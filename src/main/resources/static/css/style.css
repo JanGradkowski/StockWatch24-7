@@ -1,0 +1,241 @@
+:root {
+    /* Crisp, clean light theme */
+    --bg-color: #ffffff;
+    --text-color: #0f172a;
+    --primary-color: #3b82f6;
+    --accent-color: #10b981;
+
+    /* Frosted glass that actually blurs */
+    --glass-bg: rgba(255, 255, 255, 0.85);
+    --glass-border: rgba(15, 23, 42, 0.08);
+    --muted-text: #475569;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: var(--bg-color);
+    /* Subtle dot grid for that "fintech/developer" vibe */
+    background-image: radial-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px);
+    background-size: 24px 24px;
+    color: var(--text-color);
+    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+/* Dynamic Animated Background */
+.bg-animation {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    overflow: hidden;
+}
+
+.glow-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px); /* Tighter blur so colors hold their shape */
+    opacity: 0.45; /* Stronger opacity to cut through the white */
+    animation: float 12s infinite ease-in-out;
+}
+
+.orb-1 {
+    width: 450px;
+    height: 450px;
+    background: #8b5cf6; /* Vibrant Violet */
+    top: -100px;
+    right: -50px;
+}
+
+.orb-2 {
+    width: 550px;
+    height: 550px;
+    background: #0ea5e9; /* Bright Ocean Blue */
+    bottom: -150px;
+    left: -100px;
+    animation-delay: -6s;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(40px) scale(1.1); }
+}
+
+/* Layout elements */
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6); /* Updated to match the violet orb */
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.search-container {
+    position: relative;
+    width: min(400px, 40vw);
+}
+
+.global-ticker-search {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg);
+    outline: none;
+}
+
+.global-suggestions {
+    position: absolute;
+    width: 100%;
+    background: white;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    max-height: 250px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    margin-top: 5px;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.logout-form { margin: 0; }
+
+.logout-btn {
+    background: transparent;
+    border: 1px solid #ef4444;
+    color: #ef4444;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.suggestion-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0.75rem;
+    cursor: pointer;
+    border: 0;
+    border-bottom: 1px solid #f1f5f9;
+    background: white;
+    text-align: left;
+}
+
+.suggestion-content { display: flex; align-items: center; gap: 12px; }
+.suggestion-initials { width: 32px; height: 32px; border-radius: 50%; background: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; }
+.suggestion-initials.index { background: #8b5cf6; }
+.suggestion-symbol-row { display: flex; align-items: center; gap: 0.4rem; }
+.suggestion-symbol { color: var(--text-color); }
+.suggestion-type { font-size: 0.62rem; font-weight: 800; padding: 0.12rem 0.35rem; border-radius: 999px; background: #ede9fe; color: #6d28d9; }
+.suggestion-name { display: block; font-size: 0.75rem; color: var(--muted-text); }
+
+.nav-links a {
+    text-decoration: none;
+    margin-left: 1.5rem;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+/* Button variants */
+.btn-primary {
+    color: var(--text-color);
+    border: 1px solid var(--glass-border);
+    padding: 0.5rem 1.2rem;
+    border-radius: 6px;
+    background: #ffffff;
+}
+.btn-primary:hover {
+    background: rgba(15, 23, 42, 0.03);
+}
+
+.btn-secondary { color: var(--muted-text); }
+.btn-secondary:hover { color: var(--primary-color); }
+
+.btn-accent {
+    background: linear-gradient(135deg, #10b981, #059669); /* Richer green gradient */
+    color: #fff;
+    padding: 0.5rem 1.2rem;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+    border: none;
+}
+.btn-accent:hover {
+    opacity: 0.95;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.hero-section {
+    max-width: 800px;
+    margin: 10% auto 0 auto;
+    text-align: center;
+    padding: 0 2rem;
+}
+
+.hero-section h1 {
+    font-size: 3.5rem;
+    font-weight: 800;
+    margin-bottom: 1.5rem;
+    letter-spacing: -1px;
+    color: #0f172a;
+}
+
+.hero-section p {
+    font-size: 1.2rem;
+    color: var(--muted-text);
+    line-height: 1.6;
+    margin-bottom: 2.5rem;
+}
+
+.btn-accent.large {
+    padding: 1rem 2.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.auth-switch {
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+    color: var(--muted-text);
+}
+
+.auth-help {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+}
+
+.text-link {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.text-link:hover {
+    text-decoration: underline;
+}

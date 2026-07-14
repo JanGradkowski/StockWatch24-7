@@ -1,0 +1,26 @@
+services:
+  postgres:
+    # Exact release and multi-architecture image digest, refreshed by Dependabot.
+    image: postgres:16.14@sha256:be01cf82fc7dbba824acf0a82e150b4b360f3ff93c6631d7844af431e841a95c
+    container_name: uptodate-db
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-uptodate}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your ignored .env file}
+      POSTGRES_DB: ${DB_NAME:-uptodate_db}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 30s
+
+volumes:
+  postgres-data:

@@ -1,0 +1,1026 @@
+# Candlestick Signal Backtest Results
+
+Date run: 2026-07-08
+
+This document records the historical backtests performed for the StockWatch24-7 candlestick signal detector after adding TA4J-based indicator enrichment and confidence scoring.
+
+## Current Pipeline
+
+The tested signal flow is:
+
+1. Fetch historical candles from the database/API.
+2. Build a TA4J `BarSeries`.
+3. Calculate technical indicators:
+   - RSI 14
+   - EMA 20
+   - SMA 200
+   - ATR 14
+   - Bollinger Bands 20, 2
+   - Average volume 20
+4. Package the most recent enriched candles as `EnrichedCandle`.
+5. Run `CandlePatternDetectionService`.
+6. Record detected BUY/SELL signals.
+7. Look forward a fixed number of candles and classify the signal result.
+
+Relevant code:
+
+- `TechnicalIndicatorEnrichmentService`
+- `CandlePatternDetectionService`
+- `HistoricalSignalBacktestService`
+- `HistoricalSignalRealDataBacktestTest`
+
+## Backtest Methodology
+
+The real-data backtest uses daily candles and walks forward chronologically through history.
+
+For every candle after the warmup period:
+
+1. Take all candles up to the current candle.
+2. Enrich them with TA4J indicators.
+3. Pass the latest 5 enriched candles into the detector.
+4. If a BUY or SELL signal is emitted on the current candle, evaluate it after 5 future candles.
+
+Settings used:
+
+| Setting | Value |
+|---|---:|
+| Timeframe | Daily |
+| Minimum warmup history | 250 candles |
+| Enriched candles passed to detector | 5 |
+| Forward evaluation window | 5 candles |
+| Required move | 2.00% |
+
+Outcome definition:
+
+- BUY success: close after 5 candles is at least 2.00% above signal close.
+- SELL success: close after 5 candles is at least 2.00% below signal close.
+- Failure: price moved at least 2.00% against the signal.
+- Inconclusive: price did not move at least 2.00% either way.
+
+Two percentages are reported:
+
+- Success rate: successful signals divided by all signals, including inconclusive signals.
+- Precision: successful signals divided by successful + failed signals, excluding inconclusive signals.
+
+Command used for the real-data test:
+
+```powershell
+.\mvnw "-Dtest=HistoricalSignalRealDataBacktestTest" "-Dbacktest.real.enabled=true" test
+```
+
+## 10-Stock Baseline Run
+
+Symbols:
+
+`AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, JPM, XOM, JNJ`
+
+Aggregate result:
+
+| Metric | Result |
+|---|---:|
+| Total candles | 10,502 |
+| Analyzed candles | 10,452 |
+| Total signals | 730 |
+| BUY signals | 265 |
+| SELL signals | 465 |
+| Successful signals | 221 |
+| Failed signals | 192 |
+| Inconclusive signals | 317 |
+| Success rate including inconclusive | 30.27% |
+| Precision excluding inconclusive | 53.51% |
+| Average directional return | 0.20% |
+
+Per-symbol precision:
+
+| Symbol | Signals | Success | Failed | Inconclusive | Precision |
+|---|---:|---:|---:|---:|---:|
+| AAPL | 97 | 21 | 17 | 59 | 55.26% |
+| MSFT | 83 | 23 | 18 | 42 | 56.10% |
+| NVDA | 76 | 34 | 22 | 20 | 60.71% |
+| AMZN | 56 | 22 | 14 | 20 | 61.11% |
+| GOOGL | 65 | 18 | 17 | 30 | 51.43% |
+| META | 61 | 22 | 18 | 21 | 55.00% |
+| TSLA | 78 | 30 | 30 | 18 | 50.00% |
+| JPM | 63 | 16 | 16 | 31 | 50.00% |
+| XOM | 77 | 20 | 21 | 36 | 48.78% |
+| JNJ | 74 | 15 | 19 | 40 | 44.12% |
+
+High-confidence signals, defined as confidence score >= 80:
+
+| Metric | Result |
+|---|---:|
+| High-confidence signals | 333 |
+| Successful | 96 |
+| Failed | 96 |
+| Inconclusive | 141 |
+| Success rate including inconclusive | 28.83% |
+| Precision excluding inconclusive | 50.00% |
+
+## 30-Stock Expanded Run
+
+Symbols:
+
+`AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, AVGO, AMD, ORCL, CRM, JPM, BAC, GS, V, MA, XOM, CVX, COP, JNJ, UNH, PFE, LLY, PG, KO, COST, WMT, HD, CAT, BA`
+
+Aggregate result:
+
+| Metric | Result |
+|---|---:|
+| Total candles | 30,502 |
+| Analyzed candles | 30,352 |
+| Total signals | 2,126 |
+| BUY signals | 812 |
+| SELL signals | 1,314 |
+| Successful signals | 579 |
+| Failed signals | 575 |
+| Inconclusive signals | 972 |
+| Success rate including inconclusive | 27.23% |
+| Precision excluding inconclusive | 50.17% |
+| Average directional return | -0.01% |
+
+High-confidence aggregate, confidence score >= 80:
+
+| Metric | Result |
+|---|---:|
+| High-confidence signals | 960 |
+| Successful | 254 |
+| Failed | 270 |
+| Inconclusive | 436 |
+| Success rate including inconclusive | 26.46% |
+| Precision excluding inconclusive | 48.47% |
+
+Confidence bucket breakdown:
+
+| Confidence Score | Signals | Success | Failed | Inconclusive | Success Rate | Precision |
+|---|---:|---:|---:|---:|---:|---:|
+| 65-69 | 448 | 120 | 119 | 209 | 26.79% | 50.21% |
+| 70-74 | 336 | 91 | 83 | 162 | 27.08% | 52.30% |
+| 75-79 | 382 | 114 | 103 | 165 | 29.84% | 52.53% |
+| 80-84 | 294 | 78 | 78 | 138 | 26.53% | 50.00% |
+| 85-89 | 196 | 51 | 61 | 84 | 26.02% | 45.54% |
+| 90-94 | 244 | 70 | 60 | 114 | 28.69% | 53.85% |
+| 95-100 | 226 | 55 | 71 | 100 | 24.34% | 43.65% |
+
+## Interpretation
+
+The current detector is not reliably predictive under the tested definition.
+
+The expanded sample is close to coin-flip precision:
+
+- All signals: 50.17% precision.
+- High-confidence signals: 48.47% precision.
+- Average directional return: -0.01%.
+
+The confidence score is also not calibrated correctly. A higher score does not consistently produce better outcomes. The `95-100` bucket performed worse than several lower-confidence buckets, which means the current scoring function should not be presented as a true probability or as a reliable ranking of signal quality.
+
+## Should We Reconsider The Algorithm?
+
+Yes. The detection geometry can remain useful, but the classification and scoring model should be reconsidered.
+
+The current algorithm is reasonable for identifying candle formations with technical confluence, but the backtest shows that this does not automatically translate into profitable or directionally accurate 5-day signals. The biggest issue is the confidence layer, not necessarily the candle-pattern recognizers.
+
+Recommended changes:
+
+1. Stop treating the current confidence score as a precision estimate.
+2. Separate pattern detection from signal classification:
+   - Pattern detection answers: "Did this candle formation occur?"
+   - Classification answers: "Is this setup likely to produce a useful forward move?"
+3. Recalibrate or replace the scoring model using historical results.
+4. Add per-pattern statistics because some patterns may be useful while others may add noise.
+5. Add per-signal-direction statistics because BUY and SELL behavior can differ substantially.
+6. Test multiple horizons and thresholds:
+   - 3 candles / 1%
+   - 5 candles / 2%
+   - 10 candles / 3%
+   - ATR-based target instead of fixed percent
+7. Consider regime filters:
+   - broad market trend
+   - stock-specific volatility
+   - volume/liquidity
+   - earnings/news exclusion windows
+8. Consider training a small calibrated classifier using the current detector output as features rather than relying on manually weighted scores.
+
+## Practical Conclusion
+
+The algorithm should currently be treated as a pattern scanner, not as a high-confidence trading signal engine.
+
+The next engineering step is to turn the backtest results into calibration data:
+
+- compute precision per pattern
+- compute precision per confidence reason
+- compute precision per BUY vs SELL
+- remove or downweight reasons that do not improve results
+- promote only statistically supported combinations to alert-worthy signals
+
+## Threshold Sweep Results
+
+After the initial confidence-bucket test, a larger threshold sweep was run over the same 30-stock cached dataset.
+
+Sweep dimensions:
+
+- Forward horizons: 3, 5, and 10 candles
+- Required moves:
+  - 3-candle horizon: 1.0%, 1.5%, 2.0%
+  - 5-candle horizon: 1.0%, 1.5%, 2.0%
+  - 10-candle horizon: 1.0%, 2.0%, 3.0%
+- Confidence filters:
+  - 65-100
+  - 70-100
+  - 75-100
+  - 80-100
+  - 85-100
+  - 90-100
+  - 95-100
+  - 65-94
+  - 75-94
+  - 80-94
+  - 85-94
+  - 90-94
+
+Command used:
+
+```powershell
+.\mvnw "-Dtest=HistoricalSignalThresholdSweepTest" "-Dbacktest.sweep.enabled=true" test
+```
+
+Best configurations with at least 500 signals:
+
+| Horizon | Required Move | Confidence | Signals | Success | Failed | Inconclusive | Success Rate | Precision | Avg Return |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 3.0% | 75-94 | 1,108 | 323 | 262 | 523 | 29.15% | 55.21% | 0.18% |
+| 10 | 3.0% | 80-94 | 727 | 213 | 173 | 341 | 29.30% | 55.18% | 0.17% |
+| 10 | 2.0% | 75-94 | 1,108 | 399 | 335 | 374 | 36.01% | 54.36% | 0.18% |
+| 10 | 3.0% | 75-100 | 1,334 | 386 | 325 | 623 | 28.94% | 54.29% | 0.16% |
+| 10 | 2.0% | 80-94 | 727 | 260 | 219 | 248 | 35.76% | 54.28% | 0.17% |
+| 10 | 3.0% | 70-100 | 1,668 | 476 | 405 | 787 | 28.54% | 54.03% | 0.15% |
+| 10 | 3.0% | 80-100 | 953 | 276 | 236 | 441 | 28.96% | 53.91% | 0.14% |
+| 10 | 2.0% | 75-100 | 1,334 | 471 | 412 | 451 | 35.31% | 53.34% | 0.16% |
+| 10 | 3.0% | 85-100 | 662 | 188 | 166 | 308 | 28.40% | 53.11% | 0.17% |
+| 10 | 2.0% | 70-100 | 1,668 | 584 | 517 | 567 | 35.01% | 53.04% | 0.15% |
+
+Notable with/without 95-100 results:
+
+| Horizon | Required Move | Include 95-100 | Exclude 95-100 | Change |
+|---:|---:|---:|---:|---:|
+| 10 | 3.0% | 75-100: 54.29% | 75-94: 55.21% | +0.92 pp |
+| 10 | 3.0% | 80-100: 53.91% | 80-94: 55.18% | +1.27 pp |
+| 10 | 2.0% | 75-100: 53.34% | 75-94: 54.36% | +1.02 pp |
+| 10 | 2.0% | 80-100: 52.87% | 80-94: 54.28% | +1.41 pp |
+| 5 | 2.0% | 75-100: 49.66% | 75-94: 50.89% | +1.23 pp |
+| 5 | 2.0% | 80-100: 48.47% | 80-94: 50.00% | +1.53 pp |
+
+The 95-100 bucket alone was not reliable:
+
+| Horizon | Required Move | Confidence | Signals | Precision |
+|---:|---:|---:|---:|---:|
+| 3 | 2.0% | 95-100 | 226 | 47.12% |
+| 5 | 2.0% | 95-100 | 226 | 43.65% |
+| 10 | 3.0% | 95-100 | 226 | 50.00% |
+
+Threshold sweep conclusion:
+
+The best tested setup was confidence 75-94, 10-candle horizon, and 3.0% required move. It reached 55.21% precision on 1,108 signals.
+
+This is an improvement over the original 5-candle/2.0% setup, but it is still not strong enough to confidently call the system a buy/sell signal engine. Before per-pattern calibration, excluding the 95-100 bucket consistently helped slightly, which reinforced that the original confidence scoring was miscalibrated.
+
+## Implemented Pattern-First Calibration Change
+
+Based on the threshold sweep and the client requirement, the production detector now treats candle-pattern detection as the primary event. A structurally detected pattern is emitted even when the directional confidence is low.
+
+Implemented rule:
+
+- score < 75: emit as `LOW_CONFIDENCE`
+- score 75-84: emit as `MEDIUM_CONFIDENCE`
+- score >= 85: emit as `HIGH_CONFIDENCE`
+
+This means the algorithm notifies users that the candle pattern itself occurred, while still labeling the directional classification separately.
+
+Before per-pattern calibration, the best-tested confidence band was 75-94:
+
+| Horizon | Required Move | Signals | Success | Failed | Inconclusive | Precision |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 3.0% | 1,108 | 323 | 262 | 523 | 55.21% |
+| 10 | 2.0% | 1,108 | 399 | 335 | 374 | 54.36% |
+| 5 | 2.0% | 1,116 | 313 | 302 | 501 | 50.89% |
+
+This improved interpretation compared with treating every score as equally reliable, but it did not solve the deeper classification problem. The detector should be presented as a pattern scanner first. BUY/SELL direction and confidence are secondary classifications.
+
+## Pattern-First Threshold Sweep Rerun
+
+After changing production behavior to emit structurally detected patterns regardless of directional confidence, the threshold sweep was rerun on 2026-07-08 with additional low-confidence buckets.
+
+Command used:
+
+```powershell
+.\mvnw "-Dtest=HistoricalSignalThresholdSweepTest" "-Dbacktest.sweep.enabled=true" test
+```
+
+Sample:
+
+- 30/30 representative symbols had sufficient cached history.
+- Daily candles were used.
+- The cached dataset contains roughly 30,500 daily candles.
+- Precision still means successes divided by successes plus failures; inconclusive outcomes are excluded.
+
+Additional confidence filters added:
+
+- 0-100
+- 0-64
+- 0-74
+- 30-64
+- 50-64
+
+Best configurations with at least 500 signals:
+
+| Horizon | Required Move | Confidence | Signals | Success | Failed | Inconclusive | Success Rate | Precision | Avg Return |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 3.0% | 75-94 | 1,108 | 323 | 262 | 523 | 29.15% | 55.21% | 0.18% |
+| 10 | 3.0% | 80-94 | 727 | 213 | 173 | 341 | 29.30% | 55.18% | 0.17% |
+| 10 | 2.0% | 75-94 | 1,108 | 399 | 335 | 374 | 36.01% | 54.36% | 0.18% |
+| 10 | 3.0% | 75-100 | 1,334 | 386 | 325 | 623 | 28.94% | 54.29% | 0.16% |
+| 10 | 2.0% | 80-94 | 727 | 260 | 219 | 248 | 35.76% | 54.28% | 0.17% |
+
+All-confidence and low-confidence directional performance:
+
+| Horizon | Required Move | Confidence | Signals | Success | Failed | Inconclusive | Precision | Avg Return |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 3.0% | 0-100 | 4,106 | 1,131 | 1,134 | 1,841 | 49.93% | -0.08% |
+| 10 | 3.0% | 0-64 | 1,992 | 528 | 588 | 876 | 47.31% | -0.28% |
+| 10 | 3.0% | 0-74 | 2,772 | 745 | 809 | 1,218 | 47.94% | -0.20% |
+| 5 | 2.0% | 0-100 | 4,125 | 1,132 | 1,152 | 1,841 | 49.56% | -0.07% |
+| 5 | 2.0% | 0-64 | 1,999 | 553 | 577 | 869 | 48.94% | -0.14% |
+
+Rerun conclusion:
+
+The pattern-first change is appropriate for the email product because it increases pattern coverage, but low-confidence patterns should not be presented as directionally precise. The best directional interpretation still comes from the 75-94 range over a 10-candle horizon. Low-confidence detections are useful as candlestick-pattern notifications, not as strong BUY/SELL classifications.
+
+## Per-Pattern Calibration
+
+The next calibration pass grouped historical results by candle pattern. This showed that the original confidence score underweighted several bullish reversal patterns and overweighted several bearish reversal patterns.
+
+Baseline per-pattern results using the 10-candle / 3.0% outcome:
+
+| Pattern | Signals | Success | Failed | Inconclusive | Precision | Avg Confidence | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| INVERTED_HAMMER | 168 | 56 | 34 | 78 | 62.22% | 65.68 | 0.90% |
+| MORNING_STAR | 248 | 82 | 50 | 116 | 62.12% | 59.67 | 1.18% |
+| BULLISH_HARAMI | 513 | 165 | 120 | 228 | 57.89% | 57.02 | 0.69% |
+| HAMMER | 202 | 63 | 46 | 93 | 57.80% | 71.26 | 0.83% |
+| BULLISH_ENGULFING | 621 | 195 | 149 | 277 | 56.69% | 60.54 | 0.57% |
+| BEARISH_ENGULFING | 798 | 177 | 266 | 355 | 39.95% | 67.26 | -1.04% |
+| DARK_CLOUD_COVER | 172 | 34 | 61 | 77 | 35.79% | 64.53 | -1.75% |
+
+Implemented pattern score adjustments:
+
+| Pattern | Adjustment |
+|---|---:|
+| INVERTED_HAMMER | +10 |
+| MORNING_STAR | +10 |
+| HAMMER | +5 |
+| BULLISH_HARAMI | +5 |
+| BULLISH_ENGULFING | +5 |
+| HANGING_MAN | -5 |
+| BEARISH_HARAMI | -5 |
+| SHOOTING_STAR | -10 |
+| BEARISH_ENGULFING | -10 |
+| DARK_CLOUD_COVER | -15 |
+
+Tiny-sample patterns such as `THREE_WHITE_SOLDIERS` and `THREE_BLACK_CROWS` were left neutral despite volatile precision numbers.
+
+Post-calibration threshold sweep, best configurations with at least 500 signals:
+
+| Horizon | Required Move | Confidence | Signals | Success | Failed | Inconclusive | Success Rate | Precision | Avg Return |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 3.0% | 85-100 | 613 | 195 | 135 | 283 | 31.81% | 59.09% | 0.71% |
+| 10 | 3.0% | 80-100 | 883 | 272 | 194 | 417 | 30.80% | 58.37% | 0.64% |
+| 10 | 3.0% | 75-100 | 1,244 | 380 | 280 | 584 | 30.55% | 57.58% | 0.53% |
+| 10 | 2.0% | 85-100 | 613 | 233 | 173 | 207 | 38.01% | 57.39% | 0.71% |
+| 10 | 3.0% | 80-94 | 671 | 201 | 150 | 320 | 29.96% | 57.26% | 0.39% |
+
+Per-pattern calibration improved the best 500+ signal directional precision from 55.21% to 59.09%. This is a meaningful improvement in ranking/classification, but the product should still present alerts as pattern notifications first and directional confidence second.
+
+## Extended Horizon Sweep
+
+The threshold sweep was extended to test longer forward outcome windows while keeping the same 30 representative symbols and cached daily history.
+
+Additional settings tested:
+
+- 20-candle horizon with 2.0%, 3.0%, and 5.0% required moves
+- 30-candle horizon with 3.0%, 5.0%, and 8.0% required moves
+
+Best configurations with at least 500 signals:
+
+| Horizon | Required Move | Confidence | Signals | Success | Failed | Inconclusive | Success Rate | Precision | Avg Return |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 30 | 8.0% | 85-100 | 602 | 137 | 84 | 381 | 22.76% | 61.99% | 1.36% |
+| 30 | 8.0% | 80-100 | 863 | 191 | 127 | 545 | 22.13% | 60.06% | 1.21% |
+| 10 | 3.0% | 85-100 | 613 | 195 | 135 | 283 | 31.81% | 59.09% | 0.71% |
+| 10 | 3.0% | 80-100 | 883 | 272 | 194 | 417 | 30.80% | 58.37% | 0.64% |
+| 30 | 8.0% | 80-94 | 654 | 140 | 102 | 412 | 21.41% | 57.85% | 0.56% |
+| 10 | 3.0% | 75-100 | 1,244 | 380 | 280 | 584 | 30.55% | 57.58% | 0.53% |
+| 10 | 2.0% | 85-100 | 613 | 233 | 173 | 207 | 38.01% | 57.39% | 0.71% |
+| 30 | 5.0% | 85-100 | 602 | 195 | 145 | 262 | 32.39% | 57.35% | 1.36% |
+
+Extended horizon conclusion:
+
+The 30-candle / 8.0% setup produced the highest precision so far, but the success rate including inconclusive outcomes was lower because many signals did not move far enough in either direction. For a client-facing confidence label, the best practical range is now `85-100`; for more frequent alerts, `80-100` gives more coverage with slightly lower precision.
+
+## Weekly/Monthly Elliott Wave Experiment
+
+Date run: 2026-07-09
+
+The client requested Elliott Wave support for higher intervals, especially weekly and monthly candles. A separate `ElliottWaveDetectionService` was added so daily candlestick detection remains unchanged.
+
+Implemented Elliott patterns:
+
+- `ELLIOTT_BULLISH_IMPULSE`
+- `ELLIOTT_BEARISH_IMPULSE`
+- `ELLIOTT_BULLISH_CORRECTION`
+- `ELLIOTT_BEARISH_CORRECTION`
+
+Implementation notes:
+
+- Elliott detection uses the last higher-interval enriched candle window, up to 80 candles.
+- It identifies alternating swing pivots from highs/lows.
+- It requires five-wave impulse structure with higher highs/lows or lower lows/highs.
+- It checks Fibonacci-like retracement bounds for waves 2 and 4.
+- It only emits impulse signals on the actual wave-5 breakout/breakdown candle, not repeatedly after price is already beyond the pivot.
+- Correction signals require a completed five-wave structure and a confirmed rebound/breakdown after the corrective pivot.
+- Production daily alerts do not use Elliott Wave logic.
+
+Production setting after the test:
+
+| Setting | Default |
+|---|---:|
+| `alerts.elliott.weekly-enabled` | `false` |
+| `alerts.elliott.monthly-enabled` | `true` |
+
+Weekly Elliott is implemented but disabled by default because the cached backtest degraded most weekly precision buckets. Monthly Elliott is enabled by default because it improved every tested monthly bucket in this cached sample.
+
+### Higher-Interval Methodology
+
+The higher-interval backtest used the same 30 representative symbols as the daily expanded run:
+
+`AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, AVGO, AMD, ORCL, CRM, JPM, BAC, GS, V, MA, XOM, CVX, COP, JNJ, UNH, PFE, LLY, PG, KO, COST, WMT, HD, CAT, BA`
+
+Important sample limitation:
+
+- Only 2 of the 30 symbols had enough cached weekly/monthly history in the local database.
+- The numbers below are useful for engineering direction, but they are not enough to claim statistical confidence.
+- A stronger final validation needs a refreshed weekly/monthly cache for all 30 symbols.
+
+Command used:
+
+```powershell
+.\mvnw "-Dtest=HigherIntervalSignalBacktestTest" "-Dbacktest.higher.enabled=true" test
+```
+
+Outcome settings:
+
+| Interval | Horizon | Required Move |
+|---|---:|---:|
+| Weekly | 4 candles | 4.0% |
+| Weekly | 8 candles | 8.0% |
+| Weekly | 12 candles | 12.0% |
+| Monthly | 3 candles | 6.0% |
+| Monthly | 6 candles | 12.0% |
+| Monthly | 9 candles | 18.0% |
+
+Precision still means `success / (success + failure)`. Expected return is represented by average directional return.
+
+### Candlestick-Only Baseline
+
+Best baseline higher-interval results with at least 20 signals:
+
+| Interval | Horizon | Move | Confidence | Signals | Success | Failed | Inconclusive | Precision | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Weekly | 12 | 12.0% | 90-100 | 21 | 7 | 3 | 11 | 70.00% | 3.25% |
+| Weekly | 12 | 12.0% | 85-100 | 53 | 15 | 9 | 29 | 62.50% | 3.23% |
+| Weekly | 4 | 4.0% | 80-100 | 71 | 23 | 14 | 34 | 62.16% | 0.47% |
+| Weekly | 4 | 4.0% | 90-100 | 21 | 8 | 5 | 8 | 61.54% | 0.40% |
+| Weekly | 8 | 8.0% | 85-100 | 53 | 14 | 9 | 30 | 60.87% | 2.05% |
+
+Monthly baseline was materially weaker:
+
+| Interval | Horizon | Move | Confidence | Signals | Precision | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|
+| Monthly | 3 | 6.0% | 0-100 | 171 | 48.82% | -0.27% |
+| Monthly | 6 | 12.0% | 0-100 | 170 | 44.14% | -4.35% |
+| Monthly | 9 | 18.0% | 0-100 | 170 | 36.84% | -10.67% |
+
+### Candlestick Plus Elliott Results
+
+After tightening Elliott impulse signals to only fire on the breakout candle, the combined detector produced these best results with at least 20 signals:
+
+| Interval | Horizon | Move | Confidence | Signals | Success | Failed | Inconclusive | Precision | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Weekly | 4 | 4.0% | 75-100 | 143 | 46 | 32 | 65 | 58.97% | 0.57% |
+| Weekly | 4 | 4.0% | 80-100 | 104 | 31 | 22 | 51 | 58.49% | 0.18% |
+| Weekly | 4 | 4.0% | 90-100 | 42 | 14 | 10 | 18 | 58.33% | 0.11% |
+| Monthly | 9 | 18.0% | 90-100 | 30 | 9 | 7 | 14 | 56.25% | 6.05% |
+| Weekly | 12 | 12.0% | 85-100 | 77 | 15 | 12 | 50 | 55.56% | 1.69% |
+
+Monthly before/after comparison:
+
+| Horizon | Move | Confidence | Before Signals | Before Precision | Before Avg Return | After Signals | After Precision | After Avg Return | Precision Change | Return Change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 3 | 6.0% | 0-100 | 171 | 48.82% | -0.27% | 200 | 50.34% | -0.05% | +1.52 pp | +0.23 pp |
+| 3 | 6.0% | 90-100 | 20 | 44.44% | 2.45% | 30 | 52.00% | 4.66% | +7.56 pp | +2.20 pp |
+| 6 | 12.0% | 0-100 | 170 | 44.14% | -4.35% | 199 | 46.09% | -2.89% | +1.95 pp | +1.46 pp |
+| 6 | 12.0% | 85-100 | 30 | 35.29% | -7.41% | 49 | 46.67% | 0.37% | +11.37 pp | +7.78 pp |
+| 9 | 18.0% | 0-100 | 170 | 36.84% | -10.67% | 199 | 40.54% | -8.52% | +3.70 pp | +2.15 pp |
+| 9 | 18.0% | 90-100 | 20 | 44.44% | 1.25% | 30 | 56.25% | 6.05% | +11.81 pp | +4.80 pp |
+
+Weekly before/after comparison:
+
+| Horizon | Move | Confidence | Before Signals | Before Precision | Before Avg Return | After Signals | After Precision | After Avg Return | Precision Change | Return Change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 4 | 4.0% | 0-100 | 385 | 50.85% | -0.31% | 422 | 51.00% | -0.33% | +0.14 pp | -0.01 pp |
+| 4 | 4.0% | 80-100 | 71 | 62.16% | 0.47% | 104 | 58.49% | 0.18% | -3.67 pp | -0.28 pp |
+| 8 | 8.0% | 85-100 | 53 | 60.87% | 2.05% | 77 | 54.84% | 1.12% | -6.03 pp | -0.93 pp |
+| 12 | 12.0% | 85-100 | 53 | 62.50% | 3.23% | 77 | 55.56% | 1.69% | -6.94 pp | -1.54 pp |
+| 12 | 12.0% | 90-100 | 21 | 70.00% | 3.25% | 42 | 53.85% | 0.57% | -16.15 pp | -2.69 pp |
+
+### Elliott Wave Conclusion
+
+Elliott Wave should not be added blindly to every higher interval.
+
+The monthly results improved across all tested confidence thresholds and horizons in the cached sample, so monthly Elliott alerts are enabled by default. The strongest monthly result was the 9-month / 18.0% / 90-100 bucket at 56.25% precision and 6.05% average directional return, but this is only 30 signals from 2 symbols.
+
+The weekly results mostly degraded in the higher-confidence buckets, so weekly Elliott alerts are disabled by default. Weekly can be enabled later with:
+
+```properties
+alerts.elliott.weekly-enabled=true
+```
+
+The best next validation step is to sync enough weekly and monthly candles for the full 30-symbol sample, rerun `HigherIntervalSignalBacktestTest`, and only then decide whether weekly Elliott should be enabled for the client.
+
+## Full 30-Symbol Weekly/Monthly Rerun
+
+Date run: 2026-07-09
+
+The preliminary Elliott Wave experiment above was based on only 2 of 30 symbols because the local database did not yet contain enough weekly/monthly candles. The missing higher-interval candles were then synced from Twelve Data and the same test was rerun.
+
+Sync command:
+
+```powershell
+.\mvnw "-Dtest=HigherIntervalSignalBacktestTest" "-Dbacktest.higher.enabled=true" "-Dbacktest.higher.sync-missing=true" test
+```
+
+Sync result:
+
+| Metric | Result |
+|---|---:|
+| Missing symbol/interval datasets synced | 56 |
+| Already sufficient datasets skipped | 4 |
+| Weekly symbols with sufficient data | 30/30 |
+| Monthly symbols with sufficient data | 30/30 |
+| Weekly total candles | 29,681 |
+| Monthly total candles | 14,538 |
+
+The test includes a provider-call delay of 8.5 seconds by default to avoid hammering the Twelve Data API.
+
+### Full Sample Baseline
+
+Candlestick-only baseline, best higher-interval results with at least 20 signals:
+
+| Interval | Horizon | Move | Confidence | Signals | Success | Failed | Inconclusive | Precision | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Weekly | 12 | 12.0% | 90-100 | 429 | 92 | 62 | 275 | 59.74% | 1.68% |
+| Weekly | 8 | 8.0% | 85-100 | 759 | 189 | 129 | 441 | 59.43% | 1.72% |
+| Weekly | 8 | 8.0% | 80-100 | 1,089 | 263 | 189 | 637 | 58.19% | 1.43% |
+| Weekly | 8 | 8.0% | 90-100 | 430 | 107 | 77 | 246 | 58.15% | 2.28% |
+| Weekly | 4 | 4.0% | 90-100 | 432 | 141 | 102 | 189 | 58.02% | 1.11% |
+
+Monthly candlestick-only baseline:
+
+| Interval | Horizon | Move | Confidence | Signals | Precision | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|
+| Monthly | 3 | 6.0% | 0-100 | 2,713 | 50.63% | -0.12% |
+| Monthly | 6 | 12.0% | 0-100 | 2,697 | 47.16% | -1.47% |
+| Monthly | 9 | 18.0% | 0-100 | 2,674 | 44.60% | -2.14% |
+| Monthly | 9 | 18.0% | 90-100 | 251 | 45.61% | -4.15% |
+
+### Full Sample With Elliott
+
+Candlestick plus Elliott, best higher-interval results with at least 20 signals:
+
+| Interval | Horizon | Move | Confidence | Signals | Success | Failed | Inconclusive | Precision | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Weekly | 4 | 4.0% | 90-100 | 697 | 229 | 170 | 298 | 57.39% | 0.69% |
+| Weekly | 4 | 4.0% | 85-100 | 1,064 | 325 | 248 | 491 | 56.72% | 0.69% |
+| Weekly | 12 | 12.0% | 90-100 | 691 | 137 | 105 | 449 | 56.61% | 0.99% |
+| Weekly | 8 | 8.0% | 85-100 | 1,060 | 245 | 194 | 621 | 55.81% | 1.31% |
+| Monthly | 9 | 18.0% | 90-100 | 432 | 104 | 86 | 242 | 54.74% | 0.50% |
+
+Monthly before/after on the full sample:
+
+| Horizon | Move | Confidence | Before Signals | Before Precision | Before Avg Return | After Signals | After Precision | After Avg Return | Precision Change | Return Change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 3 | 6.0% | 0-100 | 2,713 | 50.63% | -0.12% | 3,115 | 51.68% | 0.36% | +1.04 pp | +0.49 pp |
+| 3 | 6.0% | 90-100 | 252 | 49.69% | 0.06% | 436 | 52.59% | 1.42% | +2.90 pp | +1.36 pp |
+| 6 | 12.0% | 0-100 | 2,697 | 47.16% | -1.47% | 3,096 | 49.50% | -0.50% | +2.34 pp | +0.97 pp |
+| 6 | 12.0% | 90-100 | 252 | 42.74% | -2.30% | 436 | 50.00% | 0.45% | +7.26 pp | +2.75 pp |
+| 9 | 18.0% | 0-100 | 2,674 | 44.60% | -2.14% | 3,068 | 48.61% | -0.56% | +4.01 pp | +1.59 pp |
+| 9 | 18.0% | 75-100 | 777 | 40.93% | -4.92% | 1,171 | 52.21% | 0.17% | +11.27 pp | +5.09 pp |
+| 9 | 18.0% | 90-100 | 251 | 45.61% | -4.15% | 432 | 54.74% | 0.50% | +9.12 pp | +4.66 pp |
+
+Weekly before/after on the full sample:
+
+| Horizon | Move | Confidence | Before Signals | Before Precision | Before Avg Return | After Signals | After Precision | After Avg Return | Precision Change | Return Change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 4 | 4.0% | 0-100 | 5,630 | 49.11% | -0.23% | 6,165 | 49.36% | -0.25% | +0.25 pp | -0.02 pp |
+| 4 | 4.0% | 85-100 | 761 | 56.64% | 0.88% | 1,064 | 56.72% | 0.69% | +0.08 pp | -0.19 pp |
+| 4 | 4.0% | 90-100 | 432 | 58.02% | 1.11% | 697 | 57.39% | 0.69% | -0.63 pp | -0.41 pp |
+| 8 | 8.0% | 85-100 | 759 | 59.43% | 1.72% | 1,060 | 55.81% | 1.31% | -3.63 pp | -0.41 pp |
+| 8 | 8.0% | 90-100 | 430 | 58.15% | 2.28% | 693 | 53.20% | 1.41% | -4.95 pp | -0.86 pp |
+| 12 | 12.0% | 90-100 | 429 | 59.74% | 1.68% | 691 | 56.61% | 0.99% | -3.13 pp | -0.70 pp |
+
+### Updated Recommendation
+
+The 30-symbol rerun confirms the preliminary direction:
+
+- Monthly Elliott Wave support is useful as an additional pattern source. It improved precision and expected directional return across the tested monthly horizons.
+- Weekly Elliott Wave support should remain disabled by default. It increases signal count, but it generally reduces precision and expected return in the strongest weekly confidence buckets.
+
+Production defaults remain appropriate:
+
+```properties
+alerts.elliott.weekly-enabled=false
+alerts.elliott.monthly-enabled=true
+```
+
+Client-facing interpretation:
+
+The system can now send Elliott Wave pattern notifications for monthly intervals with better evidence than the original 2-symbol test. Weekly Elliott detection exists in the codebase, but based on the 30-symbol result it should not be enabled for the client unless they explicitly prefer more pattern coverage over directional quality.
+
+## Elliott Follow-Through Rerun
+
+Date run: 2026-07-10
+
+After the first production test, monthly Elliott Wave checks were still rarely appearing in the UI. The detector was changed so a present signal can be either:
+
+- the breakout/rebound candle itself, or
+- one fresh follow-through candle immediately after that breakout/rebound.
+
+The detector still does not emit old historical Elliott waves as current alerts. The signal timestamp remains the latest candle being evaluated, and the allowed follow-through window is one higher-interval candle.
+
+### Follow-Through Methodology
+
+The same 30 representative symbols and cached higher-interval history were used:
+
+`AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, AVGO, AMD, ORCL, CRM, JPM, BAC, GS, V, MA, XOM, CVX, COP, JNJ, UNH, PFE, LLY, PG, KO, COST, WMT, HD, CAT, BA`
+
+The dataset was sufficient for all symbols:
+
+| Metric | Result |
+|---|---:|
+| Weekly symbols with sufficient data | 30/30 |
+| Monthly symbols with sufficient data | 30/30 |
+| Weekly total candles | 29,681 |
+| Monthly total candles | 14,538 |
+
+Commands used:
+
+```powershell
+.\mvnw "-Dtest=HigherIntervalSignalBacktestTest" "-Dbacktest.higher.enabled=true" test
+.\mvnw "-Dtest=ElliottWaveImplementationComparisonBacktestTest" "-Dbacktest.elliott.compare.enabled=true" test
+```
+
+The first command compares candlestick-only against the current Elliott implementation. The second command compares the legacy breakout-candle-only Elliott implementation against the current follow-through implementation.
+
+Outcome settings remained unchanged:
+
+| Interval | Horizon | Required Move |
+|---|---:|---:|
+| Weekly | 4 candles | 4.0% |
+| Weekly | 8 candles | 8.0% |
+| Weekly | 12 candles | 12.0% |
+| Monthly | 3 candles | 6.0% |
+| Monthly | 6 candles | 12.0% |
+| Monthly | 9 candles | 18.0% |
+
+Precision still means `success / (success + failure)`. Average return is average directional return per signal.
+
+### Current Best Results
+
+Candlestick plus current Elliott, best higher-interval results with at least 20 signals:
+
+| Interval | Horizon | Move | Confidence | Signals | Success | Failed | Inconclusive | Precision | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Weekly | 12 | 12.0% | 90-100 | 616 | 127 | 85 | 404 | 59.91% | 1.52% |
+| Weekly | 8 | 8.0% | 85-100 | 964 | 237 | 167 | 560 | 58.66% | 1.73% |
+| Weekly | 8 | 8.0% | 80-100 | 1,331 | 318 | 233 | 780 | 57.71% | 1.47% |
+| Weekly | 4 | 4.0% | 90-100 | 622 | 203 | 150 | 269 | 57.51% | 0.94% |
+| Weekly | 8 | 8.0% | 90-100 | 618 | 153 | 114 | 351 | 57.30% | 2.15% |
+| Monthly | 9 | 18.0% | 90-100 | 370 | 91 | 75 | 204 | 54.82% | -0.05% |
+
+### Current Versus Candlestick-Only
+
+Monthly results versus candlestick-only baseline:
+
+| Horizon | Move | Confidence | Candlestick Signals | Candlestick Precision | Candlestick Avg Return | Current Signals | Current Precision | Current Avg Return | Precision Change | Return Change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 3 | 6.0% | 0-100 | 2,713 | 50.63% | -0.12% | 2,873 | 51.06% | 0.03% | +0.43 pp | +0.15 pp |
+| 3 | 6.0% | 90-100 | 252 | 49.69% | 0.06% | 373 | 54.17% | 1.37% | +4.48 pp | +1.31 pp |
+| 6 | 12.0% | 0-100 | 2,697 | 47.16% | -1.47% | 2,857 | 47.97% | -1.10% | +0.81 pp | +0.38 pp |
+| 6 | 12.0% | 90-100 | 252 | 42.74% | -2.30% | 373 | 50.85% | 0.57% | +8.11 pp | +2.87 pp |
+| 9 | 18.0% | 0-100 | 2,674 | 44.60% | -2.14% | 2,832 | 45.96% | -1.59% | +1.36 pp | +0.55 pp |
+| 9 | 18.0% | 75-100 | 777 | 40.93% | -4.92% | 935 | 45.45% | -2.79% | +4.52 pp | +2.14 pp |
+| 9 | 18.0% | 90-100 | 251 | 45.61% | -4.15% | 370 | 54.82% | -0.05% | +9.21 pp | +4.10 pp |
+
+Weekly results versus candlestick-only baseline:
+
+| Horizon | Move | Confidence | Candlestick Signals | Candlestick Precision | Candlestick Avg Return | Current Signals | Current Precision | Current Avg Return | Precision Change | Return Change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 4 | 4.0% | 0-100 | 5,630 | 49.11% | -0.23% | 5,884 | 49.34% | -0.19% | +0.23 pp | +0.03 pp |
+| 4 | 4.0% | 85-100 | 761 | 56.64% | 0.88% | 968 | 56.78% | 0.82% | +0.14 pp | -0.06 pp |
+| 4 | 4.0% | 90-100 | 432 | 58.02% | 1.11% | 622 | 57.51% | 0.94% | -0.52 pp | -0.17 pp |
+| 8 | 8.0% | 85-100 | 759 | 59.43% | 1.72% | 964 | 58.66% | 1.73% | -0.77 pp | +0.01 pp |
+| 8 | 8.0% | 90-100 | 430 | 58.15% | 2.28% | 618 | 57.30% | 2.15% | -0.85 pp | -0.13 pp |
+| 12 | 12.0% | 85-100 | 756 | 55.64% | 0.95% | 960 | 56.57% | 1.00% | +0.94 pp | +0.05 pp |
+| 12 | 12.0% | 90-100 | 429 | 59.74% | 1.68% | 616 | 59.91% | 1.52% | +0.17 pp | -0.17 pp |
+
+### Current Versus Legacy Elliott
+
+Legacy means the previous breakout/rebound-candle-only Elliott implementation. Current means the follow-through implementation.
+
+Raw signal coverage:
+
+| Interval | Horizon | Legacy Signals | Current Signals | Change |
+|---|---:|---:|---:|---:|
+| Weekly | 4 | 5,760 | 5,884 | +124 |
+| Weekly | 8 | 5,727 | 5,850 | +123 |
+| Weekly | 12 | 5,705 | 5,828 | +123 |
+| Monthly | 3 | 2,794 | 2,873 | +79 |
+| Monthly | 6 | 2,778 | 2,857 | +79 |
+| Monthly | 9 | 2,754 | 2,832 | +78 |
+
+Monthly current-versus-legacy comparison:
+
+| Horizon | Move | Confidence | Legacy Signals | Legacy Precision | Legacy Avg Return | Current Signals | Current Precision | Current Avg Return | Precision Change | Return Change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 3 | 6.0% | 0-100 | 2,794 | 50.78% | -0.06% | 2,873 | 51.06% | 0.03% | +0.28 pp | +0.09 pp |
+| 3 | 6.0% | 75-100 | 870 | 44.12% | -1.46% | 949 | 45.56% | -1.08% | +1.44 pp | +0.38 pp |
+| 3 | 6.0% | 80-100 | 650 | 44.53% | -1.52% | 724 | 46.42% | -0.99% | +1.90 pp | +0.53 pp |
+| 3 | 6.0% | 85-100 | 497 | 48.10% | -0.57% | 558 | 49.72% | -0.14% | +1.62 pp | +0.43 pp |
+| 3 | 6.0% | 90-100 | 318 | 52.22% | 0.83% | 373 | 54.17% | 1.37% | +1.95 pp | +0.54 pp |
+| 6 | 12.0% | 0-100 | 2,778 | 47.47% | -1.27% | 2,857 | 47.97% | -1.10% | +0.50 pp | +0.17 pp |
+| 6 | 12.0% | 75-100 | 865 | 42.38% | -2.77% | 944 | 44.26% | -2.12% | +1.88 pp | +0.65 pp |
+| 6 | 12.0% | 80-100 | 647 | 42.81% | -2.78% | 721 | 45.25% | -1.90% | +2.44 pp | +0.88 pp |
+| 6 | 12.0% | 85-100 | 495 | 45.87% | -1.92% | 556 | 48.52% | -1.21% | +2.65 pp | +0.71 pp |
+| 6 | 12.0% | 90-100 | 318 | 47.06% | -0.35% | 373 | 50.85% | 0.57% | +3.79 pp | +0.92 pp |
+| 9 | 18.0% | 0-100 | 2,754 | 45.15% | -1.88% | 2,832 | 45.96% | -1.59% | +0.82 pp | +0.29 pp |
+| 9 | 18.0% | 75-100 | 857 | 42.89% | -3.81% | 935 | 45.45% | -2.79% | +2.56 pp | +1.03 pp |
+| 9 | 18.0% | 80-100 | 640 | 42.57% | -4.42% | 713 | 45.76% | -3.05% | +3.19 pp | +1.36 pp |
+| 9 | 18.0% | 85-100 | 490 | 44.89% | -4.11% | 550 | 48.03% | -2.86% | +3.14 pp | +1.24 pp |
+| 9 | 18.0% | 90-100 | 316 | 50.35% | -1.50% | 370 | 54.82% | -0.05% | +4.46 pp | +1.45 pp |
+
+Weekly current-versus-legacy comparison:
+
+| Horizon | Move | Confidence | Legacy Signals | Legacy Precision | Legacy Avg Return | Current Signals | Current Precision | Current Avg Return | Precision Change | Return Change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 4 | 4.0% | 0-100 | 5,760 | 49.23% | -0.21% | 5,884 | 49.34% | -0.19% | +0.11 pp | +0.02 pp |
+| 4 | 4.0% | 75-100 | 1,732 | 52.98% | 0.52% | 1,856 | 53.07% | 0.53% | +0.09 pp | +0.01 pp |
+| 4 | 4.0% | 80-100 | 1,218 | 56.02% | 0.77% | 1,336 | 55.88% | 0.77% | -0.14 pp | -0.00 pp |
+| 4 | 4.0% | 85-100 | 871 | 56.74% | 0.83% | 968 | 56.78% | 0.82% | +0.04 pp | -0.01 pp |
+| 4 | 4.0% | 90-100 | 535 | 58.28% | 1.02% | 622 | 57.51% | 0.94% | -0.77 pp | -0.08 pp |
+| 8 | 8.0% | 0-100 | 5,727 | 47.42% | -0.34% | 5,850 | 47.73% | -0.28% | +0.32 pp | +0.06 pp |
+| 8 | 8.0% | 75-100 | 1,724 | 53.69% | 0.89% | 1,847 | 54.31% | 1.00% | +0.62 pp | +0.11 pp |
+| 8 | 8.0% | 80-100 | 1,214 | 57.09% | 1.36% | 1,331 | 57.71% | 1.47% | +0.63 pp | +0.12 pp |
+| 8 | 8.0% | 85-100 | 868 | 58.20% | 1.62% | 964 | 58.66% | 1.73% | +0.47 pp | +0.11 pp |
+| 8 | 8.0% | 90-100 | 532 | 56.71% | 2.08% | 618 | 57.30% | 2.15% | +0.59 pp | +0.07 pp |
+| 12 | 12.0% | 0-100 | 5,705 | 46.91% | -0.55% | 5,828 | 47.09% | -0.52% | +0.18 pp | +0.04 pp |
+| 12 | 12.0% | 75-100 | 1,720 | 52.83% | 0.53% | 1,843 | 53.08% | 0.57% | +0.25 pp | +0.04 pp |
+| 12 | 12.0% | 80-100 | 1,210 | 55.50% | 0.84% | 1,327 | 55.91% | 0.87% | +0.41 pp | +0.03 pp |
+| 12 | 12.0% | 85-100 | 864 | 56.33% | 0.99% | 960 | 56.57% | 1.00% | +0.24 pp | +0.00 pp |
+| 12 | 12.0% | 90-100 | 530 | 60.43% | 1.66% | 616 | 59.91% | 1.52% | -0.52 pp | -0.15 pp |
+
+### Follow-Through Recommendation
+
+The follow-through change improved monthly Elliott behavior clearly. Monthly precision and average directional return improved versus the legacy Elliott implementation in every tested horizon and confidence bucket.
+
+Weekly also became slightly better in most broad and mid-confidence buckets, especially the 8-week and 12-week horizons. However, the strictest weekly `90-100` buckets are mixed: coverage increased, but precision/return dipped for 4-week and 12-week horizons. Weekly Elliott should therefore remain disabled by default unless the client explicitly wants more weekly pattern coverage.
+
+Production defaults remain:
+
+```properties
+alerts.elliott.weekly-enabled=false
+alerts.elliott.monthly-enabled=true
+```
+
+Client-facing interpretation remains unchanged: monthly Elliott alerts are present-relevant pattern notifications, not stale historical wave reports. The detector is now less brittle, but the report still does not justify presenting Elliott confidence as a probability of profit.
+
+## Elliott Wave Structural-Detection Rerun
+
+Date run: 2026-07-12
+
+The Elliott detector was rerun after expanding the structural recognition logic for complete I-V impulses, wave-V reversal confirmation and completed A-B-C corrections. The purpose was to measure whether the greater structural coverage also improved directional accuracy and average return.
+
+### Reused Methodology
+
+The rerun deliberately retained the methodology and parameters from the previous higher-interval experiments:
+
+- The same 30 symbols were used:
+  `AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, AVGO, AMD, ORCL, CRM, JPM, BAC, GS, V, MA, XOM, CVX, COP, JNJ, UNH, PFE, LLY, PG, KO, COST, WMT, HD, CAT, BA`.
+- Each symbol was processed chronologically in a walk-forward backtest.
+- The detector saw at most the trailing 80 enriched candles at each decision point and did not see future candles.
+- Weekly runs required 80 historical candles; monthly runs required 36.
+- Confidence filters remained `0-100`, `75-100`, `80-100`, `85-100` and `90-100`.
+- A success required the fixed-horizon closing return to reach the required move in the signal direction. An equal adverse move was a failure; anything between those thresholds was inconclusive.
+- Precision, referred to as accuracy in the discussion below, remained `success / (success + failure)`. Inconclusive signals were excluded from precision but included in signal counts and average directional return.
+- Average return remained the mean fixed-horizon directional return per signal. BUY returns use the normal percentage change and SELL returns use its inverse.
+
+Outcome parameters were unchanged:
+
+| Interval | Horizon | Required Move |
+|---|---:|---:|
+| Weekly | 4 candles | 4.0% |
+| Weekly | 8 candles | 8.0% |
+| Weekly | 12 candles | 12.0% |
+| Monthly | 3 candles | 6.0% |
+| Monthly | 6 candles | 12.0% |
+| Monthly | 9 candles | 18.0% |
+
+Commands used:
+
+```powershell
+.\mvnw "-Dtest=HigherIntervalSignalBacktestTest" "-Dbacktest.higher.enabled=true" test
+.\mvnw "-Dtest=ElliottWaveImplementationComparisonBacktestTest" "-Dbacktest.elliott.compare.enabled=true" test
+```
+
+Both commands completed with `BUILD SUCCESS`, one test executed in each suite and zero failures, errors or skipped tests. The provider-sync option was intentionally omitted so the test would use the existing cache rather than fetch a new sample during the run.
+
+### Dataset and Comparability
+
+All 30 symbols still had sufficient weekly and monthly data:
+
+| Metric | Previous Run | Current Run | Change |
+|---|---:|---:|---:|
+| Weekly symbols with sufficient data | 30/30 | 30/30 | 0 |
+| Monthly symbols with sufficient data | 30/30 | 30/30 | 0 |
+| Weekly total candles | 29,681 | 29,837 | +156 |
+| Monthly total candles | 14,538 | 14,538 | 0 |
+
+The parameters and symbol universe are identical, but the July 10 comparison is not a perfectly frozen code-and-data A/B test because the weekly cache now contains 156 additional candles and the earlier detector implementation was not retained as a separate snapshot. Monthly row counts are unchanged, although an equal count alone cannot prove that every stored row is byte-for-byte identical. The same-run candlestick-only and follow-through-control comparisons below are the stronger causal comparisons because both sides use exactly the same current cache.
+
+Signals from different horizons and confidence filters overlap. They must not be added together as if they were independent trades.
+
+### Current Signal Coverage
+
+The structural detector increased the number of signals evaluated by the combined candlestick-plus-Elliott run:
+
+| Interval | Horizon | Candlestick-Only Signals | With Current Elliott | Elliott Additions |
+|---|---:|---:|---:|---:|
+| Weekly | 4 | 5,629 | 6,073 | +444 |
+| Weekly | 8 | 5,598 | 6,037 | +439 |
+| Weekly | 12 | 5,576 | 6,015 | +439 |
+| Monthly | 3 | 2,713 | 2,933 | +220 |
+| Monthly | 6 | 2,697 | 2,915 | +218 |
+| Monthly | 9 | 2,674 | 2,890 | +216 |
+
+This confirms improved pattern coverage. It does not, by itself, establish improved directional quality.
+
+### Complete Current Results
+
+The following is the complete candlestick-plus-current-Elliott result matrix. `Success`, `Failed` and `Inconclusive` sum to `Signals` in every row.
+
+| Interval | Horizon | Move | Confidence | Signals | Success | Failed | Inconclusive | Precision | Avg Return |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Monthly | 3 | 6.0% | 0-100 | 2,933 | 946 | 924 | 1,063 | 50.59% | -0.06% |
+| Monthly | 3 | 6.0% | 75-100 | 1,009 | 280 | 350 | 379 | 44.44% | -1.28% |
+| Monthly | 3 | 6.0% | 80-100 | 788 | 221 | 275 | 292 | 44.56% | -1.43% |
+| Monthly | 3 | 6.0% | 85-100 | 640 | 190 | 212 | 238 | 47.26% | -0.68% |
+| Monthly | 3 | 6.0% | 90-100 | 466 | 144 | 147 | 175 | 49.48% | 0.10% |
+| Monthly | 6 | 12.0% | 0-100 | 2,915 | 713 | 801 | 1,401 | 47.09% | -1.44% |
+| Monthly | 6 | 12.0% | 75-100 | 1,002 | 217 | 300 | 485 | 41.97% | -3.05% |
+| Monthly | 6 | 12.0% | 80-100 | 783 | 167 | 231 | 385 | 41.96% | -3.23% |
+| Monthly | 6 | 12.0% | 85-100 | 636 | 139 | 175 | 322 | 44.27% | -2.59% |
+| Monthly | 6 | 12.0% | 90-100 | 464 | 100 | 127 | 237 | 44.05% | -1.86% |
+| Monthly | 9 | 18.0% | 0-100 | 2,890 | 590 | 706 | 1,594 | 45.52% | -1.92% |
+| Monthly | 9 | 18.0% | 75-100 | 993 | 210 | 264 | 519 | 44.30% | -3.66% |
+| Monthly | 9 | 18.0% | 80-100 | 775 | 167 | 209 | 399 | 44.41% | -4.11% |
+| Monthly | 9 | 18.0% | 85-100 | 630 | 141 | 164 | 325 | 46.23% | -3.78% |
+| Monthly | 9 | 18.0% | 90-100 | 461 | 111 | 110 | 240 | 50.23% | -1.98% |
+| Weekly | 4 | 4.0% | 0-100 | 6,073 | 1,621 | 1,656 | 2,796 | 49.47% | -0.19% |
+| Weekly | 4 | 4.0% | 75-100 | 2,038 | 570 | 514 | 954 | 52.58% | 0.39% |
+| Weekly | 4 | 4.0% | 80-100 | 1,526 | 445 | 366 | 715 | 54.87% | 0.58% |
+| Weekly | 4 | 4.0% | 85-100 | 1,174 | 336 | 283 | 555 | 54.28% | 0.50% |
+| Weekly | 4 | 4.0% | 90-100 | 838 | 252 | 210 | 376 | 54.55% | 0.51% |
+| Weekly | 8 | 8.0% | 0-100 | 6,037 | 1,197 | 1,329 | 3,511 | 47.39% | -0.36% |
+| Weekly | 8 | 8.0% | 75-100 | 2,026 | 440 | 404 | 1,182 | 52.13% | 0.54% |
+| Weekly | 8 | 8.0% | 80-100 | 1,518 | 345 | 291 | 882 | 54.25% | 0.84% |
+| Weekly | 8 | 8.0% | 85-100 | 1,167 | 262 | 229 | 676 | 53.36% | 0.78% |
+| Weekly | 8 | 8.0% | 90-100 | 832 | 181 | 176 | 475 | 50.70% | 0.74% |
+| Weekly | 12 | 12.0% | 0-100 | 6,015 | 953 | 1,064 | 3,998 | 47.25% | -0.53% |
+| Weekly | 12 | 12.0% | 75-100 | 2,023 | 350 | 314 | 1,359 | 52.71% | 0.35% |
+| Weekly | 12 | 12.0% | 80-100 | 1,515 | 269 | 221 | 1,025 | 54.90% | 0.56% |
+| Weekly | 12 | 12.0% | 85-100 | 1,164 | 208 | 172 | 784 | 54.74% | 0.52% |
+| Weekly | 12 | 12.0% | 90-100 | 831 | 153 | 116 | 562 | 56.88% | 0.77% |
+
+The highest current precision is 56.88% in the weekly 12-candle / 12.0% / 90-100 bucket. The highest average directional return is 0.84% in the weekly 8-candle / 8.0% / 80-100 bucket. The only monthly bucket with a positive average return is the 3-candle / 6.0% / 90-100 bucket at 0.10%.
+
+### Exact Same-Run Comparison With Candlestick-Only
+
+This table contains all confidence buckets from the same run. Positive changes mean that adding current Elliott signals improved the metric; negative changes mean it diluted it.
+
+| Interval | Horizon | Move | Confidence | Baseline Signals | Baseline Precision | Baseline Avg Return | Current Signals | Current Precision | Current Avg Return | Precision Change | Return Change |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Weekly | 4 | 4.0% | 0-100 | 5,629 | 49.18% | -0.22% | 6,073 | 49.47% | -0.19% | +0.29 pp | +0.03 pp |
+| Weekly | 4 | 4.0% | 75-100 | 1,594 | 52.41% | 0.46% | 2,038 | 52.58% | 0.39% | +0.17 pp | -0.07 pp |
+| Weekly | 4 | 4.0% | 80-100 | 1,082 | 55.54% | 0.76% | 1,526 | 54.87% | 0.58% | -0.67 pp | -0.18 pp |
+| Weekly | 4 | 4.0% | 85-100 | 754 | 56.14% | 0.82% | 1,174 | 54.28% | 0.50% | -1.86 pp | -0.32 pp |
+| Weekly | 4 | 4.0% | 90-100 | 434 | 57.89% | 1.05% | 838 | 54.55% | 0.51% | -3.35 pp | -0.54 pp |
+| Weekly | 8 | 8.0% | 0-100 | 5,598 | 47.51% | -0.35% | 6,037 | 47.39% | -0.36% | -0.12 pp | -0.01 pp |
+| Weekly | 8 | 8.0% | 75-100 | 1,587 | 53.85% | 0.82% | 2,026 | 52.13% | 0.54% | -1.71 pp | -0.28 pp |
+| Weekly | 8 | 8.0% | 80-100 | 1,079 | 57.58% | 1.36% | 1,518 | 54.25% | 0.84% | -3.34 pp | -0.53 pp |
+| Weekly | 8 | 8.0% | 85-100 | 752 | 58.62% | 1.62% | 1,167 | 53.36% | 0.78% | -5.26 pp | -0.84 pp |
+| Weekly | 8 | 8.0% | 90-100 | 432 | 57.22% | 2.13% | 832 | 50.70% | 0.74% | -6.52 pp | -1.39 pp |
+| Weekly | 12 | 12.0% | 0-100 | 5,576 | 46.84% | -0.56% | 6,015 | 47.25% | -0.53% | +0.41 pp | +0.03 pp |
+| Weekly | 12 | 12.0% | 75-100 | 1,584 | 52.49% | 0.48% | 2,023 | 52.71% | 0.35% | +0.22 pp | -0.12 pp |
+| Weekly | 12 | 12.0% | 80-100 | 1,076 | 55.28% | 0.82% | 1,515 | 54.90% | 0.56% | -0.39 pp | -0.27 pp |
+| Weekly | 12 | 12.0% | 85-100 | 749 | 55.85% | 0.94% | 1,164 | 54.74% | 0.52% | -1.11 pp | -0.43 pp |
+| Weekly | 12 | 12.0% | 90-100 | 431 | 60.00% | 1.73% | 831 | 56.88% | 0.77% | -3.12 pp | -0.96 pp |
+| Monthly | 3 | 6.0% | 0-100 | 2,713 | 50.63% | -0.12% | 2,933 | 50.59% | -0.06% | -0.05 pp | +0.06 pp |
+| Monthly | 3 | 6.0% | 75-100 | 789 | 42.94% | -1.82% | 1,009 | 44.44% | -1.28% | +1.50 pp | +0.54 pp |
+| Monthly | 3 | 6.0% | 80-100 | 570 | 42.86% | -2.05% | 788 | 44.56% | -1.43% | +1.70 pp | +0.62 pp |
+| Monthly | 3 | 6.0% | 85-100 | 425 | 46.49% | -1.09% | 640 | 47.26% | -0.68% | +0.77 pp | +0.41 pp |
+| Monthly | 3 | 6.0% | 90-100 | 252 | 49.69% | 0.06% | 466 | 49.48% | 0.10% | -0.20 pp | +0.05 pp |
+| Monthly | 6 | 12.0% | 0-100 | 2,697 | 47.16% | -1.47% | 2,915 | 47.09% | -1.44% | -0.07 pp | +0.04 pp |
+| Monthly | 6 | 12.0% | 75-100 | 784 | 40.88% | -3.62% | 1,002 | 41.97% | -3.05% | +1.10 pp | +0.57 pp |
+| Monthly | 6 | 12.0% | 80-100 | 567 | 40.61% | -3.99% | 783 | 41.96% | -3.23% | +1.35 pp | +0.77 pp |
+| Monthly | 6 | 12.0% | 85-100 | 423 | 43.81% | -3.18% | 636 | 44.27% | -2.59% | +0.46 pp | +0.59 pp |
+| Monthly | 6 | 12.0% | 90-100 | 252 | 42.74% | -2.30% | 464 | 44.05% | -1.86% | +1.31 pp | +0.43 pp |
+| Monthly | 9 | 18.0% | 0-100 | 2,674 | 44.60% | -2.14% | 2,890 | 45.52% | -1.92% | +0.92 pp | +0.22 pp |
+| Monthly | 9 | 18.0% | 75-100 | 777 | 40.93% | -4.91% | 993 | 44.30% | -3.66% | +3.37 pp | +1.25 pp |
+| Monthly | 9 | 18.0% | 80-100 | 561 | 39.85% | -6.00% | 775 | 44.41% | -4.11% | +4.57 pp | +1.90 pp |
+| Monthly | 9 | 18.0% | 85-100 | 419 | 41.62% | -5.94% | 630 | 46.23% | -3.78% | +4.61 pp | +2.16 pp |
+| Monthly | 9 | 18.0% | 90-100 | 251 | 45.61% | -4.15% | 461 | 50.23% | -1.98% | +4.61 pp | +2.17 pp |
+
+The exact same-run comparison is interval-dependent:
+
+- Monthly Elliott additions improve average return in every bucket and improve precision in 12 of 15 buckets. However, most monthly average returns remain negative in absolute terms.
+- Weekly Elliott additions improve broad-bucket precision slightly at 4 and 12 weeks, but dilute nearly all medium/high-confidence buckets. The largest reduction is the weekly 8-candle / 90-100 bucket: -6.52 percentage points of precision and -1.39 percentage points of average return.
+
+### Comparison With the July 10 Findings
+
+The following rows use the same decision-focused buckets documented in the preceding follow-through report. Changes compare the newly measured combined detector with the July 10 combined detector:
+
+| Interval | Horizon | Move | Confidence | Previous Signals | Previous Precision | Previous Avg Return | Current Signals | Current Precision | Current Avg Return | Signal Change | Precision Change | Return Change |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Weekly | 4 | 4.0% | 0-100 | 5,884 | 49.34% | -0.19% | 6,073 | 49.47% | -0.19% | +189 | +0.13 pp | +0.00 pp |
+| Weekly | 4 | 4.0% | 85-100 | 968 | 56.78% | 0.82% | 1,174 | 54.28% | 0.50% | +206 | -2.50 pp | -0.32 pp |
+| Weekly | 4 | 4.0% | 90-100 | 622 | 57.51% | 0.94% | 838 | 54.55% | 0.51% | +216 | -2.96 pp | -0.43 pp |
+| Weekly | 8 | 8.0% | 85-100 | 964 | 58.66% | 1.73% | 1,167 | 53.36% | 0.78% | +203 | -5.30 pp | -0.95 pp |
+| Weekly | 8 | 8.0% | 90-100 | 618 | 57.30% | 2.15% | 832 | 50.70% | 0.74% | +214 | -6.60 pp | -1.41 pp |
+| Weekly | 12 | 12.0% | 85-100 | 960 | 56.57% | 1.00% | 1,164 | 54.74% | 0.52% | +204 | -1.83 pp | -0.48 pp |
+| Weekly | 12 | 12.0% | 90-100 | 616 | 59.91% | 1.52% | 831 | 56.88% | 0.77% | +215 | -3.03 pp | -0.75 pp |
+| Monthly | 3 | 6.0% | 0-100 | 2,873 | 51.06% | 0.03% | 2,933 | 50.59% | -0.06% | +60 | -0.47 pp | -0.09 pp |
+| Monthly | 3 | 6.0% | 90-100 | 373 | 54.17% | 1.37% | 466 | 49.48% | 0.10% | +93 | -4.69 pp | -1.27 pp |
+| Monthly | 6 | 12.0% | 0-100 | 2,857 | 47.97% | -1.10% | 2,915 | 47.09% | -1.44% | +58 | -0.88 pp | -0.34 pp |
+| Monthly | 6 | 12.0% | 90-100 | 373 | 50.85% | 0.57% | 464 | 44.05% | -1.86% | +91 | -6.80 pp | -2.43 pp |
+| Monthly | 9 | 18.0% | 0-100 | 2,832 | 45.96% | -1.59% | 2,890 | 45.52% | -1.92% | +58 | -0.44 pp | -0.33 pp |
+| Monthly | 9 | 18.0% | 75-100 | 935 | 45.45% | -2.79% | 993 | 44.30% | -3.66% | +58 | -1.15 pp | -0.87 pp |
+| Monthly | 9 | 18.0% | 90-100 | 370 | 54.82% | -0.05% | 461 | 50.23% | -1.98% | +91 | -4.59 pp | -1.93 pp |
+
+The new implementation generates more signals in every compared bucket, but the July 10 result is not reproduced at the medium and strict confidence levels. Except for the broad weekly 4-candle bucket, every selected precision comparison declined, and every selected monthly average return declined. The evidence therefore supports an improvement in structural coverage, not an improvement in trading accuracy or average return.
+
+### Same-Dataset Follow-Through Control
+
+The second test constructs the current detector twice on the same candles: once with no present-signal lookback and once with the production one-candle follow-through. This isolates follow-through behavior, not the broader structural changes. The broad and strict endpoints are:
+
+| Interval | Horizon | Move | Confidence | No-Follow Signals | No-Follow Precision | No-Follow Avg Return | Current Signals | Current Precision | Current Avg Return | Precision Change | Return Change |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Weekly | 4 | 4.0% | 0-100 | 5,909 | 49.36% | -0.21% | 6,073 | 49.47% | -0.19% | +0.11 pp | +0.02 pp |
+| Weekly | 4 | 4.0% | 90-100 | 688 | 55.56% | 0.58% | 838 | 54.55% | 0.51% | -1.01 pp | -0.07 pp |
+| Weekly | 8 | 8.0% | 0-100 | 5,875 | 47.44% | -0.37% | 6,037 | 47.39% | -0.36% | -0.05 pp | +0.01 pp |
+| Weekly | 8 | 8.0% | 90-100 | 684 | 52.20% | 0.97% | 832 | 50.70% | 0.74% | -1.50 pp | -0.23 pp |
+| Weekly | 12 | 12.0% | 0-100 | 5,853 | 47.01% | -0.55% | 6,015 | 47.25% | -0.53% | +0.24 pp | +0.03 pp |
+| Weekly | 12 | 12.0% | 90-100 | 683 | 57.08% | 0.88% | 831 | 56.88% | 0.77% | -0.20 pp | -0.12 pp |
+| Monthly | 3 | 6.0% | 0-100 | 2,856 | 50.52% | -0.12% | 2,933 | 50.59% | -0.06% | +0.07 pp | +0.05 pp |
+| Monthly | 3 | 6.0% | 90-100 | 391 | 48.77% | -0.15% | 466 | 49.48% | 0.10% | +0.71 pp | +0.25 pp |
+| Monthly | 6 | 12.0% | 0-100 | 2,839 | 46.99% | -1.47% | 2,915 | 47.09% | -1.44% | +0.11 pp | +0.04 pp |
+| Monthly | 6 | 12.0% | 90-100 | 390 | 42.41% | -2.23% | 464 | 44.05% | -1.86% | +1.64 pp | +0.37 pp |
+| Monthly | 9 | 18.0% | 0-100 | 2,815 | 45.09% | -2.02% | 2,890 | 45.52% | -1.92% | +0.43 pp | +0.10 pp |
+| Monthly | 9 | 18.0% | 90-100 | 388 | 48.04% | -2.77% | 461 | 50.23% | -1.98% | +2.18 pp | +0.79 pp |
+
+Across the complete output, follow-through improves monthly precision and average return in all 15 monthly horizon/confidence combinations. Weekly effects remain mixed: broad 4- and 12-week buckets improve slightly, while strict buckets weaken.
+
+### Rerun Conclusion
+
+The rerun does not support describing the expanded detector as more accurate or more profitable:
+
+- It is structurally more capable and detects substantially more I-V, wave-V-end and completed A-B-C opportunities.
+- Greater detection coverage produces more evaluated Elliott signals, but the additional high-confidence signals dilute the strongest weekly buckets and do not reproduce the earlier monthly performance.
+- Monthly Elliott still improves average return relative to candlestick-only in every same-run bucket, and longer monthly horizons show meaningful relative precision gains. Most absolute monthly returns nevertheless remain negative.
+- The one-candle follow-through remains beneficial on monthly intervals when compared with the identical no-follow-through detector.
+- Confidence is a classification score, not a calibrated probability of profit. The current results show that higher scores do not consistently select better returns.
+
+The production recommendation is therefore:
+
+- Keep weekly Elliott alerts disabled.
+- Treat monthly Elliott as an informational structural alert rather than a stand-alone trading recommendation. The present rerun gives weaker support for enabling it than the July 10 report did.
+- Do not claim that the structural rewrite improved accuracy or expected return. Its demonstrated improvement is coverage and chart interpretation.
+- Before changing production defaults, separately backtest impulse, wave-V-end and A-B-C correction signals, recalibrate their confidence scores, and preserve a frozen dataset plus old/new detector snapshots for a strict code-only A/B test.
+
+No production alert setting was changed as part of this reporting run.

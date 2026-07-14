@@ -1,0 +1,65 @@
+# Install this file inside Nginx's http context (for example in conf.d), copy
+# stockwatch-proxy.conf to /etc/nginx/snippets/, replace the domain and certificate
+# paths, then validate with: nginx -t
+limit_req_zone $binary_remote_addr zone=stockwatch_general:10m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=stockwatch_auth:10m rate=5r/m;
+limit_conn_zone $binary_remote_addr zone=stockwatch_connections:10m;
+# Log the normalized path, not the query string (verification tokens live in queries).
+log_format stockwatch '$remote_addr - $remote_user [$time_local] '
+                      '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                      '"$http_referer" "$http_user_agent"';
+
+upstream stockwatch_backend {
+    # Keep port 8080 private. Only this trusted proxy may reach it.
+    server 127.0.0.1:8080;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name stockwatch.example;
+    if ($host != stockwatch.example) { return 421; }
+    return 308 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name stockwatch.example;
+    server_tokens off;
+    if ($host != stockwatch.example) { return 421; }
+
+    ssl_certificate /etc/letsencrypt/live/stockwatch.example/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/stockwatch.example/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:TLS:10m;
+    ssl_session_tickets off;
+
+    client_max_body_size 64k;
+    client_body_timeout 10s;
+    client_header_timeout 10s;
+    keepalive_timeout 15s;
+    send_timeout 30s;
+    limit_conn stockwatch_connections 20;
+    limit_req_status 429;
+    limit_conn_status 429;
+    access_log /var/log/nginx/stockwatch_access.log stockwatch;
+
+    location = /login {
+        limit_req zone=stockwatch_auth burst=5 nodelay;
+        include /etc/nginx/snippets/stockwatch-proxy.conf;
+    }
+
+    location = /resend-verification {
+        limit_req zone=stockwatch_auth burst=3 nodelay;
+        include /etc/nginx/snippets/stockwatch-proxy.conf;
+    }
+
+    location / {
+        limit_req zone=stockwatch_general burst=40 nodelay;
+        include /etc/nginx/snippets/stockwatch-proxy.conf;
+    }
+}

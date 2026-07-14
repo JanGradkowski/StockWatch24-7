@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <title th:text="${symbol} + ' - Market Profile'"></title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+
+  <!-- TradingView Lightweight Charts (Industry Standard) -->
+  <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <meta name="_csrf" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:content="${_csrf.headerName}">
+  <style th:attr="nonce=${cspNonce}">
+    .view-toggle { padding: 0.5rem 1.5rem; border-radius: 6px; border: 1px solid var(--glass-border); cursor: pointer; background: rgba(255,255,255,0.8); font-weight: 600; color: var(--muted-text); transition: all 0.2s;}
+    .view-toggle.active { background: var(--primary-color); color: white; border-color: var(--primary-color); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);}
+    .chart-wrapper { background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; }
+
+    .price-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem;}
+    .ticker-name { font-size: 3rem; font-weight: 800; color: var(--text-color); line-height: 1;}
+    .live-price { font-size: 2.5rem; font-weight: 700; color: var(--text-color); font-variant-numeric: tabular-nums; }
+    .price-change { font-size: 1.2rem; font-weight: 600; margin-left: 10px;}
+    .positive { color: #10b981; }
+    .negative { color: #ef4444; }
+    .alert-panel { background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+    .alert-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
+    .alert-title { font-size: 1rem; font-weight: 800; color: var(--text-color); }
+    .alert-status { font-size: 0.85rem; color: var(--muted-text); min-height: 1.25rem; text-align: right; }
+    .alert-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--glass-border); }
+    .alert-section:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+    .alert-section-title { color: var(--text-color); font-weight: 800; font-size: 0.95rem; margin-bottom: 0.5rem; }
+    .alert-grid { display: grid; grid-template-columns: 1fr repeat(2, 210px); gap: 0.5rem; align-items: center; }
+    .alert-grid-label { color: var(--muted-text); font-weight: 700; font-size: 0.85rem; }
+    .alert-row-label { color: var(--text-color); font-weight: 700; }
+    .alert-toggle { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--text-color); font-weight: 700; font-size: 0.85rem; }
+    .alert-toggle input { width: 18px; height: 18px; cursor: pointer; }
+    .alert-signal-cell { display: flex; align-items: center; gap: 0.5rem; }
+    .check-alert-btn { border: 1px solid var(--glass-border); background: rgba(255,255,255,0.85); color: var(--muted-text); border-radius: 6px; padding: 0.3rem 0.5rem; cursor: pointer; font-size: 0.75rem; font-weight: 800; }
+    .check-alert-btn:hover { color: var(--primary-color); border-color: var(--primary-color); }
+    .elliott-overlay-status { min-height: 1.25rem; margin-bottom: 0.5rem; color: var(--muted-text); font-size: 0.85rem; font-weight: 700; }
+    .elliott-overlay-status.error { color: #ef4444; }
+    .instrument-type-badge { display: inline-flex; align-items: center; margin-left: 0.65rem; padding: 0.25rem 0.55rem; border-radius: 999px; background: #e2e8f0; color: #475569; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.04em; vertical-align: middle; }
+    .instrument-type-badge[data-instrument-type="INDEX"] { background: #ede9fe; color: #6d28d9; }
+    .instrument-type-badge[data-instrument-type="ETF"] { background: #dbeafe; color: #1d4ed8; }
+    .stock-page { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
+    .interval-label { color: var(--muted-text); font-weight: 600; margin-top: 0.5rem; }
+    .quote-block { text-align: right; }
+    .quote-label { color: var(--muted-text); font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .chart-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+    .button-group { display: flex; gap: 10px; }
+    .price-chart-container { width: 100%; height: 400px; }
+    .volume-title { margin-bottom: 1rem; color: var(--muted-text); }
+    .volume-chart-container { width: 100%; height: 150px; }
+  </style>
+</head>
+<body>
+<div class="bg-animation">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+</div>
+
+<!-- The Reusable Navbar Fragment -->
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<div class="stock-page">
+
+  <div class="price-header">
+    <div>
+      <div class="ticker-name"><span th:text="${symbol}">AAPL</span><span id="instrumentTypeDisplay" class="instrument-type-badge" data-instrument-type="EQUITY">Stock</span></div>
+      <div class="interval-label">Daily Interval</div>
+    </div>
+    <div class="quote-block">
+      <div class="quote-label">Live Market Quote</div>
+      <div>
+        <span id="livePriceDisplay" class="live-price">Loading...</span>
+        <span id="liveChangeDisplay" class="price-change"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-toolbar">
+    <div class="button-group">
+      <button id="lineBtn" class="view-toggle" data-chart-mode="line">Line</button>
+      <button id="candleBtn" class="view-toggle active" data-chart-mode="candle">Candles</button>
+      <button id="historicElliottBtn" type="button" class="view-toggle">Show historic Elliott waves</button>
+    </div>
+
+    <div class="button-group">
+      <button id="int-1d" class="view-toggle active" data-chart-interval="1d">Daily</button>
+      <button id="int-1wk" class="view-toggle" data-chart-interval="1wk">Weekly</button>
+      <button id="int-1mo" class="view-toggle" data-chart-interval="1mo">Monthly</button>
+    </div>
+  </div>
+
+  <div class="alert-panel">
+    <div class="alert-header">
+      <div class="alert-title">Email Signals</div>
+      <div id="alertStatus" class="alert-status"></div>
+    </div>
+
+    <div class="alert-section">
+      <div class="alert-section-title">Candlestick Patterns</div>
+      <div class="alert-grid">
+        <div class="alert-grid-label">Interval</div>
+        <div class="alert-grid-label">Buy</div>
+        <div class="alert-grid-label">Sell</div>
+
+        <div class="alert-row-label">Daily</div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="DAILY" data-check-signal="BUY">Check</button></div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="DAILY" data-check-signal="SELL">Check</button></div>
+
+        <div class="alert-row-label">Weekly</div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="WEEKLY" data-check-signal="BUY">Check</button></div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="WEEKLY" data-check-signal="SELL">Check</button></div>
+
+        <div class="alert-row-label">Monthly</div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="MONTHLY" data-check-signal="BUY">Check</button></div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="MONTHLY" data-check-signal="SELL">Check</button></div>
+      </div>
+    </div>
+
+    <div class="alert-section">
+      <div class="alert-section-title">Elliott Wave Patterns</div>
+      <div class="alert-grid">
+        <div class="alert-grid-label">Interval</div>
+        <div class="alert-grid-label">Buy</div>
+        <div class="alert-grid-label">Sell</div>
+
+        <div class="alert-row-label">Weekly</div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="WEEKLY" data-check-signal="BUY">Check</button></div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="WEEKLY" data-check-signal="SELL">Check</button></div>
+
+        <div class="alert-row-label">Monthly</div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="MONTHLY" data-check-signal="BUY">Check</button></div>
+        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="MONTHLY" data-check-signal="SELL">Check</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Price Chart Canvas -->
+  <div class="chart-wrapper">
+    <div id="elliottOverlayStatus" class="elliott-overlay-status"></div>
+    <div id="priceChartContainer" class="price-chart-container"></div>
+  </div>
+
+  <!-- Volume Chart Canvas -->
+  <div class="chart-wrapper">
+    <h4 class="volume-title">Volume Profile</h4>
+    <div id="volumeChartContainer" class="volume-chart-container"></div>
+  </div>
+</div>
+
+<script th:inline="javascript" th:attr="nonce=${cspNonce}">
+  const ticker = /*[[${symbol}]]*/ 'AAPL';
+  const encodedTicker = encodeURIComponent(ticker);
+  const csrfToken = document.querySelector('meta[name="_csrf"]').content;
+  const csrfHeader = document.querySelector('meta[name="_csrf_header"]').content;
+
+  function secureJsonHeaders() {
+    return { 'Content-Type': 'application/json', [csrfHeader]: csrfToken };
+  }
+
+  let priceChart, volumeChart;
+  let lineSeries, candleSeries, volumeSeries, elliottSeries, elliottConfirmationSeries;
+  let historicalElliottSeries = [];
+  let currentMode = 'candle';
+  let currentInterval = '1d';
+
+  let isFetching = false;
+  let isLoadingOlder = false;
+  let hasMoreHistory = true;
+  let oldestTimestamp = null;
+  let latestCandle = null;
+  let stockCurrency = 'USD';
+
+  let globalCandleData = [];
+  let globalLineData = [];
+  let globalVolumeData = [];
+  let seenDates = new Set();
+
+  const chartOptions = {
+    layout: { textColor: '#475569', background: { type: 'solid', color: 'transparent' } },
+    grid: { vertLines: { color: 'rgba(15, 23, 42, 0.05)' }, horzLines: { color: 'rgba(15, 23, 42, 0.05)' } },
+    crosshair: { mode: 0 },
+    timeScale: { borderColor: 'rgba(15, 23, 42, 0.1)' }
+  };
+
+  async function initCharts() {
+    try {
+      priceChart = LightweightCharts.createChart(document.getElementById('priceChartContainer'), chartOptions);
+      volumeChart = LightweightCharts.createChart(document.getElementById('volumeChartContainer'), {
+        ...chartOptions,
+        timeScale: { visible: false }
+      });
+
+      priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+        volumeChart.timeScale().setVisibleLogicalRange(range);
+        if (range && range.from < 10 && !isLoadingOlder && hasMoreHistory) {
+          loadOlderData();
+        }
+      });
+
+      candleSeries = priceChart.addCandlestickSeries({ upColor: '#10b981', downColor: '#ef4444', borderVisible: false });
+      lineSeries = priceChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, crosshairMarkerVisible: true });
+      elliottSeries = priceChart.addLineSeries({
+        color: '#8b5cf6',
+        lineWidth: 2,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      elliottConfirmationSeries = priceChart.addLineSeries({
+        lineVisible: false,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      volumeSeries = volumeChart.addHistogramSeries({ priceFormat: { type: 'volume' } });
+
+      // Load currency metadata first
+      try {
+        const metaRes = await fetch(`/api/stocks/${encodedTicker}/meta`);
+        if (metaRes.ok) {
+          const metaJson = await metaRes.json();
+          const instrumentType = String(metaJson.instrumentType || 'EQUITY').toUpperCase();
+          const instrumentTypeDisplay = document.getElementById('instrumentTypeDisplay');
+          instrumentTypeDisplay.dataset.instrumentType = instrumentType;
+          instrumentTypeDisplay.textContent = instrumentType === 'INDEX'
+                  ? 'Index'
+                  : (instrumentType === 'ETF' ? 'ETF' : 'Stock');
+          if (metaJson.currency) {
+            stockCurrency = metaJson.currency;
+            priceChart.applyOptions({
+              localization: { priceFormatter: price => `${price.toFixed(2)} ${stockCurrency}` }
+            });
+          }
+        }
+      } catch (e) { console.warn("Currency fallback to USD"); }
+
+      await loadChartData('1d');
+      await loadAlertState();
+
+      setChartMode('candle');
+
+    } catch (err) {
+      console.error("Initialization error:", err);
+    }
+  }
+
+  async function loadChartData(interval) {
+    if (isFetching) return;
+    isFetching = true;
+
+    globalCandleData = [];
+    globalLineData = [];
+    globalVolumeData = [];
+    seenDates.clear();
+    hasMoreHistory = true;
+    oldestTimestamp = null;
+    clearHistoricalElliottSeries();
+    if (elliottConfirmationSeries) {
+      elliottConfirmationSeries.setData([]);
+      elliottConfirmationSeries.setMarkers([]);
+    }
+
+    try {
+      document.querySelector('.ticker-name').nextElementSibling.innerText = `Loading ${interval} data...`;
+
+      const response = await fetch(`/api/stocks/${encodedTicker}/candles?interval=${encodeURIComponent(interval)}`);
+      if (!response.ok) throw new Error("HTTP error");
+      const data = await response.json();
+
+      if (!data || data.length === 0) {
+        document.querySelector('.ticker-name').nextElementSibling.innerText = `No historical data found.`;
+        return;
+      }
+
+      oldestTimestamp = data[0].timestamp;
+      processAndSetData(data, false);
+      updatePriceHeaderFromLatestCandle();
+      await loadElliottOverlay(interval);
+
+      const intervalNames = {'1d': 'Daily Interval', '1wk': 'Weekly Interval', '1mo': 'Monthly Interval'};
+      document.querySelector('.ticker-name').nextElementSibling.innerText = intervalNames[interval];
+
+    } catch (err) {
+      console.error("Data load error:", err);
+      document.querySelector('.ticker-name').nextElementSibling.innerText = `Failed to load chart data`;
+    } finally {
+      isFetching = false;
+    }
+  }
+
+  async function loadOlderData() {
+    if (isLoadingOlder || !oldestTimestamp || !hasMoreHistory) return;
+    isLoadingOlder = true;
+
+    try {
+      const response = await fetch(`/api/stocks/${encodedTicker}/candles?interval=${encodeURIComponent(currentInterval)}&before=${encodeURIComponent(oldestTimestamp)}`);
+      if (!response.ok) throw new Error("HTTP error");
+      const data = await response.json();
+
+      if (data && data.length > 0) {
+        oldestTimestamp = data[0].timestamp;
+        processAndSetData(data, true);
+      } else {
+        hasMoreHistory = false;
+      }
+    } catch(e) {
+      console.error("Pagination error:", e);
+    } finally {
+      isLoadingOlder = false;
+    }
+  }
+
+  function processAndSetData(rawData, isPrepend) {
+    // A full replacement contains dates from the current page, so rebuild the
+    // deduplication state instead of filtering those candles out as duplicates.
+    if (!isPrepend) {
+      seenDates.clear();
+    }
+
+    rawData.sort((a, b) => a.timestamp - b.timestamp);
+
+    const newCandles = [];
+    const newLines = [];
+    const newVols = [];
+
+    rawData.forEach(d => {
+      // FIX: Force UTC processing to prevent timezone shift duplicates
+      const dateObj = new Date(d.timestamp * 1000);
+      const yyyy = dateObj.getUTCFullYear();
+      const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(dateObj.getUTCDate()).padStart(2, '0');
+      const timeString = `${yyyy}-${mm}-${dd}`;
+
+      if (seenDates.has(timeString)) return;
+      seenDates.add(timeString);
+
+      // Provide robust fallbacks if the market data provider returns null fields
+      const open = d.openPrice || 0;
+      const high = d.highPrice || open;
+      const low = d.lowPrice || open;
+      const close = d.closePrice || open;
+      const volume = d.volume || 0;
+
+      newCandles.push({ time: timeString, open: open, high: high, low: low, close: close });
+      newLines.push({ time: timeString, value: close });
+      newVols.push({ time: timeString, value: volume, color: close >= open ? 'rgba(16, 185, 129, 0.8)' : 'rgba(239, 68, 68, 0.8)' });
+    });
+
+    if (isPrepend) {
+      globalCandleData = [...newCandles, ...globalCandleData];
+      globalLineData = [...newLines, ...globalLineData];
+      globalVolumeData = [...newVols, ...globalVolumeData];
+    } else {
+      globalCandleData = newCandles;
+      globalLineData = newLines;
+      globalVolumeData = newVols;
+    }
+
+    globalCandleData.sort((a, b) => a.time.localeCompare(b.time));
+    globalLineData.sort((a, b) => a.time.localeCompare(b.time));
+    globalVolumeData.sort((a, b) => a.time.localeCompare(b.time));
+
+    if (globalCandleData.length > 0) {
+      latestCandle = { ...globalCandleData[globalCandleData.length - 1] };
+    }
+
+    try {
+      candleSeries.setData(globalCandleData);
+      lineSeries.setData(globalLineData);
+      volumeSeries.setData(globalVolumeData);
+    } catch (err) {
+      console.error("TradingView setData Crash:", err);
+    }
+
+    if (!isPrepend) priceChart.timeScale().fitContent();
+  }
+
+  async function loadElliottOverlay(interval) {
+    const status = document.getElementById('elliottOverlayStatus');
+    status.classList.remove('error');
+    clearHistoricalElliottSeries();
+    elliottSeries.setData([]);
+    elliottSeries.setMarkers([]);
+    elliottConfirmationSeries.setData([]);
+    elliottConfirmationSeries.setMarkers([]);
+    if (interval !== '1wk' && interval !== '1mo') {
+      status.textContent = '';
+      return;
+    }
+
+    status.textContent = 'Analysing Elliott Wave structure...';
+    try {
+      const response = await fetch(`/api/stocks/${encodedTicker}/elliott-waves?interval=${encodeURIComponent(interval)}`);
+      if (!response.ok) throw new Error('Elliott Wave request failed');
+      const overlay = await response.json();
+      if (currentInterval !== interval) return;
+      if (!overlay.points || overlay.points.length === 0) {
+        status.textContent = 'No complete I–V or I–V, A–B–C Elliott structure detected in the current chart range.';
+        return;
+      }
+
+      const color = overlay.direction === 'BULLISH' ? '#10b981' : '#ef4444';
+      elliottSeries.applyOptions({ color });
+      const points = overlay.points.map(point => ({
+        time: timestampToChartDate(point.timestamp),
+        value: point.price
+      }));
+      const markers = overlay.points
+              .filter(point => point.label)
+              .map(point => ({
+                time: timestampToChartDate(point.timestamp),
+                position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
+                color,
+                shape: 'circle',
+                text: point.label
+              }));
+      elliottSeries.setData(points);
+      elliottSeries.setMarkers(markers);
+      setElliottConfirmationMarkers([overlay]);
+      const finalLabel = overlay.points[overlay.points.length - 1].label.toUpperCase();
+      const structureLabel = finalLabel === 'C' ? 'I–V, A–B–C' : 'I–V';
+      status.textContent = `${overlay.direction === 'BULLISH' ? 'Bullish' : 'Bearish'} Elliott ${structureLabel} structure · quality ${overlay.qualityScore}/100`;
+    } catch (error) {
+      if (currentInterval === interval) {
+        status.textContent = 'Elliott Wave overlay unavailable.';
+      }
+      console.warn('Elliott Wave overlay failed', error);
+    }
+  }
+
+  async function showHistoricElliottWaves() {
+    const button = document.getElementById('historicElliottBtn');
+    const status = document.getElementById('elliottOverlayStatus');
+    status.classList.remove('error');
+    if (currentInterval === '1d') {
+      clearHistoricalElliottSeries();
+      elliottSeries.setData([]);
+      elliottSeries.setMarkers([]);
+      elliottConfirmationSeries.setData([]);
+      elliottConfirmationSeries.setMarkers([]);
+      status.classList.add('error');
+      status.textContent = 'Daily Elliott waves are not supported.';
+      return;
+    }
+
+    button.disabled = true;
+    status.textContent = 'Loading historic Elliott Wave structures...';
+    try {
+      const response = await fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(currentInterval)}`);
+      if (!response.ok) throw new Error('Historic Elliott Wave request failed');
+      const history = await response.json();
+      if (history.interval !== currentInterval) return;
+
+      if (history.candles && history.candles.length > 0) {
+        oldestTimestamp = history.candles[0].timestamp;
+        hasMoreHistory = false;
+        processAndSetData(history.candles, false);
+        updatePriceHeaderFromLatestCandle();
+      }
+      elliottSeries.setData([]);
+      elliottSeries.setMarkers([]);
+      clearHistoricalElliottSeries();
+
+      (history.structures || []).forEach(structure => renderHistoricalElliottStructure(structure));
+      setElliottConfirmationMarkers(history.structures || []);
+      if (!history.structures || history.structures.length === 0) {
+        status.textContent = 'No historic Elliott Wave structures were detected in the available candles.';
+        return;
+      }
+      priceChart.timeScale().fitContent();
+      status.textContent = `Showing ${history.structures.length} historic Elliott Wave structure${history.structures.length === 1 ? '' : 's'}.`;
+    } catch (error) {
+      status.classList.add('error');
+      status.textContent = 'Historic Elliott Wave display failed.';
+      console.warn('Historic Elliott Wave display failed', error);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function renderHistoricalElliottStructure(structure) {
+    const color = structure.direction === 'BULLISH' ? '#10b981' : '#ef4444';
+    const series = priceChart.addLineSeries({
+      color,
+      lineWidth: 2,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    series.setData(structure.points.map(point => ({
+      time: timestampToChartDate(point.timestamp),
+      value: point.price
+    })));
+    series.setMarkers(structure.points
+            .filter(point => point.label)
+            .map(point => ({
+              time: timestampToChartDate(point.timestamp),
+              position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
+              color,
+              shape: 'circle',
+              text: point.label
+            })));
+    historicalElliottSeries.push(series);
+  }
+
+  function setElliottConfirmationMarkers(structures) {
+    const confirmationsByTime = new Map();
+    structures
+            .filter(structure => structure.confirmationTimestamp)
+            .forEach(structure => {
+              const time = timestampToChartDate(structure.confirmationTimestamp);
+              const candle = globalCandleData.find(item => item.time === time);
+              if (!candle) return;
+              const buyConfirmation = structure.correctionComplete
+                      ? structure.direction === 'BULLISH'
+                      : structure.direction === 'BEARISH';
+              const endpointLabel = structure.correctionComplete
+                      ? (currentInterval === '1wk' ? 'c' : 'C')
+                      : (currentInterval === '1wk' ? 'v' : 'V');
+              confirmationsByTime.set(time, {
+                time,
+                value: candle.close,
+                marker: {
+                  time,
+                  position: buyConfirmation ? 'belowBar' : 'aboveBar',
+                  color: buyConfirmation ? '#10b981' : '#ef4444',
+                  shape: buyConfirmation ? 'arrowUp' : 'arrowDown',
+                  text: `${endpointLabel} confirmed`
+                }
+              });
+            });
+    const confirmations = Array.from(confirmationsByTime.values())
+            .sort((left, right) => left.time.localeCompare(right.time));
+    elliottConfirmationSeries.setData(confirmations.map(item => ({ time: item.time, value: item.value })));
+    elliottConfirmationSeries.setMarkers(confirmations.map(item => item.marker));
+  }
+
+  function clearHistoricalElliottSeries() {
+    if (!priceChart) return;
+    historicalElliottSeries.forEach(series => priceChart.removeSeries(series));
+    historicalElliottSeries = [];
+  }
+
+  function timestampToChartDate(timestamp) {
+    const date = new Date(timestamp * 1000);
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function updatePriceHeaderFromLatestCandle() {
+    if (!latestCandle) return;
+
+    document.getElementById('livePriceDisplay').innerText = `${latestCandle.close.toFixed(2)} ${stockCurrency}`;
+
+    const previous = globalCandleData.length > 1 ? globalCandleData[globalCandleData.length - 2].close : latestCandle.open;
+    const changePercent = previous > 0 ? ((latestCandle.close - previous) / previous) * 100 : 0;
+    const changeEl = document.getElementById('liveChangeDisplay');
+    changeEl.innerText = `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(2)}%`;
+    changeEl.className = 'price-change ' + (changePercent >= 0 ? 'positive' : 'negative');
+  }
+
+  async function changeInterval(newInterval) {
+    if (currentInterval === newInterval) return;
+    currentInterval = newInterval;
+
+    document.getElementById('int-1d').classList.remove('active');
+    document.getElementById('int-1wk').classList.remove('active');
+    document.getElementById('int-1mo').classList.remove('active');
+    document.getElementById(`int-${newInterval}`).classList.add('active');
+
+    await loadChartData(newInterval);
+  }
+
+  function setChartMode(mode) {
+    currentMode = mode;
+    document.getElementById('lineBtn').classList.toggle('active', mode === 'line');
+    document.getElementById('candleBtn').classList.toggle('active', mode === 'candle');
+
+    if (mode === 'line') {
+      lineSeries.applyOptions({ visible: true });
+      candleSeries.applyOptions({ visible: false });
+    } else {
+      lineSeries.applyOptions({ visible: false });
+      candleSeries.applyOptions({ visible: true });
+    }
+  }
+
+  async function fetchLivePrice() {
+    try {
+      const response = await fetch(`/api/stocks/${encodedTicker}/live`);
+      const update = await response.json();
+
+      if (update && update.price !== undefined) {
+        document.getElementById('livePriceDisplay').innerText = `${update.price.toFixed(2)} ${stockCurrency}`;
+
+        const changeEl = document.getElementById('liveChangeDisplay');
+        changeEl.innerText = `${update.changePercent > 0 ? '+' : ''}${update.changePercent.toFixed(2)}%`;
+        changeEl.className = 'price-change ' + (update.changePercent >= 0 ? 'positive' : 'negative');
+
+        if (latestCandle) {
+          const newPrice = update.price;
+          latestCandle.close = newPrice;
+          if (newPrice > latestCandle.high) latestCandle.high = newPrice;
+          if (newPrice < latestCandle.low) latestCandle.low = newPrice;
+
+          candleSeries.update(latestCandle);
+          lineSeries.update({ time: latestCandle.time, value: newPrice });
+        }
+      }
+    } catch (err) {
+      console.warn("Live fetch failed", err);
+    }
+  }
+
+  async function loadAlertState() {
+    const status = document.getElementById('alertStatus');
+    try {
+      const response = await fetch(`/api/alerts/${encodedTicker}`);
+      if (!response.ok) throw new Error("Alert state request failed");
+      const state = await response.json();
+
+      document.querySelectorAll('[data-alert-interval][data-alert-signal]').forEach(input => {
+        const family = input.dataset.alertFamily || 'CANDLESTICK';
+        const interval = input.dataset.alertInterval;
+        const signal = input.dataset.alertSignal;
+        const legacyChecked = family === 'CANDLESTICK' ? state.intervals?.[interval]?.[signal] : false;
+        input.checked = Boolean(state.families?.[family]?.[interval]?.[signal] ?? legacyChecked);
+        if (!input.dataset.listenerBound) {
+          input.addEventListener('change', () => updateAlert(input));
+          input.dataset.listenerBound = 'true';
+        }
+      });
+
+      document.querySelectorAll('[data-check-interval][data-check-signal]').forEach(button => {
+        if (!button.dataset.listenerBound) {
+          button.addEventListener('click', () => checkLatestSignal(button));
+          button.dataset.listenerBound = 'true';
+        }
+      });
+
+      status.innerText = `${state.trackedStocks}/${state.maxTrackedStocks} tracked`;
+    } catch (err) {
+      status.innerText = 'Alerts unavailable';
+      console.warn("Alert state failed", err);
+    }
+  }
+
+  async function updateAlert(input) {
+    const status = document.getElementById('alertStatus');
+    input.disabled = true;
+    status.innerText = 'Saving...';
+
+    try {
+      const response = await fetch(`/api/alerts/${encodedTicker}`, {
+        method: 'POST',
+        headers: secureJsonHeaders(),
+        body: JSON.stringify({
+          interval: input.dataset.alertInterval,
+          signal: input.dataset.alertSignal,
+          patternFamily: input.dataset.alertFamily || 'CANDLESTICK',
+          active: input.checked
+        })
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        input.checked = !input.checked;
+        status.innerText = payload.error || 'Could not save alert';
+        return;
+      }
+
+      await loadAlertState();
+    } catch (err) {
+      input.checked = !input.checked;
+      status.innerText = 'Could not save alert';
+      console.warn("Alert update failed", err);
+    } finally {
+      input.disabled = false;
+    }
+  }
+
+  async function checkLatestSignal(button) {
+    const status = document.getElementById('alertStatus');
+    button.disabled = true;
+    status.innerText = 'Checking latest candles...';
+
+    try {
+      const response = await fetch(`/api/alerts/${encodedTicker}/check`, {
+        method: 'POST',
+        headers: secureJsonHeaders(),
+        body: JSON.stringify({
+          interval: button.dataset.checkInterval,
+          signal: button.dataset.checkSignal,
+          patternFamily: button.dataset.checkFamily || 'CANDLESTICK'
+        })
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        status.innerText = payload.error || 'Check failed';
+        return;
+      }
+
+      if (payload.candlesChecked < 2) {
+        status.innerText = `Need at least 2 candles; found ${payload.candlesChecked}`;
+        return;
+      }
+
+      if (payload.matched) {
+        const matches = payload.detectedSignals.filter(signal => signal.signal === payload.signal);
+        const latestMatch = matches[matches.length - 1];
+        const detectedDate = latestMatch ? formatSignalDate(latestMatch.timestamp) : 'latest candle';
+        if (payload.patternFamily === 'ELLIOTT_WAVE') {
+          await showCheckedElliottWave(payload.interval);
+        }
+        status.innerText = `${formatFamily(payload.patternFamily)} ${payload.signal} detected on ${detectedDate}: ${payload.matchingPatterns.join(', ')}`;
+        return;
+      }
+
+      const detected = payload.detectedSignals.length
+              ? payload.detectedSignals.map(signal => signal.pattern).join(', ')
+              : 'none';
+      status.innerText = `No ${formatFamily(payload.patternFamily)} ${payload.signal} signal now. Detected: ${detected}`;
+    } catch (err) {
+      status.innerText = 'Check failed';
+      console.warn("Signal check failed", err);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function showCheckedElliottWave(alertInterval) {
+    const chartInterval = alertInterval === 'WEEKLY' ? '1wk' : '1mo';
+    if (currentInterval !== chartInterval) {
+      await changeInterval(chartInterval);
+      return;
+    }
+    await loadElliottOverlay(chartInterval);
+  }
+
+  function formatSignalDate(timestamp) {
+    if (!timestamp) return 'latest candle';
+    return new Date(timestamp * 1000).toISOString().slice(0, 10);
+  }
+
+  function formatFamily(family) {
+    return family === 'ELLIOTT_WAVE' ? 'Elliott Wave' : 'Candlestick';
+  }
+
+  window.addEventListener('resize', () => {
+    const chartWrapper = document.getElementById('priceChartContainer').parentElement;
+    priceChart.resize(chartWrapper.clientWidth - 48, 400);
+    volumeChart.resize(chartWrapper.clientWidth - 48, 150);
+  });
+
+  document.querySelectorAll('[data-chart-mode]').forEach(button => {
+    button.addEventListener('click', () => setChartMode(button.dataset.chartMode));
+  });
+  document.querySelectorAll('[data-chart-interval]').forEach(button => {
+    button.addEventListener('click', () => changeInterval(button.dataset.chartInterval));
+  });
+  document.getElementById('historicElliottBtn').addEventListener('click', showHistoricElliottWaves);
+
+  window.onload = initCharts;
+</script>
+</body>
+</html>

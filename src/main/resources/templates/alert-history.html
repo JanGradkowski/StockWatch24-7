@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <title>Alert Signals - StockWatch 24/7</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <style th:attr="nonce=${cspNonce}">
+    .page-container { max-width: 1100px; margin: 3rem auto; padding: 2rem; }
+    .page-header { margin-bottom: 2rem; }
+    .eyebrow { color: var(--muted-text); font-weight: 700; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0; }
+    .title { font-size: 2rem; font-weight: 800; color: var(--text-color); margin-top: 0.35rem; }
+    .subtitle { color: var(--muted-text); margin-top: 0.4rem; }
+    .glass-panel { background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 16px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.02); }
+    .signal-table { width: 100%; border-collapse: collapse; }
+    .signal-table th { text-align: left; color: var(--muted-text); font-size: 0.82rem; padding: 0.75rem; border-bottom: 1px solid var(--glass-border); }
+    .signal-table td { padding: 0.9rem 0.75rem; border-bottom: 1px solid var(--glass-border); color: var(--text-color); }
+    .pattern { font-weight: 800; }
+    .label { font-weight: 700; }
+    .label.high { color: var(--accent-color); }
+    .label.medium { color: var(--primary-color); }
+    .label.low { color: #f59e0b; }
+    .empty-state { color: var(--muted-text); line-height: 1.6; }
+    .back-link { display: inline-block; margin-top: 1.5rem; color: var(--primary-color); font-weight: 700; text-decoration: none; }
+    @media (max-width: 760px) {
+      .signal-table, .signal-table thead, .signal-table tbody, .signal-table th, .signal-table td, .signal-table tr { display: block; }
+      .signal-table thead { display: none; }
+      .signal-table tr { border-bottom: 1px solid var(--glass-border); padding: 0.75rem 0; }
+      .signal-table td { border-bottom: none; padding: 0.35rem 0; }
+      .signal-table td::before { content: attr(data-label); display: block; color: var(--muted-text); font-size: 0.75rem; font-weight: 700; margin-bottom: 0.1rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="bg-animation">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+</div>
+
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<main class="page-container">
+  <div class="page-header">
+    <div class="eyebrow">Signal History</div>
+    <div class="title">
+      <span th:text="${history.alert().symbol()}">NVDA</span>
+      <span> - </span>
+      <span th:text="${history.alert().intervalLabel()}">1d</span>
+      <span> - </span>
+      <span th:text="${history.alert().familyLabel()}">Candlestick</span>
+      <span> - </span>
+      <span th:text="${history.alert().tradeSignal()}">BUY</span>
+    </div>
+    <div class="subtitle" th:text="${history.alert().companyName()}">NVIDIA Corporation</div>
+  </div>
+
+  <section class="glass-panel">
+    <div th:if="${#lists.isEmpty(history.events())}" class="empty-state">
+      No signals have been received yet for this tracked alert.
+    </div>
+
+    <table th:if="${!#lists.isEmpty(history.events())}" class="signal-table">
+      <thead>
+      <tr>
+        <th>Date</th>
+        <th>Pattern</th>
+        <th>Confidence</th>
+        <th>Score</th>
+        <th>Close</th>
+        <th>Email Sent</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr th:each="event : ${history.events()}">
+        <td data-label="Date" th:text="${event.signalDate() != null ? event.signalDate() : event.signalCandleTimestamp()}">2026-07-08</td>
+        <td data-label="Pattern" class="pattern" th:text="${event.pattern()}">BULLISH_ENGULFING</td>
+        <td data-label="Confidence">
+          <span class="label"
+                th:classappend="${event.strength() != null && event.strength().name() == 'HIGH_CONFIDENCE'} ? ' high' : (${event.strength() != null && event.strength().name() == 'MEDIUM_CONFIDENCE'} ? ' medium' : ' low')"
+                th:text="${event.strength() != null ? event.strength() : 'not available'}">HIGH_CONFIDENCE</span>
+        </td>
+        <td data-label="Score" th:text="${event.confidenceScore() != null ? event.confidenceScore() + '/100' : 'not available'}">88/100</td>
+        <td data-label="Close" th:text="${event.closePrice() != null ? #numbers.formatDecimal(event.closePrice(), 1, 2) : 'not available'}">125.50</td>
+        <td data-label="Email Sent" th:text="${event.sentAt() != null ? #temporals.format(event.sentAt(), 'yyyy-MM-dd HH:mm') : 'not available'}">2026-07-08 14:00</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <a href="/home" class="back-link">Back to dashboard</a>
+  </section>
+</main>
+</body>
+</html>

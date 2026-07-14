@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <title>Dashboard - StockWatch 24/7</title>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <style th:attr="nonce=${cspNonce}">
+    .dashboard-container { max-width: 1000px; margin: 4rem auto; padding: 2rem; }
+    .welcome-header { margin-bottom: 3rem; }
+    .welcome-text { font-size: 2.5rem; font-weight: 800; color: var(--text-color); }
+    .glass-panel { background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 16px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.02); min-height: 400px;}
+
+    .grid-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
+    .stat-card { background: rgba(255,255,255,0.5); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1.5rem; }
+    .alert-list { display: grid; gap: 0.75rem; margin-top: 1rem; max-height: 520px; overflow-y: auto; padding-right: 0.35rem; }
+    .alert-list::-webkit-scrollbar { width: 10px; }
+    .alert-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.45); border-radius: 8px; }
+    .alert-list::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.45); border-radius: 8px; border: 2px solid rgba(255,255,255,0.45); }
+    .alert-list::-webkit-scrollbar-thumb:hover { background: rgba(59, 130, 246, 0.55); }
+    .alert-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) 70px 120px 80px 90px;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.9rem 1rem;
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.58);
+      color: inherit;
+      text-decoration: none;
+    }
+    .alert-row:hover { border-color: rgba(59, 130, 246, 0.35); background: rgba(255,255,255,0.82); }
+    .alert-symbol { font-weight: 800; color: var(--text-color); }
+    .alert-company { color: var(--muted-text); font-size: 0.82rem; margin-top: 0.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .alert-pill { font-weight: 700; color: var(--text-color); }
+    .alert-signal.buy { color: var(--accent-color); }
+    .alert-signal.sell { color: #ef4444; }
+    .event-count { color: var(--muted-text); font-size: 0.85rem; text-align: right; }
+    .primary-text { color: var(--primary-color); }
+    .welcome-subtitle { color: var(--muted-text); margin-top: 0.5rem; }
+    .panel-title { margin-bottom: 1rem; color: var(--text-color); }
+    .empty-alerts { color: var(--muted-text); }
+    .compact-panel { min-height: auto; }
+    .status-label { font-size: 0.9rem; color: var(--muted-text); font-weight: 600; }
+    .status-value { font-size: 1.25rem; color: var(--accent-color); font-weight: 700; margin-top: 0.25rem; }
+  </style>
+</head>
+<body>
+<!-- Animated Orbs -->
+<div class="bg-animation">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+</div>
+
+<!-- The Reusable Navbar Fragment -->
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<div class="dashboard-container">
+  <div class="welcome-header">
+    <div class="welcome-text">Welcome, <span class="primary-text" th:text="${firstName}">Trader</span>!</div>
+    <p class="welcome-subtitle">Use the search bar above to look up a stock or market index and analyze its live chart.</p>
+  </div>
+
+  <div class="grid-layout">
+    <div class="glass-panel">
+      <h3 class="panel-title">Your Active Alerts</h3>
+      <p th:if="${#lists.isEmpty(activeAlerts)}" class="empty-alerts">You currently have no active technical pattern alerts running.</p>
+
+      <div th:if="${!#lists.isEmpty(activeAlerts)}" class="alert-list">
+        <a th:each="alert : ${activeAlerts}"
+           class="alert-row"
+           th:href="@{/alerts/{id}(id=${alert.id()})}"
+           target="_blank"
+           rel="noopener">
+          <div>
+            <div class="alert-symbol" th:text="${alert.symbol()}">NVDA</div>
+            <div class="alert-company" th:text="${alert.companyName()}">NVIDIA Corporation</div>
+          </div>
+          <div class="alert-pill" th:text="${alert.intervalLabel()}">1d</div>
+          <div class="alert-pill" th:text="${alert.familyLabel()}">Candlestick</div>
+          <div class="alert-pill alert-signal"
+               th:classappend="${alert.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
+               th:text="${alert.tradeSignal()}">BUY</div>
+          <div class="event-count">
+            <span th:text="${alert.eventCount()}">0</span>
+            <span th:text="${alert.eventCount() == 1 ? 'signal' : 'signals'}">signals</span>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <div class="glass-panel compact-panel">
+      <h3 class="panel-title">Market Status</h3>
+      <div class="stat-card">
+        <div class="status-label">System Status</div>
+        <div class="status-value">Online &amp; Polling</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
