@@ -69,6 +69,36 @@ class FrontendSecurityTest {
     }
 
     @Test
+    void dashboardAndHistoryUseCompanyLevelDynamicRuleColumns() throws IOException {
+        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
+        String history = Files.readString(Path.of("src/main/resources/templates/alert-history.html"));
+        String signalDetail = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
+
+        assertTrue(dashboard.contains("th:each=\"company : ${trackedCompanies}\""));
+        assertTrue(dashboard.contains("company.representativeAlertId()"));
+        assertTrue(dashboard.contains("company.ruleCount()"));
+        assertFalse(dashboard.contains("th:each=\"alert : ${activeAlerts}\""));
+
+        assertTrue(history.contains("th:each=\"column, columnStatus : ${history.columns()}\""));
+        assertTrue(history.contains("column.alert().familyLabel()"));
+        assertTrue(history.contains("column.alert().tradeSignal()"));
+        assertTrue(history.contains("column.alert().intervalLabel()"));
+        assertTrue(history.contains("/alerts/signals/{id}"));
+        assertTrue(history.contains("event.id()"));
+        assertFalse(history.contains("class=\"signal-table\""));
+
+        assertTrue(signalDetail.contains("signal.confidenceScore()"));
+        assertTrue(signalDetail.contains("#numbers.sequence(1, 20)"));
+        assertTrue(signalDetail.contains("signal.reasons()"));
+        assertTrue(signalDetail.contains("reason.text()"));
+        assertTrue(signalDetail.contains("Detailed evidence was not stored for this signal"));
+        assertFalse(signalDetail.contains("th:utext"));
+        assertFalse(signalDetail.contains("style="));
+        assertFalse(signalDetail.contains("<style>"));
+        assertFalse(signalDetail.matches("(?s).*\\son(?:click|load|error)=.*"));
+    }
+
+    @Test
     void fullCandleHistoryReplacementRebuildsDateDeduplicationState() throws IOException {
         String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
 

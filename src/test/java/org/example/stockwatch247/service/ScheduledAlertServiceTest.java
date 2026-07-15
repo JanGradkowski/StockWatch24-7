@@ -1,5 +1,6 @@
 package org.example.stockwatch247.service;
 
+import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
@@ -11,6 +12,7 @@ import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Instant;
@@ -65,7 +67,11 @@ class ScheduledAlertServiceTest {
         service.processSymbolInterval(symbol, TimeInterval.DAILY);
 
         verify(notificationService).sendSignalEmail(any(), any());
-        verify(alertEventRepository).save(any());
+        ArgumentCaptor<AlertEvent> savedEvent = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventRepository).save(savedEvent.capture());
+        assertThat(savedEvent.getValue().getConfidenceReasons())
+                .isNotEmpty()
+                .anyMatch(reason -> reason.contains("geometry"));
     }
 
     @Test

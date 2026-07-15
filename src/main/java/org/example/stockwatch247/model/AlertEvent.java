@@ -6,6 +6,7 @@ import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TradeSignal;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "alert_events", uniqueConstraints = {
@@ -39,6 +40,9 @@ public class AlertEvent {
     @Column(name = "confidence_score")
     private Integer confidenceScore;
 
+    @Column(name = "confidence_reasons", columnDefinition = "text")
+    private String confidenceReasonsPayload;
+
     @Column(name = "close_price")
     private Double closePrice;
 
@@ -71,6 +75,16 @@ public class AlertEvent {
 
     public Integer getConfidenceScore() {
         return confidenceScore;
+    }
+
+    public List<String> getConfidenceReasons() {
+        if (confidenceReasonsPayload == null || confidenceReasonsPayload.isBlank()) {
+            return List.of();
+        }
+        return confidenceReasonsPayload.lines()
+                .map(String::trim)
+                .filter(reason -> !reason.isEmpty())
+                .toList();
     }
 
     public Double getClosePrice() {
@@ -107,6 +121,20 @@ public class AlertEvent {
 
     public void setConfidenceScore(Integer confidenceScore) {
         this.confidenceScore = confidenceScore;
+    }
+
+    public void setConfidenceReasons(List<String> confidenceReasons) {
+        if (confidenceReasons == null || confidenceReasons.isEmpty()) {
+            confidenceReasonsPayload = null;
+            return;
+        }
+        List<String> normalizedReasons = confidenceReasons.stream()
+                .filter(reason -> reason != null && !reason.isBlank())
+                .map(reason -> reason.replace('\r', ' ').replace('\n', ' ').trim())
+                .toList();
+        confidenceReasonsPayload = normalizedReasons.isEmpty()
+                ? null
+                : String.join("\n", normalizedReasons);
     }
 
     public void setClosePrice(Double closePrice) {

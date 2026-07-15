@@ -1,7 +1,9 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
-  <title th:text="${symbol} + ' - Market Profile'"></title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="${symbol} + ' — Market workspace'"></title>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 
   <!-- TradingView Lightweight Charts (Industry Standard) -->
@@ -9,143 +11,123 @@
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
   <style th:attr="nonce=${cspNonce}">
-    .view-toggle { padding: 0.5rem 1.5rem; border-radius: 6px; border: 1px solid var(--glass-border); cursor: pointer; background: rgba(255,255,255,0.8); font-weight: 600; color: var(--muted-text); transition: all 0.2s;}
-    .view-toggle.active { background: var(--primary-color); color: white; border-color: var(--primary-color); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);}
-    .chart-wrapper { background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; }
-
-    .price-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem;}
-    .ticker-name { font-size: 3rem; font-weight: 800; color: var(--text-color); line-height: 1;}
-    .live-price { font-size: 2.5rem; font-weight: 700; color: var(--text-color); font-variant-numeric: tabular-nums; }
-    .price-change { font-size: 1.2rem; font-weight: 600; margin-left: 10px;}
-    .positive { color: #10b981; }
-    .negative { color: #ef4444; }
-    .alert-panel { background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
-    .alert-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
-    .alert-title { font-size: 1rem; font-weight: 800; color: var(--text-color); }
-    .alert-status { font-size: 0.85rem; color: var(--muted-text); min-height: 1.25rem; text-align: right; }
-    .alert-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--glass-border); }
-    .alert-section:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
-    .alert-section-title { color: var(--text-color); font-weight: 800; font-size: 0.95rem; margin-bottom: 0.5rem; }
-    .alert-grid { display: grid; grid-template-columns: 1fr repeat(2, 210px); gap: 0.5rem; align-items: center; }
-    .alert-grid-label { color: var(--muted-text); font-weight: 700; font-size: 0.85rem; }
-    .alert-row-label { color: var(--text-color); font-weight: 700; }
-    .alert-toggle { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--text-color); font-weight: 700; font-size: 0.85rem; }
-    .alert-toggle input { width: 18px; height: 18px; cursor: pointer; }
-    .alert-signal-cell { display: flex; align-items: center; gap: 0.5rem; }
-    .check-alert-btn { border: 1px solid var(--glass-border); background: rgba(255,255,255,0.85); color: var(--muted-text); border-radius: 6px; padding: 0.3rem 0.5rem; cursor: pointer; font-size: 0.75rem; font-weight: 800; }
-    .check-alert-btn:hover { color: var(--primary-color); border-color: var(--primary-color); }
-    .elliott-overlay-status { min-height: 1.25rem; margin-bottom: 0.5rem; color: var(--muted-text); font-size: 0.85rem; font-weight: 700; }
-    .elliott-overlay-status.error { color: #ef4444; }
-    .instrument-type-badge { display: inline-flex; align-items: center; margin-left: 0.65rem; padding: 0.25rem 0.55rem; border-radius: 999px; background: #e2e8f0; color: #475569; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.04em; vertical-align: middle; }
-    .instrument-type-badge[data-instrument-type="INDEX"] { background: #ede9fe; color: #6d28d9; }
-    .instrument-type-badge[data-instrument-type="ETF"] { background: #dbeafe; color: #1d4ed8; }
-    .stock-page { max-width: 1200px; margin: 2rem auto; padding: 0 2rem; }
-    .interval-label { color: var(--muted-text); font-weight: 600; margin-top: 0.5rem; }
-    .quote-block { text-align: right; }
-    .quote-label { color: var(--muted-text); font-size: 0.9rem; margin-bottom: 0.25rem; }
-    .chart-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-    .button-group { display: flex; gap: 10px; }
-    .price-chart-container { width: 100%; height: 400px; }
-    .volume-title { margin-bottom: 1rem; color: var(--muted-text); }
-    .volume-chart-container { width: 100%; height: 150px; }
+    /* Page styling lives in the local stylesheet; the nonce keeps this template CSP-safe. */
   </style>
 </head>
 <body>
-<div class="bg-animation">
+<div class="bg-animation" aria-hidden="true">
   <div class="glow-orb orb-1"></div>
   <div class="glow-orb orb-2"></div>
 </div>
 
-<!-- The Reusable Navbar Fragment -->
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
-<div class="stock-page">
-
-  <div class="price-header">
-    <div>
+<main class="stock-page">
+  <header class="price-header">
+    <div class="market-identity">
+      <div class="stock-eyebrow">Live market workspace</div>
       <div class="ticker-name"><span th:text="${symbol}">AAPL</span><span id="instrumentTypeDisplay" class="instrument-type-badge" data-instrument-type="EQUITY">Stock</span></div>
       <div class="interval-label">Daily Interval</div>
     </div>
     <div class="quote-block">
-      <div class="quote-label">Live Market Quote</div>
+      <div class="quote-label">Latest market quote</div>
       <div>
         <span id="livePriceDisplay" class="live-price">Loading...</span>
         <span id="liveChangeDisplay" class="price-change"></span>
       </div>
     </div>
-  </div>
+  </header>
 
-  <div class="chart-toolbar">
-    <div class="button-group">
-      <button id="lineBtn" class="view-toggle" data-chart-mode="line">Line</button>
-      <button id="candleBtn" class="view-toggle active" data-chart-mode="candle">Candles</button>
-      <button id="historicElliottBtn" type="button" class="view-toggle">Show historic Elliott waves</button>
+  <section class="chart-toolbar" aria-label="Chart controls">
+    <div class="toolbar-cluster">
+      <span class="toolbar-label">View</span>
+      <div class="button-group">
+        <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line">Line</button>
+        <button id="candleBtn" type="button" class="view-toggle active" data-chart-mode="candle">Candles</button>
+        <button id="historicElliottBtn" type="button" class="view-toggle">Historic Elliott waves</button>
+      </div>
     </div>
-
-    <div class="button-group">
-      <button id="int-1d" class="view-toggle active" data-chart-interval="1d">Daily</button>
-      <button id="int-1wk" class="view-toggle" data-chart-interval="1wk">Weekly</button>
-      <button id="int-1mo" class="view-toggle" data-chart-interval="1mo">Monthly</button>
+    <div class="toolbar-cluster">
+      <span class="toolbar-label">Interval</span>
+      <div class="button-group">
+        <button id="int-1d" type="button" class="view-toggle active" data-chart-interval="1d">Daily</button>
+        <button id="int-1wk" type="button" class="view-toggle" data-chart-interval="1wk">Weekly</button>
+        <button id="int-1mo" type="button" class="view-toggle" data-chart-interval="1mo">Monthly</button>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div class="alert-panel">
+  <section class="alert-panel">
     <div class="alert-header">
-      <div class="alert-title">Email Signals</div>
-      <div id="alertStatus" class="alert-status"></div>
+      <div>
+        <h2 class="alert-title">Automated email signals</h2>
+        <p class="alert-description">Choose the setups StockWatch should monitor. Use Check for an immediate scan of the selected interval.</p>
+      </div>
+      <div id="alertStatus" class="alert-status" aria-live="polite"></div>
     </div>
 
-    <div class="alert-section">
-      <div class="alert-section-title">Candlestick Patterns</div>
-      <div class="alert-grid">
-        <div class="alert-grid-label">Interval</div>
-        <div class="alert-grid-label">Buy</div>
-        <div class="alert-grid-label">Sell</div>
+    <div class="alert-sections-layout">
+      <div class="alert-section">
+        <div class="alert-section-title">Candlestick Patterns</div>
+        <p class="alert-section-copy">Pattern confirmations across each supported candle interval.</p>
+        <div class="alert-grid">
+          <div class="alert-grid-label">Interval</div>
+          <div class="alert-grid-label">Buy</div>
+          <div class="alert-grid-label">Sell</div>
 
-        <div class="alert-row-label">Daily</div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="DAILY" data-check-signal="BUY">Check</button></div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="DAILY" data-check-signal="SELL">Check</button></div>
+          <div class="alert-row-label">Daily</div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="DAILY" data-check-signal="BUY">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="DAILY" data-check-signal="SELL">Check</button></div>
 
-        <div class="alert-row-label">Weekly</div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="WEEKLY" data-check-signal="BUY">Check</button></div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="WEEKLY" data-check-signal="SELL">Check</button></div>
+          <div class="alert-row-label">Weekly</div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="WEEKLY" data-check-signal="BUY">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="WEEKLY" data-check-signal="SELL">Check</button></div>
 
-        <div class="alert-row-label">Monthly</div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="MONTHLY" data-check-signal="BUY">Check</button></div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="MONTHLY" data-check-signal="SELL">Check</button></div>
+          <div class="alert-row-label">Monthly</div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="MONTHLY" data-check-signal="BUY">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="MONTHLY" data-check-signal="SELL">Check</button></div>
+        </div>
+      </div>
+
+      <div class="alert-section">
+        <div class="alert-section-title">Elliott Wave Patterns</div>
+        <p class="alert-section-copy">Higher-timeframe structures for weekly and monthly analysis.</p>
+        <div class="alert-grid">
+          <div class="alert-grid-label">Interval</div>
+          <div class="alert-grid-label">Buy</div>
+          <div class="alert-grid-label">Sell</div>
+
+          <div class="alert-row-label">Weekly</div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="WEEKLY" data-check-signal="BUY">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="WEEKLY" data-check-signal="SELL">Check</button></div>
+
+          <div class="alert-row-label">Monthly</div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="MONTHLY" data-check-signal="BUY">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="MONTHLY" data-check-signal="SELL">Check</button></div>
+        </div>
       </div>
     </div>
-
-    <div class="alert-section">
-      <div class="alert-section-title">Elliott Wave Patterns</div>
-      <div class="alert-grid">
-        <div class="alert-grid-label">Interval</div>
-        <div class="alert-grid-label">Buy</div>
-        <div class="alert-grid-label">Sell</div>
-
-        <div class="alert-row-label">Weekly</div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="WEEKLY" data-check-signal="BUY">Check</button></div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="WEEKLY" data-check-signal="SELL">Check</button></div>
-
-        <div class="alert-row-label">Monthly</div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="BUY"> BUY</label><button class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="MONTHLY" data-check-signal="BUY">Check</button></div>
-        <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="SELL"> SELL</label><button class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="MONTHLY" data-check-signal="SELL">Check</button></div>
-      </div>
-    </div>
-  </div>
+  </section>
 
   <!-- Price Chart Canvas -->
-  <div class="chart-wrapper">
-    <div id="elliottOverlayStatus" class="elliott-overlay-status"></div>
+  <section class="chart-wrapper">
+    <div class="chart-panel-head">
+      <h2 class="chart-panel-title">Price action</h2>
+      <span class="chart-panel-meta">Scroll horizontally to explore history</span>
+    </div>
+    <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite"></div>
     <div id="priceChartContainer" class="price-chart-container"></div>
-  </div>
+  </section>
 
   <!-- Volume Chart Canvas -->
-  <div class="chart-wrapper">
-    <h4 class="volume-title">Volume Profile</h4>
+  <section class="chart-wrapper">
+    <div class="chart-panel-head">
+      <h2 class="volume-title">Volume profile</h2>
+      <span class="chart-panel-meta">Synchronized with price history</span>
+    </div>
     <div id="volumeChartContainer" class="volume-chart-container"></div>
-  </div>
-</div>
+  </section>
+</main>
 
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
   const ticker = /*[[${symbol}]]*/ 'AAPL';
@@ -176,10 +158,18 @@
   let seenDates = new Set();
 
   const chartOptions = {
-    layout: { textColor: '#475569', background: { type: 'solid', color: 'transparent' } },
-    grid: { vertLines: { color: 'rgba(15, 23, 42, 0.05)' }, horzLines: { color: 'rgba(15, 23, 42, 0.05)' } },
+    layout: {
+      textColor: '#858c82',
+      fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+      background: { type: 'solid', color: 'transparent' }
+    },
+    grid: {
+      vertLines: { color: 'rgba(255, 255, 255, 0.035)' },
+      horzLines: { color: 'rgba(255, 255, 255, 0.035)' }
+    },
     crosshair: { mode: 0 },
-    timeScale: { borderColor: 'rgba(15, 23, 42, 0.1)' }
+    rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.07)' },
+    timeScale: { borderColor: 'rgba(255, 255, 255, 0.07)' }
   };
 
   async function initCharts() {
@@ -197,10 +187,16 @@
         }
       });
 
-      candleSeries = priceChart.addCandlestickSeries({ upColor: '#10b981', downColor: '#ef4444', borderVisible: false });
-      lineSeries = priceChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, crosshairMarkerVisible: true });
+      candleSeries = priceChart.addCandlestickSeries({
+        upColor: '#64e8bd',
+        downColor: '#ff647c',
+        wickUpColor: '#64e8bd',
+        wickDownColor: '#ff647c',
+        borderVisible: false
+      });
+      lineSeries = priceChart.addLineSeries({ color: '#b7f34a', lineWidth: 2, crosshairMarkerVisible: true });
       elliottSeries = priceChart.addLineSeries({
-        color: '#8b5cf6',
+        color: '#8d7dff',
         lineWidth: 2,
         crosshairMarkerVisible: false,
         lastValueVisible: false,
@@ -343,7 +339,7 @@
 
       newCandles.push({ time: timeString, open: open, high: high, low: low, close: close });
       newLines.push({ time: timeString, value: close });
-      newVols.push({ time: timeString, value: volume, color: close >= open ? 'rgba(16, 185, 129, 0.8)' : 'rgba(239, 68, 68, 0.8)' });
+      newVols.push({ time: timeString, value: volume, color: close >= open ? 'rgba(100, 232, 189, 0.72)' : 'rgba(255, 100, 124, 0.72)' });
     });
 
     if (isPrepend) {
@@ -399,7 +395,7 @@
         return;
       }
 
-      const color = overlay.direction === 'BULLISH' ? '#10b981' : '#ef4444';
+      const color = overlay.direction === 'BULLISH' ? '#64e8bd' : '#ff647c';
       elliottSeries.applyOptions({ color });
       const points = overlay.points.map(point => ({
         time: timestampToChartDate(point.timestamp),
@@ -479,7 +475,7 @@
   }
 
   function renderHistoricalElliottStructure(structure) {
-    const color = structure.direction === 'BULLISH' ? '#10b981' : '#ef4444';
+    const color = structure.direction === 'BULLISH' ? '#64e8bd' : '#ff647c';
     const series = priceChart.addLineSeries({
       color,
       lineWidth: 2,
@@ -523,7 +519,7 @@
                 marker: {
                   time,
                   position: buyConfirmation ? 'belowBar' : 'aboveBar',
-                  color: buyConfirmation ? '#10b981' : '#ef4444',
+                  color: buyConfirmation ? '#64e8bd' : '#ff647c',
                   shape: buyConfirmation ? 'arrowUp' : 'arrowDown',
                   text: `${endpointLabel} confirmed`
                 }
@@ -750,9 +746,11 @@
   }
 
   window.addEventListener('resize', () => {
-    const chartWrapper = document.getElementById('priceChartContainer').parentElement;
-    priceChart.resize(chartWrapper.clientWidth - 48, 400);
-    volumeChart.resize(chartWrapper.clientWidth - 48, 150);
+    if (!priceChart || !volumeChart) return;
+    const priceContainer = document.getElementById('priceChartContainer');
+    const volumeContainer = document.getElementById('volumeChartContainer');
+    priceChart.resize(priceContainer.clientWidth, priceContainer.clientHeight);
+    volumeChart.resize(volumeContainer.clientWidth, volumeContainer.clientHeight);
   });
 
   document.querySelectorAll('[data-chart-mode]').forEach(button => {

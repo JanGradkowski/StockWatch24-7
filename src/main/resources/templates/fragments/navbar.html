@@ -2,25 +2,29 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
 <div th:fragment="navbar">
-  <nav class="navbar">
-    <a class="logo" href="/home">
-      StockWatch 24/7
+  <nav class="navbar" aria-label="Application navigation">
+    <a class="logo" th:href="@{/home}" aria-label="StockWatch 24/7 dashboard">
+      <span class="logo-mark" aria-hidden="true"></span>
+      <span class="logo-word">StockWatch <span>24/7</span></span>
     </a>
 
     <div class="search-container">
-      <input type="text" id="globalTickerSearch" placeholder="Search stocks or indexes (e.g. AAPL, S&P 500)..."
-             class="global-ticker-search" autocomplete="off">
-      <div id="globalSuggestionsDropdown" class="global-suggestions" hidden></div>
+      <label for="globalTickerSearch" hidden>Search stocks or indexes</label>
+      <input type="search" id="globalTickerSearch" placeholder="Search stocks or indexes — AAPL, S&amp;P 500..."
+             class="global-ticker-search" autocomplete="off" aria-controls="globalSuggestionsDropdown"
+             aria-autocomplete="list" aria-expanded="false">
+      <div id="globalSuggestionsDropdown" class="global-suggestions" role="listbox" hidden></div>
     </div>
 
     <div class="nav-links">
+      <span th:if="${firstName != null}" class="nav-user"><span class="nav-user-dot" aria-hidden="true"></span><span th:text="${firstName}">Trader</span></span>
       <a th:if="${firstName != null}" href="/home" class="btn-primary">Dashboard</a>
       <form th:if="${firstName != null}" th:action="@{/logout}" method="post" class="logout-form">
-        <button type="submit" class="logout-btn">Log Out</button>
+        <button type="submit" class="logout-btn">Sign out</button>
       </form>
 
       <a th:if="${firstName == null}" href="/login" class="btn-primary">Sign In</a>
-      <a th:if="${firstName == null}" href="/signup" class="btn-accent">Sign Up</a>
+      <a th:if="${firstName == null}" href="/signup" class="btn-accent">Get started</a>
     </div>
   </nav>
 
@@ -35,6 +39,7 @@
           const query = e.target.value.trim();
           if (query.length < 2) {
             dropdown.hidden = true;
+            searchInput.setAttribute('aria-expanded', 'false');
             return;
           }
 
@@ -48,12 +53,14 @@
             const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
             if (!response.ok) {
               dropdown.hidden = true;
+              searchInput.setAttribute('aria-expanded', 'false');
               return;
             }
             const suggestions = await response.json();
 
             if (suggestions.length === 0) {
               dropdown.hidden = true;
+              searchInput.setAttribute('aria-expanded', 'false');
               return;
             }
 
@@ -64,6 +71,7 @@
               const row = document.createElement('button');
               row.type = 'button';
               row.className = 'suggestion-row';
+              row.setAttribute('role', 'option');
               row.addEventListener('click', () => {
                 window.location.assign(`/stock/${encodeURIComponent(symbol)}`);
               });
@@ -97,8 +105,10 @@
             });
 
             dropdown.hidden = false;
+            searchInput.setAttribute('aria-expanded', 'true');
           } catch (err) {
             console.error("Autocomplete failed", err);
+            searchInput.setAttribute('aria-expanded', 'false');
           }
         }
 
@@ -106,6 +116,7 @@
         document.addEventListener('click', (e) => {
           if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
             dropdown.hidden = true;
+            searchInput.setAttribute('aria-expanded', 'false');
           }
         });
       }

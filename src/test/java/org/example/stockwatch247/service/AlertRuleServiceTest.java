@@ -1,8 +1,13 @@
 package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.Candle;
+import org.example.stockwatch247.model.AlertEvent;
+import org.example.stockwatch247.model.AlertRule;
+import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
+import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.AlertEventRepository;
@@ -11,13 +16,18 @@ import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AlertRuleServiceTest {
@@ -102,6 +112,162 @@ class AlertRuleServiceTest {
         assertThat(response.get("matchingPatterns")).asList().contains("ELLIOTT_BULLISH_WAVE_V_END");
     }
 
+    @Test
+    void activeCompanyViewsCollapseRulesForTheSameInstrument() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository);
+        User user = new User();
+        user.setEmail("grouped-alerts@example.com");
+
+        StockAsset mara = stock(1L, "MARA", "MARA Holdings, Inc.");
+        StockAsset apple = stock(2L, "AAPL", "Apple Inc.");
+        AlertRule maraDailyBuy = rule(11L, user, mara, TimeInterval.DAILY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        AlertRule maraWeeklySell = rule(12L, user, mara, TimeInterval.WEEKLY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        AlertRule appleMonthlyBuy = rule(13L, user, apple, TimeInterval.MONTHLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+
+        when(alertRuleRepository
+                .findByUserAndIsActiveTrueOrderByStockAsset_TickerSymbolAscIntervalAscPatternFamilyAscTradeSignalAsc(user))
+                .thenReturn(List.of(appleMonthlyBuy, maraDailyBuy, maraWeeklySell));
+        when(alertEventRepository.countByAlertRule(appleMonthlyBuy)).thenReturn(1L);
+        when(alertEventRepository.countByAlertRule(maraDailyBuy)).thenReturn(2L);
+        when(alertEventRepository.countByAlertRule(maraWeeklySell)).thenReturn(3L);
+
+        List<AlertRuleService.TrackedCompanyView> companies = service.getActiveCompanyViews(user);
+
+        assertThat(companies).extracting(AlertRuleService.TrackedCompanyView::symbol)
+                .containsExactly("AAPL", "MARA");
+        AlertRuleService.TrackedCompanyView maraView = companies.get(1);
+        assertThat(maraView.representativeAlertId()).isEqualTo(11L);
+        assertThat(maraView.ruleCount()).isEqualTo(2);
+        assertThat(maraView.eventCount()).isEqualTo(5L);
+        assertThat(maraView.intervalLabels()).containsExactly("1d", "1wk");
+        assertThat(maraView.familyLabels()).containsExactly("Candlestick", "Elliott Wave");
+        assertThat(maraView.tradeSignals()).containsExactly(TradeSignal.BUY, TradeSignal.SELL);
+    }
+
+    @Test
+    void companySignalHistoryBuildsOneColumnPerActiveRule() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository);
+        User user = new User();
+        user.setEmail("history-board@example.com");
+        StockAsset mara = stock(1L, "MARA", "MARA Holdings, Inc.");
+        AlertRule weeklyCandleBuy = rule(21L, user, mara, TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        AlertRule monthlyElliottSell = rule(22L, user, mara, TimeInterval.MONTHLY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        AlertEvent event = new AlertEvent();
+        event.setId(301L);
+        event.setAlertRule(weeklyCandleBuy);
+        event.setPattern(CandlePattern.BULLISH_ENGULFING);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(1_752_019_200L);
+        event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
+        event.setConfidenceScore(88);
+        event.setConfidenceReasons(List.of("strict bullish candle-pattern geometry"));
+        event.setClosePrice(19.42);
+        event.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
+
+        when(alertRuleRepository.findByIdAndUserAndIsActiveTrue(weeklyCandleBuy.getId(), user))
+                .thenReturn(Optional.of(weeklyCandleBuy));
+        when(alertRuleRepository.findByUserAndStockAssetAndIsActiveTrue(user, mara))
+                .thenReturn(List.of(monthlyElliottSell, weeklyCandleBuy));
+        when(alertEventRepository.findByAlertRuleOrderBySignalCandleTimestampDesc(weeklyCandleBuy))
+                .thenReturn(List.of(event));
+        when(alertEventRepository.findByAlertRuleOrderBySignalCandleTimestampDesc(monthlyElliottSell))
+                .thenReturn(List.of());
+
+        AlertRuleService.CompanySignalHistory history = service.getCompanySignalHistory(
+                user, weeklyCandleBuy.getId());
+
+        assertThat(history.symbol()).isEqualTo("MARA");
+        assertThat(history.companyName()).isEqualTo("MARA Holdings, Inc.");
+        assertThat(history.ruleCount()).isEqualTo(2);
+        assertThat(history.eventCount()).isEqualTo(1L);
+        assertThat(history.columns()).extracting(column -> column.alert().interval())
+                .containsExactly(TimeInterval.WEEKLY, TimeInterval.MONTHLY);
+        assertThat(history.columns().getFirst().alert().familyLabel()).isEqualTo("Candlestick");
+        assertThat(history.columns().getFirst().alert().tradeSignal()).isEqualTo(TradeSignal.BUY);
+        assertThat(history.columns().getFirst().events()).hasSize(1);
+        assertThat(history.columns().getFirst().events().getFirst().id()).isEqualTo(301L);
+        assertThat(history.columns().getFirst().events().getFirst().patternLabel()).isEqualTo("Bullish Engulfing");
+        assertThat(history.columns().get(1).alert().familyLabel()).isEqualTo("Elliott Wave");
+        assertThat(history.columns().get(1).alert().tradeSignal()).isEqualTo(TradeSignal.SELL);
+    }
+
+    @Test
+    void companySignalHistoryRejectsAnAlertOutsideTheUsersActiveRules() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, mock(AlertEventRepository.class));
+        User user = new User();
+        user.setEmail("owner@example.com");
+        when(alertRuleRepository.findByIdAndUserAndIsActiveTrue(999L, user)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getCompanySignalHistory(user, 999L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Active alert rule not found.");
+        verify(alertRuleRepository, never()).findByUserAndStockAssetAndIsActiveTrue(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void signalDetailExplainsThePersistedConfidenceEvidence() {
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(mock(AlertRuleRepository.class), alertEventRepository);
+        User user = new User();
+        user.setEmail("signal-owner@example.com");
+        StockAsset mara = stock(1L, "MARA", "MARA Holdings, Inc.");
+        AlertRule rule = rule(21L, user, mara, TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        AlertEvent event = new AlertEvent();
+        event.setId(301L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.BULLISH_ENGULFING);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(1_752_019_200L);
+        event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
+        event.setConfidenceScore(88);
+        event.setConfidenceReasons(List.of(
+                "strict bullish candle-pattern geometry",
+                "RSI is rising versus the previous candle",
+                "pattern calibration lowered confidence by 2 points based on historical precision"
+        ));
+        event.setClosePrice(19.42);
+        event.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
+        when(alertEventRepository.findOwnedByIdAndUser(301L, user)).thenReturn(Optional.of(event));
+
+        AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 301L);
+
+        assertThat(detail.id()).isEqualTo(301L);
+        assertThat(detail.alertRuleId()).isEqualTo(21L);
+        assertThat(detail.symbol()).isEqualTo("MARA");
+        assertThat(detail.patternLabel()).isEqualTo("Bullish Engulfing");
+        assertThat(detail.confidenceBand()).isEqualTo("high");
+        assertThat(detail.strengthLabel()).isEqualTo("High confidence");
+        assertThat(detail.reasonsAvailable()).isTrue();
+        assertThat(detail.reasons()).extracting(AlertRuleService.SignalReasonView::category)
+                .containsExactly("Pattern geometry", "Momentum", "Calibration");
+        assertThat(detail.reasons().getLast().caution()).isTrue();
+    }
+
+    @Test
+    void signalDetailRejectsAnEventThatIsNotOwnedByTheUser() {
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(mock(AlertRuleRepository.class), alertEventRepository);
+        User user = new User();
+        user.setEmail("signal-owner@example.com");
+        when(alertEventRepository.findOwnedByIdAndUser(999L, user)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getSignalDetail(user, 999L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Signal event not found.");
+    }
+
     private AlertRuleService service(CandleRepository candleRepository,
                                      MarketDataService marketDataService) {
         return new AlertRuleService(
@@ -120,6 +286,52 @@ class AlertRuleServiceTest {
                 50,
                 500
         );
+    }
+
+    private AlertRuleService service(AlertRuleRepository alertRuleRepository,
+                                     AlertEventRepository alertEventRepository) {
+        return new AlertRuleService(
+                alertRuleRepository,
+                alertEventRepository,
+                mock(StockAssetRepository.class),
+                mock(CandleRepository.class),
+                mock(TwelveDataService.class),
+                mock(org.springframework.jdbc.core.JdbcTemplate.class),
+                mock(MarketDataService.class),
+                new TechnicalIndicatorEnrichmentService(),
+                new CandlePatternDetectionService(),
+                new ElliottWaveDetectionService(),
+                true,
+                true,
+                50,
+                500
+        );
+    }
+
+    private StockAsset stock(Long id, String symbol, String companyName) {
+        StockAsset stockAsset = new StockAsset();
+        stockAsset.setId(id);
+        stockAsset.setTickerSymbol(symbol);
+        stockAsset.setCompanyName(companyName);
+        stockAsset.setExchange("NASDAQ");
+        return stockAsset;
+    }
+
+    private AlertRule rule(Long id,
+                           User user,
+                           StockAsset stockAsset,
+                           TimeInterval interval,
+                           AlertPatternFamily family,
+                           TradeSignal signal) {
+        AlertRule rule = new AlertRule();
+        rule.setId(id);
+        rule.setUser(user);
+        rule.setStockAsset(stockAsset);
+        rule.setInterval(interval);
+        rule.setPatternFamily(family);
+        rule.setTradeSignal(signal);
+        rule.setActive(true);
+        return rule;
     }
 
     private List<Candle> syntheticElliottCandles(String symbol) {

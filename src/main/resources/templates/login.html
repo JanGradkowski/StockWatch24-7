@@ -1,46 +1,62 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
-  <title>Login - StockWatch 24/7</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — StockWatch 24/7</title>
   <link rel="stylesheet" th:href="@{/css/style.css}">
-  <style th:attr="nonce=${cspNonce}">
-    .auth-container { max-width: 400px; margin: 10% auto; padding: 2.5rem; background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); text-align: center; }
-    .auth-container h2 { margin-bottom: 1.5rem; color: var(--text-color); }
-    .form-group { margin-bottom: 1rem; text-align: left; }
-    .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.9rem; color: var(--muted-text); }
-    .form-group input { width: 100%; padding: 0.75rem; border: 1px solid var(--glass-border); border-radius: 6px; background: rgba(255,255,255,0.8); color: var(--text-color); font-size: 1rem; outline: none; }
-    .form-group input:focus { border-color: var(--primary-color); }
-    .auth-btn { width: 100%; margin-top: 1rem; }
-    .error-msg { color: #ef4444; font-size: 0.9rem; margin-bottom: 1rem; }
-    .success-msg { color: var(--accent-color); font-size: 0.9rem; margin-bottom: 1rem; }
-  </style>
 </head>
-<body>
-<div class="auth-container">
-  <h2>Welcome Back</h2>
-  <div th:if="${param.error}" class="error-msg">Invalid username or password.</div>
-  <div th:if="${param.registered}" class="success-msg">Account created! Please log in.</div>
-  <div th:if="${param.verificationSent}" class="success-msg">If the address is eligible, a verification email has been sent.</div>
-  <div th:if="${param.verificationResendRequested}" class="success-msg">If the account and password were eligible, a verification email has been sent.</div>
-  <div th:if="${param.verified}" class="success-msg">Email verified. You can now sign in.</div>
-  <div th:if="${param.verificationError}" class="error-msg">The verification link is invalid or expired.</div>
-  <div th:if="${param.expired}" class="error-msg">Your session expired. Please sign in again.</div>
-
-  <form th:action="@{/login}" method="post">
-    <div class="form-group">
-      <label>Email</label>
-      <input type="email" name="email" required maxlength="254" autocomplete="username"/>
-    </div>
-    <div class="form-group">
-      <label>Password</label>
-      <input type="password" name="password" required autocomplete="current-password" />
-    </div>
-    <button type="submit" class="btn-accent auth-btn">Sign In</button>
-  </form>
-  <p class="auth-switch">
-    Don't have an account? <a th:href="@{/signup}" class="text-link">Sign up</a>
-  </p>
-  <p class="auth-help"><a th:href="@{/resend-verification}" class="text-link">Resend verification email</a></p>
+<body class="auth-page">
+<div class="bg-animation" aria-hidden="true">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
 </div>
+
+<main class="auth-shell">
+  <section class="auth-showcase">
+    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7">
+      <span class="logo-mark" aria-hidden="true"></span>
+      <span class="logo-word">StockWatch <span>24/7</span></span>
+    </a>
+    <div class="auth-pitch">
+      <div class="eyebrow">Welcome back</div>
+      <h1>Your market<br><span class="text-gradient">command center.</span></h1>
+      <p>Pick up where you left off. Your technical alerts keep monitoring the market between every visit.</p>
+    </div>
+    <div class="auth-signal-card" aria-hidden="true">
+      <span class="auth-signal-icon">↗</span>
+      <span class="auth-signal-copy"><strong>Bullish pattern confirmed</strong><span>NVDA · Daily candlestick · just now</span></span>
+      <span class="auth-signal-score">88/100</span>
+    </div>
+  </section>
+
+  <section class="auth-card">
+    <div class="auth-kicker">Secure access</div>
+    <h2>Sign in to StockWatch</h2>
+    <p class="auth-description">Enter the email and password attached to your account.</p>
+
+    <div th:if="${param.error}" class="auth-message error-msg">The email or password is incorrect.</div>
+    <div th:if="${param.registered}" class="auth-message success-msg">Account created. You can sign in now.</div>
+    <div th:if="${param.verificationSent}" class="auth-message success-msg">If the address is eligible, a verification email has been sent.</div>
+    <div th:if="${param.verificationResendRequested}" class="auth-message success-msg">If the account and password were eligible, a verification email has been sent.</div>
+    <div th:if="${param.verified}" class="auth-message success-msg">Email verified. Your account is ready.</div>
+    <div th:if="${param.verificationError}" class="auth-message error-msg">That verification link is invalid or has expired.</div>
+    <div th:if="${param.expired}" class="auth-message error-msg">Your session expired. Please sign in again.</div>
+
+    <form th:action="@{/login}" method="post">
+      <div class="form-group">
+        <label for="loginEmail">Email address</label>
+        <input id="loginEmail" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
+      </div>
+      <button type="submit" class="btn-accent auth-btn">Enter dashboard <span class="button-arrow" aria-hidden="true">→</span></button>
+    </form>
+    <p class="auth-switch">New to StockWatch? <a th:href="@{/signup}" class="text-link">Create an account</a></p>
+    <p class="auth-help"><a th:href="@{/resend-verification}" class="text-link">Resend verification email</a></p>
+  </section>
+</main>
 </body>
 </html>

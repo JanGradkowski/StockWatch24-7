@@ -217,6 +217,7 @@ public class ScheduledAlertService {
         event.setSignalCandleTimestamp(signal.candleTimestamp());
         event.setSignalStrength(signal.strength());
         event.setConfidenceScore(signal.confidenceScore());
+        event.setConfidenceReasons(signal.reasons());
         event.setClosePrice(signal.closePrice());
         alertEventRepository.save(event);
     }

@@ -1,101 +1,124 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
-  <title>Dashboard - StockWatch 24/7</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — StockWatch 24/7</title>
   <link rel="stylesheet" th:href="@{/css/style.css}">
-  <style th:attr="nonce=${cspNonce}">
-    .dashboard-container { max-width: 1000px; margin: 4rem auto; padding: 2rem; }
-    .welcome-header { margin-bottom: 3rem; }
-    .welcome-text { font-size: 2.5rem; font-weight: 800; color: var(--text-color); }
-    .glass-panel { background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 16px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.02); min-height: 400px;}
-
-    .grid-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
-    .stat-card { background: rgba(255,255,255,0.5); border: 1px solid var(--glass-border); border-radius: 12px; padding: 1.5rem; }
-    .alert-list { display: grid; gap: 0.75rem; margin-top: 1rem; max-height: 520px; overflow-y: auto; padding-right: 0.35rem; }
-    .alert-list::-webkit-scrollbar { width: 10px; }
-    .alert-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.45); border-radius: 8px; }
-    .alert-list::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.45); border-radius: 8px; border: 2px solid rgba(255,255,255,0.45); }
-    .alert-list::-webkit-scrollbar-thumb:hover { background: rgba(59, 130, 246, 0.55); }
-    .alert-row {
-      display: grid;
-      grid-template-columns: minmax(120px, 1fr) 70px 120px 80px 90px;
-      align-items: center;
-      gap: 1rem;
-      padding: 0.9rem 1rem;
-      border: 1px solid var(--glass-border);
-      border-radius: 8px;
-      background: rgba(255,255,255,0.58);
-      color: inherit;
-      text-decoration: none;
-    }
-    .alert-row:hover { border-color: rgba(59, 130, 246, 0.35); background: rgba(255,255,255,0.82); }
-    .alert-symbol { font-weight: 800; color: var(--text-color); }
-    .alert-company { color: var(--muted-text); font-size: 0.82rem; margin-top: 0.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .alert-pill { font-weight: 700; color: var(--text-color); }
-    .alert-signal.buy { color: var(--accent-color); }
-    .alert-signal.sell { color: #ef4444; }
-    .event-count { color: var(--muted-text); font-size: 0.85rem; text-align: right; }
-    .primary-text { color: var(--primary-color); }
-    .welcome-subtitle { color: var(--muted-text); margin-top: 0.5rem; }
-    .panel-title { margin-bottom: 1rem; color: var(--text-color); }
-    .empty-alerts { color: var(--muted-text); }
-    .compact-panel { min-height: auto; }
-    .status-label { font-size: 0.9rem; color: var(--muted-text); font-weight: 600; }
-    .status-value { font-size: 1.25rem; color: var(--accent-color); font-weight: 700; margin-top: 0.25rem; }
-  </style>
 </head>
 <body>
-<!-- Animated Orbs -->
-<div class="bg-animation">
+<div class="bg-animation" aria-hidden="true">
   <div class="glow-orb orb-1"></div>
   <div class="glow-orb orb-2"></div>
 </div>
 
-<!-- The Reusable Navbar Fragment -->
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
-<div class="dashboard-container">
-  <div class="welcome-header">
-    <div class="welcome-text">Welcome, <span class="primary-text" th:text="${firstName}">Trader</span>!</div>
-    <p class="welcome-subtitle">Use the search bar above to look up a stock or market index and analyze its live chart.</p>
-  </div>
+<main class="dashboard-container">
+  <header class="app-hero welcome-header">
+    <div class="app-hero-copy">
+      <div class="eyebrow">Personal market desk</div>
+      <h1 class="welcome-text">Good to see you, <span class="primary-text" th:text="${firstName}">Trader</span>.</h1>
+      <p class="welcome-subtitle">Your automated signal desk is ready. Search for a stock or index above to inspect its chart or configure another alert.</p>
+    </div>
+    <div class="hero-status">Monitoring online</div>
+  </header>
+
+  <section class="metrics-grid" aria-label="Monitoring overview">
+    <article class="metric-card">
+      <span class="metric-label">Tracked companies</span>
+      <strong class="metric-value" th:text="${#lists.size(trackedCompanies)}">0</strong>
+      <span class="metric-note">Unique market instruments on your desk</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Active rules</span>
+      <strong class="metric-value" th:text="${activeRuleCount}">0</strong>
+      <span class="metric-note">Technical combinations currently followed</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Recovery mode</span>
+      <strong class="metric-value market-up">Armed</strong>
+      <span class="metric-note">Missed scheduled checks resume after restart</span>
+    </article>
+  </section>
 
   <div class="grid-layout">
-    <div class="glass-panel">
-      <h3 class="panel-title">Your Active Alerts</h3>
-      <p th:if="${#lists.isEmpty(activeAlerts)}" class="empty-alerts">You currently have no active technical pattern alerts running.</p>
-
-      <div th:if="${!#lists.isEmpty(activeAlerts)}" class="alert-list">
-        <a th:each="alert : ${activeAlerts}"
-           class="alert-row"
-           th:href="@{/alerts/{id}(id=${alert.id()})}"
-           target="_blank"
-           rel="noopener">
-          <div>
-            <div class="alert-symbol" th:text="${alert.symbol()}">NVDA</div>
-            <div class="alert-company" th:text="${alert.companyName()}">NVIDIA Corporation</div>
-          </div>
-          <div class="alert-pill" th:text="${alert.intervalLabel()}">1d</div>
-          <div class="alert-pill" th:text="${alert.familyLabel()}">Candlestick</div>
-          <div class="alert-pill alert-signal"
-               th:classappend="${alert.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-               th:text="${alert.tradeSignal()}">BUY</div>
-          <div class="event-count">
-            <span th:text="${alert.eventCount()}">0</span>
-            <span th:text="${alert.eventCount() == 1 ? 'signal' : 'signals'}">signals</span>
-          </div>
-        </a>
+    <section class="glass-panel dashboard-panel">
+      <div class="panel-heading">
+        <h2 class="panel-title">Company watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
+        <span class="panel-meta">Open a company to see every followed rule</span>
       </div>
-    </div>
 
-    <div class="glass-panel compact-panel">
-      <h3 class="panel-title">Market Status</h3>
-      <div class="stat-card">
-        <div class="status-label">System Status</div>
-        <div class="status-value">Online &amp; Polling</div>
+      <div th:if="${#lists.isEmpty(trackedCompanies)}" class="empty-state-card">
+        <div class="empty-state-inner">
+          <div class="empty-icon" aria-hidden="true">⌁</div>
+          <h3>Your alert desk is quiet</h3>
+          <p>Use the market search in the navigation bar, open an instrument, and switch on the technical signals you want monitored.</p>
+        </div>
       </div>
-    </div>
+
+      <div th:if="${!#lists.isEmpty(trackedCompanies)}">
+        <div class="alert-list-head company-alert-grid" aria-hidden="true">
+          <span>Company</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>History</span>
+        </div>
+        <div class="alert-list">
+          <a th:each="company : ${trackedCompanies}"
+             class="alert-row company-alert-grid"
+             th:href="@{/alerts/{id}(id=${company.representativeAlertId()})}">
+            <div>
+              <div class="alert-symbol" th:text="${company.symbol()}">MARA</div>
+              <div class="alert-company" th:text="${company.companyName()}">MARA Holdings, Inc.</div>
+            </div>
+            <div>
+              <strong class="company-rule-count" th:text="${company.ruleCount()}">6</strong>
+              <span class="company-rule-label" th:text="${company.ruleCount() == 1 ? 'rule' : 'rules'}">rules</span>
+            </div>
+            <div class="dashboard-chip-list">
+              <span th:each="interval : ${company.intervalLabels()}" class="dashboard-chip" th:text="${interval}">1wk</span>
+            </div>
+            <div class="company-coverage">
+              <div class="dashboard-chip-list">
+                <span th:each="family : ${company.familyLabels()}" class="dashboard-chip method" th:text="${family}">Candlestick</span>
+              </div>
+              <div class="dashboard-chip-list">
+                <span th:each="signal : ${company.tradeSignals()}"
+                      class="dashboard-chip signal"
+                      th:classappend="${signal.name() == 'BUY'} ? ' buy' : ' sell'"
+                      th:text="${signal}">BUY</span>
+              </div>
+            </div>
+            <div class="event-count">
+              <strong th:text="${company.eventCount()}">0</strong>
+              <span th:text="${company.eventCount() == 1 ? 'signal' : 'signals'}">signals</span>
+            </div>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <aside class="glass-panel dashboard-panel">
+      <div class="panel-heading">
+        <h2 class="panel-title">System pulse</h2>
+        <span class="panel-meta">Live</span>
+      </div>
+      <div class="system-stack">
+        <div class="system-item">
+          <div class="status-label">Scheduler</div>
+          <div class="status-value">Online &amp; polling</div>
+          <p class="system-copy">Scheduled candle checks continue in the background while the application is running.</p>
+        </div>
+        <div class="system-item">
+          <div class="status-label">Delivery recovery</div>
+          <div class="status-value">Protected</div>
+          <p class="system-copy">Eligible work missed during downtime is picked back up after the next start.</p>
+        </div>
+      </div>
+      <div class="quick-search-card">
+        <strong>Explore another market</strong>
+        <p>Search a company name, ticker, or index in the navigation bar to open its analysis workspace.</p>
+      </div>
+    </aside>
   </div>
-</div>
+</main>
 </body>
 </html>

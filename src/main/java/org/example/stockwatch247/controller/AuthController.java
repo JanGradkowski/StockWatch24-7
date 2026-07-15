@@ -126,11 +126,16 @@ public class AuthController {
         User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
 
         if (currentUser != null) {
+            var trackedCompanies = alertRuleService.getActiveCompanyViews(currentUser);
             model.addAttribute("firstName", currentUser.getFirstName());
-            model.addAttribute("activeAlerts", alertRuleService.getActiveAlertViews(currentUser));
+            model.addAttribute("trackedCompanies", trackedCompanies);
+            model.addAttribute("activeRuleCount", trackedCompanies.stream()
+                    .mapToInt(AlertRuleService.TrackedCompanyView::ruleCount)
+                    .sum());
         } else {
             model.addAttribute("firstName", "Trader");
-            model.addAttribute("activeAlerts", java.util.List.of());
+            model.addAttribute("trackedCompanies", java.util.List.of());
+            model.addAttribute("activeRuleCount", 0);
         }
 
         return "home";
@@ -143,8 +148,19 @@ public class AuthController {
             return "redirect:/login";
         }
         model.addAttribute("firstName", currentUser.getFirstName());
-        model.addAttribute("history", alertRuleService.getSignalHistory(currentUser, alertRuleId));
+        model.addAttribute("history", alertRuleService.getCompanySignalHistory(currentUser, alertRuleId));
         return "alert-history";
+    }
+
+    @GetMapping("/alerts/signals/{alertEventId}")
+    public String signalDetailPage(@PathVariable Long alertEventId, Model model, Principal principal) {
+        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        if (currentUser == null) {
+            return "redirect:/login";
+        }
+        model.addAttribute("firstName", currentUser.getFirstName());
+        model.addAttribute("signal", alertRuleService.getSignalDetail(currentUser, alertEventId));
+        return "signal-detail";
     }
 
     @GetMapping("/stock/{symbol}")

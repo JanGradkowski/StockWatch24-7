@@ -1,35 +1,52 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
-  <title>Resend Verification - StockWatch 24/7</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resend verification — StockWatch 24/7</title>
   <link rel="stylesheet" th:href="@{/css/style.css}">
-  <style th:attr="nonce=${cspNonce}">
-    .auth-container { max-width: 400px; margin: 10% auto; padding: 2.5rem; background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); text-align: center; }
-    .auth-container h2 { margin-bottom: 1rem; color: var(--text-color); }
-    .auth-description { color: var(--muted-text); font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.5rem; }
-    .form-group { margin-bottom: 1rem; text-align: left; }
-    .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.9rem; color: var(--muted-text); }
-    .form-group input { width: 100%; padding: 0.75rem; border: 1px solid var(--glass-border); border-radius: 6px; background: rgba(255,255,255,0.8); color: var(--text-color); font-size: 1rem; outline: none; }
-    .form-group input:focus { border-color: var(--primary-color); }
-    .auth-btn { width: 100%; margin-top: 1rem; }
-  </style>
 </head>
-<body>
-<div class="auth-container">
-  <h2>Resend Verification</h2>
-  <p class="auth-description">Enter the account email and password. For privacy, the result is identical whether or not the account is eligible.</p>
-  <form th:action="@{/resend-verification}" method="post">
-    <div class="form-group">
-      <label>Email</label>
-      <input type="email" name="email" required maxlength="254" autocomplete="username"/>
-    </div>
-    <div class="form-group">
-      <label>Password</label>
-      <input type="password" name="password" required maxlength="72" autocomplete="current-password"/>
-    </div>
-    <button type="submit" class="btn-accent auth-btn">Request Verification Email</button>
-  </form>
-  <p class="auth-switch"><a th:href="@{/login}" class="text-link">Back to sign in</a></p>
+<body class="auth-page">
+<div class="bg-animation" aria-hidden="true">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
 </div>
+
+<main class="auth-shell">
+  <section class="auth-showcase">
+    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7">
+      <span class="logo-mark" aria-hidden="true"></span>
+      <span class="logo-word">StockWatch <span>24/7</span></span>
+    </a>
+    <div class="auth-pitch">
+      <div class="eyebrow">Account verification</div>
+      <h1>One last<br><span class="text-gradient">security check.</span></h1>
+      <p>Verify your email to protect the alerts and market activity connected to your account.</p>
+    </div>
+    <div class="auth-signal-card" aria-hidden="true">
+      <span class="auth-signal-icon">✦</span>
+      <span class="auth-signal-copy"><strong>Privacy-preserving response</strong><span>Account eligibility is never disclosed</span></span>
+      <span class="auth-signal-score">SECURE</span>
+    </div>
+  </section>
+
+  <section class="auth-card">
+    <div class="auth-kicker">Email verification</div>
+    <h2>Request a new link</h2>
+    <p class="auth-description">Enter the account email and password. For privacy, the result is identical whether or not the account is eligible.</p>
+    <form th:action="@{/resend-verification}" method="post">
+      <div class="form-group">
+        <label for="resendEmail">Email address</label>
+        <input id="resendEmail" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label for="resendPassword">Password</label>
+        <input id="resendPassword" type="password" name="password" required maxlength="72" autocomplete="current-password" placeholder="Enter your password">
+      </div>
+      <button type="submit" class="btn-accent auth-btn">Send verification link <span class="button-arrow" aria-hidden="true">→</span></button>
+    </form>
+    <p class="auth-switch"><a th:href="@{/login}" class="text-link">← Back to sign in</a></p>
+  </section>
+</main>
 </body>
 </html>

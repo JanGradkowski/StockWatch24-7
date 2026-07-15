@@ -3,30 +3,204 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StockWatch 24/7</title>
+    <meta name="description" content="StockWatch 24/7 monitors technical market signals and delivers automated email alerts.">
+    <title>StockWatch 24/7 — Markets never sleep</title>
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
-<body>
-<div class="bg-animation">
+<body class="landing-page">
+<div class="bg-animation" aria-hidden="true">
     <div class="glow-orb orb-1"></div>
     <div class="glow-orb orb-2"></div>
 </div>
 
-<nav class="navbar">
-    <div class="logo">StockWatch 24/7</div>
-    <div class="nav-links">
-        <a href="/about" class="btn-secondary">About</a>
-        <a href="/login" class="btn-primary">Sign In</a>
-        <a href="/signup" class="btn-accent">Sign Up</a>
-    </div>
-</nav>
+<div class="landing-shell">
+    <nav class="navbar landing-nav" aria-label="Main navigation">
+        <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home">
+            <span class="logo-mark" aria-hidden="true"></span>
+            <span class="logo-word">StockWatch <span>24/7</span></span>
+        </a>
+        <div class="nav-links">
+            <a href="#platform" class="btn-secondary">Platform</a>
+            <a th:href="@{/login}" class="btn-primary">Sign in</a>
+            <a th:href="@{/signup}" class="btn-accent">Start monitoring</a>
+        </div>
+    </nav>
 
-<main class="hero-section">
-    <h1>Automate Your Technical Analysis</h1>
-    <p>Track intervals, monitor candlestick patterns automatically, and receive instant email alerts the exact second market signals match your strategy.</p>
-    <div class="hero-buttons">
-        <a href="/signup" class="btn-accent large">Get Started For Free</a>
-    </div>
-</main>
+    <main>
+        <section class="landing-hero">
+            <div class="hero-copy">
+                <div class="eyebrow">Autonomous market monitoring</div>
+                <h1>Markets move.<br><span class="text-gradient">You’ll know why.</span></h1>
+                <p>Turn candlestick patterns and Elliott wave structures into a live monitoring system. StockWatch scans your chosen intervals and delivers the signals that matter straight to your inbox.</p>
+                <div class="hero-actions">
+                    <a th:href="@{/signup}" class="btn-accent large">Build your watchlist <span class="button-arrow" aria-hidden="true">→</span></a>
+                    <a th:href="@{/login}" class="btn-primary large">Open dashboard</a>
+                </div>
+                <div class="hero-proof">
+                    <div class="proof-avatars" aria-hidden="true">
+                        <span class="proof-avatar">SW</span>
+                        <span class="proof-avatar">AI</span>
+                        <span class="proof-avatar">24</span>
+                    </div>
+                    <span>Daily, weekly and monthly signal coverage in one focused workspace.</span>
+                </div>
+            </div>
+
+            <div class="market-stage" aria-label="StockWatch market workspace preview">
+                <div class="terminal-card">
+                    <div class="terminal-topbar">
+                        <div class="window-dots" aria-hidden="true">
+                            <span class="window-dot"></span>
+                            <span class="window-dot"></span>
+                            <span class="window-dot"></span>
+                        </div>
+                        <span class="terminal-label">Market intelligence</span>
+                        <span class="terminal-live">Monitoring</span>
+                    </div>
+                    <div class="terminal-body">
+                        <div class="terminal-quote">
+                            <div>
+                                <div class="terminal-symbol">NVDA</div>
+                                <div class="terminal-company">NVIDIA Corporation</div>
+                            </div>
+                            <div class="terminal-price">
+                                <strong>$164.92</strong>
+                                <span class="market-up">+2.84%</span>
+                            </div>
+                        </div>
+                        <svg class="hero-chart" viewBox="0 0 620 245" role="img" aria-label="Illustrative rising market chart" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#b7f34a" stop-opacity="0.23"/>
+                                    <stop offset="100%" stop-color="#b7f34a" stop-opacity="0"/>
+                                </linearGradient>
+                            </defs>
+                            <line class="chart-grid-line" x1="0" y1="45" x2="620" y2="45"/>
+                            <line class="chart-grid-line" x1="0" y1="105" x2="620" y2="105"/>
+                            <line class="chart-grid-line" x1="0" y1="165" x2="620" y2="165"/>
+                            <line class="chart-grid-line" x1="0" y1="225" x2="620" y2="225"/>
+                            <path class="chart-area" d="M0 203 C35 190,60 202,92 174 S145 158,178 171 S235 124,270 137 S328 108,360 121 S413 68,449 82 S503 58,535 70 S582 31,620 22 L620 245 L0 245 Z"/>
+                            <path class="chart-line" d="M0 203 C35 190,60 202,92 174 S145 158,178 171 S235 124,270 137 S328 108,360 121 S413 68,449 82 S503 58,535 70 S582 31,620 22"/>
+                            <circle class="chart-dot" cx="620" cy="22" r="4"/>
+                        </svg>
+                        <div class="terminal-stats">
+                            <div class="terminal-stat"><span>Pattern</span><strong>Bullish engulfing</strong></div>
+                            <div class="terminal-stat"><span>Confidence</span><strong class="market-up">High · 88/100</strong></div>
+                            <div class="terminal-stat"><span>Interval</span><strong>Daily candle</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="floating-insight" aria-hidden="true">
+                    <span class="insight-icon">⌁</span>
+                    <span><strong>Elliott structure found</strong><span>Weekly · bullish direction</span></span>
+                </div>
+                <div class="floating-signal" aria-hidden="true">
+                    <div class="floating-signal-head"><span>Signal delivered</span><span class="signal-pill">BUY</span></div>
+                    <strong>Daily candle confirmed</strong>
+                    <p>Email notification queued for delivery.</p>
+                </div>
+            </div>
+        </section>
+
+        <div class="market-strip" aria-label="Illustrative market ticker">
+            <div class="market-track">
+                <div class="market-item"><strong>S&amp;P 500</strong><span class="market-up">+0.72%</span></div>
+                <div class="market-item"><strong>NASDAQ</strong><span class="market-up">+1.14%</span></div>
+                <div class="market-item"><strong>BTC-USD</strong><span class="market-down">−0.36%</span></div>
+                <div class="market-item"><strong>AAPL</strong><span class="market-up">+0.48%</span></div>
+                <div class="market-item"><strong>NVDA</strong><span class="market-up">+2.84%</span></div>
+                <div class="market-item"><strong>EUR/USD</strong><span class="market-down">−0.11%</span></div>
+                <div class="market-item"><strong>S&amp;P 500</strong><span class="market-up">+0.72%</span></div>
+                <div class="market-item"><strong>NASDAQ</strong><span class="market-up">+1.14%</span></div>
+                <div class="market-item"><strong>BTC-USD</strong><span class="market-down">−0.36%</span></div>
+                <div class="market-item"><strong>AAPL</strong><span class="market-up">+0.48%</span></div>
+                <div class="market-item"><strong>NVDA</strong><span class="market-up">+2.84%</span></div>
+                <div class="market-item"><strong>EUR/USD</strong><span class="market-down">−0.11%</span></div>
+            </div>
+        </div>
+
+        <section id="platform" class="landing-section">
+            <div class="section-heading">
+                <div class="eyebrow">One market command center</div>
+                <h2>Less chart watching.<br>More signal clarity.</h2>
+                <p>StockWatch combines technical charts, repeatable alert rules, and durable delivery into one calm workspace built for investors who want to stay informed without staying glued to a screen.</p>
+            </div>
+
+            <div class="bento-grid">
+                <article class="feature-card large">
+                    <div class="feature-content">
+                        <span class="feature-number">01 / PATTERN ENGINE</span>
+                        <h3>Technical setups, continuously watched</h3>
+                        <p>Monitor bullish and bearish candlestick patterns across daily, weekly, and monthly candles without repeating the same chart routine.</p>
+                    </div>
+                    <div class="feature-visual signal-stack" aria-hidden="true">
+                        <div class="signal-chip"><span>NVDA · 1D</span><strong class="market-up">Bullish engulfing</strong></div>
+                        <div class="signal-chip"><span>MSFT · 1W</span><strong>Awaiting confirmation</strong></div>
+                        <div class="signal-chip"><span>TSLA · 1M</span><strong class="market-down">Bearish signal</strong></div>
+                    </div>
+                </article>
+
+                <article class="feature-card medium">
+                    <div class="feature-content">
+                        <span class="feature-number">02 / STRUCTURE</span>
+                        <h3>See the bigger wave</h3>
+                        <p>Explore weekly and monthly Elliott wave structures directly over the price chart.</p>
+                    </div>
+                    <div class="feature-visual wave-visual" aria-hidden="true">
+                        <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+                    </div>
+                </article>
+
+                <article class="feature-card third">
+                    <div class="feature-content">
+                        <span class="feature-number">03 / DELIVERY</span>
+                        <h3>Signals meet you in your inbox</h3>
+                        <p>Choose exactly which market, interval, pattern family, and direction should trigger an email.</p>
+                    </div>
+                </article>
+
+                <article class="feature-card third">
+                    <div class="feature-content">
+                        <span class="feature-number">04 / RESILIENCE</span>
+                        <h3>Downtime doesn’t erase the queue</h3>
+                        <p>After a restart, missed scheduled checks are recovered so overnight interruptions do not silently drop work.</p>
+                    </div>
+                    <div class="feature-visual recovery-timeline" aria-hidden="true">
+                        <span class="recovery-node">✓</span><span class="recovery-line"></span><span class="recovery-node">↻</span><span class="recovery-line"></span><span class="recovery-node">✓</span>
+                    </div>
+                </article>
+
+                <article class="feature-card third">
+                    <div class="feature-content">
+                        <span class="feature-number">05 / HISTORY</span>
+                        <h3>A clean audit trail</h3>
+                        <p>Review detected patterns, confidence, close price, and email delivery time for every tracked alert.</p>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="landing-section">
+            <div class="cta-panel">
+                <div class="eyebrow">Your market, always on</div>
+                <h2>Make every candle<br><span class="text-gradient">work for you.</span></h2>
+                <p>Create your account, find a stock or index, and turn the technical setups you care about into automated monitoring.</p>
+                <div class="hero-actions">
+                    <a th:href="@{/signup}" class="btn-accent large">Start monitoring <span class="button-arrow" aria-hidden="true">→</span></a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <a class="logo" th:href="@{/}">
+            <span class="logo-mark" aria-hidden="true"></span>
+            <span class="logo-word">StockWatch <span>24/7</span></span>
+        </a>
+        <span class="footer-tagline">Automated technical market monitoring.</span>
+        <span>© 2026 StockWatch 24/7</span>
+    </footer>
+</div>
 </body>
 </html>

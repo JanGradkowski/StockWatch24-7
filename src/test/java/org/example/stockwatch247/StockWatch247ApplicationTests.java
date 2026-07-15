@@ -1,10 +1,28 @@
 package org.example.stockwatch247;
 
+import org.example.stockwatch247.model.AlertEvent;
+import org.example.stockwatch247.model.AlertRule;
+import org.example.stockwatch247.model.StockAsset;
+import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.enums.AlertPatternFamily;
+import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.SignalStength;
+import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.model.enums.TradeSignal;
+import org.example.stockwatch247.repository.AlertEventRepository;
+import org.example.stockwatch247.repository.AlertRuleRepository;
+import org.example.stockwatch247.repository.StockAssetRepository;
+import org.example.stockwatch247.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -15,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 
 @SpringBootTest(properties = "alerts.schedule.enabled=false")
 @AutoConfigureMockMvc
@@ -22,6 +41,18 @@ class StockWatch247ApplicationTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private StockAssetRepository stockAssetRepository;
+
+    @Autowired
+    private AlertRuleRepository alertRuleRepository;
+
+    @Autowired
+    private AlertEventRepository alertEventRepository;
 
     @Test
     void contextLoads() {
@@ -66,6 +97,106 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("stock"))
                 .andExpect(model().attribute("symbol", "^GSPC"));
+    }
+
+    @Test
+    @Transactional
+    void groupedCompanyDashboardAndDynamicHistoryBoardRender() throws Exception {
+        String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
+        String symbol = "TST" + suffix;
+        String email = symbol.toLowerCase() + "@example.com";
+        User user = new User();
+        user.setEmail(email);
+        user.setPasswordHash("test-only-password-hash");
+        user.setFirstName("Board");
+        user.setLastName("Tester");
+        user.setVerified(true);
+        user = userRepository.save(user);
+
+        StockAsset stockAsset = new StockAsset();
+        stockAsset.setTickerSymbol(symbol);
+        stockAsset.setCompanyName("Grouped Board Test Company");
+        stockAsset.setExchange("NASDAQ");
+        stockAsset.setCurrency("USD");
+        stockAsset.setInstrumentType(InstrumentType.EQUITY);
+        stockAsset = stockAssetRepository.save(stockAsset);
+
+        AlertRule candleBuy = alertRule(user, stockAsset, TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY, CandlePattern.BULLISH_ENGULFING);
+        AlertRule elliottSell = alertRule(user, stockAsset, TimeInterval.MONTHLY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL, CandlePattern.ELLIOTT_BEARISH_CORRECTION);
+        candleBuy = alertRuleRepository.save(candleBuy);
+        alertRuleRepository.save(elliottSell);
+
+        AlertEvent event = new AlertEvent();
+        event.setAlertRule(candleBuy);
+        event.setPattern(CandlePattern.BULLISH_ENGULFING);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(1_752_019_200L);
+        event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
+        event.setConfidenceScore(88);
+        event.setConfidenceReasons(List.of(
+                "strict bullish candle-pattern geometry",
+                "RSI is rising versus the previous candle",
+                "volume is at least 20% above its 20-period average"
+        ));
+        event.setClosePrice(19.42);
+        event.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
+        event = alertEventRepository.save(event);
+
+        mockMvc.perform(get("/home").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("home"))
+                .andExpect(content().string(containsString("Grouped Board Test Company")))
+                .andExpect(content().string(containsString("Watched rules")));
+
+        mockMvc.perform(get("/alerts/{id}", candleBuy.getId()).with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("alert-history"))
+                .andExpect(content().string(containsString("Followed combinations")))
+                .andExpect(content().string(containsString("Candlestick")))
+                .andExpect(content().string(containsString("Elliott Wave")))
+                .andExpect(content().string(containsString("Bullish Engulfing")))
+                .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
+
+        mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("signal-detail"))
+                .andExpect(model().attributeExists("signal"))
+                .andExpect(content().string(containsString("Why this score")))
+                .andExpect(content().string(containsString("Confidence score 88 out of 100")))
+                .andExpect(content().string(containsString("strict bullish candle-pattern geometry")))
+                .andExpect(content().string(containsString("RSI is rising versus the previous candle")))
+                .andExpect(content().string(containsString("How the confidence score works")));
+
+        User otherUser = new User();
+        otherUser.setEmail("other-" + email);
+        otherUser.setPasswordHash("test-only-password-hash");
+        otherUser.setFirstName("Other");
+        otherUser.setLastName("Tester");
+        otherUser.setVerified(true);
+        userRepository.save(otherUser);
+
+        mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(otherUser.getEmail())))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string("{\"error\":\"Invalid request.\"}"));
+    }
+
+    private AlertRule alertRule(User user,
+                                StockAsset stockAsset,
+                                TimeInterval interval,
+                                AlertPatternFamily family,
+                                TradeSignal signal,
+                                CandlePattern pattern) {
+        AlertRule rule = new AlertRule();
+        rule.setUser(user);
+        rule.setStockAsset(stockAsset);
+        rule.setInterval(interval);
+        rule.setPatternFamily(family);
+        rule.setTradeSignal(signal);
+        rule.setTargetPattern(pattern);
+        rule.setActive(true);
+        return rule;
     }
 
 }

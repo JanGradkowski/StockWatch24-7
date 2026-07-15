@@ -25,8 +25,11 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -82,29 +85,135 @@ public class AlertRuleService {
     public List<TrackedAlertView> getActiveAlertViews(User user) {
         return alertRuleRepository.findByUserAndIsActiveTrueOrderByStockAsset_TickerSymbolAscIntervalAscPatternFamilyAscTradeSignalAsc(user)
                 .stream()
-                .map(rule -> new TrackedAlertView(
-                        rule.getId(),
-                        rule.getStockAsset().getTickerSymbol(),
-                        rule.getStockAsset().getCompanyName(),
-                        rule.getInterval(),
-                        intervalLabel(rule.getInterval()),
-                        rule.getPatternFamily(),
-                        familyLabel(rule.getPatternFamily()),
-                        rule.getTradeSignal(),
-                        alertEventRepository.countByAlertRule(rule)
-                ))
+                .map(rule -> toTrackedAlertView(rule, alertEventRepository.countByAlertRule(rule)))
+                .toList();
+    }
+
+    public List<TrackedCompanyView> getActiveCompanyViews(User user) {
+        List<AlertRule> activeRules = alertRuleRepository
+                .findByUserAndIsActiveTrueOrderByStockAsset_TickerSymbolAscIntervalAscPatternFamilyAscTradeSignalAsc(user);
+        Map<String, List<AlertRule>> rulesBySymbol = new LinkedHashMap<>();
+        for (AlertRule rule : activeRules) {
+            rulesBySymbol.computeIfAbsent(
+                    rule.getStockAsset().getTickerSymbol(),
+                    ignored -> new ArrayList<>()
+            ).add(rule);
+        }
+        return rulesBySymbol.values().stream()
+                .map(this::toTrackedCompanyView)
                 .toList();
     }
 
     public AlertRuleSignalHistory getSignalHistory(User user, Long alertRuleId) {
         AlertRule rule = alertRuleRepository.findByIdAndUserAndIsActiveTrue(alertRuleId, user)
                 .orElseThrow(() -> new IllegalArgumentException("Active alert rule not found."));
+        return toSignalHistory(rule);
+    }
+
+    public CompanySignalHistory getCompanySignalHistory(User user, Long alertRuleId) {
+        AlertRule selectedRule = alertRuleRepository.findByIdAndUserAndIsActiveTrue(alertRuleId, user)
+                .orElseThrow(() -> new IllegalArgumentException("Active alert rule not found."));
+        List<AlertRuleSignalHistory> columns = alertRuleRepository
+                .findByUserAndStockAssetAndIsActiveTrue(user, selectedRule.getStockAsset())
+                .stream()
+                .sorted(Comparator.comparing(AlertRule::getInterval)
+                        .thenComparing(AlertRule::getPatternFamily)
+                        .thenComparing(AlertRule::getTradeSignal))
+                .map(this::toSignalHistory)
+                .toList();
+        long totalEventCount = columns.stream()
+                .mapToLong(column -> column.events().size())
+                .sum();
+        return new CompanySignalHistory(
+                selectedRule.getStockAsset().getTickerSymbol(),
+                selectedRule.getStockAsset().getCompanyName(),
+                columns.size(),
+                totalEventCount,
+                columns
+        );
+    }
+
+    public SignalDetailView getSignalDetail(User user, Long alertEventId) {
+        AlertEvent event = alertEventRepository.findOwnedByIdAndUser(alertEventId, user)
+                .orElseThrow(() -> new IllegalArgumentException("Signal event not found."));
+        AlertRule rule = event.getAlertRule();
+        List<String> storedReasons = event.getConfidenceReasons();
+        List<SignalReasonView> reasons = new ArrayList<>();
+        for (int index = 0; index < storedReasons.size(); index++) {
+            String reason = storedReasons.get(index);
+            reasons.add(new SignalReasonView(
+                    index + 1,
+                    reasonCategory(reason),
+                    reason,
+                    isCautionReason(reason)
+            ));
+        }
+
+        return new SignalDetailView(
+                event.getId(),
+                rule.getId(),
+                rule.getStockAsset().getTickerSymbol(),
+                rule.getStockAsset().getCompanyName(),
+                rule.getInterval(),
+                intervalLabel(rule.getInterval()),
+                normalizeFamily(rule.getPatternFamily()),
+                familyLabel(rule.getPatternFamily()),
+                event.getPattern(),
+                patternLabel(event.getPattern()),
+                event.getTradeSignal(),
+                strengthLabel(event.getSignalStrength(), event.getConfidenceScore()),
+                confidenceBand(event.getConfidenceScore()),
+                event.getConfidenceScore(),
+                confidenceExplanation(event.getConfidenceScore()),
+                event.getSignalCandleTimestamp(),
+                signalDate(event.getSignalCandleTimestamp()),
+                event.getClosePrice(),
+                event.getSentAt(),
+                List.copyOf(reasons),
+                !reasons.isEmpty()
+        );
+    }
+
+    private AlertRuleSignalHistory toSignalHistory(AlertRule rule) {
         List<AlertEventView> events = alertEventRepository.findByAlertRuleOrderBySignalCandleTimestampDesc(rule)
                 .stream()
                 .map(this::toEventView)
                 .toList();
+        TrackedAlertView alert = toTrackedAlertView(rule, events.size());
+        return new AlertRuleSignalHistory(alert, events);
+    }
 
-        TrackedAlertView alert = new TrackedAlertView(
+    private TrackedCompanyView toTrackedCompanyView(List<AlertRule> rules) {
+        AlertRule representativeRule = rules.getFirst();
+        List<String> intervalLabels = rules.stream()
+                .map(rule -> intervalLabel(rule.getInterval()))
+                .distinct()
+                .toList();
+        List<String> familyLabels = rules.stream()
+                .map(rule -> familyLabel(rule.getPatternFamily()))
+                .distinct()
+                .toList();
+        List<TradeSignal> tradeSignals = rules.stream()
+                .map(AlertRule::getTradeSignal)
+                .distinct()
+                .toList();
+        long eventCount = rules.stream()
+                .mapToLong(alertEventRepository::countByAlertRule)
+                .sum();
+        return new TrackedCompanyView(
+                representativeRule.getId(),
+                representativeRule.getStockAsset().getTickerSymbol(),
+                representativeRule.getStockAsset().getCompanyName(),
+                rules.size(),
+                intervalLabels,
+                familyLabels,
+                tradeSignals,
+                eventCount
+        );
+    }
+
+    private TrackedAlertView toTrackedAlertView(AlertRule rule, long eventCount) {
+        return new TrackedAlertView(
                 rule.getId(),
                 rule.getStockAsset().getTickerSymbol(),
                 rule.getStockAsset().getCompanyName(),
@@ -113,9 +222,8 @@ public class AlertRuleService {
                 rule.getPatternFamily(),
                 familyLabel(rule.getPatternFamily()),
                 rule.getTradeSignal(),
-                events.size()
+                eventCount
         );
-        return new AlertRuleSignalHistory(alert, events);
     }
 
     @Transactional
@@ -377,7 +485,9 @@ public class AlertRuleService {
 
     private AlertEventView toEventView(AlertEvent event) {
         return new AlertEventView(
+                event.getId(),
                 event.getPattern(),
+                patternLabel(event.getPattern()),
                 event.getTradeSignal(),
                 event.getSignalStrength(),
                 event.getConfidenceScore(),
@@ -386,6 +496,111 @@ public class AlertRuleService {
                 event.getClosePrice(),
                 event.getSentAt()
         );
+    }
+
+    private String strengthLabel(SignalStength strength, Integer confidenceScore) {
+        if (strength != null) {
+            return switch (strength) {
+                case WEAK_IGNORE -> "Weak signal";
+                case HIGH_CONFIDENCE -> "High confidence";
+                case MEDIUM_CONFIDENCE -> "Medium confidence";
+                case LOW_CONFIDENCE -> "Low confidence";
+            };
+        }
+        return switch (confidenceBand(confidenceScore)) {
+            case "high" -> "High confidence";
+            case "medium" -> "Medium confidence";
+            case "low" -> "Low confidence";
+            default -> "Unrated";
+        };
+    }
+
+    private String confidenceBand(Integer confidenceScore) {
+        if (confidenceScore == null) {
+            return "unrated";
+        }
+        if (confidenceScore >= 85) {
+            return "high";
+        }
+        return confidenceScore >= 75 ? "medium" : "low";
+    }
+
+    private String confidenceExplanation(Integer confidenceScore) {
+        if (confidenceScore == null) {
+            return "This signal does not have a recorded confidence score.";
+        }
+        if (confidenceScore >= 85) {
+            return "High confidence (85-100): strong agreement across the detector's available evidence.";
+        }
+        if (confidenceScore >= 75) {
+            return "Medium confidence (75-84): the setup passed the calibrated threshold with some mixed evidence.";
+        }
+        return "Low confidence (below 75): the detector recorded weaker or incomplete evidence.";
+    }
+
+    private String reasonCategory(String reason) {
+        String normalized = reason.toLowerCase(Locale.ROOT);
+        if (containsAny(normalized, "calibrat", "precision", "backtest")) {
+            return "Calibration";
+        }
+        if (containsAny(normalized, "elliott", "wave", "pivot", "retracement", "fibonacci", "impulse", "correction")) {
+            return "Wave structure";
+        }
+        if (containsAny(normalized, "geometry", "body", "wick", "engulf", "doji", "hammer", "shooting star", "pattern")) {
+            return "Pattern geometry";
+        }
+        if (containsAny(normalized, "rsi", "ema", "momentum")) {
+            return "Momentum";
+        }
+        if (containsAny(normalized, "bollinger", "volatility")) {
+            return "Volatility";
+        }
+        if (normalized.contains("volume")) {
+            return "Volume";
+        }
+        if (containsAny(normalized, "trend", "pressure")) {
+            return "Trend context";
+        }
+        if (containsAny(normalized, "breakout", "breakdown", "close", "reversal", "price")) {
+            return "Price action";
+        }
+        return "Market context";
+    }
+
+    private boolean isCautionReason(String reason) {
+        String normalized = reason.toLowerCase(Locale.ROOT);
+        return containsAny(normalized,
+                "lowered confidence",
+                "below the calibrated",
+                "insufficient",
+                "not confirmed",
+                "without confirmation",
+                "weak evidence",
+                "missing data",
+                "penalty");
+    }
+
+    private boolean containsAny(String value, String... candidates) {
+        for (String candidate : candidates) {
+            if (value.contains(candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String patternLabel(CandlePattern pattern) {
+        if (pattern == null) {
+            return "Unknown pattern";
+        }
+        StringBuilder label = new StringBuilder();
+        for (String word : pattern.name().toLowerCase(Locale.ROOT).split("_")) {
+            if (!label.isEmpty()) {
+                label.append(' ');
+            }
+            label.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return label.toString();
     }
 
     private LocalDate signalDate(Long timestamp) {
@@ -408,14 +623,37 @@ public class AlertRuleService {
     ) {
     }
 
+    public record TrackedCompanyView(
+            Long representativeAlertId,
+            String symbol,
+            String companyName,
+            int ruleCount,
+            List<String> intervalLabels,
+            List<String> familyLabels,
+            List<TradeSignal> tradeSignals,
+            long eventCount
+    ) {
+    }
+
     public record AlertRuleSignalHistory(
             TrackedAlertView alert,
             List<AlertEventView> events
     ) {
     }
 
+    public record CompanySignalHistory(
+            String symbol,
+            String companyName,
+            int ruleCount,
+            long eventCount,
+            List<AlertRuleSignalHistory> columns
+    ) {
+    }
+
     public record AlertEventView(
+            Long id,
             CandlePattern pattern,
+            String patternLabel,
             TradeSignal tradeSignal,
             SignalStength strength,
             Integer confidenceScore,
@@ -423,6 +661,39 @@ public class AlertRuleService {
             LocalDate signalDate,
             Double closePrice,
             java.time.LocalDateTime sentAt
+    ) {
+    }
+
+    public record SignalDetailView(
+            Long id,
+            Long alertRuleId,
+            String symbol,
+            String companyName,
+            TimeInterval interval,
+            String intervalLabel,
+            AlertPatternFamily patternFamily,
+            String familyLabel,
+            CandlePattern pattern,
+            String patternLabel,
+            TradeSignal tradeSignal,
+            String strengthLabel,
+            String confidenceBand,
+            Integer confidenceScore,
+            String confidenceExplanation,
+            Long signalCandleTimestamp,
+            LocalDate signalDate,
+            Double closePrice,
+            java.time.LocalDateTime sentAt,
+            List<SignalReasonView> reasons,
+            boolean reasonsAvailable
+    ) {
+    }
+
+    public record SignalReasonView(
+            int order,
+            String category,
+            String text,
+            boolean caution
     ) {
     }
 }
