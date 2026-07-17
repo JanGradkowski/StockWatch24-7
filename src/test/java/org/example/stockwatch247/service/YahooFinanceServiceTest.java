@@ -9,6 +9,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -16,10 +18,14 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
@@ -59,6 +65,7 @@ class YahooFinanceServiceTest {
                         "exchangeName": "GER",
                         "fullExchangeName": "XETRA",
                         "shortName": "SAP SE",
+                        "dataGranularity": "1d",
                         "exchangeTimezoneName": "Europe/Berlin"
                       },
                       "timestamp": [%d, %d, %d],
@@ -138,6 +145,7 @@ class YahooFinanceServiceTest {
                         "fullExchangeName": "Warsaw",
                         "longName": "CD Projekt S.A.",
                         "shortName": "CDPROJEKT",
+                        "dataGranularity": "1d",
                         "exchangeTimezoneName": "Europe/Warsaw"
                       },
                       "timestamp": [%d],
@@ -197,6 +205,7 @@ class YahooFinanceServiceTest {
                         "fullExchangeName": "S&P Index",
                         "shortName": "S&P 500",
                         "instrumentType": "INDEX",
+                        "dataGranularity": "1wk",
                         "exchangeTimezoneName": "America/New_York"
                       },
                       "timestamp": [%d],
@@ -213,7 +222,12 @@ class YahooFinanceServiceTest {
                 }
                 """.formatted(timestamp);
 
-        server.expect(requestTo(containsString("/v8/finance/chart/%5EGSPC?")))
+        server.expect(requestTo(allOf(
+                        containsString("/v8/finance/chart/%5EGSPC?"),
+                        containsString("interval=1wk"),
+                        containsString("period1="),
+                        containsString("period2="),
+                        not(containsString("range=")))))
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         YahooFinanceService service = new YahooFinanceService(
                 restTemplate, new ObjectMapper(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
@@ -228,6 +242,119 @@ class YahooFinanceServiceTest {
                 "^GSPC".equals(asset.getTickerSymbol())
                         && "S&P 500".equals(asset.getCompanyName())
                         && asset.getInstrumentType() == InstrumentType.INDEX));
+        server.verify();
+    }
+
+    @Test
+    void historicalPageUsesPeriodBoundsInsteadOfARange() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("MSFT");
+        asset.setCompanyName("Microsoft Corporation");
+        asset.setExchange("NMS");
+        asset.setCurrency("USD");
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("MSFT")).thenReturn(Optional.of(asset));
+
+        long before = LocalDate.of(2026, 7, 11).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        long timestamp = LocalDate.of(2026, 7, 10).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        String response = """
+                {
+                  "chart": {
+                    "result": [{
+                      "meta": {
+                        "symbol": "MSFT",
+                        "currency": "USD",
+                        "exchangeName": "NMS",
+                        "shortName": "Microsoft Corporation",
+                        "dataGranularity": "1d",
+                        "exchangeTimezoneName": "America/New_York"
+                      },
+                      "timestamp": [%d],
+                      "indicators": {"quote": [{
+                        "open": [500.0],
+                        "high": [505.0],
+                        "low": [498.0],
+                        "close": [503.0],
+                        "volume": [18000000]
+                      }]}
+                    }],
+                    "error": null
+                  }
+                }
+                """.formatted(timestamp);
+
+        server.expect(request -> {
+                    String query = URLDecoder.decode(
+                            request.getURI().getRawQuery(), StandardCharsets.UTF_8);
+                    assertThat(query)
+                            .contains("interval=1d")
+                            .contains("period1=")
+                            .contains("period2=" + before)
+                            .doesNotContain("range=");
+                })
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        YahooFinanceService service = new YahooFinanceService(
+                restTemplate, new ObjectMapper(), stockAssetRepository,
+                "https://query1.finance.yahoo.com", true);
+
+        List<MarketDataBar> bars = service.getTimeSeriesBefore("MSFT", "1d", 2, before);
+
+        assertThat(bars).singleElement().satisfies(bar -> {
+            assertThat(bar.timestamp()).isLessThan(before);
+            assertThat(bar.close()).isEqualTo(503.0);
+        });
+        server.verify();
+    }
+
+    @Test
+    void rejectsMonthlyCandlesReturnedForAWeeklyRequest() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("^GSPC")).thenReturn(Optional.empty());
+
+        long timestamp = LocalDate.of(2026, 6, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        String response = """
+                {
+                  "chart": {
+                    "result": [{
+                      "meta": {
+                        "symbol": "^GSPC",
+                        "dataGranularity": "1mo",
+                        "exchangeTimezoneName": "America/New_York"
+                      },
+                      "timestamp": [%d],
+                      "indicators": {"quote": [{
+                        "open": [5900.0],
+                        "high": [6100.0],
+                        "low": [5800.0],
+                        "close": [6050.0],
+                        "volume": [3000000000]
+                      }]}
+                    }],
+                    "error": null
+                  }
+                }
+                """.formatted(timestamp);
+
+        server.expect(requestTo(allOf(
+                        containsString("/v8/finance/chart/%5EGSPC?"),
+                        containsString("interval=1wk"),
+                        containsString("period1="),
+                        containsString("period2="),
+                        not(containsString("range=")))))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+
+        YahooFinanceService service = new YahooFinanceService(
+                restTemplate, new ObjectMapper(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
+
+        assertThatThrownBy(() -> service.getTimeSeries("SPX", "1wk", 1000))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("returned 1mo candles")
+                .hasMessageContaining("when 1wk was requested");
+        verify(stockAssetRepository, never()).save(any(StockAsset.class));
         server.verify();
     }
 }

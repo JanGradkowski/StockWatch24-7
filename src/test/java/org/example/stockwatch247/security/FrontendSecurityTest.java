@@ -39,17 +39,30 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("data-check-family=\"ELLIOTT_WAVE\" data-check-interval=\"WEEKLY\" data-check-signal=\"BUY\""));
         assertTrue(stock.contains("data-check-family=\"ELLIOTT_WAVE\" data-check-interval=\"WEEKLY\" data-check-signal=\"SELL\""));
         assertTrue(stock.contains("patternFamily: button.dataset.checkFamily || 'CANDLESTICK'"));
-        assertTrue(stock.contains("/elliott-waves?interval="));
-        assertTrue(stock.contains("elliottSeries.setMarkers(markers)"));
+        assertTrue(stock.contains("refreshHistoricalElliottOverlays"));
+        assertTrue(stock.contains("series.setMarkers(structure.points"));
         assertTrue(stock.contains("await showCheckedElliottWave(payload.interval)"));
         assertTrue(stock.contains("alertInterval === 'WEEKLY' ? '1wk' : '1mo'"));
-        assertTrue(stock.contains("id=\"historicElliottBtn\""));
+        assertTrue(stock.contains("id=\"elliottOverlayToggle\""));
+        assertFalse(stock.contains("id=\"historicElliottBtn\""));
         assertTrue(stock.contains("/elliott-waves/history?interval="));
-        assertTrue(stock.contains("Daily Elliott waves are not supported."));
+        assertTrue(stock.contains("&from=${encodeURIComponent(oldestTimestamp)}"));
+        assertTrue(stock.contains("structure.structureId || elliottStructureFallbackId(structure)"));
         assertTrue(stock.contains("status.classList.add('error')"));
         assertTrue(stock.contains("setElliottConfirmationMarkers"));
         assertTrue(stock.contains("structure.confirmationTimestamp"));
-        assertTrue(stock.contains("quality ${overlay.qualityScore}/100"));
+        assertTrue(stock.contains("color: 'rgba(0, 0, 0, 0)'"));
+        assertFalse(stock.contains("lineVisible: false"));
+        assertTrue(stock.contains("elliottQualityWarnings(structure)"));
+        assertTrue(stock.contains("Quality range ${qualityMin}–${qualityMax}/100"));
+        assertTrue(stock.contains("structure.deepWaveTwo"));
+        assertTrue(stock.contains("structure.qualityWarnings"));
+        assertTrue(stock.contains("structure.impulseVariant === 'TRUNCATED_FIFTH'"));
+        assertTrue(stock.contains("structure.correctionVariant === 'EXPANDED_FLAT'"));
+        assertTrue(stock.contains("structure.correctionVariant === 'RUNNING_FLAT'"));
+        assertTrue(stock.contains("elliottPointMarkerText"));
+        assertTrue(stock.contains("Deep Wave II"));
+        assertTrue(stock.contains("reduced confidence"));
         assertTrue(stock.contains("id=\"instrumentTypeDisplay\""));
         assertTrue(stock.contains("instrumentType === 'INDEX'"));
 
@@ -57,6 +70,22 @@ class FrontendSecurityTest {
         assertTrue(navbar.contains("Search stocks or indexes"));
         assertTrue(navbar.contains("instrumentType === 'INDEX'"));
         assertTrue(navbar.contains("typeLabel.textContent"));
+        assertTrue(navbar.contains("/api/stocks/search/local?q="));
+        assertTrue(navbar.contains("new AbortController()"));
+        assertTrue(navbar.contains("setTimeout(() => runTickerSearch(query), 225)"));
+
+        assertTrue(stock.contains("const INITIAL_CANDLE_LIMIT = 1000"));
+        assertTrue(stock.contains("const INITIAL_VISIBLE_CANDLES = 150"));
+        assertTrue(stock.contains("const HISTORY_PAGE_LIMIT = 500"));
+        assertTrue(stock.contains("getVisibleLogicalRange()"));
+        assertTrue(stock.contains("candleSeries.barsInLogicalRange(range)"));
+        assertTrue(stock.contains("barsBefore < HISTORY_PREFETCH_THRESHOLD"));
+        assertTrue(stock.contains("pageMayHaveMore(page, data, INITIAL_CANDLE_LIMIT)"));
+        assertTrue(stock.contains("visibleLogicalRange.from + newCandles.length"));
+        assertTrue(stock.contains("scheduleViewportHistoryFill()"));
+        assertTrue(stock.contains("candleSeries.setData(globalCandleData.map(item => ({ ...item })))"));
+        assertFalse(stock.contains("setVisibleRange(visibleTimeRange)"));
+        assertFalse(stock.contains("timeScale().fitContent()"));
 
         int candlestickStart = stock.indexOf("<div class=\"alert-section-title\">Candlestick Patterns</div>");
         int elliottStart = stock.indexOf("<div class=\"alert-section-title\">Elliott Wave Patterns</div>");
@@ -78,6 +107,9 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("company.representativeAlertId()"));
         assertTrue(dashboard.contains("company.ruleCount()"));
         assertFalse(dashboard.contains("th:each=\"alert : ${activeAlerts}\""));
+        assertTrue(dashboard.contains("th:each=\"signal : ${latestSignals}\""));
+        assertTrue(dashboard.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
+        assertTrue(dashboard.contains("signal.confidenceScore()"));
 
         assertTrue(history.contains("th:each=\"column, columnStatus : ${history.columns()}\""));
         assertTrue(history.contains("column.alert().familyLabel()"));

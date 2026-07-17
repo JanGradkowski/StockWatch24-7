@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,6 +32,7 @@ import java.util.Set;
 
 @Service
 public class YahooFinanceService {
+    private static final long WEEKLY_LOOKBACK_BUFFER_CANDLES = 8L;
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
     private static final List<String> COMMON_EUROPEAN_SUFFIXES = List.of(
@@ -56,6 +58,23 @@ public class YahooFinanceService {
     }
 
     public List<MarketDataBar> getTimeSeries(String rawSymbol, String appInterval, int outputSize) {
+        return getTimeSeries(rawSymbol, appInterval, outputSize, null);
+    }
+
+    public List<MarketDataBar> getTimeSeriesBefore(String rawSymbol,
+                                                   String appInterval,
+                                                   int outputSize,
+                                                   long beforeExclusive) {
+        if (beforeExclusive <= 0L) {
+            throw new IllegalArgumentException("Invalid historical candle cursor.");
+        }
+        return getTimeSeries(rawSymbol, appInterval, outputSize, beforeExclusive);
+    }
+
+    private List<MarketDataBar> getTimeSeries(String rawSymbol,
+                                              String appInterval,
+                                              int outputSize,
+                                              Long beforeExclusive) {
         if (!enabled) {
             throw new IllegalStateException("Yahoo Finance fallback is disabled.");
         }
@@ -65,9 +84,12 @@ public class YahooFinanceService {
         Set<String> candidates = initialCandidates(symbol);
         for (String candidate : candidates) {
             try {
-                ParsedSeries series = requestSeries(candidate, appInterval, outputSize);
+                ParsedSeries series = requestSeries(candidate, appInterval, outputSize, beforeExclusive,
+                        beforeExclusive != null);
                 updateAssetMetadata(symbol, series.meta());
                 return series.bars();
+            } catch (UnexpectedGranularityException e) {
+                throw e;
             } catch (RuntimeException e) {
                 lastFailure = e;
             }
@@ -78,9 +100,12 @@ public class YahooFinanceService {
                 continue;
             }
             try {
-                ParsedSeries series = requestSeries(candidate, appInterval, outputSize);
+                ParsedSeries series = requestSeries(candidate, appInterval, outputSize, beforeExclusive,
+                        beforeExclusive != null);
                 updateAssetMetadata(symbol, series.meta());
                 return series.bars();
+            } catch (UnexpectedGranularityException e) {
+                throw e;
             } catch (RuntimeException e) {
                 lastFailure = e;
             }
@@ -91,9 +116,12 @@ public class YahooFinanceService {
                 continue;
             }
             try {
-                ParsedSeries series = requestSeries(candidate, appInterval, outputSize);
+                ParsedSeries series = requestSeries(candidate, appInterval, outputSize, beforeExclusive,
+                        beforeExclusive != null);
                 updateAssetMetadata(symbol, series.meta());
                 return series.bars();
+            } catch (UnexpectedGranularityException e) {
+                throw e;
             } catch (RuntimeException e) {
                 lastFailure = e;
             }
@@ -112,7 +140,7 @@ public class YahooFinanceService {
         Set<String> candidates = initialCandidates(symbol);
         for (String candidate : candidates) {
             try {
-                ParsedSeries series = requestSeries(candidate, "1d", 1);
+                ParsedSeries series = requestSeries(candidate, "1d", 1, null, false);
                 return updateAssetMetadata(symbol, series.meta());
             } catch (RuntimeException e) {
                 lastFailure = e;
@@ -124,7 +152,7 @@ public class YahooFinanceService {
                 continue;
             }
             try {
-                ParsedSeries series = requestSeries(candidate, "1d", 1);
+                ParsedSeries series = requestSeries(candidate, "1d", 1, null, false);
                 return updateAssetMetadata(symbol, series.meta());
             } catch (RuntimeException e) {
                 lastFailure = e;
@@ -136,7 +164,7 @@ public class YahooFinanceService {
                 continue;
             }
             try {
-                ParsedSeries series = requestSeries(candidate, "1d", 1);
+                ParsedSeries series = requestSeries(candidate, "1d", 1, null, false);
                 return updateAssetMetadata(symbol, series.meta());
             } catch (RuntimeException e) {
                 lastFailure = e;
@@ -146,12 +174,29 @@ public class YahooFinanceService {
         throw new IllegalStateException("Yahoo Finance has no metadata for " + symbol + ".", lastFailure);
     }
 
-    private ParsedSeries requestSeries(String symbol, String appInterval, int outputSize) {
+    private ParsedSeries requestSeries(String symbol,
+                                       String appInterval,
+                                       int outputSize,
+                                       Long beforeExclusive,
+                                       boolean allowEmpty) {
         String yahooInterval = toYahooInterval(appInterval);
-        URI uri = UriComponentsBuilder.fromUriString(baseUrl)
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromUriString(baseUrl)
                 .pathSegment("v8", "finance", "chart", symbol)
-                .queryParam("interval", yahooInterval)
-                .queryParam("range", rangeFor(yahooInterval))
+                .queryParam("interval", yahooInterval);
+        if (beforeExclusive != null || "1wk".equals(yahooInterval)) {
+            long period2 = beforeExclusive == null ? Instant.now().getEpochSecond() : beforeExclusive;
+            long requestedCandles = Math.max(1L, outputSize);
+            long lookbackDays = historicalLookbackDays(yahooInterval, requestedCandles);
+            long period1 = Instant.ofEpochSecond(period2)
+                    .minus(lookbackDays, ChronoUnit.DAYS)
+                    .getEpochSecond();
+            uriBuilder
+                    .queryParam("period1", period1)
+                    .queryParam("period2", period2);
+        } else {
+            uriBuilder.queryParam("range", rangeFor(yahooInterval));
+        }
+        URI uri = uriBuilder
                 .queryParam("events", "div,splits")
                 .queryParam("includeAdjustedClose", true)
                 .build()
@@ -171,9 +216,13 @@ public class YahooFinanceService {
 
         JsonNode result = results.get(0);
         JsonNode meta = result.path("meta");
+        validateReturnedGranularity(symbol, yahooInterval, meta);
         JsonNode timestamps = result.path("timestamp");
         JsonNode quotes = result.path("indicators").path("quote");
         if (!timestamps.isArray() || !quotes.isArray() || quotes.isEmpty()) {
+            if (allowEmpty) {
+                return new ParsedSeries(List.of(), meta);
+            }
             throw new IllegalStateException("Yahoo Finance returned no OHLC data for " + symbol + ".");
         }
 
@@ -213,6 +262,9 @@ public class YahooFinanceService {
             ));
         }
         if (bars.isEmpty()) {
+            if (allowEmpty) {
+                return new ParsedSeries(List.of(), meta);
+            }
             throw new IllegalStateException("Yahoo Finance returned only incomplete candles for " + symbol + ".");
         }
 
@@ -334,9 +386,30 @@ public class YahooFinanceService {
             case "1m" -> "7d";
             case "5m", "15m", "30m", "60m" -> "60d";
             case "1mo" -> "max";
-            case "1wk" -> "max";
             default -> "5y";
         };
+    }
+
+    private long historicalLookbackDays(String interval, long requestedCandles) {
+        return switch (interval) {
+            case "1wk" -> Math.multiplyExact(requestedCandles + WEEKLY_LOOKBACK_BUFFER_CANDLES, 7L);
+            case "1mo" -> Math.multiplyExact(requestedCandles + 4L, 35L);
+            case "1d" -> Math.addExact(Math.multiplyExact(requestedCandles, 2L), 30L);
+            default -> Math.addExact(requestedCandles, 7L);
+        };
+    }
+
+    private void validateReturnedGranularity(String symbol, String requestedInterval, JsonNode meta) {
+        if (!Set.of("1d", "1wk", "1mo").contains(requestedInterval)) {
+            return;
+        }
+        String returnedInterval = meta.path("dataGranularity").asText("").trim().toLowerCase(Locale.ROOT);
+        if (!requestedInterval.equals(returnedInterval)) {
+            String actual = returnedInterval.isBlank() ? "an unspecified interval" : returnedInterval;
+            throw new UnexpectedGranularityException(
+                    "Yahoo Finance returned " + actual + " candles for " + symbol
+                            + " when " + requestedInterval + " was requested.");
+        }
     }
 
     private long canonicalTimestamp(long timestamp, String interval, ZoneId exchangeZone) {
@@ -424,5 +497,11 @@ public class YahooFinanceService {
     }
 
     private record ParsedSeries(List<MarketDataBar> bars, JsonNode meta) {
+    }
+
+    private static final class UnexpectedGranularityException extends IllegalStateException {
+        private UnexpectedGranularityException(String message) {
+            super(message);
+        }
     }
 }

@@ -76,6 +76,12 @@ class StockWatch247ApplicationTests {
     }
 
     @Test
+    void missingFaviconReturnsNotFoundInsteadOfInternalServerError() throws Exception {
+        mockMvc.perform(get("/favicon.ico").with(user("favicon-test@example.com")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void authenticatedStateChangeWithoutCsrfTokenIsRejected() throws Exception {
         mockMvc.perform(post("/api/alerts/AAPL")
                         .with(user("security-test@example.com"))
@@ -147,8 +153,13 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(get("/home").with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("home"))
+                .andExpect(model().attributeExists("latestSignals"))
                 .andExpect(content().string(containsString("Grouped Board Test Company")))
-                .andExpect(content().string(containsString("Watched rules")));
+                .andExpect(content().string(containsString("Watched rules")))
+                .andExpect(content().string(containsString("Latest signals")))
+                .andExpect(content().string(containsString("Bullish Engulfing")))
+                .andExpect(content().string(containsString("Confidence 88 out of 100")))
+                .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 
         mockMvc.perform(get("/alerts/{id}", candleBuy.getId()).with(user(email)))
                 .andExpect(status().isOk())
@@ -176,6 +187,11 @@ class StockWatch247ApplicationTests {
         otherUser.setLastName("Tester");
         otherUser.setVerified(true);
         userRepository.save(otherUser);
+
+        mockMvc.perform(get("/home").with(user(otherUser.getEmail())))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        containsString("/alerts/signals/" + event.getId()))));
 
         mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(otherUser.getEmail())))
                 .andExpect(status().isBadRequest())

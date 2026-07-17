@@ -15,6 +15,7 @@ import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -147,6 +148,55 @@ class AlertRuleServiceTest {
         assertThat(maraView.intervalLabels()).containsExactly("1d", "1wk");
         assertThat(maraView.familyLabels()).containsExactly("Candlestick", "Elliott Wave");
         assertThat(maraView.tradeSignals()).containsExactly(TradeSignal.BUY, TradeSignal.SELL);
+    }
+
+    @Test
+    void latestSignalViewsReturnTheNewestActiveSignalsWithDashboardMetadata() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository);
+        User user = new User();
+        user.setEmail("latest-signals@example.com");
+        StockAsset mara = stock(1L, "MARA", "MARA Holdings, Inc.");
+        AlertRule weeklyBuy = rule(21L, user, mara, TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+
+        AlertEvent latest = new AlertEvent();
+        latest.setId(302L);
+        latest.setAlertRule(weeklyBuy);
+        latest.setPattern(CandlePattern.BULLISH_ENGULFING);
+        latest.setTradeSignal(TradeSignal.BUY);
+        latest.setSignalCandleTimestamp(1_752_019_200L);
+        latest.setConfidenceScore(88);
+        latest.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
+
+        when(alertEventRepository
+                .findByAlertRule_UserAndAlertRule_IsActiveTrueOrderBySentAtDescIdDesc(
+                        user,
+                        PageRequest.of(0, 8)
+                ))
+                .thenReturn(List.of(latest));
+
+        List<AlertRuleService.LatestSignalView> signals = service.getLatestSignalViews(user);
+
+        assertThat(signals).hasSize(1);
+        AlertRuleService.LatestSignalView signal = signals.getFirst();
+        assertThat(signal.id()).isEqualTo(302L);
+        assertThat(signal.symbol()).isEqualTo("MARA");
+        assertThat(signal.companyName()).isEqualTo("MARA Holdings, Inc.");
+        assertThat(signal.patternLabel()).isEqualTo("Bullish Engulfing");
+        assertThat(signal.familyLabel()).isEqualTo("Candlestick");
+        assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.BUY);
+        assertThat(signal.intervalLabel()).isEqualTo("1wk");
+        assertThat(signal.confidenceScore()).isEqualTo(88);
+        assertThat(signal.confidenceBand()).isEqualTo("high");
+        assertThat(signal.signalDate()).isNotNull();
+        assertThat(signal.sentAt()).isEqualTo(LocalDateTime.of(2025, 7, 8, 8, 15));
+        verify(alertEventRepository)
+                .findByAlertRule_UserAndAlertRule_IsActiveTrueOrderBySentAtDescIdDesc(
+                        user,
+                        PageRequest.of(0, 8)
+                );
     }
 
     @Test

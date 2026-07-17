@@ -9,9 +9,12 @@ import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -28,6 +31,7 @@ public class MarketDataService {
     private final long higherIntervalCooldownSeconds;
     private final long syncLeaseSeconds;
     private final MarketDataSyncCoordinator syncCoordinator;
+    private final MarketDataHistoryStateStore historyStateStore;
 
     @Autowired
     public MarketDataService(CandleRepository candleRepository,
@@ -35,6 +39,7 @@ public class MarketDataService {
                              TwelveDataService twelveDataService,
                              YahooFinanceService yahooFinanceService,
                              MarketDataSyncCoordinator syncCoordinator,
+                             MarketDataHistoryStateStore historyStateStore,
                              @Value("${market-data.refresh-cooldown.intraday-seconds:60}") long intradayCooldownSeconds,
                              @Value("${market-data.refresh-cooldown.daily-seconds:600}") long dailyCooldownSeconds,
                              @Value("${market-data.refresh-cooldown.higher-interval-seconds:3600}") long higherIntervalCooldownSeconds,
@@ -44,6 +49,7 @@ public class MarketDataService {
         this.twelveDataService = twelveDataService;
         this.yahooFinanceService = yahooFinanceService;
         this.syncCoordinator = syncCoordinator;
+        this.historyStateStore = historyStateStore;
         this.intradayCooldownSeconds = Math.max(0L, intradayCooldownSeconds);
         this.dailyCooldownSeconds = Math.max(0L, dailyCooldownSeconds);
         this.higherIntervalCooldownSeconds = Math.max(0L, higherIntervalCooldownSeconds);
@@ -121,6 +127,126 @@ public class MarketDataService {
         }
     }
 
+    public CandlePage loadCandlePage(String rawSymbol, String rawInterval, Long beforeTimestamp, int requestedLimit) {
+        String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        String interval = SecurityInputValidator.requireInterval(rawInterval);
+        Long before = SecurityInputValidator.requireBeforeTimestamp(beforeTimestamp);
+        int limit = Math.max(1, Math.min(1_000, requestedLimit));
+
+        CandleSyncResult syncResult;
+        if (before == null) {
+            syncResult = syncCandles(symbol, interval, null);
+        } else {
+            List<Candle> cached = queryDescending(symbol, interval, before, limit + 1);
+            if (cached.size() <= limit && !historyStateStore.isEndReached(symbol, interval)) {
+                long providerCursor = cached.isEmpty()
+                        ? before
+                        : cached.getLast().getTimestamp();
+                syncResult = syncHistoricalCandles(symbol, interval, providerCursor, limit);
+            } else {
+                syncResult = new CandleSyncResult(CandleSource.CACHE, 0, null);
+            }
+        }
+
+        List<Candle> descending = queryDescending(symbol, interval, before, limit + 1);
+        boolean moreCached = descending.size() > limit;
+        List<Candle> page = new ArrayList<>(descending.subList(0, Math.min(limit, descending.size())));
+        Collections.reverse(page);
+        boolean endReached = historyStateStore.isEndReached(symbol, interval);
+        boolean hasMore = moreCached || !endReached && (before != null || !page.isEmpty());
+        Long nextCursor = page.isEmpty() ? null : page.getFirst().getTimestamp();
+        return new CandlePage(List.copyOf(page), nextCursor, hasMore,
+                syncResult.source(), syncResult.failureMessage());
+    }
+
+    private List<Candle> queryDescending(String symbol, String interval, Long before, int limit) {
+        PageRequest page = PageRequest.of(0, limit);
+        return before == null
+                ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(symbol, interval, page)
+                : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                        symbol, interval, before, page);
+    }
+
+    private CandleSyncResult syncHistoricalCandles(String symbol,
+                                                   String interval,
+                                                   long beforeExclusive,
+                                                   int outputSize) {
+        String coordinationInterval = interval + "-history";
+        MarketDataSyncCoordinator.Claim claim = syncCoordinator.tryClaim(
+                symbol, coordinationInterval, 0L, syncLeaseSeconds);
+        if (!claim.acquired()) {
+            CandleSource source = claim.status() == MarketDataSyncCoordinator.ClaimStatus.IN_PROGRESS
+                    ? CandleSource.CACHE_REFRESH_IN_PROGRESS
+                    : CandleSource.CACHE;
+            return new CandleSyncResult(source, 0, null);
+        }
+
+        boolean successful = false;
+        try {
+            List<MarketDataBar> twelveDataBars = null;
+            List<MarketDataBar> yahooBars = null;
+            String twelveDataFailure = null;
+            String yahooFailure = null;
+            try {
+                twelveDataBars = historicalBarsBefore(twelveDataService.getTimeSeriesBefore(
+                        symbol, toTwelveDataInterval(interval), outputSize, beforeExclusive), beforeExclusive);
+            } catch (Exception twelveDataError) {
+                twelveDataFailure = twelveDataError.getMessage();
+            }
+
+            if (twelveDataBars == null || twelveDataBars.size() < outputSize) {
+                try {
+                    yahooBars = historicalBarsBefore(yahooFinanceService.getTimeSeriesBefore(
+                            symbol, interval, outputSize, beforeExclusive), beforeExclusive);
+                } catch (Exception yahooError) {
+                    yahooFailure = yahooError.getMessage();
+                }
+            }
+
+            if (twelveDataBars == null && yahooBars == null) {
+                String failure = "Twelve Data: " + twelveDataFailure
+                        + "; Yahoo Finance: " + yahooFailure;
+                return new CandleSyncResult(CandleSource.NONE, 0, failure);
+            }
+            if (twelveDataBars != null && twelveDataBars.isEmpty() && yahooBars == null) {
+                String failure = "Twelve Data returned no historical candles; Yahoo Finance: " + yahooFailure;
+                return new CandleSyncResult(CandleSource.NONE, 0, failure);
+            }
+
+            boolean useYahoo = yahooBars != null
+                    && (twelveDataBars == null || twelveDataBars.isEmpty()
+                    || yahooBars.size() > twelveDataBars.size());
+            List<MarketDataBar> historicalBars = useYahoo ? yahooBars : twelveDataBars;
+            CandleSource source = useYahoo ? CandleSource.YAHOO_FINANCE : CandleSource.TWELVE_DATA;
+            long oldestTimestamp = historicalBars.stream()
+                    .mapToLong(MarketDataBar::timestamp)
+                    .min()
+                    .orElse(beforeExclusive);
+            boolean endReached = historicalBars.size() < outputSize && yahooBars != null;
+            historyStateStore.recordProgress(symbol, interval, oldestTimestamp, endReached);
+
+            ensureAsset(symbol);
+            int persisted = persistChangedCandles(symbol, interval, historicalBars);
+            syncCoordinator.markSuccessful(claim);
+            successful = true;
+            return new CandleSyncResult(source, persisted, null);
+        } finally {
+            if (!successful) {
+                syncCoordinator.release(claim);
+            }
+        }
+    }
+
+    private List<MarketDataBar> historicalBarsBefore(List<MarketDataBar> bars, long beforeExclusive) {
+        Map<Long, MarketDataBar> uniqueByTimestamp = new LinkedHashMap<>();
+        if (bars != null) {
+            bars.stream()
+                    .filter(bar -> bar.timestamp() < beforeExclusive)
+                    .forEach(bar -> uniqueByTimestamp.put(bar.timestamp(), bar));
+        }
+        return List.copyOf(uniqueByTimestamp.values());
+    }
+
     private long getProviderCooldownSeconds(String interval) {
         return switch (interval) {
             case "1wk", "1mo" -> higherIntervalCooldownSeconds;
@@ -164,6 +290,9 @@ public class MarketDataService {
     }
 
     private int persistChangedCandles(String symbol, String interval, List<MarketDataBar> bars) {
+        if (bars.isEmpty()) {
+            return 0;
+        }
         List<Long> timestamps = bars.stream()
                 .map(MarketDataBar::timestamp)
                 .distinct()
@@ -227,5 +356,12 @@ public class MarketDataService {
         public boolean successful() {
             return source != CandleSource.NONE;
         }
+    }
+
+    public record CandlePage(List<Candle> candles,
+                             Long nextCursor,
+                             boolean hasMore,
+                             CandleSource source,
+                             String failureMessage) {
     }
 }

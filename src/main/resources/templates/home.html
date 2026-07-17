@@ -43,7 +43,8 @@
   </section>
 
   <div class="grid-layout">
-    <section class="glass-panel dashboard-panel">
+    <div class="dashboard-main-stack">
+      <section class="glass-panel dashboard-panel">
       <div class="panel-heading">
         <h2 class="panel-title">Company watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
         <span class="panel-meta">Open a company to see every followed rule</span>
@@ -94,9 +95,66 @@
           </a>
         </div>
       </div>
-    </section>
+      </section>
 
-    <aside class="glass-panel dashboard-panel">
+      <section class="glass-panel dashboard-panel latest-signals-panel" aria-labelledby="latest-signals-heading">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker">Fresh from the detector</div>
+            <h2 id="latest-signals-heading" class="panel-title">Latest signals <span class="panel-count" th:text="${#lists.size(latestSignals)}">0</span></h2>
+          </div>
+          <span class="panel-meta">Select a signal to explore its score</span>
+        </div>
+
+        <div th:if="${#lists.isEmpty(latestSignals)}" class="latest-signals-empty">
+          <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
+          <div>
+            <h3>No confirmed signals yet</h3>
+            <p>Your newest matches will appear here as soon as one of your active rules produces a confirmed signal.</p>
+          </div>
+        </div>
+
+        <div th:if="${!#lists.isEmpty(latestSignals)}">
+          <div class="latest-signal-head latest-signal-grid" aria-hidden="true">
+            <span>Signal</span><span>Company</span><span>Interval</span><span>Detected</span><span>Confidence</span><span></span>
+          </div>
+          <div class="latest-signal-list">
+            <a th:each="signal : ${latestSignals}"
+               th:href="@{/alerts/signals/{id}(id=${signal.id()})}"
+               class="latest-signal-row latest-signal-grid"
+               th:aria-label="${'Open ' + signal.patternLabel() + ' score report for ' + signal.symbol()}">
+              <div class="latest-signal-type">
+                <strong th:text="${signal.patternLabel()}">Bullish Engulfing</strong>
+                <div class="latest-signal-tags">
+                  <span class="latest-family-tag" th:text="${signal.familyLabel()}">Candlestick</span>
+                  <span class="latest-direction-tag"
+                        th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
+                        th:text="${signal.tradeSignal()}">BUY</span>
+                </div>
+              </div>
+              <div class="latest-company">
+                <strong th:text="${signal.symbol()}">MARA</strong>
+                <span th:text="${signal.companyName()}">MARA Holdings, Inc.</span>
+              </div>
+              <span class="latest-interval" th:text="${signal.intervalLabel()}">1wk</span>
+              <div class="latest-signal-date">
+                <time th:text="${signal.signalDate() != null ? #temporals.format(signal.signalDate(), 'dd MMM yyyy') : 'Date unavailable'}">08 Jul 2026</time>
+                <span th:text="${signal.sentAt() != null ? 'Recorded ' + #temporals.format(signal.sentAt(), 'HH:mm') : 'Time unavailable'}">Recorded 08:15</span>
+              </div>
+              <div class="latest-confidence"
+                   th:classappend="${' ' + signal.confidenceBand()}"
+                   th:attr="aria-label=${signal.confidenceScore() != null ? 'Confidence ' + signal.confidenceScore() + ' out of 100' : 'Confidence unavailable'}">
+                <strong th:text="${signal.confidenceScore() != null ? signal.confidenceScore() : '--'}">88</strong>
+                <span th:text="${signal.confidenceScore() != null ? '/100' : 'N/A'}">/100</span>
+              </div>
+              <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="glass-panel dashboard-panel system-pulse-panel">
       <div class="panel-heading">
         <h2 class="panel-title">System pulse</h2>
         <span class="panel-meta">Live</span>

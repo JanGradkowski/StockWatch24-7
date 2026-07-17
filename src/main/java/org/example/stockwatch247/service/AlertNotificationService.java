@@ -50,11 +50,9 @@ public class AlertNotificationService {
 
     public void sendSignalEmail(AlertRule rule, DetectedSignal signal) {
         boolean endOfWaveC = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
-                && (signal.pattern() == CandlePattern.ELLIOTT_BULLISH_CORRECTION
-                    || signal.pattern() == CandlePattern.ELLIOTT_BEARISH_CORRECTION);
+                && isElliottCorrection(signal.pattern());
         boolean endOfWaveV = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
-                && (signal.pattern() == CandlePattern.ELLIOTT_BULLISH_WAVE_V_END
-                    || signal.pattern() == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END);
+                && isElliottWaveVEnd(signal.pattern());
         String subject = endOfWaveC
                 ? "StockWatch Elliott wave C completed: " + signal.tradeSignal()
                     + " on " + rule.getStockAsset().getTickerSymbol()
@@ -105,6 +103,18 @@ public class AlertNotificationService {
         message.setSubject(subject);
         message.setText(body);
         send(message);
+    }
+
+    private boolean isElliottCorrection(CandlePattern pattern) {
+        return pattern != null
+                && pattern.name().startsWith("ELLIOTT_")
+                && pattern.name().endsWith("CORRECTION");
+    }
+
+    private boolean isElliottWaveVEnd(CandlePattern pattern) {
+        return pattern != null
+                && pattern.name().startsWith("ELLIOTT_")
+                && pattern.name().endsWith("WAVE_V_END");
     }
 
     String formatSignalTimestamp(long timestamp) {

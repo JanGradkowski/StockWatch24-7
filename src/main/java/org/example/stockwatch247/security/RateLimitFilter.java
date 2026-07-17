@@ -69,6 +69,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (isVerificationResend(request)) {
             return new Limit("verification-resend", 5, Duration.ofHours(1));
         }
+        if (path.equals("/api/stocks/search/local")) {
+            return new Limit("stock-search-local", 120, Duration.ofMinutes(1));
+        }
         if (path.startsWith("/api/stocks/search")) {
             return new Limit("stock-search", 30, Duration.ofMinutes(1));
         }

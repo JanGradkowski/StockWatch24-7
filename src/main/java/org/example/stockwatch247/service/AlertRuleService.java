@@ -19,6 +19,7 @@ import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -36,6 +37,7 @@ import java.util.Map;
 public class AlertRuleService {
     private static final int DEFAULT_SIGNAL_CANDLES = 5;
     private static final int HIGHER_INTERVAL_SIGNAL_CANDLES = 100;
+    private static final int DASHBOARD_LATEST_SIGNAL_LIMIT = 8;
 
     private final AlertRuleRepository alertRuleRepository;
     private final AlertEventRepository alertEventRepository;
@@ -101,6 +103,17 @@ public class AlertRuleService {
         }
         return rulesBySymbol.values().stream()
                 .map(this::toTrackedCompanyView)
+                .toList();
+    }
+
+    public List<LatestSignalView> getLatestSignalViews(User user) {
+        return alertEventRepository
+                .findByAlertRule_UserAndAlertRule_IsActiveTrueOrderBySentAtDescIdDesc(
+                        user,
+                        PageRequest.of(0, DASHBOARD_LATEST_SIGNAL_LIMIT)
+                )
+                .stream()
+                .map(this::toLatestSignalView)
                 .toList();
     }
 
@@ -223,6 +236,27 @@ public class AlertRuleService {
                 familyLabel(rule.getPatternFamily()),
                 rule.getTradeSignal(),
                 eventCount
+        );
+    }
+
+    private LatestSignalView toLatestSignalView(AlertEvent event) {
+        AlertRule rule = event.getAlertRule();
+        return new LatestSignalView(
+                event.getId(),
+                rule.getStockAsset().getTickerSymbol(),
+                rule.getStockAsset().getCompanyName(),
+                normalizeFamily(rule.getPatternFamily()),
+                familyLabel(rule.getPatternFamily()),
+                event.getPattern(),
+                patternLabel(event.getPattern()),
+                event.getTradeSignal(),
+                rule.getInterval(),
+                intervalLabel(rule.getInterval()),
+                event.getConfidenceScore(),
+                confidenceBand(event.getConfidenceScore()),
+                event.getSignalCandleTimestamp(),
+                signalDate(event.getSignalCandleTimestamp()),
+                event.getSentAt()
         );
     }
 
@@ -468,19 +502,13 @@ public class AlertRuleService {
     }
 
     private boolean isElliottPattern(CandlePattern pattern) {
-        return pattern == CandlePattern.ELLIOTT_BULLISH_IMPULSE
-                || pattern == CandlePattern.ELLIOTT_BEARISH_IMPULSE
-                || pattern == CandlePattern.ELLIOTT_BULLISH_WAVE_V_END
-                || pattern == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END
-                || pattern == CandlePattern.ELLIOTT_BULLISH_CORRECTION
-                || pattern == CandlePattern.ELLIOTT_BEARISH_CORRECTION;
+        return pattern != null && pattern.name().startsWith("ELLIOTT_");
     }
 
     private boolean isActionableElliottTurningPoint(DetectedSignal signal) {
-        return signal.pattern() == CandlePattern.ELLIOTT_BULLISH_WAVE_V_END
-                || signal.pattern() == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END
-                || signal.pattern() == CandlePattern.ELLIOTT_BULLISH_CORRECTION
-                || signal.pattern() == CandlePattern.ELLIOTT_BEARISH_CORRECTION;
+        CandlePattern pattern = signal.pattern();
+        return isElliottPattern(pattern)
+                && (pattern.name().endsWith("WAVE_V_END") || pattern.name().endsWith("CORRECTION"));
     }
 
     private AlertEventView toEventView(AlertEvent event) {
@@ -577,6 +605,7 @@ public class AlertRuleService {
                 "without confirmation",
                 "weak evidence",
                 "missing data",
+                "confidence reduced",
                 "penalty");
     }
 
@@ -632,6 +661,25 @@ public class AlertRuleService {
             List<String> familyLabels,
             List<TradeSignal> tradeSignals,
             long eventCount
+    ) {
+    }
+
+    public record LatestSignalView(
+            Long id,
+            String symbol,
+            String companyName,
+            AlertPatternFamily patternFamily,
+            String familyLabel,
+            CandlePattern pattern,
+            String patternLabel,
+            TradeSignal tradeSignal,
+            TimeInterval interval,
+            String intervalLabel,
+            Integer confidenceScore,
+            String confidenceBand,
+            Long signalCandleTimestamp,
+            LocalDate signalDate,
+            java.time.LocalDateTime sentAt
     ) {
     }
 

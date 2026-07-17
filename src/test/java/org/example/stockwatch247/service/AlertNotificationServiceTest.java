@@ -92,11 +92,11 @@ class AlertNotificationServiceTest {
         rule.setPatternFamily(AlertPatternFamily.ELLIOTT_WAVE);
         rule.setTradeSignal(TradeSignal.BUY);
         DetectedSignal signal = new DetectedSignal(
-                CandlePattern.ELLIOTT_BULLISH_CORRECTION,
+                CandlePattern.ELLIOTT_BULLISH_EXPANDED_FLAT_CORRECTION,
                 TradeSignal.BUY,
                 SignalStength.HIGH_CONFIDENCE,
                 88,
-                List.of("wave C ended with bullish reversal confirmation"),
+                List.of("expanded-flat wave C ended with bullish reversal confirmation"),
                 1_789_000_000L,
                 195.25);
 
@@ -128,11 +128,11 @@ class AlertNotificationServiceTest {
         rule.setPatternFamily(AlertPatternFamily.ELLIOTT_WAVE);
         rule.setTradeSignal(TradeSignal.SELL);
         DetectedSignal signal = new DetectedSignal(
-                CandlePattern.ELLIOTT_BULLISH_WAVE_V_END,
+                CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END,
                 TradeSignal.SELL,
                 SignalStength.HIGH_CONFIDENCE,
                 88,
-                List.of("bullish wave V ended"),
+                List.of("bullish wave V ended as a truncated fifth"),
                 1_789_000_000L,
                 195.25);
 

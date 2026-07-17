@@ -48,19 +48,21 @@ public class ChartController {
     }
 
     @GetMapping("/{symbol}/candles")
-    public List<CandleResponse> getHistoricalCandles(
+    public CandlePageResponse getHistoricalCandles(
             @PathVariable String symbol,
             @RequestParam(defaultValue = "1d") String interval,
-            @RequestParam(required = false) Long before) {
+            @RequestParam(required = false) Long before,
+            @RequestParam(defaultValue = "1000") int limit) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
         interval = SecurityInputValidator.requireInterval(interval);
         before = SecurityInputValidator.requireBeforeTimestamp(before);
-        marketDataService.syncCandles(symbol, interval, before);
-        List<Candle> candles = before == null
-                ? candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, interval)
-                : candleRepository.findTop100BySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(symbol, interval, before);
-        java.util.Collections.reverse(candles);
-        return candles.stream().map(CandleResponse::from).toList();
+        MarketDataService.CandlePage page = marketDataService.loadCandlePage(symbol, interval, before, limit);
+        return new CandlePageResponse(
+                page.candles().stream().map(CandleResponse::from).toList(),
+                page.nextCursor(),
+                page.hasMore(),
+                page.source().name(),
+                page.failureMessage());
     }
 
     @GetMapping("/{symbol}/live")
@@ -86,8 +88,10 @@ public class ChartController {
         var structure = elliottWaveDetectionService
                 .findLatestWaveStructure(enrichmentService.enrich(candles, 100));
         if (structure.isEmpty()) {
-            return new ElliottWaveOverlay(validatedInterval, labelStyle(validatedInterval), null,
-                    false, List.of(), null, 0);
+            return new ElliottWaveOverlay(validatedInterval, labelStyle(validatedInterval), "none", null,
+                    false, List.of(), null, 0, 0.0, false, 0.0, 0.0,
+                    ElliottWaveDetectionService.ImpulseVariant.STANDARD,
+                    ElliottWaveDetectionService.CorrectionVariant.NONE, 0.0, 0.0, List.of());
         }
 
         ElliottWaveDetectionService.ElliottWaveStructure detected = structure.get();
@@ -101,36 +105,44 @@ public class ChartController {
         return new ElliottWaveOverlay(
                 validatedInterval,
                 labelStyle(validatedInterval),
+                structureId(detected),
                 detected.direction(),
                 detected.correctionComplete(),
                 points,
                 detected.confirmationTimestamp(),
-                detected.qualityScore());
+                detected.qualityScore(),
+                detected.waveTwoRetracement(),
+                detected.deepWaveTwo(),
+                detected.waveThreeToOneRatio(),
+                detected.waveFourRetracement(),
+                detected.impulseVariant(),
+                detected.correctionVariant(),
+                detected.correctionRetracement(),
+                detected.waveCToARatio(),
+                detected.qualityWarnings());
     }
 
     @GetMapping("/{symbol}/elliott-waves/history")
     public ElliottWaveHistoryOverlay getHistoricalElliottWaves(@PathVariable String symbol,
-                                                               @RequestParam String interval) {
+                                                               @RequestParam String interval,
+                                                               @RequestParam(required = false) Long from) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
+        from = SecurityInputValidator.requireBeforeTimestamp(from);
         if (!"1wk".equals(validatedInterval) && !"1mo".equals(validatedInterval)) {
             throw new IllegalArgumentException("Historical Elliott Waves require a weekly or monthly interval.");
         }
-        MarketDataService.CandleSyncResult syncResult = marketDataService.syncCandles(symbol, validatedInterval, null);
-        if (!syncResult.successful()) {
-            throw new IllegalStateException("Candle refresh failed.");
-        }
-
-        List<Candle> cachedCandles = candleRepository
-                .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval);
-        int firstIndex = Math.max(0, cachedCandles.size() - 2_000);
-        List<Candle> candles = List.copyOf(cachedCandles.subList(firstIndex, cachedCandles.size()));
+        List<Candle> candles = from == null
+                ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval)
+                : candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+                        symbol, validatedInterval, from);
         List<ElliottWaveOverlay> structures = elliottWaveDetectionService
                 .findHistoricalWaveStructures(enrichmentService.enrich(candles, candles.size()))
                 .stream()
                 .map(structure -> new ElliottWaveOverlay(
                         validatedInterval,
                         labelStyle(validatedInterval),
+                        structureId(structure),
                         structure.direction(),
                         structure.correctionComplete(),
                         structure.points().stream()
@@ -141,18 +153,32 @@ public class ChartController {
                                         point.pivotType()))
                                 .toList(),
                         structure.confirmationTimestamp(),
-                        structure.qualityScore()))
+                        structure.qualityScore(),
+                        structure.waveTwoRetracement(),
+                        structure.deepWaveTwo(),
+                        structure.waveThreeToOneRatio(),
+                        structure.waveFourRetracement(),
+                        structure.impulseVariant(),
+                        structure.correctionVariant(),
+                        structure.correctionRetracement(),
+                        structure.waveCToARatio(),
+                        structure.qualityWarnings()))
                 .toList();
         return new ElliottWaveHistoryOverlay(
                 validatedInterval,
                 labelStyle(validatedInterval),
-                candles.stream().map(CandleResponse::from).toList(),
+                from,
                 structures);
     }
 
     @GetMapping("/search")
     public List<Map<String, Object>> searchTickers(@RequestParam String q) {
         return twelveDataService.searchSymbols(SecurityInputValidator.requireSearchQuery(q));
+    }
+
+    @GetMapping("/search/local")
+    public List<Map<String, Object>> searchLocalTickers(@RequestParam String q) {
+        return twelveDataService.searchLocalSymbols(SecurityInputValidator.requireSearchQuery(q));
     }
 
     @GetMapping("/{symbol}/meta")
@@ -192,21 +218,44 @@ public class ChartController {
         return "1wk".equals(interval) ? "LOWERCASE" : "UPPERCASE";
     }
 
+    private String structureId(ElliottWaveDetectionService.ElliottWaveStructure structure) {
+        ElliottWaveDetectionService.ElliottWavePoint first = structure.points().getFirst();
+        ElliottWaveDetectionService.ElliottWavePoint last = structure.points().getLast();
+        return structure.direction() + ':' + first.timestamp() + ':' + last.label() + ':' + last.timestamp();
+    }
+
     public record ElliottWavePointView(String label, Long timestamp, double price, String pivotType) {
+    }
+
+    public record CandlePageResponse(List<CandleResponse> candles,
+                                     Long nextCursor,
+                                     boolean hasMore,
+                                     String source,
+                                     String failureMessage) {
     }
 
     public record ElliottWaveOverlay(String interval,
                                      String labelStyle,
+                                     String structureId,
                                      String direction,
                                      boolean correctionComplete,
                                      List<ElliottWavePointView> points,
                                      Long confirmationTimestamp,
-                                     int qualityScore) {
+                                     int qualityScore,
+                                     double waveTwoRetracement,
+                                     boolean deepWaveTwo,
+                                     double waveThreeToOneRatio,
+                                     double waveFourRetracement,
+                                     ElliottWaveDetectionService.ImpulseVariant impulseVariant,
+                                     ElliottWaveDetectionService.CorrectionVariant correctionVariant,
+                                     double correctionRetracement,
+                                     double waveCToARatio,
+                                     List<String> qualityWarnings) {
     }
 
     public record ElliottWaveHistoryOverlay(String interval,
                                              String labelStyle,
-                                             List<CandleResponse> candles,
+                                             Long fromTimestamp,
                                              List<ElliottWaveOverlay> structures) {
     }
 }

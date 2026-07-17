@@ -66,6 +66,10 @@ public final class MarketIndexCatalog {
         return symbol.startsWith("^") || BY_SYMBOL.containsKey(symbol);
     }
 
+    public static List<IndexDefinition> all() {
+        return INDEXES;
+    }
+
     public static List<IndexDefinition> search(String rawQuery) {
         String query = searchKey(rawQuery);
         if (query.isBlank()) {

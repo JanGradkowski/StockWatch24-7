@@ -44,7 +44,7 @@
       <div class="button-group">
         <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line">Line</button>
         <button id="candleBtn" type="button" class="view-toggle active" data-chart-mode="candle">Candles</button>
-        <button id="historicElliottBtn" type="button" class="view-toggle">Historic Elliott waves</button>
+        <button id="elliottOverlayToggle" type="button" class="view-toggle" aria-pressed="false" disabled>Elliott overlays</button>
       </div>
     </div>
     <div class="toolbar-cluster">
@@ -140,10 +140,21 @@
   }
 
   let priceChart, volumeChart;
-  let lineSeries, candleSeries, volumeSeries, elliottSeries, elliottConfirmationSeries;
+  const INITIAL_CANDLE_LIMIT = 1000;
+  const INITIAL_VISIBLE_CANDLES = 150;
+  const HISTORY_PAGE_LIMIT = 500;
+  const HISTORY_PREFETCH_THRESHOLD = 120;
+
+  let lineSeries, candleSeries, volumeSeries, elliottConfirmationSeries;
   let historicalElliottSeries = [];
   let currentMode = 'candle';
   let currentInterval = '1d';
+  let elliottOverlaysEnabled = true;
+  let chartLoadController = null;
+  let chartRequestSequence = 0;
+  let elliottRequestSequence = 0;
+  let historyRetryTimer = null;
+  let historyRetryAttempts = 0;
 
   let isFetching = false;
   let isLoadingOlder = false;
@@ -181,9 +192,9 @@
       });
 
       priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        volumeChart.timeScale().setVisibleLogicalRange(range);
-        if (range && range.from < 10 && !isLoadingOlder && hasMoreHistory) {
-          loadOlderData();
+        maybeLoadOlderForVisibleRange(range);
+        if (range) {
+          volumeChart.timeScale().setVisibleLogicalRange(range);
         }
       });
 
@@ -195,15 +206,11 @@
         borderVisible: false
       });
       lineSeries = priceChart.addLineSeries({ color: '#b7f34a', lineWidth: 2, crosshairMarkerVisible: true });
-      elliottSeries = priceChart.addLineSeries({
-        color: '#8d7dff',
-        lineWidth: 2,
-        crosshairMarkerVisible: false,
-        lastValueVisible: false,
-        priceLineVisible: false
-      });
       elliottConfirmationSeries = priceChart.addLineSeries({
-        lineVisible: false,
+        // This series exists only to anchor confirmation markers. Lightweight
+        // Charts 4 ignores lineVisible on a line series, so use a fully
+        // transparent color to prevent it connecting sparse confirmations.
+        color: 'rgba(0, 0, 0, 0)',
         crosshairMarkerVisible: false,
         lastValueVisible: false,
         priceLineVisible: false
@@ -241,7 +248,9 @@
   }
 
   async function loadChartData(interval) {
-    if (isFetching) return;
+    const requestId = ++chartRequestSequence;
+    if (chartLoadController) chartLoadController.abort();
+    chartLoadController = new AbortController();
     isFetching = true;
 
     globalCandleData = [];
@@ -250,63 +259,102 @@
     seenDates.clear();
     hasMoreHistory = true;
     oldestTimestamp = null;
-    clearHistoricalElliottSeries();
-    if (elliottConfirmationSeries) {
-      elliottConfirmationSeries.setData([]);
-      elliottConfirmationSeries.setMarkers([]);
-    }
+    clearTimeout(historyRetryTimer);
+    historyRetryTimer = null;
+    historyRetryAttempts = 0;
+    elliottRequestSequence++;
+    clearElliottOverlays();
+    updateElliottOverlayToggle();
 
     try {
       document.querySelector('.ticker-name').nextElementSibling.innerText = `Loading ${interval} data...`;
 
-      const response = await fetch(`/api/stocks/${encodedTicker}/candles?interval=${encodeURIComponent(interval)}`);
+      const response = await fetch(`/api/stocks/${encodedTicker}/candles?interval=${encodeURIComponent(interval)}&limit=${INITIAL_CANDLE_LIMIT}`, {
+        signal: chartLoadController.signal
+      });
       if (!response.ok) throw new Error("HTTP error");
-      const data = await response.json();
+      const page = normaliseCandlePage(await response.json());
+      if (requestId !== chartRequestSequence || currentInterval !== interval) return;
+      const data = page.candles;
 
       if (!data || data.length === 0) {
-        document.querySelector('.ticker-name').nextElementSibling.innerText = `No historical data found.`;
+        document.querySelector('.ticker-name').nextElementSibling.innerText = page.failureMessage || 'No historical data found.';
+        hasMoreHistory = false;
         return;
       }
 
-      oldestTimestamp = data[0].timestamp;
+      oldestTimestamp = page.nextCursor ?? data[0].timestamp;
+      hasMoreHistory = pageMayHaveMore(page, data, INITIAL_CANDLE_LIMIT);
       processAndSetData(data, false);
+      showNewestCandles(INITIAL_VISIBLE_CANDLES);
       updatePriceHeaderFromLatestCandle();
-      await loadElliottOverlay(interval);
+      await refreshHistoricalElliottOverlays(interval);
 
       const intervalNames = {'1d': 'Daily Interval', '1wk': 'Weekly Interval', '1mo': 'Monthly Interval'};
       document.querySelector('.ticker-name').nextElementSibling.innerText = intervalNames[interval];
 
     } catch (err) {
+      if (err.name === 'AbortError') return;
       console.error("Data load error:", err);
       document.querySelector('.ticker-name').nextElementSibling.innerText = `Failed to load chart data`;
     } finally {
-      isFetching = false;
+      if (requestId === chartRequestSequence) {
+        isFetching = false;
+        chartLoadController = null;
+      }
     }
   }
 
   async function loadOlderData() {
     if (isLoadingOlder || !oldestTimestamp || !hasMoreHistory) return;
     isLoadingOlder = true;
+    const requestedInterval = currentInterval;
+    const requestedCursor = oldestTimestamp;
+    let pageAdvanced = false;
 
     try {
-      const response = await fetch(`/api/stocks/${encodedTicker}/candles?interval=${encodeURIComponent(currentInterval)}&before=${encodeURIComponent(oldestTimestamp)}`);
+      const response = await fetch(`/api/stocks/${encodedTicker}/candles?interval=${encodeURIComponent(requestedInterval)}&before=${encodeURIComponent(requestedCursor)}&limit=${HISTORY_PAGE_LIMIT}`);
       if (!response.ok) throw new Error("HTTP error");
-      const data = await response.json();
+      const page = normaliseCandlePage(await response.json());
+      if (currentInterval !== requestedInterval || oldestTimestamp !== requestedCursor) return;
+      const data = page.candles;
 
       if (data && data.length > 0) {
-        oldestTimestamp = data[0].timestamp;
+        clearTimeout(historyRetryTimer);
+        historyRetryTimer = null;
+        historyRetryAttempts = 0;
+        const nextCursor = page.nextCursor ?? data[0].timestamp;
+        if (!Number.isFinite(nextCursor) || nextCursor >= requestedCursor) {
+          throw new Error("Historical candle cursor did not move backwards");
+        }
+        oldestTimestamp = nextCursor;
+        pageAdvanced = true;
+        hasMoreHistory = pageMayHaveMore(page, data, HISTORY_PAGE_LIMIT);
         processAndSetData(data, true);
+        await refreshHistoricalElliottOverlays(requestedInterval);
       } else {
-        hasMoreHistory = false;
+        hasMoreHistory = Boolean(page.hasMore);
+        if (hasMoreHistory && page.source === 'CACHE_REFRESH_IN_PROGRESS') {
+          scheduleHistoryRetry(requestedInterval, requestedCursor);
+        }
       }
     } catch(e) {
       console.error("Pagination error:", e);
     } finally {
       isLoadingOlder = false;
+      if (pageAdvanced && hasMoreHistory) {
+        scheduleViewportHistoryFill();
+      }
     }
   }
 
   function processAndSetData(rawData, isPrepend) {
+    // Logical coordinates retain whitespace outside the first loaded candle.
+    // A time range is clamped to the old first date and would hide every page
+    // just prepended to the chart.
+    const visibleLogicalRange = isPrepend
+            ? priceChart.timeScale().getVisibleLogicalRange()
+            : null;
     // A full replacement contains dates from the current page, so rebuild the
     // deduplication state instead of filtering those candles out as duplicates.
     if (!isPrepend) {
@@ -361,117 +409,186 @@
     }
 
     try {
-      candleSeries.setData(globalCandleData);
-      lineSeries.setData(globalLineData);
-      volumeSeries.setData(globalVolumeData);
+      // Lightweight Charts normalises string dates in-place. Give the library
+      // copies so our pagination arrays keep one stable YYYY-MM-DD type across
+      // every prepend and can still be sorted/deduplicated reliably.
+      candleSeries.setData(globalCandleData.map(item => ({ ...item })));
+      lineSeries.setData(globalLineData.map(item => ({ ...item })));
+      volumeSeries.setData(globalVolumeData.map(item => ({ ...item })));
     } catch (err) {
       console.error("TradingView setData Crash:", err);
     }
 
-    if (!isPrepend) priceChart.timeScale().fitContent();
+    if (visibleLogicalRange && newCandles.length > 0) {
+      priceChart.timeScale().setVisibleLogicalRange({
+        from: visibleLogicalRange.from + newCandles.length,
+        to: visibleLogicalRange.to + newCandles.length
+      });
+    }
   }
 
-  async function loadElliottOverlay(interval) {
+  function maybeLoadOlderForVisibleRange(range) {
+    if (!range || isFetching || isLoadingOlder || !hasMoreHistory || !candleSeries) return;
+
+    // This is Lightweight Charts' supported infinite-history signal. Unlike
+    // comparing raw logical indexes, barsBefore remains correct when another
+    // series changes the chart's shared time scale.
+    const barsInfo = candleSeries.barsInLogicalRange(range);
+    const barsBefore = barsInfo?.barsBefore;
+    if ((Number.isFinite(barsBefore) && barsBefore < HISTORY_PREFETCH_THRESHOLD)
+            || (!Number.isFinite(barsBefore) && range.from < HISTORY_PREFETCH_THRESHOLD)) {
+      void loadOlderData();
+    }
+  }
+
+  function pageMayHaveMore(page, data, pageLimit) {
+    // A full page is enough evidence to try the next cursor even if an older
+    // server or stale cache omitted/incorrectly reported the hasMore flag. One
+    // final empty request safely switches pagination off at the true beginning.
+    return Boolean(page.hasMore) || data.length >= pageLimit;
+  }
+
+  function scheduleViewportHistoryFill() {
+    requestAnimationFrame(() => {
+      if (!priceChart) return;
+      maybeLoadOlderForVisibleRange(priceChart.timeScale().getVisibleLogicalRange());
+    });
+  }
+
+  function scheduleHistoryRetry(interval, cursor) {
+    if (historyRetryAttempts >= 4) return;
+    clearTimeout(historyRetryTimer);
+    const delay = 500 * (2 ** historyRetryAttempts);
+    historyRetryAttempts++;
+    historyRetryTimer = setTimeout(() => {
+      historyRetryTimer = null;
+      if (currentInterval === interval && oldestTimestamp === cursor && hasMoreHistory) {
+        loadOlderData();
+      }
+    }, delay);
+  }
+
+  function showNewestCandles(count) {
+    if (!priceChart || globalCandleData.length === 0) return;
+    const lastIndex = globalCandleData.length - 1;
+    priceChart.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, globalCandleData.length - count),
+      to: lastIndex + 4
+    });
+  }
+
+  async function refreshHistoricalElliottOverlays(interval) {
+    const requestId = ++elliottRequestSequence;
     const status = document.getElementById('elliottOverlayStatus');
-    status.classList.remove('error');
-    clearHistoricalElliottSeries();
-    elliottSeries.setData([]);
-    elliottSeries.setMarkers([]);
-    elliottConfirmationSeries.setData([]);
-    elliottConfirmationSeries.setMarkers([]);
-    if (interval !== '1wk' && interval !== '1mo') {
+    status.classList.remove('error', 'warning');
+    clearElliottOverlays();
+    if (!elliottOverlaysEnabled || (interval !== '1wk' && interval !== '1mo')) {
       status.textContent = '';
       return;
     }
 
-    status.textContent = 'Analysing Elliott Wave structure...';
+    status.textContent = 'Analysing Elliott Wave structures in the loaded range...';
     try {
-      const response = await fetch(`/api/stocks/${encodedTicker}/elliott-waves?interval=${encodeURIComponent(interval)}`);
+      const fromQuery = oldestTimestamp === null ? '' : `&from=${encodeURIComponent(oldestTimestamp)}`;
+      const response = await fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(interval)}${fromQuery}`);
       if (!response.ok) throw new Error('Elliott Wave request failed');
-      const overlay = await response.json();
-      if (currentInterval !== interval) return;
-      if (!overlay.points || overlay.points.length === 0) {
-        status.textContent = 'No complete I–V or I–V, A–B–C Elliott structure detected in the current chart range.';
+      const history = await response.json();
+      if (requestId !== elliottRequestSequence || currentInterval !== interval || !elliottOverlaysEnabled) return;
+
+      const uniqueStructures = Array.from(new Map((history.structures || []).map(structure => [
+        structure.structureId || elliottStructureFallbackId(structure),
+        structure
+      ])).values());
+      uniqueStructures.forEach(structure => renderHistoricalElliottStructure(structure));
+      setElliottConfirmationMarkers(uniqueStructures);
+
+      if (uniqueStructures.length === 0) {
+        status.textContent = 'No complete I–V or I–V, A–B–C Elliott structure detected in the loaded range.';
         return;
       }
 
-      const color = overlay.direction === 'BULLISH' ? '#64e8bd' : '#ff647c';
-      elliottSeries.applyOptions({ color });
-      const points = overlay.points.map(point => ({
-        time: timestampToChartDate(point.timestamp),
-        value: point.price
-      }));
-      const markers = overlay.points
-              .filter(point => point.label)
-              .map(point => ({
-                time: timestampToChartDate(point.timestamp),
-                position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
-                color,
-                shape: 'circle',
-                text: point.label
-              }));
-      elliottSeries.setData(points);
-      elliottSeries.setMarkers(markers);
-      setElliottConfirmationMarkers([overlay]);
-      const finalLabel = overlay.points[overlay.points.length - 1].label.toUpperCase();
-      const structureLabel = finalLabel === 'C' ? 'I–V, A–B–C' : 'I–V';
-      status.textContent = `${overlay.direction === 'BULLISH' ? 'Bullish' : 'Bearish'} Elliott ${structureLabel} structure · quality ${overlay.qualityScore}/100`;
+      const warnedStructureCount = uniqueStructures
+              .filter(structure => elliottQualityWarnings(structure).length > 0).length;
+      const qualityScores = uniqueStructures
+              .map(structure => Number(structure.qualityScore))
+              .filter(Number.isFinite);
+      const qualityMin = qualityScores.length ? Math.min(...qualityScores) : null;
+      const qualityMax = qualityScores.length ? Math.max(...qualityScores) : null;
+      const qualityNotice = qualityMin === null
+              ? ''
+              : (qualityMin === qualityMax
+                      ? ` Quality ${qualityMin}/100.`
+                      : ` Quality range ${qualityMin}–${qualityMax}/100.`);
+      const warningNotice = warnedStructureCount > 0
+              ? ` ${warnedStructureCount} ${warnedStructureCount === 1 ? 'has' : 'have'} reduced-confidence guideline warnings.`
+              : '';
+      if (warnedStructureCount > 0) status.classList.add('warning');
+      status.textContent = `Showing ${uniqueStructures.length} Elliott Wave structure${uniqueStructures.length === 1 ? '' : 's'} in ${globalCandleData.length} loaded candles.${qualityNotice}${warningNotice}`;
     } catch (error) {
-      if (currentInterval === interval) {
+      if (requestId === elliottRequestSequence && currentInterval === interval) {
+        status.classList.add('error');
         status.textContent = 'Elliott Wave overlay unavailable.';
       }
       console.warn('Elliott Wave overlay failed', error);
     }
   }
 
-  async function showHistoricElliottWaves() {
-    const button = document.getElementById('historicElliottBtn');
-    const status = document.getElementById('elliottOverlayStatus');
-    status.classList.remove('error');
-    if (currentInterval === '1d') {
-      clearHistoricalElliottSeries();
-      elliottSeries.setData([]);
-      elliottSeries.setMarkers([]);
+  function normaliseCandlePage(payload) {
+    if (Array.isArray(payload)) {
+      return {
+        candles: payload,
+        nextCursor: payload.length ? payload[0].timestamp : null,
+        hasMore: payload.length > 0,
+        source: 'CACHE',
+        failureMessage: null
+      };
+    }
+    return {
+      candles: Array.isArray(payload?.candles) ? payload.candles : [],
+      nextCursor: payload?.nextCursor ?? null,
+      hasMore: Boolean(payload?.hasMore),
+      source: payload?.source || 'CACHE',
+      failureMessage: payload?.failureMessage || null
+    };
+  }
+
+  function elliottStructureFallbackId(structure) {
+    const points = structure.points || [];
+    const first = points[0] || {};
+    const last = points[points.length - 1] || {};
+    return `${structure.direction || ''}:${first.timestamp || ''}:${last.label || ''}:${last.timestamp || ''}`;
+  }
+
+  function clearElliottOverlays() {
+    clearHistoricalElliottSeries();
+    if (elliottConfirmationSeries) {
       elliottConfirmationSeries.setData([]);
       elliottConfirmationSeries.setMarkers([]);
-      status.classList.add('error');
-      status.textContent = 'Daily Elliott waves are not supported.';
+    }
+  }
+
+  function updateElliottOverlayToggle() {
+    const button = document.getElementById('elliottOverlayToggle');
+    const supported = currentInterval === '1wk' || currentInterval === '1mo';
+    button.disabled = !supported;
+    button.classList.toggle('active', supported && elliottOverlaysEnabled);
+    button.setAttribute('aria-pressed', String(supported && elliottOverlaysEnabled));
+    button.textContent = supported
+            ? `Elliott overlays: ${elliottOverlaysEnabled ? 'on' : 'off'}`
+            : 'Elliott overlays';
+  }
+
+  async function toggleElliottOverlays() {
+    if (currentInterval !== '1wk' && currentInterval !== '1mo') return;
+    elliottOverlaysEnabled = !elliottOverlaysEnabled;
+    updateElliottOverlayToggle();
+    if (!elliottOverlaysEnabled) {
+      elliottRequestSequence++;
+      clearElliottOverlays();
+      document.getElementById('elliottOverlayStatus').textContent = '';
       return;
     }
-
-    button.disabled = true;
-    status.textContent = 'Loading historic Elliott Wave structures...';
-    try {
-      const response = await fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(currentInterval)}`);
-      if (!response.ok) throw new Error('Historic Elliott Wave request failed');
-      const history = await response.json();
-      if (history.interval !== currentInterval) return;
-
-      if (history.candles && history.candles.length > 0) {
-        oldestTimestamp = history.candles[0].timestamp;
-        hasMoreHistory = false;
-        processAndSetData(history.candles, false);
-        updatePriceHeaderFromLatestCandle();
-      }
-      elliottSeries.setData([]);
-      elliottSeries.setMarkers([]);
-      clearHistoricalElliottSeries();
-
-      (history.structures || []).forEach(structure => renderHistoricalElliottStructure(structure));
-      setElliottConfirmationMarkers(history.structures || []);
-      if (!history.structures || history.structures.length === 0) {
-        status.textContent = 'No historic Elliott Wave structures were detected in the available candles.';
-        return;
-      }
-      priceChart.timeScale().fitContent();
-      status.textContent = `Showing ${history.structures.length} historic Elliott Wave structure${history.structures.length === 1 ? '' : 's'}.`;
-    } catch (error) {
-      status.classList.add('error');
-      status.textContent = 'Historic Elliott Wave display failed.';
-      console.warn('Historic Elliott Wave display failed', error);
-    } finally {
-      button.disabled = false;
-    }
+    await refreshHistoricalElliottOverlays(currentInterval);
   }
 
   function renderHistoricalElliottStructure(structure) {
@@ -492,11 +609,44 @@
             .map(point => ({
               time: timestampToChartDate(point.timestamp),
               position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
-              color,
+              color: elliottPointWarningLabel(structure, point) ? '#ffbd59' : color,
               shape: 'circle',
-              text: point.label
+              text: elliottPointMarkerText(structure, point)
             })));
     historicalElliottSeries.push(series);
+  }
+
+  function formatWaveTwoRetracement(retracement) {
+    const percentage = Number(retracement) * 100;
+    return Number.isFinite(percentage) ? `${percentage.toFixed(1)}%` : '';
+  }
+
+  function elliottQualityWarnings(structure) {
+    if (Array.isArray(structure.qualityWarnings) && structure.qualityWarnings.length > 0) {
+      return structure.qualityWarnings;
+    }
+    return structure.deepWaveTwo
+            ? [`Deep Wave II ${formatWaveTwoRetracement(structure.waveTwoRetracement)} — reduced confidence`]
+            : [];
+  }
+
+  function elliottPointWarningLabel(structure, point) {
+    const label = point.label.toUpperCase();
+    if (label === 'II' && (structure.waveTwoRetracement < 0.236 || structure.waveTwoRetracement > 0.786)) {
+      return structure.waveTwoRetracement > 0.786 ? 'deep' : 'shallow';
+    }
+    if (label === 'IV' && (structure.waveFourRetracement < 0.146 || structure.waveFourRetracement > 0.618)) {
+      return structure.waveFourRetracement > 0.618 ? 'deep' : 'shallow';
+    }
+    if (label === 'V' && structure.impulseVariant === 'TRUNCATED_FIFTH') return 'truncated';
+    if (label === 'C' && structure.correctionVariant === 'EXPANDED_FLAT') return 'expanded flat';
+    if (label === 'C' && structure.correctionVariant === 'RUNNING_FLAT') return 'running flat';
+    return '';
+  }
+
+  function elliottPointMarkerText(structure, point) {
+    const warningLabel = elliottPointWarningLabel(structure, point);
+    return warningLabel ? `${point.label} · ${warningLabel}` : point.label;
   }
 
   function setElliottConfirmationMarkers(structures) {
@@ -601,7 +751,7 @@
           if (newPrice > latestCandle.high) latestCandle.high = newPrice;
           if (newPrice < latestCandle.low) latestCandle.low = newPrice;
 
-          candleSeries.update(latestCandle);
+          candleSeries.update({ ...latestCandle });
           lineSeries.update({ time: latestCandle.time, value: newPrice });
         }
       }
@@ -729,11 +879,13 @@
 
   async function showCheckedElliottWave(alertInterval) {
     const chartInterval = alertInterval === 'WEEKLY' ? '1wk' : '1mo';
+    elliottOverlaysEnabled = true;
+    updateElliottOverlayToggle();
     if (currentInterval !== chartInterval) {
       await changeInterval(chartInterval);
       return;
     }
-    await loadElliottOverlay(chartInterval);
+    await refreshHistoricalElliottOverlays(chartInterval);
   }
 
   function formatSignalDate(timestamp) {
@@ -759,7 +911,7 @@
   document.querySelectorAll('[data-chart-interval]').forEach(button => {
     button.addEventListener('click', () => changeInterval(button.dataset.chartInterval));
   });
-  document.getElementById('historicElliottBtn').addEventListener('click', showHistoricElliottWaves);
+  document.getElementById('elliottOverlayToggle').addEventListener('click', toggleElliottOverlays);
 
   window.onload = initCharts;
 </script>

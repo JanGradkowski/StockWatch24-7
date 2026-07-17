@@ -33,31 +33,62 @@
       const searchInput = document.getElementById('globalTickerSearch');
       const dropdown = document.getElementById('globalSuggestionsDropdown');
       let searchTimer = null;
+      let localSearchController = null;
+      let providerSearchController = null;
+      let searchSequence = 0;
 
       if (searchInput && dropdown) {
         searchInput.addEventListener('input', (e) => {
           const query = e.target.value.trim();
+          clearTimeout(searchTimer);
+          localSearchController?.abort();
+          providerSearchController?.abort();
           if (query.length < 2) {
             dropdown.hidden = true;
             searchInput.setAttribute('aria-expanded', 'false');
             return;
           }
 
-          clearTimeout(searchTimer);
-          searchTimer = setTimeout(() => runTickerSearch(query), 700);
+          searchTimer = setTimeout(() => runTickerSearch(query), 225);
         });
 
         async function runTickerSearch(query) {
-
+          const sequence = ++searchSequence;
+          localSearchController?.abort();
+          providerSearchController?.abort();
+          localSearchController = new AbortController();
           try {
-            const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
+            const response = await fetch(`/api/stocks/search/local?q=${encodeURIComponent(query)}`, {
+              signal: localSearchController.signal
+            });
             if (!response.ok) {
               dropdown.hidden = true;
               searchInput.setAttribute('aria-expanded', 'false');
               return;
             }
             const suggestions = await response.json();
+            if (sequence !== searchSequence || searchInput.value.trim() !== query) return;
+            renderSuggestions(suggestions);
 
+            if (suggestions.length < 8) {
+              providerSearchController = new AbortController();
+              const providerResponse = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`, {
+                signal: providerSearchController.signal
+              });
+              if (!providerResponse.ok) return;
+              const enrichedSuggestions = await providerResponse.json();
+              if (sequence !== searchSequence || searchInput.value.trim() !== query) return;
+              renderSuggestions(enrichedSuggestions);
+            }
+          } catch (err) {
+            if (err.name !== 'AbortError') {
+              console.error("Autocomplete failed", err);
+              searchInput.setAttribute('aria-expanded', 'false');
+            }
+          }
+        }
+
+        function renderSuggestions(suggestions) {
             if (suggestions.length === 0) {
               dropdown.hidden = true;
               searchInput.setAttribute('aria-expanded', 'false');
@@ -106,10 +137,6 @@
 
             dropdown.hidden = false;
             searchInput.setAttribute('aria-expanded', 'true');
-          } catch (err) {
-            console.error("Autocomplete failed", err);
-            searchInput.setAttribute('aria-expanded', 'false');
-          }
         }
 
         // Close dropdown when clicking outside

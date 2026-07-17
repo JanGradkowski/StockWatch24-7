@@ -24,6 +24,30 @@ public class ElliottWaveDetectionService {
     private static final int MIN_IMPULSE_SPAN_CANDLES = 15;
     private static final int MIN_LEG_SPAN_CANDLES = 2;
     private static final int MIN_STRUCTURE_QUALITY = 68;
+    private static final double NORMAL_WAVE_TWO_MIN_RETRACEMENT = 0.236;
+    private static final double COMMON_WAVE_TWO_MIN_RETRACEMENT = 0.382;
+    private static final double COMMON_WAVE_TWO_MAX_RETRACEMENT = 0.618;
+    private static final double NORMAL_WAVE_TWO_MAX_RETRACEMENT = 0.786;
+    private static final double MAX_WAVE_TWO_RETRACEMENT = 1.0;
+    private static final double PRELIMINARY_WAVE_THREE_MIN_RATIO = 0.8;
+    private static final double NORMAL_WAVE_FOUR_MIN_RETRACEMENT = 0.146;
+    private static final double COMMON_WAVE_FOUR_MIN_RETRACEMENT = 0.236;
+    private static final double COMMON_WAVE_FOUR_MAX_RETRACEMENT = 0.5;
+    private static final double NORMAL_WAVE_FOUR_MAX_RETRACEMENT = 0.618;
+    private static final double MAX_WAVE_FOUR_RETRACEMENT = 1.0;
+    private static final double NORMAL_CORRECTION_MIN_RETRACEMENT = 0.236;
+    private static final double COMMON_CORRECTION_MIN_RETRACEMENT = 0.382;
+    private static final double COMMON_CORRECTION_MAX_RETRACEMENT = 0.618;
+    private static final double NORMAL_CORRECTION_MAX_RETRACEMENT = 0.786;
+    private static final double MAX_CONTINUATION_CORRECTION_RETRACEMENT = 1.0;
+    private static final double NORMAL_WAVE_C_TO_A_MIN_RATIO = 0.5;
+    private static final double COMMON_WAVE_C_TO_A_MIN_RATIO = 0.8;
+    private static final double COMMON_WAVE_C_TO_A_MAX_RATIO = 1.25;
+    private static final double NORMAL_WAVE_C_TO_A_MAX_RATIO = 2.0;
+    private static final double MAX_WAVE_B_RELATIVE_RECOVERY = 2.0;
+    private static final int TRUNCATED_WAVE_FIVE_PENALTY = 18;
+    private static final int EXPANDED_FLAT_PENALTY = 4;
+    private static final int RUNNING_FLAT_PENALTY = 14;
     private static final double[] PIVOT_SENSITIVITIES = {0.75, 1.25, 2.0, 3.0};
     private final int presentSignalLookbackCandles;
 
@@ -64,8 +88,18 @@ public class ElliottWaveDetectionService {
         return List.copyOf(bestSignals.values());
     }
 
+    public List<DetectedSignal> detectAlertSignals(List<EnrichedCandle> recentCandles) {
+        return detect(recentCandles).stream()
+                .filter(signal -> signal.confidenceScore() >= MIN_CONFIDENCE)
+                .toList();
+    }
+
     private void mergeSignal(Map<String, DetectedSignal> bestSignals, DetectedSignal candidate) {
-        String key = candidate.pattern().name() + ':' + candidate.tradeSignal().name();
+        String patternName = candidate.pattern().name();
+        String signalType = patternName.endsWith("WAVE_V_END")
+                ? "ELLIOTT_WAVE_V_END"
+                : patternName.endsWith("CORRECTION") ? "ELLIOTT_CORRECTION" : patternName;
+        String key = signalType + ':' + candidate.tradeSignal().name();
         DetectedSignal existing = bestSignals.get(key);
         if (existing == null || candidate.confidenceScore() > existing.confidenceScore()) {
             bestSignals.put(key, candidate);
@@ -216,6 +250,7 @@ public class ElliottWaveDetectionService {
         }
 
         WaveEvidence evidence = bullishImpulseEvidence(candles, current, wave0, wave1, wave2, wave3, wave4);
+        addPreliminaryImpulseTimingQuality(evidence, wave0, wave4);
         if (previous.close() > breakoutLevel) {
             evidence.reasons().add("breakout remains active on the latest candle with bullish follow-through");
         }
@@ -247,6 +282,7 @@ public class ElliottWaveDetectionService {
         }
 
         WaveEvidence evidence = bearishImpulseEvidence(candles, current, wave0, wave1, wave2, wave3, wave4);
+        addPreliminaryImpulseTimingQuality(evidence, wave0, wave4);
         if (previous.close() < breakdownLevel) {
             evidence.reasons().add("breakdown remains active on the latest candle with bearish follow-through");
         }
@@ -269,9 +305,15 @@ public class ElliottWaveDetectionService {
         }
         WaveEvidence evidence = bullishImpulseEvidence(
                 candles, current, sequence.get(0), sequence.get(1), sequence.get(2), sequence.get(3), sequence.get(4));
-        evidence.reasons().add("bullish wave V ended with a current bearish reversal below the previous candle low");
+        addCompletedImpulseQuality(evidence, sequence.get(0), sequence.get(3), wave5);
+        boolean truncated = isTruncatedWaveFive(sequence.get(3), wave5);
+        evidence.reasons().add(truncated
+                ? "truncated bullish wave V ended below wave III with a current bearish reversal"
+                : "bullish wave V ended with a current bearish reversal below the previous candle low");
         return java.util.Optional.of(signal(
-                CandlePattern.ELLIOTT_BULLISH_WAVE_V_END, TradeSignal.SELL, current, evidence));
+                truncated ? CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END
+                        : CandlePattern.ELLIOTT_BULLISH_WAVE_V_END,
+                TradeSignal.SELL, current, evidence));
     }
 
     private java.util.Optional<DetectedSignal> detectBearishWaveVEnd(List<EnrichedCandle> candles,
@@ -290,9 +332,15 @@ public class ElliottWaveDetectionService {
         }
         WaveEvidence evidence = bearishImpulseEvidence(
                 candles, current, sequence.get(0), sequence.get(1), sequence.get(2), sequence.get(3), sequence.get(4));
-        evidence.reasons().add("bearish wave V ended with a current bullish reversal above the previous candle high");
+        addCompletedImpulseQuality(evidence, sequence.get(0), sequence.get(3), wave5);
+        boolean truncated = isTruncatedWaveFive(sequence.get(3), wave5);
+        evidence.reasons().add(truncated
+                ? "truncated bearish wave V ended above wave III with a current bullish reversal"
+                : "bearish wave V ended with a current bullish reversal above the previous candle high");
         return java.util.Optional.of(signal(
-                CandlePattern.ELLIOTT_BEARISH_WAVE_V_END, TradeSignal.BUY, current, evidence));
+                truncated ? CandlePattern.ELLIOTT_BEARISH_TRUNCATED_WAVE_V_END
+                        : CandlePattern.ELLIOTT_BEARISH_WAVE_V_END,
+                TradeSignal.BUY, current, evidence));
     }
 
     private java.util.Optional<DetectedSignal> detectBullishCorrection(List<EnrichedCandle> candles,
@@ -318,16 +366,19 @@ public class ElliottWaveDetectionService {
                 wave0, wave1, wave2, wave3, wave4, wave5, waveA, waveB, waveC))) {
             return java.util.Optional.empty();
         }
-        double retracement = safeRatio(wave5.price() - waveC.price(), wave5.price() - wave0.price());
+        List<Pivot> complete = List.of(wave0, wave1, wave2, wave3, wave4, wave5, waveA, waveB, waveC);
+        CorrectionMetrics correction = correctionMetrics(complete, "BULLISH");
 
         if (!isCurrentBullishRebound(candles, waveC)) {
             return java.util.Optional.empty();
         }
 
-        WaveEvidence evidence = correctionEvidence(current, true, retracement);
+        WaveEvidence evidence = correctionEvidence(current, true, correction);
+        addCompletedImpulseCautions(evidence, wave0, wave1, wave2, wave3, wave4, wave5);
         evidence.reasons().add("bullish five-wave structure completed before distinct A, B and C correction legs");
         evidence.reasons().add("wave C ended with a current close back above the previous candle high");
-        return java.util.Optional.of(signal(CandlePattern.ELLIOTT_BULLISH_CORRECTION, TradeSignal.BUY, current, evidence));
+        return java.util.Optional.of(signal(
+                bullishCorrectionPattern(correction.variant()), TradeSignal.BUY, current, evidence));
     }
 
     private java.util.Optional<DetectedSignal> detectBearishCorrection(List<EnrichedCandle> candles,
@@ -353,16 +404,19 @@ public class ElliottWaveDetectionService {
                 wave0, wave1, wave2, wave3, wave4, wave5, waveA, waveB, waveC))) {
             return java.util.Optional.empty();
         }
-        double retracement = safeRatio(waveC.price() - wave5.price(), wave0.price() - wave5.price());
+        List<Pivot> complete = List.of(wave0, wave1, wave2, wave3, wave4, wave5, waveA, waveB, waveC);
+        CorrectionMetrics correction = correctionMetrics(complete, "BEARISH");
 
         if (!isCurrentBearishRejection(candles, waveC)) {
             return java.util.Optional.empty();
         }
 
-        WaveEvidence evidence = correctionEvidence(current, false, retracement);
+        WaveEvidence evidence = correctionEvidence(current, false, correction);
+        addCompletedImpulseCautions(evidence, wave0, wave1, wave2, wave3, wave4, wave5);
         evidence.reasons().add("bearish five-wave structure completed before distinct A, B and C correction legs");
         evidence.reasons().add("wave C ended with a current close back below the previous candle low");
-        return java.util.Optional.of(signal(CandlePattern.ELLIOTT_BEARISH_CORRECTION, TradeSignal.SELL, current, evidence));
+        return java.util.Optional.of(signal(
+                bearishCorrectionPattern(correction.variant()), TradeSignal.SELL, current, evidence));
     }
 
     private boolean isCurrentBullishBreakout(List<EnrichedCandle> candles, Pivot wave4, double breakoutLevel) {
@@ -438,6 +492,14 @@ public class ElliottWaveDetectionService {
                 && confirmationIndex - endpoint.index() <= MAX_CONFIRMATION_LAG_CANDLES;
     }
 
+    private boolean hasTimelyBullishRebound(List<EnrichedCandle> candles, Pivot endpoint) {
+        return isTimelyConfirmation(endpoint, firstBullishReboundIndex(candles, endpoint));
+    }
+
+    private boolean hasTimelyBearishRejection(List<EnrichedCandle> candles, Pivot endpoint) {
+        return isTimelyConfirmation(endpoint, firstBearishRejectionIndex(candles, endpoint));
+    }
+
     private int firstCandleIndexAfterPivot(List<EnrichedCandle> candles,
                                            Pivot pivot,
                                            java.util.function.Predicate<EnrichedCandle> predicate) {
@@ -506,30 +568,75 @@ public class ElliottWaveDetectionService {
                                    double wave3Length,
                                    double wave2Retracement,
                                    double wave4Retracement) {
-        if (between(wave2Retracement, 0.236, 0.786)) {
+        if (between(wave2Retracement, NORMAL_WAVE_TWO_MIN_RETRACEMENT,
+                NORMAL_WAVE_TWO_MAX_RETRACEMENT)) {
             evidence.add(5, "wave 2 retracement is within normal Elliott bounds");
+        } else {
+            int penalty = unusualWaveTwoPenalty(wave2Retracement);
+            String depth = formatPercentage(wave2Retracement);
+            if (isDeepWaveTwo(wave2Retracement)) {
+                evidence.add(-penalty, "wave 2 retracement is very deep at " + depth
+                        + "; confidence reduced by " + penalty + " points");
+            } else {
+                evidence.add(-penalty, "wave 2 retracement is unusually shallow at " + depth
+                        + "; confidence reduced by " + penalty + " points");
+            }
         }
-        if (between(wave2Retracement, 0.382, 0.618)) {
+        if (between(wave2Retracement, COMMON_WAVE_TWO_MIN_RETRACEMENT,
+                COMMON_WAVE_TWO_MAX_RETRACEMENT)) {
             evidence.add(5, "wave 2 retracement is near the common Fibonacci zone");
         }
         if (wave3Length >= wave1Length) {
             evidence.add(10, "wave 3 is at least as large as wave 1");
+        } else {
+            double waveThreeRatio = safeRatio(wave3Length, wave1Length);
+            if (waveThreeRatio < PRELIMINARY_WAVE_THREE_MIN_RATIO) {
+                int penalty = shortPreliminaryWaveThreePenalty(waveThreeRatio);
+                evidence.add(-penalty, "wave 3 is only " + formatPercentage(waveThreeRatio)
+                        + " of wave 1; confidence reduced by " + penalty + " points");
+            }
         }
-        if (between(wave4Retracement, 0.146, 0.618)) {
+        if (between(wave4Retracement, NORMAL_WAVE_FOUR_MIN_RETRACEMENT,
+                NORMAL_WAVE_FOUR_MAX_RETRACEMENT)) {
             evidence.add(5, "wave 4 retracement is within normal Elliott bounds");
+        } else {
+            int penalty = unusualWaveFourPenalty(wave4Retracement);
+            String shape = wave4Retracement > NORMAL_WAVE_FOUR_MAX_RETRACEMENT ? "deep" : "shallow";
+            evidence.add(-penalty, "wave 4 retracement is unusually " + shape + " at "
+                    + formatPercentage(wave4Retracement) + "; confidence reduced by " + penalty + " points");
         }
-        if (between(wave4Retracement, 0.236, 0.5)) {
+        if (between(wave4Retracement, COMMON_WAVE_FOUR_MIN_RETRACEMENT,
+                COMMON_WAVE_FOUR_MAX_RETRACEMENT)) {
             evidence.add(5, "wave 4 retracement is near the common Fibonacci zone");
         }
     }
 
-    private WaveEvidence correctionEvidence(EnrichedCandle current, boolean bullish, double retracement) {
+    private WaveEvidence correctionEvidence(EnrichedCandle current,
+                                            boolean bullish,
+                                            CorrectionMetrics correction) {
         WaveEvidence evidence = new WaveEvidence(62, new ArrayList<>());
-        if (between(retracement, 0.236, 0.786)) {
+        double retracement = correction.retracement();
+        if (between(retracement, NORMAL_CORRECTION_MIN_RETRACEMENT,
+                NORMAL_CORRECTION_MAX_RETRACEMENT)) {
             evidence.add(8, "correction retracement is within normal Elliott bounds");
+        } else {
+            int penalty = unusualCorrectionRetracementPenalty(retracement);
+            String shape = retracement > NORMAL_CORRECTION_MAX_RETRACEMENT ? "deep" : "shallow";
+            evidence.add(-penalty, "A-B-C correction is unusually " + shape + " at "
+                    + formatPercentage(retracement) + "; confidence reduced by " + penalty + " points");
         }
-        if (between(retracement, 0.382, 0.618)) {
+        if (between(retracement, COMMON_CORRECTION_MIN_RETRACEMENT,
+                COMMON_CORRECTION_MAX_RETRACEMENT)) {
             evidence.add(8, "correction retracement is near the common Fibonacci zone");
+        }
+        addWaveCToAWaveQuality(evidence, correction.waveCToARatio());
+        if (correction.variant() == CorrectionVariant.EXPANDED_FLAT) {
+            evidence.add(-EXPANDED_FLAT_PENALTY,
+                    "expanded-flat geometry is valid but less certain without internal subwave confirmation; "
+                            + "confidence reduced by " + EXPANDED_FLAT_PENALTY + " points");
+        } else if (correction.variant() == CorrectionVariant.RUNNING_FLAT) {
+            evidence.add(-RUNNING_FLAT_PENALTY,
+                    "running-flat geometry is rare; confidence reduced by " + RUNNING_FLAT_PENALTY + " points");
         }
         if (bullish) {
             if (isAvailable(current.ema20()) && current.close() > current.ema20()) {
@@ -550,6 +657,79 @@ public class ElliottWaveDetectionService {
             evidence.add(5, "volume is at least 20% above its 20-period average");
         }
         return evidence;
+    }
+
+    private void addWaveCToAWaveQuality(WaveEvidence evidence, double ratio) {
+        if (between(ratio, NORMAL_WAVE_C_TO_A_MIN_RATIO, NORMAL_WAVE_C_TO_A_MAX_RATIO)) {
+            evidence.add(5, "wave C length is proportionate to wave A");
+        } else {
+            int penalty = unusualWaveCToAPenalty(ratio);
+            evidence.add(-penalty, "wave C is an atypical " + roundRatio(ratio) + " times wave A; "
+                    + "confidence reduced by " + penalty + " points");
+        }
+        if (between(ratio, COMMON_WAVE_C_TO_A_MIN_RATIO, COMMON_WAVE_C_TO_A_MAX_RATIO)) {
+            evidence.add(5, "wave C is near equality with wave A");
+        }
+    }
+
+    private void addPreliminaryImpulseTimingQuality(WaveEvidence evidence, Pivot wave0, Pivot wave4) {
+        int expectedSpanBeforeWaveFive = MIN_IMPULSE_SPAN_CANDLES - MIN_LEG_SPAN_CANDLES;
+        int observedSpan = wave4.index() - wave0.index();
+        if (observedSpan < expectedSpanBeforeWaveFive) {
+            int penalty = shortImpulseSpanPenalty(observedSpan + MIN_LEG_SPAN_CANDLES);
+            evidence.add(-penalty, "the developing impulse is compressed in time; confidence reduced by "
+                    + penalty + " points");
+        }
+    }
+
+    private void addCompletedImpulseQuality(WaveEvidence evidence,
+                                            Pivot wave0,
+                                            Pivot wave3,
+                                            Pivot wave5) {
+        int penalty = shortImpulseSpanPenalty(wave5.index() - wave0.index());
+        if (penalty > 0) {
+            evidence.add(-penalty, "the five-wave impulse spans fewer than " + MIN_IMPULSE_SPAN_CANDLES
+                    + " candles; confidence reduced by " + penalty + " points");
+        }
+        if (isTruncatedWaveFive(wave3, wave5)) {
+            evidence.add(-TRUNCATED_WAVE_FIVE_PENALTY,
+                    "wave V is truncated and did not exceed wave III; confidence reduced by "
+                            + TRUNCATED_WAVE_FIVE_PENALTY + " points");
+        }
+    }
+
+    private void addCompletedImpulseCautions(WaveEvidence evidence,
+                                              Pivot wave0,
+                                              Pivot wave1,
+                                              Pivot wave2,
+                                              Pivot wave3,
+                                              Pivot wave4,
+                                              Pivot wave5) {
+        double wave1Length = Math.abs(wave1.price() - wave0.price());
+        double wave3Length = Math.abs(wave3.price() - wave2.price());
+        double wave2Retracement = safeRatio(Math.abs(wave1.price() - wave2.price()), wave1Length);
+        double wave4Retracement = safeRatio(Math.abs(wave3.price() - wave4.price()), wave3Length);
+        int waveTwoPenalty = unusualWaveTwoPenalty(wave2Retracement);
+        if (waveTwoPenalty > 0) {
+            String shape = isDeepWaveTwo(wave2Retracement) ? "deep" : "shallow";
+            evidence.add(-waveTwoPenalty, "wave 2 is unusually " + shape + " at "
+                    + formatPercentage(wave2Retracement) + "; confidence reduced by "
+                    + waveTwoPenalty + " points");
+        }
+        double waveThreeRatio = safeRatio(wave3Length, wave1Length);
+        if (waveThreeRatio < PRELIMINARY_WAVE_THREE_MIN_RATIO) {
+            int penalty = shortPreliminaryWaveThreePenalty(waveThreeRatio);
+            evidence.add(-penalty, "wave 3 is only " + formatPercentage(waveThreeRatio)
+                    + " of wave 1; confidence reduced by " + penalty + " points");
+        }
+        int waveFourPenalty = unusualWaveFourPenalty(wave4Retracement);
+        if (waveFourPenalty > 0) {
+            String shape = wave4Retracement > NORMAL_WAVE_FOUR_MAX_RETRACEMENT ? "deep" : "shallow";
+            evidence.add(-waveFourPenalty, "wave 4 is unusually " + shape + " at "
+                    + formatPercentage(wave4Retracement) + "; confidence reduced by "
+                    + waveFourPenalty + " points");
+        }
+        addCompletedImpulseQuality(evidence, wave0, wave3, wave5);
     }
 
     private void addBullishContext(WaveEvidence evidence, List<EnrichedCandle> candles, EnrichedCandle current) {
@@ -594,9 +774,8 @@ public class ElliottWaveDetectionService {
                 && wave4.price() > wave2.price()
                 && wave4.price() > wave1.price()
                 && wave1Length > 0.0
-                && wave3Length >= wave1Length * 0.8
-                && between(wave2Retracement, 0.236, 0.786)
-                && between(wave4Retracement, 0.146, 0.618)
+                && isValidWaveTwoRetracement(wave2Retracement)
+                && isValidWaveFourRetracement(wave4Retracement)
                 && hasValidImpulseTiming(wave0, wave1, wave2, wave3, wave4);
     }
 
@@ -612,10 +791,17 @@ public class ElliottWaveDetectionService {
                 && wave4.price() < wave2.price()
                 && wave4.price() < wave1.price()
                 && wave1Length > 0.0
-                && wave3Length >= wave1Length * 0.8
-                && between(wave2Retracement, 0.236, 0.786)
-                && between(wave4Retracement, 0.146, 0.618)
+                && isValidWaveTwoRetracement(wave2Retracement)
+                && isValidWaveFourRetracement(wave4Retracement)
                 && hasValidImpulseTiming(wave0, wave1, wave2, wave3, wave4);
+    }
+
+    private boolean isValidWaveTwoRetracement(double retracement) {
+        return retracement > 0.0 && retracement < MAX_WAVE_TWO_RETRACEMENT;
+    }
+
+    private boolean isValidWaveFourRetracement(double retracement) {
+        return retracement > 0.0 && retracement < MAX_WAVE_FOUR_RETRACEMENT;
     }
 
     private boolean isBullishImpulseComplete(Pivot wave0,
@@ -628,9 +814,8 @@ public class ElliottWaveDetectionService {
         double wave3Length = wave3.price() - wave2.price();
         double wave5Length = wave5.price() - wave4.price();
         return isBullishImpulseBase(wave0, wave1, wave2, wave3, wave4)
-                && wave5.price() > wave3.price()
+                && wave5.price() > wave4.price()
                 && wave3Length >= Math.min(wave1Length, wave5Length)
-                && wave5.index() - wave0.index() >= MIN_IMPULSE_SPAN_CANDLES
                 && wave5.index() - wave4.index() >= MIN_LEG_SPAN_CANDLES;
     }
 
@@ -644,9 +829,8 @@ public class ElliottWaveDetectionService {
         double wave3Length = wave2.price() - wave3.price();
         double wave5Length = wave4.price() - wave5.price();
         return isBearishImpulseBase(wave0, wave1, wave2, wave3, wave4)
-                && wave5.price() < wave3.price()
+                && wave5.price() < wave4.price()
                 && wave3Length >= Math.min(wave1Length, wave5Length)
-                && wave5.index() - wave0.index() >= MIN_IMPULSE_SPAN_CANDLES
                 && wave5.index() - wave4.index() >= MIN_LEG_SPAN_CANDLES;
     }
 
@@ -670,18 +854,18 @@ public class ElliottWaveDetectionService {
         Pivot waveA = sequence.get(6);
         Pivot waveB = sequence.get(7);
         Pivot waveC = sequence.get(8);
-        double retracement = safeRatio(wave5.price() - waveC.price(), wave5.price() - wave0.price());
         double waveALength = wave5.price() - waveA.price();
-        double waveCLength = waveB.price() - waveC.price();
+        double waveBRecovery = safeRatio(waveB.price() - waveA.price(), waveALength);
+        CorrectionMetrics correction = correctionMetrics(sequence, "BULLISH");
         return isBullishImpulseComplete(wave0, wave1, wave2, wave3, wave4, wave5)
                 && waveA.price() < wave5.price()
                 && waveA.price() > wave0.price()
                 && waveB.price() > waveA.price()
-                && waveB.price() < wave5.price() * 1.01
                 && waveC.price() < waveB.price()
-                && waveC.price() <= waveA.price() * 1.02
-                && between(retracement, 0.236, 0.786)
-                && between(safeRatio(waveCLength, waveALength), 0.5, 2.0)
+                && waveBRecovery <= MAX_WAVE_B_RELATIVE_RECOVERY
+                && correction.retracement() > 0.0
+                && correction.retracement() < MAX_CONTINUATION_CORRECTION_RETRACEMENT
+                && correction.waveCToARatio() > 0.0
                 && waveA.index() - wave5.index() >= MIN_LEG_SPAN_CANDLES
                 && waveB.index() - waveA.index() >= MIN_LEG_SPAN_CANDLES
                 && waveC.index() - waveB.index() >= MIN_LEG_SPAN_CANDLES;
@@ -700,21 +884,61 @@ public class ElliottWaveDetectionService {
         Pivot waveA = sequence.get(6);
         Pivot waveB = sequence.get(7);
         Pivot waveC = sequence.get(8);
-        double retracement = safeRatio(waveC.price() - wave5.price(), wave0.price() - wave5.price());
         double waveALength = waveA.price() - wave5.price();
-        double waveCLength = waveC.price() - waveB.price();
+        double waveBRecovery = safeRatio(waveA.price() - waveB.price(), waveALength);
+        CorrectionMetrics correction = correctionMetrics(sequence, "BEARISH");
         return isBearishImpulseComplete(wave0, wave1, wave2, wave3, wave4, wave5)
                 && waveA.price() > wave5.price()
                 && waveA.price() < wave0.price()
                 && waveB.price() < waveA.price()
-                && waveB.price() > wave5.price() / 1.01
                 && waveC.price() > waveB.price()
-                && waveC.price() >= waveA.price() * 0.98
-                && between(retracement, 0.236, 0.786)
-                && between(safeRatio(waveCLength, waveALength), 0.5, 2.0)
+                && waveBRecovery <= MAX_WAVE_B_RELATIVE_RECOVERY
+                && correction.retracement() > 0.0
+                && correction.retracement() < MAX_CONTINUATION_CORRECTION_RETRACEMENT
+                && correction.waveCToARatio() > 0.0
                 && waveA.index() - wave5.index() >= MIN_LEG_SPAN_CANDLES
                 && waveB.index() - waveA.index() >= MIN_LEG_SPAN_CANDLES
                 && waveC.index() - waveB.index() >= MIN_LEG_SPAN_CANDLES;
+    }
+
+    private CorrectionMetrics correctionMetrics(List<Pivot> sequence, String direction) {
+        Pivot wave0 = sequence.get(0);
+        Pivot wave5 = sequence.get(5);
+        Pivot waveA = sequence.get(6);
+        Pivot waveB = sequence.get(7);
+        Pivot waveC = sequence.get(8);
+        double impulseLength = Math.abs(wave5.price() - wave0.price());
+        double waveALength = Math.abs(wave5.price() - waveA.price());
+        double waveCLength = Math.abs(waveB.price() - waveC.price());
+        double retracement = safeRatio(Math.abs(wave5.price() - waveC.price()), impulseLength);
+        double waveCToARatio = safeRatio(waveCLength, waveALength);
+        boolean bullish = "BULLISH".equals(direction);
+        boolean waveBBeyondOrigin = bullish
+                ? waveB.price() > wave5.price()
+                : waveB.price() < wave5.price();
+        boolean waveCBeyondA = bullish
+                ? waveC.price() < waveA.price()
+                : waveC.price() > waveA.price();
+        CorrectionVariant variant = !waveBBeyondOrigin
+                ? CorrectionVariant.STANDARD
+                : waveCBeyondA ? CorrectionVariant.EXPANDED_FLAT : CorrectionVariant.RUNNING_FLAT;
+        return new CorrectionMetrics(retracement, waveCToARatio, variant);
+    }
+
+    private CandlePattern bullishCorrectionPattern(CorrectionVariant variant) {
+        return switch (variant) {
+            case EXPANDED_FLAT -> CandlePattern.ELLIOTT_BULLISH_EXPANDED_FLAT_CORRECTION;
+            case RUNNING_FLAT -> CandlePattern.ELLIOTT_BULLISH_RUNNING_FLAT_CORRECTION;
+            default -> CandlePattern.ELLIOTT_BULLISH_CORRECTION;
+        };
+    }
+
+    private CandlePattern bearishCorrectionPattern(CorrectionVariant variant) {
+        return switch (variant) {
+            case EXPANDED_FLAT -> CandlePattern.ELLIOTT_BEARISH_EXPANDED_FLAT_CORRECTION;
+            case RUNNING_FLAT -> CandlePattern.ELLIOTT_BEARISH_RUNNING_FLAT_CORRECTION;
+            default -> CandlePattern.ELLIOTT_BEARISH_CORRECTION;
+        };
     }
 
     private Pivot lowestPivotAfter(List<EnrichedCandle> candles, Pivot after, int endExclusive) {
@@ -762,7 +986,7 @@ public class ElliottWaveDetectionService {
         List<Pivot> complete = new ArrayList<>(sequence);
         complete.add(waveC);
         int confirmationIndex = firstBullishReboundIndex(candles, waveC);
-        if (isBullishCorrectionComplete(complete) && isCurrentBullishRebound(candles, waveC)) {
+        if (isBullishCorrectionComplete(complete) && hasTimelyBullishRebound(candles, waveC)) {
             int quality = structureQuality(candles, complete, "BULLISH", true);
             structures.add(new StructureCandidate(confirmationIndex,
                     toStructure("BULLISH", true, candles, complete, confirmationIndex, quality)));
@@ -784,7 +1008,7 @@ public class ElliottWaveDetectionService {
         List<Pivot> complete = new ArrayList<>(sequence);
         complete.add(waveC);
         int confirmationIndex = firstBearishRejectionIndex(candles, waveC);
-        if (isBearishCorrectionComplete(complete) && isCurrentBearishRejection(candles, waveC)) {
+        if (isBearishCorrectionComplete(complete) && hasTimelyBearishRejection(candles, waveC)) {
             int quality = structureQuality(candles, complete, "BEARISH", true);
             structures.add(new StructureCandidate(confirmationIndex,
                     toStructure("BEARISH", true, candles, complete, confirmationIndex, quality)));
@@ -802,7 +1026,7 @@ public class ElliottWaveDetectionService {
         Pivot wave5 = highestPivotAfter(candles, sequence.get(4), candles.size() - 1);
         if (wave5 == null || !isBullishImpulseComplete(
                 sequence.get(0), sequence.get(1), sequence.get(2), sequence.get(3), sequence.get(4), wave5)
-                || !isCurrentBearishRejection(candles, wave5)) {
+                || !hasTimelyBearishRejection(candles, wave5)) {
             return;
         }
         List<Pivot> complete = new ArrayList<>(sequence);
@@ -824,7 +1048,7 @@ public class ElliottWaveDetectionService {
         Pivot wave5 = lowestPivotAfter(candles, sequence.get(4), candles.size() - 1);
         if (wave5 == null || !isBearishImpulseComplete(
                 sequence.get(0), sequence.get(1), sequence.get(2), sequence.get(3), sequence.get(4), wave5)
-                || !isCurrentBullishRebound(candles, wave5)) {
+                || !hasTimelyBullishRebound(candles, wave5)) {
             return;
         }
         List<Pivot> complete = new ArrayList<>(sequence);
@@ -902,15 +1126,27 @@ public class ElliottWaveDetectionService {
 
         int score = 55;
         score += (int) Math.round(Math.min(12.0, safeRatio(totalMove, Math.max(atr, 0.000001))));
-        score += Math.min(8, Math.max(0, (impulseSpan - MIN_IMPULSE_SPAN_CANDLES) / 5));
+        if (impulseSpan >= MIN_IMPULSE_SPAN_CANDLES) {
+            score += Math.min(8, (impulseSpan - MIN_IMPULSE_SPAN_CANDLES) / 5);
+        } else {
+            score -= shortImpulseSpanPenalty(impulseSpan);
+        }
         if (wave3Length >= wave1Length && wave3Length >= wave5Length) {
             score += 7;
         }
-        if (between(wave2Retracement, 0.382, 0.618)) {
+        score -= shortPreliminaryWaveThreePenalty(safeRatio(wave3Length, wave1Length));
+        if (between(wave2Retracement, COMMON_WAVE_TWO_MIN_RETRACEMENT,
+                COMMON_WAVE_TWO_MAX_RETRACEMENT)) {
             score += 5;
         }
-        if (between(wave4Retracement, 0.236, 0.5)) {
+        score -= unusualWaveTwoPenalty(wave2Retracement);
+        if (between(wave4Retracement, COMMON_WAVE_FOUR_MIN_RETRACEMENT,
+                COMMON_WAVE_FOUR_MAX_RETRACEMENT)) {
             score += 5;
+        }
+        score -= unusualWaveFourPenalty(wave4Retracement);
+        if (isTruncatedWaveFive(wave3, wave5)) {
+            score -= TRUNCATED_WAVE_FIVE_PENALTY;
         }
         double alternation = Math.abs(wave2Retracement - wave4Retracement);
         if (alternation >= 0.08) {
@@ -943,15 +1179,25 @@ public class ElliottWaveDetectionService {
         }
 
         if (correctionComplete) {
-            Pivot waveA = sequence.get(6);
-            Pivot waveB = sequence.get(7);
-            Pivot waveC = sequence.get(8);
-            double waveALength = Math.abs(wave5.price() - waveA.price());
-            double waveCLength = Math.abs(waveB.price() - waveC.price());
-            double acRatio = safeRatio(waveCLength, waveALength);
+            CorrectionMetrics correction = correctionMetrics(sequence, direction);
             score += 4;
-            if (between(acRatio, 0.8, 1.25)) {
+            if (between(correction.retracement(), NORMAL_CORRECTION_MIN_RETRACEMENT,
+                    NORMAL_CORRECTION_MAX_RETRACEMENT)) {
+                score += 4;
+            } else {
+                score -= unusualCorrectionRetracementPenalty(correction.retracement());
+            }
+            if (between(correction.waveCToARatio(), COMMON_WAVE_C_TO_A_MIN_RATIO,
+                    COMMON_WAVE_C_TO_A_MAX_RATIO)) {
                 score += 5;
+            } else if (!between(correction.waveCToARatio(), NORMAL_WAVE_C_TO_A_MIN_RATIO,
+                    NORMAL_WAVE_C_TO_A_MAX_RATIO)) {
+                score -= unusualWaveCToAPenalty(correction.waveCToARatio());
+            }
+            if (correction.variant() == CorrectionVariant.EXPANDED_FLAT) {
+                score -= EXPANDED_FLAT_PENALTY;
+            } else if (correction.variant() == CorrectionVariant.RUNNING_FLAT) {
+                score -= RUNNING_FLAT_PENALTY;
             }
         }
         return clampScore(score);
@@ -976,8 +1222,156 @@ public class ElliottWaveDetectionService {
         Long confirmationTimestamp = confirmationIndex >= 0 && confirmationIndex < candles.size()
                 ? candles.get(confirmationIndex).timestamp()
                 : null;
+        double waveTwoRetracement = safeRatio(
+                Math.abs(pivots.get(1).price() - pivots.get(2).price()),
+                Math.abs(pivots.get(1).price() - pivots.get(0).price()));
+        double waveThreeToOneRatio = safeRatio(
+                Math.abs(pivots.get(3).price() - pivots.get(2).price()),
+                Math.abs(pivots.get(1).price() - pivots.get(0).price()));
+        double waveFourRetracement = safeRatio(
+                Math.abs(pivots.get(3).price() - pivots.get(4).price()),
+                Math.abs(pivots.get(3).price() - pivots.get(2).price()));
+        ImpulseVariant impulseVariant = isTruncatedWaveFive(pivots.get(3), pivots.get(5))
+                ? ImpulseVariant.TRUNCATED_FIFTH
+                : ImpulseVariant.STANDARD;
+        CorrectionMetrics correction = correctionComplete
+                ? correctionMetrics(pivots, direction)
+                : new CorrectionMetrics(0.0, 0.0, CorrectionVariant.NONE);
+        List<String> qualityWarnings = structureQualityWarnings(
+                pivots, waveTwoRetracement, waveThreeToOneRatio, waveFourRetracement, correction);
         return new ElliottWaveStructure(direction, correctionComplete, List.copyOf(points),
-                confirmationTimestamp, qualityScore);
+                confirmationTimestamp, qualityScore, waveTwoRetracement, isDeepWaveTwo(waveTwoRetracement),
+                waveThreeToOneRatio, waveFourRetracement, impulseVariant, correction.variant(),
+                correction.retracement(), correction.waveCToARatio(), qualityWarnings);
+    }
+
+    private List<String> structureQualityWarnings(List<Pivot> pivots,
+                                                  double waveTwoRetracement,
+                                                  double waveThreeToOneRatio,
+                                                  double waveFourRetracement,
+                                                  CorrectionMetrics correction) {
+        List<String> warnings = new ArrayList<>();
+        if (unusualWaveTwoPenalty(waveTwoRetracement) > 0) {
+            warnings.add((isDeepWaveTwo(waveTwoRetracement) ? "Deep" : "Shallow")
+                    + " Wave II " + formatPercentage(waveTwoRetracement) + " — reduced confidence");
+        }
+        if (waveThreeToOneRatio < PRELIMINARY_WAVE_THREE_MIN_RATIO) {
+            warnings.add("Wave III is " + formatPercentage(waveThreeToOneRatio)
+                    + " of Wave I — reduced confidence");
+        }
+        if (unusualWaveFourPenalty(waveFourRetracement) > 0) {
+            warnings.add((waveFourRetracement > NORMAL_WAVE_FOUR_MAX_RETRACEMENT ? "Deep" : "Shallow")
+                    + " Wave IV " + formatPercentage(waveFourRetracement) + " — reduced confidence");
+        }
+        int impulseSpan = pivots.get(5).index() - pivots.get(0).index();
+        if (impulseSpan < MIN_IMPULSE_SPAN_CANDLES) {
+            warnings.add("Compressed " + impulseSpan + "-candle impulse — reduced confidence");
+        }
+        if (isTruncatedWaveFive(pivots.get(3), pivots.get(5))) {
+            warnings.add("Truncated Wave V — reduced confidence");
+        }
+        if (correction.variant() != CorrectionVariant.NONE) {
+            if (unusualCorrectionRetracementPenalty(correction.retracement()) > 0) {
+                warnings.add("A–B–C retracement " + formatPercentage(correction.retracement())
+                        + " — reduced confidence");
+            }
+            if (unusualWaveCToAPenalty(correction.waveCToARatio()) > 0) {
+                warnings.add("Wave C is " + roundRatio(correction.waveCToARatio())
+                        + "× Wave A — reduced confidence");
+            }
+            if (correction.variant() == CorrectionVariant.EXPANDED_FLAT) {
+                warnings.add("Expanded-flat candidate — reduced confidence");
+            } else if (correction.variant() == CorrectionVariant.RUNNING_FLAT) {
+                warnings.add("Running-flat candidate — reduced confidence");
+            }
+        }
+        return List.copyOf(warnings);
+    }
+
+    private int unusualWaveTwoPenalty(double retracement) {
+        if (isDeepWaveTwo(retracement)) {
+            double depthWithinDeepZone = safeRatio(
+                    retracement - NORMAL_WAVE_TWO_MAX_RETRACEMENT,
+                    MAX_WAVE_TWO_RETRACEMENT - NORMAL_WAVE_TWO_MAX_RETRACEMENT);
+            return 8 + (int) Math.round(Math.min(1.0, depthWithinDeepZone) * 12.0);
+        }
+        return retracement < NORMAL_WAVE_TWO_MIN_RETRACEMENT ? 6 : 0;
+    }
+
+    private boolean isDeepWaveTwo(double retracement) {
+        return retracement > NORMAL_WAVE_TWO_MAX_RETRACEMENT
+                && retracement < MAX_WAVE_TWO_RETRACEMENT;
+    }
+
+    private int shortPreliminaryWaveThreePenalty(double waveThreeToOneRatio) {
+        if (waveThreeToOneRatio >= PRELIMINARY_WAVE_THREE_MIN_RATIO) {
+            return 0;
+        }
+        double shortfall = safeRatio(
+                PRELIMINARY_WAVE_THREE_MIN_RATIO - Math.max(0.0, waveThreeToOneRatio),
+                PRELIMINARY_WAVE_THREE_MIN_RATIO);
+        return 6 + (int) Math.round(Math.min(1.0, shortfall) * 8.0);
+    }
+
+    private int unusualWaveFourPenalty(double retracement) {
+        if (retracement < NORMAL_WAVE_FOUR_MIN_RETRACEMENT) {
+            double shortfall = safeRatio(NORMAL_WAVE_FOUR_MIN_RETRACEMENT - Math.max(0.0, retracement),
+                    NORMAL_WAVE_FOUR_MIN_RETRACEMENT);
+            return 6 + (int) Math.round(Math.min(1.0, shortfall) * 4.0);
+        }
+        if (retracement > NORMAL_WAVE_FOUR_MAX_RETRACEMENT) {
+            double depth = safeRatio(retracement - NORMAL_WAVE_FOUR_MAX_RETRACEMENT,
+                    MAX_WAVE_FOUR_RETRACEMENT - NORMAL_WAVE_FOUR_MAX_RETRACEMENT);
+            return 8 + (int) Math.round(Math.min(1.0, depth) * 8.0);
+        }
+        return 0;
+    }
+
+    private int shortImpulseSpanPenalty(int impulseSpan) {
+        return impulseSpan >= MIN_IMPULSE_SPAN_CANDLES
+                ? 0
+                : Math.min(10, Math.max(1, (MIN_IMPULSE_SPAN_CANDLES - impulseSpan) * 2));
+    }
+
+    private int unusualCorrectionRetracementPenalty(double retracement) {
+        if (retracement < NORMAL_CORRECTION_MIN_RETRACEMENT) {
+            double shortfall = safeRatio(NORMAL_CORRECTION_MIN_RETRACEMENT - Math.max(0.0, retracement),
+                    NORMAL_CORRECTION_MIN_RETRACEMENT);
+            return 6 + (int) Math.round(Math.min(1.0, shortfall) * 4.0);
+        }
+        if (retracement > NORMAL_CORRECTION_MAX_RETRACEMENT) {
+            double depth = safeRatio(retracement - NORMAL_CORRECTION_MAX_RETRACEMENT,
+                    MAX_CONTINUATION_CORRECTION_RETRACEMENT - NORMAL_CORRECTION_MAX_RETRACEMENT);
+            return 8 + (int) Math.round(Math.min(1.0, depth) * 10.0);
+        }
+        return 0;
+    }
+
+    private int unusualWaveCToAPenalty(double ratio) {
+        if (ratio < NORMAL_WAVE_C_TO_A_MIN_RATIO) {
+            double shortfall = safeRatio(NORMAL_WAVE_C_TO_A_MIN_RATIO - Math.max(0.0, ratio),
+                    NORMAL_WAVE_C_TO_A_MIN_RATIO);
+            return 6 + (int) Math.round(Math.min(1.0, shortfall) * 4.0);
+        }
+        if (ratio > NORMAL_WAVE_C_TO_A_MAX_RATIO) {
+            return 8 + Math.min(8, (int) Math.round((ratio - NORMAL_WAVE_C_TO_A_MAX_RATIO) * 4.0));
+        }
+        return 0;
+    }
+
+    private boolean isTruncatedWaveFive(Pivot wave3, Pivot wave5) {
+        return wave5.type() == PivotType.HIGH
+                ? wave5.price() <= wave3.price()
+                : wave5.price() >= wave3.price();
+    }
+
+    private String roundRatio(double value) {
+        return Double.toString(Math.round(value * 100.0) / 100.0);
+    }
+
+    private String formatPercentage(double value) {
+        double rounded = Math.round(value * 1_000.0) / 10.0;
+        return rounded + "%";
     }
 
     private List<List<Pivot>> findPivotSets(List<EnrichedCandle> candles) {
@@ -1243,6 +1637,23 @@ public class ElliottWaveDetectionService {
     private record Pivot(int index, PivotType type, double price) {
     }
 
+    public enum ImpulseVariant {
+        STANDARD,
+        TRUNCATED_FIFTH
+    }
+
+    public enum CorrectionVariant {
+        NONE,
+        STANDARD,
+        EXPANDED_FLAT,
+        RUNNING_FLAT
+    }
+
+    private record CorrectionMetrics(double retracement,
+                                     double waveCToARatio,
+                                     CorrectionVariant variant) {
+    }
+
     public record ElliottWavePoint(String label, Long timestamp, double price, String pivotType) {
     }
 
@@ -1250,7 +1661,16 @@ public class ElliottWaveDetectionService {
                                        boolean correctionComplete,
                                        List<ElliottWavePoint> points,
                                        Long confirmationTimestamp,
-                                       int qualityScore) {
+                                       int qualityScore,
+                                       double waveTwoRetracement,
+                                       boolean deepWaveTwo,
+                                       double waveThreeToOneRatio,
+                                       double waveFourRetracement,
+                                       ImpulseVariant impulseVariant,
+                                       CorrectionVariant correctionVariant,
+                                       double correctionRetracement,
+                                       double waveCToARatio,
+                                       List<String> qualityWarnings) {
     }
 
     private record StructureCandidate(int completionIndex, ElliottWaveStructure structure) {

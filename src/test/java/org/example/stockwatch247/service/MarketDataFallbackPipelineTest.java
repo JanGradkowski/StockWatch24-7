@@ -84,6 +84,22 @@ class MarketDataFallbackPipelineTest {
         });
     }
 
+    @Test
+    void doesNotPersistCandlesWhenYahooRejectsItsReturnedGranularity() {
+        TestContext context = context(List.of(), true);
+        when(context.yahooFinanceService().getTimeSeries("SAP.DE", "1wk", 1000))
+                .thenThrow(new IllegalStateException(
+                        "Yahoo Finance returned 1mo candles for SAP.DE when 1wk was requested."));
+
+        MarketDataService.CandleSyncResult result = context.marketDataService()
+                .syncCandles("SAP.DE", "1wk", null, true);
+
+        assertThat(result.source()).isEqualTo(MarketDataService.CandleSource.NONE);
+        assertThat(result.candlesSynced()).isZero();
+        assertThat(context.savedCandles()).isEmpty();
+        verify(context.candleRepository(), never()).saveAll(any());
+    }
+
     private TestContext context(List<MarketDataBar> yahooBars, boolean failTwelveData) {
         CandleRepository candleRepository = mock(CandleRepository.class);
         StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
@@ -122,11 +138,12 @@ class MarketDataFallbackPipelineTest {
                 twelveDataService,
                 yahooFinanceService,
                 new InMemoryMarketDataSyncCoordinator(() -> 1_800_000_000L),
+                mock(MarketDataHistoryStateStore.class),
                 60,
                 600,
                 3_600,
                 180);
-        return new TestContext(service, twelveDataService, yahooFinanceService, savedCandles);
+        return new TestContext(service, candleRepository, twelveDataService, yahooFinanceService, savedCandles);
     }
 
     private List<MarketDataBar> syntheticElliottBars() {
@@ -160,6 +177,7 @@ class MarketDataFallbackPipelineTest {
     }
 
     private record TestContext(MarketDataService marketDataService,
+                               CandleRepository candleRepository,
                                TwelveDataService twelveDataService,
                                YahooFinanceService yahooFinanceService,
                                List<Candle> savedCandles) {

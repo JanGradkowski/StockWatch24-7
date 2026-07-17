@@ -238,6 +238,198 @@ class ElliottWaveDetectionServiceTest {
     }
 
     @Test
+    void keepsDeepWaveTwoBelowTheOriginAsReducedConfidenceStructure() {
+        List<EnrichedCandle> candles = deepBearishWaveTwoSeries(69);
+
+        ElliottWaveDetectionService.ElliottWaveStructure structure = detectionService
+                .findLatestWaveStructure(candles)
+                .orElseThrow();
+        assertThat(structure.direction()).isEqualTo("BEARISH");
+        assertThat(structure.correctionComplete()).isFalse();
+        assertThat(structure.deepWaveTwo()).isTrue();
+        assertThat(structure.waveTwoRetracement()).isBetween(0.95, 0.99);
+        assertThat(structure.qualityScore()).isGreaterThanOrEqualTo(68);
+
+        List<DetectedSignal> detectedCandidates = detectionService.detect(candles);
+        assertThat(detectedCandidates).anySatisfy(signal -> {
+            assertThat(signal.pattern()).isEqualTo(CandlePattern.ELLIOTT_BEARISH_WAVE_V_END);
+            assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.BUY);
+            assertThat(signal.confidenceScore()).isLessThan(75);
+            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("very deep at 97.3%"));
+            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("confidence reduced by 18 points"));
+        });
+        assertThat(detectionService.detectAlertSignals(candles))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END);
+    }
+
+    @Test
+    void keepsConfirmedDeepStructureOnChartAfterEmailWindowExpires() {
+        List<EnrichedCandle> candles = deepBearishWaveTwoSeries(71);
+
+        assertThat(detectionService.detect(candles))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END);
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure -> {
+            assertThat(structure.direction()).isEqualTo("BEARISH");
+            assertThat(structure.deepWaveTwo()).isTrue();
+            assertThat(structure.confirmationTimestamp()).isEqualTo(69L);
+        });
+    }
+
+    @Test
+    void stillRejectsWaveTwoThatCrossesTheImpulseOrigin() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 520.0), anchor(6, 555.45), anchor(14, 492.37),
+                anchor(24, 557.0), anchor(38, 356.28), anchor(54, 466.32),
+                anchor(68, 349.20), anchor(69, 390.49)
+        ));
+
+        assertThat(detectionService.findLatestWaveStructure(candles)).isEmpty();
+        assertThat(detectionService.detect(candles))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END);
+    }
+
+    @Test
+    void acceptsDeepWaveFourWithoutWaveOneOverlapAndReducesConfidence() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0), anchor(14, 121.0),
+                anchor(24, 110.0), anchor(38, 160.0), anchor(54, 125.0),
+                anchor(68, 170.0), anchor(69, 166.0)
+        ));
+
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure -> {
+            assertThat(structure.waveFourRetracement()).isBetween(0.65, 0.80);
+            assertThat(structure.qualityWarnings()).anyMatch(warning -> warning.contains("Deep Wave IV"));
+        });
+        assertThat(detectionService.detect(candles)).anySatisfy(signal -> {
+            assertThat(signal.pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("wave 4 retracement is unusually deep"));
+            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("confidence reduced"));
+        });
+    }
+
+    @Test
+    void acceptsWaveThreeBelowOldEightyPercentGuidelineWhenItIsNotShortest() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0), anchor(14, 130.0),
+                anchor(24, 115.0), anchor(38, 138.0), anchor(54, 133.0),
+                anchor(68, 150.0), anchor(69, 146.0)
+        ));
+
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure -> {
+            assertThat(structure.waveThreeToOneRatio()).isBetween(0.70, 0.80);
+            assertThat(structure.qualityWarnings()).anyMatch(warning -> warning.contains("Wave III is"));
+        });
+        assertThat(detectionService.detect(candles)).anySatisfy(signal ->
+                assertThat(signal.reasons()).anyMatch(reason -> reason.contains("wave 3 is only")));
+    }
+
+    @Test
+    void acceptsCompressedImpulseAndTreatsFifteenCandlesAsQualityGuideline() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(20, 100.0), anchor(22, 121.0),
+                anchor(24, 110.0), anchor(26, 143.0), anchor(28, 126.0),
+                anchor(32, 150.0), anchor(34, 147.0)
+        ));
+
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure ->
+                assertThat(structure.qualityWarnings())
+                        .anyMatch(warning -> warning.contains("Compressed 12-candle impulse")));
+        assertThat(detectionService.detect(candles)).anySatisfy(signal ->
+                assertThat(signal.reasons()).anyMatch(reason -> reason.contains("fewer than 15 candles")));
+    }
+
+    @Test
+    void acceptsDeepAbcCorrectionWithoutCrossingTheImpulseOriginAndPenalizesIt() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0), anchor(14, 121.0),
+                anchor(24, 110.0), anchor(38, 143.0), anchor(54, 126.0),
+                anchor(68, 150.0), anchor(74, 120.0), anchor(80, 140.0),
+                anchor(86, 108.0), anchor(87, 111.0)
+        ));
+
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure -> {
+            assertThat(structure.correctionRetracement()).isBetween(0.80, 0.90);
+            assertThat(structure.qualityWarnings()).anyMatch(warning -> warning.contains("A–B–C retracement"));
+        });
+        assertThat(detectionService.detect(candles)).anySatisfy(signal -> {
+            assertThat(signal.pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("A-B-C correction is unusually deep"));
+        });
+    }
+
+    @Test
+    void acceptsAtypicalWaveCToWaveARatioAndPenalizesIt() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0), anchor(14, 121.0),
+                anchor(24, 110.0), anchor(38, 143.0), anchor(54, 126.0),
+                anchor(68, 150.0), anchor(74, 136.0), anchor(80, 144.0),
+                anchor(86, 113.0), anchor(87, 116.0)
+        ));
+
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure -> {
+            assertThat(structure.waveCToARatio()).isGreaterThan(2.0);
+            assertThat(structure.qualityWarnings()).anyMatch(warning -> warning.contains("× Wave A"));
+        });
+        assertThat(detectionService.detect(candles)).anySatisfy(signal ->
+                assertThat(signal.reasons()).anyMatch(reason -> reason.contains("wave C is an atypical")));
+    }
+
+    @Test
+    void classifiesExpandedFlatCorrectionExplicitly() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0), anchor(14, 121.0),
+                anchor(24, 110.0), anchor(38, 143.0), anchor(54, 126.0),
+                anchor(68, 150.0), anchor(74, 134.0), anchor(80, 155.0),
+                anchor(86, 128.0), anchor(87, 131.0)
+        ));
+
+        assertThat(detectionService.detect(candles)).anySatisfy(signal ->
+                assertThat(signal.pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_EXPANDED_FLAT_CORRECTION));
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure -> {
+            assertThat(structure.correctionVariant())
+                    .isEqualTo(ElliottWaveDetectionService.CorrectionVariant.EXPANDED_FLAT);
+            assertThat(structure.qualityWarnings()).contains("Expanded-flat candidate — reduced confidence");
+        });
+    }
+
+    @Test
+    void classifiesRareRunningFlatCorrectionExplicitlyAndPenalizesIt() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0), anchor(14, 121.0),
+                anchor(24, 110.0), anchor(38, 143.0), anchor(54, 126.0),
+                anchor(68, 150.0), anchor(74, 134.0), anchor(80, 155.0),
+                anchor(86, 138.0), anchor(87, 141.0)
+        ));
+
+        assertThat(detectionService.detect(candles)).anySatisfy(signal -> {
+            assertThat(signal.pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_RUNNING_FLAT_CORRECTION);
+            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("running-flat geometry is rare"));
+        });
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure ->
+                assertThat(structure.correctionVariant())
+                        .isEqualTo(ElliottWaveDetectionService.CorrectionVariant.RUNNING_FLAT));
+    }
+
+    @Test
+    void classifiesTruncatedWaveFiveExplicitlyAndAppliesHeavyPenalty() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0), anchor(14, 121.0),
+                anchor(24, 110.0), anchor(38, 150.0), anchor(54, 126.0),
+                anchor(68, 145.0), anchor(69, 141.0)
+        ));
+
+        assertThat(detectionService.detect(candles)).anySatisfy(signal -> {
+            assertThat(signal.pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END);
+            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("confidence reduced by 18 points"));
+        });
+        assertThat(detectionService.findLatestWaveStructure(candles)).hasValueSatisfying(structure -> {
+            assertThat(structure.impulseVariant())
+                    .isEqualTo(ElliottWaveDetectionService.ImpulseVariant.TRUNCATED_FIFTH);
+            assertThat(structure.qualityWarnings()).contains("Truncated Wave V — reduced confidence");
+        });
+    }
+
+    @Test
     void returnsNoSignalsWhenHistoryIsTooShortForWaveStructure() {
         List<EnrichedCandle> candles = syntheticSeries(List.of(
                 anchor(1, 100.0),
@@ -289,6 +481,18 @@ class ElliottWaveDetectionServiceTest {
                 anchor(24, 110.0), anchor(38, 143.0), anchor(54, 126.0),
                 anchor(68, 150.0), anchor(69, 147.0)
         ));
+    }
+
+    private List<EnrichedCandle> deepBearishWaveTwoSeries(int lastIndex) {
+        List<Anchor> anchors = new ArrayList<>(List.of(
+                anchor(1, 520.0), anchor(6, 555.45), anchor(14, 492.37),
+                anchor(24, 553.72), anchor(38, 356.28), anchor(54, 466.32),
+                anchor(68, 349.20), anchor(69, 390.49)
+        ));
+        if (lastIndex > 69) {
+            anchors.add(anchor(lastIndex, 395.0));
+        }
+        return syntheticSeries(anchors);
     }
 
     private EnrichedCandle candle(long timestamp, double close) {

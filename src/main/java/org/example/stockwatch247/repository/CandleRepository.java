@@ -2,6 +2,7 @@ package org.example.stockwatch247.repository;
 
 import org.example.stockwatch247.model.Candle;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -16,12 +17,18 @@ public interface CandleRepository extends JpaRepository<Candle, Long> {
 
     // 2. Pagination: Get the 100 candles that occurred strictly BEFORE a specific timestamp
     List<Candle> findTop100BySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(String symbol, String timeInterval, Long timestamp);
+    List<Candle> findBySymbolAndTimeIntervalOrderByTimestampDesc(
+            String symbol, String timeInterval, Pageable pageable);
+    List<Candle> findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+            String symbol, String timeInterval, Long timestamp, Pageable pageable);
 
     // 3. Sync Check: Find the absolute newest candle we have in the database
     List<Candle> findTop1BySymbolAndTimeIntervalOrderByTimestampDesc(String symbol, String timeInterval);
     List<Candle> findTop2BySymbolAndTimeIntervalOrderByTimestampDesc(String symbol, String timeInterval);
     List<Candle> findTop10BySymbolAndTimeIntervalOrderByTimestampDesc(String symbol, String timeInterval);
     List<Candle> findBySymbolAndTimeIntervalOrderByTimestampAsc(String symbol, String timeInterval);
+    List<Candle> findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+            String symbol, String timeInterval, Long timestamp);
 
     // 4. Cache Density Check: See how many candles we have in a specific historical window
     long countBySymbolAndTimeIntervalAndTimestampBetween(String symbol, String timeInterval, Long startTime, Long endTime);

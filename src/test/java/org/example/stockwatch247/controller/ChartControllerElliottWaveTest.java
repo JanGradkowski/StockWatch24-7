@@ -27,6 +27,31 @@ import static org.mockito.Mockito.when;
 class ChartControllerElliottWaveTest {
 
     @Test
+    void exposesCursorPaginationMetadataWithoutPersistenceIds() {
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        Candle candle = new Candle("MSFT", "1d", 900L, 100, 103, 99, 102.0, 1_000L);
+        when(marketDataService.loadCandlePage("MSFT", "1d", 1_000L, 500))
+                .thenReturn(new MarketDataService.CandlePage(
+                        List.of(candle), 900L, true, MarketDataService.CandleSource.TWELVE_DATA, null));
+        ChartController controller = new ChartController(
+                mock(CandleRepository.class), mock(LivePricingService.class), marketDataService,
+                mock(StockAssetRepository.class), mock(TwelveDataService.class), mock(YahooFinanceService.class),
+                new TechnicalIndicatorEnrichmentService(), new ElliottWaveDetectionService());
+
+        ChartController.CandlePageResponse page =
+                controller.getHistoricalCandles("msft", "1d", 1_000L, 500);
+
+        assertThat(page.nextCursor()).isEqualTo(900L);
+        assertThat(page.hasMore()).isTrue();
+        assertThat(page.source()).isEqualTo("TWELVE_DATA");
+        assertThat(page.candles()).singleElement().satisfies(response -> {
+            assertThat(response.symbol()).isEqualTo("MSFT");
+            assertThat(response.timestamp()).isEqualTo(900L);
+        });
+        verify(marketDataService).loadCandlePage("MSFT", "1d", 1_000L, 500);
+    }
+
+    @Test
     void returnsUppercaseMonthlyAndLowercaseWeeklyWaveLabels() {
         String symbol = "SAP.DE";
         CandleRepository candleRepository = mock(CandleRepository.class);
@@ -85,6 +110,34 @@ class ChartControllerElliottWaveTest {
     }
 
     @Test
+    void exposesDeepWaveTwoWarningMetadataForTheChart() {
+        String symbol = "MSFT";
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        ChartController controller = new ChartController(
+                candleRepository, mock(LivePricingService.class), marketDataService,
+                mock(StockAssetRepository.class), mock(TwelveDataService.class), mock(YahooFinanceService.class),
+                new TechnicalIndicatorEnrichmentService(), new ElliottWaveDetectionService());
+        when(marketDataService.syncCandles(symbol, "1wk", null))
+                .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
+        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1wk"))
+                .thenReturn(deepWaveTwoCandles(symbol, "1wk").reversed());
+
+        ChartController.ElliottWaveOverlay overlay = controller.getElliottWaves(symbol, "1wk");
+
+        assertThat(overlay.direction()).isEqualTo("BEARISH");
+        assertThat(overlay.deepWaveTwo()).isTrue();
+        assertThat(overlay.waveTwoRetracement()).isBetween(0.95, 0.99);
+        assertThat(overlay.qualityScore()).isGreaterThanOrEqualTo(68);
+        assertThat(overlay.impulseVariant())
+                .isEqualTo(ElliottWaveDetectionService.ImpulseVariant.STANDARD);
+        assertThat(overlay.qualityWarnings())
+                .anyMatch(warning -> warning.contains("Deep Wave II"));
+        assertThat(overlay.points()).extracting(ChartController.ElliottWavePointView::label)
+                .containsExactly("", "i", "ii", "iii", "iv", "v");
+    }
+
+    @Test
     void returnsDeepCandlesAndHistoricStructuresForSelectedIntervalButRejectsDaily() {
         String symbol = "SAP.DE";
         CandleRepository candleRepository = mock(CandleRepository.class);
@@ -100,19 +153,42 @@ class ChartControllerElliottWaveTest {
                 .thenReturn(monthlyCandles);
 
         ChartController.ElliottWaveHistoryOverlay history =
-                controller.getHistoricalElliottWaves(symbol, "1mo");
+                controller.getHistoricalElliottWaves(symbol, "1mo", null);
 
         assertThat(history.interval()).isEqualTo("1mo");
-        assertThat(history.candles()).hasSameSizeAs(monthlyCandles);
+        assertThat(history.fromTimestamp()).isNull();
         assertThat(history.structures()).isNotEmpty();
         assertThat(history.structures()).anySatisfy(structure ->
                 assertThat(structure.points().getLast().label()).isEqualTo("C"));
         assertThat(history.structures()).allSatisfy(structure -> {
+            assertThat(structure.structureId()).isNotBlank();
             assertThat(structure.confirmationTimestamp()).isNotNull();
             assertThat(structure.qualityScore()).isGreaterThanOrEqualTo(68);
         });
-        assertThatThrownBy(() -> controller.getHistoricalElliottWaves(symbol, "1d"))
+        assertThatThrownBy(() -> controller.getHistoricalElliottWaves(symbol, "1d", null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void historicalElliottAnalysisStartsAtTheLoadedChartCursor() {
+        String symbol = "MSFT";
+        long from = 86_400L;
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        List<Candle> loadedCandles = candles(symbol, "1wk");
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+                symbol, "1wk", from)).thenReturn(loadedCandles);
+        ChartController controller = new ChartController(
+                candleRepository, mock(LivePricingService.class), mock(MarketDataService.class),
+                mock(StockAssetRepository.class), mock(TwelveDataService.class), mock(YahooFinanceService.class),
+                new TechnicalIndicatorEnrichmentService(), new ElliottWaveDetectionService());
+
+        ChartController.ElliottWaveHistoryOverlay history =
+                controller.getHistoricalElliottWaves(symbol, "1wk", from);
+
+        assertThat(history.fromTimestamp()).isEqualTo(from);
+        assertThat(history.structures()).isNotEmpty();
+        verify(candleRepository).findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+                symbol, "1wk", from);
     }
 
     @Test
@@ -185,6 +261,27 @@ class ChartControllerElliottWaveTest {
                 new Anchor(1, 112.0), new Anchor(6, 100.0), new Anchor(14, 121.0),
                 new Anchor(24, 110.0), new Anchor(38, 143.0), new Anchor(54, 126.0),
                 new Anchor(68, 150.0), new Anchor(69, 147.0)
+        );
+        List<Candle> candles = new ArrayList<>();
+        for (int anchorIndex = 0; anchorIndex < anchors.size() - 1; anchorIndex++) {
+            Anchor start = anchors.get(anchorIndex);
+            Anchor end = anchors.get(anchorIndex + 1);
+            int from = anchorIndex == 0 ? start.index() : start.index() + 1;
+            for (int index = from; index <= end.index(); index++) {
+                double progress = (index - start.index()) / (double) (end.index() - start.index());
+                double close = start.price() + (end.price() - start.price()) * progress;
+                candles.add(new Candle(symbol, interval, index * 86_400L,
+                        close - 0.4, close + 0.6, close - 0.6, close, 1_500L));
+            }
+        }
+        return candles;
+    }
+
+    private List<Candle> deepWaveTwoCandles(String symbol, String interval) {
+        List<Anchor> anchors = List.of(
+                new Anchor(1, 520.0), new Anchor(6, 555.45), new Anchor(14, 492.37),
+                new Anchor(24, 553.72), new Anchor(38, 356.28), new Anchor(54, 466.32),
+                new Anchor(68, 349.20), new Anchor(69, 390.49)
         );
         List<Candle> candles = new ArrayList<>();
         for (int anchorIndex = 0; anchorIndex < anchors.size() - 1; anchorIndex++) {

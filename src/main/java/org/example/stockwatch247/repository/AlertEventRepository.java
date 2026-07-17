@@ -4,6 +4,8 @@ import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -20,6 +22,10 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
     long countByAlertRule(AlertRule alertRule);
 
     List<AlertEvent> findByAlertRuleOrderBySignalCandleTimestampDesc(AlertRule alertRule);
+
+    @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
+    List<AlertEvent> findByAlertRule_UserAndAlertRule_IsActiveTrueOrderBySentAtDescIdDesc(User user,
+                                                                                          Pageable pageable);
 
     @Query("""
             select event

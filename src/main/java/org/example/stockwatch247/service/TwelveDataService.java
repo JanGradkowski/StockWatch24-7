@@ -2,19 +2,26 @@ package org.example.stockwatch247.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import org.example.stockwatch247.market.MarketIndexCatalog;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -25,11 +32,15 @@ import java.util.Optional;
 
 @Service
 public class TwelveDataService {
+    private static final DateTimeFormatter PROVIDER_DATE_TIME = DateTimeFormatter
+            .ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneOffset.UTC);
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final StockAssetRepository stockAssetRepository;
     private final String apiKey;
     private final String baseUrl;
+    private final TickerSearchIndex tickerSearchIndex = new TickerSearchIndex();
     private final BoundedTtlCache<String, List<Map<String, Object>>> searchCache =
             new BoundedTtlCache<>(1_000, 900);
 
@@ -45,16 +56,49 @@ public class TwelveDataService {
         this.baseUrl = stripTrailingSlash(baseUrl);
     }
 
+    @PostConstruct
+    void initializeTickerSearchIndex() {
+        refreshTickerSearchIndex();
+    }
+
+    @Scheduled(fixedDelayString = "${market-search.index-refresh-ms:60000}")
+    void refreshTickerSearchIndex() {
+        tickerSearchIndex.rebuild(stockAssetRepository.findAll());
+    }
+
     public List<MarketDataBar> getTimeSeries(String rawSymbol, String interval, int outputSize) {
+        return requestTimeSeries(rawSymbol, interval, outputSize, null);
+    }
+
+    public List<MarketDataBar> getTimeSeriesBefore(String rawSymbol,
+                                                   String interval,
+                                                   int outputSize,
+                                                   long beforeExclusive) {
+        if (beforeExclusive <= 0L) {
+            throw new IllegalArgumentException("Invalid historical candle cursor.");
+        }
+        return requestTimeSeries(rawSymbol, interval, outputSize, beforeExclusive);
+    }
+
+    private List<MarketDataBar> requestTimeSeries(String rawSymbol,
+                                                  String interval,
+                                                  int outputSize,
+                                                  Long beforeExclusive) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
-        URI uri = UriComponentsBuilder.fromUriString(baseUrl)
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/time_series")
                 .queryParam("symbol", symbol)
                 .queryParam("interval", interval)
                 .queryParam("outputsize", outputSize)
                 .queryParam("format", "JSON")
                 .queryParam("timezone", "UTC")
-                .queryParam("adjust", "splits")
+                .queryParam("adjust", "splits");
+        if (beforeExclusive != null) {
+            String endDate = PROVIDER_DATE_TIME.format(
+                    Instant.ofEpochSecond(beforeExclusive).minusSeconds(1L));
+            uriBuilder.queryParam("end_date", endDate);
+        }
+        URI uri = uriBuilder
                 .queryParam("apikey", apiKey)
                 .build()
                 .encode()
@@ -69,8 +113,9 @@ public class TwelveDataService {
 
         java.util.ArrayList<MarketDataBar> bars = new java.util.ArrayList<>();
         for (JsonNode value : values) {
-            Optional<MarketDataBar> bar = toBar(rawSymbol, value);
-            bar.ifPresent(bars::add);
+            Optional<MarketDataBar> bar = toBar(symbol, interval, value);
+            bar.filter(candidate -> beforeExclusive == null || candidate.timestamp() < beforeExclusive)
+                    .ifPresent(bars::add);
         }
         return bars;
     }
@@ -136,11 +181,7 @@ public class TwelveDataService {
             return List.of();
         }
 
-        List<Map<String, Object>> indexMatches = MarketIndexCatalog.search(query).stream()
-                .map(this::toSuggestion)
-                .toList();
-        List<Map<String, Object>> localMatches = searchLocalSymbols(query);
-        List<Map<String, Object>> builtInMatches = mergeSuggestions(indexMatches, localMatches);
+        List<Map<String, Object>> builtInMatches = tickerSearchIndex.search(query, 8);
         if (query.length() < 2) {
             return builtInMatches;
         }
@@ -179,7 +220,8 @@ public class TwelveDataService {
                         .limit(8)
                         .map(this::toSuggestion)
                         .toList();
-                results = mergeSuggestions(indexMatches, localMatches, providerMatches);
+                results = mergeSuggestions(builtInMatches, providerMatches);
+                refreshTickerSearchIndex();
             }
         } catch (RuntimeException e) {
             System.err.println("Twelve Data symbol search unavailable: " + e.getMessage());
@@ -188,6 +230,11 @@ public class TwelveDataService {
 
         searchCache.put(query, results, now);
         return results;
+    }
+
+    public List<Map<String, Object>> searchLocalSymbols(String rawQuery) {
+        String query = normalizeSymbol(SecurityInputValidator.requireSearchQuery(rawQuery));
+        return tickerSearchIndex.search(query, 8);
     }
 
     public StockAsset upsertStockAsset(String rawSymbol, String companyName, String exchange, String currency) {
@@ -253,7 +300,7 @@ public class TwelveDataService {
         }
     }
 
-    private Optional<MarketDataBar> toBar(String fallbackSymbol, JsonNode value) {
+    private Optional<MarketDataBar> toBar(String fallbackSymbol, String interval, JsonNode value) {
         String datetime = value.path("datetime").asText("");
         if (datetime.isBlank()) {
             return Optional.empty();
@@ -261,7 +308,7 @@ public class TwelveDataService {
 
         return Optional.of(new MarketDataBar(
                 normalizeSymbol(fallbackSymbol),
-                parseTimestamp(datetime),
+                canonicalTimestamp(parseTimestamp(datetime), interval),
                 parseDouble(value.path("open").asText("0")),
                 parseDouble(value.path("high").asText("0")),
                 parseDouble(value.path("low").asText("0")),
@@ -402,19 +449,6 @@ public class TwelveDataService {
                 meta.path("instrument_type").asText(""), meta.path("type").asText(""))));
     }
 
-    private List<Map<String, Object>> searchLocalSymbols(String query) {
-        Map<String, StockAsset> matches = new LinkedHashMap<>();
-        stockAssetRepository.findByTickerSymbolStartsWithIgnoreCase(query)
-                .forEach(asset -> matches.put(asset.getTickerSymbol(), asset));
-        stockAssetRepository.findByCompanyNameContainingIgnoreCase(query)
-                .forEach(asset -> matches.put(asset.getTickerSymbol(), asset));
-
-        return matches.values().stream()
-                .limit(8)
-                .map(this::toSuggestion)
-                .toList();
-    }
-
     private Map<String, Object> toSuggestion(StockAsset asset) {
         String symbol = normalizeSymbol(asset.getTickerSymbol());
         Map<String, Object> suggestion = new HashMap<>();
@@ -465,6 +499,19 @@ public class TwelveDataService {
         return java.time.LocalDateTime.parse(normalized)
                 .atZone(java.time.ZoneOffset.UTC)
                 .toEpochSecond();
+    }
+
+    private long canonicalTimestamp(long timestamp, String interval) {
+        LocalDate date = Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC).toLocalDate();
+        LocalDate canonicalDate = switch (interval) {
+            case "1day" -> date;
+            case "1week" -> date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            case "1month" -> date.withDayOfMonth(1);
+            default -> null;
+        };
+        return canonicalDate == null
+                ? timestamp
+                : canonicalDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond();
     }
 
     private double parseDouble(String value) {

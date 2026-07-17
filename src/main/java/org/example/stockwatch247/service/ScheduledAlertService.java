@@ -233,7 +233,7 @@ public class ScheduledAlertService {
     private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles, TimeInterval interval) {
         List<DetectedSignal> signals = new java.util.ArrayList<>(detectionService.detect(enrichedCandles));
         if (isElliottEnabled(interval)) {
-            signals.addAll(elliottWaveDetectionService.detect(enrichedCandles).stream()
+            signals.addAll(elliottWaveDetectionService.detectAlertSignals(enrichedCandles).stream()
                     .filter(this::isActionableElliottTurningPoint)
                     .toList());
         }
@@ -258,18 +258,12 @@ public class ScheduledAlertService {
     }
 
     private boolean isElliottPattern(CandlePattern pattern) {
-        return pattern == CandlePattern.ELLIOTT_BULLISH_IMPULSE
-                || pattern == CandlePattern.ELLIOTT_BEARISH_IMPULSE
-                || pattern == CandlePattern.ELLIOTT_BULLISH_WAVE_V_END
-                || pattern == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END
-                || pattern == CandlePattern.ELLIOTT_BULLISH_CORRECTION
-                || pattern == CandlePattern.ELLIOTT_BEARISH_CORRECTION;
+        return pattern != null && pattern.name().startsWith("ELLIOTT_");
     }
 
     private boolean isActionableElliottTurningPoint(DetectedSignal signal) {
-        return signal.pattern() == CandlePattern.ELLIOTT_BULLISH_WAVE_V_END
-                || signal.pattern() == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END
-                || signal.pattern() == CandlePattern.ELLIOTT_BULLISH_CORRECTION
-                || signal.pattern() == CandlePattern.ELLIOTT_BEARISH_CORRECTION;
+        CandlePattern pattern = signal.pattern();
+        return isElliottPattern(pattern)
+                && (pattern.name().endsWith("WAVE_V_END") || pattern.name().endsWith("CORRECTION"));
     }
 }

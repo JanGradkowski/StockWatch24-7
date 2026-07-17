@@ -127,14 +127,17 @@ public class AuthController {
 
         if (currentUser != null) {
             var trackedCompanies = alertRuleService.getActiveCompanyViews(currentUser);
+            var latestSignals = alertRuleService.getLatestSignalViews(currentUser);
             model.addAttribute("firstName", currentUser.getFirstName());
             model.addAttribute("trackedCompanies", trackedCompanies);
+            model.addAttribute("latestSignals", latestSignals);
             model.addAttribute("activeRuleCount", trackedCompanies.stream()
                     .mapToInt(AlertRuleService.TrackedCompanyView::ruleCount)
                     .sum());
         } else {
             model.addAttribute("firstName", "Trader");
             model.addAttribute("trackedCompanies", java.util.List.of());
+            model.addAttribute("latestSignals", java.util.List.of());
             model.addAttribute("activeRuleCount", 0);
         }
 

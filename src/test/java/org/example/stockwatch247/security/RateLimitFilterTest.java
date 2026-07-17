@@ -55,4 +55,22 @@ class RateLimitFilterTest {
         assertThat(response.getHeader("Retry-After")).isEqualTo("900");
         assertThat(response.getContentAsString()).doesNotContain("user@example.com");
     }
+
+    @Test
+    void localRadixSearchUsesItsOwnHigherCapacityBucket() throws Exception {
+        RequestRateLimiter limiter = mock(RequestRateLimiter.class);
+        when(limiter.tryAcquire(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+        RateLimitFilter filter = new RateLimitFilter(limiter);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setRequestURI("/api/stocks/search/local");
+        request.setRemoteAddr("203.0.113.8");
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        verify(limiter).tryAcquire(eq("stock-search-local:ip:203.0.113.8"), eq(120),
+                eq(java.time.Duration.ofMinutes(1)));
+    }
 }

@@ -6,11 +6,14 @@ import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
+import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.CandleRepository;
+import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -194,11 +197,94 @@ class ScheduledAlertServiceTest {
         verify(alertEventRepository).save(any());
     }
 
+    @Test
+    void scheduledElliottChecksUseOnlyConfidenceFilteredAlertSignals() {
+        String symbol = "MSFT";
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService elliottWaveDetectionService = mock(ElliottWaveDetectionService.class);
+        AlertRule rule = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        when(marketDataService.syncCandles(symbol, "1wk", null, true))
+                .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
+        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1wk"))
+                .thenReturn(syntheticElliottCandles(symbol).reversed());
+        when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
+                symbol, TimeInterval.WEEKLY)).thenReturn(List.of(rule));
+        when(elliottWaveDetectionService.detectAlertSignals(any())).thenReturn(List.of());
+
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, elliottWaveDetectionService);
+
+        service.processSymbolInterval(symbol, TimeInterval.WEEKLY);
+
+        verify(elliottWaveDetectionService).detectAlertSignals(any());
+        verify(elliottWaveDetectionService, never()).detect(any());
+        verify(notificationService, never()).sendSignalEmail(any(), any());
+        verify(alertEventRepository, never()).save(any());
+    }
+
+    @Test
+    void scheduledElliottChecksDeliverNewTurningPointVariants() {
+        String symbol = "MSFT";
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService elliottWaveDetectionService = mock(ElliottWaveDetectionService.class);
+        AlertRule rule = rule(symbol, TimeInterval.MONTHLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        long signalTimestamp = 68L * 86_400L;
+        DetectedSignal truncatedFifth = new DetectedSignal(
+                CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END,
+                TradeSignal.SELL,
+                SignalStength.HIGH_CONFIDENCE,
+                81,
+                List.of("Truncated Wave V — reduced confidence"),
+                signalTimestamp,
+                149.0);
+        when(marketDataService.syncCandles(symbol, "1mo", null, true))
+                .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
+        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1mo"))
+                .thenReturn(syntheticWaveVEndCandles(symbol).reversed());
+        when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
+                symbol, TimeInterval.MONTHLY)).thenReturn(List.of(rule));
+        when(elliottWaveDetectionService.detectAlertSignals(any())).thenReturn(List.of(truncatedFifth));
+        when(alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(
+                rule, truncatedFifth.pattern(), signalTimestamp)).thenReturn(false);
+
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, elliottWaveDetectionService);
+
+        service.processSymbolInterval(symbol, TimeInterval.MONTHLY);
+
+        verify(notificationService).sendSignalEmail(rule, truncatedFifth);
+        ArgumentCaptor<AlertEvent> savedEvent = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventRepository).save(savedEvent.capture());
+        assertThat(savedEvent.getValue().getPattern())
+                .isEqualTo(CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END);
+        assertThat(savedEvent.getValue().getConfidenceScore()).isEqualTo(81);
+    }
+
     private ScheduledAlertService service(AlertRuleRepository alertRuleRepository,
                                           AlertEventRepository alertEventRepository,
                                           CandleRepository candleRepository,
                                           MarketDataService marketDataService,
                                           AlertNotificationService notificationService) {
+        return service(alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, new ElliottWaveDetectionService());
+    }
+
+    private ScheduledAlertService service(AlertRuleRepository alertRuleRepository,
+                                          AlertEventRepository alertEventRepository,
+                                          CandleRepository candleRepository,
+                                          MarketDataService marketDataService,
+                                          AlertNotificationService notificationService,
+                                          ElliottWaveDetectionService elliottWaveDetectionService) {
         return new ScheduledAlertService(
                 alertRuleRepository,
                 alertEventRepository,
@@ -206,7 +292,7 @@ class ScheduledAlertServiceTest {
                 marketDataService,
                 new TechnicalIndicatorEnrichmentService(),
                 new CandlePatternDetectionService(),
-                new ElliottWaveDetectionService(),
+                elliottWaveDetectionService,
                 notificationService,
                 mock(AlertCheckJobStore.class),
                 mock(AlertScheduleRecoveryService.class),
