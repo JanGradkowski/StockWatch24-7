@@ -42,7 +42,7 @@ class ScheduledAlertServiceTest {
     }
 
     @Test
-    void yahooBackedDailyCandlesStillTriggerAutomaticPatternEmailAndEventRecording() {
+    void confidenceDoesNotSuppressStructurallyDetectedYahooCandlestick() {
         String symbol = "SAP.DE";
         MarketDataService marketDataService = mock(MarketDataService.class);
         CandleRepository candleRepository = mock(CandleRepository.class);
@@ -72,9 +72,9 @@ class ScheduledAlertServiceTest {
         verify(notificationService).sendSignalEmail(any(), any());
         ArgumentCaptor<AlertEvent> savedEvent = ArgumentCaptor.forClass(AlertEvent.class);
         verify(alertEventRepository).save(savedEvent.capture());
+        assertThat(savedEvent.getValue().getConfidenceScore()).isLessThan(75);
         assertThat(savedEvent.getValue().getConfidenceReasons())
-                .isNotEmpty()
-                .anyMatch(reason -> reason.contains("geometry"));
+                .anyMatch(reason -> reason.contains("pattern geometry remains valid"));
     }
 
     @Test
@@ -86,7 +86,17 @@ class ScheduledAlertServiceTest {
         AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
         AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        CandlePatternDetectionService detectionService = mock(CandlePatternDetectionService.class);
         AlertRule rule = rule(symbol, TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        DetectedSignal qualifiedSignal = new DetectedSignal(
+                CandlePattern.BULLISH_ENGULFING,
+                TradeSignal.BUY,
+                SignalStength.HIGH_CONFIDENCE,
+                88,
+                List.of("qualified regression fixture"),
+                2 * 86_400L,
+                101.0
+        );
 
         when(marketDataService.syncCandles(symbol, "1d", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(
@@ -101,16 +111,19 @@ class ScheduledAlertServiceTest {
                 symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
         when(alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(any(), any(), any()))
                 .thenReturn(false);
+        when(detectionService.detectAlertSignals(any())).thenReturn(List.of(qualifiedSignal));
 
         ScheduledAlertService service = service(
-                alertRuleRepository, alertEventRepository, candleRepository, marketDataService, notificationService);
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, detectionService, new ElliottWaveDetectionService());
 
         service.processSymbolInterval(symbol, TimeInterval.DAILY, scheduledFor);
 
         verify(candleRepository).findTop100BySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
                 symbol, "1d", scheduledFor.getEpochSecond());
         verify(candleRepository, never()).findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1d");
-        verify(notificationService).sendSignalEmail(any(), any());
+        verify(detectionService).detectAlertSignals(any());
+        verify(notificationService).sendSignalEmail(rule, qualifiedSignal);
         verify(alertEventRepository).save(any());
     }
 
@@ -276,7 +289,7 @@ class ScheduledAlertServiceTest {
                                           MarketDataService marketDataService,
                                           AlertNotificationService notificationService) {
         return service(alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
-                notificationService, new ElliottWaveDetectionService());
+                notificationService, new CandlePatternDetectionService(), new ElliottWaveDetectionService());
     }
 
     private ScheduledAlertService service(AlertRuleRepository alertRuleRepository,
@@ -292,6 +305,33 @@ class ScheduledAlertServiceTest {
                 marketDataService,
                 new TechnicalIndicatorEnrichmentService(),
                 new CandlePatternDetectionService(),
+                elliottWaveDetectionService,
+                notificationService,
+                mock(AlertCheckJobStore.class),
+                mock(AlertScheduleRecoveryService.class),
+                true,
+                true,
+                true,
+                300,
+                60,
+                3
+        );
+    }
+
+    private ScheduledAlertService service(AlertRuleRepository alertRuleRepository,
+                                          AlertEventRepository alertEventRepository,
+                                          CandleRepository candleRepository,
+                                          MarketDataService marketDataService,
+                                          AlertNotificationService notificationService,
+                                          CandlePatternDetectionService detectionService,
+                                          ElliottWaveDetectionService elliottWaveDetectionService) {
+        return new ScheduledAlertService(
+                alertRuleRepository,
+                alertEventRepository,
+                candleRepository,
+                marketDataService,
+                new TechnicalIndicatorEnrichmentService(),
+                detectionService,
                 elliottWaveDetectionService,
                 notificationService,
                 mock(AlertCheckJobStore.class),

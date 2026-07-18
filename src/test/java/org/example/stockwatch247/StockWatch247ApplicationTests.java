@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -127,18 +128,38 @@ class StockWatch247ApplicationTests {
         stockAsset.setInstrumentType(InstrumentType.EQUITY);
         stockAsset = stockAssetRepository.save(stockAsset);
 
+        StockAsset indexAsset = new StockAsset();
+        indexAsset.setTickerSymbol("I" + suffix);
+        indexAsset.setCompanyName("Dashboard Test Index");
+        indexAsset.setExchange("INDEX");
+        indexAsset.setCurrency("USD");
+        indexAsset.setInstrumentType(InstrumentType.INDEX);
+        indexAsset = stockAssetRepository.save(indexAsset);
+
+        StockAsset etfAsset = new StockAsset();
+        etfAsset.setTickerSymbol("E" + suffix);
+        etfAsset.setCompanyName("Dashboard Test ETF");
+        etfAsset.setExchange("NYSE");
+        etfAsset.setCurrency("USD");
+        etfAsset.setInstrumentType(InstrumentType.ETF);
+        etfAsset = stockAssetRepository.save(etfAsset);
+
         AlertRule candleBuy = alertRule(user, stockAsset, TimeInterval.WEEKLY,
                 AlertPatternFamily.CANDLESTICK, TradeSignal.BUY, CandlePattern.BULLISH_ENGULFING);
         AlertRule elliottSell = alertRule(user, stockAsset, TimeInterval.MONTHLY,
                 AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL, CandlePattern.ELLIOTT_BEARISH_CORRECTION);
         candleBuy = alertRuleRepository.save(candleBuy);
         alertRuleRepository.save(elliottSell);
+        alertRuleRepository.save(alertRule(user, indexAsset, TimeInterval.WEEKLY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY, CandlePattern.ELLIOTT_BULLISH_CORRECTION));
+        alertRuleRepository.save(alertRule(user, etfAsset, TimeInterval.DAILY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.SELL, CandlePattern.BEARISH_ENGULFING));
 
         AlertEvent event = new AlertEvent();
         event.setAlertRule(candleBuy);
         event.setPattern(CandlePattern.BULLISH_ENGULFING);
         event.setTradeSignal(TradeSignal.BUY);
-        event.setSignalCandleTimestamp(1_752_019_200L);
+        event.setSignalCandleTimestamp(Instant.parse("2026-07-13T00:00:00Z").getEpochSecond());
         event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
         event.setConfidenceScore(88);
         event.setConfidenceReasons(List.of(
@@ -154,10 +175,19 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("home"))
                 .andExpect(model().attributeExists("latestSignals"))
+                .andExpect(model().attribute("stockCompanyCount", 1L))
+                .andExpect(model().attribute("indexEtfCompanyCount", 2L))
                 .andExpect(content().string(containsString("Grouped Board Test Company")))
+                .andExpect(content().string(containsString("Dashboard Test Index")))
+                .andExpect(content().string(containsString("Dashboard Test ETF")))
                 .andExpect(content().string(containsString("Watched rules")))
+                .andExpect(content().string(containsString("Indexes / ETFs")))
+                .andExpect(content().string(containsString("data-instrument-group=\"stocks\"")))
+                .andExpect(content().string(containsString("data-instrument-group=\"funds\"")))
+                .andExpect(content().string(containsString("aria-pressed=\"true\"")))
                 .andExpect(content().string(containsString("Latest signals")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
+                .andExpect(content().string(containsString("13\u201317 Jul 2026")))
                 .andExpect(content().string(containsString("Confidence 88 out of 100")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 

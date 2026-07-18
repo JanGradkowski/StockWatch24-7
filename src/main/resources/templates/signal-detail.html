@@ -42,7 +42,7 @@
               th:text="${signal.tradeSignal()}">BUY</span>
         <span class="signal-report-tag interval" th:text="${signal.intervalLabel()}">1wk</span>
         <span class="signal-report-tag"
-              th:text="${signal.signalDate() != null ? #temporals.format(signal.signalDate(), 'dd MMM yyyy') : 'Date unavailable'}">08 Jul 2026</span>
+              th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</span>
       </div>
     </div>
     <div class="signal-report-actions">
@@ -103,8 +103,8 @@
           <strong th:text="${signal.intervalLabel()}">1wk</strong>
         </div>
         <div class="signal-snapshot-item">
-          <span>Signal candle</span>
-          <strong th:text="${signal.signalDate() != null ? #temporals.format(signal.signalDate(), 'dd MMM yyyy') : 'Not available'}">08 Jul 2026</strong>
+          <span>Signal period</span>
+          <strong th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Not available'}">13&ndash;17 Jul 2026</strong>
         </div>
         <div class="signal-snapshot-item">
           <span>Recorded close</span>

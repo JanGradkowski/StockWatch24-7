@@ -131,6 +131,12 @@ public class AuthController {
             model.addAttribute("firstName", currentUser.getFirstName());
             model.addAttribute("trackedCompanies", trackedCompanies);
             model.addAttribute("latestSignals", latestSignals);
+            model.addAttribute("stockCompanyCount", trackedCompanies.stream()
+                    .filter(company -> company.instrumentGroup().equals("stocks"))
+                    .count());
+            model.addAttribute("indexEtfCompanyCount", trackedCompanies.stream()
+                    .filter(company -> company.instrumentGroup().equals("funds"))
+                    .count());
             model.addAttribute("activeRuleCount", trackedCompanies.stream()
                     .mapToInt(AlertRuleService.TrackedCompanyView::ruleCount)
                     .sum());
@@ -138,6 +144,8 @@ public class AuthController {
             model.addAttribute("firstName", "Trader");
             model.addAttribute("trackedCompanies", java.util.List.of());
             model.addAttribute("latestSignals", java.util.List.of());
+            model.addAttribute("stockCompanyCount", 0L);
+            model.addAttribute("indexEtfCompanyCount", 0L);
             model.addAttribute("activeRuleCount", 0);
         }
 

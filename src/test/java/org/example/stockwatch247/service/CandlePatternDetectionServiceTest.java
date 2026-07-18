@@ -119,7 +119,43 @@ class CandlePatternDetectionServiceTest {
             assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.BUY);
             assertThat(signal.strength()).isEqualTo(SignalStength.LOW_CONFIDENCE);
             assertThat(signal.confidenceScore()).isLessThan(75);
-            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("below the calibrated signal range"));
+            assertThat(signal.reasons()).anyMatch(reason -> reason.contains("pattern geometry remains valid"));
+        });
+        assertThat(detectionService.detectAlertSignals(candles))
+                .anyMatch(signal -> signal.pattern() == CandlePattern.BULLISH_ENGULFING);
+    }
+
+    @Test
+    void rejectsAmznWeeklyShootingStarShapeWithoutAnEstablishedUptrend() {
+        List<EnrichedCandle> candles = List.of(
+                candle(1L, 246.68, 250.43, 233.59, 238.55, 1000, 1000, 48, 239.5, 220, 260, 15),
+                candle(2L, 245.02, 249.51, 236.00, 244.39, 1000, 1000, 51, 239.8, 220, 260, 15),
+                candle(3L, 240.08, 242.42, 225.55, 232.69, 1000, 1000, 43, 239.2, 220, 260, 15),
+                candle(4L, 234.22, 249.71, 233.80, 242.67, 1000, 1000, 50, 239.6, 220, 260, 15),
+                candle(5L, 243.80, 251.03, 238.25, 245.34, 1000, 1000, 53, 240.1, 220, 260, 15),
+                candle(6L, 244.68, 258.08, 243.59, 247.23, 1000, 1000, 55, 240.8, 220, 260, 15)
+        );
+
+        assertThat(detectionService.detect(candles))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.SHOOTING_STAR);
+        assertThat(detectionService.detectAlertSignals(candles))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.SHOOTING_STAR);
+    }
+
+    @Test
+    void acceptsQualifiedShootingStarAfterHigherHighHigherLowAdvance() {
+        List<EnrichedCandle> candles = List.of(
+                candle(1L, 99, 102, 98, 101, 1000, 1000, 54, 99, 90, 120, 4),
+                candle(2L, 102, 106, 101, 105, 1000, 1000, 60, 100, 90, 120, 4),
+                candle(3L, 106, 110, 105, 109, 1000, 1000, 66, 102, 90, 120, 4),
+                candle(4L, 110, 114, 109, 113, 1000, 1000, 72, 104, 90, 120, 4),
+                candle(5L, 114, 124, 113.5, 115, 2000, 1000, 68, 106, 90, 123, 4)
+        );
+
+        assertThat(detectionService.detectAlertSignals(candles)).anySatisfy(signal -> {
+            assertThat(signal.pattern()).isEqualTo(CandlePattern.SHOOTING_STAR);
+            assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.SELL);
+            assertThat(signal.confidenceScore()).isGreaterThanOrEqualTo(75);
         });
     }
 

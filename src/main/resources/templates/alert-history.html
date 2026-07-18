@@ -69,7 +69,7 @@
              class="signal-event-card signal-event-link"
              th:aria-label="${'Open score report for ' + event.patternLabel()}">
             <div class="signal-event-topline">
-              <time th:text="${event.signalDate() != null ? event.signalDate() : event.signalCandleTimestamp()}">2026-07-08</time>
+              <time th:text="${event.signalPeriodLabel() != null ? event.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</time>
               <span class="label"
                     th:classappend="${event.strength() != null && event.strength().name() == 'HIGH_CONFIDENCE'} ? ' high' : (${event.strength() != null && event.strength().name() == 'MEDIUM_CONFIDENCE'} ? ' medium' : ' low')"
                     th:text="${event.strength() != null ? event.strength() : 'UNRATED'}">HIGH_CONFIDENCE</span>

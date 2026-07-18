@@ -12,11 +12,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Locale;
 
 @Service
 public class AlertNotificationService {
@@ -73,7 +69,7 @@ public class AlertNotificationService {
                 Backtested context: high-confidence classifications are strongest over roughly 30 daily candles.
                 Reasons: %s
                 Interval: %s
-                Signal candle date: %s
+                Signal candle period: %s
                 Close price: %.2f
                 """.formatted(
                 "A",
@@ -87,7 +83,7 @@ public class AlertNotificationService {
                 signal.confidenceScore(),
                 signal.reasons().isEmpty() ? "not available" : String.join("; ", signal.reasons()),
                 rule.getInterval(),
-                formatSignalTimestamp(signal.candleTimestamp()),
+                SignalPeriodFormatter.format(signal.candleTimestamp(), rule.getInterval(), signalTimeZone),
                 signal.closePrice()
         );
 
@@ -115,26 +111,6 @@ public class AlertNotificationService {
         return pattern != null
                 && pattern.name().startsWith("ELLIOTT_")
                 && pattern.name().endsWith("WAVE_V_END");
-    }
-
-    String formatSignalTimestamp(long timestamp) {
-        ZonedDateTime dateTime = Instant.ofEpochSecond(timestamp).atZone(signalTimeZone);
-        int day = dateTime.getDayOfMonth();
-        String suffix = ordinalSuffix(day);
-        String rest = dateTime.format(DateTimeFormatter.ofPattern("MMMM uuuu, HH:mm", Locale.ENGLISH));
-        return day + suffix + " of " + rest;
-    }
-
-    private String ordinalSuffix(int day) {
-        if (day >= 11 && day <= 13) {
-            return "th";
-        }
-        return switch (day % 10) {
-            case 1 -> "st";
-            case 2 -> "nd";
-            case 3 -> "rd";
-            default -> "th";
-        };
     }
 
     private void send(SimpleMailMessage message) {

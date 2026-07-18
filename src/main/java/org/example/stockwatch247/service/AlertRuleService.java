@@ -9,6 +9,7 @@ import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
@@ -180,6 +181,7 @@ public class AlertRuleService {
                 confidenceExplanation(event.getConfidenceScore()),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
+                signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
                 event.getClosePrice(),
                 event.getSentAt(),
                 List.copyOf(reasons),
@@ -190,7 +192,7 @@ public class AlertRuleService {
     private AlertRuleSignalHistory toSignalHistory(AlertRule rule) {
         List<AlertEventView> events = alertEventRepository.findByAlertRuleOrderBySignalCandleTimestampDesc(rule)
                 .stream()
-                .map(this::toEventView)
+                .map(event -> toEventView(event, rule.getInterval()))
                 .toList();
         TrackedAlertView alert = toTrackedAlertView(rule, events.size());
         return new AlertRuleSignalHistory(alert, events);
@@ -198,6 +200,9 @@ public class AlertRuleService {
 
     private TrackedCompanyView toTrackedCompanyView(List<AlertRule> rules) {
         AlertRule representativeRule = rules.getFirst();
+        InstrumentType instrumentType = representativeRule.getStockAsset().getInstrumentType() == null
+                ? InstrumentType.EQUITY
+                : representativeRule.getStockAsset().getInstrumentType();
         List<String> intervalLabels = rules.stream()
                 .map(rule -> intervalLabel(rule.getInterval()))
                 .distinct()
@@ -217,12 +222,30 @@ public class AlertRuleService {
                 representativeRule.getId(),
                 representativeRule.getStockAsset().getTickerSymbol(),
                 representativeRule.getStockAsset().getCompanyName(),
+                instrumentType,
+                instrumentTypeLabel(instrumentType),
+                instrumentGroup(instrumentType),
                 rules.size(),
                 intervalLabels,
                 familyLabels,
                 tradeSignals,
                 eventCount
         );
+    }
+
+    private String instrumentTypeLabel(InstrumentType instrumentType) {
+        return switch (instrumentType) {
+            case EQUITY -> "Stock";
+            case ETF -> "ETF";
+            case INDEX -> "Index";
+            case OTHER -> "Other";
+        };
+    }
+
+    private String instrumentGroup(InstrumentType instrumentType) {
+        return instrumentType == InstrumentType.INDEX || instrumentType == InstrumentType.ETF
+                ? "funds"
+                : "stocks";
     }
 
     private TrackedAlertView toTrackedAlertView(AlertRule rule, long eventCount) {
@@ -256,6 +279,7 @@ public class AlertRuleService {
                 confidenceBand(event.getConfidenceScore()),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
+                signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
                 event.getSentAt()
         );
     }
@@ -454,9 +478,9 @@ public class AlertRuleService {
     }
 
     private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles, TimeInterval interval) {
-        List<DetectedSignal> signals = new java.util.ArrayList<>(detectionService.detect(enrichedCandles));
+        List<DetectedSignal> signals = new java.util.ArrayList<>(detectionService.detectAlertSignals(enrichedCandles));
         if (isElliottEnabled(interval)) {
-            signals.addAll(elliottWaveDetectionService.detect(enrichedCandles).stream()
+            signals.addAll(elliottWaveDetectionService.detectAlertSignals(enrichedCandles).stream()
                     .filter(this::isActionableElliottTurningPoint)
                     .toList());
         }
@@ -511,7 +535,7 @@ public class AlertRuleService {
                 && (pattern.name().endsWith("WAVE_V_END") || pattern.name().endsWith("CORRECTION"));
     }
 
-    private AlertEventView toEventView(AlertEvent event) {
+    private AlertEventView toEventView(AlertEvent event, TimeInterval interval) {
         return new AlertEventView(
                 event.getId(),
                 event.getPattern(),
@@ -521,6 +545,7 @@ public class AlertRuleService {
                 event.getConfidenceScore(),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
+                signalPeriodLabel(interval, event.getSignalCandleTimestamp()),
                 event.getClosePrice(),
                 event.getSentAt()
         );
@@ -639,6 +664,10 @@ public class AlertRuleService {
         return Instant.ofEpochSecond(timestamp).atZone(ZoneId.systemDefault()).toLocalDate();
     }
 
+    private String signalPeriodLabel(TimeInterval interval, Long timestamp) {
+        return SignalPeriodFormatter.format(timestamp, interval, ZoneId.systemDefault());
+    }
+
     public record TrackedAlertView(
             Long id,
             String symbol,
@@ -656,6 +685,9 @@ public class AlertRuleService {
             Long representativeAlertId,
             String symbol,
             String companyName,
+            InstrumentType instrumentType,
+            String instrumentTypeLabel,
+            String instrumentGroup,
             int ruleCount,
             List<String> intervalLabels,
             List<String> familyLabels,
@@ -679,6 +711,7 @@ public class AlertRuleService {
             String confidenceBand,
             Long signalCandleTimestamp,
             LocalDate signalDate,
+            String signalPeriodLabel,
             java.time.LocalDateTime sentAt
     ) {
     }
@@ -707,6 +740,7 @@ public class AlertRuleService {
             Integer confidenceScore,
             Long signalCandleTimestamp,
             LocalDate signalDate,
+            String signalPeriodLabel,
             Double closePrice,
             java.time.LocalDateTime sentAt
     ) {
@@ -730,6 +764,7 @@ public class AlertRuleService {
             String confidenceExplanation,
             Long signalCandleTimestamp,
             LocalDate signalDate,
+            String signalPeriodLabel,
             Double closePrice,
             java.time.LocalDateTime sentAt,
             List<SignalReasonView> reasons,

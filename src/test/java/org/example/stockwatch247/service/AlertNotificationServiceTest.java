@@ -15,6 +15,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import java.util.List;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
@@ -69,7 +70,7 @@ class AlertNotificationServiceTest {
         assertThat(message.getText()).contains(
                 "Direction confidence: 91/100",
                 "bullish body engulfs",
-                "Signal candle date: 10th of July 2026, 11:45");
+                "Signal candle period: 10 Jul 2026");
     }
 
     @Test
@@ -97,7 +98,7 @@ class AlertNotificationServiceTest {
                 SignalStength.HIGH_CONFIDENCE,
                 88,
                 List.of("expanded-flat wave C ended with bullish reversal confirmation"),
-                1_789_000_000L,
+                Instant.parse("2026-07-13T00:00:00Z").getEpochSecond(),
                 195.25);
 
         service.sendSignalEmail(rule, signal);
@@ -106,7 +107,9 @@ class AlertNotificationServiceTest {
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getSubject()).contains("Elliott wave C completed", "BUY", "SAP.DE");
-        assertThat(messageCaptor.getValue().getText()).contains("End of Elliott correction (wave C)");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "End of Elliott correction (wave C)",
+                "Signal candle period: 13\u201317 Jul 2026");
     }
 
     @Test
@@ -133,7 +136,7 @@ class AlertNotificationServiceTest {
                 SignalStength.HIGH_CONFIDENCE,
                 88,
                 List.of("bullish wave V ended as a truncated fifth"),
-                1_789_000_000L,
+                Instant.parse("2026-07-01T00:00:00Z").getEpochSecond(),
                 195.25);
 
         service.sendSignalEmail(rule, signal);
@@ -142,6 +145,8 @@ class AlertNotificationServiceTest {
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getSubject()).contains("Elliott wave V completed", "SELL", "SAP.DE");
-        assertThat(messageCaptor.getValue().getText()).contains("End of Elliott impulse (wave V)");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "End of Elliott impulse (wave V)",
+                "Signal candle period: July 2026");
     }
 }

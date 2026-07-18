@@ -231,7 +231,7 @@ public class ScheduledAlertService {
     }
 
     private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles, TimeInterval interval) {
-        List<DetectedSignal> signals = new java.util.ArrayList<>(detectionService.detect(enrichedCandles));
+        List<DetectedSignal> signals = new java.util.ArrayList<>(detectionService.detectAlertSignals(enrichedCandles));
         if (isElliottEnabled(interval)) {
             signals.addAll(elliottWaveDetectionService.detectAlertSignals(enrichedCandles).stream()
                     .filter(this::isActionableElliottTurningPoint)

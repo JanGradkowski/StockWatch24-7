@@ -51,9 +51,9 @@ public class CandlePatternDetectionService {
         }
 
         if (isGeometricShootingStarShape(current)) {
-            if (isUptrendBefore(candles, last)) {
+            if (isEstablishedUptrendBefore(candles, last)) {
                 addSignal(signals, CandlePattern.SHOOTING_STAR, TradeSignal.SELL,
-                        evaluateBearishReversal(candles, last, last - 1));
+                        evaluateBearishReversal(candles, last, last));
             } else if (isDowntrendBefore(candles, last)) {
                 addSignal(signals, CandlePattern.INVERTED_HAMMER, TradeSignal.BUY,
                         evaluateBullishReversal(candles, last, last - 1));
@@ -109,6 +109,16 @@ public class CandlePatternDetectionService {
         }
 
         return signals;
+    }
+
+    /**
+     * Returns structurally valid BUY/SELL patterns for alert matching. Confidence
+     * describes supporting evidence only and never determines pattern validity.
+     */
+    public List<DetectedSignal> detectAlertSignals(List<EnrichedCandle> recentCandles) {
+        return detect(recentCandles).stream()
+                .filter(signal -> signal.tradeSignal() != TradeSignal.HOLD)
+                .toList();
     }
 
     private void addSignal(List<DetectedSignal> signals,
@@ -168,7 +178,7 @@ public class CandlePatternDetectionService {
     private List<String> classifyReasons(SignalEvidence evidence) {
         List<String> reasons = new ArrayList<>(evidence.reasons());
         if (evidence.confidenceScore() < MIN_CALIBRATED_CONFIDENCE) {
-            reasons.add("classification confidence is below the calibrated signal range; pattern is still detected");
+            reasons.add("supporting evidence is below the calibrated confidence range; pattern geometry remains valid");
         }
         return List.copyOf(reasons);
     }
@@ -497,6 +507,49 @@ public class CandlePatternDetectionService {
         }
 
         return score >= 2;
+    }
+
+    /**
+     * A shooting-star shape is only a bearish reversal when it forms after a real
+     * advance. Four context candles allow one pullback, while still requiring a
+     * sequence dominated by higher highs/higher lows and a meaningful price move.
+     */
+    private boolean isEstablishedUptrendBefore(List<EnrichedCandle> candles, int signalIndex) {
+        int contextIndex = signalIndex - 1;
+        int firstContextIndex = contextIndex - 3;
+        if (firstContextIndex < 0) {
+            return false;
+        }
+
+        EnrichedCandle first = candles.get(firstContextIndex);
+        EnrichedCandle context = candles.get(contextIndex);
+        int higherHighAndLowTransitions = 0;
+        for (int index = firstContextIndex + 1; index <= contextIndex; index++) {
+            EnrichedCandle previous = candles.get(index - 1);
+            EnrichedCandle current = candles.get(index);
+            if (current.high() > previous.high() && current.low() > previous.low()) {
+                higherHighAndLowTransitions++;
+            }
+        }
+
+        double minimumAdvance = first.close() * 0.02;
+        if (isAvailable(context.atr14())) {
+            minimumAdvance = Math.max(minimumAdvance, context.atr14() * 0.5);
+        }
+
+        boolean meaningfulAdvance = context.close() - first.close() >= minimumAdvance;
+        boolean higherRange = context.high() > first.high() && context.low() > first.low();
+        boolean emaPositionConfirmed = !isAvailable(context.ema20()) || context.close() > context.ema20();
+        boolean emaSlopeConfirmed = contextIndex == 0
+                || !isAvailable(context.ema20())
+                || !isAvailable(candles.get(contextIndex - 1).ema20())
+                || context.ema20() > candles.get(contextIndex - 1).ema20();
+
+        return higherHighAndLowTransitions >= 2
+                && higherRange
+                && meaningfulAdvance
+                && emaPositionConfirmed
+                && emaSlopeConfirmed;
     }
 
     private boolean isMeaningfulVolatility(EnrichedCandle candle) {

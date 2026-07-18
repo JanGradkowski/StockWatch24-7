@@ -100,6 +100,7 @@ class FrontendSecurityTest {
     @Test
     void dashboardAndHistoryUseCompanyLevelDynamicRuleColumns() throws IOException {
         String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
+        String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
         String history = Files.readString(Path.of("src/main/resources/templates/alert-history.html"));
         String signalDetail = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
 
@@ -110,6 +111,16 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("th:each=\"signal : ${latestSignals}\""));
         assertTrue(dashboard.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
         assertTrue(dashboard.contains("signal.confidenceScore()"));
+        assertTrue(dashboard.contains("signal.signalPeriodLabel()"));
+        assertTrue(dashboard.contains("data-watch-filter=\"stocks\""));
+        assertTrue(dashboard.contains("data-watch-filter=\"funds\""));
+        assertTrue(dashboard.contains("data-instrument-group=${company.instrumentGroup()}"));
+        assertTrue(dashboard.contains("th:hidden=\"${company.instrumentGroup() != 'stocks'}\""));
+        assertTrue(dashboard.contains("@{/js/dashboard.js}"));
+        assertTrue(dashboardScript.contains("activateFilter(\"stocks\")"));
+        assertTrue(dashboardScript.contains("row.hidden = !visible"));
+        assertTrue(dashboardScript.contains("button.setAttribute(\"aria-pressed\", String(selected))"));
+        assertFalse(dashboardScript.contains("innerHTML"));
 
         assertTrue(history.contains("th:each=\"column, columnStatus : ${history.columns()}\""));
         assertTrue(history.contains("column.alert().familyLabel()"));
@@ -117,9 +128,11 @@ class FrontendSecurityTest {
         assertTrue(history.contains("column.alert().intervalLabel()"));
         assertTrue(history.contains("/alerts/signals/{id}"));
         assertTrue(history.contains("event.id()"));
+        assertTrue(history.contains("event.signalPeriodLabel()"));
         assertFalse(history.contains("class=\"signal-table\""));
 
         assertTrue(signalDetail.contains("signal.confidenceScore()"));
+        assertTrue(signalDetail.contains("signal.signalPeriodLabel()"));
         assertTrue(signalDetail.contains("#numbers.sequence(1, 20)"));
         assertTrue(signalDetail.contains("signal.reasons()"));
         assertTrue(signalDetail.contains("reason.text()"));

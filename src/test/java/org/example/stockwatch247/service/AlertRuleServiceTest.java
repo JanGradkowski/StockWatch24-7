@@ -7,6 +7,7 @@ import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
@@ -17,6 +18,7 @@ import org.example.stockwatch247.repository.StockAssetRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,10 +30,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AlertRuleServiceTest {
+    private static final long WEEK_OF_13_JULY_2026 =
+            Instant.parse("2026-07-13T00:00:00Z").getEpochSecond();
 
     @Test
     void checkLatestSignalDetectsCurrentMonthlyElliottBuySignal() {
@@ -148,6 +153,40 @@ class AlertRuleServiceTest {
         assertThat(maraView.intervalLabels()).containsExactly("1d", "1wk");
         assertThat(maraView.familyLabels()).containsExactly("Candlestick", "Elliott Wave");
         assertThat(maraView.tradeSignals()).containsExactly(TradeSignal.BUY, TradeSignal.SELL);
+        assertThat(maraView.instrumentType()).isEqualTo(InstrumentType.EQUITY);
+        assertThat(maraView.instrumentTypeLabel()).isEqualTo("Stock");
+        assertThat(maraView.instrumentGroup()).isEqualTo("stocks");
+    }
+
+    @Test
+    void activeCompanyViewsGroupIndexesAndEtfsSeparatelyFromStocks() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository);
+        User user = new User();
+        user.setEmail("instrument-groups@example.com");
+
+        StockAsset index = stock(3L, "^GSPC", "S&P 500 Index");
+        index.setInstrumentType(InstrumentType.INDEX);
+        StockAsset etf = stock(4L, "SPY", "SPDR S&P 500 ETF Trust");
+        etf.setInstrumentType(InstrumentType.ETF);
+        AlertRule indexRule = rule(31L, user, index, TimeInterval.WEEKLY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        AlertRule etfRule = rule(32L, user, etf, TimeInterval.DAILY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.SELL);
+
+        when(alertRuleRepository
+                .findByUserAndIsActiveTrueOrderByStockAsset_TickerSymbolAscIntervalAscPatternFamilyAscTradeSignalAsc(user))
+                .thenReturn(List.of(indexRule, etfRule));
+
+        List<AlertRuleService.TrackedCompanyView> companies = service.getActiveCompanyViews(user);
+
+        assertThat(companies).extracting(AlertRuleService.TrackedCompanyView::instrumentType)
+                .containsExactly(InstrumentType.INDEX, InstrumentType.ETF);
+        assertThat(companies).extracting(AlertRuleService.TrackedCompanyView::instrumentTypeLabel)
+                .containsExactly("Index", "ETF");
+        assertThat(companies).extracting(AlertRuleService.TrackedCompanyView::instrumentGroup)
+                .containsOnly("funds");
     }
 
     @Test
@@ -166,7 +205,7 @@ class AlertRuleServiceTest {
         latest.setAlertRule(weeklyBuy);
         latest.setPattern(CandlePattern.BULLISH_ENGULFING);
         latest.setTradeSignal(TradeSignal.BUY);
-        latest.setSignalCandleTimestamp(1_752_019_200L);
+        latest.setSignalCandleTimestamp(WEEK_OF_13_JULY_2026);
         latest.setConfidenceScore(88);
         latest.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
 
@@ -191,6 +230,7 @@ class AlertRuleServiceTest {
         assertThat(signal.confidenceScore()).isEqualTo(88);
         assertThat(signal.confidenceBand()).isEqualTo("high");
         assertThat(signal.signalDate()).isNotNull();
+        assertThat(signal.signalPeriodLabel()).isEqualTo("13\u201317 Jul 2026");
         assertThat(signal.sentAt()).isEqualTo(LocalDateTime.of(2025, 7, 8, 8, 15));
         verify(alertEventRepository)
                 .findByAlertRule_UserAndAlertRule_IsActiveTrueOrderBySentAtDescIdDesc(
@@ -211,12 +251,12 @@ class AlertRuleServiceTest {
                 AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
         AlertRule monthlyElliottSell = rule(22L, user, mara, TimeInterval.MONTHLY,
                 AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
-        AlertEvent event = new AlertEvent();
+        AlertEvent event = spy(new AlertEvent());
         event.setId(301L);
         event.setAlertRule(weeklyCandleBuy);
         event.setPattern(CandlePattern.BULLISH_ENGULFING);
         event.setTradeSignal(TradeSignal.BUY);
-        event.setSignalCandleTimestamp(1_752_019_200L);
+        event.setSignalCandleTimestamp(WEEK_OF_13_JULY_2026);
         event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
         event.setConfidenceScore(88);
         event.setConfidenceReasons(List.of("strict bullish candle-pattern geometry"));
@@ -246,8 +286,11 @@ class AlertRuleServiceTest {
         assertThat(history.columns().getFirst().events()).hasSize(1);
         assertThat(history.columns().getFirst().events().getFirst().id()).isEqualTo(301L);
         assertThat(history.columns().getFirst().events().getFirst().patternLabel()).isEqualTo("Bullish Engulfing");
+        assertThat(history.columns().getFirst().events().getFirst().signalPeriodLabel())
+                .isEqualTo("13\u201317 Jul 2026");
         assertThat(history.columns().get(1).alert().familyLabel()).isEqualTo("Elliott Wave");
         assertThat(history.columns().get(1).alert().tradeSignal()).isEqualTo(TradeSignal.SELL);
+        verify(event, never()).getAlertRule();
     }
 
     @Test
@@ -279,7 +322,7 @@ class AlertRuleServiceTest {
         event.setAlertRule(rule);
         event.setPattern(CandlePattern.BULLISH_ENGULFING);
         event.setTradeSignal(TradeSignal.BUY);
-        event.setSignalCandleTimestamp(1_752_019_200L);
+        event.setSignalCandleTimestamp(WEEK_OF_13_JULY_2026);
         event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
         event.setConfidenceScore(88);
         event.setConfidenceReasons(List.of(
@@ -298,6 +341,7 @@ class AlertRuleServiceTest {
         assertThat(detail.symbol()).isEqualTo("MARA");
         assertThat(detail.patternLabel()).isEqualTo("Bullish Engulfing");
         assertThat(detail.confidenceBand()).isEqualTo("high");
+        assertThat(detail.signalPeriodLabel()).isEqualTo("13\u201317 Jul 2026");
         assertThat(detail.strengthLabel()).isEqualTo("High confidence");
         assertThat(detail.reasonsAvailable()).isTrue();
         assertThat(detail.reasons()).extracting(AlertRuleService.SignalReasonView::category)

@@ -1623,6 +1623,73 @@ a:hover .button-arrow {
     font-size: 0.7rem;
 }
 
+.watch-panel-heading {
+    align-items: flex-end;
+}
+
+.watch-panel-heading .panel-meta {
+    display: block;
+    margin-top: 0.3rem;
+}
+
+.watch-filter-tabs {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    background: rgba(4, 6, 8, 0.52);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.watch-filter-tab {
+    display: inline-flex;
+    min-height: 35px;
+    gap: 0.48rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.48rem 0.68rem;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--muted-text);
+    cursor: pointer;
+    font-size: 0.64rem;
+    font-weight: 730;
+    transition: border-color 170ms ease, background 170ms ease, color 170ms ease, box-shadow 170ms ease, transform 170ms ease;
+}
+
+.watch-filter-tab:hover {
+    color: var(--text-color);
+    transform: translateY(-1px);
+}
+
+.watch-filter-tab.active {
+    border-color: rgba(183, 243, 74, 0.19);
+    background: linear-gradient(145deg, rgba(183, 243, 74, 0.12), rgba(183, 243, 74, 0.045));
+    color: var(--primary-color);
+    box-shadow: 0 7px 20px rgba(0, 0, 0, 0.15), inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.watch-filter-tab strong {
+    display: inline-grid;
+    min-width: 21px;
+    height: 21px;
+    padding: 0 0.28rem;
+    place-items: center;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.055);
+    color: var(--text-soft);
+    font-size: 0.56rem;
+    font-weight: 820;
+}
+
+.watch-filter-tab.active strong {
+    background: rgba(183, 243, 74, 0.11);
+    color: var(--primary-color);
+}
+
 .alert-list-head,
 .alert-row {
     display: grid;
@@ -1694,6 +1761,35 @@ a:hover .button-arrow {
 .alert-symbol {
     color: var(--text-color);
     font-weight: 820;
+}
+
+.alert-symbol-line {
+    display: flex;
+    min-width: 0;
+    gap: 0.42rem;
+    align-items: center;
+}
+
+.instrument-kind-badge {
+    display: inline-flex;
+    min-height: 20px;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0.14rem 0.38rem;
+    border: 1px solid rgba(141, 125, 255, 0.18);
+    border-radius: 6px;
+    background: rgba(141, 125, 255, 0.065);
+    color: #afa5ff;
+    font-size: 0.52rem;
+    font-weight: 790;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+}
+
+.instrument-kind-badge.other {
+    border-color: rgba(255, 194, 92, 0.17);
+    background: rgba(255, 194, 92, 0.055);
+    color: #ffc25c;
 }
 
 .alert-company {
@@ -1824,7 +1920,7 @@ a:hover .button-arrow {
 .latest-signal-head,
 .latest-signal-row {
     display: grid;
-    grid-template-columns: minmax(190px, 1.35fr) minmax(125px, 0.9fr) 58px minmax(100px, 0.72fr) 86px 22px;
+    grid-template-columns: minmax(190px, 1.35fr) minmax(125px, 0.9fr) 58px minmax(125px, 0.78fr) 86px 22px;
     gap: 0.75rem;
     align-items: center;
 }
@@ -2098,6 +2194,26 @@ a:hover .button-arrow {
     border-radius: 15px;
     background: rgba(255, 255, 255, 0.015);
     text-align: center;
+}
+
+.watch-filter-empty {
+    min-height: 250px;
+}
+
+.instrument-empty-icon {
+    border-color: rgba(141, 125, 255, 0.18);
+    background: rgba(141, 125, 255, 0.06);
+    color: #afa5ff;
+}
+
+.watch-filter-announcement {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 .empty-state-inner {
@@ -3788,7 +3904,7 @@ a:hover .button-arrow {
 @media (max-width: 1120px) {
     .latest-signal-head,
     .latest-signal-row {
-        grid-template-columns: minmax(155px, 1.3fr) minmax(90px, 0.8fr) 50px minmax(82px, 0.65fr) 76px 18px;
+        grid-template-columns: minmax(155px, 1.3fr) minmax(90px, 0.8fr) 50px minmax(110px, 0.7fr) 76px 18px;
         gap: 0.55rem;
     }
 
@@ -4004,6 +4120,19 @@ a:hover .button-arrow {
 
     .metric-card {
         min-height: 105px;
+    }
+
+    .watch-panel-heading {
+        display: block;
+    }
+
+    .watch-filter-tabs {
+        width: 100%;
+        margin-top: 1rem;
+    }
+
+    .watch-filter-tab {
+        flex: 1 1 50%;
     }
 
     .alert-list-head {

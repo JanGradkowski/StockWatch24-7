@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — StockWatch 24/7</title>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <script th:src="@{/js/dashboard.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true">
@@ -19,14 +20,14 @@
     <div class="app-hero-copy">
       <div class="eyebrow">Personal market desk</div>
       <h1 class="welcome-text">Good to see you, <span class="primary-text" th:text="${firstName}">Trader</span>.</h1>
-      <p class="welcome-subtitle">Your automated signal desk is ready. Search for a stock or index above to inspect its chart or configure another alert.</p>
+      <p class="welcome-subtitle">Your automated signal desk is ready. Search for a stock, ETF, or index above to inspect its chart or configure another alert.</p>
     </div>
     <div class="hero-status">Monitoring online</div>
   </header>
 
   <section class="metrics-grid" aria-label="Monitoring overview">
     <article class="metric-card">
-      <span class="metric-label">Tracked companies</span>
+      <span class="metric-label">Tracked instruments</span>
       <strong class="metric-value" th:text="${#lists.size(trackedCompanies)}">0</strong>
       <span class="metric-note">Unique market instruments on your desk</span>
     </article>
@@ -44,13 +45,35 @@
 
   <div class="grid-layout">
     <div class="dashboard-main-stack">
-      <section class="glass-panel dashboard-panel">
-      <div class="panel-heading">
-        <h2 class="panel-title">Company watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
-        <span class="panel-meta">Open a company to see every followed rule</span>
+      <section class="glass-panel dashboard-panel" aria-labelledby="watch-desk-heading">
+      <div class="panel-heading watch-panel-heading">
+        <div>
+          <h2 id="watch-desk-heading" class="panel-title">Market watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
+          <span class="panel-meta">Open an instrument to see every followed rule</span>
+        </div>
+        <div class="watch-filter-tabs" role="group" aria-label="Filter followed instruments">
+          <button id="watchFilterStocks"
+                  type="button"
+                  class="watch-filter-tab active"
+                  data-watch-filter="stocks"
+                  aria-controls="followedInstrumentList"
+                  aria-pressed="true">
+            <span>Stocks</span>
+            <strong th:text="${stockCompanyCount}">0</strong>
+          </button>
+          <button id="watchFilterFunds"
+                  type="button"
+                  class="watch-filter-tab"
+                  data-watch-filter="funds"
+                  aria-controls="followedInstrumentList"
+                  aria-pressed="false">
+            <span>Indexes / ETFs</span>
+            <strong th:text="${indexEtfCompanyCount}">0</strong>
+          </button>
+        </div>
       </div>
 
-      <div th:if="${#lists.isEmpty(trackedCompanies)}" class="empty-state-card">
+      <div id="followedInstrumentList" th:if="${#lists.isEmpty(trackedCompanies)}" class="empty-state-card">
         <div class="empty-state-inner">
           <div class="empty-icon" aria-hidden="true">⌁</div>
           <h3>Your alert desk is quiet</h3>
@@ -58,16 +81,24 @@
         </div>
       </div>
 
-      <div th:if="${!#lists.isEmpty(trackedCompanies)}">
-        <div class="alert-list-head company-alert-grid" aria-hidden="true">
-          <span>Company</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>History</span>
+      <div id="followedInstrumentList" th:if="${!#lists.isEmpty(trackedCompanies)}">
+        <div class="alert-list-head company-alert-grid" data-watch-list-head aria-hidden="true" th:hidden="${stockCompanyCount == 0}">
+          <span>Instrument</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>History</span>
         </div>
         <div class="alert-list">
           <a th:each="company : ${trackedCompanies}"
              class="alert-row company-alert-grid"
-             th:href="@{/alerts/{id}(id=${company.representativeAlertId()})}">
+             th:href="@{/alerts/{id}(id=${company.representativeAlertId()})}"
+             th:attr="data-instrument-group=${company.instrumentGroup()}"
+             th:hidden="${company.instrumentGroup() != 'stocks'}">
             <div>
-              <div class="alert-symbol" th:text="${company.symbol()}">MARA</div>
+              <div class="alert-symbol-line">
+                <div class="alert-symbol" th:text="${company.symbol()}">MARA</div>
+                <span th:if="${company.instrumentType().name() != 'EQUITY'}"
+                      class="instrument-kind-badge"
+                      th:classappend="${company.instrumentGroup() == 'funds'} ? ' fund' : ' other'"
+                      th:text="${company.instrumentTypeLabel()}">Index</span>
+              </div>
               <div class="alert-company" th:text="${company.companyName()}">MARA Holdings, Inc.</div>
             </div>
             <div>
@@ -94,6 +125,25 @@
             </div>
           </a>
         </div>
+
+        <div class="empty-state-card watch-filter-empty" data-watch-empty="stocks" th:hidden="${stockCompanyCount > 0}">
+          <div class="empty-state-inner">
+            <div class="empty-icon" aria-hidden="true">S</div>
+            <h3>No followed stocks yet</h3>
+            <p>Search for a company in the navigation bar and activate a signal rule to add its stock here.</p>
+          </div>
+        </div>
+
+        <div class="empty-state-card watch-filter-empty" data-watch-empty="funds" hidden>
+          <div class="empty-state-inner">
+            <div class="empty-icon instrument-empty-icon" aria-hidden="true">I</div>
+            <h3>No followed indexes or ETFs yet</h3>
+            <p>Search for an index or exchange-traded fund and activate a signal rule to add it to this view.</p>
+          </div>
+        </div>
+
+        <p id="watchFilterAnnouncement" class="watch-filter-announcement" aria-live="polite"
+           th:text="${'Showing ' + stockCompanyCount + (stockCompanyCount == 1 ? ' followed stock' : ' followed stocks')}">Showing 0 followed stocks</p>
       </div>
       </section>
 
@@ -116,7 +166,7 @@
 
         <div th:if="${!#lists.isEmpty(latestSignals)}">
           <div class="latest-signal-head latest-signal-grid" aria-hidden="true">
-            <span>Signal</span><span>Company</span><span>Interval</span><span>Detected</span><span>Confidence</span><span></span>
+            <span>Signal</span><span>Company</span><span>Interval</span><span>Candle period</span><span>Confidence</span><span></span>
           </div>
           <div class="latest-signal-list">
             <a th:each="signal : ${latestSignals}"
@@ -138,7 +188,7 @@
               </div>
               <span class="latest-interval" th:text="${signal.intervalLabel()}">1wk</span>
               <div class="latest-signal-date">
-                <time th:text="${signal.signalDate() != null ? #temporals.format(signal.signalDate(), 'dd MMM yyyy') : 'Date unavailable'}">08 Jul 2026</time>
+                <time th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</time>
                 <span th:text="${signal.sentAt() != null ? 'Recorded ' + #temporals.format(signal.sentAt(), 'HH:mm') : 'Time unavailable'}">Recorded 08:15</span>
               </div>
               <div class="latest-confidence"
