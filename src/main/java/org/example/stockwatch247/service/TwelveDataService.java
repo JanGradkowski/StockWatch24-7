@@ -6,8 +6,10 @@ import jakarta.annotation.PostConstruct;
 import org.example.stockwatch247.market.MarketIndexCatalog;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.MarketDataProvider;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -38,22 +40,34 @@ public class TwelveDataService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final StockAssetRepository stockAssetRepository;
+    private final ProviderSymbolRegistry providerSymbolRegistry;
     private final String apiKey;
     private final String baseUrl;
     private final TickerSearchIndex tickerSearchIndex = new TickerSearchIndex();
     private final BoundedTtlCache<String, List<Map<String, Object>>> searchCache =
             new BoundedTtlCache<>(1_000, 900);
 
+    @Autowired
     public TwelveDataService(RestTemplate restTemplate,
                              ObjectMapper objectMapper,
                              StockAssetRepository stockAssetRepository,
+                             ProviderSymbolRegistry providerSymbolRegistry,
                              @Value("${twelve-data.api-key:${TWELVE_DATA_API_KEY:}}") String apiKey,
                              @Value("${twelve-data.base-url:https://api.twelvedata.com}") String baseUrl) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.stockAssetRepository = stockAssetRepository;
+        this.providerSymbolRegistry = providerSymbolRegistry;
         this.apiKey = apiKey;
         this.baseUrl = stripTrailingSlash(baseUrl);
+    }
+
+    TwelveDataService(RestTemplate restTemplate,
+                      ObjectMapper objectMapper,
+                      StockAssetRepository stockAssetRepository,
+                      String apiKey,
+                      String baseUrl) {
+        this(restTemplate, objectMapper, stockAssetRepository, null, apiKey, baseUrl);
     }
 
     @PostConstruct
@@ -85,14 +99,18 @@ public class TwelveDataService {
                                                   int outputSize,
                                                   Long beforeExclusive) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        ProviderSymbolRegistry.ProviderSymbolReference providerReference = providerReference(symbol, null);
         UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/time_series")
-                .queryParam("symbol", symbol)
+                .queryParam("symbol", providerReference.symbol())
                 .queryParam("interval", interval)
                 .queryParam("outputsize", outputSize)
                 .queryParam("format", "JSON")
                 .queryParam("timezone", "UTC")
                 .queryParam("adjust", "splits");
+        if (providerReference.micCode() != null) {
+            uriBuilder.queryParam("mic_code", providerReference.micCode());
+        }
         if (beforeExclusive != null) {
             String endDate = PROVIDER_DATE_TIME.format(
                     Instant.ofEpochSecond(beforeExclusive).minusSeconds(1L));
@@ -105,7 +123,7 @@ public class TwelveDataService {
                 .toUri();
 
         JsonNode root = query(uri);
-        updateAssetFromMeta(symbol, root.path("meta"));
+        updateAssetFromMeta(symbol, providerReference.symbol(), root.path("meta"));
         JsonNode values = root.path("values");
         if (!values.isArray()) {
             return List.of();
@@ -113,7 +131,7 @@ public class TwelveDataService {
 
         java.util.ArrayList<MarketDataBar> bars = new java.util.ArrayList<>();
         for (JsonNode value : values) {
-            Optional<MarketDataBar> bar = toBar(symbol, interval, value);
+            Optional<MarketDataBar> bar = toBar(providerReference.symbol(), interval, value);
             bar.filter(candidate -> beforeExclusive == null || candidate.timestamp() < beforeExclusive)
                     .ifPresent(bars::add);
         }
@@ -121,7 +139,12 @@ public class TwelveDataService {
     }
 
     public StockAsset refreshStockAssetMetadata(String rawSymbol) {
+        return refreshStockAssetMetadata(rawSymbol, null);
+    }
+
+    public StockAsset refreshStockAssetMetadata(String rawSymbol, String rawMicCode) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        String selectedMic = SecurityInputValidator.requireOptionalMicCode(rawMicCode);
 
         Optional<MarketIndexCatalog.IndexDefinition> knownIndex = MarketIndexCatalog.findBySymbol(symbol);
         if (knownIndex.isPresent()) {
@@ -131,7 +154,7 @@ public class TwelveDataService {
         }
 
         try {
-            Optional<StockAsset> seriesAsset = findTimeSeriesMetaAsset(symbol);
+            Optional<StockAsset> seriesAsset = findTimeSeriesMetaAsset(symbol, selectedMic);
             if (seriesAsset.isPresent()) {
                 return seriesAsset.get();
             }
@@ -140,7 +163,7 @@ public class TwelveDataService {
         }
 
         try {
-            Optional<StockAsset> providerAsset = findProviderAsset(symbol);
+            Optional<StockAsset> providerAsset = findProviderAsset(symbol, selectedMic);
             if (providerAsset.isPresent()) {
                 return providerAsset.get();
             }
@@ -154,9 +177,11 @@ public class TwelveDataService {
 
     public Optional<TwelveDataQuote> getQuote(String rawSymbol) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        ProviderSymbolRegistry.ProviderSymbolReference providerReference = providerReference(symbol, null);
         URI uri = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/quote")
-                .queryParam("symbol", symbol)
+                .queryParam("symbol", providerReference.symbol())
+                .queryParamIfPresent("mic_code", Optional.ofNullable(providerReference.micCode()))
                 .queryParam("apikey", apiKey)
                 .build()
                 .encode()
@@ -167,8 +192,12 @@ public class TwelveDataService {
             return Optional.empty();
         }
 
+        rememberProviderSymbol(symbol,
+                normalizeSymbol(defaultIfBlank(root.path("symbol").asText(""), providerReference.symbol())),
+                providerReference.micCode(),
+                "QUOTE_SUCCESS");
         return Optional.of(new TwelveDataQuote(
-                SecurityInputValidator.requireMarketSymbol(root.path("symbol").asText(symbol)),
+                symbol,
                 parseDouble(root.path("close").asText("0")),
                 parseDouble(root.path("percent_change").asText("0")),
                 root.path("timestamp").asLong(Instant.now().getEpochSecond())
@@ -205,23 +234,23 @@ public class TwelveDataService {
             if (!data.isArray()) {
                 results = builtInMatches;
             } else {
-                Map<String, ProviderAssetCandidate> bestBySymbol = new LinkedHashMap<>();
+                Map<String, ProviderAssetCandidate> bestByListing = new LinkedHashMap<>();
                 for (JsonNode item : data) {
                     String symbol = validProviderSymbol(item.path("symbol").asText(""));
                     if (symbol == null) {
                         continue;
                     }
                     ProviderAssetCandidate candidate = toCandidate(symbol, item);
-                    bestBySymbol.merge(symbol, candidate, (existing, replacement) ->
+                    String listingKey = symbol + '|' + defaultIfBlank(candidate.micCode(), candidate.exchange());
+                    bestByListing.merge(listingKey, candidate, (existing, replacement) ->
                             candidateRank(query, replacement) < candidateRank(query, existing) ? replacement : existing);
                 }
-                List<Map<String, Object>> providerMatches = bestBySymbol.values().stream()
+                List<Map<String, Object>> providerMatches = bestByListing.values().stream()
                         .sorted(Comparator.comparingInt(candidate -> candidateRank(query, candidate)))
                         .limit(8)
                         .map(this::toSuggestion)
                         .toList();
                 results = mergeSuggestions(builtInMatches, providerMatches);
-                refreshTickerSearchIndex();
             }
         } catch (RuntimeException e) {
             System.err.println("Twelve Data symbol search unavailable: " + e.getMessage());
@@ -250,6 +279,21 @@ public class TwelveDataService {
                                        String exchange,
                                        String currency,
                                        InstrumentType instrumentType) {
+        return upsertStockAsset(rawSymbol, companyName, exchange, currency, instrumentType,
+                null, null, null, null, null, null);
+    }
+
+    private StockAsset upsertStockAsset(String rawSymbol,
+                                        String companyName,
+                                        String exchange,
+                                        String currency,
+                                        InstrumentType instrumentType,
+                                        String micCode,
+                                        String country,
+                                        String figi,
+                                        String isin,
+                                        String providerSymbol,
+                                        String resolutionSource) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         Optional<StockAsset> existing = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol);
         StockAsset asset = existing.orElseGet(StockAsset::new);
@@ -267,7 +311,27 @@ public class TwelveDataService {
         }
         asset.setInstrumentType(resolvedType);
 
-        return stockAssetRepository.save(asset);
+        String safeMic = normalizeMic(micCode);
+        if (safeMic != null) {
+            asset.setMicCode(safeMic);
+        }
+        if (country != null && !country.isBlank()) {
+            asset.setCountry(safeProviderText(country, "", 100));
+        }
+        String safeFigi = safeIdentifier(figi, "[A-Z0-9]{12,32}");
+        if (safeFigi != null) {
+            asset.setFigi(safeFigi);
+        }
+        String safeIsin = safeIdentifier(isin, "[A-Z]{2}[A-Z0-9]{10,14}");
+        if (safeIsin != null) {
+            asset.setIsin(safeIsin);
+        }
+
+        StockAsset saved = stockAssetRepository.save(asset);
+        if (providerSymbol != null && !providerSymbol.isBlank()) {
+            rememberProviderSymbol(saved, providerSymbol, safeMic, resolutionSource);
+        }
+        return saved;
     }
 
     public String normalizeSymbol(String symbol) {
@@ -317,7 +381,7 @@ public class TwelveDataService {
         ));
     }
 
-    private Optional<StockAsset> findProviderAsset(String symbol) {
+    private Optional<StockAsset> findProviderAsset(String symbol, String selectedMic) {
         URI uri = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/symbol_search")
                 .queryParam("symbol", symbol)
@@ -340,13 +404,21 @@ public class TwelveDataService {
         }
 
         return candidates.stream()
-                .min(Comparator.comparingInt(candidate -> candidateRank(symbol, candidate)))
+                .filter(candidate -> selectedMic == null
+                        || selectedMic.equalsIgnoreCase(candidate.micCode()))
+                .min(Comparator.comparingInt(candidate -> candidateRank(symbol, selectedMic, candidate)))
                 .map(candidate -> upsertStockAsset(
-                        candidate.symbol(),
+                        symbol,
                         candidate.name(),
                         candidate.exchange(),
                         candidate.currency(),
-                        candidate.instrumentType()
+                        candidate.instrumentType(),
+                        candidate.micCode(),
+                        candidate.country(),
+                        candidate.figi(),
+                        candidate.isin(),
+                        candidate.symbol(),
+                        "SYMBOL_SEARCH"
                 ));
     }
 
@@ -356,21 +428,16 @@ public class TwelveDataService {
     }
 
     private Map<String, Object> toSuggestion(ProviderAssetCandidate candidate) {
-        StockAsset asset = upsertStockAsset(
-                candidate.symbol(),
-                candidate.name(),
-                candidate.exchange(),
-                candidate.currency(),
-                candidate.instrumentType()
-        );
-
         Map<String, Object> suggestion = new HashMap<>();
-        suggestion.put("symbol", asset.getTickerSymbol());
-        suggestion.put("name", asset.getCompanyName());
-        suggestion.put("region", asset.getExchange());
-        suggestion.put("currency", asset.getCurrency());
-        suggestion.put("instrumentType", asset.getInstrumentType().name());
-        suggestion.put("initials", initials(asset.getTickerSymbol()));
+        suggestion.put("symbol", candidate.symbol());
+        suggestion.put("name", candidate.name());
+        suggestion.put("region", candidate.exchange());
+        suggestion.put("micCode", defaultIfBlank(candidate.micCode(), ""));
+        suggestion.put("country", defaultIfBlank(candidate.country(), ""));
+        suggestion.put("currency", candidate.currency());
+        suggestion.put("instrumentType", candidate.instrumentType().name());
+        suggestion.put("provider", MarketDataProvider.TWELVE_DATA.name());
+        suggestion.put("initials", initials(candidate.symbol()));
         return suggestion;
     }
 
@@ -379,9 +446,13 @@ public class TwelveDataService {
                 symbol,
                 defaultIfBlank(item.path("instrument_name").asText(""), symbol),
                 defaultIfBlank(item.path("exchange").asText(""), item.path("mic_code").asText("UNKNOWN")),
+                item.path("mic_code").asText(""),
+                item.path("country").asText(""),
                 defaultIfBlank(item.path("currency").asText(""), "USD"),
                 instrumentTypeFor(symbol, defaultIfBlank(
-                        item.path("instrument_type").asText(""), item.path("type").asText("")))
+                        item.path("instrument_type").asText(""), item.path("type").asText(""))),
+                defaultIfBlank(item.path("figi_code").asText(""), item.path("figi").asText("")),
+                item.path("isin").asText("")
         );
     }
 
@@ -401,14 +472,18 @@ public class TwelveDataService {
         return value.length() <= maximumLength ? value : value.substring(0, maximumLength);
     }
 
-    private Optional<StockAsset> findTimeSeriesMetaAsset(String symbol) {
-        URI uri = UriComponentsBuilder.fromUriString(baseUrl)
+    private Optional<StockAsset> findTimeSeriesMetaAsset(String symbol, String selectedMic) {
+        ProviderSymbolRegistry.ProviderSymbolReference providerReference = providerReference(symbol, selectedMic);
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/time_series")
-                .queryParam("symbol", symbol)
+                .queryParam("symbol", providerReference.symbol())
                 .queryParam("interval", "1day")
                 .queryParam("outputsize", 1)
-                .queryParam("format", "JSON")
-                .queryParam("apikey", apiKey)
+                .queryParam("format", "JSON");
+        if (providerReference.micCode() != null) {
+            uriBuilder.queryParam("mic_code", providerReference.micCode());
+        }
+        URI uri = uriBuilder.queryParam("apikey", apiKey)
                 .build()
                 .encode()
                 .toUri();
@@ -419,34 +494,48 @@ public class TwelveDataService {
         }
 
         return Optional.of(upsertStockAsset(
-                normalizeSymbol(defaultIfBlank(meta.path("symbol").asText(""), symbol)),
+                symbol,
                 defaultIfBlank(meta.path("name").asText(""), symbol),
                 defaultIfBlank(meta.path("exchange").asText(""), meta.path("mic_code").asText("UNKNOWN")),
                 meta.path("currency").asText(),
                 instrumentTypeFor(symbol, defaultIfBlank(
-                        meta.path("instrument_type").asText(""), meta.path("type").asText("")))
+                        meta.path("instrument_type").asText(""), meta.path("type").asText(""))),
+                defaultIfBlank(meta.path("mic_code").asText(""), providerReference.micCode()),
+                meta.path("country").asText(""),
+                defaultIfBlank(meta.path("figi_code").asText(""), meta.path("figi").asText("")),
+                meta.path("isin").asText(""),
+                normalizeSymbol(defaultIfBlank(meta.path("symbol").asText(""), providerReference.symbol())),
+                "TIME_SERIES_META"
         ));
     }
 
-    private void updateAssetFromMeta(String fallbackSymbol, JsonNode meta) {
+    private void updateAssetFromMeta(String canonicalSymbol, String requestedProviderSymbol, JsonNode meta) {
         if (meta == null || meta.isMissingNode()) {
             return;
         }
 
-        String symbol = normalizeSymbol(defaultIfBlank(meta.path("symbol").asText(""), fallbackSymbol));
-        if (symbol.isBlank()) {
+        String providerSymbol = normalizeSymbol(defaultIfBlank(
+                meta.path("symbol").asText(""), requestedProviderSymbol));
+        if (providerSymbol.isBlank()) {
             return;
         }
 
-        String name = defaultIfBlank(meta.path("name").asText(""), symbol);
+        String name = defaultIfBlank(meta.path("name").asText(""), canonicalSymbol);
         String exchange = defaultIfBlank(meta.path("exchange").asText(""), meta.path("mic_code").asText("UNKNOWN"));
         String currency = defaultIfBlank(meta.path("currency").asText(""), "");
         if (currency.isBlank()) {
             return;
         }
 
-        upsertStockAsset(symbol, name, exchange, currency, instrumentTypeFor(symbol, defaultIfBlank(
-                meta.path("instrument_type").asText(""), meta.path("type").asText(""))));
+        upsertStockAsset(canonicalSymbol, name, exchange, currency,
+                instrumentTypeFor(canonicalSymbol, defaultIfBlank(
+                        meta.path("instrument_type").asText(""), meta.path("type").asText(""))),
+                meta.path("mic_code").asText(""),
+                meta.path("country").asText(""),
+                defaultIfBlank(meta.path("figi_code").asText(""), meta.path("figi").asText("")),
+                meta.path("isin").asText(""),
+                providerSymbol,
+                "TIME_SERIES_META");
     }
 
     private Map<String, Object> toSuggestion(StockAsset asset) {
@@ -455,6 +544,8 @@ public class TwelveDataService {
         suggestion.put("symbol", symbol);
         suggestion.put("name", defaultIfBlank(asset.getCompanyName(), symbol));
         suggestion.put("region", defaultIfBlank(asset.getExchange(), "UNKNOWN"));
+        suggestion.put("micCode", defaultIfBlank(asset.getMicCode(), ""));
+        suggestion.put("country", defaultIfBlank(asset.getCountry(), ""));
         suggestion.put("currency", defaultIfBlank(asset.getCurrency(), "USD"));
         suggestion.put("instrumentType", asset.getInstrumentType() == null
                 ? InstrumentType.EQUITY.name()
@@ -464,8 +555,16 @@ public class TwelveDataService {
     }
 
     private Map<String, Object> toSuggestion(MarketIndexCatalog.IndexDefinition index) {
-        return toSuggestion(upsertStockAsset(index.symbol(), index.name(), index.exchange(), index.currency(),
-                InstrumentType.INDEX));
+        Map<String, Object> suggestion = new HashMap<>();
+        suggestion.put("symbol", index.symbol());
+        suggestion.put("name", index.name());
+        suggestion.put("region", index.exchange());
+        suggestion.put("micCode", "");
+        suggestion.put("country", "");
+        suggestion.put("currency", index.currency());
+        suggestion.put("instrumentType", InstrumentType.INDEX.name());
+        suggestion.put("initials", initials(index.symbol()));
+        return suggestion;
     }
 
     @SafeVarargs
@@ -474,8 +573,16 @@ public class TwelveDataService {
         for (List<Map<String, Object>> group : groups) {
             for (Map<String, Object> suggestion : group) {
                 String symbol = String.valueOf(suggestion.getOrDefault("symbol", ""));
+                String micCode = String.valueOf(suggestion.getOrDefault("micCode", ""));
                 if (!symbol.isBlank()) {
-                    bySymbol.putIfAbsent(symbol, suggestion);
+                    String genericKey = symbol + '|';
+                    if (!micCode.isBlank() && bySymbol.containsKey(genericKey)) {
+                        // Enrich the existing local/catalog result without moving it behind
+                        // lower-ranked provider matches in the insertion-ordered map.
+                        bySymbol.put(genericKey, suggestion);
+                        continue;
+                    }
+                    bySymbol.putIfAbsent(symbol + '|' + micCode, suggestion);
                 }
             }
         }
@@ -561,9 +668,18 @@ public class TwelveDataService {
     }
 
     private int candidateRank(String requestedSymbol, ProviderAssetCandidate candidate) {
+        return candidateRank(requestedSymbol, null, candidate);
+    }
+
+    private int candidateRank(String requestedSymbol,
+                              String selectedMic,
+                              ProviderAssetCandidate candidate) {
         int rank = 0;
         if (!candidate.symbol().equals(requestedSymbol)) {
             rank += 100;
+        }
+        if (selectedMic != null && !selectedMic.equalsIgnoreCase(candidate.micCode())) {
+            rank += 1_000;
         }
         if (isPlainTicker(requestedSymbol) && !isUsExchange(candidate.exchange())) {
             rank += 10;
@@ -572,6 +688,61 @@ public class TwelveDataService {
             rank -= 3;
         }
         return rank;
+    }
+
+    private ProviderSymbolRegistry.ProviderSymbolReference providerReference(String canonicalSymbol,
+                                                                              String selectedMic) {
+        String mic = normalizeMic(selectedMic);
+        Optional<StockAsset> asset = stockAssetRepository.findByTickerSymbolIgnoreCase(canonicalSymbol);
+        if (providerSymbolRegistry != null && asset.isPresent()) {
+            Optional<ProviderSymbolRegistry.ProviderSymbolReference> alias = providerSymbolRegistry.find(
+                    asset.get(), MarketDataProvider.TWELVE_DATA);
+            if (alias.isPresent()) {
+                ProviderSymbolRegistry.ProviderSymbolReference reference = alias.get();
+                return new ProviderSymbolRegistry.ProviderSymbolReference(
+                        reference.symbol(),
+                        mic == null ? reference.micCode() : mic
+                );
+            }
+        }
+        if (mic == null && asset.isPresent()) {
+            mic = normalizeMic(asset.get().getMicCode());
+        }
+        return new ProviderSymbolRegistry.ProviderSymbolReference(canonicalSymbol, mic);
+    }
+
+    private void rememberProviderSymbol(String canonicalSymbol,
+                                        String providerSymbol,
+                                        String micCode,
+                                        String resolutionSource) {
+        stockAssetRepository.findByTickerSymbolIgnoreCase(canonicalSymbol)
+                .ifPresent(asset -> rememberProviderSymbol(
+                        asset, providerSymbol, micCode, resolutionSource));
+    }
+
+    private void rememberProviderSymbol(StockAsset asset,
+                                        String providerSymbol,
+                                        String micCode,
+                                        String resolutionSource) {
+        if (providerSymbolRegistry != null) {
+            providerSymbolRegistry.remember(
+                    asset,
+                    MarketDataProvider.TWELVE_DATA,
+                    providerSymbol,
+                    micCode,
+                    resolutionSource
+            );
+        }
+    }
+
+    private String normalizeMic(String rawMic) {
+        String mic = normalizeSymbol(rawMic);
+        return mic.matches("[A-Z0-9]{4,12}") ? mic : null;
+    }
+
+    private String safeIdentifier(String rawIdentifier, String pattern) {
+        String identifier = normalizeSymbol(rawIdentifier);
+        return identifier.matches(pattern) ? identifier : null;
     }
 
     private boolean isPlainTicker(String symbol) {
@@ -594,7 +765,11 @@ public class TwelveDataService {
     private record ProviderAssetCandidate(String symbol,
                                           String name,
                                           String exchange,
+                                          String micCode,
+                                          String country,
                                           String currency,
-                                          InstrumentType instrumentType) {
+                                          InstrumentType instrumentType,
+                                          String figi,
+                                          String isin) {
     }
 }

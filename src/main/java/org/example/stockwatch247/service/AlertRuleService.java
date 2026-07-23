@@ -36,9 +36,10 @@ import java.util.Map;
 
 @Service
 public class AlertRuleService {
-    private static final int DEFAULT_SIGNAL_CANDLES = 5;
+    private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int HIGHER_INTERVAL_SIGNAL_CANDLES = 100;
     private static final int DASHBOARD_LATEST_SIGNAL_LIMIT = 8;
+    private static final int MAX_ALERT_CHANGES_PER_REQUEST = 16;
 
     private final AlertRuleRepository alertRuleRepository;
     private final AlertEventRepository alertEventRepository;
@@ -61,7 +62,7 @@ public class AlertRuleService {
                              CandleRepository candleRepository,
                              TwelveDataService twelveDataService,
                              JdbcTemplate jdbcTemplate,
-                             MarketDataService marketDataService,
+                            MarketDataService marketDataService,
                             TechnicalIndicatorEnrichmentService enrichmentService,
                             CandlePatternDetectionService detectionService,
                             ElliottWaveDetectionService elliottWaveDetectionService,
@@ -151,6 +152,9 @@ public class AlertRuleService {
         AlertEvent event = alertEventRepository.findOwnedByIdAndUser(alertEventId, user)
                 .orElseThrow(() -> new IllegalArgumentException("Signal event not found."));
         AlertRule rule = event.getAlertRule();
+        CandlestickHorizonGuidance.Guidance horizonGuidance = CandlestickHorizonGuidance
+                .forSignal(rule.getPatternFamily(), rule.getInterval())
+                .orElse(null);
         List<String> storedReasons = event.getConfidenceReasons();
         List<SignalReasonView> reasons = new ArrayList<>();
         for (int index = 0; index < storedReasons.size(); index++) {
@@ -170,15 +174,18 @@ public class AlertRuleService {
                 rule.getStockAsset().getCompanyName(),
                 rule.getInterval(),
                 intervalLabel(rule.getInterval()),
+                horizonGuidance == null ? null : horizonGuidance.label(),
+                horizonGuidance == null ? null : horizonGuidance.summary(),
+                horizonGuidance == null ? null : horizonGuidance.disclaimer(),
                 normalizeFamily(rule.getPatternFamily()),
                 familyLabel(rule.getPatternFamily()),
                 event.getPattern(),
                 patternLabel(event.getPattern()),
                 event.getTradeSignal(),
-                strengthLabel(event.getSignalStrength(), event.getConfidenceScore()),
-                confidenceBand(event.getConfidenceScore()),
+                setupStrengthLabel(event.getSignalStrength(), event.getConfidenceScore()),
+                setupBand(event.getConfidenceScore()),
                 event.getConfidenceScore(),
-                confidenceExplanation(event.getConfidenceScore()),
+                setupExplanation(event.getConfidenceScore()),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
@@ -249,12 +256,18 @@ public class AlertRuleService {
     }
 
     private TrackedAlertView toTrackedAlertView(AlertRule rule, long eventCount) {
+        CandlestickHorizonGuidance.Guidance horizonGuidance = CandlestickHorizonGuidance
+                .forSignal(rule.getPatternFamily(), rule.getInterval())
+                .orElse(null);
         return new TrackedAlertView(
                 rule.getId(),
                 rule.getStockAsset().getTickerSymbol(),
                 rule.getStockAsset().getCompanyName(),
                 rule.getInterval(),
                 intervalLabel(rule.getInterval()),
+                horizonGuidance == null ? null : horizonGuidance.label(),
+                horizonGuidance == null ? null : horizonGuidance.summary(),
+                horizonGuidance == null ? null : horizonGuidance.disclaimer(),
                 rule.getPatternFamily(),
                 familyLabel(rule.getPatternFamily()),
                 rule.getTradeSignal(),
@@ -264,6 +277,9 @@ public class AlertRuleService {
 
     private LatestSignalView toLatestSignalView(AlertEvent event) {
         AlertRule rule = event.getAlertRule();
+        CandlestickHorizonGuidance.Guidance horizonGuidance = CandlestickHorizonGuidance
+                .forSignal(rule.getPatternFamily(), rule.getInterval())
+                .orElse(null);
         return new LatestSignalView(
                 event.getId(),
                 rule.getStockAsset().getTickerSymbol(),
@@ -275,8 +291,11 @@ public class AlertRuleService {
                 event.getTradeSignal(),
                 rule.getInterval(),
                 intervalLabel(rule.getInterval()),
+                horizonGuidance == null ? null : horizonGuidance.label(),
+                horizonGuidance == null ? null : horizonGuidance.summary(),
+                horizonGuidance == null ? null : horizonGuidance.disclaimer(),
                 event.getConfidenceScore(),
-                confidenceBand(event.getConfidenceScore()),
+                setupBand(event.getConfidenceScore()),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
@@ -291,11 +310,8 @@ public class AlertRuleService {
                               TradeSignal signal,
                               AlertPatternFamily patternFamily,
                               boolean active) {
-        if (signal == TradeSignal.HOLD) {
-            throw new IllegalArgumentException("Only BUY and SELL alert signals can be tracked.");
-        }
-        AlertPatternFamily family = normalizeFamily(patternFamily);
-        validateFamilyInterval(family, interval);
+        AlertRuleChange change = validateAlertChange(
+                new AlertRuleChange(interval, signal, patternFamily, active));
 
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         StockAsset stockAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
@@ -304,6 +320,59 @@ public class AlertRuleService {
         if (active) {
             enforceTrackedStockLimit(user, stockAsset);
         }
+
+        return upsertAlertRule(user, stockAsset, change);
+    }
+
+    @Transactional
+    public void applyAlertChanges(User user,
+                                  String rawSymbol,
+                                  List<AlertRuleChange> requestedChanges) {
+        if (requestedChanges == null || requestedChanges.isEmpty()
+                || requestedChanges.size() > MAX_ALERT_CHANGES_PER_REQUEST) {
+            throw new IllegalArgumentException("An alert change batch must contain between 1 and "
+                    + MAX_ALERT_CHANGES_PER_REQUEST + " entries.");
+        }
+
+        Map<AlertRuleKey, AlertRuleChange> changesByRule = new LinkedHashMap<>();
+        for (AlertRuleChange requestedChange : requestedChanges) {
+            AlertRuleChange change = validateAlertChange(requestedChange);
+            AlertRuleKey key = new AlertRuleKey(
+                    change.interval(), change.signal(), change.patternFamily());
+            if (changesByRule.putIfAbsent(key, change) != null) {
+                throw new IllegalArgumentException("Duplicate alert rule in change batch.");
+            }
+        }
+
+        String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        StockAsset stockAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
+                .orElseGet(() -> twelveDataService.upsertStockAsset(symbol, symbol, "UNKNOWN", "USD"));
+
+        if (changesByRule.values().stream().anyMatch(AlertRuleChange::active)) {
+            enforceTrackedStockLimit(user, stockAsset);
+        }
+
+        changesByRule.values().forEach(change -> upsertAlertRule(user, stockAsset, change));
+    }
+
+    private AlertRuleChange validateAlertChange(AlertRuleChange change) {
+        if (change == null || change.interval() == null || change.signal() == null) {
+            throw new IllegalArgumentException("Alert interval and signal are required.");
+        }
+        if (change.signal() == TradeSignal.HOLD) {
+            throw new IllegalArgumentException("Only BUY and SELL alert signals can be tracked.");
+        }
+        AlertPatternFamily family = normalizeFamily(change.patternFamily());
+        validateFamilyInterval(family, change.interval());
+        return new AlertRuleChange(change.interval(), change.signal(), family, change.active());
+    }
+
+    private AlertRule upsertAlertRule(User user,
+                                      StockAsset stockAsset,
+                                      AlertRuleChange change) {
+        TimeInterval interval = change.interval();
+        TradeSignal signal = change.signal();
+        AlertPatternFamily family = change.patternFamily();
 
         AlertRule rule = alertRuleRepository
                 .findByUserAndStockAssetAndIntervalAndTradeSignalAndPatternFamily(user, stockAsset, interval, signal, family)
@@ -317,7 +386,7 @@ public class AlertRuleService {
         // Existing databases have a check constraint generated from the original enum values.
         // The tradeSignal column drives the new "any buy/sell pattern" behavior.
         rule.setTargetPattern(defaultTargetPattern(signal, family));
-        rule.setActive(active);
+        rule.setActive(change.active());
         return alertRuleRepository.save(rule);
     }
 
@@ -340,8 +409,13 @@ public class AlertRuleService {
             throw new IllegalStateException("Candle refresh failed: " + syncResult.failureMessage());
         }
 
-        List<Candle> latest = candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, apiInterval);
-        List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(latest, signalCandleCount(interval));
+        int signalCandleCount = signalCandleCount(interval);
+        List<Candle> latest = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol,
+                apiInterval,
+                PageRequest.of(0, enrichmentService.requiredInputCandles(signalCandleCount))
+        );
+        List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(latest, signalCandleCount);
         List<DetectedSignal> detectedSignals = detectSignals(enrichedCandles, interval);
         List<Map<String, Object>> detected = detectedSignals.stream()
                 .filter(detectedSignal -> signalFamily(detectedSignal) == family)
@@ -350,7 +424,7 @@ public class AlertRuleService {
                         "patternFamily", family.name(),
                         "signal", detectedSignal.tradeSignal().name(),
                         "strength", detectedSignal.strength().name(),
-                        "confidenceScore", detectedSignal.confidenceScore(),
+                        "setupScore", detectedSignal.setupScore(),
                         "reasons", detectedSignal.reasons(),
                         "timestamp", detectedSignal.candleTimestamp(),
                         "closePrice", detectedSignal.closePrice()
@@ -368,6 +442,11 @@ public class AlertRuleService {
         response.put("interval", interval.name());
         response.put("signal", signal.name());
         response.put("patternFamily", family.name());
+        CandlestickHorizonGuidance.forSignal(family, interval).ifPresent(guidance -> {
+            response.put("researchHorizonLabel", guidance.label());
+            response.put("researchHorizonSummary", guidance.summary());
+            response.put("researchHorizonDisclaimer", guidance.disclaimer());
+        });
         response.put("candlesChecked", latest.size());
         response.put("enrichedCandlesChecked", enrichedCandles.size());
         response.put("matched", !matchingPatterns.isEmpty());
@@ -477,8 +556,11 @@ public class AlertRuleService {
         };
     }
 
-    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles, TimeInterval interval) {
-        List<DetectedSignal> signals = new java.util.ArrayList<>(detectionService.detectAlertSignals(enrichedCandles));
+    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles,
+                                               TimeInterval interval) {
+        List<DetectedSignal> signals = new java.util.ArrayList<>(
+                detectionService.detectAlertSignals(enrichedCandles)
+        );
         if (isElliottEnabled(interval)) {
             signals.addAll(elliottWaveDetectionService.detectAlertSignals(enrichedCandles).stream()
                     .filter(this::isActionableElliottTurningPoint)
@@ -542,6 +624,8 @@ public class AlertRuleService {
                 patternLabel(event.getPattern()),
                 event.getTradeSignal(),
                 event.getSignalStrength(),
+                setupStrengthLabel(event.getSignalStrength(), event.getConfidenceScore()),
+                setupBand(event.getConfidenceScore()),
                 event.getConfidenceScore(),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
@@ -551,48 +635,63 @@ public class AlertRuleService {
         );
     }
 
-    private String strengthLabel(SignalStength strength, Integer confidenceScore) {
+    private String setupStrengthLabel(SignalStength strength, Integer setupScore) {
         if (strength != null) {
             return switch (strength) {
-                case WEAK_IGNORE -> "Weak signal";
-                case HIGH_CONFIDENCE -> "High confidence";
-                case MEDIUM_CONFIDENCE -> "Medium confidence";
-                case LOW_CONFIDENCE -> "Low confidence";
+                case WEAK_IGNORE -> "Very weak setup";
+                case HIGH_CONFIDENCE -> "Strong setup";
+                case MEDIUM_CONFIDENCE -> "Moderate setup";
+                case LOW_CONFIDENCE -> "Weak setup";
             };
         }
-        return switch (confidenceBand(confidenceScore)) {
-            case "high" -> "High confidence";
-            case "medium" -> "Medium confidence";
-            case "low" -> "Low confidence";
+        return switch (setupBand(setupScore)) {
+            case "high" -> "Strong setup";
+            case "medium" -> "Moderate setup";
+            case "low" -> "Weak setup";
             default -> "Unrated";
         };
     }
 
-    private String confidenceBand(Integer confidenceScore) {
-        if (confidenceScore == null) {
+    private String setupBand(Integer setupScore) {
+        if (setupScore == null) {
             return "unrated";
         }
-        if (confidenceScore >= 85) {
+        if (setupScore >= 85) {
             return "high";
         }
-        return confidenceScore >= 75 ? "medium" : "low";
+        return setupScore >= 75 ? "medium" : "low";
     }
 
-    private String confidenceExplanation(Integer confidenceScore) {
-        if (confidenceScore == null) {
-            return "This signal does not have a recorded confidence score.";
+    private String setupExplanation(Integer setupScore) {
+        if (setupScore == null) {
+            return "This signal does not have a recorded setup score.";
         }
-        if (confidenceScore >= 85) {
-            return "High confidence (85-100): strong agreement across the detector's available evidence.";
+        if (setupScore >= 85) {
+            return "Strong setup (85-100): broad confluence across the stock's pattern quality and technical evidence.";
         }
-        if (confidenceScore >= 75) {
-            return "Medium confidence (75-84): the setup passed the calibrated threshold with some mixed evidence.";
+        if (setupScore >= 75) {
+            return "Moderate setup (75-84): several factors align, with some mixed or unavailable evidence.";
         }
-        return "Low confidence (below 75): the detector recorded weaker or incomplete evidence.";
+        return "Weak setup (below 75): the pattern is valid, but supporting confluence is limited.";
     }
 
     private String reasonCategory(String reason) {
         String normalized = reason.toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("pattern geometry")) {
+            return "Pattern geometry";
+        }
+        if (normalized.startsWith("trend context")) {
+            return "Trend context";
+        }
+        if (normalized.startsWith("location")) {
+            return "Location";
+        }
+        if (normalized.startsWith("momentum")) {
+            return "Momentum";
+        }
+        if (normalized.startsWith("volume")) {
+            return "Volume";
+        }
         if (containsAny(normalized, "calibrat", "precision", "backtest")) {
             return "Calibration";
         }
@@ -623,8 +722,10 @@ public class AlertRuleService {
     private boolean isCautionReason(String reason) {
         String normalized = reason.toLowerCase(Locale.ROOT);
         return containsAny(normalized,
+                "+0/",
                 "lowered confidence",
                 "below the calibrated",
+                "was unavailable",
                 "insufficient",
                 "not confirmed",
                 "without confirmation",
@@ -674,6 +775,9 @@ public class AlertRuleService {
             String companyName,
             TimeInterval interval,
             String intervalLabel,
+            String researchHorizonLabel,
+            String researchHorizonSummary,
+            String researchHorizonDisclaimer,
             AlertPatternFamily patternFamily,
             String familyLabel,
             TradeSignal tradeSignal,
@@ -707,13 +811,23 @@ public class AlertRuleService {
             TradeSignal tradeSignal,
             TimeInterval interval,
             String intervalLabel,
-            Integer confidenceScore,
-            String confidenceBand,
+            String researchHorizonLabel,
+            String researchHorizonSummary,
+            String researchHorizonDisclaimer,
+            Integer setupScore,
+            String setupBand,
             Long signalCandleTimestamp,
             LocalDate signalDate,
             String signalPeriodLabel,
             java.time.LocalDateTime sentAt
     ) {
+        public Integer confidenceScore() {
+            return setupScore;
+        }
+
+        public String confidenceBand() {
+            return setupBand;
+        }
     }
 
     public record AlertRuleSignalHistory(
@@ -737,13 +851,18 @@ public class AlertRuleService {
             String patternLabel,
             TradeSignal tradeSignal,
             SignalStength strength,
-            Integer confidenceScore,
+            String setupStrengthLabel,
+            String setupBand,
+            Integer setupScore,
             Long signalCandleTimestamp,
             LocalDate signalDate,
             String signalPeriodLabel,
             Double closePrice,
             java.time.LocalDateTime sentAt
     ) {
+        public Integer confidenceScore() {
+            return setupScore;
+        }
     }
 
     public record SignalDetailView(
@@ -753,15 +872,18 @@ public class AlertRuleService {
             String companyName,
             TimeInterval interval,
             String intervalLabel,
+            String researchHorizonLabel,
+            String researchHorizonSummary,
+            String researchHorizonDisclaimer,
             AlertPatternFamily patternFamily,
             String familyLabel,
             CandlePattern pattern,
             String patternLabel,
             TradeSignal tradeSignal,
-            String strengthLabel,
-            String confidenceBand,
-            Integer confidenceScore,
-            String confidenceExplanation,
+            String setupStrengthLabel,
+            String setupBand,
+            Integer setupScore,
+            String setupExplanation,
             Long signalCandleTimestamp,
             LocalDate signalDate,
             String signalPeriodLabel,
@@ -770,6 +892,21 @@ public class AlertRuleService {
             List<SignalReasonView> reasons,
             boolean reasonsAvailable
     ) {
+        public String strengthLabel() {
+            return setupStrengthLabel;
+        }
+
+        public String confidenceBand() {
+            return setupBand;
+        }
+
+        public Integer confidenceScore() {
+            return setupScore;
+        }
+
+        public String confidenceExplanation() {
+            return setupExplanation;
+        }
     }
 
     public record SignalReasonView(
@@ -777,6 +914,21 @@ public class AlertRuleService {
             String category,
             String text,
             boolean caution
+    ) {
+    }
+
+    public record AlertRuleChange(
+            TimeInterval interval,
+            TradeSignal signal,
+            AlertPatternFamily patternFamily,
+            boolean active
+    ) {
+    }
+
+    private record AlertRuleKey(
+            TimeInterval interval,
+            TradeSignal signal,
+            AlertPatternFamily patternFamily
     ) {
     }
 }

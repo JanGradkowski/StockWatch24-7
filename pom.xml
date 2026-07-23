@@ -15,7 +15,11 @@
     <description>StockWatch24-7</description>
     <url/>
     <licenses>
-        <license/>
+        <license>
+            <name>StockWatch 24/7 Proprietary Commercial License</name>
+            <distribution>repo</distribution>
+            <comments>All rights reserved. Use requires a separate written, paid commercial license.</comments>
+        </license>
     </licenses>
     <developers>
         <developer/>

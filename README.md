@@ -1,6 +1,6 @@
 # StockWatch 24/7
 
-StockWatch 24/7 is a Spring Boot web application for exploring market data, detecting technical signals, and delivering per-user email alerts. It supports candlestick-pattern alerts on daily candles and Elliott-wave alerts on weekly and monthly candles.
+StockWatch 24/7 is a Spring Boot web application for exploring market data, detecting technical signals, and delivering per-user email alerts. It supports candlestick-pattern alerts on daily, weekly, and monthly candles and Elliott-wave alerts on weekly and monthly candles.
 
 The alert scheduler is backed by PostgreSQL. If the application is offline when a daily, weekly, or monthly check should run, it reconstructs the missed schedule after restart, processes the backlog oldest-first, and evaluates the candles that were available at each original scheduled time.
 
@@ -11,7 +11,7 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 - User signup, email verification, login, and session security
 - Symbol search, historical candlestick charts, and live-price lookup
 - Twelve Data market data with Yahoo Finance fallback
-- Candlestick-pattern detection and confidence classification
+- Geometry- and trend-validated candlestick detection with a stock-only heuristic setup score and frozen higher-interval pattern calibration; scoring evidence ranks valid patterns but never creates or suppresses alerts
 - Weekly and monthly Elliott-wave analysis
 - Per-user BUY, SELL, and HOLD alert rules
 - SMTP email delivery to every user with a matching active alert
@@ -151,13 +151,14 @@ Production requires the `prod` Spring profile, HTTPS behind a trusted reverse pr
 
 See [Secure deployment checklist](docs/security-deployment.md) for the required environment, migration command, Nginx example, network boundaries, and release checks.
 
-## Contributing
+## Contributions
 
-1. Create a focused branch.
-2. Keep secrets and generated files out of Git.
-3. Add or update tests with behavioral changes.
-4. Run `./mvnw test` before opening a pull request.
+StockWatch 24/7 is proprietary software. Unsolicited code contributions are not accepted unless the contributor first signs a written agreement that gives the project owner the rights required to incorporate and commercially license the contribution.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Copyright © 2026 Jan Gradkowski. All rights reserved.
+
+StockWatch 24/7 is proprietary software. No permission is granted to use, copy, modify, distribute, sublicense, sell, host, or create derivative works without a separate written, paid commercial license from the copyright owner. See the [StockWatch 24/7 Proprietary Commercial License](LICENSE).
+
+Revisions previously distributed under the Apache License, Version 2.0 remain under that license; the proprietary license applies prospectively from the repository revision in which it was introduced. Third-party components remain governed by their own licenses.

@@ -182,6 +182,8 @@ public final class TickerSearchIndex {
     private record SearchEntry(String symbol,
                                String name,
                                String region,
+                               String micCode,
+                               String country,
                                String currency,
                                InstrumentType instrumentType,
                                Set<String> tickerKeys,
@@ -195,7 +197,7 @@ public final class TickerSearchIndex {
             index.searchAliases().stream().map(TickerSearchIndex::searchKey).forEach(nameKeys::add);
             LinkedHashSet<String> allKeys = new LinkedHashSet<>(tickerKeys);
             allKeys.addAll(nameKeys);
-            return new SearchEntry(index.symbol(), index.name(), index.exchange(), index.currency(),
+            return new SearchEntry(index.symbol(), index.name(), index.exchange(), "", "", index.currency(),
                     InstrumentType.INDEX, Set.copyOf(tickerKeys), Set.copyOf(nameKeys), Set.copyOf(allKeys));
         }
 
@@ -208,6 +210,8 @@ public final class TickerSearchIndex {
             return new SearchEntry(symbol,
                     defaultIfBlank(asset.getCompanyName(), symbol),
                     defaultIfBlank(asset.getExchange(), "UNKNOWN"),
+                    defaultIfBlank(asset.getMicCode(), ""),
+                    defaultIfBlank(asset.getCountry(), ""),
                     defaultIfBlank(asset.getCurrency(), "USD"),
                     asset.getInstrumentType() == null ? InstrumentType.EQUITY : asset.getInstrumentType(),
                     tickerKeys, nameKeys, Set.copyOf(allKeys));
@@ -217,6 +221,8 @@ public final class TickerSearchIndex {
             boolean genericStoredName = stored.name().equalsIgnoreCase(stored.symbol());
             String name = genericStoredName ? catalog.name() : stored.name();
             String region = "UNKNOWN".equalsIgnoreCase(stored.region()) ? catalog.region() : stored.region();
+            String micCode = stored.micCode().isBlank() ? catalog.micCode() : stored.micCode();
+            String country = stored.country().isBlank() ? catalog.country() : stored.country();
             String currency = stored.currency().isBlank() ? catalog.currency() : stored.currency();
             LinkedHashSet<String> tickerKeys = new LinkedHashSet<>(catalog.tickerKeys());
             tickerKeys.addAll(stored.tickerKeys());
@@ -224,7 +230,7 @@ public final class TickerSearchIndex {
             nameKeys.addAll(wordPrefixes(name));
             LinkedHashSet<String> allKeys = new LinkedHashSet<>(tickerKeys);
             allKeys.addAll(nameKeys);
-            return new SearchEntry(catalog.symbol(), name, region, currency, catalog.instrumentType(),
+            return new SearchEntry(catalog.symbol(), name, region, micCode, country, currency, catalog.instrumentType(),
                     Set.copyOf(tickerKeys), Set.copyOf(nameKeys), Set.copyOf(allKeys));
         }
 
@@ -246,6 +252,8 @@ public final class TickerSearchIndex {
             suggestion.put("symbol", symbol);
             suggestion.put("name", name);
             suggestion.put("region", region);
+            suggestion.put("micCode", micCode);
+            suggestion.put("country", country);
             suggestion.put("currency", currency);
             suggestion.put("instrumentType", instrumentType.name());
             suggestion.put("initials", initials(symbol));

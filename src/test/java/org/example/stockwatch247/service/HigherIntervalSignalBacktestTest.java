@@ -38,6 +38,9 @@ class HigherIntervalSignalBacktestTest {
     );
     private static final List<ConfidenceFilter> CONFIDENCE_FILTERS = List.of(
             new ConfidenceFilter("0-100", 0, 100),
+            new ConfidenceFilter("60-100", 60, 100),
+            new ConfidenceFilter("65-100", 65, 100),
+            new ConfidenceFilter("70-100", 70, 100),
             new ConfidenceFilter("75-100", 75, 100),
             new ConfidenceFilter("80-100", 80, 100),
             new ConfidenceFilter("85-100", 85, 100),
@@ -149,7 +152,11 @@ class HigherIntervalSignalBacktestTest {
                     continue;
                 }
                 sufficientSymbols++;
-                BacktestReport report = backtestService.backtest(candles, run.settings(), includeElliottWaves);
+                BacktestReport report = backtestService.backtest(
+                        candles,
+                        run.settings(),
+                        includeElliottWaves
+                );
                 totalCandles += report.totalCandles();
                 analyzedCandles += report.analyzedCandles();
                 allTrades.addAll(report.trades());

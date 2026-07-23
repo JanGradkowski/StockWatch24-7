@@ -13,6 +13,7 @@ class SecurityInputValidatorTest {
         assertEquals("^GSPC", SecurityInputValidator.requireMarketSymbol("spx"));
         assertEquals("^GSPC", SecurityInputValidator.requireMarketSymbol(" ^gspc "));
         assertEquals("^GSPC", SecurityInputValidator.requireSearchQuery(" ^GSPC "));
+        assertEquals("XWAR", SecurityInputValidator.requireOptionalMicCode(" xwar "));
         assertEquals("jan@example.com", SecurityInputValidator.requireEmail(" Jan@Example.com "));
         assertEquals("1wk", SecurityInputValidator.requireInterval("1wk"));
     }
@@ -27,6 +28,8 @@ class SecurityInputValidatorTest {
                 () -> SecurityInputValidator.requireSearchQuery("<img src=x onerror=alert(1)>"));
         assertThrows(IllegalArgumentException.class,
                 () -> SecurityInputValidator.requireInterval("../../../etc/passwd"));
+        assertThrows(IllegalArgumentException.class,
+                () -> SecurityInputValidator.requireOptionalMicCode("XWAR<script>"));
     }
 
     @Test

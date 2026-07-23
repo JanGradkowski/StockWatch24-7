@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.market.MarketIndexCatalog;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.MarketDataProvider;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -18,12 +20,14 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.text.Normalizer;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -42,19 +46,31 @@ public class YahooFinanceService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final StockAssetRepository stockAssetRepository;
+    private final ProviderSymbolRegistry providerSymbolRegistry;
     private final String baseUrl;
     private final boolean enabled;
 
+    @Autowired
     public YahooFinanceService(RestTemplate restTemplate,
                                ObjectMapper objectMapper,
                                StockAssetRepository stockAssetRepository,
+                               ProviderSymbolRegistry providerSymbolRegistry,
                                @Value("${yahoo-finance.base-url:https://query1.finance.yahoo.com}") String baseUrl,
                                @Value("${yahoo-finance.enabled:true}") boolean enabled) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.stockAssetRepository = stockAssetRepository;
+        this.providerSymbolRegistry = providerSymbolRegistry;
         this.baseUrl = stripTrailingSlash(baseUrl);
         this.enabled = enabled;
+    }
+
+    YahooFinanceService(RestTemplate restTemplate,
+                        ObjectMapper objectMapper,
+                        StockAssetRepository stockAssetRepository,
+                        String baseUrl,
+                        boolean enabled) {
+        this(restTemplate, objectMapper, stockAssetRepository, null, baseUrl, enabled);
     }
 
     public List<MarketDataBar> getTimeSeries(String rawSymbol, String appInterval, int outputSize) {
@@ -79,14 +95,16 @@ public class YahooFinanceService {
             throw new IllegalStateException("Yahoo Finance fallback is disabled.");
         }
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        Optional<StockAsset> asset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol);
 
         RuntimeException lastFailure = null;
-        Set<String> candidates = initialCandidates(symbol);
+        Set<String> candidates = initialCandidates(symbol, asset);
         for (String candidate : candidates) {
             try {
                 ParsedSeries series = requestSeries(candidate, appInterval, outputSize, beforeExclusive,
                         beforeExclusive != null);
-                updateAssetMetadata(symbol, series.meta());
+                verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
+                updateAssetMetadata(symbol, candidate, series.meta(), "DIRECT_OR_ALIAS");
                 return series.bars();
             } catch (UnexpectedGranularityException e) {
                 throw e;
@@ -95,14 +113,15 @@ public class YahooFinanceService {
             }
         }
 
-        for (String candidate : searchCandidateSymbols(symbol)) {
+        for (String candidate : searchCandidateSymbols(symbol, asset)) {
             if (!candidates.add(candidate)) {
                 continue;
             }
             try {
                 ParsedSeries series = requestSeries(candidate, appInterval, outputSize, beforeExclusive,
                         beforeExclusive != null);
-                updateAssetMetadata(symbol, series.meta());
+                verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
+                updateAssetMetadata(symbol, candidate, series.meta(), "VERIFIED_SEARCH");
                 return series.bars();
             } catch (UnexpectedGranularityException e) {
                 throw e;
@@ -111,14 +130,15 @@ public class YahooFinanceService {
             }
         }
 
-        for (String candidate : fallbackCandidateSymbols(symbol)) {
+        for (String candidate : fallbackCandidateSymbols(symbol, asset)) {
             if (!candidates.add(candidate)) {
                 continue;
             }
             try {
                 ParsedSeries series = requestSeries(candidate, appInterval, outputSize, beforeExclusive,
                         beforeExclusive != null);
-                updateAssetMetadata(symbol, series.meta());
+                verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
+                updateAssetMetadata(symbol, candidate, series.meta(), "SUFFIX_FALLBACK");
                 return series.bars();
             } catch (UnexpectedGranularityException e) {
                 throw e;
@@ -127,7 +147,7 @@ public class YahooFinanceService {
             }
         }
 
-        throw new IllegalStateException("Yahoo Finance has no candle data for " + symbol + ".", lastFailure);
+        throw noDataFailure("candle data", symbol, candidates, lastFailure);
     }
 
     public StockAsset refreshStockAssetMetadata(String rawSymbol) {
@@ -135,43 +155,47 @@ public class YahooFinanceService {
             throw new IllegalStateException("Yahoo Finance fallback is disabled.");
         }
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        Optional<StockAsset> asset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol);
 
         RuntimeException lastFailure = null;
-        Set<String> candidates = initialCandidates(symbol);
+        Set<String> candidates = initialCandidates(symbol, asset);
         for (String candidate : candidates) {
             try {
                 ParsedSeries series = requestSeries(candidate, "1d", 1, null, false);
-                return updateAssetMetadata(symbol, series.meta());
+                verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
+                return updateAssetMetadata(symbol, candidate, series.meta(), "DIRECT_OR_ALIAS");
             } catch (RuntimeException e) {
                 lastFailure = e;
             }
         }
 
-        for (String candidate : searchCandidateSymbols(symbol)) {
+        for (String candidate : searchCandidateSymbols(symbol, asset)) {
             if (!candidates.add(candidate)) {
                 continue;
             }
             try {
                 ParsedSeries series = requestSeries(candidate, "1d", 1, null, false);
-                return updateAssetMetadata(symbol, series.meta());
+                verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
+                return updateAssetMetadata(symbol, candidate, series.meta(), "VERIFIED_SEARCH");
             } catch (RuntimeException e) {
                 lastFailure = e;
             }
         }
 
-        for (String candidate : fallbackCandidateSymbols(symbol)) {
+        for (String candidate : fallbackCandidateSymbols(symbol, asset)) {
             if (!candidates.add(candidate)) {
                 continue;
             }
             try {
                 ParsedSeries series = requestSeries(candidate, "1d", 1, null, false);
-                return updateAssetMetadata(symbol, series.meta());
+                verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
+                return updateAssetMetadata(symbol, candidate, series.meta(), "SUFFIX_FALLBACK");
             } catch (RuntimeException e) {
                 lastFailure = e;
             }
         }
 
-        throw new IllegalStateException("Yahoo Finance has no metadata for " + symbol + ".", lastFailure);
+        throw noDataFailure("metadata", symbol, candidates, lastFailure);
     }
 
     private ParsedSeries requestSeries(String symbol,
@@ -183,7 +207,9 @@ public class YahooFinanceService {
         UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromUriString(baseUrl)
                 .pathSegment("v8", "finance", "chart", symbol)
                 .queryParam("interval", yahooInterval);
-        if (beforeExclusive != null || "1wk".equals(yahooInterval)) {
+        if (beforeExclusive != null
+                || "1wk".equals(yahooInterval)
+                || "1mo".equals(yahooInterval)) {
             long period2 = beforeExclusive == null ? Instant.now().getEpochSecond() : beforeExclusive;
             long requestedCandles = Math.max(1L, outputSize);
             long lookbackDays = historicalLookbackDays(yahooInterval, requestedCandles);
@@ -272,16 +298,19 @@ public class YahooFinanceService {
         return new ParsedSeries(List.copyOf(bars.subList(first, bars.size())), meta);
     }
 
-    private Set<String> initialCandidates(String symbol) {
+    private Set<String> initialCandidates(String symbol, Optional<StockAsset> asset) {
         LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        if (providerSymbolRegistry != null && asset.isPresent()) {
+            providerSymbolRegistry.find(asset.get(), MarketDataProvider.YAHOO_FINANCE)
+                    .map(ProviderSymbolRegistry.ProviderSymbolReference::symbol)
+                    .ifPresent(candidates::add);
+        }
         if (hasExchangeSuffix(symbol)) {
             candidates.add(symbol);
             return candidates;
         }
 
-        stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
-                .map(StockAsset::getExchange)
-                .map(this::suffixForExchange)
+        asset.map(this::expectedYahooSuffix)
                 .filter(suffix -> !suffix.isBlank())
                 .map(suffix -> symbol + suffix)
                 .ifPresent(candidates::add);
@@ -289,11 +318,29 @@ public class YahooFinanceService {
         return candidates;
     }
 
-    private List<String> searchCandidateSymbols(String symbol) {
+    private List<String> searchCandidateSymbols(String symbol, Optional<StockAsset> asset) {
+        LinkedHashSet<String> queries = new LinkedHashSet<>();
+        asset.map(StockAsset::getCompanyName)
+                .filter(name -> hasMeaningfulCompanyName(name, symbol))
+                .ifPresent(queries::add);
+        queries.add(symbol);
+
+        for (String searchQuery : queries) {
+            List<String> matches = querySearchCandidates(searchQuery, symbol, asset);
+            if (!matches.isEmpty()) {
+                return matches;
+            }
+        }
+        return List.of();
+    }
+
+    private List<String> querySearchCandidates(String searchQuery,
+                                               String requestedSymbol,
+                                               Optional<StockAsset> asset) {
         URI uri = UriComponentsBuilder.fromUriString(baseUrl)
                 .pathSegment("v1", "finance", "search")
-                .queryParam("q", symbol)
-                .queryParam("quotesCount", 10)
+                .queryParam("q", searchQuery)
+                .queryParam("quotesCount", 20)
                 .queryParam("newsCount", 0)
                 .build()
                 .encode()
@@ -303,25 +350,45 @@ public class YahooFinanceService {
             if (!quotes.isArray()) {
                 return List.of();
             }
-            List<String> candidates = new ArrayList<>();
+            List<YahooSearchCandidate> candidates = new ArrayList<>();
             for (JsonNode quote : quotes) {
                 String quoteType = quote.path("quoteType").asText("");
-                String candidate = normalizeSymbol(quote.path("symbol").asText(""));
-                if (("EQUITY".equalsIgnoreCase(quoteType) || "ETF".equalsIgnoreCase(quoteType)
-                        || "INDEX".equalsIgnoreCase(quoteType))
-                        && (candidate.equals(symbol) || candidate.startsWith(symbol + "."))) {
+                String candidateSymbol = normalizeSymbol(quote.path("symbol").asText(""));
+                YahooSearchCandidate candidate = new YahooSearchCandidate(
+                        candidateSymbol,
+                        firstNonBlank(quote.path("longname").asText(""), quote.path("shortname").asText("")),
+                        firstNonBlank(quote.path("exchDisp").asText(""), quote.path("exchange").asText("")),
+                        quoteType
+                );
+                if (isSupportedQuoteType(quoteType)
+                        && isCandidateEligible(requestedSymbol, asset.orElse(null), candidate)) {
                     candidates.add(candidate);
                 }
             }
-            return candidates;
+            return candidates.stream()
+                    .sorted(Comparator.comparingInt(candidate ->
+                            yahooCandidateRank(requestedSymbol, asset.orElse(null), candidate)))
+                    .map(YahooSearchCandidate::symbol)
+                    .distinct()
+                    .toList();
         } catch (RuntimeException e) {
+            System.err.println("Yahoo Finance symbol search unavailable for " + searchQuery + ": " + e.getMessage());
             return List.of();
         }
     }
 
-    private List<String> fallbackCandidateSymbols(String symbol) {
+    private List<String> fallbackCandidateSymbols(String symbol, Optional<StockAsset> asset) {
         if (hasExchangeSuffix(symbol)) {
             return List.of();
+        }
+        if (asset.isPresent()) {
+            String expectedSuffix = expectedYahooSuffix(asset.get());
+            if (!expectedSuffix.isBlank()) {
+                return List.of(symbol + expectedSuffix);
+            }
+            if (hasMeaningfulCompanyName(asset.get().getCompanyName(), symbol)) {
+                return List.of();
+            }
         }
         return COMMON_EUROPEAN_SUFFIXES.stream()
                 .map(suffix -> symbol + suffix)
@@ -350,15 +417,23 @@ public class YahooFinanceService {
         }
     }
 
-    private StockAsset updateAssetMetadata(String requestedSymbol, JsonNode meta) {
-        StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(requestedSymbol)
-                .orElseGet(StockAsset::new);
+    private StockAsset updateAssetMetadata(String requestedSymbol,
+                                           String requestedProviderSymbol,
+                                           JsonNode meta,
+                                           String resolutionSource) {
+        Optional<StockAsset> existingAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(requestedSymbol);
+        StockAsset asset = existingAsset.orElseGet(StockAsset::new);
+        boolean preserveCanonicalListing = existingAsset.filter(this::hasReliableListingIdentity).isPresent();
         String name = firstNonBlank(meta.path("longName").asText(""), meta.path("shortName").asText(""));
         String exchange = firstNonBlank(meta.path("fullExchangeName").asText(""), meta.path("exchangeName").asText(""));
         String currency = meta.path("currency").asText("");
+        String providerSymbol = normalizeSymbol(defaultIfBlank(
+                meta.path("symbol").asText(""), requestedProviderSymbol));
         asset.setTickerSymbol(requestedSymbol);
         asset.setCompanyName(name.isBlank() ? requestedSymbol : name);
-        asset.setExchange(exchange.isBlank() ? "UNKNOWN" : exchange);
+        if (!preserveCanonicalListing) {
+            asset.setExchange(exchange.isBlank() ? "UNKNOWN" : exchange);
+        }
         asset.setCurrency(currency.isBlank() ? "USD" : currency);
         InstrumentType providerType = InstrumentType.fromProviderValue(firstNonBlank(
                 meta.path("instrumentType").asText(""), meta.path("quoteType").asText("")));
@@ -368,7 +443,250 @@ public class YahooFinanceService {
             providerType = asset.getInstrumentType() == null ? InstrumentType.EQUITY : asset.getInstrumentType();
         }
         asset.setInstrumentType(providerType);
-        return stockAssetRepository.save(asset);
+        StockAsset saved = stockAssetRepository.save(asset);
+        StockAsset persisted = saved == null ? asset : saved;
+        if (providerSymbolRegistry != null) {
+            providerSymbolRegistry.remember(
+                    persisted,
+                    MarketDataProvider.YAHOO_FINANCE,
+                    providerSymbol,
+                    yahooMic(meta),
+                    resolutionSource
+            );
+        }
+        return persisted;
+    }
+
+    private void verifyCandidateCompatibility(StockAsset asset,
+                                              String providerSymbol,
+                                              JsonNode meta) {
+        if (asset == null || !hasReliableListingIdentity(asset)) {
+            return;
+        }
+
+        String expectedSuffix = expectedYahooSuffix(asset);
+        if (!expectedSuffix.isBlank() && !providerSymbol.endsWith(expectedSuffix)) {
+            throw new IllegalStateException("Yahoo candidate " + providerSymbol
+                    + " does not match the expected " + expectedSuffix + " exchange listing.");
+        }
+
+        String returnedName = firstNonBlank(
+                meta.path("longName").asText(""),
+                meta.path("shortName").asText("")
+        );
+        if (!returnedName.isBlank() && !sameCompany(asset.getCompanyName(), returnedName)) {
+            throw new IllegalStateException("Yahoo candidate " + providerSymbol
+                    + " belongs to a different company.");
+        }
+
+        String returnedCurrency = normalizeSymbol(meta.path("currency").asText(""));
+        String expectedCurrency = normalizeSymbol(asset.getCurrency());
+        if (!returnedCurrency.isBlank() && !expectedCurrency.isBlank()
+                && !returnedCurrency.equals(expectedCurrency)) {
+            throw new IllegalStateException("Yahoo candidate " + providerSymbol
+                    + " uses " + returnedCurrency + " instead of " + expectedCurrency + ".");
+        }
+
+        InstrumentType returnedType = InstrumentType.fromProviderValue(firstNonBlank(
+                meta.path("instrumentType").asText(""), meta.path("quoteType").asText("")));
+        if (returnedType != InstrumentType.OTHER
+                && asset.getInstrumentType() != null
+                && returnedType != asset.getInstrumentType()) {
+            throw new IllegalStateException("Yahoo candidate " + providerSymbol
+                    + " has a different instrument type.");
+        }
+    }
+
+    private boolean isCandidateEligible(String requestedSymbol,
+                                        StockAsset asset,
+                                        YahooSearchCandidate candidate) {
+        if (candidate.symbol().isBlank()) {
+            return false;
+        }
+        if (candidate.symbol().equals(requestedSymbol)
+                || candidate.symbol().startsWith(requestedSymbol + ".")) {
+            return true;
+        }
+        if (asset == null || !hasReliableListingIdentity(asset)
+                || !sameCompany(asset.getCompanyName(), candidate.name())) {
+            return false;
+        }
+        String expectedSuffix = expectedYahooSuffix(asset);
+        return expectedSuffix.isBlank() || candidate.symbol().endsWith(expectedSuffix);
+    }
+
+    private int yahooCandidateRank(String requestedSymbol,
+                                   StockAsset asset,
+                                   YahooSearchCandidate candidate) {
+        if (candidate.symbol().equals(requestedSymbol)) {
+            return 0;
+        }
+        if (candidate.symbol().startsWith(requestedSymbol + ".")) {
+            return 10;
+        }
+        boolean companyMatch = sameCompany(asset == null ? null : asset.getCompanyName(), candidate.name());
+        int rank = companyMatch
+                ? 20 + Math.min(20, tickerDistance(requestedSymbol, candidate.symbol()))
+                : 100;
+        String expectedSuffix = asset == null ? "" : expectedYahooSuffix(asset);
+        if (!expectedSuffix.isBlank() && !candidate.symbol().endsWith(expectedSuffix)) {
+            rank += 1_000;
+        }
+        return rank + secondaryVenuePenalty(candidate.exchange());
+    }
+
+    private boolean isSupportedQuoteType(String quoteType) {
+        return "EQUITY".equalsIgnoreCase(quoteType)
+                || "ETF".equalsIgnoreCase(quoteType)
+                || "INDEX".equalsIgnoreCase(quoteType);
+    }
+
+    private boolean hasReliableListingIdentity(StockAsset asset) {
+        return asset != null
+                && hasMeaningfulCompanyName(asset.getCompanyName(), asset.getTickerSymbol())
+                && asset.getExchange() != null
+                && !asset.getExchange().isBlank()
+                && !"UNKNOWN".equalsIgnoreCase(asset.getExchange());
+    }
+
+    private boolean hasMeaningfulCompanyName(String companyName, String symbol) {
+        return companyName != null
+                && !companyName.isBlank()
+                && !companyName.equalsIgnoreCase(symbol);
+    }
+
+    private boolean sameCompany(String left, String right) {
+        String leftKey = companyKey(left);
+        String rightKey = companyKey(right);
+        return !leftKey.isBlank() && leftKey.equals(rightKey);
+    }
+
+    private String companyKey(String rawName) {
+        if (rawName == null) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(rawName, Normalizer.Form.NFKD)
+                .replaceAll("\\p{M}+", "")
+                .toUpperCase(Locale.ROOT)
+                .replace('&', ' ')
+                .replaceAll("[^A-Z0-9]+", " ")
+                .trim();
+        List<String> legalSuffixes = List.of(
+                "SA", "SE", "AG", "NV", "PLC", "INC", "INCORPORATED",
+                "CORP", "CORPORATION", "LTD", "LIMITED", "SPA", "SAS", "BV"
+        );
+        List<String> tokens = new ArrayList<>(List.of(normalized.split("\\s+")));
+        if (tokens.size() >= 2) {
+            String finalPair = tokens.get(tokens.size() - 2) + tokens.getLast();
+            if (List.of("SA", "NV", "BV", "SE").contains(finalPair)) {
+                tokens.removeLast();
+                tokens.removeLast();
+            }
+        }
+        while (!tokens.isEmpty() && legalSuffixes.contains(tokens.getLast())) {
+            tokens.removeLast();
+        }
+        return String.join(" ", tokens);
+    }
+
+    private String expectedYahooSuffix(StockAsset asset) {
+        String fromMic = suffixForExchange(asset.getMicCode());
+        return fromMic.isBlank() ? suffixForExchange(asset.getExchange()) : fromMic;
+    }
+
+    private int tickerDistance(String requestedSymbol, String candidateSymbol) {
+        String requested = comparableTickerRoot(requestedSymbol);
+        String candidate = comparableTickerRoot(candidateSymbol);
+        if (requested.isBlank() || candidate.isBlank()) {
+            return 20;
+        }
+        int[] previous = new int[candidate.length() + 1];
+        for (int column = 0; column <= candidate.length(); column++) {
+            previous[column] = column;
+        }
+        for (int row = 1; row <= requested.length(); row++) {
+            int[] current = new int[candidate.length() + 1];
+            current[0] = row;
+            for (int column = 1; column <= candidate.length(); column++) {
+                int substitution = requested.charAt(row - 1) == candidate.charAt(column - 1) ? 0 : 1;
+                current[column] = Math.min(
+                        Math.min(current[column - 1] + 1, previous[column] + 1),
+                        previous[column - 1] + substitution
+                );
+            }
+            previous = current;
+        }
+        return previous[candidate.length()];
+    }
+
+    private String comparableTickerRoot(String rawSymbol) {
+        String symbol = normalizeSymbol(rawSymbol);
+        if (symbol.startsWith("^")) {
+            symbol = symbol.substring(1);
+        }
+        int suffix = symbol.indexOf('.');
+        if (suffix > 0) {
+            symbol = symbol.substring(0, suffix);
+        }
+        return symbol.replaceAll("[^A-Z0-9]", "");
+    }
+
+    private int secondaryVenuePenalty(String rawExchange) {
+        String exchange = normalizeSymbol(rawExchange);
+        if (exchange.contains("OTC") || exchange.equals("PNK") || exchange.contains("PINK")) {
+            return 40;
+        }
+        if (exchange.equals("IOB") || exchange.contains("INTERNATIONAL ORDERBOOK")) {
+            return 25;
+        }
+        if (Set.of("FRA", "DUS", "MUN", "STU", "BER", "HAM").contains(exchange)) {
+            return 10;
+        }
+        return 0;
+    }
+
+    private String yahooMic(JsonNode meta) {
+        String explicitMic = normalizeSymbol(firstNonBlank(
+                meta.path("mic").asText(""), meta.path("micCode").asText("")));
+        if (explicitMic.matches("[A-Z0-9]{4,12}")) {
+            return explicitMic;
+        }
+        String exchange = normalizeSymbol(
+                meta.path("exchangeName").asText("") + " "
+                        + meta.path("fullExchangeName").asText(""));
+        if (exchange.contains("WSE") || exchange.contains("WARSAW")) return "XWAR";
+        if (exchange.contains("NASDAQ") || exchange.contains("NMS")
+                || exchange.contains("NMQ") || exchange.contains("NGM")) return "XNAS";
+        if (exchange.contains("NYSE") || exchange.contains("NYQ")) return "XNYS";
+        if (exchange.contains("XETRA") || exchange.equals("GER")) return "XETR";
+        if (exchange.contains("FRANKFURT") || exchange.contains("FRA")) return "XFRA";
+        if (exchange.contains("LONDON") || exchange.contains("LSE")) return "XLON";
+        if (exchange.contains("AMSTERDAM")) return "XAMS";
+        if (exchange.contains("BRUSSELS")) return "XBRU";
+        if (exchange.contains("PARIS")) return "XPAR";
+        if (exchange.contains("MILAN")) return "XMIL";
+        if (exchange.contains("MADRID")) return "XMAD";
+        if (exchange.contains("SWISS") || exchange.contains("SIX")) return "XSWX";
+        if (exchange.contains("VIENNA")) return "XWBO";
+        if (exchange.contains("COPENHAGEN")) return "XCSE";
+        if (exchange.contains("STOCKHOLM")) return "XSTO";
+        if (exchange.contains("HELSINKI")) return "XHEL";
+        if (exchange.contains("OSLO")) return "XOSL";
+        if (exchange.contains("LISBON")) return "XLIS";
+        return null;
+    }
+
+    private IllegalStateException noDataFailure(String dataType,
+                                                String symbol,
+                                                Set<String> attemptedSymbols,
+                                                RuntimeException cause) {
+        String attempts = attemptedSymbols.isEmpty()
+                ? ""
+                : " Tried provider symbols: " + String.join(", ", attemptedSymbols) + ".";
+        return new IllegalStateException(
+                "Yahoo Finance has no " + dataType + " for " + symbol + "." + attempts,
+                cause
+        );
     }
 
     private String toYahooInterval(String interval) {
@@ -385,7 +703,6 @@ public class YahooFinanceService {
         return switch (interval) {
             case "1m" -> "7d";
             case "5m", "15m", "30m", "60m" -> "60d";
-            case "1mo" -> "max";
             default -> "5y";
         };
     }
@@ -488,6 +805,10 @@ public class YahooFinanceService {
         return first == null || first.isBlank() ? (second == null ? "" : second) : first;
     }
 
+    private String defaultIfBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
     private String describeHttpError(RestClientResponseException e) {
         String response = e.getResponseBodyAsString();
         if (response == null || response.isBlank()) {
@@ -497,6 +818,12 @@ public class YahooFinanceService {
     }
 
     private record ParsedSeries(List<MarketDataBar> bars, JsonNode meta) {
+    }
+
+    private record YahooSearchCandidate(String symbol,
+                                        String name,
+                                        String exchange,
+                                        String quoteType) {
     }
 
     private static final class UnexpectedGranularityException extends IllegalStateException {

@@ -159,14 +159,14 @@
         <div th:if="${#lists.isEmpty(latestSignals)}" class="latest-signals-empty">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
-            <h3>No confirmed signals yet</h3>
-            <p>Your newest matches will appear here as soon as one of your active rules produces a confirmed signal.</p>
+            <h3>No validated patterns yet</h3>
+            <p>Your newest matches will appear here as soon as one of your active rules produces a pattern with valid geometry and stock-specific trend context.</p>
           </div>
         </div>
 
         <div th:if="${!#lists.isEmpty(latestSignals)}">
           <div class="latest-signal-head latest-signal-grid" aria-hidden="true">
-            <span>Signal</span><span>Company</span><span>Interval</span><span>Candle period</span><span>Confidence</span><span></span>
+            <span>Signal</span><span>Company</span><span>Interval</span><span>Candle period</span><span>Research horizon</span><span>Setup score</span><span></span>
           </div>
           <div class="latest-signal-list">
             <a th:each="signal : ${latestSignals}"
@@ -191,11 +191,18 @@
                 <time th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</time>
                 <span th:text="${signal.sentAt() != null ? 'Recorded ' + #temporals.format(signal.sentAt(), 'HH:mm') : 'Time unavailable'}">Recorded 08:15</span>
               </div>
+              <div class="latest-horizon"
+                   th:title="${signal.researchHorizonLabel() != null ? signal.researchHorizonSummary() + ' ' + signal.researchHorizonDisclaimer() : 'Candlestick-specific guidance is not applied to this signal family.'}">
+                <strong th:if="${signal.researchHorizonLabel() != null}"
+                        th:text="${signal.researchHorizonLabel()}">8&ndash;12 weeks</strong>
+                <span th:if="${signal.researchHorizonLabel() != null}">Historical evaluation window</span>
+                <span th:unless="${signal.researchHorizonLabel() != null}" class="unavailable">Not applicable</span>
+              </div>
               <div class="latest-confidence"
-                   th:classappend="${' ' + signal.confidenceBand()}"
-                   th:attr="aria-label=${signal.confidenceScore() != null ? 'Confidence ' + signal.confidenceScore() + ' out of 100' : 'Confidence unavailable'}">
-                <strong th:text="${signal.confidenceScore() != null ? signal.confidenceScore() : '--'}">88</strong>
-                <span th:text="${signal.confidenceScore() != null ? '/100' : 'N/A'}">/100</span>
+                   th:classappend="${' ' + signal.setupBand()}"
+                   th:attr="aria-label=${signal.setupScore() != null ? 'Setup score ' + signal.setupScore() + ' out of 100' : 'Setup score unavailable'}">
+                <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
+                <span th:text="${signal.setupScore() != null ? '/100' : 'N/A'}">/100</span>
               </div>
               <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
             </a>

@@ -24,7 +24,7 @@ import java.util.Map;
 class HistoricalSignalPatternCalibrationTest {
     private static final String INTERVAL = "1d";
     private static final int MINIMUM_HISTORY = 250;
-    private static final int SIGNAL_CANDLES = 5;
+    private static final int SIGNAL_CANDLES = 100;
     private static final BacktestSettings BEST_DIRECTIONAL_SETTINGS =
             new BacktestSettings(MINIMUM_HISTORY, SIGNAL_CANDLES, 10, 3.0);
     private static final BacktestSettings SHORTER_CONFIRMATION_SETTINGS =
@@ -50,7 +50,6 @@ class HistoricalSignalPatternCalibrationTest {
                 ))
                 .filter(history -> history.candles().size() >= MINIMUM_HISTORY + 10)
                 .toList();
-
         System.out.println();
         System.out.println("=== Per-Pattern Calibration Report ===");
         System.out.printf("Symbols with sufficient cached history: %d/%d%n", histories.size(), REPRESENTATIVE_SYMBOLS.size());
@@ -60,10 +59,15 @@ class HistoricalSignalPatternCalibrationTest {
         System.out.println();
     }
 
-    private void printReport(String label, List<SymbolHistory> histories, BacktestSettings settings) {
+    private void printReport(String label,
+                             List<SymbolHistory> histories,
+                             BacktestSettings settings) {
         List<BacktestTrade> trades = new ArrayList<>();
         for (SymbolHistory history : histories) {
-            BacktestReport report = backtestService.backtest(history.candles(), settings);
+            BacktestReport report = backtestService.backtest(
+                    history.candles(),
+                    settings
+            );
             trades.addAll(report.trades());
         }
 
@@ -110,21 +114,21 @@ class HistoricalSignalPatternCalibrationTest {
 
     private void printPatternStats(PatternStats stats) {
         System.out.printf(
-                "  %-22s signals=%4d success=%4d failed=%4d inconclusive=%4d precision=%6.2f%% avgConf=%6.2f avgReturn=%7.2f%%%n",
+                "  %-22s signals=%4d success=%4d failed=%4d inconclusive=%4d precision=%6.2f%% avgScore=%6.2f avgReturn=%7.2f%%%n",
                 stats.pattern(),
                 stats.totalSignals(),
                 stats.successfulSignals(),
                 stats.failedSignals(),
                 stats.inconclusiveSignals(),
                 stats.precision(),
-                stats.averageConfidence(),
+                stats.averageSetupScore(),
                 stats.averageReturn()
         );
     }
 
     private void printPatternDirectionStats(PatternDirectionStats stats) {
         System.out.printf(
-                "  %-22s %-4s signals=%4d success=%4d failed=%4d inconclusive=%4d precision=%6.2f%% avgConf=%6.2f avgReturn=%7.2f%%%n",
+                "  %-22s %-4s signals=%4d success=%4d failed=%4d inconclusive=%4d precision=%6.2f%% avgScore=%6.2f avgReturn=%7.2f%%%n",
                 stats.pattern(),
                 stats.tradeSignal(),
                 stats.totalSignals(),
@@ -132,7 +136,7 @@ class HistoricalSignalPatternCalibrationTest {
                 stats.failedSignals(),
                 stats.inconclusiveSignals(),
                 stats.precision(),
-                stats.averageConfidence(),
+                stats.averageSetupScore(),
                 stats.averageReturn()
         );
     }
@@ -175,7 +179,7 @@ class HistoricalSignalPatternCalibrationTest {
         private int successfulSignals;
         private int failedSignals;
         private int inconclusiveSignals;
-        private double confidenceSum;
+        private double setupScoreSum;
         private double returnSum;
 
         private PatternStats(CandlePattern pattern) {
@@ -184,7 +188,7 @@ class HistoricalSignalPatternCalibrationTest {
 
         private void add(BacktestTrade trade) {
             totalSignals++;
-            confidenceSum += trade.confidenceScore();
+            setupScoreSum += trade.confidenceScore();
             returnSum += trade.directionalReturnPercent();
             if (trade.outcome() == BacktestOutcome.SUCCESS) {
                 successfulSignals++;
@@ -221,8 +225,8 @@ class HistoricalSignalPatternCalibrationTest {
                     : (successfulSignals * 100.0) / (successfulSignals + failedSignals);
         }
 
-        private double averageConfidence() {
-            return totalSignals == 0 ? 0.0 : confidenceSum / totalSignals;
+        private double averageSetupScore() {
+            return totalSignals == 0 ? 0.0 : setupScoreSum / totalSignals;
         }
 
         private double averageReturn() {
@@ -273,8 +277,8 @@ class HistoricalSignalPatternCalibrationTest {
             return stats.precision();
         }
 
-        private double averageConfidence() {
-            return stats.averageConfidence();
+        private double averageSetupScore() {
+            return stats.averageSetupScore();
         }
 
         private double averageReturn() {

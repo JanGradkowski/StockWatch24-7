@@ -11,6 +11,7 @@ import org.example.stockwatch247.service.ElliottWaveDetectionService;
 import org.example.stockwatch247.service.TechnicalIndicatorEnrichmentService;
 import org.example.stockwatch247.service.TwelveDataService;
 import org.example.stockwatch247.service.YahooFinanceService;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,6 +21,7 @@ import java.util.Locale;
 @RestController
 @RequestMapping("/api/stocks")
 public class ChartController {
+    private static final int LATEST_WAVE_CANDLES = 100;
 
     private final MarketDataService marketDataService;
     private final CandleRepository candleRepository;
@@ -84,9 +86,13 @@ public class ChartController {
             throw new IllegalStateException("Candle refresh failed.");
         }
         List<Candle> candles = candleRepository
-                .findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, validatedInterval);
+                .findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                        symbol,
+                        validatedInterval,
+                        PageRequest.of(0, enrichmentService.requiredInputCandles(LATEST_WAVE_CANDLES))
+                );
         var structure = elliottWaveDetectionService
-                .findLatestWaveStructure(enrichmentService.enrich(candles, 100));
+                .findLatestWaveStructure(enrichmentService.enrich(candles, LATEST_WAVE_CANDLES));
         if (structure.isEmpty()) {
             return new ElliottWaveOverlay(validatedInterval, labelStyle(validatedInterval), "none", null,
                     false, List.of(), null, 0, 0.0, false, 0.0, 0.0,
@@ -182,9 +188,11 @@ public class ChartController {
     }
 
     @GetMapping("/{symbol}/meta")
-    public Map<String, String> getStockMetadata(@PathVariable String symbol) {
+    public Map<String, String> getStockMetadata(@PathVariable String symbol,
+                                                @RequestParam(required = false) String micCode) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
-        StockAsset asset = twelveDataService.refreshStockAssetMetadata(symbol);
+        micCode = SecurityInputValidator.requireOptionalMicCode(micCode);
+        StockAsset asset = twelveDataService.refreshStockAssetMetadata(symbol, micCode);
         if (isGenericMetadata(asset, symbol)) {
             try {
                 asset = yahooFinanceService.refreshStockAssetMetadata(symbol);
@@ -196,11 +204,17 @@ public class ChartController {
                 "symbol", asset.getTickerSymbol(),
                 "name", asset.getCompanyName(),
                 "exchange", asset.getExchange(),
+                "micCode", asset.getMicCode() == null ? "" : asset.getMicCode(),
+                "country", asset.getCountry() == null ? "" : asset.getCountry(),
                 "currency", asset.getCurrency() != null ? asset.getCurrency() : "USD",
                 "instrumentType", asset.getInstrumentType() != null
                         ? asset.getInstrumentType().name()
                         : org.example.stockwatch247.model.enums.InstrumentType.EQUITY.name()
         );
+    }
+
+    public Map<String, String> getStockMetadata(String symbol) {
+        return getStockMetadata(symbol, null);
     }
 
     private boolean isGenericMetadata(StockAsset asset, String symbol) {

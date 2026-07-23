@@ -54,13 +54,17 @@
                   th:classappend="${column.alert().tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
                   th:text="${column.alert().tradeSignal()}">BUY</span>
             <span class="column-tag interval" th:text="${column.alert().intervalLabel()}">1wk</span>
+            <span th:if="${column.alert().researchHorizonLabel() != null}"
+                  class="column-tag horizon"
+                  th:title="${column.alert().researchHorizonSummary() + ' ' + column.alert().researchHorizonDisclaimer()}"
+                  th:text="${'Research horizon ' + column.alert().researchHorizonLabel()}">Research horizon 8&ndash;12 weeks</span>
           </div>
         </header>
 
         <div th:if="${#lists.isEmpty(column.events())}" class="history-column-empty">
           <div class="column-empty-icon" aria-hidden="true">⌁</div>
           <strong>Waiting for a match</strong>
-          <p>This combination is being followed, but it has not produced a confirmed signal yet.</p>
+          <p>This combination is being followed, but it has not produced a validated pattern yet.</p>
         </div>
 
         <div th:if="${!#lists.isEmpty(column.events())}" class="history-event-list">
@@ -71,14 +75,14 @@
             <div class="signal-event-topline">
               <time th:text="${event.signalPeriodLabel() != null ? event.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</time>
               <span class="label"
-                    th:classappend="${event.strength() != null && event.strength().name() == 'HIGH_CONFIDENCE'} ? ' high' : (${event.strength() != null && event.strength().name() == 'MEDIUM_CONFIDENCE'} ? ' medium' : ' low')"
-                    th:text="${event.strength() != null ? event.strength() : 'UNRATED'}">HIGH_CONFIDENCE</span>
+                    th:classappend="${' ' + event.setupBand()}"
+                    th:text="${event.setupStrengthLabel()}">Strong setup</span>
             </div>
             <h3 th:text="${event.patternLabel()}">Bullish Engulfing</h3>
             <div class="signal-event-metrics">
               <div>
                 <span>Score</span>
-                <strong th:text="${event.confidenceScore() != null ? event.confidenceScore() + '/100' : 'N/A'}">88/100</strong>
+                <strong th:text="${event.setupScore() != null ? event.setupScore() + '/100' : 'N/A'}">88/100</strong>
               </div>
               <div>
                 <span>Close</span>

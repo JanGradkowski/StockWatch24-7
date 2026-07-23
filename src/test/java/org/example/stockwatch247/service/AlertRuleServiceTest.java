@@ -32,6 +32,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class AlertRuleServiceTest {
@@ -50,7 +51,8 @@ class AlertRuleServiceTest {
         when(marketDataService.syncCandles(symbol, "1mo", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.YAHOO_FINANCE, 76, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1mo"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 299)))
                 .thenReturn(syntheticElliottCandles(symbol).reversed());
 
         Map<String, Object> response = service.checkLatestSignal(
@@ -67,6 +69,8 @@ class AlertRuleServiceTest {
                 .containsEntry("signal", "BUY")
                 .containsEntry("patternFamily", "ELLIOTT_WAVE")
                 .containsEntry("matched", true);
+        assertThat(response).doesNotContainKeys(
+                "researchHorizonLabel", "researchHorizonSummary", "researchHorizonDisclaimer");
         assertThat(response.get("matchingPatterns"))
                 .asList()
                 .contains("ELLIOTT_BULLISH_CORRECTION");
@@ -81,6 +85,30 @@ class AlertRuleServiceTest {
     }
 
     @Test
+    void manualCandlestickCheckRefreshesOnlyTheRequestedStock() {
+        String symbol = "VST";
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(candleRepository, marketDataService);
+
+        when(marketDataService.syncCandles(symbol, "1d", null, true))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.TWELVE_DATA, 2, null));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1d", PageRequest.of(0, 299)))
+                .thenReturn(List.of(
+                        new Candle(symbol, "1d", 2 * 86_400L, 100.0, 103.0, 99.0, 102.0, 1_000L),
+                        new Candle(symbol, "1d", 86_400L, 98.0, 101.0, 97.0, 100.0, 1_000L)
+                ));
+
+        service.checkLatestSignal(
+                new User(), symbol, TimeInterval.DAILY, TradeSignal.BUY, AlertPatternFamily.CANDLESTICK);
+
+        verify(marketDataService).syncCandles(symbol, "1d", null, true);
+        verifyNoMoreInteractions(marketDataService);
+    }
+
+    @Test
     void checkLatestSignalSupportsCurrentWeeklyEndOfWaveC() {
         String symbol = "SAP.DE";
         MarketDataService marketDataService = mock(MarketDataService.class);
@@ -90,7 +118,8 @@ class AlertRuleServiceTest {
         when(marketDataService.syncCandles(symbol, "1wk", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1wk"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1wk", PageRequest.of(0, 299)))
                 .thenReturn(syntheticElliottCandles(symbol, "1wk").reversed());
 
         Map<String, Object> response = service.checkLatestSignal(
@@ -108,7 +137,8 @@ class AlertRuleServiceTest {
         AlertRuleService service = service(candleRepository, marketDataService);
         when(marketDataService.syncCandles(symbol, "1mo", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1mo"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 299)))
                 .thenReturn(syntheticWaveVEndCandles(symbol, "1mo").reversed());
 
         Map<String, Object> response = service.checkLatestSignal(
@@ -227,8 +257,11 @@ class AlertRuleServiceTest {
         assertThat(signal.familyLabel()).isEqualTo("Candlestick");
         assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.BUY);
         assertThat(signal.intervalLabel()).isEqualTo("1wk");
-        assertThat(signal.confidenceScore()).isEqualTo(88);
-        assertThat(signal.confidenceBand()).isEqualTo("high");
+        assertThat(signal.researchHorizonLabel()).isEqualTo("8\u201312 weeks");
+        assertThat(signal.researchHorizonSummary()).contains("4-week result was less useful");
+        assertThat(signal.researchHorizonDisclaimer()).contains("not a recommended holding period");
+        assertThat(signal.setupScore()).isEqualTo(88);
+        assertThat(signal.setupBand()).isEqualTo("high");
         assertThat(signal.signalDate()).isNotNull();
         assertThat(signal.signalPeriodLabel()).isEqualTo("13\u201317 Jul 2026");
         assertThat(signal.sentAt()).isEqualTo(LocalDateTime.of(2025, 7, 8, 8, 15));
@@ -282,6 +315,7 @@ class AlertRuleServiceTest {
         assertThat(history.columns()).extracting(column -> column.alert().interval())
                 .containsExactly(TimeInterval.WEEKLY, TimeInterval.MONTHLY);
         assertThat(history.columns().getFirst().alert().familyLabel()).isEqualTo("Candlestick");
+        assertThat(history.columns().getFirst().alert().researchHorizonLabel()).isEqualTo("8\u201312 weeks");
         assertThat(history.columns().getFirst().alert().tradeSignal()).isEqualTo(TradeSignal.BUY);
         assertThat(history.columns().getFirst().events()).hasSize(1);
         assertThat(history.columns().getFirst().events().getFirst().id()).isEqualTo(301L);
@@ -289,6 +323,7 @@ class AlertRuleServiceTest {
         assertThat(history.columns().getFirst().events().getFirst().signalPeriodLabel())
                 .isEqualTo("13\u201317 Jul 2026");
         assertThat(history.columns().get(1).alert().familyLabel()).isEqualTo("Elliott Wave");
+        assertThat(history.columns().get(1).alert().researchHorizonLabel()).isNull();
         assertThat(history.columns().get(1).alert().tradeSignal()).isEqualTo(TradeSignal.SELL);
         verify(event, never()).getAlertRule();
     }
@@ -309,7 +344,7 @@ class AlertRuleServiceTest {
     }
 
     @Test
-    void signalDetailExplainsThePersistedConfidenceEvidence() {
+    void signalDetailExplainsThePersistedSetupEvidence() {
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
         AlertRuleService service = service(mock(AlertRuleRepository.class), alertEventRepository);
         User user = new User();
@@ -340,9 +375,12 @@ class AlertRuleServiceTest {
         assertThat(detail.alertRuleId()).isEqualTo(21L);
         assertThat(detail.symbol()).isEqualTo("MARA");
         assertThat(detail.patternLabel()).isEqualTo("Bullish Engulfing");
-        assertThat(detail.confidenceBand()).isEqualTo("high");
+        assertThat(detail.setupBand()).isEqualTo("high");
+        assertThat(detail.researchHorizonLabel()).isEqualTo("8\u201312 weeks");
+        assertThat(detail.researchHorizonSummary()).contains("separated historical outcomes most clearly");
+        assertThat(detail.researchHorizonDisclaimer()).contains("not a recommended holding period");
         assertThat(detail.signalPeriodLabel()).isEqualTo("13\u201317 Jul 2026");
-        assertThat(detail.strengthLabel()).isEqualTo("High confidence");
+        assertThat(detail.setupStrengthLabel()).isEqualTo("Strong setup");
         assertThat(detail.reasonsAvailable()).isTrue();
         assertThat(detail.reasons()).extracting(AlertRuleService.SignalReasonView::category)
                 .containsExactly("Pattern geometry", "Momentum", "Calibration");

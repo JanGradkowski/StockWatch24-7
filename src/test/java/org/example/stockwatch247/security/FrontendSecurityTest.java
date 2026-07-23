@@ -86,6 +86,12 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("candleSeries.setData(globalCandleData.map(item => ({ ...item })))"));
         assertFalse(stock.contains("setVisibleRange(visibleTimeRange)"));
         assertFalse(stock.contains("timeScale().fitContent()"));
+        int loadChartData = stock.indexOf("async function loadChartData(interval)");
+        int paginationReady = stock.indexOf("isFetching = false;", loadChartData);
+        int initialOverlayRefresh = stock.indexOf(
+                "await refreshHistoricalElliottOverlays(interval);", loadChartData);
+        assertTrue(paginationReady > loadChartData);
+        assertTrue(paginationReady < initialOverlayRefresh);
 
         int candlestickStart = stock.indexOf("<div class=\"alert-section-title\">Candlestick Patterns</div>");
         int elliottStart = stock.indexOf("<div class=\"alert-section-title\">Elliott Wave Patterns</div>");
@@ -95,6 +101,28 @@ class FrontendSecurityTest {
         assertFalse(candlestickSection.contains("data-alert-family=\"ELLIOTT_WAVE\""));
         assertTrue(elliottSection.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\""));
         assertTrue(elliottSection.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"MONTHLY\""));
+    }
+
+    @Test
+    void stockAlertChangesRemainDraftsUntilExplicitlyApplied() throws IOException {
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String navbar = Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html"));
+
+        assertTrue(stock.contains("id=\"applyAlertChangesBtn\""));
+        assertTrue(stock.contains("id=\"unsavedAlertDialog\""));
+        assertTrue(stock.contains("id=\"saveAlertChangesBeforeLeaveBtn\""));
+        assertTrue(stock.contains("id=\"discardAlertChangesBtn\""));
+        assertTrue(stock.contains("id=\"keepEditingAlertsBtn\""));
+        assertTrue(stock.contains("const persistedAlertState = new Map()"));
+        assertTrue(stock.contains("body: JSON.stringify({ changes: changedInputs.map(alertChangePayload) })"));
+        assertTrue(stock.contains("method: 'PUT'"));
+        assertTrue(stock.contains("if (alertSavePromise) return alertSavePromise"));
+        assertTrue(stock.contains("window.addEventListener('beforeunload'"));
+        assertTrue(stock.contains("window.requestStockWatchNavigation"));
+        assertTrue(stock.contains("if (pageExitAllowed || !hasUnappliedAlertChanges()"));
+        assertFalse(stock.contains("input.addEventListener('change', () => updateAlert(input))"));
+        assertFalse(stock.contains("async function updateAlert(input)"));
+        assertTrue(navbar.contains("window.requestStockWatchNavigation(destination)"));
     }
 
     @Test
@@ -110,8 +138,9 @@ class FrontendSecurityTest {
         assertFalse(dashboard.contains("th:each=\"alert : ${activeAlerts}\""));
         assertTrue(dashboard.contains("th:each=\"signal : ${latestSignals}\""));
         assertTrue(dashboard.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
-        assertTrue(dashboard.contains("signal.confidenceScore()"));
+        assertTrue(dashboard.contains("signal.setupScore()"));
         assertTrue(dashboard.contains("signal.signalPeriodLabel()"));
+        assertTrue(dashboard.contains("signal.researchHorizonLabel()"));
         assertTrue(dashboard.contains("data-watch-filter=\"stocks\""));
         assertTrue(dashboard.contains("data-watch-filter=\"funds\""));
         assertTrue(dashboard.contains("data-instrument-group=${company.instrumentGroup()}"));
@@ -126,13 +155,15 @@ class FrontendSecurityTest {
         assertTrue(history.contains("column.alert().familyLabel()"));
         assertTrue(history.contains("column.alert().tradeSignal()"));
         assertTrue(history.contains("column.alert().intervalLabel()"));
+        assertTrue(history.contains("column.alert().researchHorizonLabel()"));
         assertTrue(history.contains("/alerts/signals/{id}"));
         assertTrue(history.contains("event.id()"));
         assertTrue(history.contains("event.signalPeriodLabel()"));
         assertFalse(history.contains("class=\"signal-table\""));
 
-        assertTrue(signalDetail.contains("signal.confidenceScore()"));
+        assertTrue(signalDetail.contains("signal.setupScore()"));
         assertTrue(signalDetail.contains("signal.signalPeriodLabel()"));
+        assertTrue(signalDetail.contains("signal.researchHorizonLabel()"));
         assertTrue(signalDetail.contains("#numbers.sequence(1, 20)"));
         assertTrue(signalDetail.contains("signal.reasons()"));
         assertTrue(signalDetail.contains("reason.text()"));

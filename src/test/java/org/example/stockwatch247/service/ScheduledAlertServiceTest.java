@@ -3,6 +3,7 @@ package org.example.stockwatch247.service;
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.Candle;
+import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
@@ -16,6 +17,7 @@ import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.Instant;
@@ -28,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class ScheduledAlertServiceTest {
@@ -42,7 +45,7 @@ class ScheduledAlertServiceTest {
     }
 
     @Test
-    void confidenceDoesNotSuppressStructurallyDetectedYahooCandlestick() {
+    void setupScoreDoesNotSuppressValidatedYahooCandlestick() {
         String symbol = "SAP.DE";
         MarketDataService marketDataService = mock(MarketDataService.class);
         CandleRepository candleRepository = mock(CandleRepository.class);
@@ -53,11 +56,15 @@ class ScheduledAlertServiceTest {
 
         when(marketDataService.syncCandles(symbol, "1d", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(
-                        MarketDataService.CandleSource.YAHOO_FINANCE, 2, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1d"))
+                        MarketDataService.CandleSource.YAHOO_FINANCE, 5, null));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1d", PageRequest.of(0, 299)))
                 .thenReturn(List.of(
-                        candle(symbol, "1d", 2, 89, 103, 87, 101),
-                        candle(symbol, "1d", 1, 100, 105, 88, 90)
+                        candle(symbol, "1d", 5, 98, 105, 97, 104),
+                        candle(symbol, "1d", 4, 103, 104, 98, 99),
+                        candle(symbol, "1d", 3, 105, 106, 101, 102),
+                        candle(symbol, "1d", 2, 108, 109, 104, 105),
+                        candle(symbol, "1d", 1, 110, 111, 107, 108)
                 ));
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
@@ -74,7 +81,7 @@ class ScheduledAlertServiceTest {
         verify(alertEventRepository).save(savedEvent.capture());
         assertThat(savedEvent.getValue().getConfidenceScore()).isLessThan(75);
         assertThat(savedEvent.getValue().getConfidenceReasons())
-                .anyMatch(reason -> reason.contains("pattern geometry remains valid"));
+                .anyMatch(reason -> reason.startsWith("Pattern quality +"));
     }
 
     @Test
@@ -101,8 +108,8 @@ class ScheduledAlertServiceTest {
         when(marketDataService.syncCandles(symbol, "1d", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.YAHOO_FINANCE, 3, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                symbol, "1d", scheduledFor.getEpochSecond()))
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                symbol, "1d", scheduledFor.getEpochSecond(), PageRequest.of(0, 299)))
                 .thenReturn(List.of(
                         candle(symbol, "1d", 2, 89, 103, 87, 101),
                         candle(symbol, "1d", 1, 100, 105, 88, 90)
@@ -119,12 +126,67 @@ class ScheduledAlertServiceTest {
 
         service.processSymbolInterval(symbol, TimeInterval.DAILY, scheduledFor);
 
-        verify(candleRepository).findTop100BySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                symbol, "1d", scheduledFor.getEpochSecond());
-        verify(candleRepository, never()).findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1d");
+        verify(candleRepository).findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                symbol, "1d", scheduledFor.getEpochSecond(), PageRequest.of(0, 299));
+        verify(candleRepository, never()).findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1d", PageRequest.of(0, 299));
         verify(detectionService).detectAlertSignals(any());
         verify(notificationService).sendSignalEmail(rule, qualifiedSignal);
         verify(alertEventRepository).save(any());
+    }
+
+    @Test
+    void candlestickCheckUsesOnlyTheRequestedStocksCandles() {
+        String symbol = "VST";
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        CandlePatternDetectionService detectionService = mock(CandlePatternDetectionService.class);
+        AlertRule rule = rule(symbol, TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+
+        when(marketDataService.syncCandles(symbol, "1d", null, true))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.TWELVE_DATA, 2, null));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1d", PageRequest.of(0, 299)))
+                .thenReturn(List.of(
+                        candle(symbol, "1d", 2, 100, 103, 99, 102),
+                        candle(symbol, "1d", 1, 98, 101, 97, 100)
+                ));
+        when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
+                symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
+        when(detectionService.detectAlertSignals(any())).thenReturn(List.of());
+
+        ScheduledAlertService service = new ScheduledAlertService(
+                alertRuleRepository,
+                alertEventRepository,
+                candleRepository,
+                marketDataService,
+                new TechnicalIndicatorEnrichmentService(),
+                detectionService,
+                new ElliottWaveDetectionService(),
+                notificationService,
+                mock(AlertCheckJobStore.class),
+                mock(AlertScheduleRecoveryService.class),
+                true,
+                true,
+                true,
+                300,
+                60,
+                3
+        );
+
+        service.processSymbolInterval(symbol, TimeInterval.DAILY);
+
+        ArgumentCaptor<List<EnrichedCandle>> assetCandles = ArgumentCaptor.captor();
+        verify(detectionService).detectAlertSignals(assetCandles.capture());
+        assertThat(assetCandles.getValue())
+                .extracting(EnrichedCandle::close)
+                .containsExactly(100.0, 102.0);
+        verify(marketDataService).syncCandles(symbol, "1d", null, true);
+        verifyNoMoreInteractions(marketDataService);
     }
 
     @Test
@@ -140,7 +202,8 @@ class ScheduledAlertServiceTest {
         when(marketDataService.syncCandles(symbol, "1mo", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.YAHOO_FINANCE, 76, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1mo"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 299)))
                 .thenReturn(syntheticElliottCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.MONTHLY)).thenReturn(List.of(rule));
@@ -169,7 +232,8 @@ class ScheduledAlertServiceTest {
         when(marketDataService.syncCandles(symbol, "1wk", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1wk"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1wk", PageRequest.of(0, 299)))
                 .thenReturn(syntheticElliottCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.WEEKLY)).thenReturn(List.of(rule));
@@ -195,7 +259,8 @@ class ScheduledAlertServiceTest {
         AlertRule rule = rule(symbol, TimeInterval.MONTHLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
         when(marketDataService.syncCandles(symbol, "1mo", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1mo"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 299)))
                 .thenReturn(syntheticWaveVEndCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.MONTHLY)).thenReturn(List.of(rule));
@@ -222,7 +287,8 @@ class ScheduledAlertServiceTest {
         AlertRule rule = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
         when(marketDataService.syncCandles(symbol, "1wk", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1wk"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1wk", PageRequest.of(0, 299)))
                 .thenReturn(syntheticElliottCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.WEEKLY)).thenReturn(List.of(rule));
@@ -261,7 +327,8 @@ class ScheduledAlertServiceTest {
                 149.0);
         when(marketDataService.syncCandles(symbol, "1mo", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1mo"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 299)))
                 .thenReturn(syntheticWaveVEndCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.MONTHLY)).thenReturn(List.of(rule));

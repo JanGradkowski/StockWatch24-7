@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
 public final class SecurityInputValidator {
     private static final Pattern MARKET_SYMBOL = Pattern.compile("[A-Z0-9^][A-Z0-9.^=_-]{0,19}");
     private static final Pattern SEARCH_QUERY = Pattern.compile("[\\p{L}\\p{N} .&'^_-]{1,64}");
+    private static final Pattern MIC_CODE = Pattern.compile("[A-Z0-9]{4,12}");
     private static final Pattern PERSON_NAME = Pattern.compile("[\\p{L}\\p{M} .'-]{1,100}");
     private static final Pattern EMAIL = Pattern.compile(
             "^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$",
@@ -34,6 +35,17 @@ public final class SecurityInputValidator {
             throw new IllegalArgumentException("Invalid search query.");
         }
         return query;
+    }
+
+    public static String requireOptionalMicCode(String rawMicCode) {
+        if (rawMicCode == null || rawMicCode.isBlank()) {
+            return null;
+        }
+        String micCode = rawMicCode.trim().toUpperCase(Locale.ROOT);
+        if (!MIC_CODE.matcher(micCode).matches()) {
+            throw new IllegalArgumentException("Invalid market identifier code.");
+        }
+        return micCode;
     }
 
     public static String requireInterval(String interval) {

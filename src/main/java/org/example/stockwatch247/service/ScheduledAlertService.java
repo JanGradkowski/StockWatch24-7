@@ -14,6 +14,7 @@ import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedS
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -25,7 +26,7 @@ import java.time.Instant;
 
 @Service
 public class ScheduledAlertService {
-    private static final int DEFAULT_SIGNAL_CANDLES = 5;
+    private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int HIGHER_INTERVAL_SIGNAL_CANDLES = 100;
 
     private final AlertRuleRepository alertRuleRepository;
@@ -174,10 +175,16 @@ public class ScheduledAlertService {
             throw new IllegalStateException("Candle refresh failed: " + syncResult.failureMessage());
         }
 
+        int signalCandleCount = signalCandleCount(interval);
+        PageRequest historyWindow = PageRequest.of(
+                0,
+                enrichmentService.requiredInputCandles(signalCandleCount)
+        );
         List<Candle> storedCandles = scheduledFor == null
-                ? candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, apiInterval)
-                : candleRepository.findTop100BySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                        symbol, apiInterval, scheduledFor.getEpochSecond());
+                ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                        symbol, apiInterval, historyWindow)
+                : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                        symbol, apiInterval, scheduledFor.getEpochSecond(), historyWindow);
         List<Candle> candles = new ArrayDeque<>(storedCandles)
                 .stream()
                 .sorted(Comparator.comparing(Candle::getTimestamp))
@@ -188,14 +195,17 @@ public class ScheduledAlertService {
             return;
         }
 
-        List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(candles, signalCandleCount(interval));
+        List<AlertRule> rules = alertRuleRepository
+                .findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(symbol, interval);
+        if (rules.isEmpty()) {
+            return;
+        }
+
+        List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(candles, signalCandleCount);
         List<DetectedSignal> detectedSignals = detectSignals(enrichedCandles, interval);
         if (detectedSignals.isEmpty()) {
             return;
         }
-
-        List<AlertRule> rules = alertRuleRepository
-                .findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(symbol, interval);
 
         for (DetectedSignal signal : detectedSignals) {
             rules.stream()
@@ -230,8 +240,11 @@ public class ScheduledAlertService {
         };
     }
 
-    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles, TimeInterval interval) {
-        List<DetectedSignal> signals = new java.util.ArrayList<>(detectionService.detectAlertSignals(enrichedCandles));
+    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles,
+                                               TimeInterval interval) {
+        List<DetectedSignal> signals = new java.util.ArrayList<>(
+                detectionService.detectAlertSignals(enrichedCandles)
+        );
         if (isElliottEnabled(interval)) {
             signals.addAll(elliottWaveDetectionService.detectAlertSignals(enrichedCandles).stream()
                     .filter(this::isActionableElliottTurningPoint)

@@ -98,13 +98,22 @@
             dropdown.replaceChildren();
             suggestions.forEach(item => {
               const symbol = String(item.symbol || '');
+              const micCode = String(item.micCode || '');
+              const region = String(item.region || '');
+              const currency = String(item.currency || '');
               const instrumentType = String(item.instrumentType || 'EQUITY').toUpperCase();
               const row = document.createElement('button');
               row.type = 'button';
               row.className = 'suggestion-row';
               row.setAttribute('role', 'option');
               row.addEventListener('click', () => {
-                window.location.assign(`/stock/${encodeURIComponent(symbol)}`);
+                const listingQuery = micCode ? `?mic=${encodeURIComponent(micCode)}` : '';
+                const destination = `/stock/${encodeURIComponent(symbol)}${listingQuery}`;
+                if (typeof window.requestStockWatchNavigation === 'function') {
+                  window.requestStockWatchNavigation(destination);
+                } else {
+                  window.location.assign(destination);
+                }
               });
 
               const content = document.createElement('span');
@@ -127,9 +136,12 @@
               const nameLabel = document.createElement('span');
               nameLabel.className = 'suggestion-name';
               nameLabel.textContent = String(item.name || symbol);
+              const listingLabel = document.createElement('span');
+              listingLabel.className = 'suggestion-listing';
+              listingLabel.textContent = [region, currency].filter(Boolean).join(' / ');
 
               symbolRow.append(symbolLabel, typeLabel);
-              labels.append(symbolRow, nameLabel);
+              labels.append(symbolRow, nameLabel, listingLabel);
               content.append(initials, labels);
               row.append(content);
               dropdown.append(row);

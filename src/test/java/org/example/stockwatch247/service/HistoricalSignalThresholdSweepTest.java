@@ -20,7 +20,7 @@ import java.util.List;
 class HistoricalSignalThresholdSweepTest {
     private static final String INTERVAL = "1d";
     private static final int MINIMUM_HISTORY = 250;
-    private static final int SIGNAL_CANDLES = 5;
+    private static final int SIGNAL_CANDLES = 100;
     private static final List<String> REPRESENTATIVE_SYMBOLS = List.of(
             "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "AMD", "ORCL",
             "CRM", "JPM", "BAC", "GS", "V", "MA", "XOM", "CVX", "COP", "JNJ",
@@ -43,24 +43,25 @@ class HistoricalSignalThresholdSweepTest {
             new BacktestSettings(MINIMUM_HISTORY, SIGNAL_CANDLES, 30, 5.0),
             new BacktestSettings(MINIMUM_HISTORY, SIGNAL_CANDLES, 30, 8.0)
     );
-    private static final List<ConfidenceFilter> CONFIDENCE_FILTERS = List.of(
-            new ConfidenceFilter("0-100", 0, 100),
-            new ConfidenceFilter("0-64", 0, 64),
-            new ConfidenceFilter("0-74", 0, 74),
-            new ConfidenceFilter("30-64", 30, 64),
-            new ConfidenceFilter("50-64", 50, 64),
-            new ConfidenceFilter("65-100", 65, 100),
-            new ConfidenceFilter("70-100", 70, 100),
-            new ConfidenceFilter("75-100", 75, 100),
-            new ConfidenceFilter("80-100", 80, 100),
-            new ConfidenceFilter("85-100", 85, 100),
-            new ConfidenceFilter("90-100", 90, 100),
-            new ConfidenceFilter("95-100", 95, 100),
-            new ConfidenceFilter("65-94", 65, 94),
-            new ConfidenceFilter("75-94", 75, 94),
-            new ConfidenceFilter("80-94", 80, 94),
-            new ConfidenceFilter("85-94", 85, 94),
-            new ConfidenceFilter("90-94", 90, 94)
+    private static final List<SetupScoreFilter> SETUP_SCORE_FILTERS = List.of(
+            new SetupScoreFilter("0-100", 0, 100),
+            new SetupScoreFilter("0-59", 0, 59),
+            new SetupScoreFilter("0-74", 0, 74),
+            new SetupScoreFilter("50-59", 50, 59),
+            new SetupScoreFilter("60-100", 60, 100),
+            new SetupScoreFilter("60-69", 60, 69),
+            new SetupScoreFilter("65-100", 65, 100),
+            new SetupScoreFilter("70-100", 70, 100),
+            new SetupScoreFilter("75-100", 75, 100),
+            new SetupScoreFilter("80-100", 80, 100),
+            new SetupScoreFilter("85-100", 85, 100),
+            new SetupScoreFilter("90-100", 90, 100),
+            new SetupScoreFilter("95-100", 95, 100),
+            new SetupScoreFilter("65-94", 65, 94),
+            new SetupScoreFilter("75-94", 75, 94),
+            new SetupScoreFilter("80-94", 80, 94),
+            new SetupScoreFilter("85-94", 85, 94),
+            new SetupScoreFilter("90-94", 90, 94)
     );
 
     @Autowired
@@ -70,7 +71,7 @@ class HistoricalSignalThresholdSweepTest {
     private HistoricalSignalBacktestService backtestService;
 
     @Test
-    void printsThresholdAndConfidenceSweep() {
+    void printsThresholdAndSetupScoreSweep() {
         List<SymbolHistory> histories = REPRESENTATIVE_SYMBOLS.stream()
                 .map(symbol -> new SymbolHistory(
                         symbol,
@@ -78,7 +79,6 @@ class HistoricalSignalThresholdSweepTest {
                 ))
                 .filter(history -> history.candles().size() >= MINIMUM_HISTORY + 10)
                 .toList();
-
         System.out.println();
         System.out.println("=== Signal Threshold Sweep ===");
         System.out.printf("Symbols with sufficient cached history: %d/%d%n", histories.size(), REPRESENTATIVE_SYMBOLS.size());
@@ -91,13 +91,16 @@ class HistoricalSignalThresholdSweepTest {
             int totalCandles = 0;
             int analyzedCandles = 0;
             for (SymbolHistory history : histories) {
-                BacktestReport report = backtestService.backtest(history.candles(), settings);
+                BacktestReport report = backtestService.backtest(
+                        history.candles(),
+                        settings
+                );
                 totalCandles += report.totalCandles();
                 analyzedCandles += report.analyzedCandles();
                 allTrades.addAll(report.trades());
             }
 
-            for (ConfidenceFilter filter : CONFIDENCE_FILTERS) {
+            for (SetupScoreFilter filter : SETUP_SCORE_FILTERS) {
                 List<BacktestTrade> filteredTrades = allTrades.stream()
                         .filter(filter::matches)
                         .toList();
@@ -139,7 +142,7 @@ class HistoricalSignalThresholdSweepTest {
     private void printResult(SweepResult result) {
         BacktestSettings settings = result.settings();
         System.out.printf(
-                "horizon=%2d minMove=%3.1f%% conf=%6s signals=%4d success=%4d failed=%4d inconclusive=%4d successRate=%6.2f%% precision=%6.2f%% avgReturn=%7.2f%%%n",
+                "horizon=%2d minMove=%3.1f%% score=%6s signals=%4d success=%4d failed=%4d inconclusive=%4d successRate=%6.2f%% precision=%6.2f%% avgReturn=%7.2f%%%n",
                 settings.forwardCandles(),
                 settings.minimumMovePercent(),
                 result.filter().label(),
@@ -156,7 +159,7 @@ class HistoricalSignalThresholdSweepTest {
     private record SymbolHistory(String symbol, List<Candle> candles) {
     }
 
-    private record ConfidenceFilter(String label, int minInclusive, int maxInclusive) {
+    private record SetupScoreFilter(String label, int minInclusive, int maxInclusive) {
         private boolean matches(BacktestTrade trade) {
             return trade.confidenceScore() >= minInclusive && trade.confidenceScore() <= maxInclusive;
         }
@@ -164,7 +167,7 @@ class HistoricalSignalThresholdSweepTest {
 
     private record SweepResult(
             BacktestSettings settings,
-            ConfidenceFilter filter,
+            SetupScoreFilter filter,
             int totalCandles,
             int analyzedCandles,
             int totalSignals,
@@ -176,7 +179,7 @@ class HistoricalSignalThresholdSweepTest {
             double averageDirectionalReturnPercent
     ) {
         private static SweepResult from(BacktestSettings settings,
-                                        ConfidenceFilter filter,
+                                        SetupScoreFilter filter,
                                         int totalCandles,
                                         int analyzedCandles,
                                         List<BacktestTrade> trades) {

@@ -26,9 +26,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
@@ -89,6 +91,51 @@ class StockWatch247ApplicationTests {
                         .contentType("application/json")
                         .content("{\"interval\":\"DAILY\",\"signal\":\"BUY\",\"active\":true}"))
                 .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/alerts/AAPL")
+                        .with(user("security-test@example.com"))
+                        .contentType("application/json")
+                        .content("{\"changes\":[{\"interval\":\"DAILY\",\"signal\":\"BUY\",\"active\":true}]}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @Transactional
+    void appliesAnAlertDraftThroughTheBatchEndpoint() throws Exception {
+        String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
+        String symbol = "D" + suffix;
+        String email = "draft-" + suffix.toLowerCase() + "@example.com";
+
+        User userEntity = new User();
+        userEntity.setEmail(email);
+        userEntity.setPasswordHash("test-only-password-hash");
+        userEntity.setFirstName("Draft");
+        userEntity.setLastName("Tester");
+        userEntity.setVerified(true);
+        userRepository.save(userEntity);
+
+        StockAsset stockAsset = new StockAsset();
+        stockAsset.setTickerSymbol(symbol);
+        stockAsset.setCompanyName("Alert Draft Test Company");
+        stockAsset.setExchange("NASDAQ");
+        stockAsset.setCurrency("USD");
+        stockAsset.setInstrumentType(InstrumentType.EQUITY);
+        stockAssetRepository.save(stockAsset);
+
+        mockMvc.perform(put("/api/alerts/{symbol}", symbol)
+                        .with(user(email))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {"changes":[
+                                  {"interval":"DAILY","signal":"BUY","patternFamily":"CANDLESTICK","active":true},
+                                  {"interval":"MONTHLY","signal":"SELL","patternFamily":"ELLIOTT_WAVE","active":true}
+                                ]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.families.CANDLESTICK.DAILY.BUY").value(true))
+                .andExpect(jsonPath("$.families.ELLIOTT_WAVE.MONTHLY.SELL").value(true))
+                .andExpect(jsonPath("$.trackedStocks").value(1));
     }
 
     @Test
@@ -188,7 +235,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Latest signals")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
                 .andExpect(content().string(containsString("13\u201317 Jul 2026")))
-                .andExpect(content().string(containsString("Confidence 88 out of 100")))
+                .andExpect(content().string(containsString("Setup score 88 out of 100")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 
         mockMvc.perform(get("/alerts/{id}", candleBuy.getId()).with(user(email)))
@@ -205,10 +252,10 @@ class StockWatch247ApplicationTests {
                 .andExpect(view().name("signal-detail"))
                 .andExpect(model().attributeExists("signal"))
                 .andExpect(content().string(containsString("Why this score")))
-                .andExpect(content().string(containsString("Confidence score 88 out of 100")))
+                .andExpect(content().string(containsString("Setup score 88 out of 100")))
                 .andExpect(content().string(containsString("strict bullish candle-pattern geometry")))
                 .andExpect(content().string(containsString("RSI is rising versus the previous candle")))
-                .andExpect(content().string(containsString("How the confidence score works")));
+                .andExpect(content().string(containsString("How the setup score works")));
 
         User otherUser = new User();
         otherUser.setEmail("other-" + email);

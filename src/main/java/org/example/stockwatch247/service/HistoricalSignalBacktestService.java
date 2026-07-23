@@ -75,7 +75,8 @@ public class HistoricalSignalBacktestService {
         return BacktestReport.from(candles.size(), lastSignalIndex + 1, validatedSettings, trades);
     }
 
-    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles, boolean includeElliottWaves) {
+    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles,
+                                               boolean includeElliottWaves) {
         List<DetectedSignal> signals = new ArrayList<>(detectionService.detect(enrichedCandles));
         if (includeElliottWaves) {
             signals.addAll(elliottWaveDetectionService.detect(enrichedCandles));

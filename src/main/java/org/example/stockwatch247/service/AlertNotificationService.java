@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -57,6 +58,23 @@ public class AlertNotificationService {
                     + " on " + rule.getStockAsset().getTickerSymbol()
                 : "StockWatch pattern detected: " + signal.pattern()
                     + " on " + rule.getStockAsset().getTickerSymbol();
+        String eventDescription = endOfWaveC
+                ? "End of Elliott correction (wave C)"
+                : endOfWaveV
+                ? "End of Elliott impulse (wave V)"
+                : "Validated candlestick pattern (next-candle confirmation not evaluated)";
+        String researchHorizonSection = CandlestickHorizonGuidance
+                .forSignal(rule.getPatternFamily(), rule.getInterval())
+                .map(guidance -> """
+
+                        Research horizon: %s
+                        Horizon context: %s
+                        Horizon note: %s""".formatted(
+                        guidance.label(),
+                        guidance.summary(),
+                        guidance.disclaimer()
+                ))
+                .orElse("");
         String body = """
                 %s technical pattern was detected for %s.
 
@@ -64,11 +82,11 @@ public class AlertNotificationService {
                 Pattern: %s
                 Signal event: %s
                 Direction classification: %s
-                Direction confidence label: %s
-                Direction confidence: %d/100
-                Backtested context: high-confidence classifications are strongest over roughly 30 daily candles.
-                Reasons: %s
-                Interval: %s
+                Setup strength: %s
+                Heuristic setup score: %d/100
+                Score note: this measures technical confluence, not probability of profit.
+                Score breakdown: %s
+                Interval: %s%s
                 Signal candle period: %s
                 Close price: %.2f
                 """.formatted(
@@ -76,13 +94,13 @@ public class AlertNotificationService {
                 rule.getStockAsset().getTickerSymbol(),
                 rule.getPatternFamily(),
                 signal.pattern(),
-                endOfWaveC ? "End of Elliott correction (wave C)"
-                        : endOfWaveV ? "End of Elliott impulse (wave V)" : "Technical pattern confirmation",
+                eventDescription,
                 signal.tradeSignal(),
-                signal.strength(),
-                signal.confidenceScore(),
+                setupStrengthLabel(signal.strength()),
+                signal.setupScore(),
                 signal.reasons().isEmpty() ? "not available" : String.join("; ", signal.reasons()),
                 rule.getInterval(),
+                researchHorizonSection,
                 SignalPeriodFormatter.format(signal.candleTimestamp(), rule.getInterval(), signalTimeZone),
                 signal.closePrice()
         );
@@ -99,6 +117,15 @@ public class AlertNotificationService {
         message.setSubject(subject);
         message.setText(body);
         send(message);
+    }
+
+    private String setupStrengthLabel(SignalStength strength) {
+        return switch (strength) {
+            case HIGH_CONFIDENCE -> "Strong";
+            case MEDIUM_CONFIDENCE -> "Moderate";
+            case LOW_CONFIDENCE -> "Weak";
+            case WEAK_IGNORE -> "Very weak";
+        };
     }
 
     private boolean isElliottCorrection(CandlePattern pattern) {

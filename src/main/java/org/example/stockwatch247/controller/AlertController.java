@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -38,13 +39,14 @@ public class AlertController {
                                       Principal principal) {
         try {
             User user = currentUser(principal);
+            AlertRuleService.AlertRuleChange change = parseAlertChange(request);
             AlertRule rule = alertRuleService.setAlert(
                     user,
                     SecurityInputValidator.requireMarketSymbol(symbol),
-                    TimeInterval.valueOf(request.interval()),
-                    TradeSignal.valueOf(request.signal()),
-                    parsePatternFamily(request.patternFamily()),
-                    request.active()
+                    change.interval(),
+                    change.signal(),
+                    change.patternFamily(),
+                    change.active()
             );
             return ResponseEntity.ok(Map.of(
                     "id", rule.getId(),
@@ -58,6 +60,29 @@ public class AlertController {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid alert request."));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "The alert request could not be completed."));
+        }
+    }
+
+    @PutMapping("/{symbol}")
+    public ResponseEntity<?> applyAlertChanges(@PathVariable String symbol,
+                                               @RequestBody AlertBatchRequest request,
+                                               Principal principal) {
+        try {
+            if (request == null || request.changes() == null) {
+                throw new IllegalArgumentException("Alert changes are required.");
+            }
+            User user = currentUser(principal);
+            String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+            List<AlertRuleService.AlertRuleChange> changes = request.changes().stream()
+                    .map(this::parseAlertChange)
+                    .toList();
+            alertRuleService.applyAlertChanges(user, validatedSymbol, changes);
+            return ResponseEntity.ok(alertRuleService.getAlertState(user, validatedSymbol));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid alert changes."));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "The alert changes could not be applied."));
         }
     }
 
@@ -93,7 +118,22 @@ public class AlertController {
         return AlertPatternFamily.valueOf(value);
     }
 
+    private AlertRuleService.AlertRuleChange parseAlertChange(AlertToggleRequest request) {
+        if (request == null || request.interval() == null || request.signal() == null) {
+            throw new IllegalArgumentException("Alert interval and signal are required.");
+        }
+        return new AlertRuleService.AlertRuleChange(
+                TimeInterval.valueOf(request.interval()),
+                TradeSignal.valueOf(request.signal()),
+                parsePatternFamily(request.patternFamily()),
+                request.active()
+        );
+    }
+
     public record AlertToggleRequest(String interval, String signal, String patternFamily, boolean active) {
+    }
+
+    public record AlertBatchRequest(List<AlertToggleRequest> changes) {
     }
 
     public record AlertCheckRequest(String interval, String signal, String patternFamily) {

@@ -12,6 +12,7 @@ import org.example.stockwatch247.service.TechnicalIndicatorEnrichmentService;
 import org.example.stockwatch247.service.TwelveDataService;
 import org.example.stockwatch247.service.YahooFinanceService;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -70,9 +71,11 @@ class ChartControllerElliottWaveTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
         when(marketDataService.syncCandles(symbol, "1wk", null))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1mo"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 299)))
                 .thenReturn(candles(symbol, "1mo").reversed());
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1wk"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1wk", PageRequest.of(0, 299)))
                 .thenReturn(candles(symbol, "1wk").reversed());
 
         ChartController.ElliottWaveOverlay monthly = controller.getElliottWaves(symbol, "1mo");
@@ -99,7 +102,8 @@ class ChartControllerElliottWaveTest {
                 new TechnicalIndicatorEnrichmentService(), new ElliottWaveDetectionService());
         when(marketDataService.syncCandles(symbol, "1mo", null))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1mo"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 299)))
                 .thenReturn(waveVCandles(symbol, "1mo").reversed());
 
         ChartController.ElliottWaveOverlay overlay = controller.getElliottWaves(symbol, "1mo");
@@ -120,7 +124,8 @@ class ChartControllerElliottWaveTest {
                 new TechnicalIndicatorEnrichmentService(), new ElliottWaveDetectionService());
         when(marketDataService.syncCandles(symbol, "1wk", null))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1wk"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1wk", PageRequest.of(0, 299)))
                 .thenReturn(deepWaveTwoCandles(symbol, "1wk").reversed());
 
         ChartController.ElliottWaveOverlay overlay = controller.getElliottWaves(symbol, "1wk");
@@ -202,7 +207,8 @@ class ChartControllerElliottWaveTest {
                 new TechnicalIndicatorEnrichmentService(), new ElliottWaveDetectionService());
         when(marketDataService.syncCandles(canonicalSymbol, "1mo", null))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
-        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(canonicalSymbol, "1mo"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                canonicalSymbol, "1mo", PageRequest.of(0, 299)))
                 .thenReturn(candles(canonicalSymbol, "1mo").reversed());
 
         ChartController.ElliottWaveOverlay overlay = controller.getElliottWaves("SPX", "1mo");
@@ -221,7 +227,7 @@ class ChartControllerElliottWaveTest {
         index.setExchange("SNP");
         index.setCurrency("USD");
         index.setInstrumentType(InstrumentType.INDEX);
-        when(twelveDataService.refreshStockAssetMetadata("^GSPC")).thenReturn(index);
+        when(twelveDataService.refreshStockAssetMetadata("^GSPC", null)).thenReturn(index);
         ChartController controller = new ChartController(
                 mock(CandleRepository.class), mock(LivePricingService.class), mock(MarketDataService.class),
                 mock(StockAssetRepository.class), twelveDataService, mock(YahooFinanceService.class),

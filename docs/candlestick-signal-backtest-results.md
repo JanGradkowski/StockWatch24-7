@@ -4,6 +4,8 @@ Date run: 2026-07-08
 
 This document records the historical backtests performed for the StockWatch24-7 candlestick signal detector after adding TA4J-based indicator enrichment and confidence scoring.
 
+> **Terminology and validity note (2026-07-21):** The 2026-07-08 results below use the detector's former “confidence” terminology and predate mandatory prior-trend validation for every reversal pattern. The production UI now calls this a heuristic **setup score**, not a probability estimate. See the strict-context rerun dated 2026-07-21 for current results.
+
 ## Current Pipeline
 
 The tested signal flow is:
@@ -424,6 +426,136 @@ Best configurations with at least 500 signals:
 Extended horizon conclusion:
 
 The 30-candle / 8.0% setup produced the highest precision so far, but the success rate including inconclusive outcomes was lower because many signals did not move far enough in either direction. For a client-facing confidence label, the best practical range is now `85-100`; for more frequent alerts, `80-100` gives more coverage with slightly lower precision.
+
+## Strict Trend-Validated Candlestick Rerun
+
+Date run: 2026-07-21
+
+This rerun measures the current candlestick detector after making candle geometry and the required prior trend mandatory. Elliott Wave signals were disabled. `DOJI` was excluded from directional testing because it emits `HOLD`; `ANY` is a subscription selector rather than a detected pattern.
+
+### Methodology and data
+
+The outcome methodology is unchanged from the earlier candlestick report:
+
+- chronological walk-forward evaluation with no future candles passed to detection;
+- daily candles and a 250-candle warmup;
+- fixed-horizon close-to-close directional returns;
+- success when the directional return reaches the positive move threshold, failure when it reaches the equal negative threshold, and otherwise inconclusive;
+- precision = success / (success + failure), excluding inconclusive outcomes;
+- average return = mean fixed-horizon directional return across every signal, including inconclusive outcomes.
+
+The same 30-symbol universe was used. All 30 symbols had sufficient cached history: 30,078 daily candles spanning 2022-07-11 through 2026-07-20.
+
+One detector-input correction was required. The old harness passed only 5 enriched candles. The current production detector uses a 20-candle relative-body baseline and up to 5 completed pre-pattern candles for trend validation, so the harness now passes 25 candles. Five input candles would leave only two pre-pattern candles for a three-candle formation and would therefore make every three-candle reversal impossible to validate. This does not change the warmup, outcome horizons, move thresholds, or walk-forward design.
+
+Commands used:
+
+```powershell
+.\mvnw.cmd "-Dtest=HistoricalSignalRealDataBacktestTest" "-Dbacktest.real.enabled=true" test
+.\mvnw.cmd "-Dtest=HistoricalSignalThresholdSweepTest" "-Dbacktest.sweep.enabled=true" test
+.\mvnw.cmd "-Dtest=HistoricalSignalPatternCalibrationTest" "-Dbacktest.pattern.enabled=true" test
+```
+
+### Original 5-candle / 2.0% outcome baseline
+
+| Setup score | Signals | Success | Failed | Inconclusive | Success rate | Precision | Avg directional return |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0-100 | 1,009 | 280 | 296 | 433 | 27.75% | 48.61% | -0.19% |
+| 70-100 | 540 | 144 | 144 | 252 | 26.67% | 50.00% | +0.10% |
+| 75-100 | 451 | 116 | 126 | 209 | 25.72% | 47.93% | +0.02% |
+| 80-100 | 325 | 84 | 100 | 141 | 25.85% | 45.65% | -0.03% |
+
+The strict detector does not show a useful aggregate edge at the original 5-candle / 2.0% outcome. A higher setup score is also not monotonically associated with higher precision at this horizon.
+
+### Horizon and setup-score sweep
+
+The sweep retained the report's 3-, 5-, 10-, 20-, and 30-candle horizons and their associated move thresholds. Selected rows are shown below; score bands were selected on this same sample and are therefore calibration results, not out-of-sample validation.
+
+| Horizon | Required move | Setup score | Signals | Success | Failed | Inconclusive | Success rate | Precision | Avg directional return |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 3.0% | 0-100 | 1,003 | 282 | 274 | 447 | 28.12% | 50.72% | +0.05% |
+| 10 | 3.0% | 70-100 | 536 | 154 | 122 | 260 | 28.73% | 55.80% | +0.61% |
+| 10 | 3.0% | 75-100 | 448 | 124 | 98 | 226 | 27.68% | 55.86% | +0.63% |
+| 10 | 3.0% | 80-100 | 322 | 96 | 76 | 150 | 29.81% | 55.81% | +0.81% |
+| 20 | 5.0% | 70-100 | 531 | 139 | 123 | 269 | 26.18% | 53.05% | +0.68% |
+| 30 | 8.0% | 0-100 | 969 | 175 | 194 | 600 | 18.06% | 47.43% | -0.46% |
+| 30 | 8.0% | 80-100 | 314 | 67 | 52 | 195 | 21.34% | 56.30% | +0.69% |
+| 30 | 8.0% | 90-100 | 94 | 24 | 14 | 56 | 25.53% | 63.16% | +0.71% |
+
+Best tested bands by minimum sample size:
+
+- At least 500 signals: 10 candles / 3.0% / setup score 70-100, with 55.80% precision and +0.61% average directional return across 536 signals.
+- At least 300 signals: 30 candles / 8.0% / setup score 80-100, with 56.30% precision and +0.69% average directional return across 314 signals.
+- The 90-100 result is included for visibility but is too small and too heavily selected to support a production claim.
+
+### Per-pattern accuracy and average return
+
+The main per-pattern comparison uses the report's 10-candle / 3.0% outcome and includes every setup score.
+
+| Pattern | Signals | Success | Failed | Inconclusive | Precision | Avg setup score | Avg directional return |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BULLISH_ENGULFING | 96 | 41 | 18 | 37 | 69.49% | 70.73 | +1.81% |
+| INVERTED_HAMMER | 92 | 37 | 19 | 36 | 66.07% | 61.33 | +1.15% |
+| BULLISH_HARAMI | 81 | 28 | 20 | 33 | 58.33% | 74.72 | +1.13% |
+| HAMMER | 78 | 27 | 20 | 31 | 57.45% | 71.38 | +1.43% |
+| EVENING_STAR | 46 | 14 | 11 | 21 | 56.00% | 73.02 | +0.20% |
+| DARK_CLOUD_COVER | 39 | 10 | 8 | 21 | 55.56% | 74.44 | +0.88% |
+| BEARISH_HARAMI | 84 | 22 | 24 | 38 | 47.83% | 71.62 | -1.10% |
+| BEARISH_ENGULFING | 146 | 36 | 43 | 67 | 45.57% | 74.08 | -0.64% |
+| MORNING_STAR | 43 | 9 | 11 | 23 | 45.00% | 74.40 | +0.19% |
+| HANGING_MAN | 140 | 32 | 44 | 64 | 42.11% | 63.10 | -0.63% |
+| SHOOTING_STAR | 122 | 23 | 44 | 55 | 34.33% | 71.59 | -1.29% |
+| PIERCING_LINE | 23 | 2 | 7 | 14 | 22.22% | 76.17 | -1.55% |
+| THREE_WHITE_SOLDIERS | 11 | 1 | 4 | 6 | 20.00% | 50.64 | -1.20% |
+| THREE_BLACK_CROWS | 2 | 0 | 1 | 1 | 0.00% | 62.00 | -0.94% |
+
+At the original 5-candle / 2.0% outcome, `BEARISH_HARAMI` produced 86 signals, 45.24% precision, and -0.94% average directional return. The prior-uptrend requirement makes the label structurally correct, but this sample does not support using bearish harami as a standalone SELL edge.
+
+### Rerun conclusion
+
+Mandatory trend context sharply reduces false structural labels, but it does not make the complete pattern set profitable as one undifferentiated signal engine. Aggregate performance was 48.61% / -0.19% at 5 candles and 50.72% / +0.05% at 10 candles. The promising evidence is concentrated in a few bullish reversal patterns and in selected longer-horizon setup-score bands.
+
+These are gross signal returns, not a portfolio backtest. They exclude fees, spread, slippage, position sizing, stop losses, and overlapping-position constraints. The universe is a fixed set of large current US stocks, outcomes overlap, and all score/horizon choices were inspected on the same sample. The next reliable step is a frozen-rule out-of-sample or time-split validation, particularly for bullish engulfing and inverted hammer. Bearish harami, shooting star, hanging man, bearish engulfing, and piercing line should remain informational alerts rather than be described as historically validated trade signals.
+
+### Temporal holdout and matched-control follow-up
+
+Date run: 2026-07-21
+
+The current definitions were frozen and the two strongest research candidates, `BULLISH_ENGULFING` and `INVERTED_HAMMER`, were tested with the already selected 10-candle / 3.0% outcome. No setup-score filter was added. The split was:
+
+- Development: analyzable signals through 2024-12-31 whose 10-candle exits also occurred before 2025.
+- Validation: signals from 2025-01-01 through the last date with a complete 10-candle outcome.
+
+This is a retrospective temporal-stability diagnostic, not a pristine out-of-sample test, because the full 2022-2026 dataset had already been inspected when these two candidates were selected.
+
+Each signal was matched to a control date that was not reused within the same pattern, symbol, and segment and that:
+
+- belonged to the same symbol and temporal segment;
+- was within 63 trading candles of the signal;
+- had the same mandatory prior downtrend according to the detector's exact trend routine;
+- minimized the prior-trend setup-point difference before minimizing date distance; and
+- did not emit any bullish candlestick-reversal signal.
+
+Future returns were not used to choose controls. All 181 candidate signals received a control. Mean trend-score gaps were 0.16 points in development and 0.05 points in validation. Exploratory 95% intervals use 10,000 deterministic symbol-cluster bootstrap resamples.
+
+Command used:
+
+```powershell
+.\mvnw.cmd "-Dtest=HistoricalCandlestickHoldoutValidationTest" "-Dbacktest.candlestick.holdout.enabled=true" test
+```
+
+| Segment | Pattern | Matched signals | Signal precision | Signal avg return | Control precision | Control avg return | Precision uplift (95% CI) | Return uplift (95% CI) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Development | BULLISH_ENGULFING | 33 | 78.26% | +2.45% | 68.42% | +2.72% | +9.84 pp (-9.62, +38.57) | -0.27 pp (-1.77, +1.80) |
+| Development | INVERTED_HAMMER | 44 | 65.38% | +1.03% | 50.00% | -0.64% | +15.38 pp (-7.27, +34.71) | +1.67 pp (+0.04, +3.48) |
+| Development | Combined | 77 | 71.43% | +1.64% | 58.54% | +0.80% | +12.89 pp (+0.38, +25.46) | +0.84 pp (-0.27, +2.04) |
+| Validation | BULLISH_ENGULFING | 58 | 65.63% | +1.65% | 72.50% | +2.39% | -6.88 pp (-21.82, +7.23) | -0.74 pp (-2.11, +0.70) |
+| Validation | INVERTED_HAMMER | 46 | 65.52% | +1.30% | 78.13% | +2.97% | -12.61 pp (-30.56, +4.43) | -1.67 pp (-4.62, +0.39) |
+| Validation | Combined | 104 | 65.57% | +1.49% | 75.00% | +2.65% | -9.43 pp (-21.03, +2.47) | -1.15 pp (-2.85, +0.13) |
+
+The raw validation performance remained attractive: the two patterns combined reached 65.57% precision and +1.49% average 10-candle return. However, matched downtrend controls were stronger at 75.00% precision and +2.65%. Neither validation uplift interval excludes zero, and both point estimates are negative.
+
+The defensible conclusion is therefore that the earlier result primarily captured a large-cap rebound effect after the detector's qualifying downtrends, not demonstrated incremental forecasting value from the bullish-engulfing or inverted-hammer shape. These patterns remain useful descriptions and contextual alerts, but this test does not validate them as standalone BUY signals. A genuinely untouched test must use post-freeze data after 2026-07-21 or a separately frozen external universe, followed by a transaction-cost-aware portfolio simulation.
 
 ## Weekly/Monthly Elliott Wave Experiment
 
@@ -1024,3 +1156,211 @@ The production recommendation is therefore:
 - Before changing production defaults, separately backtest impulse, wave-V-end and A-B-C correction signals, recalibrate their confidence scores, and preserve a frozen dataset plus old/new detector snapshots for a strict code-only A/B test.
 
 No production alert setting was changed as part of this reporting run.
+
+## Candlestick Stock-Only Setup Score V3
+
+Date changed: 2026-07-23
+
+This change applies only to candlestick setup scoring. The Elliott Wave detector, its score, its enabled intervals, and its 100-candle weekly/monthly input were not changed.
+
+### Production invariant
+
+A directional alert still requires a recognized candlestick formation with all mandatory candle geometry and classical prior-trend rules. The prior trend is established from raw OHLC structure across three to five completed pre-pattern candles, including meaningful net progress and either a coherent close sequence or a higher-high/higher-low sequence.
+
+The following inputs are evaluated only after the pattern is valid and can only change its setup score and explanation:
+
+- EMA;
+- RSI;
+- volume;
+- Bollinger Bands;
+- ATR and volatility context;
+- completed higher-timeframe alignment;
+- support/resistance proximity.
+
+All scoring inputs now come from the instrument being checked. Weak, contradictory, missing, or unavailable scoring context does not suppress a valid candlestick alert. It also cannot create one. `DOJI` remains neutral (`HOLD`) and is not a directional alert.
+
+### Daily five-component / higher-interval six-component score
+
+| Component | Maximum | Evidence summarized |
+|---|---:|---|
+| Pattern quality | 35.7 daily; 21.4 weekly/monthly | Mandatory geometry quality plus raw-price prior-trend quality |
+| Historical pattern calibration | 0 daily; 14.3 weekly/monthly | Frozen, sample-size-shrunk pattern reliability from the pre-2020 development sample |
+| Higher-timeframe alignment | 21.4 | Completed weekly/monthly periods for daily candles; completed monthly/quarterly periods for higher intervals |
+| Price location | 14.3 | Recent swing support/resistance and Bollinger Band contact |
+| Volatility and momentum | 21.4 | Candle range versus ATR, ATR percentile, RSI level, and RSI turn |
+| Volume | 7.2 | Current volume versus its 20-period average |
+| **Total** | **100** | Heuristic confluence, not probability of profit |
+
+The previous stock-only components totaled 70 points (25/15/10/15/5). Each component was multiplied by `100/70`, then represented to one decimal place with equal-weight components kept equal. The higher-interval pattern allocation preserves its former 15:10 structural-to-calibration split. Only completed higher-timeframe periods are used, and no other instrument is loaded or scored.
+
+### Validation status
+
+The V3 score distribution requires a fresh historical rerun before its numeric bands can be compared with the V2 results. The tables below are retained as an archive of the benchmark-aware V2 model and do not validate the reweighted stock-only score.
+
+## Archived Candlestick Contextual Setup Score V2 Results
+
+### Backtest methodology
+
+The rerun uses the same fixed-horizon methodology as the earlier report:
+
+- 30 large US stocks and `^GSPC` as the same-interval market benchmark;
+- 30,078 cached daily candles, spanning 2022-07-11 through 2026-07-20;
+- chronological walk-forward detection with a 250-candle indicator warmup;
+- 100 asset candles passed to candlestick detection so 60-period relative strength and completed weekly/monthly context are available;
+- no Elliott Wave signals;
+- precision excludes inconclusive outcomes, while average directional return includes every signal;
+- no fees, spread, slippage, position sizing, stop loss, or overlapping-trade constraints.
+
+Commands used:
+
+```powershell
+.\mvnw.cmd "-Dtest=HistoricalSignalRealDataBacktestTest" "-Dbacktest.real.enabled=true" test
+.\mvnw.cmd "-Dtest=HistoricalSignalThresholdSweepTest" "-Dbacktest.sweep.enabled=true" test
+.\mvnw.cmd "-Dtest=HistoricalSignalPatternCalibrationTest" "-Dbacktest.pattern.enabled=true" test
+.\mvnw.cmd "-Dtest=HistoricalCandlestickScoringValidationTest" "-Dbacktest.candlestick.scoring.enabled=true" test
+```
+
+### Full-sample score sweep
+
+| Horizon | Required move | Setup score | Signals | Success | Failed | Inconclusive | Precision | Avg directional return |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 2.0% | 0-100 | 1,003 | 276 | 296 | 431 | 48.25% | -0.22% |
+| 5 | 2.0% | 60-100 | 392 | 125 | 103 | 164 | 54.82% | +0.03% |
+| 5 | 2.0% | 70-100 | 110 | 42 | 31 | 37 | 57.53% | +0.34% |
+| 5 | 2.0% | 75-100 | 35 | 11 | 12 | 12 | 47.83% | -0.01% |
+| 10 | 3.0% | 0-100 | 997 | 279 | 280 | 438 | 49.91% | -0.04% |
+| 10 | 3.0% | 60-100 | 389 | 116 | 107 | 166 | 52.02% | +0.15% |
+| 10 | 3.0% | 70-100 | 110 | 38 | 28 | 44 | 57.58% | +0.29% |
+| 10 | 3.0% | 75-100 | 35 | 13 | 10 | 12 | 56.52% | +0.30% |
+| 20 | 5.0% | 0-100 | 984 | 234 | 250 | 500 | 48.35% | -0.33% |
+| 20 | 5.0% | 60-100 | 386 | 98 | 86 | 202 | 53.26% | +0.33% |
+| 20 | 5.0% | 70-100 | 109 | 33 | 25 | 51 | 56.90% | +0.62% |
+| 30 | 8.0% | 0-100 | 963 | 169 | 192 | 602 | 46.81% | -0.73% |
+| 30 | 8.0% | 60-100 | 377 | 70 | 55 | 252 | 56.00% | +0.42% |
+| 30 | 8.0% | 65-100 | 214 | 46 | 32 | 136 | 58.97% | +1.46% |
+
+The score separates some useful full-sample cohorts: 60+ improves precision and average return at each selected horizon, and 70+ usually improves precision further. It is not monotonic, however. At five candles the small 75+ bucket falls back to 47.83% precision, and no signal reached 80 in this sample. These observations rule out interpreting the numeric score as a calibrated probability.
+
+### Chronological stability check
+
+The 10-candle / 3.0% sample was split at 2025-01-01. This remains a retrospective stability check rather than pristine out-of-sample evidence because the broader dataset and candidate features have already been inspected.
+
+| Segment | Score/direction | Signals | Success | Failed | Inconclusive | Precision | Avg directional return |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Development through 2024 | All | 525 | 148 | 139 | 238 | 51.57% | -0.08% |
+| Development through 2024 | 60-69 | 135 | 40 | 34 | 61 | 54.05% | +0.17% |
+| Development through 2024 | 70-100 | 57 | 19 | 14 | 24 | 57.58% | +0.77% |
+| Development through 2024 | 75-100 | 16 | 8 | 3 | 5 | 72.73% | +3.38% |
+| Validation from 2025 | All | 472 | 131 | 141 | 200 | 48.16% | -0.01% |
+| Validation from 2025 | 60-69 | 144 | 38 | 45 | 61 | 45.78% | +0.02% |
+| Validation from 2025 | 70-100 | 53 | 19 | 14 | 20 | 57.58% | -0.24% |
+| Validation from 2025 | 75-100 | 19 | 5 | 7 | 7 | 41.67% | -2.30% |
+| Validation from 2025 | 70-100 BUY | 39 | 16 | 8 | 15 | 66.67% | +0.73% |
+| Validation from 2025 | 70-100 SELL | 14 | 3 | 6 | 5 | 33.33% | -2.93% |
+
+The 70+ band preserved higher precision in the later segment, especially for BUY signals, but its overall average return weakened and the 75+ development result did not generalize. Individual context components also did not produce a stable standalone edge. The score should therefore be used to explain and rank confluence, not to suppress alerts, claim a probability, or authorize a trade automatically.
+
+### Per-pattern reminder
+
+At 10 candles / 3.0%, the strongest full-sample raw patterns remained `BULLISH_ENGULFING` (93 signals, 70.69% precision, +1.92% average return), `INVERTED_HAMMER` (91, 63.16%, +0.88%), and `BULLISH_HARAMI` (81, 58.33%, +1.14%). Several bearish formations remained below 50% precision with negative average returns. These are descriptive sample results, and the earlier matched-control test still prevents claiming that the candle shape itself has demonstrated incremental predictive value.
+
+### Decision
+
+- Ship the richer candlestick-only explanation and setup score.
+- Continue sending every structurally valid directional candlestick alert regardless of score.
+- Keep Elliott Wave scoring and detection unchanged.
+- Do not add a 70, 75, or any other production alert threshold from this retrospective sample.
+- Treat 70+ BUY behavior as a research candidate for a future frozen, transaction-cost-aware validation, not as a production filter.
+
+## Frozen Weekly and Monthly Pattern Calibration
+
+Date run: 2026-07-21
+
+### Why published rankings were not copied directly
+
+The published evidence is mixed and is overwhelmingly based on daily candles rather than weekly or monthly candles:
+
+- Caginalp and Laurent reported predictive reversal behavior for combined candlestick rules in an older S&P 500 sample, but their method aggregates patterns and uses a different exit rule ([Applied Mathematical Finance](https://www.tandfonline.com/doi/abs/10.1080/135048698334637)).
+- Marshall, Young, and Rose found that candlestick strategies did not consistently outperform the Dow Jones Industrial Average under a more robust bootstrap design ([Journal of Banking & Finance](https://www.sciencedirect.com/science/article/abs/pii/S0378426605002116)).
+- Horton found little forecasting value across nine named patterns in 349 US stocks ([Quarterly Review of Economics and Finance](https://www.sciencedirect.com/science/article/pii/S106297690700097X)).
+- Lu, Shiu, and Liu reported strong out-of-sample daily results for bullish piercing, engulfing, and harami rules in Taiwan, while the tested bearish rules had weak or negative average returns after their assumed costs ([Research in International Business and Finance paper](https://ah.lib.nccu.edu.tw/bitstream/140.119/61660/1/6368.pdf)).
+
+This supports using external research as a conservative prior, not as a transferable win-rate table. The production weights therefore come from this application's own strict detector, symbols, intervals, and outcome definitions.
+
+### Calibration method
+
+- Weekly cache coverage was expanded from 4/30 to 30/30 representative US stocks before fitting.
+- The frozen development segment contains signals before 2020-01-01. Candles from 2020 onward are kept as a chronological stability segment.
+- Weekly calibration uses the 8-candle / 8.0% outcome. Monthly calibration uses the 6-candle / 12.0% outcome.
+- Pattern precision is shrunk toward the same-interval, same-direction baseline with 30 prior actionable outcomes. This prevents a tiny pattern sample from receiving an extreme score and avoids comparing a bullish pattern only with a bearish baseline.
+- The shrunk rate maps to 0-10 ranking points. Patterns with fewer than 10 actionable development outcomes receive the neutral 5/10 score.
+- The calibration model still emits its frozen raw 0-10 assessment. In V3 that assessment receives 14.3 setup-score points, while weekly/monthly structural pattern quality receives 21.4. Daily structural pattern quality receives 35.7. The proportional stock-only total remains 100.
+- The table is frozen in code. Production does not learn from live outcomes, inspect future candles, or make network calls while scoring.
+
+Commands used:
+
+```powershell
+.\mvnw.cmd "-Dtest=HigherIntervalSignalBacktestTest" "-Dbacktest.higher.enabled=true" "-Dbacktest.higher.sync-missing=true" test
+.\mvnw.cmd "-Dtest=HistoricalHigherIntervalCandlestickCalibrationTest" "-Dbacktest.candlestick.higher.calibration.enabled=true" test
+```
+
+### Chronological stability results
+
+Precision remains `success / (success + failure)` and excludes inconclusive outcomes. Average return includes every signal. These are retrospective stability results, not a calibrated probability or a transaction-cost-aware trading simulation.
+
+| Interval outcome | Cohort in 2020+ segment | Signals | Actionable | Precision | Avg directional return |
+|---|---|---:|---:|---:|---:|
+| Weekly 4 candles / 4% | All patterns | 594 | 333 | 52.55% | +0.48% |
+| Weekly 4 candles / 4% | Score 60+ | 116 | 77 | 58.44% | +1.45% |
+| Weekly 4 candles / 4% | Score 65+ | 66 | 49 | 55.10% | +1.27% |
+| Weekly 8 candles / 8% | All patterns | 592 | 264 | 50.76% | +0.40% |
+| Weekly 8 candles / 8% | Score 60+ | 116 | 64 | 68.75% | +5.14% |
+| Weekly 8 candles / 8% | Score 65+ | 66 | 39 | 61.54% | +3.17% |
+| Weekly 12 candles / 12% | All patterns | 587 | 218 | 46.79% | -0.66% |
+| Weekly 12 candles / 12% | Score 60+ | 115 | 50 | 70.00% | +5.80% |
+| Weekly 12 candles / 12% | Score 65+ | 65 | 28 | 64.29% | +3.05% |
+| Monthly 3 candles / 6% | All patterns | 157 | 100 | 39.00% | -3.21% |
+| Monthly 3 candles / 6% | Score 60+ | 21 | 14 | 35.71% | -1.93% |
+| Monthly 3 candles / 6% | Score 65+ | 14 | 9 | 44.44% | +0.50% |
+| Monthly 6 candles / 12% | All patterns | 153 | 87 | 31.03% | -5.58% |
+| Monthly 6 candles / 12% | Score 60+ | 21 | 10 | 60.00% | +8.57% |
+| Monthly 6 candles / 12% | Score 65+ | 14 | 7 | 71.43% | +13.11% |
+| Monthly 9 candles / 18% | All patterns | 145 | 79 | 34.18% | -10.54% |
+| Monthly 9 candles / 18% | Score 60+ | 18 | 6 | 83.33% | +16.53% |
+| Monthly 9 candles / 18% | Score 65+ | 12 | 3 | 100.00% | +16.70% |
+
+The monthly 9-candle percentages are based on only six and three actionable outcomes, so they must not be treated as reliable precision estimates. The monthly 3-candle result also shows that the calibration is not uniformly beneficial at every horizon.
+
+### Most stable pattern observation
+
+The strongest repeatable split was direction rather than a universal named-pattern hierarchy. In the 2020+ weekly segment, bullish hammers reached 75.0%, 88.2%, and 84.2% precision over the 4-, 8-, and 12-candle outcomes. Bullish engulfing reached 72.2%, 68.8%, and 70.4%. Most bearish formations remained below 50% and had negative average directional returns. Monthly pattern-level validation counts were much smaller, so their individual rankings remain tentative.
+
+At the 75+ full-sample weekly score band, calibration reduced coverage from 55 to 38 signals but improved the descriptive results:
+
+| Weekly outcome | Before calibration precision / return | After calibration precision / return |
+|---|---:|---:|
+| 4 candles / 4% | 48.57% / +0.62% | 60.87% / +2.94% |
+| 8 candles / 8% | 58.62% / +2.21% | 68.42% / +4.94% |
+| 12 candles / 12% | 61.90% / +2.64% | 86.67% / +7.03% |
+
+The analogous monthly 75+ cohort contained only seven signals and did not improve consistently. Monthly conclusions should therefore focus on the broader 60+ cohort and on accumulating more forward observations.
+
+### Production decision
+
+- Add frozen empirical-Bayes calibration to candlestick scoring on weekly and monthly intervals only.
+- Keep daily candlestick scoring and all Elliott Wave logic unchanged.
+- Continue emitting every structurally valid directional candlestick pattern. Calibration changes only score and explanation; it is not an alert gate.
+- Do not describe the setup score as a probability, and do not advertise the tiny 70+/75+ cohorts as expected precision.
+- Refit only through an explicit offline, chronological calibration process after enough new outcomes accumulate.
+
+### User-facing research horizons
+
+Alert emails and website signal views show the evaluation window in which the historical tests were most useful. This is explanatory metadata only; it does not change detection, scoring, or alert emission.
+
+| Signal interval | Displayed research horizon | Interpretation |
+|---|---|---|
+| Daily | 10&ndash;30 trading sessions | Ten sessions is the primary directional calibration window; 20&ndash;30 sessions capture slower follow-through. |
+| Weekly | 8&ndash;12 weeks | Score separation was clearest at 8 and 12 weeks; the 4-week result was weaker. |
+| Monthly | About 6 months | Six months is the primary window. Three months was weak, and nine months remains preliminary because the actionable sample is too small. |
+
+These are historical evaluation windows, not recommended holding periods, price targets, precision guarantees, or financial advice. Elliott Wave alerts do not receive this candlestick-specific guidance.

@@ -61,15 +61,21 @@
     <div class="alert-header">
       <div>
         <h2 class="alert-title">Automated email signals</h2>
-        <p class="alert-description">Choose the setups StockWatch should monitor. Use Check for an immediate scan of the selected interval.</p>
+        <p class="alert-description">Choose the setups StockWatch should monitor, then apply the draft when you are ready. Use Check for an immediate scan of the selected interval.</p>
       </div>
-      <div id="alertStatus" class="alert-status" aria-live="polite"></div>
+      <div class="alert-header-actions">
+        <div id="alertStatus" class="alert-status" aria-live="polite"></div>
+        <div class="alert-apply-row">
+          <span id="alertDraftStatus" class="alert-draft-status" aria-live="polite">No unapplied changes</span>
+          <button id="applyAlertChangesBtn" type="button" class="btn-accent alert-apply-btn" disabled>Apply changes</button>
+        </div>
+      </div>
     </div>
 
     <div class="alert-sections-layout">
       <div class="alert-section">
         <div class="alert-section-title">Candlestick Patterns</div>
-        <p class="alert-section-copy">Pattern confirmations across each supported candle interval.</p>
+        <p class="alert-section-copy">Context-validated pattern detections across each supported candle interval.</p>
         <div class="alert-grid">
           <div class="alert-grid-label">Interval</div>
           <div class="alert-grid-label">Buy</div>
@@ -109,6 +115,20 @@
     </div>
   </section>
 
+  <dialog id="unsavedAlertDialog" class="unsaved-alert-dialog" aria-labelledby="unsavedAlertTitle">
+    <div class="unsaved-alert-dialog-content">
+      <span class="unsaved-alert-kicker">Unapplied changes</span>
+      <h2 id="unsavedAlertTitle">Save your alert changes before leaving?</h2>
+      <p>Your checkbox changes have not been applied yet. You can save them now, discard them, or keep editing.</p>
+      <div id="unsavedAlertDialogStatus" class="unsaved-alert-dialog-status" aria-live="polite"></div>
+      <div class="unsaved-alert-dialog-actions">
+        <button id="keepEditingAlertsBtn" type="button" class="btn-secondary">Keep editing</button>
+        <button id="discardAlertChangesBtn" type="button" class="unsaved-alert-discard-btn">Discard changes</button>
+        <button id="saveAlertChangesBeforeLeaveBtn" type="button" class="btn-accent">Save and leave</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Price Chart Canvas -->
   <section class="chart-wrapper">
     <div class="chart-panel-head">
@@ -131,6 +151,7 @@
 
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
   const ticker = /*[[${symbol}]]*/ 'AAPL';
+  const selectedMic = /*[[${selectedMic}]]*/ null;
   const encodedTicker = encodeURIComponent(ticker);
   const csrfToken = document.querySelector('meta[name="_csrf"]').content;
   const csrfHeader = document.querySelector('meta[name="_csrf_header"]').content;
@@ -167,6 +188,14 @@
   let globalLineData = [];
   let globalVolumeData = [];
   let seenDates = new Set();
+
+  const persistedAlertState = new Map();
+  let alertStateLoaded = false;
+  let alertSaveInProgress = false;
+  let alertSavePromise = null;
+  let trackedAlertSummary = '';
+  let pendingNavigationAction = null;
+  let pageExitAllowed = false;
 
   const chartOptions = {
     layout: {
@@ -219,7 +248,8 @@
 
       // Load currency metadata first
       try {
-        const metaRes = await fetch(`/api/stocks/${encodedTicker}/meta`);
+        const micQuery = selectedMic ? `?micCode=${encodeURIComponent(selectedMic)}` : '';
+        const metaRes = await fetch(`/api/stocks/${encodedTicker}/meta${micQuery}`);
         if (metaRes.ok) {
           const metaJson = await metaRes.json();
           const instrumentType = String(metaJson.instrumentType || 'EQUITY').toUpperCase();
@@ -288,10 +318,18 @@
       processAndSetData(data, false);
       showNewestCandles(INITIAL_VISIBLE_CANDLES);
       updatePriceHeaderFromLatestCandle();
-      await refreshHistoricalElliottOverlays(interval);
 
       const intervalNames = {'1d': 'Daily Interval', '1wk': 'Weekly Interval', '1mo': 'Monthly Interval'};
       document.querySelector('.ticker-name').nextElementSibling.innerText = intervalNames[interval];
+
+      // Candle pagination must become available as soon as the candle series is
+      // rendered. Elliott analysis is a separate request and must not suppress
+      // left-scroll events while it is still running.
+      isFetching = false;
+      chartLoadController = null;
+      scheduleViewportHistoryFill();
+
+      await refreshHistoricalElliottOverlays(interval);
 
     } catch (err) {
       if (err.name === 'AbortError') return;
@@ -766,18 +804,7 @@
       const response = await fetch(`/api/alerts/${encodedTicker}`);
       if (!response.ok) throw new Error("Alert state request failed");
       const state = await response.json();
-
-      document.querySelectorAll('[data-alert-interval][data-alert-signal]').forEach(input => {
-        const family = input.dataset.alertFamily || 'CANDLESTICK';
-        const interval = input.dataset.alertInterval;
-        const signal = input.dataset.alertSignal;
-        const legacyChecked = family === 'CANDLESTICK' ? state.intervals?.[interval]?.[signal] : false;
-        input.checked = Boolean(state.families?.[family]?.[interval]?.[signal] ?? legacyChecked);
-        if (!input.dataset.listenerBound) {
-          input.addEventListener('change', () => updateAlert(input));
-          input.dataset.listenerBound = 'true';
-        }
-      });
+      hydrateAlertDraft(state);
 
       document.querySelectorAll('[data-check-interval][data-check-signal]').forEach(button => {
         if (!button.dataset.listenerBound) {
@@ -785,46 +812,232 @@
           button.dataset.listenerBound = 'true';
         }
       });
-
-      status.innerText = `${state.trackedStocks}/${state.maxTrackedStocks} tracked`;
     } catch (err) {
+      alertStateLoaded = false;
+      updateAlertDraftUi();
       status.innerText = 'Alerts unavailable';
       console.warn("Alert state failed", err);
     }
   }
 
-  async function updateAlert(input) {
+  function alertInputs() {
+    return Array.from(document.querySelectorAll('[data-alert-interval][data-alert-signal]'));
+  }
+
+  function alertControlKey(input) {
+    return `${input.dataset.alertFamily || 'CANDLESTICK'}|${input.dataset.alertInterval}|${input.dataset.alertSignal}`;
+  }
+
+  function alertStateValue(state, input) {
+    const family = input.dataset.alertFamily || 'CANDLESTICK';
+    const interval = input.dataset.alertInterval;
+    const signal = input.dataset.alertSignal;
+    const legacyChecked = family === 'CANDLESTICK' ? state.intervals?.[interval]?.[signal] : false;
+    return Boolean(state.families?.[family]?.[interval]?.[signal] ?? legacyChecked);
+  }
+
+  function hydrateAlertDraft(state) {
+    persistedAlertState.clear();
+    alertInputs().forEach(input => {
+      const checked = alertStateValue(state, input);
+      input.checked = checked;
+      persistedAlertState.set(alertControlKey(input), checked);
+      if (!input.dataset.listenerBound) {
+        input.addEventListener('change', updateAlertDraftUi);
+        input.dataset.listenerBound = 'true';
+      }
+    });
+    trackedAlertSummary = `${state.trackedStocks}/${state.maxTrackedStocks} tracked`;
+    document.getElementById('alertStatus').innerText = trackedAlertSummary;
+    alertStateLoaded = true;
+    updateAlertDraftUi();
+  }
+
+  function changedAlertInputs() {
+    if (!alertStateLoaded) return [];
+    return alertInputs().filter(input =>
+            persistedAlertState.get(alertControlKey(input)) !== input.checked);
+  }
+
+  function hasUnappliedAlertChanges() {
+    return changedAlertInputs().length > 0;
+  }
+
+  function updateAlertDraftUi() {
+    const changedCount = changedAlertInputs().length;
+    const applyButton = document.getElementById('applyAlertChangesBtn');
+    const draftStatus = document.getElementById('alertDraftStatus');
+    const alertPanel = document.querySelector('.alert-panel');
+
+    applyButton.disabled = !alertStateLoaded || alertSaveInProgress || changedCount === 0;
+    alertPanel.classList.toggle('has-unapplied-changes', changedCount > 0);
+    if (alertSaveInProgress) {
+      applyButton.textContent = 'Applying...';
+      draftStatus.textContent = 'Saving your changes';
+      return;
+    }
+    applyButton.textContent = 'Apply changes';
+    draftStatus.textContent = changedCount === 0
+            ? 'No unapplied changes'
+            : `${changedCount} unapplied change${changedCount === 1 ? '' : 's'}`;
+  }
+
+  function setAlertInputsDisabled(disabled) {
+    alertInputs().forEach(input => {
+      input.disabled = disabled;
+    });
+  }
+
+  function alertChangePayload(input) {
+    return {
+      interval: input.dataset.alertInterval,
+      signal: input.dataset.alertSignal,
+      patternFamily: input.dataset.alertFamily || 'CANDLESTICK',
+      active: input.checked
+    };
+  }
+
+  function persistAlertDraft() {
+    if (alertSavePromise) return alertSavePromise;
+    alertSavePromise = performAlertDraftSave().finally(() => {
+      alertSavePromise = null;
+    });
+    return alertSavePromise;
+  }
+
+  async function performAlertDraftSave() {
+    const changedInputs = changedAlertInputs();
+    if (changedInputs.length === 0) return true;
+
     const status = document.getElementById('alertStatus');
-    input.disabled = true;
-    status.innerText = 'Saving...';
+    alertSaveInProgress = true;
+    setAlertInputsDisabled(true);
+    status.innerText = 'Applying alert changes...';
+    updateAlertDraftUi();
 
     try {
       const response = await fetch(`/api/alerts/${encodedTicker}`, {
-        method: 'POST',
+        method: 'PUT',
         headers: secureJsonHeaders(),
-        body: JSON.stringify({
-          interval: input.dataset.alertInterval,
-          signal: input.dataset.alertSignal,
-          patternFamily: input.dataset.alertFamily || 'CANDLESTICK',
-          active: input.checked
-        })
+        body: JSON.stringify({ changes: changedInputs.map(alertChangePayload) })
       });
 
-      const payload = await response.json();
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        input.checked = !input.checked;
-        status.innerText = payload.error || 'Could not save alert';
-        return;
+        status.innerText = payload.error || 'Could not apply alert changes';
+        return false;
       }
 
-      await loadAlertState();
+      hydrateAlertDraft(payload);
+      status.innerText = `${trackedAlertSummary} · Changes applied`;
+      return true;
     } catch (err) {
-      input.checked = !input.checked;
-      status.innerText = 'Could not save alert';
-      console.warn("Alert update failed", err);
+      status.innerText = 'Could not apply alert changes';
+      console.warn("Alert batch update failed", err);
+      return false;
     } finally {
-      input.disabled = false;
+      alertSaveInProgress = false;
+      setAlertInputsDisabled(false);
+      updateAlertDraftUi();
     }
+  }
+
+  function closeUnsavedAlertDialog() {
+    const dialog = document.getElementById('unsavedAlertDialog');
+    if (dialog.open) dialog.close();
+    document.getElementById('unsavedAlertDialogStatus').textContent = '';
+  }
+
+  function requestGuardedNavigation(action) {
+    if (!hasUnappliedAlertChanges()) {
+      pageExitAllowed = true;
+      action();
+      return;
+    }
+    pendingNavigationAction = action;
+    const dialog = document.getElementById('unsavedAlertDialog');
+    document.getElementById('unsavedAlertDialogStatus').textContent = '';
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function continuePendingNavigation() {
+    const action = pendingNavigationAction;
+    pendingNavigationAction = null;
+    closeUnsavedAlertDialog();
+    if (!action) return;
+    pageExitAllowed = true;
+    action();
+  }
+
+  function keepEditingAlertDraft() {
+    pendingNavigationAction = null;
+    closeUnsavedAlertDialog();
+  }
+
+  async function saveAlertDraftAndLeave() {
+    const saveButton = document.getElementById('saveAlertChangesBeforeLeaveBtn');
+    const dialogStatus = document.getElementById('unsavedAlertDialogStatus');
+    saveButton.disabled = true;
+    saveButton.textContent = 'Saving...';
+    dialogStatus.textContent = 'Applying your alert changes...';
+    const saved = await persistAlertDraft();
+    saveButton.disabled = false;
+    saveButton.textContent = 'Save and leave';
+    if (saved) {
+      continuePendingNavigation();
+      return;
+    }
+    dialogStatus.textContent = 'The changes could not be saved. Your draft is still available.';
+  }
+
+  window.requestStockWatchNavigation = destination => {
+    requestGuardedNavigation(() => window.location.assign(destination));
+  };
+
+  function bindUnsavedAlertGuards() {
+    document.getElementById('applyAlertChangesBtn').addEventListener('click', persistAlertDraft);
+    document.getElementById('keepEditingAlertsBtn').addEventListener('click', keepEditingAlertDraft);
+    document.getElementById('discardAlertChangesBtn').addEventListener('click', continuePendingNavigation);
+    document.getElementById('saveAlertChangesBeforeLeaveBtn').addEventListener('click', saveAlertDraftAndLeave);
+    document.getElementById('unsavedAlertDialog').addEventListener('cancel', event => {
+      event.preventDefault();
+      keepEditingAlertDraft();
+    });
+
+    document.addEventListener('click', event => {
+      if (pageExitAllowed || !hasUnappliedAlertChanges() || event.defaultPrevented
+              || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+      const rawHref = anchor.getAttribute('href');
+      if (!rawHref || rawHref.startsWith('#')) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      requestGuardedNavigation(() => window.location.assign(anchor.href));
+    }, true);
+
+    document.addEventListener('submit', event => {
+      if (pageExitAllowed || !hasUnappliedAlertChanges() || event.defaultPrevented) return;
+      const form = event.target;
+      const submitter = event.submitter;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      requestGuardedNavigation(() => {
+        if (submitter) {
+          form.requestSubmit(submitter);
+        } else {
+          HTMLFormElement.prototype.submit.call(form);
+        }
+      });
+    }, true);
+
+    window.addEventListener('beforeunload', event => {
+      if (pageExitAllowed || !hasUnappliedAlertChanges()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
   }
 
   async function checkLatestSignal(button) {
@@ -861,7 +1074,10 @@
         if (payload.patternFamily === 'ELLIOTT_WAVE') {
           await showCheckedElliottWave(payload.interval);
         }
-        status.innerText = `${formatFamily(payload.patternFamily)} ${payload.signal} detected on ${detectedDate}: ${payload.matchingPatterns.join(', ')}`;
+        const horizonContext = payload.researchHorizonLabel
+                ? ` Research horizon: ${payload.researchHorizonLabel}. ${payload.researchHorizonDisclaimer}`
+                : '';
+        status.innerText = `${formatFamily(payload.patternFamily)} ${payload.signal} detected on ${detectedDate}: ${payload.matchingPatterns.join(', ')}.${horizonContext}`;
         return;
       }
 
@@ -912,6 +1128,7 @@
     button.addEventListener('click', () => changeInterval(button.dataset.chartInterval));
   });
   document.getElementById('elliottOverlayToggle').addEventListener('click', toggleElliottOverlays);
+  bindUnsavedAlertGuards();
 
   window.onload = initCharts;
 </script>

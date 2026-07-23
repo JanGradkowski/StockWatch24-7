@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signal score report &mdash; StockWatch 24/7</title>
+  <title>Setup score report &mdash; StockWatch 24/7</title>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -20,12 +20,12 @@
     <span aria-hidden="true">/</span>
     <a th:href="@{/alerts/{id}(id=${signal.alertRuleId()})}" th:text="${signal.symbol()}">MARA</a>
     <span aria-hidden="true">/</span>
-    <span>Score report</span>
+    <span>Setup score</span>
   </nav>
 
   <header class="signal-report-header">
     <div class="signal-report-copy">
-      <div class="eyebrow">Signal score report</div>
+      <div class="eyebrow">Setup score report</div>
       <div class="signal-report-title-row">
         <h1 class="title" th:text="${signal.patternLabel()}">Bullish Engulfing</h1>
         <span class="signal-report-id" th:text="${'SIGNAL #' + signal.id()}">SIGNAL #142</span>
@@ -41,6 +41,9 @@
               th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
               th:text="${signal.tradeSignal()}">BUY</span>
         <span class="signal-report-tag interval" th:text="${signal.intervalLabel()}">1wk</span>
+        <span th:if="${signal.researchHorizonLabel() != null}"
+              class="signal-report-tag"
+              th:text="${'Research horizon ' + signal.researchHorizonLabel()}">Research horizon 8&ndash;12 weeks</span>
         <span class="signal-report-tag"
               th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</span>
       </div>
@@ -51,38 +54,38 @@
     </div>
   </header>
 
-  <section class="signal-score-layout" aria-labelledby="confidence-heading">
-    <article class="signal-score-card" th:classappend="${' ' + signal.confidenceBand()}">
+  <section class="signal-score-layout" aria-labelledby="setup-heading">
+    <article class="signal-score-card" th:classappend="${' ' + signal.setupBand()}">
       <div class="signal-score-card-topline">
         <div>
-          <span class="signal-section-kicker">Aggregate confidence</span>
-          <h2 id="confidence-heading">Detector score</h2>
+          <span class="signal-section-kicker">Heuristic confluence</span>
+          <h2 id="setup-heading">Setup score</h2>
         </div>
-        <span class="signal-confidence-pill" th:text="${signal.strengthLabel()}">High confidence</span>
+        <span class="signal-confidence-pill" th:text="${signal.setupStrengthLabel()}">Strong setup</span>
       </div>
 
       <div class="signal-score-visual">
         <div class="signal-score-orbit" aria-hidden="true">
           <div class="signal-score-orbit-core">
-            <strong th:text="${signal.confidenceScore() != null ? signal.confidenceScore() : '--'}">88</strong>
+            <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
             <span>/100</span>
           </div>
         </div>
         <div class="signal-score-summary">
-          <p th:text="${signal.confidenceExplanation()}">High confidence: strong agreement across the detector's available evidence.</p>
+          <p th:text="${signal.setupExplanation()}">Strong setup: broad confluence across the stock's pattern quality and technical evidence.</p>
           <div class="signal-score-rail"
                role="meter"
                aria-valuemin="0"
                aria-valuemax="100"
-               th:attr="aria-valuenow=${signal.confidenceScore() != null ? signal.confidenceScore() : 0},aria-label=${'Confidence score ' + (signal.confidenceScore() != null ? signal.confidenceScore() : 'not available') + ' out of 100'}">
+               th:attr="aria-valuenow=${signal.setupScore() != null ? signal.setupScore() : 0},aria-label=${'Setup score ' + (signal.setupScore() != null ? signal.setupScore() : 'not available') + ' out of 100'}">
             <span th:each="segment : ${#numbers.sequence(1, 20)}"
                   class="signal-score-segment"
-                  th:classappend="${signal.confidenceScore() != null and signal.confidenceScore() >= segment * 5} ? ' active' : ''"></span>
+                  th:classappend="${signal.setupScore() != null and signal.setupScore() >= segment * 5} ? ' active' : ''"></span>
           </div>
-          <div class="signal-score-thresholds" aria-label="Confidence thresholds">
-            <span><i class="threshold-dot low" aria-hidden="true"></i>Low &lt;75</span>
-            <span><i class="threshold-dot medium" aria-hidden="true"></i>Medium 75&ndash;84</span>
-            <span><i class="threshold-dot high" aria-hidden="true"></i>High 85+</span>
+          <div class="signal-score-thresholds" aria-label="Setup score thresholds">
+            <span><i class="threshold-dot low" aria-hidden="true"></i>Weak &lt;75</span>
+            <span><i class="threshold-dot medium" aria-hidden="true"></i>Moderate 75&ndash;84</span>
+            <span><i class="threshold-dot high" aria-hidden="true"></i>Strong 85+</span>
           </div>
         </div>
       </div>
@@ -138,7 +141,7 @@
         <div class="evidence-card-topline">
           <span class="evidence-number" th:text="${#numbers.formatInteger(reason.order(), 2)}">01</span>
           <span class="evidence-category" th:text="${reason.category()}">Pattern geometry</span>
-          <span class="evidence-impact" th:text="${reason.caution() ? 'Caution' : 'Supports score'}">Supports score</span>
+          <span class="evidence-impact" th:text="${reason.caution() ? 'No points / caution' : 'Supports score'}">Supports score</span>
         </div>
         <p th:text="${reason.text()}">Bullish body geometry confirmed the pattern.</p>
       </article>
@@ -153,12 +156,27 @@
     </div>
   </section>
 
-  <section class="signal-method-note" aria-labelledby="method-heading">
+  <section th:if="${signal.researchHorizonLabel() != null}"
+           class="signal-method-note"
+           aria-labelledby="horizon-heading">
     <div class="method-note-index" aria-hidden="true">01</div>
     <div>
+      <div class="signal-section-kicker">Backtest guidance</div>
+      <h2 id="horizon-heading">Most useful research horizon: <span th:text="${signal.researchHorizonLabel()}">8&ndash;12 weeks</span></h2>
+      <p><span th:text="${signal.researchHorizonSummary()}">The score was most informative over this evaluation window.</span>
+        <strong th:text="${signal.researchHorizonDisclaimer()}">Historical evaluation window only.</strong>
+      </p>
+    </div>
+  </section>
+
+  <section class="signal-method-note" aria-labelledby="method-heading">
+    <div class="method-note-index" aria-hidden="true"
+         th:text="${signal.researchHorizonLabel() != null ? '02' : '01'}">02</div>
+    <div>
       <div class="signal-section-kicker">Reading the report</div>
-      <h2 id="method-heading">How the confidence score works</h2>
-      <p>The detector combines pattern structure, technical context, and calibration evidence into one score. The reasons above explain the evidence considered; they are not equal-sized point allocations. A score is a model classification, not a probability of profit or financial advice.</p>
+      <h2 id="method-heading">How the setup score works</h2>
+      <p th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">A named candlestick pattern is emitted only after its mandatory geometry and prior-trend rules pass. Daily setups use five stock-only scoring components. Weekly and monthly setups use six by splitting the pattern allocation between structural quality (21.4) and a frozen, sample-size-shrunk historical calibration (14.3). Higher-timeframe alignment (21.4), price location (14.3), volatility/momentum (21.4), and volume (7.2) provide the remaining evidence, all from the instrument being checked. The score ranks confluence and is not a probability of profit. Neither the calibration nor any indicator can create or suppress an alert.</p>
+      <p th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE'}">The Elliott detector combines wave structure, proportional relationships, trend context, momentum, and available confirmation evidence. Its score measures technical confluence, not probability of profit or financial advice.</p>
     </div>
   </section>
 </main>

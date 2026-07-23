@@ -25,7 +25,7 @@ import java.util.List;
 
 @Service
 public class TechnicalIndicatorEnrichmentService {
-    private static final int DEFAULT_SIGNAL_CANDLES = 5;
+    private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int RSI_PERIOD = 14;
     private static final int ATR_PERIOD = 14;
     private static final int FAST_PERIOD = 20;
@@ -34,6 +34,20 @@ public class TechnicalIndicatorEnrichmentService {
 
     public List<EnrichedCandle> enrichForSignalDetection(List<Candle> rawCandles) {
         return enrich(rawCandles, DEFAULT_SIGNAL_CANDLES);
+    }
+
+    /**
+     * Returns the input history needed for every emitted candle to have a fully
+     * warmed value for the longest technical indicator. The current candle is
+     * part of the indicator period, so only {@code SLOW_PERIOD - 1} additional
+     * warm-up candles are required.
+     */
+    public int requiredInputCandles(int latestCount) {
+        if (latestCount <= 0) {
+            return 0;
+        }
+        long required = (long) latestCount + SLOW_PERIOD - 1L;
+        return required > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) required;
     }
 
     public List<EnrichedCandle> enrich(List<Candle> rawCandles, int latestCount) {

@@ -18,7 +18,7 @@ import java.util.List;
 @EnabledIfSystemProperty(named = "backtest.real.enabled", matches = "true")
 class HistoricalSignalRealDataBacktestTest {
     private static final String INTERVAL = "1d";
-    private static final BacktestSettings SETTINGS = new BacktestSettings(250, 5, 5, 2.0);
+    private static final BacktestSettings SETTINGS = new BacktestSettings(250, 100, 5, 2.0);
     private static final List<String> REPRESENTATIVE_SYMBOLS = List.of(
             "AAPL",
             "MSFT",
@@ -106,18 +106,18 @@ class HistoricalSignalRealDataBacktestTest {
                     report.averageDirectionalReturnPercent()
             );
 
-            List<BacktestTrade> highConfidenceTrades = highConfidenceTrades(report);
+            List<BacktestTrade> highSetupScoreTrades = highSetupScoreTrades(report);
             System.out.printf(
-                    "      highConfidence signals=%3d success=%3d failed=%3d inconclusive=%3d successRate=%6.2f%% precision=%6.2f%%%n",
-                    highConfidenceTrades.size(),
-                    countOutcome(highConfidenceTrades, BacktestOutcome.SUCCESS),
-                    countOutcome(highConfidenceTrades, BacktestOutcome.FAILURE),
-                    countOutcome(highConfidenceTrades, BacktestOutcome.INCONCLUSIVE),
-                    percentage(countOutcome(highConfidenceTrades, BacktestOutcome.SUCCESS), highConfidenceTrades.size()),
+                    "      setupScore>=70 signals=%3d success=%3d failed=%3d inconclusive=%3d successRate=%6.2f%% precision=%6.2f%%%n",
+                    highSetupScoreTrades.size(),
+                    countOutcome(highSetupScoreTrades, BacktestOutcome.SUCCESS),
+                    countOutcome(highSetupScoreTrades, BacktestOutcome.FAILURE),
+                    countOutcome(highSetupScoreTrades, BacktestOutcome.INCONCLUSIVE),
+                    percentage(countOutcome(highSetupScoreTrades, BacktestOutcome.SUCCESS), highSetupScoreTrades.size()),
                     percentage(
-                            countOutcome(highConfidenceTrades, BacktestOutcome.SUCCESS),
-                            countOutcome(highConfidenceTrades, BacktestOutcome.SUCCESS)
-                                    + countOutcome(highConfidenceTrades, BacktestOutcome.FAILURE)
+                            countOutcome(highSetupScoreTrades, BacktestOutcome.SUCCESS),
+                            countOutcome(highSetupScoreTrades, BacktestOutcome.SUCCESS)
+                                    + countOutcome(highSetupScoreTrades, BacktestOutcome.FAILURE)
                     )
             );
         }
@@ -135,8 +135,8 @@ class HistoricalSignalRealDataBacktestTest {
                 .mapToDouble(HistoricalSignalBacktestService.BacktestTrade::directionalReturnPercent)
                 .average()
                 .orElse(0.0);
-        List<BacktestTrade> highConfidenceTrades = reports.stream()
-                .flatMap(report -> highConfidenceTrades(report).stream())
+        List<BacktestTrade> highSetupScoreTrades = reports.stream()
+                .flatMap(report -> highSetupScoreTrades(report).stream())
                 .toList();
         List<BacktestTrade> allTrades = reports.stream()
                 .flatMap(report -> report.trades().stream())
@@ -158,26 +158,26 @@ class HistoricalSignalRealDataBacktestTest {
                 averageReturn
         );
         System.out.printf(
-                "HIGH CONFIDENCE TOTAL signals=%d success=%d failed=%d inconclusive=%d successRate=%6.2f%% precision=%6.2f%%%n",
-                highConfidenceTrades.size(),
-                countOutcome(highConfidenceTrades, BacktestOutcome.SUCCESS),
-                countOutcome(highConfidenceTrades, BacktestOutcome.FAILURE),
-                countOutcome(highConfidenceTrades, BacktestOutcome.INCONCLUSIVE),
-                percentage(countOutcome(highConfidenceTrades, BacktestOutcome.SUCCESS), highConfidenceTrades.size()),
+                "SETUP SCORE >=70 TOTAL signals=%d success=%d failed=%d inconclusive=%d successRate=%6.2f%% precision=%6.2f%%%n",
+                highSetupScoreTrades.size(),
+                countOutcome(highSetupScoreTrades, BacktestOutcome.SUCCESS),
+                countOutcome(highSetupScoreTrades, BacktestOutcome.FAILURE),
+                countOutcome(highSetupScoreTrades, BacktestOutcome.INCONCLUSIVE),
+                percentage(countOutcome(highSetupScoreTrades, BacktestOutcome.SUCCESS), highSetupScoreTrades.size()),
                 percentage(
-                        countOutcome(highConfidenceTrades, BacktestOutcome.SUCCESS),
-                        countOutcome(highConfidenceTrades, BacktestOutcome.SUCCESS)
-                                + countOutcome(highConfidenceTrades, BacktestOutcome.FAILURE)
+                        countOutcome(highSetupScoreTrades, BacktestOutcome.SUCCESS),
+                        countOutcome(highSetupScoreTrades, BacktestOutcome.SUCCESS)
+                                + countOutcome(highSetupScoreTrades, BacktestOutcome.FAILURE)
                 )
         );
-        printConfidenceBuckets(allTrades);
+        printSetupScoreBuckets(allTrades);
         System.out.println("============================================");
         System.out.println();
     }
 
-    private List<BacktestTrade> highConfidenceTrades(BacktestReport report) {
+    private List<BacktestTrade> highSetupScoreTrades(BacktestReport report) {
         return report.trades().stream()
-                .filter(trade -> trade.confidenceScore() >= 80)
+                .filter(trade -> trade.confidenceScore() >= 70)
                 .toList();
     }
 
@@ -187,19 +187,19 @@ class HistoricalSignalRealDataBacktestTest {
                 .count();
     }
 
-    private void printConfidenceBuckets(List<BacktestTrade> trades) {
+    private void printSetupScoreBuckets(List<BacktestTrade> trades) {
         System.out.println();
-        System.out.println("Confidence bucket breakdown:");
-        printConfidenceBucket("65-69", trades, 65, 69);
-        printConfidenceBucket("70-74", trades, 70, 74);
-        printConfidenceBucket("75-79", trades, 75, 79);
-        printConfidenceBucket("80-84", trades, 80, 84);
-        printConfidenceBucket("85-89", trades, 85, 89);
-        printConfidenceBucket("90-94", trades, 90, 94);
-        printConfidenceBucket("95-100", trades, 95, 100);
+        System.out.println("Setup-score bucket breakdown:");
+        printSetupScoreBucket("0-49", trades, 0, 49);
+        printSetupScoreBucket("50-59", trades, 50, 59);
+        printSetupScoreBucket("60-64", trades, 60, 64);
+        printSetupScoreBucket("65-69", trades, 65, 69);
+        printSetupScoreBucket("70-74", trades, 70, 74);
+        printSetupScoreBucket("75-79", trades, 75, 79);
+        printSetupScoreBucket("80-100", trades, 80, 100);
     }
 
-    private void printConfidenceBucket(String label, List<BacktestTrade> trades, int minInclusive, int maxInclusive) {
+    private void printSetupScoreBucket(String label, List<BacktestTrade> trades, int minInclusive, int maxInclusive) {
         List<BacktestTrade> bucket = trades.stream()
                 .filter(trade -> trade.confidenceScore() >= minInclusive)
                 .filter(trade -> trade.confidenceScore() <= maxInclusive)

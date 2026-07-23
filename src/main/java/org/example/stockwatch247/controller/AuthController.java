@@ -175,12 +175,16 @@ public class AuthController {
     }
 
     @GetMapping("/stock/{symbol}")
-    public String stockPage(@PathVariable String symbol, Model model, Principal principal) {
+    public String stockPage(@PathVariable String symbol,
+                            @RequestParam(required = false) String mic,
+                            Model model,
+                            Principal principal) {
         User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
         if (currentUser != null) {
             model.addAttribute("firstName", currentUser.getFirstName());
         }
         model.addAttribute("symbol", SecurityInputValidator.requireMarketSymbol(symbol));
+        model.addAttribute("selectedMic", SecurityInputValidator.requireOptionalMicCode(mic));
         return "stock";
     }
 

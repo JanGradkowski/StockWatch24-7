@@ -3,6 +3,7 @@ package org.example.stockwatch247.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.MarketDataProvider;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -33,6 +34,104 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class YahooFinanceServiceTest {
+
+    @Test
+    void resolvesCboeDinoSymbolToVerifiedYahooWarsawPrimaryListing() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        ProviderSymbolRegistry providerSymbolRegistry = mock(ProviderSymbolRegistry.class);
+        StockAsset asset = new StockAsset();
+        asset.setId(42L);
+        asset.setTickerSymbol("DNPW");
+        asset.setCompanyName("Dino Polska S.A.");
+        asset.setExchange("CBOE");
+        asset.setMicCode("BCXE");
+        asset.setCountry("United Kingdom");
+        asset.setCurrency("PLN");
+        asset.setInstrumentType(InstrumentType.EQUITY);
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("DNPW")).thenReturn(Optional.of(asset));
+        when(stockAssetRepository.save(asset)).thenReturn(asset);
+        when(providerSymbolRegistry.find(asset, MarketDataProvider.YAHOO_FINANCE)).thenReturn(Optional.empty());
+
+        String unavailableResponse = """
+                {"chart":{"result":null,"error":{"description":"No data found"}}}
+                """;
+        server.expect(requestTo(containsString("/v8/finance/chart/DNPW?")))
+                .andRespond(withSuccess(unavailableResponse, MediaType.APPLICATION_JSON));
+        server.expect(request -> {
+                    String query = URLDecoder.decode(request.getURI().getRawQuery(), StandardCharsets.UTF_8);
+                    assertThat(query).contains("q=Dino Polska S.A.");
+                })
+                .andRespond(withSuccess("""
+                        {
+                          "quotes": [
+                            {"symbol":"DNOPF","quoteType":"EQUITY","longname":"Dino Polska S.A.","exchange":"PNK"},
+                            {"symbol":"5Y2.F","quoteType":"EQUITY","longname":"Dino Polska S.A.","exchange":"FRA"},
+                            {"symbol":"5Y2.DU","quoteType":"EQUITY","longname":"Dino Polska S.A.","exchange":"DUS"},
+                            {"symbol":"0TCP.IL","quoteType":"EQUITY","longname":"Dino Polska S.A.","exchange":"IOB"},
+                            {"symbol":"DNOPY","quoteType":"EQUITY","longname":"Dino Polska S.A.","exchange":"PNK"},
+                            {"symbol":"DNP.WA","quoteType":"EQUITY","longname":"Dino Polska S.A.","exchange":"WSE"}
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        long timestamp = LocalDate.of(2026, 7, 21)
+                .atTime(17, 0)
+                .atZone(ZoneId.of("Europe/Warsaw"))
+                .toEpochSecond();
+        server.expect(requestTo(containsString("/v8/finance/chart/DNP.WA?")))
+                .andRespond(withSuccess("""
+                        {
+                          "chart": {
+                            "result": [{
+                              "meta": {
+                                "symbol": "DNP.WA",
+                                "currency": "PLN",
+                                "exchangeName": "WSE",
+                                "fullExchangeName": "Warsaw",
+                                "longName": "Dino Polska S.A.",
+                                "instrumentType": "EQUITY",
+                                "dataGranularity": "1d",
+                                "exchangeTimezoneName": "Europe/Warsaw"
+                              },
+                              "timestamp": [%d],
+                              "indicators": {"quote": [{
+                                "open": [41.2], "high": [42.1], "low": [40.9],
+                                "close": [41.8], "volume": [1250000]
+                              }]}
+                            }],
+                            "error": null
+                          }
+                        }
+                        """.formatted(timestamp), MediaType.APPLICATION_JSON));
+
+        YahooFinanceService service = new YahooFinanceService(
+                restTemplate,
+                new ObjectMapper(),
+                stockAssetRepository,
+                providerSymbolRegistry,
+                "https://query1.finance.yahoo.com",
+                true
+        );
+
+        List<MarketDataBar> bars = service.getTimeSeries("DNPW", "1d", 1000);
+
+        assertThat(bars).singleElement().satisfies(bar -> {
+            assertThat(bar.providerSymbol()).isEqualTo("DNP.WA");
+            assertThat(bar.close()).isEqualTo(41.8);
+        });
+        assertThat(asset.getExchange()).isEqualTo("CBOE");
+        assertThat(asset.getMicCode()).isEqualTo("BCXE");
+        verify(providerSymbolRegistry).remember(
+                asset,
+                MarketDataProvider.YAHOO_FINANCE,
+                "DNP.WA",
+                "XWAR",
+                "VERIFIED_SEARCH"
+        );
+        server.verify();
+    }
 
     @Test
     void resolvesXetraSuffixParsesValidBarsAndCanonicalizesTheTradingDate() {
@@ -242,6 +341,68 @@ class YahooFinanceServiceTest {
                 "^GSPC".equals(asset.getTickerSymbol())
                         && "S&P 500".equals(asset.getCompanyName())
                         && asset.getInstrumentType() == InstrumentType.INDEX));
+        server.verify();
+    }
+
+    @Test
+    void monthlyRequestUsesPeriodBoundsSoYahooPreservesMonthlyGranularity() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("ZAB");
+        asset.setCompanyName("Zabka Group S.A.");
+        asset.setExchange("Warsaw");
+        asset.setCurrency("PLN");
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("ZAB")).thenReturn(Optional.of(asset));
+        when(stockAssetRepository.save(any(StockAsset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        long october = LocalDate.of(2025, 10, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        long november = LocalDate.of(2025, 11, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        String response = """
+                {
+                  "chart": {
+                    "result": [{
+                      "meta": {
+                        "symbol": "ZAB.WA",
+                        "currency": "PLN",
+                        "exchangeName": "WSE",
+                        "fullExchangeName": "Warsaw",
+                        "shortName": "Zabka Group S.A.",
+                        "dataGranularity": "1mo",
+                        "exchangeTimezoneName": "Europe/Warsaw"
+                      },
+                      "timestamp": [%d, %d],
+                      "indicators": {"quote": [{
+                        "open": [20.0, 21.0],
+                        "high": [22.0, 23.0],
+                        "low": [19.0, 20.0],
+                        "close": [21.0, 22.0],
+                        "volume": [1000000, 1200000]
+                      }]}
+                    }],
+                    "error": null
+                  }
+                }
+                """.formatted(october, november);
+
+        server.expect(requestTo(allOf(
+                        containsString("/v8/finance/chart/ZAB.WA?"),
+                        containsString("interval=1mo"),
+                        containsString("period1="),
+                        containsString("period2="),
+                        not(containsString("range=")))))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+
+        YahooFinanceService service = new YahooFinanceService(
+                restTemplate, new ObjectMapper(), stockAssetRepository,
+                "https://query1.finance.yahoo.com", true);
+
+        List<MarketDataBar> bars = service.getTimeSeries("ZAB", "1mo", 1000);
+
+        assertThat(bars).hasSize(2);
+        assertThat(bars).extracting(MarketDataBar::providerSymbol).containsOnly("ZAB.WA");
+        assertThat(bars).extracting(MarketDataBar::close).containsExactly(21.0, 22.0);
         server.verify();
     }
 

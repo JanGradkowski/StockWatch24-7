@@ -14,16 +14,55 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AlertQuotaServiceTest {
+
+    @Test
+    void appliesAValidatedAlertDraftAsOneBatchAndChecksCapacityOnce() {
+        Fixture fixture = fixture();
+        when(fixture.rules.countDistinctActiveStocksByUser(fixture.user)).thenReturn(2L);
+        when(fixture.rules.existsByStockAssetAndIsActiveTrue(fixture.asset)).thenReturn(true);
+        when(fixture.rules.findByUserAndStockAssetAndIntervalAndTradeSignalAndPatternFamily(
+                fixture.user, fixture.asset, TimeInterval.WEEKLY, TradeSignal.SELL,
+                AlertPatternFamily.CANDLESTICK)).thenReturn(Optional.empty());
+        when(fixture.rules.save(any(AlertRule.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        fixture.service.applyAlertChanges(fixture.user, "AAPL", List.of(
+                new AlertRuleService.AlertRuleChange(
+                        TimeInterval.DAILY, TradeSignal.BUY, AlertPatternFamily.CANDLESTICK, true),
+                new AlertRuleService.AlertRuleChange(
+                        TimeInterval.WEEKLY, TradeSignal.SELL, AlertPatternFamily.CANDLESTICK, true)
+        ));
+
+        verify(fixture.rules, times(2)).save(any(AlertRule.class));
+        verify(fixture.rules, times(1)).countDistinctActiveStocksByUser(fixture.user);
+    }
+
+    @Test
+    void rejectsADuplicateDraftRuleBeforePersistingAnything() {
+        Fixture fixture = fixture();
+
+        assertThatThrownBy(() -> fixture.service.applyAlertChanges(fixture.user, "AAPL", List.of(
+                new AlertRuleService.AlertRuleChange(
+                        TimeInterval.DAILY, TradeSignal.BUY, AlertPatternFamily.CANDLESTICK, true),
+                new AlertRuleService.AlertRuleChange(
+                        TimeInterval.DAILY, TradeSignal.BUY, AlertPatternFamily.CANDLESTICK, false)
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Duplicate");
+
+        verify(fixture.rules, never()).save(any());
+    }
 
     @Test
     void oneUserCannotConsumeAnotherUsersQuota() {

@@ -42,26 +42,29 @@ class MarketDataFallbackPipelineTest {
     }
 
     @Test
-    void yahooFallbackCandlesStillProduceCandlestickPatternAndConfidenceScore() {
+    void yahooFallbackCandlesStillProduceValidatedPatternAndSetupScore() {
         List<MarketDataBar> yahooBars = List.of(
-                bar(1, 100, 105, 88, 90),
-                bar(2, 89, 103, 87, 101)
+                bar(1, 110, 111, 107, 108),
+                bar(2, 108, 109, 104, 105),
+                bar(3, 105, 106, 101, 102),
+                bar(4, 103, 104, 98, 99),
+                bar(5, 98, 105, 97, 104)
         );
         TestContext context = context(yahooBars, true);
 
         MarketDataService.CandleSyncResult result = context.marketDataService()
                 .syncCandles("SAP.DE", "1d", null, true);
         List<EnrichedCandle> enriched = new TechnicalIndicatorEnrichmentService()
-                .enrich(context.savedCandles(), 5);
+                .enrich(context.savedCandles(), 25);
         List<DetectedSignal> signals = new CandlePatternDetectionService().detect(enriched);
 
         assertThat(result.source()).isEqualTo(MarketDataService.CandleSource.YAHOO_FINANCE);
-        assertThat(context.savedCandles()).hasSize(2);
+        assertThat(context.savedCandles()).hasSize(5);
         assertThat(signals).anySatisfy(signal -> {
             assertThat(signal.pattern()).isEqualTo(CandlePattern.BULLISH_ENGULFING);
             assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.BUY);
-            assertThat(signal.confidenceScore()).isBetween(0, 100);
-            assertThat(signal.candleTimestamp()).isEqualTo(2L * 86_400L);
+            assertThat(signal.setupScore()).isBetween(0, 100);
+            assertThat(signal.candleTimestamp()).isEqualTo(5L * 86_400L);
         });
     }
 

@@ -68,8 +68,10 @@ class AlertNotificationServiceTest {
         assertThat(message.getTo()).containsExactly("customer@example.com");
         assertThat(message.getSubject()).contains("BULLISH_ENGULFING", "SAP.DE");
         assertThat(message.getText()).contains(
-                "Direction confidence: 91/100",
+                "Heuristic setup score: 91/100",
                 "bullish body engulfs",
+                "Research horizon: 10\u201330 trading sessions",
+                "Historical evaluation window only \u2014 not a recommended holding period",
                 "Signal candle period: 10 Jul 2026");
     }
 
@@ -110,6 +112,7 @@ class AlertNotificationServiceTest {
         assertThat(messageCaptor.getValue().getText()).contains(
                 "End of Elliott correction (wave C)",
                 "Signal candle period: 13\u201317 Jul 2026");
+        assertThat(messageCaptor.getValue().getText()).doesNotContain("Research horizon:");
     }
 
     @Test
@@ -148,5 +151,6 @@ class AlertNotificationServiceTest {
         assertThat(messageCaptor.getValue().getText()).contains(
                 "End of Elliott impulse (wave V)",
                 "Signal candle period: July 2026");
+        assertThat(messageCaptor.getValue().getText()).doesNotContain("Research horizon:");
     }
 }

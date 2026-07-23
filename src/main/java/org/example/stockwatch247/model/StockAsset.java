@@ -26,6 +26,18 @@ public class StockAsset {
     @Column(nullable = false)
     private String exchange; // e.g., "NASDAQ", "NYSE"
 
+    @Column(name = "mic_code", length = 12)
+    private String micCode;
+
+    @Column(length = 100)
+    private String country;
+
+    @Column(length = 32)
+    private String figi;
+
+    @Column(length = 16)
+    private String isin;
+
     // --- NEW FIELD ---
     @Column(name = "currency", length = 10)
     private String currency = "USD";
@@ -50,6 +62,38 @@ public class StockAsset {
 
     public String getTickerSymbol() {
         return tickerSymbol;
+    }
+
+    public String getMicCode() {
+        return micCode;
+    }
+
+    public void setMicCode(String micCode) {
+        this.micCode = micCode;
+    }
+
+    public String getCountry() {
+        return country;
+    }
+
+    public void setCountry(String country) {
+        this.country = country;
+    }
+
+    public String getFigi() {
+        return figi;
+    }
+
+    public void setFigi(String figi) {
+        this.figi = figi;
+    }
+
+    public String getIsin() {
+        return isin;
+    }
+
+    public void setIsin(String isin) {
+        this.isin = isin;
     }
 
     public void setExchange(String exchange) {
