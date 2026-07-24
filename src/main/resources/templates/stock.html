@@ -115,6 +115,89 @@
     </div>
   </section>
 
+  <section id="congressionalActivityPanel"
+           class="congressional-activity-panel"
+           aria-labelledby="congressionalActivityTitle"
+           hidden>
+    <div class="congressional-panel-header">
+      <div>
+        <div class="congressional-panel-kicker">Stocks only · public disclosures</div>
+        <h2 id="congressionalActivityTitle">Congressional trading activity</h2>
+        <p>Follow newly observed purchase and sale disclosures for this stock. New activity appears on your dashboard and is sent by email.</p>
+      </div>
+      <div class="congressional-panel-actions">
+        <button id="followCongressionalActivityBtn"
+                type="button"
+                class="btn-accent congressional-follow-button"
+                aria-pressed="false"
+                disabled>Follow congressional activity</button>
+        <button id="showCongressionalHistoryBtn"
+                type="button"
+                class="btn-secondary congressional-history-button"
+                disabled>Show historical congressional activity</button>
+      </div>
+    </div>
+    <div class="congressional-panel-meta">
+      <div id="congressionalActivityStatus" class="congressional-activity-status" aria-live="polite">
+        Loading follow state…
+      </div>
+      <p id="congressionalRelevanceNotice">
+        Only purchases and sales with transaction dates in the last 365 days are shown.
+      </p>
+      <p id="congressionalBaselineNotice">
+        Following starts when you switch it on. Existing history is used only as a baseline and never generates old email alerts.
+      </p>
+      <p>
+        Data via
+        <a href="https://congressinvests.com/" target="_blank" rel="noopener noreferrer">CongressInvests</a>
+        from public U.S. House and Senate filings. Disclosures can arrive up to 45 days after a trade.
+        Informational only, not financial advice.
+      </p>
+    </div>
+  </section>
+
+  <dialog id="congressionalHistoryDialog"
+          class="congressional-history-dialog"
+          aria-labelledby="congressionalHistoryTitle">
+    <div class="congressional-history-dialog-content">
+      <div class="congressional-history-heading">
+        <div>
+          <span class="congressional-panel-kicker">Cached disclosure archive</span>
+          <h2 id="congressionalHistoryTitle">Congressional trading history</h2>
+          <p id="congressionalHistoryWindow">Relevant purchase and sale disclosures from the last 365 days.</p>
+        </div>
+        <button id="closeCongressionalHistoryBtn"
+                type="button"
+                class="congressional-dialog-close"
+                aria-label="Close congressional trading history">×</button>
+      </div>
+      <div id="congressionalHistoryStatus"
+           class="congressional-history-status"
+           aria-live="polite">Loading history…</div>
+      <div class="congressional-history-table-wrap">
+        <table class="congressional-history-table">
+          <thead>
+          <tr>
+            <th scope="col">Member</th>
+            <th scope="col">Activity</th>
+            <th scope="col">Reported value</th>
+            <th scope="col">Transaction date</th>
+            <th scope="col">Disclosure date</th>
+            <th scope="col">Filing</th>
+          </tr>
+          </thead>
+          <tbody id="congressionalHistoryRows"></tbody>
+        </table>
+      </div>
+      <div id="congressionalHistoryEmpty" class="congressional-history-empty" hidden>
+        No relevant purchase or sale disclosures were found for this stock in the current window.
+      </div>
+      <p id="congressionalHistoryDisclaimer" class="congressional-history-disclaimer">
+        Data is for informational and research purposes only and is not financial advice.
+      </p>
+    </div>
+  </dialog>
+
   <dialog id="unsavedAlertDialog" class="unsaved-alert-dialog" aria-labelledby="unsavedAlertTitle">
     <div class="unsaved-alert-dialog-content">
       <span class="unsaved-alert-kicker">Unapplied changes</span>
@@ -196,6 +279,9 @@
   let trackedAlertSummary = '';
   let pendingNavigationAction = null;
   let pageExitAllowed = false;
+  let congressionalActivityEligible = false;
+  let congressionalFollowing = false;
+  let congressionalActivityBusy = false;
 
   const chartOptions = {
     layout: {
@@ -258,6 +344,7 @@
           instrumentTypeDisplay.textContent = instrumentType === 'INDEX'
                   ? 'Index'
                   : (instrumentType === 'ETF' ? 'ETF' : 'Stock');
+          await configureCongressionalActivity(instrumentType);
           if (metaJson.currency) {
             stockCurrency = metaJson.currency;
             priceChart.applyOptions({
@@ -820,6 +907,208 @@
     }
   }
 
+  async function configureCongressionalActivity(instrumentType) {
+    const panel = document.getElementById('congressionalActivityPanel');
+    congressionalActivityEligible = instrumentType === 'EQUITY';
+    panel.hidden = !congressionalActivityEligible;
+    if (!congressionalActivityEligible) return;
+    await loadCongressionalActivityState();
+  }
+
+  async function loadCongressionalActivityState() {
+    const status = document.getElementById('congressionalActivityStatus');
+    setCongressionalControlsDisabled(true);
+    try {
+      const response = await fetch(`/api/congressional-activity/${encodedTicker}/state`);
+      const state = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(state.error || 'Congressional activity is unavailable');
+      applyCongressionalActivityState(state);
+    } catch (error) {
+      status.textContent = error.message || 'Congressional activity is unavailable';
+      console.warn('Congressional activity state failed', error);
+    } finally {
+      setCongressionalControlsDisabled(false);
+    }
+  }
+
+  function applyCongressionalActivityState(state) {
+    congressionalFollowing = Boolean(state.following);
+    const followButton = document.getElementById('followCongressionalActivityBtn');
+    followButton.setAttribute('aria-pressed', String(congressionalFollowing));
+    followButton.classList.toggle('following', congressionalFollowing);
+    followButton.textContent = congressionalFollowing
+            ? 'Stop following activity'
+            : 'Follow congressional activity';
+    const status = document.getElementById('congressionalActivityStatus');
+    status.textContent = state.baselinePending
+            ? 'Following is active · Preparing a no-alert historical baseline'
+            : `${state.followedStocks}/${state.maximumFollowedStocks} congressional stocks followed`;
+    if (state.relevanceNotice) {
+      document.getElementById('congressionalRelevanceNotice').textContent = state.relevanceNotice;
+    }
+    if (state.alertBaselineNotice) {
+      document.getElementById('congressionalBaselineNotice').textContent = state.alertBaselineNotice;
+    }
+  }
+
+  function setCongressionalControlsDisabled(disabled) {
+    congressionalActivityBusy = disabled;
+    document.getElementById('followCongressionalActivityBtn').disabled = disabled;
+    document.getElementById('showCongressionalHistoryBtn').disabled = disabled;
+  }
+
+  async function toggleCongressionalActivityFollow() {
+    if (!congressionalActivityEligible || congressionalActivityBusy) return;
+    const desiredState = !congressionalFollowing;
+    const status = document.getElementById('congressionalActivityStatus');
+    setCongressionalControlsDisabled(true);
+    status.textContent = desiredState
+            ? 'Preparing the historical baseline and enabling alerts…'
+            : 'Stopping congressional activity alerts…';
+    try {
+      const response = await fetch(`/api/congressional-activity/${encodedTicker}/subscription`, {
+        method: 'PUT',
+        headers: secureJsonHeaders(),
+        body: JSON.stringify({ active: desiredState })
+      });
+      const state = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(state.error || 'The follow setting could not be changed');
+      applyCongressionalActivityState(state);
+    } catch (error) {
+      status.textContent = error.message || 'The follow setting could not be changed';
+      console.warn('Congressional activity follow update failed', error);
+    } finally {
+      setCongressionalControlsDisabled(false);
+    }
+  }
+
+  async function showCongressionalHistory() {
+    if (!congressionalActivityEligible || congressionalActivityBusy) return;
+    const dialog = document.getElementById('congressionalHistoryDialog');
+    const status = document.getElementById('congressionalHistoryStatus');
+    const rows = document.getElementById('congressionalHistoryRows');
+    const empty = document.getElementById('congressionalHistoryEmpty');
+    rows.replaceChildren();
+    empty.hidden = true;
+    status.textContent = 'Checking the database cache…';
+    if (!dialog.open) dialog.showModal();
+    setCongressionalControlsDisabled(true);
+    try {
+      const response = await fetch(`/api/congressional-activity/${encodedTicker}/history`);
+      const history = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(history.error || 'Congressional history could not be loaded');
+      renderCongressionalHistory(history);
+      applyCongressionalActivityState(history);
+    } catch (error) {
+      status.textContent = error.message || 'Congressional history could not be loaded';
+      console.warn('Congressional activity history failed', error);
+    } finally {
+      setCongressionalControlsDisabled(false);
+    }
+  }
+
+  function renderCongressionalHistory(history) {
+    const rows = document.getElementById('congressionalHistoryRows');
+    const empty = document.getElementById('congressionalHistoryEmpty');
+    const trades = Array.isArray(history.trades) ? history.trades : [];
+    rows.replaceChildren(...trades.map(createCongressionalHistoryRow));
+    empty.hidden = trades.length > 0;
+
+    const cacheLabels = {
+      CACHE: 'Loaded from the StockWatch database cache',
+      REFRESHED: 'Fetched from CongressInvests and cached in StockWatch',
+      REFRESHING: 'A shared refresh is running · Showing the current database cache',
+      COOLDOWN: 'This ticker was already refreshed today · Showing the database cache until midnight UTC',
+      STALE: 'CongressInvests is temporarily unavailable · Showing the last successful cache'
+    };
+    const cachedDate = history.cachedAt ? ` · Cached ${formatDateTime(history.cachedAt)}` : '';
+    document.getElementById('congressionalHistoryStatus').textContent =
+            (cacheLabels[history.cacheStatus] || 'History loaded') + cachedDate;
+    document.getElementById('congressionalHistoryWindow').textContent =
+            history.relevanceNotice || `Relevant purchase and sale disclosures from the last ${history.historyDays || 365} days.`;
+    if (history.attribution?.disclaimer) {
+      document.getElementById('congressionalHistoryDisclaimer').textContent =
+              `${history.attribution.disclaimer} ${history.alertBaselineNotice || ''}`.trim();
+    }
+  }
+
+  function createCongressionalHistoryRow(trade) {
+    const row = document.createElement('tr');
+    row.append(
+            historyCell('Member', trade.memberName, trade.chamber),
+            historyActivityCell(trade),
+            historyCell('Reported value', trade.amountRange),
+            historyCell('Transaction date', formatCongressionalDate(trade.transactionDate)),
+            historyCell('Disclosure date', formatCongressionalDate(trade.disclosureDate)),
+            historySourceCell(trade.sourceUrl)
+    );
+    return row;
+  }
+
+  function historyCell(label, primary, secondary) {
+    const cell = document.createElement('td');
+    cell.dataset.label = label;
+    const strong = document.createElement('strong');
+    strong.textContent = primary || 'Unavailable';
+    cell.append(strong);
+    if (secondary) {
+      const detail = document.createElement('span');
+      detail.textContent = secondary;
+      cell.append(detail);
+    }
+    return cell;
+  }
+
+  function historyActivityCell(trade) {
+    const cell = document.createElement('td');
+    cell.dataset.label = 'Activity';
+    const badge = document.createElement('span');
+    badge.className = `congressional-history-type ${trade.transactionType === 'PURCHASE' ? 'purchase' : 'sale'}`;
+    badge.textContent = trade.transactionTypeLabel || trade.transactionType || 'Activity';
+    cell.append(badge);
+    return cell;
+  }
+
+  function historySourceCell(sourceUrl) {
+    const cell = document.createElement('td');
+    cell.dataset.label = 'Filing';
+    if (typeof sourceUrl === 'string' && /^https?:\/\//i.test(sourceUrl)) {
+      const link = document.createElement('a');
+      link.href = sourceUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Official filing';
+      cell.append(link);
+    } else {
+      cell.textContent = 'Unavailable';
+    }
+    return cell;
+  }
+
+  function formatCongressionalDate(value) {
+    if (!value) return 'Unavailable';
+    const date = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat(undefined, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(date);
+  }
+
+  function formatDateTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat(undefined, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  }
+
   function alertInputs() {
     return Array.from(document.querySelectorAll('[data-alert-interval][data-alert-signal]'));
   }
@@ -1128,6 +1417,12 @@
     button.addEventListener('click', () => changeInterval(button.dataset.chartInterval));
   });
   document.getElementById('elliottOverlayToggle').addEventListener('click', toggleElliottOverlays);
+  document.getElementById('followCongressionalActivityBtn')
+          .addEventListener('click', toggleCongressionalActivityFollow);
+  document.getElementById('showCongressionalHistoryBtn')
+          .addEventListener('click', showCongressionalHistory);
+  document.getElementById('closeCongressionalHistoryBtn')
+          .addEventListener('click', () => document.getElementById('congressionalHistoryDialog').close());
   bindUnsavedAlertGuards();
 
   window.onload = initCharts;

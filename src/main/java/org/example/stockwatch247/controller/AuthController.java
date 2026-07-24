@@ -4,6 +4,7 @@ import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AlertRuleService;
 import org.example.stockwatch247.service.EmailVerificationService;
+import org.example.stockwatch247.service.congress.CongressionalActivityService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -21,15 +22,18 @@ import java.nio.charset.StandardCharsets;
 public class AuthController {
     private final UserRepository userRepository;
     private final AlertRuleService alertRuleService;
+    private final CongressionalActivityService congressionalActivityService;
     private final PasswordEncoder passwordEncoder;
     private final EmailVerificationService emailVerificationService;
     private final String dummyPasswordHash;
     public AuthController(UserRepository userRepository,
                           AlertRuleService alertRuleService,
+                          CongressionalActivityService congressionalActivityService,
                           PasswordEncoder passwordEncoder,
                           EmailVerificationService emailVerificationService) {
         this.userRepository = userRepository;
         this.alertRuleService = alertRuleService;
+        this.congressionalActivityService = congressionalActivityService;
         this.passwordEncoder = passwordEncoder;
         this.emailVerificationService = emailVerificationService;
         this.dummyPasswordHash = passwordEncoder.encode("nonexistent-account-timing-equalizer");
@@ -128,9 +132,23 @@ public class AuthController {
         if (currentUser != null) {
             var trackedCompanies = alertRuleService.getActiveCompanyViews(currentUser);
             var latestSignals = alertRuleService.getLatestSignalViews(currentUser);
+            var congressionalActivities = congressionalActivityService
+                    .getLatestDashboardActivity(currentUser, 10);
+            var congressionalFollowedStocks = congressionalActivityService
+                    .getFollowedStocks(currentUser);
             model.addAttribute("firstName", currentUser.getFirstName());
             model.addAttribute("trackedCompanies", trackedCompanies);
             model.addAttribute("latestSignals", latestSignals);
+            model.addAttribute("congressionalActivities", congressionalActivities);
+            model.addAttribute("congressionalFollowedStocks", congressionalFollowedStocks);
+            model.addAttribute("congressionalFollowedCount", congressionalFollowedStocks.size());
+            model.addAttribute("trackedInstrumentCount", java.util.stream.Stream.concat(
+                            trackedCompanies.stream().map(AlertRuleService.TrackedCompanyView::symbol),
+                            congressionalFollowedStocks.stream()
+                                    .map(CongressionalActivityService.FollowedStockView::symbol))
+                    .map(String::toUpperCase)
+                    .distinct()
+                    .count());
             model.addAttribute("stockCompanyCount", trackedCompanies.stream()
                     .filter(company -> company.instrumentGroup().equals("stocks"))
                     .count());
@@ -144,6 +162,10 @@ public class AuthController {
             model.addAttribute("firstName", "Trader");
             model.addAttribute("trackedCompanies", java.util.List.of());
             model.addAttribute("latestSignals", java.util.List.of());
+            model.addAttribute("congressionalActivities", java.util.List.of());
+            model.addAttribute("congressionalFollowedStocks", java.util.List.of());
+            model.addAttribute("congressionalFollowedCount", 0);
+            model.addAttribute("trackedInstrumentCount", 0L);
             model.addAttribute("stockCompanyCount", 0L);
             model.addAttribute("indexEtfCompanyCount", 0L);
             model.addAttribute("activeRuleCount", 0);

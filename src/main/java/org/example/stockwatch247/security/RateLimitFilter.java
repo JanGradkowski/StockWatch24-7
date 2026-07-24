@@ -84,6 +84,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (path.startsWith("/api/alerts/")) {
             return new Limit("alert-management", 60, Duration.ofMinutes(1));
         }
+        if (path.startsWith("/api/congressional-activity/")) {
+            return new Limit("congressional-activity", 30, Duration.ofMinutes(1));
+        }
         return null;
     }
 

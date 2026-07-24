@@ -41,6 +41,10 @@
               th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
               th:text="${signal.tradeSignal()}">BUY</span>
         <span class="signal-report-tag interval" th:text="${signal.intervalLabel()}">1wk</span>
+        <span th:if="${signal.lifecycle().tracked()}"
+              class="signal-report-tag signal-lifecycle-pill"
+              th:classappend="${' ' + signal.lifecycle().cssClass()}"
+              th:text="${signal.lifecycle().label()}">Detected</span>
         <span th:if="${signal.researchHorizonLabel() != null}"
               class="signal-report-tag"
               th:text="${'Research horizon ' + signal.researchHorizonLabel()}">Research horizon 8&ndash;12 weeks</span>
@@ -122,6 +126,107 @@
         </div>
       </div>
     </aside>
+  </section>
+
+  <section th:if="${signal.lifecycle().tracked()}"
+           class="signal-lifecycle-section"
+           aria-labelledby="lifecycle-heading">
+    <div class="signal-lifecycle-heading">
+      <div>
+        <div class="signal-section-kicker">Post-detection follow-through</div>
+        <h2 id="lifecycle-heading">Signal lifecycle</h2>
+      </div>
+      <span class="signal-lifecycle-pill lifecycle-heading-pill"
+            th:classappend="${' ' + signal.lifecycle().cssClass()}"
+            th:text="${signal.lifecycle().label()}">Detected</span>
+    </div>
+    <p class="signal-lifecycle-summary" th:text="${signal.lifecycle().summary()}">
+      Waiting for a completed candle to cross a lifecycle boundary.
+    </p>
+    <ol class="signal-lifecycle-timeline" aria-label="Signal lifecycle timeline">
+      <li class="signal-lifecycle-step detected">
+        <span class="lifecycle-step-marker" aria-hidden="true">1</span>
+        <div class="lifecycle-step-copy">
+          <span class="lifecycle-step-label">Detection</span>
+          <strong>Detected</strong>
+          <time th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Signal period unavailable'}">13&ndash;17 Jul 2026</time>
+          <small th:if="${signal.sentAt() != null}">
+            Alert recorded
+            <time th:text="${#temporals.format(signal.sentAt(), 'dd MMM yyyy, HH:mm')}">17 Jul 2026, 22:15</time>
+          </small>
+        </div>
+      </li>
+      <li th:if="${signal.lifecycle().terminal()}"
+          class="signal-lifecycle-step lifecycle-resolution-step"
+          th:classappend="${' ' + signal.lifecycle().cssClass()}">
+        <span class="lifecycle-step-marker" aria-hidden="true">2</span>
+        <div class="lifecycle-step-copy">
+          <span class="lifecycle-step-label">Terminal update</span>
+          <strong th:text="${signal.lifecycle().label()}">Confirmed</strong>
+          <time th:text="${signal.lifecycle().resolutionPeriodLabel() != null ? signal.lifecycle().resolutionPeriodLabel() : 'Resolution period unavailable'}">20&ndash;24 Jul 2026</time>
+          <small th:if="${signal.lifecycle().updatedAt() != null}">
+            Lifecycle processed
+            <time th:text="${#temporals.format(signal.lifecycle().updatedAt(), 'dd MMM yyyy, HH:mm')}">24 Jul 2026, 22:15</time>
+          </small>
+        </div>
+      </li>
+      <li th:unless="${signal.lifecycle().terminal()}"
+          class="signal-lifecycle-step pending">
+        <span class="lifecycle-step-marker" aria-hidden="true">2</span>
+        <div class="lifecycle-step-copy">
+          <span class="lifecycle-step-label">Next update</span>
+          <strong>Awaiting follow-through</strong>
+          <span th:text="${'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">Up to 3 completed candles</span>
+          <small th:if="${signal.lifecycle().updatedAt() != null}">
+            Tracking started
+            <time th:text="${#temporals.format(signal.lifecycle().updatedAt(), 'dd MMM yyyy, HH:mm')}">17 Jul 2026, 22:15</time>
+          </small>
+        </div>
+      </li>
+    </ol>
+    <div class="signal-lifecycle-grid">
+      <div>
+        <span>Pattern range</span>
+        <strong>
+          <span th:text="${#numbers.formatDecimal(signal.lifecycle().patternLow(), 1, 4)}">96.0000</span>
+          <span aria-hidden="true">&ndash;</span>
+          <span th:text="${#numbers.formatDecimal(signal.lifecycle().patternHigh(), 1, 4)}">102.0000</span>
+        </strong>
+      </div>
+      <div>
+        <span>Confirmation trigger</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationTriggerPrice(), 1, 4)}">102.0000</strong>
+      </div>
+      <div>
+        <span>Invalidation boundary</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">96.0000</strong>
+      </div>
+      <div>
+        <span>Observation window</span>
+        <strong th:text="${signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">3 completed candles</strong>
+      </div>
+      <div th:if="${signal.lifecycle().terminal()}">
+        <span>Resolution period</span>
+        <strong th:text="${signal.lifecycle().resolutionPeriodLabel()}">21 Jul 2026</strong>
+      </div>
+      <div th:if="${signal.lifecycle().terminal()}">
+        <span>Resolution close</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().resolutionClosePrice(), 1, 4)}">103.0000</strong>
+      </div>
+    </div>
+    <p class="signal-lifecycle-delivery"
+       th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() != null}">
+      Follow-up email sent
+      <time th:text="${#temporals.format(signal.lifecycle().followUpSentAt(), 'dd MMM yyyy, HH:mm')}">21 Jul 2026, 08:15</time>
+    </p>
+    <p class="signal-lifecycle-delivery"
+       th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() == null}">
+      Lifecycle resolved; no follow-up delivery timestamp was recorded.
+    </p>
+    <p class="signal-lifecycle-note">
+      Confirmation uses completed-candle closes, not intraday boundary touches. The first confirmed,
+      invalidated, or expired outcome is terminal and does not replace the original detection.
+    </p>
   </section>
 
   <section class="signal-evidence-section" aria-labelledby="evidence-heading">

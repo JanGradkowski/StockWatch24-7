@@ -37,6 +37,7 @@ public class ScheduledAlertService {
     private final CandlePatternDetectionService detectionService;
     private final ElliottWaveDetectionService elliottWaveDetectionService;
     private final AlertNotificationService notificationService;
+    private final CandlestickSignalLifecycleService lifecycleService;
     private final AlertCheckJobStore jobStore;
     private final AlertScheduleRecoveryService scheduleRecoveryService;
     private final boolean scheduleEnabled;
@@ -54,6 +55,7 @@ public class ScheduledAlertService {
                                  CandlePatternDetectionService detectionService,
                                  ElliottWaveDetectionService elliottWaveDetectionService,
                                  AlertNotificationService notificationService,
+                                 CandlestickSignalLifecycleService lifecycleService,
                                  AlertCheckJobStore jobStore,
                                  AlertScheduleRecoveryService scheduleRecoveryService,
                                  @Value("${alerts.schedule.enabled:true}") boolean scheduleEnabled,
@@ -70,6 +72,7 @@ public class ScheduledAlertService {
         this.detectionService = detectionService;
         this.elliottWaveDetectionService = elliottWaveDetectionService;
         this.notificationService = notificationService;
+        this.lifecycleService = lifecycleService;
         this.jobStore = jobStore;
         this.scheduleRecoveryService = scheduleRecoveryService;
         this.scheduleEnabled = scheduleEnabled;
@@ -190,6 +193,13 @@ public class ScheduledAlertService {
                 .sorted(Comparator.comparing(Candle::getTimestamp))
                 .toList();
 
+        CandlestickSignalLifecycleService.LifecycleEvaluationResult lifecycleResult =
+                lifecycleService.evaluatePending(symbol, interval, candles);
+        if (lifecycleResult.resolved() > 0) {
+            System.out.println("Resolved " + lifecycleResult.resolved()
+                    + " candlestick lifecycle follow-up(s) for " + symbol + " " + interval + ".");
+        }
+
         if (candles.size() < 2) {
             System.out.println("Skipping alert check for " + symbol + " " + interval + ": not enough candles.");
             return;
@@ -213,13 +223,11 @@ public class ScheduledAlertService {
                     .filter(rule -> rule.getPatternFamily() == signalFamily(signal))
                     .filter(rule -> !alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(
                             rule, signal.pattern(), signal.candleTimestamp()))
-                    .forEach(rule -> sendAndRecord(rule, signal));
+                    .forEach(rule -> sendAndRecord(rule, signal, candles));
         }
     }
 
-    private void sendAndRecord(AlertRule rule, DetectedSignal signal) {
-        notificationService.sendSignalEmail(rule, signal);
-
+    private void sendAndRecord(AlertRule rule, DetectedSignal signal, List<Candle> candles) {
         AlertEvent event = new AlertEvent();
         event.setAlertRule(rule);
         event.setPattern(signal.pattern());
@@ -229,6 +237,11 @@ public class ScheduledAlertService {
         event.setConfidenceScore(signal.confidenceScore());
         event.setConfidenceReasons(signal.reasons());
         event.setClosePrice(signal.closePrice());
+        if (signalFamily(signal) == AlertPatternFamily.CANDLESTICK) {
+            lifecycleService.initializeTracking(event, signal, candles);
+        }
+
+        notificationService.sendSignalEmail(rule, signal, event);
         alertEventRepository.save(event);
     }
 

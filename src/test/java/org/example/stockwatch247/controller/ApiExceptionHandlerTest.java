@@ -4,7 +4,9 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import org.example.stockwatch247.service.congress.CongressionalRefreshLimitException;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -72,6 +74,19 @@ class ApiExceptionHandlerTest {
             logger.setAdditive(originalAdditive);
             appender.stop();
         }
+    }
+
+    @Test
+    void congressionalRefreshLimitReturns429AndRetryAfter() {
+        ResponseEntity<Map<String, String>> response = handler.congressionalRefreshLimited(
+                new CongressionalRefreshLimitException(
+                        "Only two uncached refreshes are allowed per minute.",
+                        60L));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("60");
+        assertThat(response.getBody())
+                .containsEntry("error", "Only two uncached refreshes are allowed per minute.");
     }
 
     private MockHttpServletRequest request(String method, String uri) {

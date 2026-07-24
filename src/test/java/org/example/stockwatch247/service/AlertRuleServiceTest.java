@@ -8,6 +8,7 @@ import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
@@ -295,6 +296,16 @@ class AlertRuleServiceTest {
         event.setConfidenceReasons(List.of("strict bullish candle-pattern geometry"));
         event.setClosePrice(19.42);
         event.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
+        event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+        event.setPatternHigh(20.0);
+        event.setPatternLow(18.0);
+        event.setConfirmationTriggerPrice(20.0);
+        event.setInvalidationPrice(18.0);
+        event.setConfirmationWindowCandles(3);
+        event.setResolutionCandleTimestamp(Instant.parse("2026-07-20T00:00:00Z").getEpochSecond());
+        event.setResolutionCandleOffset(1);
+        event.setResolutionClosePrice(20.75);
+        event.setLifecycleUpdatedAt(LocalDateTime.of(2026, 7, 24, 22, 15));
 
         when(alertRuleRepository.findByIdAndUserAndIsActiveTrue(weeklyCandleBuy.getId(), user))
                 .thenReturn(Optional.of(weeklyCandleBuy));
@@ -322,6 +333,10 @@ class AlertRuleServiceTest {
         assertThat(history.columns().getFirst().events().getFirst().patternLabel()).isEqualTo("Bullish Engulfing");
         assertThat(history.columns().getFirst().events().getFirst().signalPeriodLabel())
                 .isEqualTo("13\u201317 Jul 2026");
+        assertThat(history.columns().getFirst().events().getFirst().lifecycle().label())
+                .isEqualTo("Confirmed");
+        assertThat(history.columns().getFirst().events().getFirst().lifecycle().resolutionPeriodLabel())
+                .isEqualTo("20\u201324 Jul 2026");
         assertThat(history.columns().get(1).alert().familyLabel()).isEqualTo("Elliott Wave");
         assertThat(history.columns().get(1).alert().researchHorizonLabel()).isNull();
         assertThat(history.columns().get(1).alert().tradeSignal()).isEqualTo(TradeSignal.SELL);
@@ -367,6 +382,16 @@ class AlertRuleServiceTest {
         ));
         event.setClosePrice(19.42);
         event.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
+        event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+        event.setPatternHigh(20.0);
+        event.setPatternLow(18.0);
+        event.setConfirmationTriggerPrice(20.0);
+        event.setInvalidationPrice(18.0);
+        event.setConfirmationWindowCandles(3);
+        event.setResolutionCandleTimestamp(Instant.parse("2026-07-20T00:00:00Z").getEpochSecond());
+        event.setResolutionCandleOffset(1);
+        event.setResolutionClosePrice(20.75);
+        event.setLifecycleUpdatedAt(LocalDateTime.of(2026, 7, 24, 22, 15));
         when(alertEventRepository.findOwnedByIdAndUser(301L, user)).thenReturn(Optional.of(event));
 
         AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 301L);
@@ -380,6 +405,9 @@ class AlertRuleServiceTest {
         assertThat(detail.researchHorizonSummary()).contains("separated historical outcomes most clearly");
         assertThat(detail.researchHorizonDisclaimer()).contains("not a recommended holding period");
         assertThat(detail.signalPeriodLabel()).isEqualTo("13\u201317 Jul 2026");
+        assertThat(detail.lifecycle().label()).isEqualTo("Confirmed");
+        assertThat(detail.lifecycle().resolutionPeriodLabel()).isEqualTo("20\u201324 Jul 2026");
+        assertThat(detail.lifecycle().updatedAt()).isEqualTo(LocalDateTime.of(2026, 7, 24, 22, 15));
         assertThat(detail.setupStrengthLabel()).isEqualTo("Strong setup");
         assertThat(detail.reasonsAvailable()).isTrue();
         assertThat(detail.reasons()).extracting(AlertRuleService.SignalReasonView::category)

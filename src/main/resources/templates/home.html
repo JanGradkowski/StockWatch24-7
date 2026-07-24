@@ -25,16 +25,51 @@
     <div class="hero-status">Monitoring online</div>
   </header>
 
-  <section class="metrics-grid" aria-label="Monitoring overview">
+  <nav class="dashboard-view-navigation" aria-label="Dashboard views">
+    <div class="dashboard-view-navigation-copy">
+      <span>Dashboard view</span>
+      <strong>Separate chart signals from company-event alerts</strong>
+    </div>
+    <div class="dashboard-view-tabs" role="group" aria-label="Choose dashboard view">
+      <button id="technicalAnalysisViewButton"
+              type="button"
+              class="dashboard-view-tab active"
+              data-dashboard-view-button="technical"
+              aria-pressed="true"
+              aria-controls="technicalDashboardMetrics technicalWatchDesk latestTechnicalSignals systemPulsePanel">
+        <span>Technical analysis</span>
+        <small>Rules, signals and market monitoring</small>
+      </button>
+      <button id="tickerAlertsViewButton"
+              type="button"
+              class="dashboard-view-tab"
+              data-dashboard-view-button="alerts"
+              aria-pressed="false"
+              aria-controls="tickerAlertsIntroduction congressionalActivityDashboard">
+        <span>Ticker alerts</span>
+        <small>Filings and company activity</small>
+      </button>
+    </div>
+  </nav>
+
+  <section id="technicalDashboardMetrics"
+           class="metrics-grid"
+           data-dashboard-view="technical"
+           aria-label="Technical monitoring overview">
     <article class="metric-card">
-      <span class="metric-label">Tracked instruments</span>
+      <span class="metric-label">Technical instruments</span>
       <strong class="metric-value" th:text="${#lists.size(trackedCompanies)}">0</strong>
-      <span class="metric-note">Unique market instruments on your desk</span>
+      <span class="metric-note">Unique instruments with active signal rules</span>
     </article>
     <article class="metric-card">
       <span class="metric-label">Active rules</span>
       <strong class="metric-value" th:text="${activeRuleCount}">0</strong>
       <span class="metric-note">Technical combinations currently followed</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Latest signals</span>
+      <strong class="metric-value" th:text="${#lists.size(latestSignals)}">0</strong>
+      <span class="metric-note">Recent validated technical matches</span>
     </article>
     <article class="metric-card">
       <span class="metric-label">Recovery mode</span>
@@ -43,9 +78,12 @@
     </article>
   </section>
 
-  <div class="grid-layout">
+  <div class="grid-layout" data-dashboard-view-layout>
     <div class="dashboard-main-stack">
-      <section class="glass-panel dashboard-panel" aria-labelledby="watch-desk-heading">
+      <section id="technicalWatchDesk"
+               class="glass-panel dashboard-panel"
+               data-dashboard-view="technical"
+               aria-labelledby="watch-desk-heading">
       <div class="panel-heading watch-panel-heading">
         <div>
           <h2 id="watch-desk-heading" class="panel-title">Market watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
@@ -147,7 +185,10 @@
       </div>
       </section>
 
-      <section class="glass-panel dashboard-panel latest-signals-panel" aria-labelledby="latest-signals-heading">
+      <section id="latestTechnicalSignals"
+               class="glass-panel dashboard-panel latest-signals-panel"
+               data-dashboard-view="technical"
+               aria-labelledby="latest-signals-heading">
         <div class="panel-heading">
           <div>
             <div class="panel-kicker">Fresh from the detector</div>
@@ -166,7 +207,7 @@
 
         <div th:if="${!#lists.isEmpty(latestSignals)}">
           <div class="latest-signal-head latest-signal-grid" aria-hidden="true">
-            <span>Signal</span><span>Company</span><span>Interval</span><span>Candle period</span><span>Research horizon</span><span>Setup score</span><span></span>
+            <span>Signal</span><span>Company</span><span>Interval</span><span>Candle period</span><span>Research horizon</span><span>Status</span><span>Setup score</span><span></span>
           </div>
           <div class="latest-signal-list">
             <a th:each="signal : ${latestSignals}"
@@ -198,6 +239,14 @@
                 <span th:if="${signal.researchHorizonLabel() != null}">Historical evaluation window</span>
                 <span th:unless="${signal.researchHorizonLabel() != null}" class="unavailable">Not applicable</span>
               </div>
+              <div class="latest-lifecycle" aria-label="Lifecycle status">
+                <span th:if="${signal.lifecycle().tracked()}"
+                      class="signal-lifecycle-pill"
+                      th:classappend="${' ' + signal.lifecycle().cssClass()}"
+                      th:text="${signal.lifecycle().label()}">Detected</span>
+                <span th:unless="${signal.lifecycle().tracked()}"
+                      class="lifecycle-unavailable">Not tracked</span>
+              </div>
               <div class="latest-confidence"
                    th:classappend="${' ' + signal.setupBand()}"
                    th:attr="aria-label=${signal.setupScore() != null ? 'Setup score ' + signal.setupScore() + ' out of 100' : 'Setup score unavailable'}">
@@ -209,9 +258,116 @@
           </div>
         </div>
       </section>
+
+      <section id="tickerAlertsIntroduction"
+               class="ticker-alerts-introduction"
+               data-dashboard-view="alerts"
+               aria-labelledby="ticker-alerts-view-heading"
+               hidden>
+        <div>
+          <div class="panel-kicker">Company-event monitoring</div>
+          <h2 id="ticker-alerts-view-heading">Ticker alerts</h2>
+          <p>Follow material activity tied to a company without mixing it into technical chart signals. Congressional disclosures are the first source, with more ticker-level alert types able to join this view later.</p>
+        </div>
+        <div class="ticker-alerts-summary">
+          <span>Congress follows</span>
+          <strong th:text="${congressionalFollowedCount}">0</strong>
+          <small>Stocks watched for new public disclosures</small>
+        </div>
+      </section>
+
+      <section id="congressionalActivityDashboard"
+               class="glass-panel dashboard-panel congressional-dashboard-panel"
+               data-dashboard-view="alerts"
+               hidden
+               aria-labelledby="congressional-dashboard-heading">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker">Public disclosure monitor</div>
+            <h2 id="congressional-dashboard-heading" class="panel-title">
+              Congressional activity
+              <span class="panel-count" th:text="${#lists.size(congressionalActivities)}">0</span>
+            </h2>
+          </div>
+          <span class="panel-meta">Relevant window: last 365 days</span>
+        </div>
+
+        <div th:if="${!#lists.isEmpty(congressionalFollowedStocks)}"
+             class="congressional-follow-strip"
+             aria-label="Stocks followed for congressional disclosures">
+          <span class="congressional-follow-label">Following</span>
+          <a th:each="stock : ${congressionalFollowedStocks}"
+             th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"
+             class="congressional-follow-chip">
+            <strong th:text="${stock.symbol()}">AAPL</strong>
+            <span th:if="${stock.baselinePending()}">baseline pending</span>
+          </a>
+        </div>
+
+        <div th:if="${#lists.isEmpty(congressionalActivities)}"
+             class="latest-signals-empty congressional-empty">
+          <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
+          <div>
+            <h3>No new followed disclosures yet</h3>
+            <p th:if="${#lists.isEmpty(congressionalFollowedStocks)}">
+              Open a stock and switch on congressional activity alerts to start following newly reported purchases and sales.
+            </p>
+            <p th:unless="${#lists.isEmpty(congressionalFollowedStocks)}">
+              Your followed stocks are active. New disclosures observed after each follow began will appear here and be sent by email.
+            </p>
+          </div>
+        </div>
+
+        <div th:if="${!#lists.isEmpty(congressionalActivities)}"
+             class="congressional-dashboard-list">
+          <article th:each="activity : ${congressionalActivities}"
+                   class="congressional-dashboard-row">
+            <div class="congressional-activity-direction"
+                 th:classappend="${activity.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'">
+              <span th:text="${activity.transactionTypeLabel()}">Purchase</span>
+              <strong th:text="${activity.symbol()}">AAPL</strong>
+            </div>
+            <div class="congressional-member">
+              <strong th:text="${activity.memberName()}">Member name</strong>
+              <span th:text="${activity.chamber()}">House</span>
+            </div>
+            <div class="congressional-value">
+              <span>Reported value</span>
+              <strong th:text="${activity.amountRange()}">$1,001 - $15,000</strong>
+            </div>
+            <div class="congressional-dates">
+              <span>
+                Traded
+                <time th:text="${#temporals.format(activity.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time>
+              </span>
+              <span>
+                Disclosed
+                <time th:text="${#temporals.format(activity.disclosureDate(), 'dd MMM yyyy')}">02 Jan 2026</time>
+              </span>
+            </div>
+            <div class="congressional-row-actions">
+              <span class="congressional-delivery-status" th:text="${activity.deliveryStatus()}">Email sent</span>
+              <a th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}">Open stock</a>
+              <a th:if="${activity.sourceUrl() != null}"
+                 th:href="${activity.sourceUrl()}"
+                 target="_blank"
+                 rel="noopener noreferrer">Official filing</a>
+            </div>
+          </article>
+        </div>
+
+        <p class="congressional-dashboard-note">
+          Purchases and sales are sourced through
+          <a href="https://congressinvests.com/" target="_blank" rel="noopener noreferrer">CongressInvests</a>
+          from public House and Senate filings. Disclosures can arrive up to 45 days after a transaction.
+          Informational only, not financial advice.
+        </p>
+      </section>
     </div>
 
-    <aside class="glass-panel dashboard-panel system-pulse-panel">
+    <aside id="systemPulsePanel"
+           class="glass-panel dashboard-panel system-pulse-panel"
+           data-dashboard-view="technical">
       <div class="panel-heading">
         <h2 class="panel-title">System pulse</h2>
         <span class="panel-meta">Live</span>

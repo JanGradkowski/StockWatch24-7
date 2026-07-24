@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.service.AlertRuleService;
 import org.example.stockwatch247.service.EmailVerificationService;
+import org.example.stockwatch247.service.congress.CongressionalActivityService;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
@@ -29,7 +30,11 @@ class AuthControllerVerificationResendTest {
         user.setVerified(false);
         when(users.findByEmailIgnoreCase("owner@example.com")).thenReturn(Optional.of(user));
         AuthController controller = new AuthController(
-                users, mock(AlertRuleService.class), encoder, verification);
+                users,
+                mock(AlertRuleService.class),
+                mock(CongressionalActivityService.class),
+                encoder,
+                verification);
 
         String wrongPassword = controller.processVerificationResend(
                 "owner@example.com", "incorrect password value");

@@ -1,6 +1,63 @@
 (() => {
     "use strict";
 
+    function initializeDashboardViews() {
+        const viewButtons = Array.from(document.querySelectorAll("[data-dashboard-view-button]"));
+        const viewSections = Array.from(document.querySelectorAll("[data-dashboard-view]"));
+        const viewLayout = document.querySelector("[data-dashboard-view-layout]");
+        if (viewButtons.length === 0 || viewSections.length === 0) {
+            return;
+        }
+
+        function activateView(view, moveFocus = false) {
+            const activeButton = viewButtons.find(button => button.dataset.dashboardViewButton === view);
+            if (!activeButton) {
+                return;
+            }
+
+            viewButtons.forEach(button => {
+                const selected = button === activeButton;
+                button.classList.toggle("active", selected);
+                button.setAttribute("aria-pressed", String(selected));
+            });
+
+            viewSections.forEach(section => {
+                section.hidden = section.dataset.dashboardView !== view;
+            });
+
+            if (viewLayout) {
+                viewLayout.classList.toggle("ticker-alerts-active", view === "alerts");
+            }
+
+            if (moveFocus) {
+                activeButton.focus();
+            }
+        }
+
+        viewButtons.forEach((button, index) => {
+            button.addEventListener("click", () => activateView(button.dataset.dashboardViewButton));
+            button.addEventListener("keydown", event => {
+                let targetIndex = null;
+                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                    targetIndex = (index + 1) % viewButtons.length;
+                } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                    targetIndex = (index - 1 + viewButtons.length) % viewButtons.length;
+                } else if (event.key === "Home") {
+                    targetIndex = 0;
+                } else if (event.key === "End") {
+                    targetIndex = viewButtons.length - 1;
+                }
+
+                if (targetIndex != null) {
+                    event.preventDefault();
+                    activateView(viewButtons[targetIndex].dataset.dashboardViewButton, true);
+                }
+            });
+        });
+
+        activateView("technical");
+    }
+
     function initializeWatchFilters() {
         const filterButtons = Array.from(document.querySelectorAll("[data-watch-filter]"));
         if (filterButtons.length === 0) {
@@ -76,9 +133,14 @@
         activateFilter("stocks");
     }
 
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initializeWatchFilters, {once: true});
-    } else {
+    function initializeDashboard() {
+        initializeDashboardViews();
         initializeWatchFilters();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initializeDashboard, {once: true});
+    } else {
+        initializeDashboard();
     }
 })();

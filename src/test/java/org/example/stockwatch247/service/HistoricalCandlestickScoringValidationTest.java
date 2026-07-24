@@ -11,6 +11,7 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -46,6 +47,9 @@ class HistoricalCandlestickScoringValidationTest {
     void printsTemporalValidationForStockOnlyCandlestickScore() {
         List<LabeledTrade> allTrades = new ArrayList<>();
         int sufficientSymbols = 0;
+        int totalCandles = 0;
+        long firstTimestamp = Long.MAX_VALUE;
+        long lastTimestamp = Long.MIN_VALUE;
         for (String symbol : SYMBOLS) {
             List<Candle> candles = candleRepository
                     .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, INTERVAL);
@@ -53,6 +57,9 @@ class HistoricalCandlestickScoringValidationTest {
                 continue;
             }
             sufficientSymbols++;
+            totalCandles += candles.size();
+            firstTimestamp = Math.min(firstTimestamp, candles.getFirst().getTimestamp());
+            lastTimestamp = Math.max(lastTimestamp, candles.getLast().getTimestamp());
             backtestService.backtest(candles, SETTINGS).trades()
                     .forEach(trade -> allTrades.add(new LabeledTrade(symbol, trade)));
         }
@@ -75,6 +82,13 @@ class HistoricalCandlestickScoringValidationTest {
                 SETTINGS.minimumMovePercent(),
                 sufficientSymbols,
                 SYMBOLS.size());
+        System.out.printf(
+                "Data: candles=%d span=%s through %s interval=%s%n",
+                totalCandles,
+                utcDate(firstTimestamp),
+                utcDate(lastTimestamp),
+                INTERVAL
+        );
         printSegment("Development through 2024-12-31", development);
         printSegment("Validation from 2025-01-01", validation);
         System.out.println("=====================================================");
@@ -155,6 +169,10 @@ class HistoricalCandlestickScoringValidationTest {
 
     private double percentage(int numerator, int denominator) {
         return denominator == 0 ? 0.0 : numerator * 100.0 / denominator;
+    }
+
+    private LocalDate utcDate(long timestamp) {
+        return Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC).toLocalDate();
     }
 
     private record LabeledTrade(String symbol, BacktestTrade trade) {

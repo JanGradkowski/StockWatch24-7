@@ -79,6 +79,20 @@
                     th:text="${event.setupStrengthLabel()}">Strong setup</span>
             </div>
             <h3 th:text="${event.patternLabel()}">Bullish Engulfing</h3>
+            <div class="signal-event-lifecycle"
+                 th:title="${event.lifecycle().tracked() ? event.lifecycle().summary() : 'Lifecycle tracking is not available for this signal.'}">
+              <div>
+                <span class="signal-event-lifecycle-label">Lifecycle status</span>
+                <time th:if="${event.lifecycle().terminal()}"
+                      th:text="${event.lifecycle().resolutionPeriodLabel() != null ? 'Resolved ' + event.lifecycle().resolutionPeriodLabel() : 'Resolution period unavailable'}">Resolved 20&ndash;24 Jul 2026</time>
+              </div>
+              <span th:if="${event.lifecycle().tracked()}"
+                    class="signal-lifecycle-pill"
+                    th:classappend="${' ' + event.lifecycle().cssClass()}"
+                    th:text="${event.lifecycle().label()}">Detected</span>
+              <span th:unless="${event.lifecycle().tracked()}"
+                    class="lifecycle-unavailable">Not tracked</span>
+            </div>
             <div class="signal-event-metrics">
               <div>
                 <span>Score</span>
@@ -91,7 +105,7 @@
             </div>
             <div class="signal-event-delivery">
               <span class="delivery-dot" aria-hidden="true"></span>
-              <span>Email sent</span>
+              <span th:text="${event.lifecycle().terminal() ? 'Detection and lifecycle recorded' : 'Detection email sent'}">Detection email sent</span>
               <time th:text="${event.sentAt() != null ? #temporals.format(event.sentAt(), 'yyyy-MM-dd HH:mm') : 'not available'}">2026-07-08 14:00</time>
             </div>
             <div class="signal-event-open">Explore score report <span aria-hidden="true">&rarr;</span></div>

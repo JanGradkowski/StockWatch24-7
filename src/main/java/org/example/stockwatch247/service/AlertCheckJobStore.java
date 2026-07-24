@@ -40,10 +40,25 @@ public class AlertCheckJobStore {
                     returning interval, scheduled_for
                 )
                 insert into alert_check_jobs (symbol, interval, scheduled_for, status)
-                select distinct asset.ticker_symbol, rule.interval, inserted_run.scheduled_for, 'PENDING'
+                select distinct candidate.symbol, candidate.interval, inserted_run.scheduled_for, 'PENDING'
                 from inserted_run
-                join alert_rules rule on rule.interval = inserted_run.interval and rule.is_active = true
-                join stock_assets asset on asset.id = rule.stock_asset_id
+                join (
+                    select asset.ticker_symbol as symbol, rule.interval
+                    from alert_rules rule
+                    join stock_assets asset on asset.id = rule.stock_asset_id
+                    where rule.is_active = true
+
+                    union
+
+                    select asset.ticker_symbol as symbol, rule.interval
+                    from alert_events event
+                    join alert_rules rule on rule.id = event.alert_rule_id
+                    join stock_assets asset on asset.id = rule.stock_asset_id
+                    where event.lifecycle_status = 'DETECTED'
+                      and event.confirmation_window_candles is not null
+                      and event.pattern_high is not null
+                      and event.pattern_low is not null
+                ) candidate on candidate.interval = inserted_run.interval
                 on conflict (symbol, interval, scheduled_for) do nothing
                 """,
                 interval.name(), toOffsetDateTime(scheduledFor));

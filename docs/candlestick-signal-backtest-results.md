@@ -1193,9 +1193,354 @@ All scoring inputs now come from the instrument being checked. Weak, contradicto
 
 The previous stock-only components totaled 70 points (25/15/10/15/5). Each component was multiplied by `100/70`, then represented to one decimal place with equal-weight components kept equal. The higher-interval pattern allocation preserves its former 15:10 structural-to-calibration split. Only completed higher-timeframe periods are used, and no other instrument is loaded or scored.
 
-### Validation status
+### Fresh V3 daily temporal rerun
 
-The V3 score distribution requires a fresh historical rerun before its numeric bands can be compared with the V2 results. The tables below are retained as an archive of the benchmark-aware V2 model and do not validate the reweighted stock-only score.
+Date run: 2026-07-24
+
+The required V3 rerun is now complete. It used:
+
+- the current production candlestick detector and stock-only V3 setup score;
+- the same 30 large US stocks used in the earlier daily research;
+- 30,124 cached daily candles spanning 2022-07-11 through 2026-07-23;
+- a chronological walk-forward with a 250-candle indicator warmup and 100 candles passed to detection;
+- the existing 10-candle / 3.0% fixed-horizon classification, with entry measured at the signal candle's close, so the results remain comparable with the archived V2 score test;
+- no Elliott Wave signals, score gate, fees, spread, slippage, stop, sizing, capital, or overlapping-position constraints;
+- the same split at 2025-01-01.
+
+The later segment is a temporal stability check, not pristine out-of-sample evidence. The application, detector features, and broader dataset had already been inspected before this rerun. This score test is also not an executable trade simulation because it measures from the already-completed signal candle's close.
+
+Command used:
+
+```powershell
+.\mvnw.cmd "-Dtest=HistoricalCandlestickScoringValidationTest" "-Dbacktest.candlestick.scoring.enabled=true" test
+```
+
+| Segment | Score/direction | Signals | Success | Failed | Inconclusive | Precision | Avg directional return |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Development through 2024 | All | 525 | 148 | 139 | 238 | 51.57% | -0.08% |
+| Development through 2024 | 0-59 | 113 | 27 | 38 | 48 | 41.54% | -1.10% |
+| Development through 2024 | 60-69 | 199 | 54 | 49 | 96 | 52.43% | -0.27% |
+| Development through 2024 | 70-100 | 213 | 67 | 52 | 94 | 56.30% | +0.64% |
+| Development through 2024 | 75-100 | 87 | 32 | 13 | 42 | 71.11% | +1.62% |
+| Development through 2024 | 70-100 BUY | 109 | 42 | 21 | 46 | 66.67% | +1.26% |
+| Development through 2024 | 70-100 SELL | 104 | 25 | 31 | 48 | 44.64% | -0.02% |
+| Development through 2024 | 75-100 BUY | 53 | 19 | 8 | 26 | 70.37% | +1.67% |
+| Development through 2024 | 75-100 SELL | 34 | 13 | 5 | 16 | 72.22% | +1.55% |
+| Validation from 2025 | All | 475 | 131 | 142 | 202 | 47.99% | -0.02% |
+| Validation from 2025 | 0-59 | 109 | 30 | 44 | 35 | 40.54% | -0.65% |
+| Validation from 2025 | 60-69 | 188 | 62 | 45 | 81 | 57.94% | +0.81% |
+| Validation from 2025 | 70-100 | 178 | 39 | 53 | 86 | 42.39% | -0.50% |
+| Validation from 2025 | 75-100 | 82 | 17 | 25 | 40 | 40.48% | -0.37% |
+| Validation from 2025 | 70-100 BUY | 99 | 25 | 30 | 44 | 45.45% | -0.09% |
+| Validation from 2025 | 70-100 SELL | 79 | 14 | 23 | 42 | 37.84% | -1.01% |
+| Validation from 2025 | 75-100 BUY | 45 | 12 | 14 | 19 | 46.15% | +0.36% |
+| Validation from 2025 | 75-100 SELL | 37 | 5 | 11 | 21 | 31.25% | -1.26% |
+
+The V3 score did not preserve a monotonic relationship with outcomes. The 70+ and 75+ development results looked strong, but both deteriorated below 50% precision in the later segment. The later 60-69 bucket performed better than the higher buckets. Higher-timeframe alignment also fell from 51.26% precision / -0.08% average return in development to 44.50% / -0.62% later; price-location evidence moved from 57.89% / +0.34% to 50.63% / +0.24%. These results reject a 70, 75, or other V3 alert gate. The score remains an explanation and ranking heuristic, not a calibrated probability or permission to trade.
+
+### Expanded 2,343-symbol cross-sectional validation
+
+Date run: 2026-07-24
+
+#### Blunt result
+
+The much larger test overturns the earlier suggestion that `85+` is a reliably better bracket:
+
+- in the untouched 2,193-symbol power-validation cohort, daily `85+` precision was **47.80%**, with a two-way symbol/year cluster-bootstrap 95% interval of **44.44%-51.42%** and an average directional return of **-0.37%**;
+- daily `85+` BUY was **50.79%** with a clustered interval of **45.11%-56.91%** and a **+0.04%** average return, so it did not demonstrate an edge;
+- daily `85+` SELL was **43.74%** with a clustered interval of **38.70%-48.78%** and a **-0.94%** average return;
+- weekly `85+` was **45.24%**, **-1.41%** on average, and contained only BUY signals; its clustered interval was **31.42%-66.26%**;
+- monthly `85+` produced only **17 signals and eight actionable outcomes** in 374,262 monthly candles, which is nowhere near enough to estimate precision.
+
+This is strong evidence that `85+` is not a calibrated high-probability label. It should not be presented as having better historical precision than lower scores, and an `85+` alert should not be treated as permission to trade.
+
+#### Frozen design and data
+
+The production research dependencies were frozen before the holdout and power-validation outcomes were opened:
+
+- `CandlePatternDetectionService`;
+- `TechnicalIndicatorEnrichmentService`;
+- `HistoricalSignalBacktestService`;
+- `CandlestickPatternCalibration`;
+- the `85` high-confidence boundary;
+- daily 10-candle / 3.0%, weekly 8-candle / 8.0%, and monthly 6-candle / 12.0% outcomes.
+
+The study uses the archived [Quandl WIKI Prices US Equities table](https://www.kaggle.com/datasets/marketneutral/quandl-wiki-prices-us-equites), ending on 2018-03-27. Adjusted open, high, low, close, and volume were used so stock splits do not create false candle shapes or false returns. The archive contains 15,389,314 rows and 3,199 tickers. The application does not redistribute the archive. Kaggle labels its license `Unknown`, even though the uploader describes the original table as public-domain data, so the file is suitable here as a local research input but requires a separate licensing review before commercial redistribution or bundling.
+
+The frozen 150-symbol core was selected without inspecting algorithm outcomes:
+
+- 40 large-cap, 40 mid-cap, and 40 small-cap endpoint companies;
+- all 11 available major sector groups represented;
+- 30 former S&P 500 tickers whose WIKI series ended before the dataset endpoint;
+- 120 development symbols and 30 untouched holdout symbols;
+- the holdout contains eight names from each active cap tier and six former constituents, with every active sector represented at least twice.
+
+The frozen cap bands were $10 billion or more for large, $2-$10 billion for mid, and $300 million-$2 billion for small. Static sector metadata was used only to diversify the core; it can be imperfect for renamed companies and reused tickers, so no sector-level precision claim is made.
+
+The 120-symbol development pilot revealed that the original 150-symbol design would not reach the planned high-score sample sizes. The study was therefore enlarged before any new-universe outcomes were inspected. The power cohort deterministically includes every remaining WIKI ticker that had:
+
+- at least 2,400 daily rows in the fixed 2003-03-28 through 2018-03-27 window;
+- at least 3,650 calendar days between its first and last included row;
+- no invalid adjusted-OHLC row;
+- no overlap with any of the 150 core symbols.
+
+That outcome-blind rule produced 2,193 additional symbols, 7,802,979 daily candles, and 400 ended tickers. This cohort was run once after the detector, harness, eligibility rule, manifest, and source checksums were locked. The pilot-driven increase is a sample-size adaptation, so the untouched 2,193-symbol result is the primary estimate; the combined 2,343-symbol table is secondary.
+
+| Disjoint cohort | Symbols | Daily candles | Weekly candles | Monthly candles | Outcome use |
+|---|---:|---:|---:|---:|---|
+| Development pilot | 120 | 439,905 | 91,353 | 21,099 | Exposed first; used only to size the extension |
+| Frozen core holdout | 30 | 110,015 | 22,846 | 5,277 | Opened once after harness freeze |
+| Power validation | 2,193 | 7,802,979 | 1,620,590 | 374,262 | Outcome-blind eligibility; opened once |
+| **Disjoint total** | **2,343** | **8,352,899** | **1,734,789** | **400,638** | Intervals remain separate |
+
+Weekly and monthly candles were aggregated from each symbol's adjusted daily series: first open, maximum high, minimum low, last close, and summed volume in each calendar week or month. Daily, weekly, and monthly results are not added together because they reuse the same underlying price path and are not independent observations.
+
+The full prepared universe includes 430 ended/former tickers. That materially reduces survivor-only selection, but it is not a complete point-in-time reconstruction of every investable US stock. Former tickers are mostly acquisitions, mergers, or discontinued share classes; they are not all bankruptcies.
+
+#### Outcome and uncertainty definitions
+
+The outcome definition remains exactly comparable with the existing fixed-horizon score research:
+
+- entry price is the detected candle's close;
+- exit is the close after 10 daily, eight weekly, or six monthly candles;
+- BUY uses normal percentage return and SELL uses the directional inverse;
+- success requires at least +3%, +8%, or +12%, respectively;
+- failure requires at most -3%, -8%, or -12%;
+- everything between the two boundaries is inconclusive;
+- precision is `success / (success + failure)`, excluding inconclusive outcomes;
+- average directional return includes every signal.
+
+The detected close is not an executable fill for a scanner that acts after the candle has completed. The test has no spread, slippage, fees, borrow cost, dividend payment on shorts, tax, stop, sizing, capital, overlap, or portfolio constraint. It is a score-validation test, not a profitability backtest.
+
+Two uncertainty estimates are reported:
+
+- the Wilson 95% interval treats actionable signals as independent and is included for conventional sample-size comparison;
+- the primary cluster interval uses 10,000 deterministic bootstrap resamples across both symbols and calendar years, preserving signal dependence within a company and common market-period concentration.
+
+The clustered interval is deliberately wider. Thousands of tickers do not create thousands of independent market regimes when they all trade through the same 15 years.
+
+#### Untouched power-validation result
+
+| Interval | Direction | Signals | Success | Failed | Inconclusive | Actionable | Precision | Wilson 95% CI | Cluster 95% CI | Cluster MOE | Avg return | 400 target |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Daily | Combined | 7,117 | 2,142 | 2,339 | 2,636 | 4,481 | 47.80% | 46.34%-49.27% | 44.44%-51.42% | 3.61 pp | -0.37% | Met |
+| Daily | BUY | 4,124 | 1,311 | 1,270 | 1,543 | 2,581 | 50.79% | 48.87%-52.72% | 45.11%-56.91% | 6.11 pp | +0.04% | Met |
+| Daily | SELL | 2,993 | 831 | 1,069 | 1,093 | 1,900 | 43.74% | 41.52%-45.98% | 38.70%-48.78% | 5.04 pp | -0.94% | Met |
+| Weekly | Combined | 706 | 176 | 213 | 317 | 389 | 45.24% | 40.37%-50.21% | 31.42%-66.26% | 21.02 pp | -1.41% | Not met |
+| Weekly | BUY | 706 | 176 | 213 | 317 | 389 | 45.24% | 40.37%-50.21% | 31.22%-67.02% | 21.77 pp | -1.41% | Not met |
+| Weekly | SELL | 0 | 0 | 0 | 0 | 0 | n/a | n/a | n/a | n/a | n/a | Not met |
+| Monthly | Combined | 17 | 4 | 4 | 9 | 8 | 50.00% | 21.52%-78.48% | 0.00%-100.00% | 50.00 pp | +2.28% | Not met |
+| Monthly | BUY | 16 | 4 | 4 | 8 | 8 | 50.00% | 21.52%-78.48% | 0.00%-100.00% | 50.00 pp | +1.76% | Not met |
+| Monthly | SELL | 1 | 0 | 0 | 1 | 0 | n/a | n/a | n/a | n/a | +10.60% | Not met |
+
+The daily SELL cluster interval is wholly below 50%, which is a negative finding for the current score. The combined daily and BUY cluster intervals include 50%, so they do not demonstrate a directional advantage. A 50% classification reference is not itself an economic break-even benchmark, and no multiple-comparison-adjusted profitability claim is made.
+
+The weekly raw actionable count nearly reached 400 in the untouched cohort, but it did not produce low uncertainty. Outcomes were heavily market-period-dependent: for example, 106 of the 152 weekly `85+` signals during 2008 were actionable failures or successes, and failures outnumbered successes 82 to 24. All 706 weekly high-score signals were BUY because the frozen weekly calibration awards its strongest prior points to bullish formations; no bearish weekly setup reached 85 in 1,620,590 weekly candles.
+
+Monthly `85+` occurred once per approximately 22,000 monthly candles and produced an actionable result only eight times. At that observed rate, obtaining 400 actionable monthly outcomes would require roughly 18.7 million monthly candles, or more than 100,000 complete 15-year symbol histories. Adding a few hundred more tickers cannot make the current monthly `85+` bracket estimable.
+
+#### Score ordering in the untouched cohort
+
+| Interval | Score group | Signals | Actionable | Precision | Wilson 95% CI | Avg return |
+|---|---|---:|---:|---:|---:|---:|
+| Daily | All detected | 352,854 | 216,778 | 50.31% | 50.10%-50.52% | +0.04% |
+| Daily | Below 75 | 293,927 | 180,158 | 50.50% | 50.27%-50.73% | +0.11% |
+| Daily | 75-84 | 51,810 | 32,139 | 49.55% | 49.00%-50.09% | -0.32% |
+| Daily | 85+ | 7,117 | 4,481 | 47.80% | 46.34%-49.27% | -0.37% |
+| Weekly | All detected | 79,513 | 41,076 | 49.23% | 48.74%-49.71% | +0.08% |
+| Weekly | Below 75 | 75,785 | 39,046 | 49.11% | 48.61%-49.60% | +0.09% |
+| Weekly | 75-84 | 3,022 | 1,641 | 53.08% | 50.66%-55.48% | +0.27% |
+| Weekly | 85+ | 706 | 389 | 45.24% | 40.37%-50.21% | -1.41% |
+| Monthly | All detected | 17,898 | 10,800 | 46.93% | 45.99%-47.87% | +0.98% |
+| Monthly | Below 75 | 17,753 | 10,709 | 46.84% | 45.90%-47.79% | +0.96% |
+| Monthly | 75-84 | 128 | 83 | 57.83% | 47.09%-67.88% | +3.90% |
+| Monthly | 85+ | 17 | 8 | 50.00% | 21.52%-78.48% | +2.28% |
+
+The score is not monotonic. In daily data the 85+ bracket was worse than both all detections and below-75 detections. In weekly data 75-84 looked better than 85+, but this split was discovered in the final validation and cannot be promoted into a new production threshold without a new untouched sample. Monthly 75-84 remains far too small.
+
+#### Secondary combined long-history result
+
+Combining the three disjoint cohorts gives the planned raw weekly actionable count, but does not fix the dependence or monthly scarcity:
+
+| Interval | Direction | Signals | Success | Failed | Inconclusive | Actionable | Precision | Wilson 95% CI | Avg return |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Daily | Combined | 7,612 | 2,263 | 2,500 | 2,849 | 4,763 | 47.51% | 46.10%-48.93% | -0.41% |
+| Daily | BUY | 4,421 | 1,387 | 1,357 | 1,677 | 2,744 | 50.55% | 48.68%-52.42% | -0.01% |
+| Daily | SELL | 3,191 | 876 | 1,143 | 1,172 | 2,019 | 43.39% | 41.24%-45.56% | -0.96% |
+| Weekly | Combined / BUY | 767 | 187 | 230 | 350 | 417 | 44.84% | 40.14%-49.64% | -1.43% |
+| Weekly | SELL | 0 | 0 | 0 | 0 | 0 | n/a | n/a | n/a |
+| Monthly | Combined | 17 | 4 | 4 | 9 | 8 | 50.00% | 21.52%-78.48% | +2.28% |
+
+The combined Wilson interval is not the primary inference because it treats correlated signals as independent. The untouched power cohort's cluster interval remains the honest uncertainty estimate.
+
+#### Independence and generalization limits
+
+`Untouched` here means the new ticker manifest and its outcomes were not inspected before the final run. It is a cross-sectional holdout, not a later-time holdout. The 2003-2018 market years overlap the pre-2020 period used to create the frozen weekly/monthly pattern-calibration table, although the 2,193 power tickers do not overlap the 150-symbol core and were not selected by outcomes. Common market regimes can therefore still leak broad conditions across tickers.
+
+This makes the negative high-score result especially important, but it means a positive subset from this report would still require a new temporal test. A production trading claim needs a separately licensed, point-in-time dataset covering post-development years, delisted securities, actual next-open execution, transaction and borrow costs, dividends, and portfolio overlap.
+
+#### Reproduction and checksums
+
+The reproducible harness is `ExpandedCandlestickStatisticalValidationTest`; the source preparation command verifies both the downloaded zip and its uncompressed CSV before producing adjusted subsets.
+
+```powershell
+python scripts\prepare_expanded_candlestick_backtest.py `
+  --archive target\expanded-backtest-data\quandl-wiki-prices.zip
+
+python scripts\prepare_expanded_candlestick_backtest.py `
+  --archive target\expanded-backtest-data\quandl-wiki-prices.zip `
+  --build-power-universe `
+  --manifest target\expanded-backtest-data\expanded-candlestick-power-universe.tsv `
+  --output target\expanded-backtest-data\expanded-power-candles.csv.gz
+
+.\mvnw.cmd "-Dtest=ExpandedCandlestickStatisticalValidationTest" `
+  "-Dbacktest.expanded.enabled=true" `
+  "-Dbacktest.expanded.stage=holdout" `
+  "-Dbacktest.expanded.bootstrap-replicates=10000" test
+
+.\mvnw.cmd "-Dtest=ExpandedCandlestickStatisticalValidationTest" `
+  "-Dbacktest.expanded.enabled=true" `
+  "-Dbacktest.expanded.stage=validation" `
+  "-Dbacktest.expanded.bootstrap-replicates=10000" `
+  "-Dbacktest.expanded.manifest-file=target\expanded-backtest-data\expanded-candlestick-power-universe.tsv" `
+  "-Dbacktest.expanded.data-file=target\expanded-backtest-data\expanded-power-candles.csv.gz" test
+```
+
+| Frozen artifact | SHA-256 |
+|---|---|
+| Source zip | `ADFD226694C6F3EC2C56B585D973764180A39A3EC516601721E90096DC1DE94F` |
+| Uncompressed `WIKI_PRICES.csv` | `CA7FB174C7948DB85638917D25FF65D438E27D5CB23675DA784C54DB01E3D003` |
+| Core manifest | `20C0B44D9A05635B46AC8378CC90DEC9405918A847B2451DFF2953C2E6C36D98` |
+| Prepared core candles | `EE7EFBB991B271057BE8B2677BF5848DC5B172462B3F14DC05DFBBA4FDD3C31F` |
+| Power manifest | `8364BE9B75B3D91A3377FB128195849CAD080189FE928243AC92F6CE573F160F` |
+| Prepared power candles | `3E99F1BD3CC0DB80DE45CA02BB7D9B89DBCB307F48DA17FC1EC75542A85245BD` |
+
+#### Production decision
+
+- Do not market `85+` as statistically higher precision or a probability of success.
+- Do not gate trades or increase position size because a score reached 85.
+- Do not change the detector to weekly 75-84 or monthly 75-84 based on this final sample; those are post-hoc research observations.
+- Preserve immediate `DETECTED` and factual lifecycle follow-ups because those communicate observed state rather than a guaranteed return.
+- Treat daily SELL and weekly high-score behavior as failed validation targets.
+- Keep monthly `85+` out of any quoted precision table until its scoring design is changed on development data and tested on a new untouched dataset.
+- Any future score redesign must use a new version, a new development sample, and a separately frozen post-development validation set. Reusing this 2003-2018 power cohort for tuning would convert it into development data.
+
+## Three-Candle Candlestick Signal Lifecycle Backtest
+
+Date run: 2026-07-24
+
+### Rules and data tested
+
+The historical harness uses the same pure lifecycle policy as the live service, rather than reimplementing a similar rule inside the test:
+
+- freeze the complete one-, two-, or three-candle pattern high and low when the signal is detected;
+- for BUY, confirm on the first subsequent close strictly above the high and invalidate on the first close strictly below the low;
+- for SELL, confirm on the first subsequent close strictly below the low and invalidate on the first close strictly above the high;
+- equality with a boundary and intraday high/low crossings do not resolve the signal;
+- the first terminal close wins;
+- expire at the third subsequent close if neither boundary has closed beyond it.
+
+Detection still uses the current production detector, a 250-candle warmup, 100 detection candles, and no Elliott Wave signals. All 30 symbols had sufficient data. The cache contained 30,124 daily candles from 2022-07-11 through 2026-07-23. The lifecycle population contains 1,008 detections with all three following candles available; signals too near the right edge are excluded rather than assigned an incomplete outcome.
+
+Commands used:
+
+```powershell
+.\mvnw.cmd "-Dtest=CandlestickSignalLifecycleServiceTest" test
+.\mvnw.cmd "-Dtest=HistoricalCandlestickLifecycleBacktestTest" "-Dbacktest.candlestick.lifecycle.enabled=true" test
+```
+
+### Executable-timing methodology
+
+Two timings are reported and must not be confused:
+
+- **Detection entry:** the next daily candle's open after the pattern has completed. This is the earliest hypothetical entry in this daily-close system.
+- **Post-confirmation entry:** the next daily candle's open after the confirming candle has closed. Entering at the confirming close would use a price before the system can safely act on that completed close.
+
+The exit is the close of the fifth, tenth, or twentieth holding-session candle, including the entry session. BUY returns use normal percentage change; SELL returns use its directional inverse. The primary outcome is the report's existing 10-session / +/-3.0% classification. `Precision` is success / (success + failure), excluding inconclusive final returns. `Gross+` is the percentage finishing above 0%. `Net+` is the percentage finishing above an illustrative 0.20% round-trip cost, equivalent to subtracting 0.20 percentage points from every gross directional return. MFE and MAE are average maximum favorable and adverse intraperiod moves from the next-open entry; they do not implement a target or stop.
+
+This remains a signal-level research simulation. It does not model bid/ask spread separately, variable slippage, taxes, short borrow availability or fees, dividends, position sizing, portfolio capital, simultaneous/overlapping positions, compounding, stop execution, gaps through a stop, or market impact. The 0.20% cost is an explicit sensitivity assumption, not an estimate for every broker or instrument.
+
+### Lifecycle resolution
+
+| Terminal status | Signals | Share | BUY | SELL |
+|---|---:|---:|---:|---:|
+| Confirmed | 444 | 44.05% | 214 | 230 |
+| Invalidated | 355 | 35.22% | 115 | 240 |
+| Expired | 209 | 20.73% | 88 | 121 |
+| **Total detected** | **1,008** | **100.00%** | **417** | **591** |
+
+| Resolution candle after detection | Confirmed | Invalidated | Expired | Total |
+|---:|---:|---:|---:|---:|
+| 1 | 273 | 208 | 0 | 481 |
+| 2 | 102 | 102 | 0 | 204 |
+| 3 | 69 | 45 | 209 | 323 |
+
+The mean terminal delay was 1.84 candles. If confirmation were used as an entry gate, only 44.05% of detections would become eligible, so it would indeed produce fewer entries. The implemented notification workflow does not suppress those detections: it sends `DETECTED` first and later sends one terminal follow-up.
+
+### Primary 10-session result
+
+Rows have slightly different counts because a complete lifecycle needs three future candles while a 10-session return after a delayed entry can need additional candles near the dataset boundary.
+
+| Cohort and hypothetical entry | N | Success | Failed | Inconclusive | Precision | Gross+ | Net+ | Avg gross | Median | Avg net | Avg MFE | Avg MAE |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| All detected / next open after detection | 1,000 | 284 | 276 | 440 | 50.71% | 52.20% | 50.40% | -0.01% | +0.26% | -0.21% | +4.45% | -4.61% |
+| Eventually confirmed / next open after detection | 440 | 178 | 82 | 180 | 68.46% | 65.68% | 63.64% | +1.76% | +1.76% | +1.56% | +6.03% | -3.15% |
+| Confirmed / next open after confirmation | 440 | 129 | 112 | 199 | 53.53% | 51.36% | 50.00% | +0.22% | +0.17% | +0.02% | +4.61% | -4.38% |
+| Invalidated / next open after detection | 351 | 51 | 146 | 154 | 25.89% | 35.33% | 33.90% | -2.46% | -1.81% | -2.66% | +2.85% | -6.81% |
+| Expired / next open after detection | 208 | 55 | 48 | 105 | 53.40% | 52.40% | 50.48% | +0.38% | +0.25% | +0.18% | +3.82% | -3.97% |
+| Confirmed BUY / next open after confirmation | 213 | 73 | 40 | 100 | 64.60% | 59.15% | 57.28% | +1.15% | +0.91% | +0.95% | +4.90% | -3.88% |
+| Confirmed SELL / next open after confirmation | 227 | 56 | 72 | 99 | 43.75% | 44.05% | 43.17% | -0.66% | -0.70% | -0.86% | +4.33% | -4.84% |
+
+The `eventually confirmed / next open after detection` row is hindsight-only: at that entry time nobody knows which detections will later confirm. It demonstrates that the terminal label separates a historically stronger subset, but it is not an executable selection rule. Once entry waits until the next open after confirmation, the combined result falls to +0.22% gross and +0.02% after the illustrative cost. Most of the apparent confirmation edge occurred in the move that caused confirmation.
+
+Invalidation was informative: detections that later invalidated averaged -2.46% from the initial next-open entry. That does not make invalidation a validated stop. The notification arrives only after a completed close outside the range, and the test did not exit at that close or model the next executable fill.
+
+### Horizon and temporal stability
+
+| Cohort | Horizon / move | N | Precision | Avg gross | Avg net |
+|---|---|---:|---:|---:|---:|
+| All detected / detection entry | 5 sessions / 2% | 1,006 | 47.46% | -0.18% | -0.38% |
+| Confirmed / post-confirmation entry | 5 sessions / 2% | 441 | 50.62% | -0.09% | -0.29% |
+| All detected / detection entry | 10 sessions / 3% | 1,000 | 50.71% | -0.01% | -0.21% |
+| Confirmed / post-confirmation entry | 10 sessions / 3% | 440 | 53.53% | +0.22% | +0.02% |
+| All detected / detection entry | 20 sessions / 5% | 987 | 47.71% | -0.31% | -0.51% |
+| Confirmed / post-confirmation entry | 20 sessions / 5% | 433 | 50.00% | +0.17% | -0.03% |
+
+| Signal-date segment, 10-session post-confirmation test | N | Precision | Avg gross | Avg net |
+|---|---:|---:|---:|---:|
+| Development through 2024, all detected / detection entry | 525 | 50.70% | -0.08% | -0.28% |
+| Development through 2024, confirmed combined | 224 | 51.35% | +0.11% | -0.09% |
+| Development through 2024, confirmed BUY | 105 | 68.09% | +1.26% | +1.06% |
+| Development through 2024, confirmed SELL | 119 | 39.06% | -0.91% | -1.11% |
+| Validation from 2025, all detected / detection entry | 475 | 50.72% | +0.07% | -0.13% |
+| Validation from 2025, confirmed combined | 216 | 55.38% | +0.33% | +0.13% |
+| Validation from 2025, confirmed BUY | 108 | 62.12% | +1.04% | +0.84% |
+| Validation from 2025, confirmed SELL | 108 | 48.44% | -0.38% | -0.58% |
+
+The BUY/SELL split was directionally stable in this reused sample: confirmed BUY was positive in both periods and confirmed SELL was negative in both. That makes confirmed BUY a research candidate, not a production rule. The split was examined retrospectively, trades overlap, the symbols share market regimes, and no untouched external or post-freeze period has tested it.
+
+### V3 score inside the confirmed cohort
+
+| V3 score, 10-session post-confirmation entry | N | Precision | Avg gross | Avg net |
+|---|---:|---:|---:|---:|
+| 0-59 | 78 | 48.08% | -0.05% | -0.25% |
+| 60-69 | 176 | 61.86% | +0.68% | +0.48% |
+| 70-100 | 186 | 47.83% | -0.11% | -0.31% |
+
+Confirmation did not repair the V3 score ordering: 60-69 outperformed 70+ here as well. There is no basis for interpreting a higher V3 number as a higher probability of profit.
+
+### Blunt conclusion and production decision
+
+The lifecycle is useful product information, but this run does not validate a profitable combined trading system:
+
+- immediate detections remained approximately flat gross and negative after the illustrative cost at every tested horizon;
+- waiting for confirmation improved the combined descriptive result only to approximately break-even after cost;
+- confirmed BUY was the one promising directional subset, while confirmed SELL remained negative;
+- the V3 score was not monotonic and its high-score development performance did not survive the later segment;
+- no stop, target, sizing, portfolio, overlap, borrow, dividend, or full execution model was tested;
+- this is reused historical data, not an untouched prospective test, and no multiple-testing or correlated-signal significance claim is made.
+
+Production should therefore keep sending `DETECTED` plus the factual `CONFIRMED`, `INVALIDATED`, or `EXPIRED` follow-up, but must not describe `CONFIRMED` as a buy/sell instruction or profitability guarantee. No detector or score gate should be changed from this retrospective run. A trading product would still need pre-registered entry, exit, stop/invalidation execution, sizing, cost and portfolio rules, followed by a frozen external or post-2026-07-24 walk-forward test.
 
 ## Archived Candlestick Contextual Setup Score V2 Results
 

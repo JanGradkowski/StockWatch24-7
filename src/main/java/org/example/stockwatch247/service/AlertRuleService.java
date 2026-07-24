@@ -11,6 +11,7 @@ import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.SignalStength;
+import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.AlertEventRepository;
@@ -191,6 +192,7 @@ public class AlertRuleService {
                 signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
                 event.getClosePrice(),
                 event.getSentAt(),
+                toLifecycleView(event, rule.getInterval()),
                 List.copyOf(reasons),
                 !reasons.isEmpty()
         );
@@ -299,7 +301,8 @@ public class AlertRuleService {
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
-                event.getSentAt()
+                event.getSentAt(),
+                toLifecycleView(event, rule.getInterval())
         );
     }
 
@@ -631,8 +634,83 @@ public class AlertRuleService {
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(interval, event.getSignalCandleTimestamp()),
                 event.getClosePrice(),
-                event.getSentAt()
+                event.getSentAt(),
+                toLifecycleView(event, interval)
         );
+    }
+
+    private SignalLifecycleView toLifecycleView(AlertEvent event, TimeInterval interval) {
+        SignalLifecycleStatus status = event.getLifecycleStatus();
+        boolean tracked = event.isLifecycleTracked();
+        String resolutionPeriod = event.getResolutionCandleTimestamp() == null
+                ? null
+                : signalPeriodLabel(interval, event.getResolutionCandleTimestamp());
+        String boundaryDirection = event.getTradeSignal() == TradeSignal.BUY ? "above" : "below";
+        String invalidationDirection = event.getTradeSignal() == TradeSignal.BUY ? "below" : "above";
+        String summary;
+        if (!tracked) {
+            summary = "Follow-up lifecycle tracking was not recorded for this signal.";
+        } else {
+            summary = switch (status) {
+                case DETECTED -> String.format(
+                        Locale.ROOT,
+                        "Waiting for a completed candle to close %s %.4f. The setup expires after %d candles unless it confirms or invalidates first.",
+                        boundaryDirection,
+                        event.getConfirmationTriggerPrice(),
+                        event.getConfirmationWindowCandles()
+                );
+                case CONFIRMED -> String.format(
+                        Locale.ROOT,
+                        "Confirmed on %s when candle %d closed at %.4f, %s the %.4f trigger.",
+                        resolutionPeriod,
+                        event.getResolutionCandleOffset(),
+                        event.getResolutionClosePrice(),
+                        boundaryDirection,
+                        event.getConfirmationTriggerPrice()
+                );
+                case INVALIDATED -> String.format(
+                        Locale.ROOT,
+                        "Invalidated on %s when candle %d closed at %.4f, %s the %.4f boundary.",
+                        resolutionPeriod,
+                        event.getResolutionCandleOffset(),
+                        event.getResolutionClosePrice(),
+                        invalidationDirection,
+                        event.getInvalidationPrice()
+                );
+                case EXPIRED -> String.format(
+                        Locale.ROOT,
+                        "Expired after %d completed candles without a close beyond either lifecycle boundary.",
+                        event.getConfirmationWindowCandles()
+                );
+            };
+        }
+        return new SignalLifecycleView(
+                status,
+                lifecycleLabel(status),
+                status.name().toLowerCase(Locale.ROOT),
+                tracked,
+                status != SignalLifecycleStatus.DETECTED,
+                summary,
+                event.getPatternHigh(),
+                event.getPatternLow(),
+                event.getConfirmationTriggerPrice(),
+                event.getInvalidationPrice(),
+                event.getConfirmationWindowCandles(),
+                event.getResolutionCandleOffset(),
+                resolutionPeriod,
+                event.getResolutionClosePrice(),
+                event.getLifecycleUpdatedAt(),
+                event.getFollowUpSentAt()
+        );
+    }
+
+    private String lifecycleLabel(SignalLifecycleStatus status) {
+        return switch (status) {
+            case DETECTED -> "Detected";
+            case CONFIRMED -> "Confirmed";
+            case INVALIDATED -> "Invalidated";
+            case EXPIRED -> "Expired";
+        };
     }
 
     private String setupStrengthLabel(SignalStength strength, Integer setupScore) {
@@ -819,7 +897,8 @@ public class AlertRuleService {
             Long signalCandleTimestamp,
             LocalDate signalDate,
             String signalPeriodLabel,
-            java.time.LocalDateTime sentAt
+            java.time.LocalDateTime sentAt,
+            SignalLifecycleView lifecycle
     ) {
         public Integer confidenceScore() {
             return setupScore;
@@ -858,7 +937,8 @@ public class AlertRuleService {
             LocalDate signalDate,
             String signalPeriodLabel,
             Double closePrice,
-            java.time.LocalDateTime sentAt
+            java.time.LocalDateTime sentAt,
+            SignalLifecycleView lifecycle
     ) {
         public Integer confidenceScore() {
             return setupScore;
@@ -889,6 +969,7 @@ public class AlertRuleService {
             String signalPeriodLabel,
             Double closePrice,
             java.time.LocalDateTime sentAt,
+            SignalLifecycleView lifecycle,
             List<SignalReasonView> reasons,
             boolean reasonsAvailable
     ) {
@@ -907,6 +988,26 @@ public class AlertRuleService {
         public String confidenceExplanation() {
             return setupExplanation;
         }
+    }
+
+    public record SignalLifecycleView(
+            SignalLifecycleStatus status,
+            String label,
+            String cssClass,
+            boolean tracked,
+            boolean terminal,
+            String summary,
+            Double patternHigh,
+            Double patternLow,
+            Double confirmationTriggerPrice,
+            Double invalidationPrice,
+            Integer confirmationWindowCandles,
+            Integer resolutionCandleOffset,
+            String resolutionPeriodLabel,
+            Double resolutionClosePrice,
+            java.time.LocalDateTime updatedAt,
+            java.time.LocalDateTime followUpSentAt
+    ) {
     }
 
     public record SignalReasonView(

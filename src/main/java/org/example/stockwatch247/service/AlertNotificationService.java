@@ -1,11 +1,15 @@
 package org.example.stockwatch247.service;
 
+import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.SignalStength;
+import org.example.stockwatch247.model.enums.CongressionalTradeType;
+import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
+import org.example.stockwatch247.service.congress.CongressionalTradeStore.ClaimedDelivery;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
@@ -46,6 +50,10 @@ public class AlertNotificationService {
     }
 
     public void sendSignalEmail(AlertRule rule, DetectedSignal signal) {
+        sendSignalEmail(rule, signal, null);
+    }
+
+    public void sendSignalEmail(AlertRule rule, DetectedSignal signal, AlertEvent lifecycleEvent) {
         boolean endOfWaveC = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
                 && isElliottCorrection(signal.pattern());
         boolean endOfWaveV = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
@@ -62,7 +70,9 @@ public class AlertNotificationService {
                 ? "End of Elliott correction (wave C)"
                 : endOfWaveV
                 ? "End of Elliott impulse (wave V)"
-                : "Validated candlestick pattern (next-candle confirmation not evaluated)";
+                : lifecycleEvent != null && lifecycleEvent.isLifecycleTracked()
+                ? "Validated candlestick pattern; close-based lifecycle tracking started"
+                : "Validated candlestick pattern";
         String researchHorizonSection = CandlestickHorizonGuidance
                 .forSignal(rule.getPatternFamily(), rule.getInterval())
                 .map(guidance -> """
@@ -75,6 +85,27 @@ public class AlertNotificationService {
                         guidance.disclaimer()
                 ))
                 .orElse("");
+        String lifecycleSection = lifecycleEvent != null && lifecycleEvent.isLifecycleTracked()
+                ? """
+
+                        Lifecycle status: DETECTED
+                        Confirmation rule: a subsequent completed candle must close %s %.4f
+                        Invalidation rule: a subsequent completed candle must close %s %.4f first
+                        Observation window: %d completed %s candles
+                        Lifecycle note: DETECTED remains the original alert. One CONFIRMED, INVALIDATED, or EXPIRED follow-up will be sent.
+                        """.formatted(
+                        signal.tradeSignal() == org.example.stockwatch247.model.enums.TradeSignal.BUY
+                                ? "above"
+                                : "below",
+                        lifecycleEvent.getConfirmationTriggerPrice(),
+                        signal.tradeSignal() == org.example.stockwatch247.model.enums.TradeSignal.BUY
+                                ? "below"
+                                : "above",
+                        lifecycleEvent.getInvalidationPrice(),
+                        lifecycleEvent.getConfirmationWindowCandles(),
+                        rule.getInterval().name().toLowerCase()
+                )
+                : "";
         String body = """
                 %s technical pattern was detected for %s.
 
@@ -86,7 +117,7 @@ public class AlertNotificationService {
                 Heuristic setup score: %d/100
                 Score note: this measures technical confluence, not probability of profit.
                 Score breakdown: %s
-                Interval: %s%s
+                Interval: %s%s%s
                 Signal candle period: %s
                 Close price: %.2f
                 """.formatted(
@@ -101,6 +132,7 @@ public class AlertNotificationService {
                 signal.reasons().isEmpty() ? "not available" : String.join("; ", signal.reasons()),
                 rule.getInterval(),
                 researchHorizonSection,
+                lifecycleSection,
                 SignalPeriodFormatter.format(signal.candleTimestamp(), rule.getInterval(), signalTimeZone),
                 signal.closePrice()
         );
@@ -117,6 +149,144 @@ public class AlertNotificationService {
         message.setSubject(subject);
         message.setText(body);
         send(message);
+    }
+
+    public void sendSignalLifecycleEmail(AlertEvent event) {
+        if (event == null || !event.isLifecycleTracked()) {
+            throw new IllegalArgumentException("A tracked candlestick event is required.");
+        }
+        SignalLifecycleStatus status = event.getLifecycleStatus();
+        if (status == SignalLifecycleStatus.DETECTED) {
+            throw new IllegalArgumentException("A terminal candlestick lifecycle status is required.");
+        }
+
+        AlertRule rule = event.getAlertRule();
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        String statusLabel = status.name();
+        String outcome = switch (status) {
+            case CONFIRMED -> "The expected close-based follow-through occurred.";
+            case INVALIDATED -> "Price closed beyond the opposite pattern boundary before confirmation.";
+            case EXPIRED -> "The observation window ended without confirmation or invalidation.";
+            case DETECTED -> throw new IllegalStateException("DETECTED is not a terminal outcome.");
+        };
+        String expectedDirection = event.getTradeSignal()
+                == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "above" : "below";
+        String invalidationDirection = event.getTradeSignal()
+                == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "below" : "above";
+        String body = """
+                Candlestick lifecycle update for %s.
+
+                Status: %s
+                Outcome: %s
+                Pattern: %s
+                Direction classification: %s
+                Interval: %s
+                Original signal period: %s
+                Pattern range: %.4f to %.4f
+                Confirmation trigger: close %s %.4f
+                Invalidation boundary: close %s %.4f
+                Observation window: %d completed candles
+                Resolution candle: %s
+                Resolution candle number: %d
+                Resolution close: %.4f
+
+                This lifecycle update describes the observed price action after a detected setup.
+                It is informational and is not a recommendation, price target, or guarantee.
+                """.formatted(
+                symbol,
+                statusLabel,
+                outcome,
+                event.getPattern(),
+                event.getTradeSignal(),
+                rule.getInterval(),
+                SignalPeriodFormatter.format(
+                        event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
+                event.getPatternLow(),
+                event.getPatternHigh(),
+                expectedDirection,
+                event.getConfirmationTriggerPrice(),
+                invalidationDirection,
+                event.getInvalidationPrice(),
+                event.getConfirmationWindowCandles(),
+                SignalPeriodFormatter.format(
+                        event.getResolutionCandleTimestamp(), rule.getInterval(), signalTimeZone),
+                event.getResolutionCandleOffset(),
+                event.getResolutionClosePrice()
+        );
+
+        if (!emailEnabled) {
+            System.out.println("[EMAIL DISABLED] " + statusLabel
+                    + " lifecycle email suppressed for " + symbol + ".");
+            return;
+        }
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(rule.getUser().getEmail());
+        message.setSubject("StockWatch pattern " + statusLabel.toLowerCase()
+                + ": " + event.getPattern() + " on " + symbol);
+        message.setText(body);
+        send(message);
+    }
+
+    public void sendCongressionalTradeEmail(ClaimedDelivery delivery) {
+        String transactionLabel;
+        try {
+            transactionLabel = CongressionalTradeType.valueOf(delivery.transactionType()).getLabel();
+        } catch (IllegalArgumentException exception) {
+            transactionLabel = delivery.transactionType();
+        }
+        String subject = "StockWatch congressional "
+                + transactionLabel.toLowerCase()
+                + " disclosed: "
+                + delivery.ticker();
+        String sourceLine = delivery.sourceUrl() == null || delivery.sourceUrl().isBlank()
+                ? "Official filing link: unavailable"
+                : "Official filing: " + delivery.sourceUrl();
+        String assetLine = delivery.assetName() == null || delivery.assetName().isBlank()
+                ? ""
+                : "\nReported asset: " + delivery.assetName();
+        String body = """
+                A new congressional transaction disclosure was observed for %s.
+
+                Member: %s
+                Chamber: %s
+                Activity: %s
+                Reported value: %s
+                Transaction date: %s
+                Disclosure date: %s%s
+                %s
+
+                This alert is based on the public disclosure date, not the day the trade occurred.
+                Congressional disclosures may be filed up to 45 days after a transaction.
+                Data is provided for informational and research purposes only and is not financial advice.
+                """.formatted(
+                delivery.ticker(),
+                delivery.memberName(),
+                delivery.chamber(),
+                transactionLabel,
+                delivery.amountRange(),
+                delivery.transactionDate(),
+                delivery.disclosureDate(),
+                assetLine,
+                sourceLine);
+
+        if (!emailEnabled) {
+            System.out.println("[EMAIL DISABLED] Congressional activity email suppressed for "
+                    + delivery.ticker() + ".");
+            return;
+        }
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(delivery.recipientEmail());
+        message.setSubject(subject);
+        message.setText(body);
+        send(message);
+    }
+
+    public boolean isEmailDeliveryEnabled() {
+        return emailEnabled;
     }
 
     private String setupStrengthLabel(SignalStength strength) {

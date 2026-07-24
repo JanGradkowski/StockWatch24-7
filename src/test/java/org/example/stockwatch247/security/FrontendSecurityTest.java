@@ -126,6 +126,62 @@ class FrontendSecurityTest {
     }
 
     @Test
+    void congressionalActivityIsStockOnlyAndExplainsItsCacheAndHistoryWindow() throws IOException {
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
+
+        assertTrue(stock.contains("id=\"congressionalActivityPanel\""));
+        assertTrue(stock.contains("panel.hidden = !congressionalActivityEligible"));
+        assertTrue(stock.contains("instrumentType === 'EQUITY'"));
+        assertTrue(stock.contains("/api/congressional-activity/${encodedTicker}/state"));
+        assertTrue(stock.contains("/api/congressional-activity/${encodedTicker}/history"));
+        assertTrue(stock.contains("/api/congressional-activity/${encodedTicker}/subscription"));
+        assertTrue(stock.contains("Checking the database cache"));
+        assertTrue(stock.contains("last 365 days"));
+        assertTrue(stock.contains("never generates old email alerts"));
+        assertTrue(stock.contains("rows.replaceChildren"));
+        assertFalse(stock.contains("innerHTML"));
+
+        assertTrue(dashboard.contains("th:each=\"activity : ${congressionalActivities}\""));
+        assertTrue(dashboard.contains("th:each=\"stock : ${congressionalFollowedStocks}\""));
+        assertTrue(dashboard.contains("CongressInvests"));
+        assertTrue(dashboard.contains("up to 45 days"));
+    }
+
+    @Test
+    void dashboardSeparatesTechnicalAnalysisFromTickerAlerts() throws IOException {
+        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
+        String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
+
+        assertTrue(dashboard.contains("id=\"technicalAnalysisViewButton\""));
+        assertTrue(dashboard.contains("id=\"tickerAlertsViewButton\""));
+        assertTrue(dashboard.contains("data-dashboard-view-button=\"technical\""));
+        assertTrue(dashboard.contains("data-dashboard-view-button=\"alerts\""));
+        assertTrue(dashboard.contains("id=\"technicalDashboardMetrics\""));
+        assertTrue(dashboard.contains("id=\"tickerAlertsIntroduction\""));
+        assertTrue(dashboard.contains("id=\"congressionalActivityDashboard\""));
+        assertTrue(dashboard.contains("data-dashboard-view=\"technical\""));
+        assertTrue(dashboard.contains("data-dashboard-view=\"alerts\""));
+        assertTrue(dashboard.contains("with more ticker-level alert types able to join this view later"));
+
+        int watchDesk = dashboard.indexOf("id=\"technicalWatchDesk\"");
+        int latestSignals = dashboard.indexOf("id=\"latestTechnicalSignals\"");
+        int tickerIntroduction = dashboard.indexOf("id=\"tickerAlertsIntroduction\"");
+        int congressionalActivity = dashboard.indexOf("id=\"congressionalActivityDashboard\"");
+        assertTrue(watchDesk >= 0);
+        assertTrue(latestSignals > watchDesk);
+        assertTrue(tickerIntroduction > latestSignals);
+        assertTrue(congressionalActivity > tickerIntroduction);
+
+        assertTrue(dashboardScript.contains("function initializeDashboardViews()"));
+        assertTrue(dashboardScript.contains("activateView(\"technical\")"));
+        assertTrue(dashboardScript.contains("section.hidden = section.dataset.dashboardView !== view"));
+        assertTrue(dashboardScript.contains("view === \"alerts\""));
+        assertTrue(dashboardScript.contains("button.setAttribute(\"aria-pressed\", String(selected))"));
+        assertFalse(dashboardScript.contains("innerHTML"));
+    }
+
+    @Test
     void dashboardAndHistoryUseCompanyLevelDynamicRuleColumns() throws IOException {
         String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
         String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
@@ -141,6 +197,9 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("signal.setupScore()"));
         assertTrue(dashboard.contains("signal.signalPeriodLabel()"));
         assertTrue(dashboard.contains("signal.researchHorizonLabel()"));
+        assertTrue(dashboard.contains("<span>Status</span>"));
+        assertTrue(dashboard.contains("class=\"latest-lifecycle\""));
+        assertTrue(dashboard.contains("signal.lifecycle().label()"));
         assertTrue(dashboard.contains("data-watch-filter=\"stocks\""));
         assertTrue(dashboard.contains("data-watch-filter=\"funds\""));
         assertTrue(dashboard.contains("data-instrument-group=${company.instrumentGroup()}"));
@@ -159,11 +218,19 @@ class FrontendSecurityTest {
         assertTrue(history.contains("/alerts/signals/{id}"));
         assertTrue(history.contains("event.id()"));
         assertTrue(history.contains("event.signalPeriodLabel()"));
+        assertTrue(history.contains("signal-event-lifecycle-label"));
+        assertTrue(history.contains("event.lifecycle().label()"));
+        assertTrue(history.contains("event.lifecycle().resolutionPeriodLabel()"));
         assertFalse(history.contains("class=\"signal-table\""));
 
         assertTrue(signalDetail.contains("signal.setupScore()"));
         assertTrue(signalDetail.contains("signal.signalPeriodLabel()"));
         assertTrue(signalDetail.contains("signal.researchHorizonLabel()"));
+        assertTrue(signalDetail.contains("class=\"signal-lifecycle-timeline\""));
+        assertTrue(signalDetail.contains("signal.lifecycle().resolutionPeriodLabel()"));
+        assertTrue(signalDetail.contains("signal.lifecycle().updatedAt()"));
+        assertTrue(signalDetail.contains("Alert recorded"));
+        assertTrue(signalDetail.contains("Lifecycle processed"));
         assertTrue(signalDetail.contains("#numbers.sequence(1, 20)"));
         assertTrue(signalDetail.contains("signal.reasons()"));
         assertTrue(signalDetail.contains("reason.text()"));

@@ -27,6 +27,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -76,10 +77,12 @@ class ScheduledAlertServiceTest {
 
         service.processSymbolInterval(symbol, TimeInterval.DAILY);
 
-        verify(notificationService).sendSignalEmail(any(), any());
+        verify(notificationService).sendSignalEmail(any(), any(), any());
         ArgumentCaptor<AlertEvent> savedEvent = ArgumentCaptor.forClass(AlertEvent.class);
         verify(alertEventRepository).save(savedEvent.capture());
         assertThat(savedEvent.getValue().getConfidenceScore()).isLessThan(75);
+        assertThat(savedEvent.getValue().isLifecycleTracked()).isTrue();
+        assertThat(savedEvent.getValue().getConfirmationWindowCandles()).isEqualTo(3);
         assertThat(savedEvent.getValue().getConfidenceReasons())
                 .anyMatch(reason -> reason.startsWith("Pattern quality +"));
     }
@@ -131,7 +134,7 @@ class ScheduledAlertServiceTest {
         verify(candleRepository, never()).findBySymbolAndTimeIntervalOrderByTimestampDesc(
                 symbol, "1d", PageRequest.of(0, 299));
         verify(detectionService).detectAlertSignals(any());
-        verify(notificationService).sendSignalEmail(rule, qualifiedSignal);
+        verify(notificationService).sendSignalEmail(eq(rule), eq(qualifiedSignal), any(AlertEvent.class));
         verify(alertEventRepository).save(any());
     }
 
@@ -168,6 +171,7 @@ class ScheduledAlertServiceTest {
                 detectionService,
                 new ElliottWaveDetectionService(),
                 notificationService,
+                new CandlestickSignalLifecycleService(alertEventRepository, notificationService, 3),
                 mock(AlertCheckJobStore.class),
                 mock(AlertScheduleRecoveryService.class),
                 true,
@@ -215,7 +219,7 @@ class ScheduledAlertServiceTest {
 
         service.processSymbolInterval(symbol, TimeInterval.MONTHLY);
 
-        verify(notificationService).sendSignalEmail(any(), any());
+        verify(notificationService).sendSignalEmail(any(), any(), any());
         verify(alertEventRepository).save(any());
     }
 
@@ -244,7 +248,7 @@ class ScheduledAlertServiceTest {
                 alertRuleRepository, alertEventRepository, candleRepository, marketDataService, notificationService);
         service.processSymbolInterval(symbol, TimeInterval.WEEKLY);
 
-        verify(notificationService).sendSignalEmail(any(), any());
+        verify(notificationService).sendSignalEmail(any(), any(), any());
         verify(alertEventRepository).save(any());
     }
 
@@ -271,7 +275,7 @@ class ScheduledAlertServiceTest {
                 alertRuleRepository, alertEventRepository, candleRepository, marketDataService, notificationService);
         service.processSymbolInterval(symbol, TimeInterval.MONTHLY);
 
-        verify(notificationService).sendSignalEmail(any(), any());
+        verify(notificationService).sendSignalEmail(any(), any(), any());
         verify(alertEventRepository).save(any());
     }
 
@@ -302,7 +306,7 @@ class ScheduledAlertServiceTest {
 
         verify(elliottWaveDetectionService).detectAlertSignals(any());
         verify(elliottWaveDetectionService, never()).detect(any());
-        verify(notificationService, never()).sendSignalEmail(any(), any());
+        verify(notificationService, never()).sendSignalEmail(any(), any(), any());
         verify(alertEventRepository, never()).save(any());
     }
 
@@ -342,7 +346,7 @@ class ScheduledAlertServiceTest {
 
         service.processSymbolInterval(symbol, TimeInterval.MONTHLY);
 
-        verify(notificationService).sendSignalEmail(rule, truncatedFifth);
+        verify(notificationService).sendSignalEmail(eq(rule), eq(truncatedFifth), any(AlertEvent.class));
         ArgumentCaptor<AlertEvent> savedEvent = ArgumentCaptor.forClass(AlertEvent.class);
         verify(alertEventRepository).save(savedEvent.capture());
         assertThat(savedEvent.getValue().getPattern())
@@ -374,6 +378,7 @@ class ScheduledAlertServiceTest {
                 new CandlePatternDetectionService(),
                 elliottWaveDetectionService,
                 notificationService,
+                new CandlestickSignalLifecycleService(alertEventRepository, notificationService, 3),
                 mock(AlertCheckJobStore.class),
                 mock(AlertScheduleRecoveryService.class),
                 true,
@@ -401,6 +406,7 @@ class ScheduledAlertServiceTest {
                 detectionService,
                 elliottWaveDetectionService,
                 notificationService,
+                new CandlestickSignalLifecycleService(alertEventRepository, notificationService, 3),
                 mock(AlertCheckJobStore.class),
                 mock(AlertScheduleRecoveryService.class),
                 true,

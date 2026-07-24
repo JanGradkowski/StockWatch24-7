@@ -7,6 +7,7 @@ import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
@@ -97,6 +98,55 @@ class StockWatch247ApplicationTests {
                         .contentType("application/json")
                         .content("{\"changes\":[{\"interval\":\"DAILY\",\"signal\":\"BUY\",\"active\":true}]}"))
                 .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/congressional-activity/AAPL/subscription")
+                        .with(user("security-test@example.com"))
+                        .contentType("application/json")
+                        .content("{\"active\":true}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @Transactional
+    void congressionalActivityStateIsAvailableForStocksAndRejectedForFunds() throws Exception {
+        String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
+        String email = "congress-state-" + suffix.toLowerCase() + "@example.com";
+        User userEntity = new User();
+        userEntity.setEmail(email);
+        userEntity.setPasswordHash("test-only-password-hash");
+        userEntity.setFirstName("Congress");
+        userEntity.setLastName("State");
+        userEntity.setVerified(true);
+        userRepository.save(userEntity);
+
+        StockAsset equity = new StockAsset();
+        equity.setTickerSymbol("C" + suffix);
+        equity.setCompanyName("Congress State Equity");
+        equity.setExchange("NASDAQ");
+        equity.setCurrency("USD");
+        equity.setInstrumentType(InstrumentType.EQUITY);
+        stockAssetRepository.save(equity);
+
+        StockAsset etf = new StockAsset();
+        etf.setTickerSymbol("F" + suffix);
+        etf.setCompanyName("Congress State ETF");
+        etf.setExchange("NYSE");
+        etf.setCurrency("USD");
+        etf.setInstrumentType(InstrumentType.ETF);
+        stockAssetRepository.save(etf);
+
+        mockMvc.perform(get("/api/congressional-activity/{symbol}/state", equity.getTickerSymbol())
+                        .with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eligible").value(true))
+                .andExpect(jsonPath("$.following").value(false))
+                .andExpect(jsonPath("$.historyDays").value(365))
+                .andExpect(jsonPath("$.relevanceNotice", containsString("last 365 days")))
+                .andExpect(jsonPath("$.alertBaselineNotice", containsString("never generates old email alerts")));
+
+        mockMvc.perform(get("/api/congressional-activity/{symbol}/state", etf.getTickerSymbol())
+                        .with(user(email)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -215,7 +265,18 @@ class StockWatch247ApplicationTests {
                 "volume is at least 20% above its 20-period average"
         ));
         event.setClosePrice(19.42);
-        event.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
+        event.setSentAt(LocalDateTime.of(2026, 7, 17, 22, 15));
+        event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+        event.setPatternHigh(20.0);
+        event.setPatternLow(18.0);
+        event.setConfirmationTriggerPrice(20.0);
+        event.setInvalidationPrice(18.0);
+        event.setConfirmationWindowCandles(3);
+        event.setResolutionCandleTimestamp(Instant.parse("2026-07-20T00:00:00Z").getEpochSecond());
+        event.setResolutionCandleOffset(1);
+        event.setResolutionClosePrice(20.75);
+        event.setLifecycleUpdatedAt(LocalDateTime.of(2026, 7, 24, 22, 15));
+        event.setFollowUpSentAt(LocalDateTime.of(2026, 7, 24, 22, 16));
         event = alertEventRepository.save(event);
 
         mockMvc.perform(get("/home").with(user(email)))
@@ -235,6 +296,8 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Latest signals")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
                 .andExpect(content().string(containsString("13\u201317 Jul 2026")))
+                .andExpect(content().string(containsString("Lifecycle status")))
+                .andExpect(content().string(containsString("Confirmed")))
                 .andExpect(content().string(containsString("Setup score 88 out of 100")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 
@@ -245,6 +308,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Candlestick")))
                 .andExpect(content().string(containsString("Elliott Wave")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
+                .andExpect(content().string(containsString("Lifecycle status")))
+                .andExpect(content().string(containsString("Resolved 20\u201324 Jul 2026")))
+                .andExpect(content().string(containsString("Confirmed")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 
         mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email)))
@@ -252,6 +318,13 @@ class StockWatch247ApplicationTests {
                 .andExpect(view().name("signal-detail"))
                 .andExpect(model().attributeExists("signal"))
                 .andExpect(content().string(containsString("Why this score")))
+                .andExpect(content().string(containsString("Signal lifecycle timeline")))
+                .andExpect(content().string(containsString("Detection")))
+                .andExpect(content().string(containsString("Detected")))
+                .andExpect(content().string(containsString("Terminal update")))
+                .andExpect(content().string(containsString("Confirmed")))
+                .andExpect(content().string(containsString("20\u201324 Jul 2026")))
+                .andExpect(content().string(containsString("Lifecycle processed")))
                 .andExpect(content().string(containsString("Setup score 88 out of 100")))
                 .andExpect(content().string(containsString("strict bullish candle-pattern geometry")))
                 .andExpect(content().string(containsString("RSI is rising versus the previous candle")))
