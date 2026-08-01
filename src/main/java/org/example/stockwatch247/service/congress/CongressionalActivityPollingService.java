@@ -102,6 +102,8 @@ public class CongressionalActivityPollingService {
                 trackedAssets.putIfAbsent(asset.getTickerSymbol().toUpperCase(Locale.ROOT), asset);
             }
 
+            log.info("Congressional activity check started for {} followed stock(s).",
+                    trackedAssets.size());
             var batch = provider.fetchRecentTrades();
             LocalDate earliest = LocalDate.now(ZoneOffset.UTC).minusDays(historyDays - 1L);
             Map<Long, List<ProviderTrade>> tradesByAsset = new LinkedHashMap<>();
@@ -130,10 +132,9 @@ public class CongressionalActivityPollingService {
             tradeStore.completePendingBaselines(
                     trackedAssets.values().stream().map(StockAsset::getId).toList());
             tradeStore.completeProviderPoll(provider.providerName(), pollOwner);
-            if (insertedTradeCount > 0 || deliveries > 0) {
-                log.info("Congressional activity poll stored {} new trades and queued {} user deliveries.",
-                        insertedTradeCount, deliveries);
-            }
+            log.info("Congressional activity check completed for {} followed stock(s): "
+                            + "{} new disclosure(s) stored and {} user notification(s) queued.",
+                    trackedAssets.size(), insertedTradeCount, deliveries);
         } catch (RuntimeException exception) {
             tradeStore.failProviderPoll(provider.providerName(), pollOwner, exception);
             log.warn("Congressional activity poll could not be completed: {}",

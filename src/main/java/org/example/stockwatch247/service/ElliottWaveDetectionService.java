@@ -15,6 +15,7 @@ import java.util.Map;
 
 @Service
 public class ElliottWaveDetectionService {
+    public static final String SETUP_SCORE_VERSION = "ELLIOTT_V1";
     private static final int MIN_CANDLES = 34;
     private static final int MIN_CONFIDENCE = 75;
     private static final int HIGH_CONFIDENCE = 85;
@@ -254,7 +255,12 @@ public class ElliottWaveDetectionService {
         if (previous.close() > breakoutLevel) {
             evidence.reasons().add("breakout remains active on the latest candle with bullish follow-through");
         }
-        return java.util.Optional.of(signal(CandlePattern.ELLIOTT_BULLISH_IMPULSE, TradeSignal.BUY, current, evidence));
+        return java.util.Optional.of(signal(
+                CandlePattern.ELLIOTT_BULLISH_IMPULSE,
+                TradeSignal.BUY,
+                current,
+                evidence
+        ));
     }
 
     private java.util.Optional<DetectedSignal> detectBearishImpulse(List<EnrichedCandle> candles,
@@ -286,7 +292,12 @@ public class ElliottWaveDetectionService {
         if (previous.close() < breakdownLevel) {
             evidence.reasons().add("breakdown remains active on the latest candle with bearish follow-through");
         }
-        return java.util.Optional.of(signal(CandlePattern.ELLIOTT_BEARISH_IMPULSE, TradeSignal.SELL, current, evidence));
+        return java.util.Optional.of(signal(
+                CandlePattern.ELLIOTT_BEARISH_IMPULSE,
+                TradeSignal.SELL,
+                current,
+                evidence
+        ));
     }
 
     private java.util.Optional<DetectedSignal> detectBullishWaveVEnd(List<EnrichedCandle> candles,
@@ -313,7 +324,10 @@ public class ElliottWaveDetectionService {
         return java.util.Optional.of(signal(
                 truncated ? CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END
                         : CandlePattern.ELLIOTT_BULLISH_WAVE_V_END,
-                TradeSignal.SELL, current, evidence));
+                TradeSignal.SELL,
+                current,
+                evidence
+        ));
     }
 
     private java.util.Optional<DetectedSignal> detectBearishWaveVEnd(List<EnrichedCandle> candles,
@@ -340,7 +354,10 @@ public class ElliottWaveDetectionService {
         return java.util.Optional.of(signal(
                 truncated ? CandlePattern.ELLIOTT_BEARISH_TRUNCATED_WAVE_V_END
                         : CandlePattern.ELLIOTT_BEARISH_WAVE_V_END,
-                TradeSignal.BUY, current, evidence));
+                TradeSignal.BUY,
+                current,
+                evidence
+        ));
     }
 
     private java.util.Optional<DetectedSignal> detectBullishCorrection(List<EnrichedCandle> candles,
@@ -378,7 +395,11 @@ public class ElliottWaveDetectionService {
         evidence.reasons().add("bullish five-wave structure completed before distinct A, B and C correction legs");
         evidence.reasons().add("wave C ended with a current close back above the previous candle high");
         return java.util.Optional.of(signal(
-                bullishCorrectionPattern(correction.variant()), TradeSignal.BUY, current, evidence));
+                bullishCorrectionPattern(correction.variant()),
+                TradeSignal.BUY,
+                current,
+                evidence
+        ));
     }
 
     private java.util.Optional<DetectedSignal> detectBearishCorrection(List<EnrichedCandle> candles,
@@ -416,7 +437,11 @@ public class ElliottWaveDetectionService {
         evidence.reasons().add("bearish five-wave structure completed before distinct A, B and C correction legs");
         evidence.reasons().add("wave C ended with a current close back below the previous candle low");
         return java.util.Optional.of(signal(
-                bearishCorrectionPattern(correction.variant()), TradeSignal.SELL, current, evidence));
+                bearishCorrectionPattern(correction.variant()),
+                TradeSignal.SELL,
+                current,
+                evidence
+        ));
     }
 
     private boolean isCurrentBullishBreakout(List<EnrichedCandle> candles, Pivot wave4, double breakoutLevel) {
@@ -639,17 +664,17 @@ public class ElliottWaveDetectionService {
                     "running-flat geometry is rare; confidence reduced by " + RUNNING_FLAT_PENALTY + " points");
         }
         if (bullish) {
-            if (isAvailable(current.ema20()) && current.close() > current.ema20()) {
+            if (isAvailable(current.fastEma()) && current.close() > current.fastEma()) {
                 evidence.add(7, "close is above the 20-period EMA after the correction");
             }
-            if (isAvailable(current.rsi14()) && current.rsi14() >= 40 && current.rsi14() <= 68) {
+            if (isAvailable(current.rsi()) && current.rsi() >= 40 && current.rsi() <= 68) {
                 evidence.add(5, "RSI supports a bullish rebound without extreme overbought pressure");
             }
         } else {
-            if (isAvailable(current.ema20()) && current.close() < current.ema20()) {
+            if (isAvailable(current.fastEma()) && current.close() < current.fastEma()) {
                 evidence.add(7, "close is below the 20-period EMA after the correction");
             }
-            if (isAvailable(current.rsi14()) && current.rsi14() <= 60 && current.rsi14() >= 32) {
+            if (isAvailable(current.rsi()) && current.rsi() <= 60 && current.rsi() >= 32) {
                 evidence.add(5, "RSI supports a bearish continuation without extreme oversold pressure");
             }
         }
@@ -733,13 +758,13 @@ public class ElliottWaveDetectionService {
     }
 
     private void addBullishContext(WaveEvidence evidence, List<EnrichedCandle> candles, EnrichedCandle current) {
-        if (isAvailable(current.ema20()) && current.close() > current.ema20()) {
+        if (isAvailable(current.fastEma()) && current.close() > current.fastEma()) {
             evidence.add(7, "close is above the 20-period EMA");
         }
         if (emaRising(candles)) {
             evidence.add(5, "20-period EMA is rising");
         }
-        if (isAvailable(current.rsi14()) && current.rsi14() >= 45 && current.rsi14() <= 72) {
+        if (isAvailable(current.rsi()) && current.rsi() >= 45 && current.rsi() <= 72) {
             evidence.add(5, "RSI confirms bullish momentum without extreme overbought pressure");
         }
         if (isVolumeSurge(current)) {
@@ -748,13 +773,13 @@ public class ElliottWaveDetectionService {
     }
 
     private void addBearishContext(WaveEvidence evidence, List<EnrichedCandle> candles, EnrichedCandle current) {
-        if (isAvailable(current.ema20()) && current.close() < current.ema20()) {
+        if (isAvailable(current.fastEma()) && current.close() < current.fastEma()) {
             evidence.add(7, "close is below the 20-period EMA");
         }
         if (emaFalling(candles)) {
             evidence.add(5, "20-period EMA is falling");
         }
-        if (isAvailable(current.rsi14()) && current.rsi14() <= 55 && current.rsi14() >= 28) {
+        if (isAvailable(current.rsi()) && current.rsi() <= 55 && current.rsi() >= 28) {
             evidence.add(5, "RSI confirms bearish momentum without extreme oversold pressure");
         }
         if (isVolumeSurge(current)) {
@@ -1490,8 +1515,8 @@ public class ElliottWaveDetectionService {
 
     private double reversalAmount(List<EnrichedCandle> candles, int index, double sensitivity) {
         EnrichedCandle candle = candles.get(index);
-        double volatility = isAvailable(candle.atr14()) && candle.atr14() > 0.0
-                ? candle.atr14()
+        double volatility = isAvailable(candle.atr()) && candle.atr() > 0.0
+                ? candle.atr()
                 : averageTrueRange(candles, Math.max(0, index - 13), index);
         double percentageFloor = Math.abs(candle.close()) * 0.0125 * sensitivity;
         return Math.max(volatility * sensitivity, percentageFloor);
@@ -1507,8 +1532,8 @@ public class ElliottWaveDetectionService {
         int count = 0;
         for (int index = from; index <= to; index++) {
             EnrichedCandle candle = candles.get(index);
-            if (isAvailable(candle.atr14()) && candle.atr14() > 0.0) {
-                total += candle.atr14();
+            if (isAvailable(candle.atr()) && candle.atr() > 0.0) {
+                total += candle.atr();
             } else {
                 double trueRange = candle.high() - candle.low();
                 if (index > 0) {
@@ -1579,7 +1604,9 @@ public class ElliottWaveDetectionService {
         }
         EnrichedCandle current = candles.get(candles.size() - 1);
         EnrichedCandle previous = candles.get(candles.size() - 4);
-        return isAvailable(current.ema20()) && isAvailable(previous.ema20()) && current.ema20() > previous.ema20();
+        return isAvailable(current.fastEma())
+                && isAvailable(previous.fastEma())
+                && current.fastEma() > previous.fastEma();
     }
 
     private boolean emaFalling(List<EnrichedCandle> candles) {
@@ -1588,11 +1615,13 @@ public class ElliottWaveDetectionService {
         }
         EnrichedCandle current = candles.get(candles.size() - 1);
         EnrichedCandle previous = candles.get(candles.size() - 4);
-        return isAvailable(current.ema20()) && isAvailable(previous.ema20()) && current.ema20() < previous.ema20();
+        return isAvailable(current.fastEma())
+                && isAvailable(previous.fastEma())
+                && current.fastEma() < previous.fastEma();
     }
 
     private boolean isVolumeSurge(EnrichedCandle candle) {
-        return isAvailable(candle.averageVolume20()) && candle.volume() > candle.averageVolume20() * 1.2;
+        return isAvailable(candle.averageVolume()) && candle.volume() > candle.averageVolume() * 1.2;
     }
 
     private boolean hasCompleteData(EnrichedCandle candle) {

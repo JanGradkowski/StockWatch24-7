@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
   <script th:src="@{/js/dashboard.js}" defer></script>
 </head>
@@ -45,7 +46,7 @@
               class="dashboard-view-tab"
               data-dashboard-view-button="alerts"
               aria-pressed="false"
-              aria-controls="tickerAlertsIntroduction congressionalActivityDashboard">
+              aria-controls="tickerAlertsIntroduction latestTickerNotifications congressionalActivityDashboard insiderActivityDashboard">
         <span>Ticker alerts</span>
         <small>Filings and company activity</small>
       </button>
@@ -249,7 +250,7 @@
               </div>
               <div class="latest-confidence"
                    th:classappend="${' ' + signal.setupBand()}"
-                   th:attr="aria-label=${signal.setupScore() != null ? 'Setup score ' + signal.setupScore() + ' out of 100' : 'Setup score unavailable'}">
+                   th:attr="aria-label=${signal.setupScore() != null ? 'Setup score ' + signal.setupScore() + ' out of 100; model ' + signal.scoreVersion() : 'Setup score unavailable'},title=${'Score model: ' + signal.scoreVersion()}">
                 <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
                 <span th:text="${signal.setupScore() != null ? '/100' : 'N/A'}">/100</span>
               </div>
@@ -267,12 +268,88 @@
         <div>
           <div class="panel-kicker">Company-event monitoring</div>
           <h2 id="ticker-alerts-view-heading">Ticker alerts</h2>
-          <p>Follow material activity tied to a company without mixing it into technical chart signals. Congressional disclosures are the first source, with more ticker-level alert types able to join this view later.</p>
+          <p>Follow material company activity without mixing it into technical chart signals. Congressional disclosures and corporate insider filings are monitored as distinct, explainable sources.</p>
         </div>
-        <div class="ticker-alerts-summary">
-          <span>Congress follows</span>
-          <strong th:text="${congressionalFollowedCount}">0</strong>
-          <small>Stocks watched for new public disclosures</small>
+        <div class="ticker-alerts-summary-grid">
+          <div class="ticker-alerts-summary">
+            <span>Congress follows</span>
+            <strong th:text="${congressionalFollowedCount}">0</strong>
+            <small>Stocks watched for public disclosures</small>
+          </div>
+          <div class="ticker-alerts-summary insider">
+            <span>Insider follows</span>
+            <strong th:text="${insiderFollowedCount}">0</strong>
+            <small>Stocks checked daily for SEC filings</small>
+          </div>
+        </div>
+      </section>
+
+      <section id="latestTickerNotifications"
+               class="glass-panel dashboard-panel latest-signals-panel ticker-notifications-panel"
+               data-dashboard-view="alerts"
+               hidden
+               aria-labelledby="latest-ticker-notifications-heading">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker">Fresh from followed company events</div>
+            <h2 id="latest-ticker-notifications-heading" class="panel-title">
+              Latest notifications
+              <span class="panel-count" th:text="${#lists.size(latestTickerNotifications)}">0</span>
+            </h2>
+          </div>
+          <span class="panel-meta">Congressional disclosures and insider filings</span>
+        </div>
+
+        <div th:if="${#lists.isEmpty(latestTickerNotifications)}"
+             class="latest-signals-empty">
+          <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
+          <div>
+            <h3>No ticker notifications yet</h3>
+            <p>Follow congressional or insider activity from a stock workspace. Newly observed filings will appear here without being mixed into technical signals.</p>
+          </div>
+        </div>
+
+        <div th:if="${!#lists.isEmpty(latestTickerNotifications)}"
+             class="ticker-notification-list">
+          <article th:each="notification : ${latestTickerNotifications}"
+                   class="ticker-notification-row">
+            <div class="ticker-notification-source"
+                 th:classappend="${notification.source() == 'INSIDER'} ? ' insider' : ' congressional'">
+              <span th:text="${notification.sourceLabel()}">Corporate insider</span>
+              <strong th:text="${notification.symbol()}">AAPL</strong>
+            </div>
+            <div class="ticker-notification-actor">
+              <strong th:text="${notification.actorName()}">Reporting person</strong>
+              <span th:text="${notification.actorRole() != null ? notification.actorRole() : notification.companyName()}">Officer</span>
+            </div>
+            <div class="ticker-notification-activity">
+              <span class="congressional-history-type"
+                    th:classappend="${notification.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'"
+                    th:text="${notification.transactionTypeLabel()}">Purchase</span>
+              <strong th:text="${notification.amountLabel()}">$25,000</strong>
+            </div>
+            <div class="ticker-notification-return">
+              <span>Directional return</span>
+              <strong th:if="${notification.returnPercent() != null}"
+                      th:classappend="${notification.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
+                      th:text="${(notification.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(notification.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
+              <strong th:unless="${notification.returnPercent() != null}" class="unavailable">Not applicable</strong>
+              <small th:if="${notification.returnAsOf() != null}"
+                     th:text="${'through ' + #temporals.format(notification.returnAsOf(), 'dd MMM yyyy')}">through 01 Jan 2026</small>
+            </div>
+            <div class="ticker-notification-dates">
+              <span>Traded <time th:text="${#temporals.format(notification.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time></span>
+              <span>Filed <time th:text="${#temporals.format(notification.filingDate(), 'dd MMM yyyy')}">02 Jan 2026</time></span>
+            </div>
+            <div class="congressional-row-actions">
+              <span class="congressional-delivery-status" th:text="${notification.deliveryStatus()}">Email sent</span>
+              <a th:href="@{/stock/{symbol}(symbol=${notification.symbol()})}">Open stock</a>
+              <a th:if="${notification.sourceUrl() != null}"
+                 th:href="${notification.sourceUrl()}"
+                 target="_blank"
+                 rel="noopener noreferrer">Official filing</a>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -361,6 +438,103 @@
           <a href="https://congressinvests.com/" target="_blank" rel="noopener noreferrer">CongressInvests</a>
           from public House and Senate filings. Disclosures can arrive up to 45 days after a transaction.
           Informational only, not financial advice.
+        </p>
+      </section>
+
+      <section id="insiderActivityDashboard"
+               class="glass-panel dashboard-panel congressional-dashboard-panel insider-dashboard-panel"
+               data-dashboard-view="alerts"
+               hidden
+               aria-labelledby="insider-dashboard-heading">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker">SEC corporate filing monitor</div>
+            <h2 id="insider-dashboard-heading" class="panel-title">
+              Corporate insider activity
+              <span class="panel-count" th:text="${#lists.size(insiderActivities)}">0</span>
+            </h2>
+          </div>
+          <span class="panel-meta">Daily checks · Open-market purchases and sales</span>
+        </div>
+
+        <div th:if="${!#lists.isEmpty(insiderFollowedStocks)}"
+             class="congressional-follow-strip insider-follow-strip"
+             aria-label="Stocks followed for insider filings">
+          <span class="congressional-follow-label">Following</span>
+          <a th:each="stock : ${insiderFollowedStocks}"
+             th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"
+             class="congressional-follow-chip">
+            <strong th:text="${stock.symbol()}">AAPL</strong>
+            <span th:if="${stock.baselinePending()}">baseline pending</span>
+          </a>
+        </div>
+
+        <div th:if="${#lists.isEmpty(insiderActivities)}"
+             class="latest-signals-empty congressional-empty">
+          <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
+          <div>
+            <h3>No new followed insider filings yet</h3>
+            <p th:if="${#lists.isEmpty(insiderFollowedStocks)}">
+              Open a stock and follow corporate insider activity to monitor newly filed purchases and sales.
+            </p>
+            <p th:unless="${#lists.isEmpty(insiderFollowedStocks)}">
+              Daily checks are active. New filings observed after each baseline was established will appear here and be sent by email.
+            </p>
+          </div>
+        </div>
+
+        <div th:if="${!#lists.isEmpty(insiderActivities)}"
+             class="congressional-dashboard-list">
+          <article th:each="activity : ${insiderActivities}"
+                   class="congressional-dashboard-row insider-dashboard-row">
+            <div class="congressional-activity-direction"
+                 th:classappend="${activity.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'">
+              <span th:text="${activity.transactionTypeLabel()}">Purchase</span>
+              <strong th:text="${activity.symbol()}">AAPL</strong>
+            </div>
+            <div class="congressional-member">
+              <strong th:text="${activity.insiderName()}">Insider name</strong>
+              <span th:text="${activity.ownerRole() != null ? activity.ownerRole() : 'Role not reported'}">Director</span>
+            </div>
+            <div class="congressional-value">
+              <span>Filed trade</span>
+              <strong th:if="${activity.transactionValue() != null}"
+                      th:text="${'$' + #numbers.formatDecimal(activity.transactionValue(), 1, 0)}">$25,000</strong>
+              <strong th:unless="${activity.transactionValue() != null}">Value unavailable</strong>
+            </div>
+            <div class="insider-dashboard-return">
+              <span>Directional return</span>
+              <strong th:if="${activity.returnPercent() != null}"
+                      th:classappend="${activity.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
+                      th:text="${(activity.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(activity.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
+              <strong th:unless="${activity.returnPercent() != null}" class="unavailable">Awaiting price data</strong>
+              <small th:if="${activity.returnAsOf() != null}"
+                     th:text="${'through ' + #temporals.format(activity.returnAsOf(), 'dd MMM yyyy')}">through 01 Jan 2026</small>
+            </div>
+            <div class="congressional-dates">
+              <span>Traded <time th:text="${#temporals.format(activity.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time></span>
+              <span>Filed <time th:text="${#temporals.format(activity.filingDate(), 'dd MMM yyyy')}">02 Jan 2026</time></span>
+            </div>
+            <div class="congressional-row-actions">
+              <span class="congressional-delivery-status" th:text="${activity.deliveryStatus()}">Email sent</span>
+              <a th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}">Open stock</a>
+              <a th:if="${activity.sourceUrl() != null}"
+                 th:href="${activity.sourceUrl()}"
+                 target="_blank"
+                 rel="noopener noreferrer">SEC filing</a>
+            </div>
+          </article>
+        </div>
+
+        <p class="congressional-dashboard-note">
+          Insider filings are sourced through
+          <a href="https://api-ninjas.com/api/insidertrading"
+             target="_blank"
+             rel="noopener noreferrer">API Ninjas</a>.
+          Each free-tier check merges the 10 latest rows into StockWatch's accumulated archive;
+          larger bursts between daily checks can still be missed.
+          Directional return measures a purchase rising or a sale being followed by a decline, from the filed price to the latest completed close.
+          It is not a realized return or a recommendation.
         </p>
       </section>
     </div>

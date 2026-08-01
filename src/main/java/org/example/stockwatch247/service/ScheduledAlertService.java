@@ -13,6 +13,7 @@ import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -47,6 +48,7 @@ public class ScheduledAlertService {
     private final Duration retryDelay;
     private final int maximumAttempts;
 
+    @Autowired
     public ScheduledAlertService(AlertRuleRepository alertRuleRepository,
                                  AlertEventRepository alertEventRepository,
                                  CandleRepository candleRepository,
@@ -179,9 +181,16 @@ public class ScheduledAlertService {
         }
 
         int signalCandleCount = signalCandleCount(interval);
+        int requiredHistory = enrichmentService.requiredInputCandles(signalCandleCount, interval);
+        if (isElliottEnabled(interval)) {
+            requiredHistory = Math.max(
+                    requiredHistory,
+                    enrichmentService.requiredElliottInputCandles(signalCandleCount, interval)
+            );
+        }
         PageRequest historyWindow = PageRequest.of(
                 0,
-                enrichmentService.requiredInputCandles(signalCandleCount)
+                requiredHistory
         );
         List<Candle> storedCandles = scheduledFor == null
                 ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
@@ -211,8 +220,13 @@ public class ScheduledAlertService {
             return;
         }
 
-        List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(candles, signalCandleCount);
-        List<DetectedSignal> detectedSignals = detectSignals(enrichedCandles, interval);
+        List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(candles, signalCandleCount, interval);
+        List<DetectedSignal> detectedSignals = detectSignals(
+                candles,
+                enrichedCandles,
+                signalCandleCount,
+                interval
+        );
         if (detectedSignals.isEmpty()) {
             return;
         }
@@ -235,6 +249,7 @@ public class ScheduledAlertService {
         event.setSignalCandleTimestamp(signal.candleTimestamp());
         event.setSignalStrength(signal.strength());
         event.setConfidenceScore(signal.confidenceScore());
+        event.setScoreVersion(scoreVersion(signal));
         event.setConfidenceReasons(signal.reasons());
         event.setClosePrice(signal.closePrice());
         if (signalFamily(signal) == AlertPatternFamily.CANDLESTICK) {
@@ -253,13 +268,21 @@ public class ScheduledAlertService {
         };
     }
 
-    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles,
+    private List<DetectedSignal> detectSignals(List<Candle> candles,
+                                               List<EnrichedCandle> candlestickCandles,
+                                               int signalCandleCount,
                                                TimeInterval interval) {
-        List<DetectedSignal> signals = new java.util.ArrayList<>(
-                detectionService.detectAlertSignals(enrichedCandles)
-        );
+        List<DetectedSignal> candlestickSignals = detectionService.detectAlertSignals(candlestickCandles);
+        List<EnrichedCandle> elliottCandles = isElliottEnabled(interval)
+                ? enrichmentService.enrichForElliott(
+                    candles,
+                    signalCandleCount,
+                    interval
+                )
+                : List.of();
+        List<DetectedSignal> signals = new java.util.ArrayList<>(candlestickSignals);
         if (isElliottEnabled(interval)) {
-            signals.addAll(elliottWaveDetectionService.detectAlertSignals(enrichedCandles).stream()
+            signals.addAll(elliottWaveDetectionService.detectAlertSignals(elliottCandles).stream()
                     .filter(this::isActionableElliottTurningPoint)
                     .toList());
         }
@@ -285,6 +308,12 @@ public class ScheduledAlertService {
 
     private boolean isElliottPattern(CandlePattern pattern) {
         return pattern != null && pattern.name().startsWith("ELLIOTT_");
+    }
+
+    private String scoreVersion(DetectedSignal signal) {
+        return isElliottPattern(signal.pattern())
+                ? ElliottWaveDetectionService.SETUP_SCORE_VERSION
+                : CandlePatternDetectionService.SETUP_SCORE_VERSION;
     }
 
     private boolean isActionableElliottTurningPoint(DetectedSignal signal) {

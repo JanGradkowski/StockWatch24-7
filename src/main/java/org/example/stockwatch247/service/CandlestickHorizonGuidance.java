@@ -23,22 +23,22 @@ public final class CandlestickHorizonGuidance {
 
         return switch (interval) {
             case DAILY -> Optional.of(new Guidance(
-                    "10\u201330 trading sessions",
-                    "Historical testing was most informative over roughly 10\u201330 trading sessions. "
-                            + "Ten sessions is the primary directional calibration window; "
-                            + "20\u201330 sessions capture slower follow-through.",
+                    "10 trading sessions",
+                    "The current V4 diagnostic measures daily outcomes after 10 trading sessions. "
+                            + "This is a fixed research measurement window, not evidence that the "
+                            + "experimental score predicts returns.",
                     DISCLAIMER
             ));
             case WEEKLY -> Optional.of(new Guidance(
-                    "8\u201312 weeks",
-                    "The calibrated setup score separated historical outcomes most clearly over "
-                            + "8\u201312 weeks; the 4-week result was less useful.",
+                    "4, 8, and 12 weeks",
+                    "V4 is reported at 4-, 8-, and 12-week research windows. The score ordering "
+                            + "was not stable across all three windows and top-score samples were small.",
                     DISCLAIMER
             ));
             case MONTHLY -> Optional.of(new Guidance(
-                    "About 6 months",
-                    "Six months is the primary research horizon. The 3-month result was weak, "
-                            + "while the 9-month result is preliminary because it has too few actionable observations.",
+                    "3, 6, and 9 months",
+                    "V4 is reported at 3-, 6-, and 9-month research windows. Monthly validation "
+                            + "is exploratory because the sample is small and aggregate results were weak.",
                     DISCLAIMER
             ));
             default -> Optional.empty();

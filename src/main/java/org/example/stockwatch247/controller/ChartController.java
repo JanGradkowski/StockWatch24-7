@@ -2,6 +2,7 @@ package org.example.stockwatch247.controller;
 
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
+import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/stocks")
@@ -80,6 +82,9 @@ public class ChartController {
         if (!"1wk".equals(validatedInterval) && !"1mo".equals(validatedInterval)) {
             throw new IllegalArgumentException("Elliott Wave overlays require a weekly or monthly interval.");
         }
+        TimeInterval waveInterval = "1wk".equals(validatedInterval)
+                ? TimeInterval.WEEKLY
+                : TimeInterval.MONTHLY;
 
         MarketDataService.CandleSyncResult syncResult = marketDataService.syncCandles(symbol, validatedInterval, null);
         if (!syncResult.successful()) {
@@ -89,10 +94,22 @@ public class ChartController {
                 .findBySymbolAndTimeIntervalOrderByTimestampDesc(
                         symbol,
                         validatedInterval,
-                        PageRequest.of(0, enrichmentService.requiredInputCandles(LATEST_WAVE_CANDLES))
+                        PageRequest.of(
+                                0,
+                                enrichmentService.requiredElliottInputCandles(
+                                        LATEST_WAVE_CANDLES,
+                                        waveInterval
+                                )
+                        )
                 );
         var structure = elliottWaveDetectionService
-                .findLatestWaveStructure(enrichmentService.enrich(candles, LATEST_WAVE_CANDLES));
+                .findLatestWaveStructure(
+                        enrichmentService.enrichForElliott(
+                                candles,
+                                LATEST_WAVE_CANDLES,
+                                waveInterval
+                        )
+                );
         if (structure.isEmpty()) {
             return new ElliottWaveOverlay(validatedInterval, labelStyle(validatedInterval), "none", null,
                     false, List.of(), null, 0, 0.0, false, 0.0, 0.0,
@@ -138,12 +155,21 @@ public class ChartController {
         if (!"1wk".equals(validatedInterval) && !"1mo".equals(validatedInterval)) {
             throw new IllegalArgumentException("Historical Elliott Waves require a weekly or monthly interval.");
         }
+        TimeInterval waveInterval = "1wk".equals(validatedInterval)
+                ? TimeInterval.WEEKLY
+                : TimeInterval.MONTHLY;
         List<Candle> candles = from == null
                 ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval)
                 : candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
                         symbol, validatedInterval, from);
         List<ElliottWaveOverlay> structures = elliottWaveDetectionService
-                .findHistoricalWaveStructures(enrichmentService.enrich(candles, candles.size()))
+                .findHistoricalWaveStructures(
+                        enrichmentService.enrichForElliott(
+                                candles,
+                                candles.size(),
+                                waveInterval
+                        )
+                )
                 .stream()
                 .map(structure -> new ElliottWaveOverlay(
                         validatedInterval,
@@ -193,7 +219,7 @@ public class ChartController {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
         micCode = SecurityInputValidator.requireOptionalMicCode(micCode);
         StockAsset asset = twelveDataService.refreshStockAssetMetadata(symbol, micCode);
-        if (isGenericMetadata(asset, symbol)) {
+        if (isGenericMetadata(asset, symbol) || isInconsistentUsMetadata(asset, symbol)) {
             try {
                 asset = yahooFinanceService.refreshStockAssetMetadata(symbol);
             } catch (RuntimeException e) {
@@ -222,6 +248,25 @@ public class ChartController {
         String exchange = asset.getExchange();
         return name == null || name.isBlank() || name.equalsIgnoreCase(symbol)
                 || exchange == null || exchange.isBlank() || "UNKNOWN".equalsIgnoreCase(exchange);
+    }
+
+    private boolean isInconsistentUsMetadata(StockAsset asset, String symbol) {
+        if (asset == null || symbol == null || !symbol.matches("[A-Z0-9-]+")) {
+            return false;
+        }
+        String mic = asset.getMicCode() == null
+                ? ""
+                : asset.getMicCode().trim().toUpperCase(Locale.ROOT);
+        String country = asset.getCountry() == null
+                ? ""
+                : asset.getCountry().trim().toUpperCase(Locale.ROOT);
+        boolean usIdentity = Set.of(
+                "XNAS", "XNCM", "XNMS", "XNGS", "XNYS",
+                "XASE", "ARCX", "BATS", "IEXG", "OTCM").contains(mic)
+                || country.equals("US")
+                || country.equals("USA")
+                || country.contains("UNITED STATES");
+        return usIdentity && !"USD".equalsIgnoreCase(asset.getCurrency());
     }
 
     private String formatWaveLabel(String label, String interval) {

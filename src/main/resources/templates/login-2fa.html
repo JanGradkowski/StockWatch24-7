@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify sign in — StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script><link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body class="auth-page">
+<div class="bg-animation" aria-hidden="true"><div class="glow-orb orb-1"></div><div class="glow-orb orb-2"></div></div>
+<main class="auth-shell auth-shell-compact">
+  <section class="auth-showcase">
+    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7"><span class="logo-mark" aria-hidden="true"></span><span class="logo-word">StockWatch <span>24/7</span></span></a>
+    <div class="auth-pitch"><div class="eyebrow">Second step</div><h1>Verify it is<br><span class="text-gradient">really you.</span></h1><p>Your password was accepted. Complete sign-in with your authenticator app or one saved recovery code.</p></div>
+  </section>
+  <section class="auth-card">
+    <div class="auth-kicker">Two-factor authentication</div><h2>Enter your security code</h2>
+    <p class="auth-description">Authenticator codes contain six digits. Recovery codes can be entered with or without the dash.</p>
+    <div th:if="${error}" class="auth-message error-msg" th:text="${error}"></div>
+    <form th:action="@{/login/2fa}" method="post">
+      <div class="form-group"><label for="mfaLoginCode">Authenticator or recovery code</label><input id="mfaLoginCode" name="code" required maxlength="24" autocomplete="one-time-code" autofocus></div>
+      <button type="submit" class="btn-accent auth-btn">Verify and continue</button>
+    </form>
+    <form th:action="@{/login/2fa/cancel}" method="post"><button type="submit" class="auth-secondary-button">Cancel sign in</button></form>
+  </section>
+</main>
+</body></html>

@@ -21,6 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.mail.host=smtp.example",
         "spring.mail.username=mailer",
         "spring.mail.password=test-only-password",
+        "security.mfa.encryption-key=test-only-mfa-encryption-key-that-is-at-least-32-characters",
         "spring.flyway.enabled=true",
         "alerts.schedule.enabled=false",
         "server.tomcat.remoteip.internal-proxies=127\\.0\\.0\\.1"

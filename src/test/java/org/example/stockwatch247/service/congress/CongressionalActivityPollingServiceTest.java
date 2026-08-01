@@ -11,7 +11,10 @@ import org.example.stockwatch247.service.congress.CongressionalTradeStore.Claime
 import org.example.stockwatch247.service.congress.CongressionalTradeStore.PollClaimStatus;
 import org.example.stockwatch247.service.congress.CongressionalTradeStore.UpsertedTrade;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -27,10 +30,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(OutputCaptureExtension.class)
 class CongressionalActivityPollingServiceTest {
 
     @Test
-    void pollCanRecoverARelevantTradePreviouslyStoredByHistory() {
+    void pollCanRecoverARelevantTradePreviouslyStoredByHistory(CapturedOutput output) {
         CongressionalTradeProvider provider = mock(CongressionalTradeProvider.class);
         CongressionalTradeStore store = mock(CongressionalTradeStore.class);
         CongressionalTradeSubscriptionRepository subscriptions =
@@ -77,6 +81,10 @@ class CongressionalActivityPollingServiceTest {
         order.verify(store).enqueueDeliveries(List.of(77L));
         order.verify(store).completePendingBaselines(List.of(8L));
         order.verify(store).completeProviderPoll(eq("CONGRESS_INVESTS"), anyString());
+        org.assertj.core.api.Assertions.assertThat(output)
+                .contains("Congressional activity check started for 1 followed stock(s).")
+                .contains("Congressional activity check completed for 1 followed stock(s): "
+                        + "0 new disclosure(s) stored and 1 user notification(s) queued.");
     }
 
     @Test

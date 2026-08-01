@@ -54,9 +54,9 @@ class HistoricalHigherIntervalCandlestickCalibrationTest {
     @Test
     void printsShrunkPerPatternDevelopmentAndValidationResults() {
         System.out.println();
-        System.out.println("=== Higher-Interval Candlestick Pattern Calibration ===");
+        System.out.println("=== Candlestick V4 Higher-Interval Diagnostic ===");
         System.out.println("Development ends 2019-12-31; validation starts 2020-01-01.");
-        System.out.println("Pattern precision is shrunk toward the same-interval, same-direction baseline (prior n=30).");
+        System.out.println("Elliott Wave remains a separate detector and does not modify candlestick setup scores.");
 
         for (CalibrationRun run : RUNS) {
             List<LabeledTrade> trades = new ArrayList<>();
@@ -68,8 +68,8 @@ class HistoricalHigherIntervalCandlestickCalibrationTest {
                     continue;
                 }
                 sufficientSymbols++;
-                BacktestReport report = backtestService.backtest(candles, run.settings());
-                report.trades().forEach(trade -> trades.add(new LabeledTrade(symbol, trade)));
+                BacktestReport v4 = backtestService.backtest(candles, run.settings(), false);
+                v4.trades().forEach(trade -> trades.add(new LabeledTrade(symbol, trade)));
             }
 
             assertThat(sufficientSymbols).isEqualTo(SYMBOLS.size());

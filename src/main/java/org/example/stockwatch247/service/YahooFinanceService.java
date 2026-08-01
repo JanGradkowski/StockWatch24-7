@@ -300,6 +300,9 @@ public class YahooFinanceService {
 
     private Set<String> initialCandidates(String symbol, Optional<StockAsset> asset) {
         LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        if (!hasExchangeSuffix(symbol) && asset.map(this::hasUsListingIdentity).orElse(false)) {
+            candidates.add(symbol);
+        }
         if (providerSymbolRegistry != null && asset.isPresent()) {
             providerSymbolRegistry.find(asset.get(), MarketDataProvider.YAHOO_FINANCE)
                     .map(ProviderSymbolRegistry.ProviderSymbolReference::symbol)
@@ -423,7 +426,11 @@ public class YahooFinanceService {
                                            String resolutionSource) {
         Optional<StockAsset> existingAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(requestedSymbol);
         StockAsset asset = existingAsset.orElseGet(StockAsset::new);
-        boolean preserveCanonicalListing = existingAsset.filter(this::hasReliableListingIdentity).isPresent();
+        boolean authoritativeExactUsSymbol = normalizeSymbol(requestedProviderSymbol)
+                .equals(normalizeSymbol(requestedSymbol))
+                && existingAsset.map(this::hasUsListingIdentity).orElse(true);
+        boolean preserveCanonicalListing = existingAsset.filter(this::hasReliableListingIdentity).isPresent()
+                && !authoritativeExactUsSymbol;
         String name = firstNonBlank(meta.path("longName").asText(""), meta.path("shortName").asText(""));
         String exchange = firstNonBlank(meta.path("fullExchangeName").asText(""), meta.path("exchangeName").asText(""));
         String currency = meta.path("currency").asText("");
@@ -464,8 +471,13 @@ public class YahooFinanceService {
             return;
         }
 
+        boolean authoritativeExactUsSymbol = normalizeSymbol(providerSymbol)
+                .equals(normalizeSymbol(asset.getTickerSymbol()))
+                && hasUsListingIdentity(asset);
         String expectedSuffix = expectedYahooSuffix(asset);
-        if (!expectedSuffix.isBlank() && !providerSymbol.endsWith(expectedSuffix)) {
+        if (!authoritativeExactUsSymbol
+                && !expectedSuffix.isBlank()
+                && !providerSymbol.endsWith(expectedSuffix)) {
             throw new IllegalStateException("Yahoo candidate " + providerSymbol
                     + " does not match the expected " + expectedSuffix + " exchange listing.");
         }
@@ -474,14 +486,17 @@ public class YahooFinanceService {
                 meta.path("longName").asText(""),
                 meta.path("shortName").asText("")
         );
-        if (!returnedName.isBlank() && !sameCompany(asset.getCompanyName(), returnedName)) {
+        if (!authoritativeExactUsSymbol
+                && !returnedName.isBlank()
+                && !sameCompany(asset.getCompanyName(), returnedName)) {
             throw new IllegalStateException("Yahoo candidate " + providerSymbol
                     + " belongs to a different company.");
         }
 
         String returnedCurrency = normalizeSymbol(meta.path("currency").asText(""));
         String expectedCurrency = normalizeSymbol(asset.getCurrency());
-        if (!returnedCurrency.isBlank() && !expectedCurrency.isBlank()
+        if (!authoritativeExactUsSymbol
+                && !returnedCurrency.isBlank() && !expectedCurrency.isBlank()
                 && !returnedCurrency.equals(expectedCurrency)) {
             throw new IllegalStateException("Yahoo candidate " + providerSymbol
                     + " uses " + returnedCurrency + " instead of " + expectedCurrency + ".");
@@ -549,6 +564,22 @@ public class YahooFinanceService {
                 && !"UNKNOWN".equalsIgnoreCase(asset.getExchange());
     }
 
+    private boolean hasUsListingIdentity(StockAsset asset) {
+        if (asset == null) {
+            return false;
+        }
+        String mic = normalizeSymbol(asset.getMicCode());
+        if (Set.of(
+                "XNAS", "XNCM", "XNMS", "XNGS", "XNYS",
+                "XASE", "ARCX", "BATS", "IEXG", "OTCM").contains(mic)) {
+            return true;
+        }
+        String country = normalizeSymbol(asset.getCountry());
+        return country.equals("US")
+                || country.equals("USA")
+                || country.contains("UNITED STATES");
+    }
+
     private boolean hasMeaningfulCompanyName(String companyName, String symbol) {
         return companyName != null
                 && !companyName.isBlank()
@@ -571,22 +602,60 @@ public class YahooFinanceService {
                 .replace('&', ' ')
                 .replaceAll("[^A-Z0-9]+", " ")
                 .trim();
-        List<String> legalSuffixes = List.of(
-                "SA", "SE", "AG", "NV", "PLC", "INC", "INCORPORATED",
-                "CORP", "CORPORATION", "LTD", "LIMITED", "SPA", "SAS", "BV"
+        List<List<String>> legalSuffixes = List.of(
+                List.of("PUBLIC", "LIMITED", "COMPANY"),
+                List.of("SOCIETE", "ANONYME"),
+                List.of("SOCIETA", "PER", "AZIONI"),
+                List.of("NAAMLOZE", "VENNOOTSCHAP"),
+                List.of("SPOLKA", "AKCYJNA"),
+                List.of("S", "A"),
+                List.of("N", "V"),
+                List.of("B", "V"),
+                List.of("S", "E"),
+                List.of("SA"),
+                List.of("SE"),
+                List.of("AG"),
+                List.of("AKTIENGESELLSCHAFT"),
+                List.of("NV"),
+                List.of("PLC"),
+                List.of("INC"),
+                List.of("INCORPORATED"),
+                List.of("CORP"),
+                List.of("CORPORATION"),
+                List.of("LTD"),
+                List.of("LIMITED"),
+                List.of("SPA"),
+                List.of("SAS"),
+                List.of("BV")
         );
         List<String> tokens = new ArrayList<>(List.of(normalized.split("\\s+")));
-        if (tokens.size() >= 2) {
-            String finalPair = tokens.get(tokens.size() - 2) + tokens.getLast();
-            if (List.of("SA", "NV", "BV", "SE").contains(finalPair)) {
-                tokens.removeLast();
-                tokens.removeLast();
+        boolean removed;
+        do {
+            removed = false;
+            for (List<String> suffix : legalSuffixes) {
+                if (endsWith(tokens, suffix)) {
+                    for (int index = 0; index < suffix.size(); index++) {
+                        tokens.removeLast();
+                    }
+                    removed = true;
+                    break;
+                }
+            }
+        } while (removed);
+        return String.join(" ", tokens);
+    }
+
+    private boolean endsWith(List<String> tokens, List<String> suffix) {
+        if (tokens.size() < suffix.size()) {
+            return false;
+        }
+        int offset = tokens.size() - suffix.size();
+        for (int index = 0; index < suffix.size(); index++) {
+            if (!tokens.get(offset + index).equals(suffix.get(index))) {
+                return false;
             }
         }
-        while (!tokens.isEmpty() && legalSuffixes.contains(tokens.getLast())) {
-            tokens.removeLast();
-        }
-        return String.join(" ", tokens);
+        return true;
     }
 
     private String expectedYahooSuffix(StockAsset asset) {
@@ -683,8 +752,11 @@ public class YahooFinanceService {
         String attempts = attemptedSymbols.isEmpty()
                 ? ""
                 : " Tried provider symbols: " + String.join(", ", attemptedSymbols) + ".";
+        String failureDetail = cause == null || cause.getMessage() == null || cause.getMessage().isBlank()
+                ? ""
+                : " Last provider failure: " + cause.getMessage();
         return new IllegalStateException(
-                "Yahoo Finance has no " + dataType + " for " + symbol + "." + attempts,
+                "Yahoo Finance has no " + dataType + " for " + symbol + "." + attempts + failureDetail,
                 cause
         );
     }

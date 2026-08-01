@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+          content="Learn how StockWatch 24/7 detects candlestick patterns, classifies Elliott Wave structures, scores technical evidence, and monitors completed candles.">
+    <title>About &amp; Functionalities — StockWatch 24/7</title>
+    <script th:src="@{/js/theme.js}"></script>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body class="about-page">
+<div class="bg-animation" aria-hidden="true">
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
+</div>
+
+<div class="about-shell">
+    <nav class="navbar landing-nav about-nav" aria-label="Main navigation">
+        <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home">
+            <span class="logo-mark" aria-hidden="true"></span>
+            <span class="logo-word">StockWatch <span>24/7</span></span>
+        </a>
+        <div class="nav-links">
+            <a th:href="@{/}" class="btn-secondary">Home</a>
+            <a href="#contents" class="btn-secondary">Contents</a>
+            <a th:href="@{/login}" class="btn-primary">Sign in</a>
+            <a th:href="@{/signup}" class="btn-accent">Start monitoring</a>
+        </div>
+    </nav>
+
+    <main>
+        <header class="about-hero">
+            <div class="about-hero-copy">
+                <div class="eyebrow">About &amp; functionalities</div>
+                <h1>Technical signals,<br><span class="text-gradient">made explainable.</span></h1>
+                <p>
+                    StockWatch 24/7 is a market-research and monitoring workspace. It turns completed
+                    price candles into named patterns, explainable evidence scores, Elliott Wave
+                    structures, historical measurements, and user-controlled alerts.
+                </p>
+                <div class="about-hero-actions">
+                    <a href="#how-it-works" class="btn-accent large">See how it works <span aria-hidden="true">↓</span></a>
+                    <a href="#candlesticks" class="btn-primary large">Read the detector rules</a>
+                </div>
+                <div class="about-trust-note">
+                    <span aria-hidden="true">i</span>
+                    <p>
+                        The application is a research tool, not an investment adviser. A detected
+                        setup or high score is not a prediction, recommendation, or probability of profit.
+                    </p>
+                </div>
+            </div>
+            <figure class="about-hero-visual">
+                <img th:src="@{/images/about/analysis-hero.png}"
+                     alt="Conceptual candlestick analysis flowing into a five-wave market structure"
+                     width="1717"
+                     height="916">
+                <figcaption>Original explanatory artwork: geometry, structure, context, and score.</figcaption>
+            </figure>
+        </header>
+
+        <section id="contents" class="about-contents" aria-labelledby="contents-title">
+            <div>
+                <span class="about-section-number">Guide / 00</span>
+                <h2 id="contents-title">Explore the system</h2>
+            </div>
+            <nav class="about-contents-grid" aria-label="About page contents">
+                <a href="#how-it-works"><span>01</span><strong>How it works</strong><small>From ticker to evidence</small></a>
+                <a href="#workspace"><span>02</span><strong>Workspace</strong><small>Charts, history, and alerts</small></a>
+                <a href="#candlesticks"><span>03</span><strong>Candlesticks</strong><small>Exact formation rules</small></a>
+                <a href="#scoring"><span>04</span><strong>Scoring</strong><small>Every weighted component</small></a>
+                <a href="#elliott"><span>05</span><strong>Elliott Wave</strong><small>Pivots, waves, and confirmation</small></a>
+                <a href="#monitoring"><span>06</span><strong>Monitoring</strong><small>Checks, lifecycle, and delivery</small></a>
+                <a href="#history"><span>07</span><strong>Historical research</strong><small>Outcomes and limitations</small></a>
+                <a href="#limitations"><span>08</span><strong>Limitations</strong><small>What the system cannot claim</small></a>
+            </nav>
+        </section>
+
+        <section id="how-it-works" class="about-section" aria-labelledby="how-title">
+            <div class="about-section-heading">
+                <span class="about-section-number">Guide / 01</span>
+                <div>
+                    <h2 id="how-title">From a ticker to an explainable signal</h2>
+                    <p>
+                        Detection is a sequence of gates. Later evidence cannot rescue an invalid
+                        formation, and an active candle is never treated as if it has already closed.
+                    </p>
+                </div>
+            </div>
+
+            <ol class="about-pipeline">
+                <li>
+                    <span>01</span>
+                    <strong>Resolve the instrument</strong>
+                    <p>Search stocks, ETFs, and indexes, normalize the symbol, and retain the relevant market identity.</p>
+                </li>
+                <li>
+                    <span>02</span>
+                    <strong>Refresh and cache candles</strong>
+                    <p>Request market data, fall back to the secondary provider when necessary, and persist changed bars.</p>
+                </li>
+                <li>
+                    <span>03</span>
+                    <strong>Keep completed periods</strong>
+                    <p>Exclude the still-forming daily, weekly, or monthly candle before running any detector.</p>
+                </li>
+                <li>
+                    <span>04</span>
+                    <strong>Enrich the price series</strong>
+                    <p>Calculate interval-specific RSI, CCI, EMA, SMA, MACD, ATR, Bollinger, VWAP, and volume context.</p>
+                </li>
+                <li>
+                    <span>05</span>
+                    <strong>Apply structural rules</strong>
+                    <p>Require exact candle geometry and prior trend, or alternating Elliott pivots and wave constraints.</p>
+                </li>
+                <li>
+                    <span>06</span>
+                    <strong>Explain and monitor</strong>
+                    <p>Return the evidence breakdown, evaluate follow-through, and notify only the combinations the user chose.</p>
+                </li>
+            </ol>
+
+            <div class="about-definition-grid">
+                <article>
+                    <span>Completed-candle policy</span>
+                    <h3>No intraperiod guessing</h3>
+                    <p>
+                        Daily candles become eligible on the next configured local day. Weekly candles
+                        remain protected during the trading week and become eligible from Saturday.
+                        Monthly candles become eligible on the first day of the next month.
+                    </p>
+                </article>
+                <article>
+                    <span>Supported analysis intervals</span>
+                    <h3>Native-bar calculations</h3>
+                    <p>
+                        Candlestick analysis supports daily, weekly, and monthly bars. Elliott analysis
+                        uses weekly and monthly bars. Indicator periods are expressed in those native bars,
+                        not silently converted from days.
+                    </p>
+                </article>
+                <article>
+                    <span>Explainability</span>
+                    <h3>Rules before labels</h3>
+                    <p>
+                        Each signal records its formation, direction, score version, component evidence,
+                        signal candle, close, and lifecycle state so the result can be inspected later.
+                    </p>
+                </article>
+            </div>
+        </section>
+
+        <section id="workspace" class="about-section" aria-labelledby="workspace-title">
+            <div class="about-section-heading">
+                <span class="about-section-number">Guide / 02</span>
+                <div>
+                    <h2 id="workspace-title">What the website can do</h2>
+                    <p>
+                        The interface separates market exploration, technical monitoring, and
+                        company-event monitoring while keeping every result connected to its source ticker.
+                    </p>
+                </div>
+            </div>
+
+            <div class="about-function-grid">
+                <article><span>Search</span><h3>Find stocks, ETFs, and indexes</h3><p>Use local symbol data first and provider search when broader discovery is needed.</p></article>
+                <article><span>Charts</span><h3>Explore price and volume</h3><p>Switch line or candlestick mode, change intervals, zoom, and load older history as the chart scrolls.</p></article>
+                <article><span>Checks</span><h3>Run an immediate scan</h3><p>Refresh the selected interval and evaluate the newest completed candle without enabling an alert.</p></article>
+                <article><span>Alerts</span><h3>Choose the exact combinations</h3><p>Follow BUY or SELL candlestick and Elliott families independently for supported intervals.</p></article>
+                <article><span>History</span><h3>Research earlier detections</h3><p>Select the interval and number of candles, then inspect recalculated outcomes and detailed evidence.</p></article>
+                <article><span>Lifecycle</span><h3>Follow a setup after detection</h3><p>See whether a subsequent close confirms, invalidates, or lets the setup expire.</p></article>
+                <article><span>Dashboard</span><h3>Review companies and signals</h3><p>Separate technical instruments, active rule combinations, recent signals, and recovery status.</p></article>
+                <article><span>Company events</span><h3>Follow public transaction filings</h3><p>Monitor congressional disclosures and corporate insider purchases or sales separately from technical chart signals. StockWatch loads its accumulated insider archive first, then merges each API Ninjas free-tier snapshot of up to 10 rows. The archive grows over time, although unusually large filing bursts can still be missed.</p></article>
+            </div>
+
+            <div class="about-screenshot-grid">
+                <figure class="about-screenshot wide">
+                    <img th:src="@{/images/about/market-workspace.png}"
+                         alt="Stock workspace with candlestick price chart and synchronized volume chart"
+                         loading="lazy">
+                    <figcaption><strong>Market workspace</strong><span>Price action and volume share one navigable timeline.</span></figcaption>
+                </figure>
+                <figure class="about-screenshot">
+                    <img th:src="@{/images/about/latest-signals.png}"
+                         alt="Dashboard list of recent candlestick signals with interval, period, horizon, and score"
+                         loading="lazy">
+                    <figcaption><strong>Latest signals</strong><span>Every row exposes its family, direction, interval, candle period, research horizon, and setup score.</span></figcaption>
+                </figure>
+                <figure class="about-screenshot">
+                    <img th:src="@{/images/about/monitoring-board.png}"
+                         alt="Company monitoring board with separate alert rule combinations"
+                         loading="lazy">
+                    <figcaption><strong>Company monitoring board</strong><span>Each column represents one pattern family, direction, and interval combination.</span></figcaption>
+                </figure>
+                <figure class="about-screenshot wide">
+                    <img th:src="@{/images/about/disclosure-history.png}"
+                         alt="Congressional trading disclosure history with reported value and filing links"
+                         loading="lazy">
+                    <figcaption><strong>Company-event research</strong><span>Congressional disclosures remain visibly separate from technical signals.</span></figcaption>
+                </figure>
+            </div>
+        </section>
+
+        <section id="candlesticks" class="about-section" aria-labelledby="candlestick-title">
+            <div class="about-section-heading">
+                <span class="about-section-number">Guide / 03</span>
+                <div>
+                    <h2 id="candlestick-title">Candlestick detection: exact requirements</h2>
+                    <p>
+                        Version <code>CANDLE_V4_EXPERIMENTAL</code> first validates formation geometry
+                        and the required prior trend. The score is calculated only after the pattern exists.
+                    </p>
+                </div>
+            </div>
+
+            <div class="about-formula-row">
+                <article>
+                    <span>Real body</span>
+                    <strong>| close − open |</strong>
+                    <p>The directional portion between open and close.</p>
+                </article>
+                <article>
+                    <span>Full range</span>
+                    <strong>high − low</strong>
+                    <p>The complete candle, including both shadows.</p>
+                </article>
+                <article>
+                    <span>Upper shadow</span>
+                    <strong>high − max(open, close)</strong>
+                    <p>Price explored above the real body.</p>
+                </article>
+                <article>
+                    <span>Lower shadow</span>
+                    <strong>min(open, close) − low</strong>
+                    <p>Price explored below the real body.</p>
+                </article>
+            </div>
+
+            <div class="about-callout">
+                <strong>The prior-trend gate</strong>
+                <p>
+                    Up to five completed candles immediately before the formation are examined; at
+                    least three are required. A trend needs a net move of at least 1.5%, at least 60%
+                    directional close or high/low transitions, and—when close-only structure is used—
+                    directional efficiency of at least 35%. Three White Soldiers may also begin from
+                    a compact base no wider than 4%.
+                </p>
+            </div>
+
+            <div class="about-callout">
+                <strong>Separate Elliott Wave analysis</strong>
+                <p>
+                    Elliott Wave structures remain available as an independent weekly and monthly
+                    detector. They do not add to or subtract from the candlestick V4 setup score.
+                    Keeping the two analyses separate makes each signal explainable and avoids
+                    treating an experimental wave interpretation as candlestick confirmation.
+                </p>
+            </div>
+
+            <div class="about-table-wrap">
+                <table class="about-rule-table">
+                    <thead>
+                    <tr>
+                        <th scope="col">Pattern</th>
+                        <th scope="col">Required context</th>
+                        <th scope="col">Mandatory geometry</th>
+                        <th scope="col">Output</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr>
+                        <th scope="row">Doji</th>
+                        <td>No directional trend requirement</td>
+                        <td>Real body ≤ 10% of the full range.</td>
+                        <td><span class="about-signal neutral">HOLD</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Hammer</th>
+                        <td>Established downtrend</td>
+                        <td>Body is 2–30% of range; lower shadow ≥ 2× body; upper shadow ≤ 0.5× body.</td>
+                        <td><span class="about-signal buy">BUY</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Hanging Man</th>
+                        <td>Established uptrend</td>
+                        <td>Same mandatory shape as Hammer; trend context changes its interpretation.</td>
+                        <td><span class="about-signal sell">SELL</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Inverted Hammer</th>
+                        <td>Established downtrend</td>
+                        <td>Body is 2–30% of range; upper shadow ≥ 2× body; lower shadow ≤ 0.5× body.</td>
+                        <td><span class="about-signal buy">BUY</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Shooting Star</th>
+                        <td>Established uptrend</td>
+                        <td>Same mandatory shape as Inverted Hammer; trend context changes its interpretation.</td>
+                        <td><span class="about-signal sell">SELL</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Bullish Engulfing</th>
+                        <td>Established downtrend</td>
+                        <td>Bearish candle then bullish candle; first body ≥ 20% of range; second body ≥ first body and ≥ 45% of its range; second body fully covers the first body.</td>
+                        <td><span class="about-signal buy">BUY</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Bearish Engulfing</th>
+                        <td>Established uptrend</td>
+                        <td>Bullish candle then bearish candle; the same body-size and complete body-engulfing rules apply in reverse.</td>
+                        <td><span class="about-signal sell">SELL</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Piercing Line</th>
+                        <td>Established downtrend</td>
+                        <td>Long bearish candle then strong bullish candle; second opens below the first close, closes above its midpoint, but remains below its open.</td>
+                        <td><span class="about-signal buy">BUY</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Dark Cloud Cover</th>
+                        <td>Established uptrend</td>
+                        <td>Long bullish candle then strong bearish candle; second opens above the first close, closes below its midpoint, but remains above its open.</td>
+                        <td><span class="about-signal sell">SELL</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Bullish Harami</th>
+                        <td>Established downtrend</td>
+                        <td>Long bearish candle contains a bullish body; second body ≤ 45% of first and ≤ 75% of the recent median body.</td>
+                        <td><span class="about-signal buy">BUY</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Bearish Harami</th>
+                        <td>Established uptrend</td>
+                        <td>Long bullish candle contains a bearish body; the same relative small-body limits apply.</td>
+                        <td><span class="about-signal sell">SELL</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Morning Star</th>
+                        <td>Established downtrend</td>
+                        <td>Long bearish first candle, small middle body, strong bullish third candle, and third close above the first candle’s midpoint.</td>
+                        <td><span class="about-signal buy">BUY</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Evening Star</th>
+                        <td>Established uptrend</td>
+                        <td>Long bullish first candle, small middle body, strong bearish third candle, and third close below the first candle’s midpoint.</td>
+                        <td><span class="about-signal sell">SELL</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Three White Soldiers</th>
+                        <td>Downtrend or compact base</td>
+                        <td>Three bullish bodies, each ≥ 50% of range and ≥ 80% of recent median; rising closes; opens inside prior bodies; upper shadows ≤ 30% of body.</td>
+                        <td><span class="about-signal buy">BUY</span></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Three Black Crows</th>
+                        <td>Established uptrend</td>
+                        <td>Three bearish bodies with the same relative-body rules; falling closes; opens inside prior bodies; lower shadows ≤ 30% of body.</td>
+                        <td><span class="about-signal sell">SELL</span></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="about-footnotes">
+                <p><strong>Relative-body baseline:</strong> “long,” “strong,” and “small” compare the formation with the median body of up to 20 earlier completed candles.</p>
+                <p><strong>Long:</strong> ≥ 55% of its range and ≥ 110% of median body. <strong>Strong:</strong> ≥ 50% of range and ≥ 90% of median. <strong>Small:</strong> ≤ 30% of range and ≤ 75% of median.</p>
+                <p><strong>Important:</strong> a technically aligned RSI or large volume value cannot create a named pattern when these mandatory geometry and context rules fail.</p>
+            </div>
+        </section>
+
+        <section id="scoring" class="about-section" aria-labelledby="scoring-title">
+            <div class="about-section-heading">
+                <span class="about-section-number">Guide / 04</span>
+                <div>
+                    <h2 id="scoring-title">How the candlestick setup score is built</h2>
+                    <p>
+                        The score is an explainable confluence summary capped at 100. Correlated
+                        measurements share family caps; missing evidence receives no points rather than
+                        being silently invented.
+                    </p>
+                </div>
+            </div>
+
+            <div class="about-score-layout">
+                <div class="about-score-ring" aria-label="Maximum setup score 100">
+                    <span>Maximum</span>
+                    <strong>100</strong>
+                    <small>explainable points</small>
+                </div>
+                <div class="about-score-components">
+                    <article><span><strong>25</strong> Pattern quality</span><p>Mandatory geometry quality plus the quality of the required raw-price prior trend.</p></article>
+                    <article><span><strong>20</strong> Trend indicators</span><p>Fast/slow EMA order and slopes, close versus long SMA, MACD line/signal, and histogram change.</p></article>
+                    <article><span><strong>5</strong> Higher timeframe</span><p>Completed higher-period closes versus a short mean and the direction of that mean.</p></article>
+                    <article><span><strong>15</strong> Momentum</span><p>Directional RSI and CCI location plus whether each oscillator is turning with the signal.</p></article>
+                    <article><span><strong>10</strong> Bollinger context</span><p>Relevant band test, %B location, and whether price closes back inside the band.</p></article>
+                    <article><span><strong>15</strong> Support or resistance</span><p>ATR-scaled proximity, repeated touches, and rejection through the formation range.</p></article>
+                    <article><span><strong>10</strong> Volume participation</span><p>Relative volume, rolling VWAP position and slope, plus an OHLCV volume-profile approximation.</p></article>
+                </div>
+            </div>
+
+            <div class="about-profile-table-wrap">
+                <table class="about-profile-table">
+                    <thead>
+                    <tr><th>Profile</th><th>RSI / ATR</th><th>EMA fast / slow</th><th>Long SMA</th><th>MACD</th><th>CCI</th><th>Bollinger</th><th>Volume / VWAP / profile</th></tr>
+                    </thead>
+                    <tbody>
+                    <tr><th>Daily</th><td>14 / 14</td><td>20 / 50</td><td>200</td><td>12 / 26 / 9</td><td>20</td><td>20, 2.0σ</td><td>20 / 20 / 60</td></tr>
+                    <tr><th>Weekly</th><td>10 / 10</td><td>8 / 21</td><td>40</td><td>8 / 21 / 5</td><td>14</td><td>13, 2.0σ</td><td>13 / 13 / 26</td></tr>
+                    <tr><th>Monthly</th><td>9 / 9</td><td>6 / 12</td><td>24</td><td>6 / 12 / 4</td><td>12</td><td>12, 2.0σ</td><td>12 / 12 / 24</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="about-band-grid">
+                <article class="low"><span>Below 75</span><strong>Low confluence</strong><p>The formation is still valid; supporting evidence is limited or unavailable.</p></article>
+                <article class="medium"><span>75–84</span><strong>Moderate confluence</strong><p>Several independent evidence families align with the detected direction.</p></article>
+                <article class="high"><span>85–100</span><strong>High confluence</strong><p>Broad alignment across the recorded evidence—not an 85–100% success probability.</p></article>
+            </div>
+        </section>
+
+        <section id="elliott" class="about-section" aria-labelledby="elliott-title">
+            <div class="about-section-heading">
+                <span class="about-section-number">Guide / 05</span>
+                <div>
+                    <h2 id="elliott-title">Elliott Wave detection: structure before story</h2>
+                    <p>
+                        Version <code>ELLIOTT_V1</code> searches weekly and monthly enriched candles.
+                        It does not draw waves by eye: it extracts alternating volatility-scaled pivots,
+                        tests ordered structures, and requires a present confirmation.
+                    </p>
+                </div>
+            </div>
+
+            <figure class="about-wave-diagram">
+                <svg viewBox="0 0 1000 390" role="img" aria-labelledby="wave-title wave-description">
+                    <title id="wave-title">Bullish five-wave impulse followed by an A-B-C correction</title>
+                    <desc id="wave-description">Alternating pivots labeled zero through five, followed by corrective pivots A, B, and C.</desc>
+                    <line x1="40" y1="340" x2="960" y2="340" class="about-wave-axis"/>
+                    <path d="M70 310 L200 225 L300 270 L485 105 L600 180 L750 55 L835 170 L900 120 L955 245"
+                          class="about-wave-path"/>
+                    <g class="about-wave-points">
+                        <circle cx="70" cy="310" r="7"/><text x="58" y="350">0</text>
+                        <circle cx="200" cy="225" r="7"/><text x="190" y="205">I</text>
+                        <circle cx="300" cy="270" r="7"/><text x="286" y="305">II</text>
+                        <circle cx="485" cy="105" r="7"/><text x="470" y="82">III</text>
+                        <circle cx="600" cy="180" r="7"/><text x="582" y="215">IV</text>
+                        <circle cx="750" cy="55" r="7"/><text x="738" y="35">V</text>
+                        <circle cx="835" cy="170" r="7"/><text x="824" y="205">A</text>
+                        <circle cx="900" cy="120" r="7"/><text x="891" y="98">B</text>
+                        <circle cx="955" cy="245" r="7"/><text x="944" y="280">C</text>
+                    </g>
+                    <path d="M200 360 H750" class="about-wave-bracket"/>
+                    <text x="405" y="382" class="about-wave-caption">Five-wave impulse</text>
+                    <path d="M750 315 H955" class="about-wave-bracket correction"/>
+                    <text x="795" y="337" class="about-wave-caption">A-B-C</text>
+                </svg>
+                <figcaption>
+                    Bullish example. The bearish detector mirrors the high/low ordering and confirmation direction.
+                </figcaption>
+            </figure>
+
+            <div class="about-elliott-grid">
+                <article>
+                    <span>1 / Input gate</span>
+                    <h3>At least 34 completed candles</h3>
+                    <p>Incomplete or invalid OHLCV bars are removed and the remaining candles are sorted before structural analysis.</p>
+                </article>
+                <article>
+                    <span>2 / Pivot engine</span>
+                    <h3>Four volatility sensitivities</h3>
+                    <p>Sensitivities 0.75, 1.25, 2.0, and 3.0 seek alternating highs and lows. A reversal must exceed the greater of ATR × sensitivity or 1.25% of close × sensitivity.</p>
+                </article>
+                <article>
+                    <span>3 / Impulse ordering</span>
+                    <h3>Higher or lower pivot structure</h3>
+                    <p>A bullish impulse requires higher wave I and III highs, wave II above origin, wave IV above waves II and I, and positive wave II/IV retracements below 100%. Bearish rules mirror this.</p>
+                </article>
+                <article>
+                    <span>4 / Timing</span>
+                    <h3>Distinct legs</h3>
+                    <p>Each pivot leg must span at least two candles. A 15-candle impulse is preferred; compressed structures receive a quality penalty.</p>
+                </article>
+                <article>
+                    <span>5 / Wave III rule</span>
+                    <h3>Not the shortest motive wave</h3>
+                    <p>For a completed impulse, Wave III must be at least the shorter of Waves I and V. A Wave III below 80% of Wave I is penalized during preliminary scoring.</p>
+                </article>
+                <article>
+                    <span>6 / Present relevance</span>
+                    <h3>No stale wave alerts</h3>
+                    <p>Impulse breakout, Wave V reversal, or Wave C confirmation must occur on the latest candle or remain active with follow-through inside the configured one-candle present window.</p>
+                </article>
+            </div>
+
+            <div class="about-elliott-details">
+                <article>
+                    <h3>Impulse and Wave V outputs</h3>
+                    <ul>
+                        <li><strong>Developing impulse:</strong> price closes 0.3% beyond Wave III from the Wave IV pivot, or below it for bearish structure.</li>
+                        <li><strong>Wave V end:</strong> a complete impulse is followed by a current reversal beyond the previous candle’s low/high.</li>
+                        <li><strong>Truncated Wave V:</strong> Wave V fails to exceed Wave III and receives an 18-point confidence penalty.</li>
+                        <li><strong>Action direction:</strong> impulse continuation follows the impulse; a Wave V end points in the reversal direction.</li>
+                    </ul>
+                </article>
+                <article>
+                    <h3>A-B-C correction outputs</h3>
+                    <ul>
+                        <li>A complete five-wave impulse must precede three distinct A, B, and C legs.</li>
+                        <li>Wave A moves against the impulse but must remain beyond the original Wave 0.</li>
+                        <li>Wave B recovers toward the impulse direction; recovery is limited to 2× Wave A.</li>
+                        <li>Wave C moves against B; the complete correction must retrace more than 0% and less than 100% of the impulse.</li>
+                        <li>A bullish correction requires a close back above the previous candle high; bearish requires a close below the previous low.</li>
+                    </ul>
+                </article>
+            </div>
+
+            <div class="about-fibonacci-grid">
+                <article><span>Wave II normal</span><strong>23.6–78.6%</strong><small>Common zone: 38.2–61.8%</small></article>
+                <article><span>Wave IV normal</span><strong>14.6–61.8%</strong><small>Common zone: 23.6–50.0%</small></article>
+                <article><span>Correction normal</span><strong>23.6–78.6%</strong><small>Common zone: 38.2–61.8%</small></article>
+                <article><span>Wave C / Wave A</span><strong>0.5–2.0×</strong><small>Common zone: 0.8–1.25×</small></article>
+            </div>
+
+            <div class="about-callout violet">
+                <strong>Variants and quality</strong>
+                <p>
+                    Standard, expanded-flat, and running-flat corrections are classified from Waves B
+                    and C. Expanded flats lose 4 points; running flats lose 14. Historical overlays
+                    require structure quality ≥ 68 and suppress candidates that overlap a better
+                    structure by more than 40%. Alert emission requires Elliott confidence ≥ 75.
+                </p>
+            </div>
+        </section>
+
+        <section id="monitoring" class="about-section" aria-labelledby="monitoring-title">
+            <div class="about-section-heading">
+                <span class="about-section-number">Guide / 06</span>
+                <div>
+                    <h2 id="monitoring-title">Manual checks, scheduled monitoring, and lifecycle</h2>
+                    <p>
+                        The Check button and background scheduler use the same completed-candle and
+                        detection services. Checking does not automatically enable a saved rule.
+                    </p>
+                </div>
+            </div>
+
+            <div class="about-monitoring-flow">
+                <article><span>Check now</span><strong>Force a fresh market-data sync</strong><p>Load enough indicator history and inspect the newest completed candle for the selected family and direction.</p></article>
+                <article><span>Apply rules</span><strong>Save only explicit choices</strong><p>Alert toggles remain drafts until the user applies the batch of changes.</p></article>
+                <article><span>Scheduled scan</span><strong>Daily, weekly, and monthly jobs</strong><p>Default schedule: daily at midnight Tuesday–Saturday, weekly on Saturday, and monthly on day one in Europe/Brussels.</p></article>
+                <article><span>Recovery</span><strong>Resume missed work</strong><p>Durable coordination re-queues due schedules after restarts and prevents duplicate workers from processing the same job.</p></article>
+                <article><span>Delivery</span><strong>Email the matched direction</strong><p>Notifications contain the pattern, interval, close, score version, and recorded evidence.</p></article>
+            </div>
+
+            <div class="about-lifecycle">
+                <div class="about-lifecycle-line" aria-hidden="true"></div>
+                <article><span>1</span><strong>Detected</strong><p>The pattern closes and its high/low boundaries are recorded.</p></article>
+                <article><span>2</span><strong>Confirmed</strong><p>A later completed BUY candle closes above the trigger, or SELL closes below it.</p></article>
+                <article><span>3</span><strong>Invalidated</strong><p>A BUY closes below the invalidation level, or SELL closes above it.</p></article>
+                <article><span>4</span><strong>Expired</strong><p>No boundary wins within the default three completed-candle observation window.</p></article>
+            </div>
+
+            <div class="about-callout">
+                <strong>Close-based, not intraday</strong>
+                <p>
+                    High/low touches and equality with a boundary do not resolve lifecycle state.
+                    Only a later completed candle’s close can confirm or invalidate the setup.
+                </p>
+            </div>
+        </section>
+
+        <section id="history" class="about-section" aria-labelledby="history-title">
+            <div class="about-section-heading">
+                <span class="about-section-number">Guide / 07</span>
+                <div>
+                    <h2 id="history-title">Historical research without pretending it is a trade</h2>
+                    <p>
+                        Historical scans are recalculated on demand and are not persisted as alert
+                        events. The selected candle count controls the visible research window.
+                    </p>
+                </div>
+            </div>
+
+            <div class="about-history-grid">
+                <article>
+                    <span>1–750 candles</span>
+                    <h3>User-selected lookback</h3>
+                    <p>The interval picker is followed by a candle-count picker and an estimated earliest date. If the ticker has less history, all available completed candles are analyzed.</p>
+                </article>
+                <article>
+                    <span>Daily</span>
+                    <h3>10-session outcome</h3>
+                    <p>Success requires at least 3% in the detected direction at the fixed evaluation close.</p>
+                </article>
+                <article>
+                    <span>Weekly</span>
+                    <h3>4-week outcome</h3>
+                    <p>Success requires at least 4% in the detected direction at the fourth completed weekly close.</p>
+                </article>
+                <article>
+                    <span>Monthly</span>
+                    <h3>3-month outcome</h3>
+                    <p>Success requires at least 6% in the detected direction at the third completed monthly close.</p>
+                </article>
+            </div>
+
+            <div class="about-outcome-grid">
+                <article class="success"><strong>Successful</strong><p>Directional return reaches or exceeds the interval threshold.</p></article>
+                <article class="failure"><strong>Unsuccessful</strong><p>Directional return reaches the same threshold in the opposite direction.</p></article>
+                <article class="inconclusive"><strong>Inconclusive</strong><p>The fixed-horizon close stays between the positive and negative thresholds.</p></article>
+                <article class="pending"><strong>Pending</strong><p>Not enough later completed candles exist to evaluate the fixed horizon.</p></article>
+            </div>
+
+            <p class="about-method-note">
+                Historical impact is a close-to-close research measurement. It does not model entry
+                delay, spread, slippage, fees, taxes, borrow availability, dividends, stop execution,
+                position sizing, capital limits, or overlapping trades.
+            </p>
+        </section>
+
+        <section id="limitations" class="about-section about-limitations" aria-labelledby="limitations-title">
+            <div class="about-section-heading">
+                <span class="about-section-number">Guide / 08</span>
+                <div>
+                    <h2 id="limitations-title">Read the signal, keep the uncertainty</h2>
+                    <p>
+                        Transparency is part of the product. These boundaries matter as much as the
+                        detector rules themselves.
+                    </p>
+                </div>
+            </div>
+
+            <div class="about-limit-grid">
+                <article><span>01</span><h3>Scores are not probabilities</h3><p>The candlestick score orders recorded confluence. Existing validation does not support reading 88/100 as an 88% chance of success.</p></article>
+                <article><span>02</span><h3>Pattern names are classifications</h3><p>Correct geometric classification does not prove that the following price move will match the assigned BUY or SELL direction.</p></article>
+                <article><span>03</span><h3>Elliott interpretation remains heuristic</h3><p>Volatility-scaled pivots improve repeatability, but different sensitivity choices can still produce competing valid structures.</p></article>
+                <article><span>04</span><h3>Market data can be incomplete</h3><p>Listings have finite histories, providers can differ, and recently formed candles may be revised before their period completes.</p></article>
+                <article><span>05</span><h3>Historical outcomes are simplified</h3><p>Fixed close-to-close measurements are not executable portfolio simulations and do not include trading frictions.</p></article>
+                <article><span>06</span><h3>Company disclosures arrive later</h3><p>Congressional filings can be reported up to 45 days after a transaction. The temporary API Ninjas free response omits the insider transaction date, so StockWatch labels the filing date as a fallback; returns still use filed prices and completed closes, not an investor's actual execution.</p></article>
+            </div>
+
+            <div class="about-final-cta">
+                <div>
+                    <span class="eyebrow">Explore with context</span>
+                    <h2>Use the detector as a research assistant,<br>not an oracle.</h2>
+                    <p>Inspect the evidence, compare intervals, and decide which combinations deserve monitoring.</p>
+                </div>
+                <div class="about-hero-actions">
+                    <a th:href="@{/signup}" class="btn-accent large">Create an account</a>
+                    <a th:href="@{/}" class="btn-primary large">Return home</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer about-footer">
+        <a class="logo" th:href="@{/}">
+            <span class="logo-mark" aria-hidden="true"></span>
+            <span class="logo-word">StockWatch <span>24/7</span></span>
+        </a>
+        <span class="footer-tagline">Explainable technical market monitoring.</span>
+        <a href="#contents">Back to contents ↑</a>
+        <span>© 2026 StockWatch 24/7</span>
+    </footer>
+</div>
+</body>
+</html>

@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.SignalStength;
+import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,7 +53,11 @@ public class HistoricalSignalBacktestService {
             return BacktestReport.empty(candles.size(), validatedSettings);
         }
 
+        TimeInterval interval = inferInterval(candles);
         List<EnrichedCandle> enrichedHistory = enrichmentService.enrich(candles, candles.size());
+        List<EnrichedCandle> elliottHistory = includeElliottWaves
+                ? enrichmentService.enrichForElliott(candles, candles.size(), interval)
+                : List.of();
         List<BacktestTrade> trades = new ArrayList<>();
         int lastSignalIndex = candles.size() - validatedSettings.forwardCandles() - 1;
         for (int signalIndex = validatedSettings.minimumHistoricalCandles() - 1;
@@ -60,9 +65,16 @@ public class HistoricalSignalBacktestService {
              signalIndex++) {
             int firstEnrichedIndex = Math.max(0, signalIndex - validatedSettings.signalCandles() + 1);
             List<EnrichedCandle> enrichedCandles = enrichedHistory.subList(firstEnrichedIndex, signalIndex + 1);
+            List<EnrichedCandle> elliottCandles = includeElliottWaves
+                    ? elliottHistory.subList(firstEnrichedIndex, signalIndex + 1)
+                    : List.of();
             Long signalTimestamp = candles.get(signalIndex).getTimestamp();
 
-            List<DetectedSignal> signals = detectSignals(enrichedCandles, includeElliottWaves).stream()
+            List<DetectedSignal> signals = detectSignals(
+                    enrichedCandles,
+                    elliottCandles,
+                    includeElliottWaves
+            ).stream()
                     .filter(signal -> signal.tradeSignal() == TradeSignal.BUY || signal.tradeSignal() == TradeSignal.SELL)
                     .filter(signal -> signal.candleTimestamp().equals(signalTimestamp))
                     .toList();
@@ -75,13 +87,25 @@ public class HistoricalSignalBacktestService {
         return BacktestReport.from(candles.size(), lastSignalIndex + 1, validatedSettings, trades);
     }
 
-    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles,
+    private List<DetectedSignal> detectSignals(List<EnrichedCandle> candlestickCandles,
+                                               List<EnrichedCandle> elliottCandles,
                                                boolean includeElliottWaves) {
-        List<DetectedSignal> signals = new ArrayList<>(detectionService.detect(enrichedCandles));
+        List<DetectedSignal> signals = new ArrayList<>(detectionService.detect(candlestickCandles));
         if (includeElliottWaves) {
-            signals.addAll(elliottWaveDetectionService.detect(enrichedCandles));
+            signals.addAll(elliottWaveDetectionService.detect(elliottCandles));
         }
         return List.copyOf(signals);
+    }
+
+    private TimeInterval inferInterval(List<Candle> candles) {
+        if (candles == null || candles.isEmpty()) {
+            return TimeInterval.DAILY;
+        }
+        return switch (candles.getFirst().getTimeInterval()) {
+            case "1wk" -> TimeInterval.WEEKLY;
+            case "1mo" -> TimeInterval.MONTHLY;
+            default -> TimeInterval.DAILY;
+        };
     }
 
     private BacktestTrade evaluateSignal(DetectedSignal signal,

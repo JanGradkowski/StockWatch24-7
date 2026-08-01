@@ -72,9 +72,9 @@ public final class SecurityInputValidator {
     }
 
     public static String requirePassword(String password) {
-        if (password == null || password.length() < 12
+        if (password == null || password.length() < 15
                 || password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new IllegalArgumentException("Password must be at least 12 characters and at most 72 UTF-8 bytes.");
+            throw new IllegalArgumentException("Password must be at least 15 characters and at most 72 UTF-8 bytes.");
         }
         return password;
     }

@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Setup score report &mdash; StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -50,6 +51,8 @@
               th:text="${'Research horizon ' + signal.researchHorizonLabel()}">Research horizon 8&ndash;12 weeks</span>
         <span class="signal-report-tag"
               th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</span>
+        <span class="signal-report-tag"
+              th:text="${'Score model ' + signal.scoreVersion()}">Score model CANDLE_V4_EXPERIMENTAL</span>
       </div>
     </div>
     <div class="signal-report-actions">
@@ -77,6 +80,10 @@
         </div>
         <div class="signal-score-summary">
           <p th:text="${signal.setupExplanation()}">Strong setup: broad confluence across the stock's pattern quality and technical evidence.</p>
+          <p th:if="${#strings.contains(signal.scoreVersion(), 'EXPERIMENTAL')}">
+            Experimental means the inputs and arithmetic are implemented and tested, but the score has not earned a predictive accuracy claim.
+            It must not be read as a win probability or trade recommendation.
+          </p>
           <div class="signal-score-rail"
                role="meter"
                aria-valuemin="0"
@@ -87,9 +94,9 @@
                   th:classappend="${signal.setupScore() != null and signal.setupScore() >= segment * 5} ? ' active' : ''"></span>
           </div>
           <div class="signal-score-thresholds" aria-label="Setup score thresholds">
-            <span><i class="threshold-dot low" aria-hidden="true"></i>Weak &lt;75</span>
-            <span><i class="threshold-dot medium" aria-hidden="true"></i>Moderate 75&ndash;84</span>
-            <span><i class="threshold-dot high" aria-hidden="true"></i>Strong 85+</span>
+            <span><i class="threshold-dot low" aria-hidden="true"></i>Low confluence &lt;75</span>
+            <span><i class="threshold-dot medium" aria-hidden="true"></i>Moderate confluence 75&ndash;84</span>
+            <span><i class="threshold-dot high" aria-hidden="true"></i>High confluence 85+</span>
           </div>
         </div>
       </div>
@@ -246,9 +253,21 @@
         <div class="evidence-card-topline">
           <span class="evidence-number" th:text="${#numbers.formatInteger(reason.order(), 2)}">01</span>
           <span class="evidence-category" th:text="${reason.category()}">Pattern geometry</span>
-          <span class="evidence-impact" th:text="${reason.caution() ? 'No points / caution' : 'Supports score'}">Supports score</span>
+          <span th:if="${reason.scored()}"
+                class="evidence-score"
+                th:text="${reason.scoreLabel()}">24/25</span>
+          <span class="evidence-impact" th:text="${reason.statusLabel()}">Partial support</span>
         </div>
-        <p th:text="${reason.text()}">Bullish body geometry confirmed the pattern.</p>
+        <ul class="evidence-detail-list">
+          <li th:each="detail : ${reason.details()}">
+            <div class="evidence-detail-heading">
+              <strong th:text="${detail.label()}">Pattern rules</strong>
+              <span th:if="${detail.scoreLabel() != null}"
+                    th:text="${detail.scoreLabel() + ' pts'}">4/5 pts</span>
+            </div>
+            <p th:text="${detail.text()}">Bullish body geometry confirmed the pattern.</p>
+          </li>
+        </ul>
       </article>
     </div>
 
@@ -280,7 +299,7 @@
     <div>
       <div class="signal-section-kicker">Reading the report</div>
       <h2 id="method-heading">How the setup score works</h2>
-      <p th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">A named candlestick pattern is emitted only after its mandatory geometry and prior-trend rules pass. Daily setups use five stock-only scoring components. Weekly and monthly setups use six by splitting the pattern allocation between structural quality (21.4) and a frozen, sample-size-shrunk historical calibration (14.3). Higher-timeframe alignment (21.4), price location (14.3), volatility/momentum (21.4), and volume (7.2) provide the remaining evidence, all from the instrument being checked. The score ranks confluence and is not a probability of profit. Neither the calibration nor any indicator can create or suppress an alert.</p>
+      <p th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">A named candlestick pattern is emitted only after its mandatory geometry and prior-trend rules pass. V4 then allocates 25 points to pattern quality, 20 to EMA/SMA/MACD trend evidence, 5 to completed higher-timeframe trend, 15 to RSI/CCI momentum, 10 to Bollinger location, 15 to support/resistance, and 10 to relative volume, rolling VWAP, and an OHLCV volume-at-price approximation. Daily uses RSI 14, EMA 20/50, and SMA 200; weekly uses RSI 10, EMA 8/21, and SMA 40; monthly uses RSI 9, EMA 6/12, and SMA 24. The volume-profile values are approximations because an OHLCV candle does not reveal where inside its range each trade occurred. The score ranks heuristic confluence and cannot create or suppress an alert.</p>
       <p th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE'}">The Elliott detector combines wave structure, proportional relationships, trend context, momentum, and available confirmation evidence. Its score measures technical confluence, not probability of profit or financial advice.</p>
     </div>
   </section>

@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import org.example.stockwatch247.service.congress.CongressionalRefreshLimitException;
+import org.example.stockwatch247.service.insider.InsiderDataUnavailableException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -87,6 +88,21 @@ class ApiExceptionHandlerTest {
         assertThat(response.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("60");
         assertThat(response.getBody())
                 .containsEntry("error", "Only two uncached refreshes are allowed per minute.");
+    }
+
+    @Test
+    void insiderProviderFailureReturnsItsSafeMessage() {
+        ResponseEntity<Map<String, String>> response = handler.insiderDataUnavailable(
+                new InsiderDataUnavailableException(
+                        "The API Ninjas insider-data quota has been reached."),
+                request("GET", "/api/insider-activity/AAPL/history"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody())
+                .containsEntry("code", "INSIDER_DATA_UNAVAILABLE")
+                .containsEntry(
+                        "error",
+                        "The API Ninjas insider-data quota has been reached.");
     }
 
     private MockHttpServletRequest request(String method, String uri) {

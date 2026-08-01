@@ -18,6 +18,9 @@
 
     <div class="nav-links">
       <span th:if="${firstName != null}" class="nav-user"><span class="nav-user-dot" aria-hidden="true"></span><span th:text="${firstName}">Trader</span></span>
+      <a th:if="${firstName != null}" th:href="@{/settings}" class="nav-settings-link" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.7a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path></svg>
+      </a>
       <a th:if="${firstName != null}" href="/home" class="btn-primary">Dashboard</a>
       <form th:if="${firstName != null}" th:action="@{/logout}" method="post" class="logout-form">
         <button type="submit" class="logout-btn">Sign out</button>
@@ -26,6 +29,8 @@
       <a th:if="${firstName == null}" href="/login" class="btn-primary">Sign In</a>
       <a th:if="${firstName == null}" href="/signup" class="btn-accent">Get started</a>
     </div>
+    <span th:if="${firstName != null}" id="accountThemeSync" hidden
+          th:attr="data-theme-endpoint=@{/api/settings/theme},data-csrf-token=${_csrf.token}"></span>
   </nav>
 
   <script th:attr="nonce=${cspNonce}">

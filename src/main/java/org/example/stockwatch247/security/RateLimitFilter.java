@@ -24,8 +24,22 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+        String requester = requesterKey(request);
+        if (isInsiderProviderRequest(request)) {
+            if (!tryAcquire(
+                    response,
+                    new Limit("insider-activity-minute", 5, Duration.ofMinutes(1)),
+                    requester)
+                    || !tryAcquire(
+                    response,
+                    new Limit("insider-activity-hour", 100, Duration.ofHours(1)),
+                    requester)) {
+                return;
+            }
+        }
+
         Limit limit = limitFor(request);
-        if (limit != null && !tryAcquire(response, limit, requesterKey(request))) {
+        if (limit != null && !tryAcquire(response, limit, requester)) {
             return;
         }
 
@@ -88,6 +102,16 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return new Limit("congressional-activity", 30, Duration.ofMinutes(1));
         }
         return null;
+    }
+
+    private boolean isInsiderProviderRequest(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return ("POST".equals(request.getMethod())
+                && path.startsWith("/api/insider-activity/")
+                && path.endsWith("/history/refresh"))
+                || ("PUT".equals(request.getMethod())
+                && path.startsWith("/api/insider-activity/")
+                && path.endsWith("/subscription"));
     }
 
     private boolean isLogin(HttpServletRequest request) {

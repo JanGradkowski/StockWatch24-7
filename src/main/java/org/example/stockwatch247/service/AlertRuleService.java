@@ -21,6 +21,7 @@ import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -49,6 +50,7 @@ public class AlertRuleService {
     private final TwelveDataService twelveDataService;
     private final JdbcTemplate jdbcTemplate;
     private final MarketDataService marketDataService;
+    private final CandleCompletionService candleCompletionService;
     private final TechnicalIndicatorEnrichmentService enrichmentService;
     private final CandlePatternDetectionService detectionService;
     private final ElliottWaveDetectionService elliottWaveDetectionService;
@@ -57,13 +59,15 @@ public class AlertRuleService {
     private final int maxTrackedStocksPerUser;
     private final int maxGlobalTrackedStocks;
 
+    @Autowired
     public AlertRuleService(AlertRuleRepository alertRuleRepository,
                             AlertEventRepository alertEventRepository,
                             StockAssetRepository stockAssetRepository,
                              CandleRepository candleRepository,
-                             TwelveDataService twelveDataService,
-                             JdbcTemplate jdbcTemplate,
+                            TwelveDataService twelveDataService,
+                            JdbcTemplate jdbcTemplate,
                             MarketDataService marketDataService,
+                            CandleCompletionService candleCompletionService,
                             TechnicalIndicatorEnrichmentService enrichmentService,
                             CandlePatternDetectionService detectionService,
                             ElliottWaveDetectionService elliottWaveDetectionService,
@@ -78,6 +82,7 @@ public class AlertRuleService {
         this.twelveDataService = twelveDataService;
         this.jdbcTemplate = jdbcTemplate;
         this.marketDataService = marketDataService;
+        this.candleCompletionService = candleCompletionService;
         this.enrichmentService = enrichmentService;
         this.detectionService = detectionService;
         this.elliottWaveDetectionService = elliottWaveDetectionService;
@@ -160,11 +165,26 @@ public class AlertRuleService {
         List<SignalReasonView> reasons = new ArrayList<>();
         for (int index = 0; index < storedReasons.size(); index++) {
             String reason = storedReasons.get(index);
+            SignalScoreBreakdown.Section section = SignalScoreBreakdown.parse(
+                    reason,
+                    reasonCategory(reason),
+                    event.getTradeSignal()
+            );
             reasons.add(new SignalReasonView(
                     index + 1,
-                    reasonCategory(reason),
+                    section.category(),
                     reason,
-                    isCautionReason(reason)
+                    isCautionReason(reason),
+                    section.scoreLabel(),
+                    section.status(),
+                    section.details().stream()
+                            .map(detail -> new SignalReasonDetailView(
+                                    detail.label(),
+                                    detail.text(),
+                                    detail.score()
+                            ))
+                            .toList(),
+                    section.scored()
             ));
         }
 
@@ -186,7 +206,8 @@ public class AlertRuleService {
                 setupStrengthLabel(event.getSignalStrength(), event.getConfidenceScore()),
                 setupBand(event.getConfidenceScore()),
                 event.getConfidenceScore(),
-                setupExplanation(event.getConfidenceScore()),
+                event.getScoreVersion(),
+                setupExplanation(event.getConfidenceScore(), event.getScoreVersion()),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
@@ -298,6 +319,7 @@ public class AlertRuleService {
                 horizonGuidance == null ? null : horizonGuidance.disclaimer(),
                 event.getConfidenceScore(),
                 setupBand(event.getConfidenceScore()),
+                event.getScoreVersion(),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
@@ -413,13 +435,30 @@ public class AlertRuleService {
         }
 
         int signalCandleCount = signalCandleCount(interval);
-        List<Candle> latest = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+        int requiredHistory = family == AlertPatternFamily.ELLIOTT_WAVE
+                ? enrichmentService.requiredElliottInputCandles(signalCandleCount, interval)
+                : enrichmentService.requiredInputCandles(signalCandleCount, interval);
+        long firstIncompleteTimestamp =
+                candleCompletionService.firstIncompleteCandleTimestamp(interval);
+        List<Candle> latest = candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
                 symbol,
                 apiInterval,
-                PageRequest.of(0, enrichmentService.requiredInputCandles(signalCandleCount))
+                firstIncompleteTimestamp,
+                PageRequest.of(0, requiredHistory)
         );
-        List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(latest, signalCandleCount);
-        List<DetectedSignal> detectedSignals = detectSignals(enrichedCandles, interval);
+        List<EnrichedCandle> enrichedCandles = family == AlertPatternFamily.ELLIOTT_WAVE
+                ? enrichmentService.enrichForElliott(latest, signalCandleCount, interval)
+                : enrichmentService.enrich(latest, signalCandleCount, interval);
+        List<EnrichedCandle> elliottCandles = family == AlertPatternFamily.ELLIOTT_WAVE
+                ? enrichmentService.enrichForElliott(latest, signalCandleCount, interval)
+                : List.of();
+        List<DetectedSignal> detectedSignals = detectSignals(
+                enrichedCandles,
+                elliottCandles,
+                interval,
+                family
+        );
         List<Map<String, Object>> detected = detectedSignals.stream()
                 .filter(detectedSignal -> signalFamily(detectedSignal) == family)
                 .map(detectedSignal -> Map.<String, Object>of(
@@ -428,6 +467,7 @@ public class AlertRuleService {
                         "signal", detectedSignal.tradeSignal().name(),
                         "strength", detectedSignal.strength().name(),
                         "setupScore", detectedSignal.setupScore(),
+                        "scoreVersion", scoreVersion(detectedSignal),
                         "reasons", detectedSignal.reasons(),
                         "timestamp", detectedSignal.candleTimestamp(),
                         "closePrice", detectedSignal.closePrice()
@@ -455,9 +495,11 @@ public class AlertRuleService {
         response.put("matched", !matchingPatterns.isEmpty());
         response.put("matchingPatterns", matchingPatterns);
         response.put("detectedSignals", detected);
+        response.put("firstIncompleteTimestamp", firstIncompleteTimestamp);
         if (!latest.isEmpty()) {
             Candle newest = latest.get(0);
             response.put("latestTimestamp", newest.getTimestamp());
+            response.put("latestCompletedTimestamp", newest.getTimestamp());
             response.put("latestClosePrice", newest.getClosePrice());
         }
         return response;
@@ -560,16 +602,18 @@ public class AlertRuleService {
     }
 
     private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles,
-                                               TimeInterval interval) {
-        List<DetectedSignal> signals = new java.util.ArrayList<>(
-                detectionService.detectAlertSignals(enrichedCandles)
-        );
-        if (isElliottEnabled(interval)) {
-            signals.addAll(elliottWaveDetectionService.detectAlertSignals(enrichedCandles).stream()
-                    .filter(this::isActionableElliottTurningPoint)
-                    .toList());
+                                               List<EnrichedCandle> elliottCandles,
+                                               TimeInterval interval,
+                                               AlertPatternFamily family) {
+        if (family == AlertPatternFamily.CANDLESTICK) {
+            return detectionService.detectAlertSignals(enrichedCandles);
         }
-        return List.copyOf(signals);
+        if (!isElliottEnabled(interval)) {
+            return List.of();
+        }
+        return elliottWaveDetectionService.detectAlertSignals(elliottCandles).stream()
+                .filter(this::isActionableElliottTurningPoint)
+                .toList();
     }
 
     private int signalCandleCount(TimeInterval interval) {
@@ -614,6 +658,12 @@ public class AlertRuleService {
         return pattern != null && pattern.name().startsWith("ELLIOTT_");
     }
 
+    private String scoreVersion(DetectedSignal signal) {
+        return isElliottPattern(signal.pattern())
+                ? ElliottWaveDetectionService.SETUP_SCORE_VERSION
+                : CandlePatternDetectionService.SETUP_SCORE_VERSION;
+    }
+
     private boolean isActionableElliottTurningPoint(DetectedSignal signal) {
         CandlePattern pattern = signal.pattern();
         return isElliottPattern(pattern)
@@ -630,6 +680,7 @@ public class AlertRuleService {
                 setupStrengthLabel(event.getSignalStrength(), event.getConfidenceScore()),
                 setupBand(event.getConfidenceScore()),
                 event.getConfidenceScore(),
+                event.getScoreVersion(),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(interval, event.getSignalCandleTimestamp()),
@@ -716,16 +767,16 @@ public class AlertRuleService {
     private String setupStrengthLabel(SignalStength strength, Integer setupScore) {
         if (strength != null) {
             return switch (strength) {
-                case WEAK_IGNORE -> "Very weak setup";
-                case HIGH_CONFIDENCE -> "Strong setup";
-                case MEDIUM_CONFIDENCE -> "Moderate setup";
-                case LOW_CONFIDENCE -> "Weak setup";
+                case WEAK_IGNORE -> "Minimal confluence";
+                case HIGH_CONFIDENCE -> "High confluence";
+                case MEDIUM_CONFIDENCE -> "Moderate confluence";
+                case LOW_CONFIDENCE -> "Low confluence";
             };
         }
         return switch (setupBand(setupScore)) {
-            case "high" -> "Strong setup";
-            case "medium" -> "Moderate setup";
-            case "low" -> "Weak setup";
+            case "high" -> "High confluence";
+            case "medium" -> "Moderate confluence";
+            case "low" -> "Low confluence";
             default -> "Unrated";
         };
     }
@@ -740,21 +791,43 @@ public class AlertRuleService {
         return setupScore >= 75 ? "medium" : "low";
     }
 
-    private String setupExplanation(Integer setupScore) {
+    private String setupExplanation(Integer setupScore, String scoreVersion) {
         if (setupScore == null) {
             return "This signal does not have a recorded setup score.";
         }
+        String validationNote = CandlePatternDetectionService.SETUP_SCORE_VERSION.equals(scoreVersion)
+                ? " This V4 score is experimental and has not demonstrated stable out-of-sample predictive ordering."
+                : "";
         if (setupScore >= 85) {
-            return "Strong setup (85-100): broad confluence across the stock's pattern quality and technical evidence.";
+            return "High heuristic confluence (85-100): broad alignment across the recorded technical evidence."
+                    + validationNote;
         }
         if (setupScore >= 75) {
-            return "Moderate setup (75-84): several factors align, with some mixed or unavailable evidence.";
+            return "Moderate heuristic confluence (75-84): several factors align, with some mixed or unavailable evidence."
+                    + validationNote;
         }
-        return "Weak setup (below 75): the pattern is valid, but supporting confluence is limited.";
+        return "Low heuristic confluence (below 75): the pattern is valid, but supporting confluence is limited."
+                + validationNote;
     }
 
     private String reasonCategory(String reason) {
         String normalized = reason.toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("pattern quality")) {
+            return "Pattern quality";
+        }
+        if (normalized.startsWith("trend indicators")
+                || normalized.startsWith("higher-timeframe trend")) {
+            return "Trend evidence";
+        }
+        if (normalized.startsWith("bollinger volatility/location")) {
+            return "Bollinger";
+        }
+        if (normalized.startsWith("support/resistance")) {
+            return "Support/resistance";
+        }
+        if (normalized.startsWith("volume participation")) {
+            return "Volume";
+        }
         if (normalized.startsWith("pattern geometry")) {
             return "Pattern geometry";
         }
@@ -894,6 +967,7 @@ public class AlertRuleService {
             String researchHorizonDisclaimer,
             Integer setupScore,
             String setupBand,
+            String scoreVersion,
             Long signalCandleTimestamp,
             LocalDate signalDate,
             String signalPeriodLabel,
@@ -933,6 +1007,7 @@ public class AlertRuleService {
             String setupStrengthLabel,
             String setupBand,
             Integer setupScore,
+            String scoreVersion,
             Long signalCandleTimestamp,
             LocalDate signalDate,
             String signalPeriodLabel,
@@ -963,6 +1038,7 @@ public class AlertRuleService {
             String setupStrengthLabel,
             String setupBand,
             Integer setupScore,
+            String scoreVersion,
             String setupExplanation,
             Long signalCandleTimestamp,
             LocalDate signalDate,
@@ -1014,7 +1090,21 @@ public class AlertRuleService {
             int order,
             String category,
             String text,
-            boolean caution
+            boolean caution,
+            String scoreLabel,
+            String statusLabel,
+            List<SignalReasonDetailView> details,
+            boolean scored
+    ) {
+        public SignalReasonView {
+            details = List.copyOf(details);
+        }
+    }
+
+    public record SignalReasonDetailView(
+            String label,
+            String text,
+            String scoreLabel
     ) {
     }
 

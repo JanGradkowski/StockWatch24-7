@@ -41,6 +41,9 @@ public class AlertEvent {
     @Column(name = "confidence_score")
     private Integer confidenceScore;
 
+    @Column(name = "score_version", nullable = false, length = 32)
+    private String scoreVersion = "LEGACY_UNVERSIONED";
+
     @Column(name = "confidence_reasons", columnDefinition = "text")
     private String confidenceReasonsPayload;
 
@@ -110,6 +113,12 @@ public class AlertEvent {
 
     public Integer getConfidenceScore() {
         return confidenceScore;
+    }
+
+    public String getScoreVersion() {
+        return scoreVersion == null || scoreVersion.isBlank()
+                ? "LEGACY_UNVERSIONED"
+                : scoreVersion;
     }
 
     public List<String> getConfidenceReasons() {
@@ -208,6 +217,18 @@ public class AlertEvent {
 
     public void setConfidenceScore(Integer confidenceScore) {
         this.confidenceScore = confidenceScore;
+    }
+
+    public void setScoreVersion(String scoreVersion) {
+        if (scoreVersion == null || scoreVersion.isBlank()) {
+            this.scoreVersion = "LEGACY_UNVERSIONED";
+            return;
+        }
+        String normalized = scoreVersion.trim();
+        if (normalized.length() > 32) {
+            throw new IllegalArgumentException("Score version must not exceed 32 characters.");
+        }
+        this.scoreVersion = normalized;
     }
 
     public void setConfidenceReasons(List<String> confidenceReasons) {

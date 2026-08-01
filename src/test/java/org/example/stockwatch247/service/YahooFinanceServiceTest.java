@@ -36,6 +36,84 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class YahooFinanceServiceTest {
 
     @Test
+    void exactUsTickerRepairsAConflictingEuropeanAliasAndCurrency() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        ProviderSymbolRegistry providerSymbolRegistry = mock(ProviderSymbolRegistry.class);
+        StockAsset asset = new StockAsset();
+        asset.setId(51L);
+        asset.setTickerSymbol("MARA");
+        asset.setCompanyName("Marubeni Corporation");
+        asset.setExchange("Frankfurt");
+        asset.setMicCode("XNCM");
+        asset.setCountry("United States");
+        asset.setCurrency("EUR");
+        asset.setInstrumentType(InstrumentType.EQUITY);
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("MARA"))
+                .thenReturn(Optional.of(asset));
+        when(stockAssetRepository.save(asset)).thenReturn(asset);
+        when(providerSymbolRegistry.find(asset, MarketDataProvider.YAHOO_FINANCE))
+                .thenReturn(Optional.of(
+                        new ProviderSymbolRegistry.ProviderSymbolReference("MARA.F", "XFRA")));
+
+        long timestamp = LocalDate.of(2026, 7, 27)
+                .atTime(16, 0)
+                .atZone(ZoneId.of("America/New_York"))
+                .toEpochSecond();
+        server.expect(requestTo(containsString("/v8/finance/chart/MARA?")))
+                .andRespond(withSuccess("""
+                        {
+                          "chart": {
+                            "result": [{
+                              "meta": {
+                                "symbol": "MARA",
+                                "currency": "USD",
+                                "exchangeName": "NCM",
+                                "fullExchangeName": "NasdaqCM",
+                                "longName": "MARA Holdings, Inc.",
+                                "instrumentType": "EQUITY",
+                                "dataGranularity": "1d",
+                                "exchangeTimezoneName": "America/New_York"
+                              },
+                              "timestamp": [%d],
+                              "indicators": {"quote": [{
+                                "open": [15.0],
+                                "high": [15.8],
+                                "low": [14.7],
+                                "close": [15.4],
+                                "volume": [25000000]
+                              }]}
+                            }],
+                            "error": null
+                          }
+                        }
+                        """.formatted(timestamp), MediaType.APPLICATION_JSON));
+
+        YahooFinanceService service = new YahooFinanceService(
+                restTemplate,
+                new ObjectMapper(),
+                stockAssetRepository,
+                providerSymbolRegistry,
+                "https://query1.finance.yahoo.com",
+                true);
+
+        StockAsset repaired = service.refreshStockAssetMetadata("MARA");
+
+        assertThat(repaired.getCompanyName()).isEqualTo("MARA Holdings, Inc.");
+        assertThat(repaired.getExchange()).isEqualTo("NasdaqCM");
+        assertThat(repaired.getCurrency()).isEqualTo("USD");
+        assertThat(repaired.getMicCode()).isEqualTo("XNCM");
+        verify(providerSymbolRegistry).remember(
+                asset,
+                MarketDataProvider.YAHOO_FINANCE,
+                "MARA",
+                "XNAS",
+                "DIRECT_OR_ALIAS");
+        server.verify();
+    }
+
+    @Test
     void resolvesCboeDinoSymbolToVerifiedYahooWarsawPrimaryListing() {
         RestTemplate restTemplate = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
@@ -202,6 +280,84 @@ class YahooFinanceServiceTest {
         assertThat(asset.getCompanyName()).isEqualTo("SAP SE");
         assertThat(asset.getCurrency()).isEqualTo("EUR");
         verify(stockAssetRepository).save(asset);
+        server.verify();
+    }
+
+    @Test
+    void acceptsEquivalentFrenchLegalFormWhenResolvingParisTicker() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        ProviderSymbolRegistry providerSymbolRegistry = mock(ProviderSymbolRegistry.class);
+        StockAsset asset = new StockAsset();
+        asset.setId(1535L);
+        asset.setTickerSymbol("ALHGR");
+        asset.setCompanyName("Hoffmann Green Cement Technologies S.A.");
+        asset.setExchange("Euronext");
+        asset.setMicCode("XPAR");
+        asset.setCountry("France");
+        asset.setCurrency("EUR");
+        asset.setInstrumentType(InstrumentType.EQUITY);
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("ALHGR")).thenReturn(Optional.of(asset));
+        when(stockAssetRepository.save(asset)).thenReturn(asset);
+        when(providerSymbolRegistry.find(asset, MarketDataProvider.YAHOO_FINANCE)).thenReturn(Optional.empty());
+
+        long timestamp = LocalDate.of(2026, 7, 23)
+                .atTime(17, 30)
+                .atZone(ZoneId.of("Europe/Paris"))
+                .toEpochSecond();
+        server.expect(requestTo(containsString("/v8/finance/chart/ALHGR.PA?")))
+                .andRespond(withSuccess("""
+                        {
+                          "chart": {
+                            "result": [{
+                              "meta": {
+                                "symbol": "ALHGR.PA",
+                                "currency": "EUR",
+                                "exchangeName": "PAR",
+                                "fullExchangeName": "Paris",
+                                "longName": "Hoffmann Green Cement Technologies Societe anonyme",
+                                "shortName": "HOFFMANN",
+                                "instrumentType": "EQUITY",
+                                "dataGranularity": "1d",
+                                "exchangeTimezoneName": "Europe/Paris"
+                              },
+                              "timestamp": [%d],
+                              "indicators": {"quote": [{
+                                "open": [3.80],
+                                "high": [3.95],
+                                "low": [3.75],
+                                "close": [3.90],
+                                "volume": [42893]
+                              }]}
+                            }],
+                            "error": null
+                          }
+                        }
+                        """.formatted(timestamp), MediaType.APPLICATION_JSON));
+
+        YahooFinanceService service = new YahooFinanceService(
+                restTemplate,
+                new ObjectMapper(),
+                stockAssetRepository,
+                providerSymbolRegistry,
+                "https://query1.finance.yahoo.com",
+                true
+        );
+
+        List<MarketDataBar> bars = service.getTimeSeries("ALHGR", "1d", 1000);
+
+        assertThat(bars).singleElement().satisfies(bar -> {
+            assertThat(bar.providerSymbol()).isEqualTo("ALHGR.PA");
+            assertThat(bar.close()).isEqualTo(3.90);
+        });
+        verify(providerSymbolRegistry).remember(
+                asset,
+                MarketDataProvider.YAHOO_FINANCE,
+                "ALHGR.PA",
+                "XPAR",
+                "DIRECT_OR_ALIAS"
+        );
         server.verify();
     }
 

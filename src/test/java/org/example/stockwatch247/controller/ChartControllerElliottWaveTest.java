@@ -240,6 +240,50 @@ class ChartControllerElliottWaveTest {
                 .containsEntry("instrumentType", "INDEX");
     }
 
+    @Test
+    void inconsistentUsCurrencyFallsBackToYahooAndRepairsMaraMetadata() {
+        TwelveDataService twelveDataService = mock(TwelveDataService.class);
+        YahooFinanceService yahooFinanceService = mock(YahooFinanceService.class);
+        StockAsset corrupted = new StockAsset();
+        corrupted.setTickerSymbol("MARA");
+        corrupted.setCompanyName("Marubeni Corporation");
+        corrupted.setExchange("Frankfurt");
+        corrupted.setCurrency("EUR");
+        corrupted.setMicCode("XNCM");
+        corrupted.setCountry("United States");
+        corrupted.setInstrumentType(InstrumentType.EQUITY);
+        StockAsset repaired = new StockAsset();
+        repaired.setTickerSymbol("MARA");
+        repaired.setCompanyName("MARA Holdings, Inc.");
+        repaired.setExchange("NasdaqCM");
+        repaired.setCurrency("USD");
+        repaired.setMicCode("XNCM");
+        repaired.setCountry("United States");
+        repaired.setInstrumentType(InstrumentType.EQUITY);
+        when(twelveDataService.refreshStockAssetMetadata("MARA", null))
+                .thenReturn(corrupted);
+        when(yahooFinanceService.refreshStockAssetMetadata("MARA"))
+                .thenReturn(repaired);
+        ChartController controller = new ChartController(
+                mock(CandleRepository.class),
+                mock(LivePricingService.class),
+                mock(MarketDataService.class),
+                mock(StockAssetRepository.class),
+                twelveDataService,
+                yahooFinanceService,
+                new TechnicalIndicatorEnrichmentService(),
+                new ElliottWaveDetectionService());
+
+        Map<String, String> metadata = controller.getStockMetadata("MARA");
+
+        assertThat(metadata)
+                .containsEntry("symbol", "MARA")
+                .containsEntry("name", "MARA Holdings, Inc.")
+                .containsEntry("exchange", "NasdaqCM")
+                .containsEntry("currency", "USD");
+        verify(yahooFinanceService).refreshStockAssetMetadata("MARA");
+    }
+
     private List<Candle> candles(String symbol, String interval) {
         List<Anchor> anchors = List.of(
                 new Anchor(1, 112.0), new Anchor(6, 100.0), new Anchor(14, 121.0),

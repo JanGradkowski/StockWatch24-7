@@ -20,24 +20,24 @@ import java.util.Map;
 
 @Service
 public class CandlePatternDetectionService {
+    public static final String SETUP_SCORE_VERSION = "CANDLE_V4_EXPERIMENTAL";
     private static final int MIN_SETUP_SCORE = 75;
     private static final int STRONG_SETUP_SCORE = 85;
     private static final int BODY_COMPARISON_LOOKBACK = 20;
     private static final int TREND_LOOKBACK = 5;
     private static final int MIN_TREND_CANDLES = 3;
     /*
-     * The former stock-only components totaled 70 points:
-     * pattern quality 25, higher timeframe 15, price location 10,
-     * volatility/momentum 15, and volume 5. These allocations preserve those
-     * proportions to one decimal place while making the stock-only total 100.
+     * V4 is an explainable setup rank, not a probability forecast. Correlated
+     * indicators share family caps so an individual price move cannot collect
+     * full independent credit from every mathematical transformation of it.
      */
-    private static final int DAILY_PATTERN_QUALITY_MAX_TENTHS = 357;
-    private static final int HIGHER_INTERVAL_STRUCTURE_MAX_TENTHS = 214;
-    private static final int HISTORICAL_CALIBRATION_MAX_TENTHS = 143;
-    private static final int HIGHER_TIMEFRAME_MAX_TENTHS = 214;
-    private static final int PRICE_LOCATION_MAX_TENTHS = 143;
-    private static final int VOLATILITY_MOMENTUM_MAX_TENTHS = 214;
-    private static final int VOLUME_MAX_TENTHS = 72;
+    private static final int PATTERN_QUALITY_MAX_TENTHS = 250;
+    private static final int TREND_MAX_TENTHS = 200;
+    private static final int HIGHER_TIMEFRAME_MAX_TENTHS = 50;
+    private static final int MOMENTUM_MAX_TENTHS = 150;
+    private static final int BOLLINGER_MAX_TENTHS = 100;
+    private static final int SUPPORT_RESISTANCE_MAX_TENTHS = 150;
+    private static final int VOLUME_MAX_TENTHS = 100;
 
     public List<DetectedSignal> detect(List<EnrichedCandle> recentCandles) {
         if (recentCandles == null || recentCandles.size() < 2) {
@@ -60,7 +60,7 @@ public class CandlePatternDetectionService {
         if (isGeometricDoji(current)) {
             signals.add(neutralSignal(CandlePattern.DOJI, current, List.of(
                     "Pattern geometry: the real body is no more than 10% of the candle range",
-                    isAvailable(current.atr14())
+                    isAvailable(current.atr())
                             ? "Volatility context: ATR was available for interpretation"
                             : "Volatility context: ATR was unavailable"
             )));
@@ -258,47 +258,109 @@ public class CandlePatternDetectionService {
         List<ScoreComponent> components = new ArrayList<>();
 
         int rawGeometryPoints = geometryScore(pattern, candles, setupIndex, signalIndex, statistics);
-        BaseInterval baseInterval = inferBaseInterval(candles);
-        boolean calibratedHigherInterval = baseInterval != BaseInterval.DAILY;
-        int patternQualityMaximum = calibratedHigherInterval ? 15 : 25;
-        int geometryMaximum = calibratedHigherInterval ? 6 : 10;
-        int trendMaximum = calibratedHigherInterval ? 9 : 15;
-        int geometryPoints = (int) Math.round(rawGeometryPoints * geometryMaximum / 25.0);
-        int trendPoints = (int) Math.round(trend.scorePoints() * trendMaximum / 25.0);
-        int patternQualityMaximumTenths = calibratedHigherInterval
-                ? HIGHER_INTERVAL_STRUCTURE_MAX_TENTHS
-                : DAILY_PATTERN_QUALITY_MAX_TENTHS;
+        int geometryPoints = (int) Math.round(rawGeometryPoints * 10.0 / 25.0);
+        int trendPoints = (int) Math.round(trend.scorePoints() * 15.0 / 25.0);
         components.add(weightedComponent(
                 "Pattern quality",
                 geometryPoints + trendPoints,
-                patternQualityMaximum,
-                patternQualityMaximumTenths,
+                25,
+                PATTERN_QUALITY_MAX_TENTHS,
                 "all mandatory " + patternLabel(pattern)
                         + " geometry and prior-trend rules passed (geometry "
                         + rawGeometryPoints + "/25, trend " + trend.scorePoints()
                         + "/25); " + trend.description()
         ));
-        if (calibratedHigherInterval) {
-            CandlestickPatternCalibration.Timeframe calibrationTimeframe =
-                    baseInterval == BaseInterval.WEEKLY
-                            ? CandlestickPatternCalibration.Timeframe.WEEKLY
-                            : CandlestickPatternCalibration.Timeframe.MONTHLY;
-            CandlestickPatternCalibration.Assessment calibration =
-                    CandlestickPatternCalibration.assess(pattern, calibrationTimeframe);
-            components.add(weightedComponent(
-                    "Historical pattern calibration",
-                    calibration.points(),
-                    CandlestickPatternCalibration.MAX_POINTS,
-                    HISTORICAL_CALIBRATION_MAX_TENTHS,
-                    calibration.detail()
-            ));
-        }
+        components.add(trendIndicatorComponent(candles, signalIndex, direction));
         components.add(higherTimeframeComponent(candles, current.timestamp(), direction));
-        components.add(locationComponent(candles, setupIndex, signalIndex, direction));
-        components.add(volatilityMomentumComponent(candles, signalIndex, direction));
-        components.add(volumeComponent(current));
+        components.add(momentumComponent(candles, signalIndex, direction));
+        components.add(bollingerComponent(candles, setupIndex, signalIndex, direction));
+        components.add(supportResistanceComponent(candles, setupIndex, signalIndex, direction));
+        components.add(volumeComponent(candles, signalIndex, direction));
 
         return new SignalEvidence(current, components);
+    }
+
+    private ScoreComponent trendIndicatorComponent(List<EnrichedCandle> candles,
+                                                    int signalIndex,
+                                                    TradeSignal direction) {
+        EnrichedCandle current = candles.get(signalIndex);
+        EnrichedCandle previous = candles.get(Math.max(0, signalIndex - 1));
+        TechnicalIndicatorProfile profile = indicatorProfile(candles);
+        int points = 0;
+        List<String> details = new ArrayList<>();
+
+        if (isAvailable(current.fastEma()) && isAvailable(current.slowEma())) {
+            boolean emaOrderAligned = directionalDelta(current.fastEma() - current.slowEma(), direction);
+            if (emaOrderAligned) {
+                points += 5;
+            }
+            details.add("EMA(" + profile.fastEmaPeriod() + ")/EMA(" + profile.slowEmaPeriod()
+                    + ") order was " + alignmentLabel(emaOrderAligned));
+
+            if (isAvailable(previous.fastEma())) {
+                boolean fastSlopeAligned = directionalDelta(current.fastEma() - previous.fastEma(), direction);
+                if (fastSlopeAligned) {
+                    points += 3;
+                }
+                details.add("EMA(" + profile.fastEmaPeriod() + ") slope was "
+                        + alignmentLabel(fastSlopeAligned));
+            }
+            if (isAvailable(previous.slowEma())) {
+                boolean slowSlopeAligned = directionalDelta(current.slowEma() - previous.slowEma(), direction);
+                if (slowSlopeAligned) {
+                    points += 2;
+                }
+                details.add("EMA(" + profile.slowEmaPeriod() + ") slope was "
+                        + alignmentLabel(slowSlopeAligned));
+            }
+        } else {
+            details.add("EMA(" + profile.fastEmaPeriod() + ")/EMA(" + profile.slowEmaPeriod()
+                    + ") context was unavailable");
+        }
+
+        if (isAvailable(current.longSma())) {
+            boolean longTrendAligned = directionalDelta(current.close() - current.longSma(), direction);
+            if (longTrendAligned) {
+                points += 4;
+            }
+            details.add("close versus SMA(" + profile.longSmaPeriod() + ") was "
+                    + alignmentLabel(longTrendAligned));
+        } else {
+            details.add("SMA(" + profile.longSmaPeriod() + ") context was unavailable");
+        }
+
+        if (isAvailable(current.macdLine()) && isAvailable(current.macdSignal())) {
+            boolean macdAligned = directionalDelta(current.macdLine() - current.macdSignal(), direction);
+            if (macdAligned) {
+                points += 3;
+            }
+            details.add("MACD(" + profile.macdFastPeriod() + "," + profile.macdSlowPeriod()
+                    + "," + profile.macdSignalPeriod() + ") line/signal was "
+                    + alignmentLabel(macdAligned));
+        } else {
+            details.add("MACD(" + profile.macdFastPeriod() + "," + profile.macdSlowPeriod()
+                    + "," + profile.macdSignalPeriod() + ") line/signal context was unavailable");
+        }
+        if (isAvailable(current.macdHistogram()) && isAvailable(previous.macdHistogram())) {
+            boolean histogramAligned = directionalDelta(
+                    current.macdHistogram() - previous.macdHistogram(),
+                    direction
+            );
+            if (histogramAligned) {
+                points += 3;
+            }
+            details.add("MACD(" + profile.macdFastPeriod() + "," + profile.macdSlowPeriod()
+                    + "," + profile.macdSignalPeriod() + ") histogram change was "
+                    + alignmentLabel(histogramAligned));
+        }
+
+        return weightedComponent(
+                "Trend indicators",
+                points,
+                20,
+                TREND_MAX_TENTHS,
+                profile.shortLabel() + " profile: " + String.join("; ", details)
+        );
     }
 
     private ScoreComponent higherTimeframeComponent(List<EnrichedCandle> candles,
@@ -344,7 +406,7 @@ public class CandlePatternDetectionService {
             details.add(quarterly.detail());
         }
         return weightedComponent(
-                "Higher-timeframe alignment",
+                "Higher-timeframe trend",
                 points,
                 15,
                 HIGHER_TIMEFRAME_MAX_TENTHS,
@@ -352,15 +414,161 @@ public class CandlePatternDetectionService {
         );
     }
 
-    private ScoreComponent locationComponent(List<EnrichedCandle> candles,
-                                             int setupIndex,
+    private ScoreComponent momentumComponent(List<EnrichedCandle> candles,
                                              int signalIndex,
                                              TradeSignal direction) {
+        EnrichedCandle current = candles.get(signalIndex);
+        EnrichedCandle previous = candles.get(Math.max(0, signalIndex - 1));
+        TechnicalIndicatorProfile profile = indicatorProfile(candles);
+        int points = 0;
+        List<String> details = new ArrayList<>();
+
+        if (isAvailable(current.rsi())) {
+            int rsiLevelPoints;
+            if (direction == TradeSignal.BUY) {
+                rsiLevelPoints = current.rsi() <= 35.0 ? 5
+                        : current.rsi() < 45.0 ? 3
+                        : current.rsi() < 50.0 ? 1 : 0;
+            } else {
+                rsiLevelPoints = current.rsi() >= 65.0 ? 5
+                        : current.rsi() > 55.0 ? 3
+                        : current.rsi() > 50.0 ? 1 : 0;
+            }
+            points += rsiLevelPoints;
+            details.add(String.format(
+                    Locale.ROOT,
+                    "RSI(%d) was %.1f (+%d/5 for directional reversal location)",
+                    profile.rsiPeriod(),
+                    current.rsi(),
+                    rsiLevelPoints
+            ));
+            if (isAvailable(previous.rsi())) {
+                boolean rsiTurnAligned = directionalDelta(current.rsi() - previous.rsi(), direction);
+                if (rsiTurnAligned) {
+                    points += 3;
+                }
+                details.add("RSI(" + profile.rsiPeriod() + ") change was "
+                        + alignmentLabel(rsiTurnAligned));
+            }
+        } else {
+            details.add("RSI(" + profile.rsiPeriod() + ") was unavailable");
+        }
+
+        if (isAvailable(current.cci())) {
+            int cciLevelPoints;
+            if (direction == TradeSignal.BUY) {
+                cciLevelPoints = current.cci() <= -100.0 ? 4 : current.cci() <= -50.0 ? 2 : 0;
+            } else {
+                cciLevelPoints = current.cci() >= 100.0 ? 4 : current.cci() >= 50.0 ? 2 : 0;
+            }
+            points += cciLevelPoints;
+            details.add(String.format(
+                    Locale.ROOT,
+                    "CCI(%d) was %.1f (+%d/4 for directional reversal location)",
+                    profile.cciPeriod(),
+                    current.cci(),
+                    cciLevelPoints
+            ));
+            if (isAvailable(previous.cci())) {
+                boolean cciTurnAligned = directionalDelta(current.cci() - previous.cci(), direction);
+                if (cciTurnAligned) {
+                    points += 3;
+                }
+                details.add("CCI(" + profile.cciPeriod() + ") change was "
+                        + alignmentLabel(cciTurnAligned));
+            }
+        } else {
+            details.add("CCI(" + profile.cciPeriod() + ") was unavailable");
+        }
+
+        return weightedComponent(
+                "Momentum",
+                points,
+                15,
+                MOMENTUM_MAX_TENTHS,
+                profile.shortLabel() + " profile: " + String.join("; ", details)
+        );
+    }
+
+    private ScoreComponent bollingerComponent(List<EnrichedCandle> candles,
+                                              int setupIndex,
+                                              int signalIndex,
+                                              TradeSignal direction) {
+        EnrichedCandle current = candles.get(signalIndex);
+        TechnicalIndicatorProfile profile = indicatorProfile(candles);
+        int points = 0;
+        List<String> details = new ArrayList<>();
+        boolean testedBand = false;
+        for (int index = setupIndex; index <= signalIndex; index++) {
+            EnrichedCandle candle = candles.get(index);
+            if (direction == TradeSignal.BUY
+                    && isAvailable(candle.lowerBollinger())
+                    && candle.low() <= candle.lowerBollinger() * 1.005) {
+                testedBand = true;
+            } else if (direction == TradeSignal.SELL
+                    && isAvailable(candle.upperBollinger())
+                    && candle.high() >= candle.upperBollinger() * 0.995) {
+                testedBand = true;
+            }
+        }
+        if (testedBand) {
+            points += 4;
+            details.add(direction == TradeSignal.BUY
+                    ? "the pattern tested the lower band"
+                    : "the pattern tested the upper band");
+        }
+
+        if (isAvailable(current.lowerBollinger())
+                && isAvailable(current.upperBollinger())
+                && current.upperBollinger() > current.lowerBollinger()) {
+            double percentB = (current.close() - current.lowerBollinger())
+                    / (current.upperBollinger() - current.lowerBollinger());
+            int locationPoints = direction == TradeSignal.BUY
+                    ? percentB <= 0.20 ? 4 : percentB <= 0.35 ? 2 : 0
+                    : percentB >= 0.80 ? 4 : percentB >= 0.65 ? 2 : 0;
+            points += locationPoints;
+            details.add(String.format(Locale.ROOT, "Bollinger %%B was %.2f (+%d/4)", percentB, locationPoints));
+
+            boolean reentered = testedBand && (direction == TradeSignal.BUY
+                    ? current.close() > current.lowerBollinger()
+                    : current.close() < current.upperBollinger());
+            if (reentered) {
+                points += 2;
+                details.add("the close moved back inside the tested band");
+            }
+
+            if (isAvailable(current.bollingerMiddle()) && current.bollingerMiddle() != 0.0) {
+                double bandwidth = (current.upperBollinger() - current.lowerBollinger())
+                        / Math.abs(current.bollingerMiddle()) * 100.0;
+                details.add(String.format(Locale.ROOT, "bandwidth was %.2f%%", bandwidth));
+            }
+        } else {
+            details.add("Bollinger values were unavailable");
+        }
+
+        return weightedComponent(
+                "Bollinger volatility/location",
+                points,
+                10,
+                BOLLINGER_MAX_TENTHS,
+                "Bollinger(" + profile.bollingerPeriod() + ","
+                        + String.format(Locale.ROOT, "%.1f", profile.bollingerDeviation())
+                        + "): " + String.join("; ", details)
+        );
+    }
+
+    private ScoreComponent supportResistanceComponent(List<EnrichedCandle> candles,
+                                                      int setupIndex,
+                                                      int signalIndex,
+                                                      TradeSignal direction) {
+        EnrichedCandle current = candles.get(signalIndex);
         int points = 0;
         List<String> details = new ArrayList<>();
         int referenceStart = Math.max(0, setupIndex - BODY_COMPARISON_LOOKBACK);
 
-        if (setupIndex > referenceStart) {
+        if (setupIndex <= referenceStart) {
+            details.add("no completed pre-pattern bars were available for a level");
+        } else {
             double patternLow = Double.POSITIVE_INFINITY;
             double patternHigh = Double.NEGATIVE_INFINITY;
             for (int index = setupIndex; index <= signalIndex; index++) {
@@ -375,152 +583,157 @@ public class CandlePatternDetectionService {
                 referenceHigh = Math.max(referenceHigh, candles.get(index).high());
             }
 
-            EnrichedCandle current = candles.get(signalIndex);
-            double tolerance = Math.max(Math.abs(current.close()) * 0.005,
-                    isAvailable(current.atr14()) ? current.atr14() * 0.25 : 0.0);
-            if (direction == TradeSignal.BUY && patternLow <= referenceLow + tolerance) {
-                points += 6;
-                details.add("the pattern tested the recent support area within an ATR-aware tolerance");
-            } else if (direction == TradeSignal.SELL && patternHigh >= referenceHigh - tolerance) {
-                points += 6;
-                details.add("the pattern tested the recent resistance area within an ATR-aware tolerance");
+            double scale = isAvailable(current.atr()) && current.atr() > 0.0
+                    ? current.atr()
+                    : Math.max(Math.abs(current.close()) * 0.01, 0.000001);
+            double level = direction == TradeSignal.BUY ? referenceLow : referenceHigh;
+            double patternExtreme = direction == TradeSignal.BUY ? patternLow : patternHigh;
+            double distanceInAtr = Math.abs(patternExtreme - level) / scale;
+            int proximityPoints = distanceInAtr <= 0.25 ? 7
+                    : distanceInAtr <= 0.50 ? 5
+                    : distanceInAtr <= 1.0 ? 3 : 0;
+            points += proximityPoints;
+            details.add(String.format(
+                    Locale.ROOT,
+                    "pattern extreme was %.2f ATR-equivalents from recent %s (+%d/7)",
+                    distanceInAtr,
+                    direction == TradeSignal.BUY ? "support" : "resistance",
+                    proximityPoints
+            ));
+
+            double touchTolerance = scale * 0.5;
+            int touches = 0;
+            for (int index = referenceStart; index < setupIndex; index++) {
+                double candidate = direction == TradeSignal.BUY
+                        ? candles.get(index).low()
+                        : candles.get(index).high();
+                if (Math.abs(candidate - level) <= touchTolerance) {
+                    touches++;
+                }
             }
+            int touchPoints = touches >= 3 ? 4 : touches == 2 ? 2 : touches == 1 ? 1 : 0;
+            points += touchPoints;
+            details.add(touches + " prior level touch(es) (+" + touchPoints + "/4)");
+
+            double patternRange = Math.max(patternHigh - patternLow, 0.000001);
+            double rejectionFraction = direction == TradeSignal.BUY
+                    ? (current.close() - patternLow) / patternRange
+                    : (patternHigh - current.close()) / patternRange;
+            int rejectionPoints = rejectionFraction >= 0.65 ? 4 : rejectionFraction >= 0.50 ? 2 : 0;
+            points += rejectionPoints;
+            details.add(String.format(
+                    Locale.ROOT,
+                    "close rejected %.0f%% of the pattern range from the level (+%d/4)",
+                    rejectionFraction * 100.0,
+                    rejectionPoints
+            ));
         }
 
-        boolean testedBollingerBand = false;
-        for (int index = setupIndex; index <= signalIndex; index++) {
-            EnrichedCandle candle = candles.get(index);
-            if (direction == TradeSignal.BUY
-                    && isAvailable(candle.lowerBollinger())
-                    && candle.low() <= candle.lowerBollinger() * 1.005) {
-                testedBollingerBand = true;
-            } else if (direction == TradeSignal.SELL
-                    && isAvailable(candle.upperBollinger())
-                    && candle.high() >= candle.upperBollinger() * 0.995) {
-                testedBollingerBand = true;
-            }
-        }
-        if (testedBollingerBand) {
-            points += 4;
-            details.add(direction == TradeSignal.BUY
-                    ? "price tested the lower Bollinger Band"
-                    : "price tested the upper Bollinger Band");
-        }
-
-        if (details.isEmpty()) {
-            details.add("no recent swing-level or Bollinger Band confluence was detected");
-        }
         return weightedComponent(
-                "Price location",
+                "Support/resistance",
                 points,
-                10,
-                PRICE_LOCATION_MAX_TENTHS,
+                15,
+                SUPPORT_RESISTANCE_MAX_TENTHS,
                 String.join("; ", details)
         );
     }
 
-    private ScoreComponent volatilityMomentumComponent(List<EnrichedCandle> candles,
-                                                       int signalIndex,
-                                                       TradeSignal direction) {
-        EnrichedCandle current = candles.get(signalIndex);
+    private ScoreComponent volumeComponent(List<EnrichedCandle> candles,
+                                           int signalIndex,
+                                           TradeSignal direction) {
+        EnrichedCandle candle = candles.get(signalIndex);
         EnrichedCandle previous = candles.get(Math.max(0, signalIndex - 1));
+        TechnicalIndicatorProfile profile = indicatorProfile(candles);
         int points = 0;
         List<String> details = new ArrayList<>();
-
-        if (isAvailable(current.atr14()) && current.atr14() > 0.0) {
-            double rangeToAtr = range(current) / current.atr14();
-            int rangePoints = rangeToAtr >= 0.6 && rangeToAtr <= 2.0
-                    ? 5
-                    : rangeToAtr >= 0.4 && rangeToAtr <= 2.5 ? 3 : 1;
-            points += rangePoints;
-            details.add(String.format(Locale.ROOT,
-                    "pattern candle range was %.2f ATR (+%d/5)",
-                    rangeToAtr,
-                    rangePoints));
-
-            List<Double> priorAtr = new ArrayList<>();
-            int atrStart = Math.max(0, signalIndex - BODY_COMPARISON_LOOKBACK);
-            for (int index = atrStart; index <= signalIndex; index++) {
-                if (isAvailable(candles.get(index).atr14()) && candles.get(index).atr14() > 0.0) {
-                    priorAtr.add(candles.get(index).atr14());
-                }
-            }
-            if (priorAtr.size() >= 5) {
-                double percentile = percentileRank(priorAtr, current.atr14());
-                int regimePoints = percentile >= 20.0 && percentile <= 80.0 ? 3 : 1;
-                points += regimePoints;
-                details.add(String.format(Locale.ROOT,
-                        "ATR was at the %.0fth recent percentile (+%d/3)",
-                        percentile,
-                        regimePoints));
-            }
+        if (!isAvailable(candle.averageVolume()) || candle.averageVolume() <= 0) {
+            details.add("relative volume versus the " + profile.volumePeriod()
+                    + "-bar average was unavailable");
         } else {
-            details.add("ATR data was unavailable");
-        }
-
-        if (isAvailable(current.rsi14())) {
-            if (direction == TradeSignal.BUY) {
-                if (current.rsi14() <= 35) {
-                    points += 4;
-                    details.add("RSI is oversold");
-                } else if (current.rsi14() < 45) {
-                    points += 2;
-                    details.add("RSI is below neutral");
-                }
-                if (isAvailable(previous.rsi14()) && current.rsi14() > previous.rsi14()) {
-                    points += 3;
-                    details.add("RSI is turning upward");
-                }
-            } else {
-                if (current.rsi14() >= 65) {
-                    points += 4;
-                    details.add("RSI is overbought");
-                } else if (current.rsi14() > 55) {
-                    points += 2;
-                    details.add("RSI is above neutral");
-                }
-                if (isAvailable(previous.rsi14()) && current.rsi14() < previous.rsi14()) {
-                    points += 3;
-                    details.add("RSI is turning downward");
-                }
-            }
-        }
-
-        if (details.isEmpty()) {
-            details.add(isAvailable(current.rsi14())
-                    ? "RSI did not add directional confluence"
-                    : "RSI data was unavailable");
-        }
-        return weightedComponent(
-                "Volatility and momentum",
-                Math.min(points, 15),
-                15,
-                VOLATILITY_MOMENTUM_MAX_TENTHS,
-                String.join("; ", details)
-        );
-    }
-
-    private ScoreComponent volumeComponent(EnrichedCandle candle) {
-        int points = 0;
-        String detail;
-        if (!isAvailable(candle.averageVolume20()) || candle.averageVolume20() <= 0) {
-            detail = "20-period average volume was unavailable";
-        } else {
-            double ratio = candle.volume() / candle.averageVolume20();
+            double ratio = candle.volume() / candle.averageVolume();
+            int relativeVolumePoints;
             if (ratio >= 1.5) {
-                points = 5;
-                detail = "volume was at least 50% above its 20-period average";
+                relativeVolumePoints = 4;
             } else if (ratio >= 1.2) {
-                points = 4;
-                detail = "volume was at least 20% above its 20-period average";
+                relativeVolumePoints = 3;
             } else if (ratio >= 1.0) {
-                points = 2;
-                detail = "volume met its 20-period average";
+                relativeVolumePoints = 2;
             } else {
-                detail = "volume was below its 20-period average";
+                relativeVolumePoints = 0;
             }
+            points += relativeVolumePoints;
+            details.add(String.format(
+                    Locale.ROOT,
+                    "volume was %.2fx its %d-bar average (+%d/4)",
+                    ratio,
+                    profile.volumePeriod(),
+                    relativeVolumePoints
+            ));
         }
-        return weightedComponent("Volume", points, 5, VOLUME_MAX_TENTHS, detail);
+
+        if (isAvailable(candle.rollingVwap())) {
+            boolean priceAligned = directionalDelta(candle.close() - candle.rollingVwap(), direction);
+            if (priceAligned) {
+                points += 2;
+            }
+            details.add("close versus rolling VWAP(" + profile.vwapPeriod() + ") was "
+                    + alignmentLabel(priceAligned));
+
+            if (isAvailable(previous.rollingVwap())) {
+                boolean vwapSlopeAligned = directionalDelta(
+                        candle.rollingVwap() - previous.rollingVwap(),
+                        direction
+                );
+                if (vwapSlopeAligned) {
+                    points += 1;
+                }
+                details.add("rolling VWAP(" + profile.vwapPeriod() + ") slope was "
+                        + alignmentLabel(vwapSlopeAligned));
+            }
+        } else {
+            details.add("rolling VWAP(" + profile.vwapPeriod() + ") was unavailable");
+        }
+
+        if (isAvailable(candle.volumeProfilePointOfControl())
+                && isAvailable(candle.volumeProfileValueAreaLow())
+                && isAvailable(candle.volumeProfileValueAreaHigh())) {
+            boolean pointOfControlSideAligned = direction == TradeSignal.BUY
+                    ? candle.close() <= candle.volumeProfilePointOfControl()
+                    : candle.close() >= candle.volumeProfilePointOfControl();
+            if (pointOfControlSideAligned) {
+                points += 1;
+            }
+
+            double relevantBoundary = direction == TradeSignal.BUY
+                    ? candle.volumeProfileValueAreaLow()
+                    : candle.volumeProfileValueAreaHigh();
+            double scale = isAvailable(candle.atr()) && candle.atr() > 0.0
+                    ? candle.atr()
+                    : Math.max(Math.abs(candle.close()) * 0.01, 0.000001);
+            double boundaryDistance = Math.abs(candle.close() - relevantBoundary) / scale;
+            int boundaryPoints = boundaryDistance <= 0.5 ? 2 : boundaryDistance <= 1.0 ? 1 : 0;
+            points += boundaryPoints;
+            details.add(String.format(
+                    Locale.ROOT,
+                    "%d-bar OHLCV volume-profile approximation: point-of-control side was %s; "
+                            + "close was %.2f ATR-equivalents from the relevant 70%% value-area boundary (+%d/2)",
+                    profile.volumeProfilePeriod(),
+                    alignmentLabel(pointOfControlSideAligned),
+                    boundaryDistance,
+                    boundaryPoints
+            ));
+        } else {
+            details.add(profile.volumeProfilePeriod()
+                    + "-bar OHLCV volume-profile approximation was unavailable");
+        }
+
+        return weightedComponent(
+                "Volume participation",
+                points,
+                10,
+                VOLUME_MAX_TENTHS,
+                profile.shortLabel() + " profile: " + String.join("; ", details)
+        );
     }
 
     private ScoreComponent weightedComponent(String category,
@@ -575,6 +788,14 @@ public class CandlePatternDetectionService {
             return BaseInterval.WEEKLY;
         }
         return BaseInterval.MONTHLY;
+    }
+
+    private TechnicalIndicatorProfile indicatorProfile(List<EnrichedCandle> candles) {
+        return TechnicalIndicatorProfile.forInterval(switch (inferBaseInterval(candles)) {
+            case DAILY -> org.example.stockwatch247.model.enums.TimeInterval.DAILY;
+            case WEEKLY -> org.example.stockwatch247.model.enums.TimeInterval.WEEKLY;
+            case MONTHLY -> org.example.stockwatch247.model.enums.TimeInterval.MONTHLY;
+        });
     }
 
     private List<Double> completedPeriodCloses(List<EnrichedCandle> candles,
@@ -635,18 +856,10 @@ public class CandlePatternDetectionService {
         int points = (priceAligned ? pricePoints : 0) + (slopeAligned ? slopePoints : 0);
         return new AlignmentAssessment(
                 points,
-                label + " close/mean was " + alignmentLabel(priceAligned)
-                        + " and mean slope was " + alignmentLabel(slopeAligned)
+                label + " close/" + averagePeriod + "-period mean was " + alignmentLabel(priceAligned)
+                        + " and " + averagePeriod + "-period mean slope was " + alignmentLabel(slopeAligned)
                         + " (+" + points + "/" + maximumPoints + ")"
         );
-    }
-
-    private double percentileRank(List<Double> values, double target) {
-        if (values.isEmpty()) {
-            return 0.0;
-        }
-        long atOrBelow = values.stream().filter(value -> value <= target).count();
-        return atOrBelow * 100.0 / values.size();
     }
 
     private int geometryScore(CandlePattern pattern,
@@ -1047,19 +1260,19 @@ public class CandlePatternDetectionService {
                                int contextIndex,
                                TrendDirection direction) {
         EnrichedCandle context = candles.get(contextIndex);
-        if (!isAvailable(context.ema20())) {
+        if (!isAvailable(context.fastEma())) {
             return false;
         }
         boolean positionAligned = direction == TrendDirection.UP
-                ? context.close() > context.ema20()
-                : context.close() < context.ema20();
+                ? context.close() > context.fastEma()
+                : context.close() < context.fastEma();
         if (!positionAligned || contextIndex == 0
-                || !isAvailable(candles.get(contextIndex - 1).ema20())) {
+                || !isAvailable(candles.get(contextIndex - 1).fastEma())) {
             return positionAligned;
         }
         return direction == TrendDirection.UP
-                ? context.ema20() > candles.get(contextIndex - 1).ema20()
-                : context.ema20() < candles.get(contextIndex - 1).ema20();
+                ? context.fastEma() > candles.get(contextIndex - 1).fastEma()
+                : context.fastEma() < candles.get(contextIndex - 1).fastEma();
     }
 
     private CandleStatistics statisticsBefore(List<EnrichedCandle> candles, int patternStartIndex) {

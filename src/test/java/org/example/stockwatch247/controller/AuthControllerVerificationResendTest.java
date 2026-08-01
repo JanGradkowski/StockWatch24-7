@@ -5,6 +5,7 @@ import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.service.AlertRuleService;
 import org.example.stockwatch247.service.EmailVerificationService;
 import org.example.stockwatch247.service.congress.CongressionalActivityService;
+import org.example.stockwatch247.service.insider.InsiderActivityService;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
@@ -33,6 +34,7 @@ class AuthControllerVerificationResendTest {
                 users,
                 mock(AlertRuleService.class),
                 mock(CongressionalActivityService.class),
+                mock(InsiderActivityService.class),
                 encoder,
                 verification);
 

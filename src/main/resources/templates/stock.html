@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title th:text="${symbol} + ' — Market workspace'"></title>
+  <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 
   <!-- TradingView Lightweight Charts (Industry Standard) -->
@@ -14,7 +15,63 @@
     /* Page styling lives in the local stylesheet; the nonce keeps this template CSP-safe. */
   </style>
 </head>
-<body>
+<body class="stock-is-loading">
+<div id="stockPageLoader"
+     class="stock-page-loader"
+     role="status"
+     aria-live="polite"
+     aria-atomic="true"
+     aria-labelledby="stockLoaderTitle">
+  <div class="stock-loader-grid" aria-hidden="true"></div>
+  <div class="stock-loader-glow stock-loader-glow-primary" aria-hidden="true"></div>
+  <div class="stock-loader-glow stock-loader-glow-violet" aria-hidden="true"></div>
+
+  <div class="stock-loader-content">
+    <div class="stock-loader-brand">
+      <span class="logo-mark" aria-hidden="true"></span>
+      <span class="logo-word">StockWatch <span>24/7</span></span>
+    </div>
+
+    <div class="stock-loader-market" aria-hidden="true">
+      <svg viewBox="0 0 620 230" focusable="false">
+        <g class="stock-loader-chart-grid">
+          <line x1="20" y1="45" x2="600" y2="45"/>
+          <line x1="20" y1="115" x2="600" y2="115"/>
+          <line x1="20" y1="185" x2="600" y2="185"/>
+        </g>
+        <g class="stock-loader-candles">
+          <line x1="62" y1="90" x2="62" y2="179"/><rect x="52" y="112" width="20" height="42"/>
+          <line x1="122" y1="107" x2="122" y2="194"/><rect x="112" y="128" width="20" height="43"/>
+          <line x1="182" y1="68" x2="182" y2="163"/><rect x="172" y="94" width="20" height="48"/>
+          <line x1="242" y1="52" x2="242" y2="139"/><rect x="232" y="73" width="20" height="43"/>
+          <line x1="302" y1="74" x2="302" y2="159"/><rect x="292" y="96" width="20" height="39"/>
+          <line x1="362" y1="41" x2="362" y2="126"/><rect x="352" y="62" width="20" height="42"/>
+          <line x1="422" y1="24" x2="422" y2="104"/><rect x="412" y="44" width="20" height="38"/>
+          <line x1="482" y1="47" x2="482" y2="131"/><rect x="472" y="67" width="20" height="42"/>
+          <line x1="542" y1="20" x2="542" y2="102"/><rect x="532" y="40" width="20" height="39"/>
+        </g>
+        <path class="stock-loader-path"
+              d="M32 178 C92 166, 122 186, 182 139 S267 135, 322 100 S402 91, 452 61 S531 60, 590 28"/>
+        <circle class="stock-loader-path-point" cx="590" cy="28" r="6"/>
+      </svg>
+      <span class="stock-loader-scan-line"></span>
+    </div>
+
+    <div class="stock-loader-copy">
+      <span class="stock-loader-kicker">Market data initialization</span>
+      <h1 id="stockLoaderTitle">
+        Opening <span th:text="${symbol}">AAPL</span> workspace
+      </h1>
+      <p id="stockLoaderStatus">Preparing the market canvas...</p>
+    </div>
+
+    <div class="stock-loader-progress" aria-hidden="true">
+      <span></span>
+    </div>
+    <p class="stock-loader-note">Completed candles only · Price · Volume · Technical context</p>
+  </div>
+</div>
+
 <div class="bg-animation" aria-hidden="true">
   <div class="glow-orb orb-1"></div>
   <div class="glow-orb orb-2"></div>
@@ -22,7 +79,7 @@
 
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
-<main class="stock-page">
+<main class="stock-page" aria-busy="true">
   <header class="price-header">
     <div class="market-identity">
       <div class="stock-eyebrow">Live market workspace</div>
@@ -45,6 +102,12 @@
         <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line">Line</button>
         <button id="candleBtn" type="button" class="view-toggle active" data-chart-mode="candle">Candles</button>
         <button id="elliottOverlayToggle" type="button" class="view-toggle" aria-pressed="false" disabled>Elliott overlays</button>
+        <button id="anchoredVolumeProfileToggle"
+                type="button"
+                class="view-toggle"
+                aria-pressed="false">
+          Anchored volume profile
+        </button>
       </div>
     </div>
     <div class="toolbar-cluster">
@@ -55,6 +118,53 @@
         <button id="int-1mo" type="button" class="view-toggle" data-chart-interval="1mo">Monthly</button>
       </div>
     </div>
+  </section>
+
+  <!-- Price Chart Canvas -->
+  <section class="chart-wrapper">
+    <div class="chart-panel-head">
+      <h2 class="chart-panel-title">Price action</h2>
+      <span class="chart-panel-meta">Scroll horizontally to explore history</span>
+    </div>
+    <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite"></div>
+    <div id="anchoredVolumeProfileSummary" class="anchored-volume-profile-summary">
+      <div class="anchored-volume-profile-range">
+        <span class="anchored-volume-profile-kicker">Anchored range</span>
+        <span id="anchoredVolumeProfileRange">Select a candle</span>
+      </div>
+      <div class="anchored-volume-profile-metrics" aria-label="Volume profile levels">
+        <div class="anchored-volume-profile-metric poc">
+          <span>POC</span>
+          <strong id="anchoredVolumeProfilePoc">—</strong>
+        </div>
+        <div class="anchored-volume-profile-metric">
+          <span>VAH</span>
+          <strong id="anchoredVolumeProfileVah">—</strong>
+        </div>
+        <div class="anchored-volume-profile-metric">
+          <span>VAL</span>
+          <strong id="anchoredVolumeProfileVal">—</strong>
+        </div>
+      </div>
+      <div id="anchoredVolumeProfileStatus"
+           class="anchored-volume-profile-status"
+           aria-live="polite"></div>
+    </div>
+    <div id="priceChartStage" class="price-chart-stage">
+      <div id="priceChartContainer" class="price-chart-container"></div>
+      <canvas id="anchoredVolumeProfileCanvas"
+              class="anchored-volume-profile-canvas"
+              aria-hidden="true"></canvas>
+    </div>
+  </section>
+
+  <!-- Volume Chart Canvas -->
+  <section class="chart-wrapper">
+    <div class="chart-panel-head">
+      <h2 class="volume-title">Trading volume</h2>
+      <span class="chart-panel-meta">Synchronized with price history</span>
+    </div>
+    <div id="volumeChartContainer" class="volume-chart-container"></div>
   </section>
 
   <section class="alert-panel">
@@ -70,6 +180,14 @@
           <button id="applyAlertChangesBtn" type="button" class="btn-accent alert-apply-btn" disabled>Apply changes</button>
         </div>
       </div>
+    </div>
+
+    <div class="historical-candlestick-launch-row">
+      <button id="showHistoricalCandlestickPatternsBtn"
+              type="button"
+              class="btn-secondary historical-candlestick-open-button">
+        Show historical candle patterns
+      </button>
     </div>
 
     <div class="alert-sections-layout">
@@ -156,6 +274,52 @@
     </div>
   </section>
 
+  <section id="insiderActivityPanel"
+           class="congressional-activity-panel insider-activity-panel"
+           aria-labelledby="insiderActivityTitle"
+           hidden>
+    <div class="congressional-panel-header">
+      <div>
+        <div class="congressional-panel-kicker">Stocks only · Growing SEC insider archive</div>
+        <h2 id="insiderActivityTitle">Corporate insider activity</h2>
+        <p>Follow newly filed open-market purchases and sales by company officers, directors, and other reporting insiders.</p>
+      </div>
+      <div class="congressional-panel-actions">
+        <button id="followInsiderActivityBtn"
+                type="button"
+                class="btn-accent congressional-follow-button insider-follow-button"
+                aria-pressed="false"
+                disabled>Follow insider activity</button>
+        <button id="showInsiderHistoryBtn"
+                type="button"
+                class="btn-secondary congressional-history-button"
+                disabled>Show insider history</button>
+      </div>
+    </div>
+    <div class="congressional-panel-meta">
+      <div id="insiderActivityStatus" class="congressional-activity-status" aria-live="polite">
+        Loading follow state…
+      </div>
+      <p id="insiderReturnNotice">
+        Directional return compares the filed transaction price with the latest completed daily close.
+      </p>
+      <p id="insiderBaselineNotice">
+        Cached observations are kept for history. The current latest 10 establish a no-alert baseline,
+        then daily checks merge newly observed rows.
+      </p>
+      <p>
+        Data provided by
+        <a href="https://api-ninjas.com/api/insidertrading"
+           target="_blank"
+           rel="noopener noreferrer">API Ninjas</a>
+        from public SEC insider filings.
+        Free-tier coverage is limited to the 10 latest rows and can miss larger bursts between checks.
+        Awards, gifts, option exercises, and zero-price grants are excluded.
+        Informational only, not financial advice.
+      </p>
+    </div>
+  </section>
+
   <dialog id="congressionalHistoryDialog"
           class="congressional-history-dialog"
           aria-labelledby="congressionalHistoryTitle">
@@ -198,6 +362,202 @@
     </div>
   </dialog>
 
+  <dialog id="insiderHistoryDialog"
+          class="congressional-history-dialog insider-history-dialog"
+          aria-labelledby="insiderHistoryTitle">
+    <div class="congressional-history-dialog-content insider-history-dialog-content">
+      <div class="congressional-history-heading">
+        <div>
+          <span class="congressional-panel-kicker">Cache-first accumulated archive</span>
+          <h2 id="insiderHistoryTitle">Corporate insider trading history</h2>
+          <p id="insiderHistoryWindow">Loading stored observations, then checking the provider's latest 10.</p>
+        </div>
+        <button id="closeInsiderHistoryBtn"
+                type="button"
+                class="congressional-dialog-close"
+                aria-label="Close insider trading history">&times;</button>
+      </div>
+      <div id="insiderHistoryStatus"
+           class="congressional-history-status"
+           aria-live="polite">Loading history…</div>
+      <div class="congressional-history-table-wrap insider-history-table-wrap">
+        <table class="congressional-history-table insider-history-table">
+          <thead>
+          <tr>
+            <th scope="col">Insider</th>
+            <th scope="col">Activity</th>
+            <th scope="col">Shares / price</th>
+            <th scope="col">Trade value</th>
+            <th scope="col">Effective date*</th>
+            <th scope="col">Filed</th>
+            <th scope="col">Directional return</th>
+            <th scope="col">Filing</th>
+          </tr>
+          </thead>
+          <tbody id="insiderHistoryRows"></tbody>
+        </table>
+      </div>
+      <div id="insiderHistoryEmpty" class="congressional-history-empty" hidden>
+        No open-market purchases or sales were found in the latest API response.
+      </div>
+      <p id="insiderHistoryDisclaimer" class="congressional-history-disclaimer">
+        Returns are mark-to-market research measurements, not realized portfolio returns.
+      </p>
+    </div>
+  </dialog>
+
+  <dialog id="historicalCandlestickIntervalDialog"
+          class="congressional-history-dialog historical-candlestick-dialog interval-picker-dialog"
+          aria-labelledby="historicalCandlestickIntervalTitle">
+    <div class="congressional-history-dialog-content">
+      <div class="congressional-history-heading">
+        <div>
+          <span class="congressional-panel-kicker">On-demand pattern research</span>
+          <h2 id="historicalCandlestickIntervalTitle">Choose a candle interval</h2>
+          <p>After choosing the interval, you can set exactly how many completed candles to scan.</p>
+        </div>
+        <button id="closeHistoricalCandlestickIntervalBtn"
+                type="button"
+                class="congressional-dialog-close"
+                aria-label="Close historical candlestick interval picker">&times;</button>
+      </div>
+      <div class="historical-candlestick-interval-grid">
+        <button type="button"
+                class="historical-candlestick-interval-option"
+                data-historical-candlestick-interval="1d">
+          <span>Daily</span>
+          <strong>Daily candles</strong>
+          <small>Outcome after 10 trading sessions</small>
+        </button>
+        <button type="button"
+                class="historical-candlestick-interval-option"
+                data-historical-candlestick-interval="1wk">
+          <span>Weekly</span>
+          <strong>Weekly candles</strong>
+          <small>Outcome after 4 weeks</small>
+        </button>
+        <button type="button"
+                class="historical-candlestick-interval-option"
+                data-historical-candlestick-interval="1mo">
+          <span>Monthly</span>
+          <strong>Monthly candles</strong>
+          <small>Outcome after 3 months</small>
+        </button>
+      </div>
+      <p class="congressional-history-disclaimer">
+        Signals are recalculated when requested and are not stored or cached.
+        Historical measurements do not include execution costs and are not financial advice.
+      </p>
+    </div>
+  </dialog>
+
+  <dialog id="historicalCandlestickLookbackDialog"
+          class="congressional-history-dialog historical-candlestick-dialog lookback-picker-dialog"
+          aria-labelledby="historicalCandlestickLookbackTitle">
+    <form id="historicalCandlestickLookbackForm"
+          class="congressional-history-dialog-content historical-candlestick-lookback-form">
+      <div class="congressional-history-heading">
+        <div>
+          <span id="historicalCandlestickLookbackInterval"
+                class="congressional-panel-kicker">Selected interval</span>
+          <h2 id="historicalCandlestickLookbackTitle">Choose how many candles to scan</h2>
+          <p>The estimate updates as you type. The result uses completed candles only.</p>
+        </div>
+        <button id="closeHistoricalCandlestickLookbackBtn"
+                type="button"
+                class="congressional-dialog-close"
+                aria-label="Close historical candlestick lookback picker">&times;</button>
+      </div>
+      <label class="historical-candlestick-lookback-field"
+             for="historicalCandlestickLookbackInput">
+        <span>Number of candles</span>
+        <input id="historicalCandlestickLookbackInput"
+               name="lookbackCandles"
+               type="number"
+               inputmode="numeric"
+               min="1"
+               max="750"
+               step="1"
+               required
+               aria-describedby="historicalCandlestickLookbackHelp historicalCandlestickLookbackError">
+        <small id="historicalCandlestickLookbackHelp">
+          Enter a whole number from 1 to 750.
+        </small>
+      </label>
+      <div class="historical-candlestick-lookback-preview" aria-live="polite">
+        <span>Estimated earliest candle</span>
+        <strong id="historicalCandlestickLookbackDate">Enter a candle count</strong>
+        <small id="historicalCandlestickLookbackDateHelp">
+          This is an estimate; market holidays and incomplete periods can shift the actual date.
+        </small>
+      </div>
+      <p id="historicalCandlestickLookbackError"
+         class="historical-candlestick-lookback-error"
+         role="alert"></p>
+      <div class="historical-candlestick-lookback-actions">
+        <button id="backToHistoricalCandlestickIntervalBtn"
+                type="button"
+                class="btn-secondary">Back</button>
+        <button type="submit" class="btn-primary">Show historical patterns</button>
+      </div>
+      <p class="congressional-history-disclaimer">
+        Signals are recalculated when requested and are not stored or cached.
+        Historical measurements do not include execution costs and are not financial advice.
+      </p>
+    </form>
+  </dialog>
+
+  <dialog id="historicalCandlestickResultsDialog"
+          class="congressional-history-dialog historical-candlestick-dialog results-dialog"
+          aria-labelledby="historicalCandlestickResultsTitle">
+    <div class="congressional-history-dialog-content">
+      <div class="congressional-history-heading">
+        <div>
+          <span class="congressional-panel-kicker">On-demand historical scan</span>
+          <h2 id="historicalCandlestickResultsTitle">Historical candle patterns</h2>
+          <p id="historicalCandlestickResultsWindow">Select an interval to calculate historical signals.</p>
+        </div>
+        <div class="historical-candlestick-dialog-actions">
+          <button id="changeHistoricalCandlestickIntervalBtn"
+                  type="button"
+                  class="btn-secondary">Change search</button>
+          <button id="closeHistoricalCandlestickResultsBtn"
+                  type="button"
+                  class="congressional-dialog-close"
+                  aria-label="Close historical candlestick results">&times;</button>
+        </div>
+      </div>
+      <div id="historicalCandlestickResultsStatus"
+           class="congressional-history-status"
+           aria-live="polite">Choose an interval to begin.</div>
+      <div class="congressional-history-table-wrap historical-candlestick-table-wrap">
+        <table class="congressional-history-table historical-candlestick-table">
+          <thead>
+          <tr>
+            <th scope="col">Signal date</th>
+            <th scope="col">Type</th>
+            <th scope="col">Status</th>
+            <th scope="col">Confidence</th>
+            <th scope="col">Formation</th>
+            <th scope="col">Historical impact</th>
+            <th scope="col">Details</th>
+          </tr>
+          </thead>
+          <tbody id="historicalCandlestickResultsRows"></tbody>
+        </table>
+      </div>
+      <div id="historicalCandlestickResultsEmpty"
+           class="congressional-history-empty"
+           hidden>
+        No valid candlestick signals were found in this interval's current history window.
+      </div>
+      <p id="historicalCandlestickResultsDisclaimer" class="congressional-history-disclaimer">
+        Success is a fixed close-to-close research measurement, not a simulated trade.
+        Results are recalculated on every request and are never persisted.
+      </p>
+    </div>
+  </dialog>
+
   <dialog id="unsavedAlertDialog" class="unsaved-alert-dialog" aria-labelledby="unsavedAlertTitle">
     <div class="unsaved-alert-dialog-content">
       <span class="unsaved-alert-kicker">Unapplied changes</span>
@@ -211,25 +571,6 @@
       </div>
     </div>
   </dialog>
-
-  <!-- Price Chart Canvas -->
-  <section class="chart-wrapper">
-    <div class="chart-panel-head">
-      <h2 class="chart-panel-title">Price action</h2>
-      <span class="chart-panel-meta">Scroll horizontally to explore history</span>
-    </div>
-    <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite"></div>
-    <div id="priceChartContainer" class="price-chart-container"></div>
-  </section>
-
-  <!-- Volume Chart Canvas -->
-  <section class="chart-wrapper">
-    <div class="chart-panel-head">
-      <h2 class="volume-title">Volume profile</h2>
-      <span class="chart-panel-meta">Synchronized with price history</span>
-    </div>
-    <div id="volumeChartContainer" class="volume-chart-container"></div>
-  </section>
 </main>
 
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
@@ -238,6 +579,36 @@
   const encodedTicker = encodeURIComponent(ticker);
   const csrfToken = document.querySelector('meta[name="_csrf"]').content;
   const csrfHeader = document.querySelector('meta[name="_csrf_header"]').content;
+  const stockPageLoader = document.getElementById('stockPageLoader');
+  const stockLoaderStatus = document.getElementById('stockLoaderStatus');
+  const stockWorkspace = document.querySelector('.stock-page');
+  let stockLoaderFinished = false;
+  const stockLoaderSafetyTimer = window.setTimeout(() => {
+    finishStockPageLoading('Workspace opened. Some market data may still be arriving.');
+  }, 25000);
+
+  function updateStockLoadingStatus(message) {
+    if (!stockLoaderFinished && stockLoaderStatus) {
+      stockLoaderStatus.textContent = message;
+    }
+  }
+
+  function finishStockPageLoading(message) {
+    if (stockLoaderFinished) return;
+    stockLoaderFinished = true;
+    window.clearTimeout(stockLoaderSafetyTimer);
+    if (stockLoaderStatus) {
+      stockLoaderStatus.textContent = message;
+    }
+    if (stockWorkspace) {
+      stockWorkspace.setAttribute('aria-busy', 'false');
+    }
+    document.body.classList.remove('stock-is-loading');
+    if (stockPageLoader) {
+      stockPageLoader.classList.add('is-complete');
+      window.setTimeout(() => stockPageLoader.remove(), 700);
+    }
+  }
 
   function secureJsonHeaders() {
     return { 'Content-Type': 'application/json', [csrfHeader]: csrfToken };
@@ -259,6 +630,12 @@
   let elliottRequestSequence = 0;
   let historyRetryTimer = null;
   let historyRetryAttempts = 0;
+  let anchoredVolumeProfileEnabled = false;
+  let anchoredVolumeProfile = null;
+  let anchoredVolumeProfileAnchorTimestamp = null;
+  let anchoredVolumeProfileRequestSequence = 0;
+  let anchoredVolumeProfileRenderFrame = null;
+  const ANCHORED_PROFILE_RIGHT_OFFSET_BARS = 30;
 
   let isFetching = false;
   let isLoadingOlder = false;
@@ -282,24 +659,76 @@
   let congressionalActivityEligible = false;
   let congressionalFollowing = false;
   let congressionalActivityBusy = false;
-
-  const chartOptions = {
-    layout: {
-      textColor: '#858c82',
-      fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
-      background: { type: 'solid', color: 'transparent' }
-    },
-    grid: {
-      vertLines: { color: 'rgba(255, 255, 255, 0.035)' },
-      horzLines: { color: 'rgba(255, 255, 255, 0.035)' }
-    },
-    crosshair: { mode: 0 },
-    rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.07)' },
-    timeScale: { borderColor: 'rgba(255, 255, 255, 0.07)' }
+  let insiderActivityEligible = false;
+  let insiderFollowing = false;
+  let insiderActivityBusy = false;
+  let historicalCandlestickRequestController = null;
+  let selectedHistoricalCandlestickInterval = null;
+  const HISTORICAL_CANDLESTICK_LOOKBACK_MIN = 1;
+  const HISTORICAL_CANDLESTICK_LOOKBACK_MAX = 750;
+  const HISTORICAL_CANDLESTICK_DEFAULT_LOOKBACKS = {
+    '1d': 60,
+    '1wk': 104,
+    '1mo': 120
   };
 
+  function chartThemeOptions(theme = document.documentElement.dataset.theme) {
+    const light = theme === 'light';
+    return {
+      layout: {
+        textColor: light ? '#526158' : '#858c82',
+        fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+        background: { type: 'solid', color: 'transparent' }
+      },
+      grid: {
+        vertLines: { color: light ? 'rgba(31, 48, 37, 0.09)' : 'rgba(255, 255, 255, 0.035)' },
+        horzLines: { color: light ? 'rgba(31, 48, 37, 0.09)' : 'rgba(255, 255, 255, 0.035)' }
+      },
+      crosshair: { mode: 0 },
+      rightPriceScale: {
+        borderColor: light ? 'rgba(27, 43, 33, 0.14)' : 'rgba(255, 255, 255, 0.07)'
+      },
+      timeScale: {
+        borderColor: light ? 'rgba(27, 43, 33, 0.14)' : 'rgba(255, 255, 255, 0.07)'
+      }
+    };
+  }
+
+  function chartSeriesThemeOptions(theme = document.documentElement.dataset.theme) {
+    const light = theme === 'light';
+    return {
+      candles: {
+        upColor: light ? '#078568' : '#64e8bd',
+        downColor: light ? '#d23f59' : '#ff647c',
+        wickUpColor: light ? '#078568' : '#64e8bd',
+        wickDownColor: light ? '#d23f59' : '#ff647c',
+        borderVisible: false
+      },
+      line: {
+        color: light ? '#477a12' : '#b7f34a',
+        lineWidth: 2,
+        crosshairMarkerVisible: true
+      },
+      volumeUp: light ? 'rgba(7, 133, 104, 0.64)' : 'rgba(100, 232, 189, 0.72)',
+      volumeDown: light ? 'rgba(210, 63, 89, 0.58)' : 'rgba(255, 100, 124, 0.72)'
+    };
+  }
+
+  function themedVolumeData(theme = document.documentElement.dataset.theme) {
+    const seriesTheme = chartSeriesThemeOptions(theme);
+    return globalVolumeData.map(item => ({
+      time: item.time,
+      value: item.value,
+      color: item.isUp ? seriesTheme.volumeUp : seriesTheme.volumeDown
+    }));
+  }
+
+  const chartOptions = chartThemeOptions();
+
   async function initCharts() {
+    let completionMessage = 'Workspace ready';
     try {
+      updateStockLoadingStatus('Building the price and volume charts...');
       priceChart = LightweightCharts.createChart(document.getElementById('priceChartContainer'), chartOptions);
       volumeChart = LightweightCharts.createChart(document.getElementById('volumeChartContainer'), {
         ...chartOptions,
@@ -311,16 +740,13 @@
         if (range) {
           volumeChart.timeScale().setVisibleLogicalRange(range);
         }
+        scheduleAnchoredVolumeProfileRender();
       });
+      priceChart.subscribeClick(handleAnchoredVolumeProfileChartClick);
 
-      candleSeries = priceChart.addCandlestickSeries({
-        upColor: '#64e8bd',
-        downColor: '#ff647c',
-        wickUpColor: '#64e8bd',
-        wickDownColor: '#ff647c',
-        borderVisible: false
-      });
-      lineSeries = priceChart.addLineSeries({ color: '#b7f34a', lineWidth: 2, crosshairMarkerVisible: true });
+      const seriesTheme = chartSeriesThemeOptions();
+      candleSeries = priceChart.addCandlestickSeries(seriesTheme.candles);
+      lineSeries = priceChart.addLineSeries(seriesTheme.line);
       elliottConfirmationSeries = priceChart.addLineSeries({
         // This series exists only to anchor confirmation markers. Lightweight
         // Charts 4 ignores lineVisible on a line series, so use a fully
@@ -333,6 +759,7 @@
       volumeSeries = volumeChart.addHistogramSeries({ priceFormat: { type: 'volume' } });
 
       // Load currency metadata first
+      updateStockLoadingStatus('Resolving instrument and market details...');
       try {
         const micQuery = selectedMic ? `?micCode=${encodeURIComponent(selectedMic)}` : '';
         const metaRes = await fetch(`/api/stocks/${encodedTicker}/meta${micQuery}`);
@@ -344,7 +771,10 @@
           instrumentTypeDisplay.textContent = instrumentType === 'INDEX'
                   ? 'Index'
                   : (instrumentType === 'ETF' ? 'ETF' : 'Stock');
-          await configureCongressionalActivity(instrumentType);
+          await Promise.all([
+            configureCongressionalActivity(instrumentType),
+            configureInsiderActivity(instrumentType)
+          ]);
           if (metaJson.currency) {
             stockCurrency = metaJson.currency;
             priceChart.applyOptions({
@@ -354,13 +784,20 @@
         }
       } catch (e) { console.warn("Currency fallback to USD"); }
 
+      updateStockLoadingStatus('Loading completed daily candles and technical context...');
       await loadChartData('1d');
+      updateStockLoadingStatus('Loading monitoring preferences...');
       await loadAlertState();
 
       setChartMode('candle');
+      updateStockLoadingStatus('Finalizing overlays and historical results...');
+      await reopenHistoricalCandlestickResultsFromUrl();
 
     } catch (err) {
       console.error("Initialization error:", err);
+      completionMessage = 'Workspace opened with limited data';
+    } finally {
+      finishStockPageLoading(completionMessage);
     }
   }
 
@@ -382,6 +819,11 @@
     elliottRequestSequence++;
     clearElliottOverlays();
     updateElliottOverlayToggle();
+    anchoredVolumeProfileRequestSequence++;
+    anchoredVolumeProfile = null;
+    anchoredVolumeProfileAnchorTimestamp = null;
+    clearAnchoredVolumeProfileCanvas();
+    updateAnchoredVolumeProfileToggle();
 
     try {
       document.querySelector('.ticker-name').nextElementSibling.innerText = `Loading ${interval} data...`;
@@ -417,6 +859,10 @@
       scheduleViewportHistoryFill();
 
       await refreshHistoricalElliottOverlays(interval);
+      if (anchoredVolumeProfileEnabled && globalCandleData.length > 0) {
+        await requestAnchoredVolumeProfile(
+                globalCandleData[globalCandleData.length - 1].timestamp);
+      }
 
     } catch (err) {
       if (err.name === 'AbortError') return;
@@ -510,9 +956,16 @@
       const close = d.closePrice || open;
       const volume = d.volume || 0;
 
-      newCandles.push({ time: timeString, open: open, high: high, low: low, close: close });
+      newCandles.push({
+        time: timeString,
+        timestamp: d.timestamp,
+        open: open,
+        high: high,
+        low: low,
+        close: close
+      });
       newLines.push({ time: timeString, value: close });
-      newVols.push({ time: timeString, value: volume, color: close >= open ? 'rgba(100, 232, 189, 0.72)' : 'rgba(255, 100, 124, 0.72)' });
+      newVols.push({ time: timeString, value: volume, isUp: close >= open });
     });
 
     if (isPrepend) {
@@ -532,14 +985,21 @@
     if (globalCandleData.length > 0) {
       latestCandle = { ...globalCandleData[globalCandleData.length - 1] };
     }
+    updateAnchoredVolumeProfileToggle();
 
     try {
       // Lightweight Charts normalises string dates in-place. Give the library
       // copies so our pagination arrays keep one stable YYYY-MM-DD type across
       // every prepend and can still be sorted/deduplicated reliably.
-      candleSeries.setData(globalCandleData.map(item => ({ ...item })));
+      candleSeries.setData(globalCandleData.map(item => ({
+        time: item.time,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close
+      })));
       lineSeries.setData(globalLineData.map(item => ({ ...item })));
-      volumeSeries.setData(globalVolumeData.map(item => ({ ...item })));
+      volumeSeries.setData(themedVolumeData());
     } catch (err) {
       console.error("TradingView setData Crash:", err);
     }
@@ -550,6 +1010,7 @@
         to: visibleLogicalRange.to + newCandles.length
       });
     }
+    scheduleAnchoredVolumeProfileRender();
   }
 
   function maybeLoadOlderForVisibleRange(range) {
@@ -716,6 +1177,404 @@
     await refreshHistoricalElliottOverlays(currentInterval);
   }
 
+  async function toggleAnchoredVolumeProfile() {
+    if (anchoredVolumeProfileEnabled) {
+      disableAnchoredVolumeProfile();
+      return;
+    }
+    if (globalCandleData.length === 0) return;
+
+    setChartMode('candle');
+    anchoredVolumeProfileEnabled = true;
+    document.getElementById('priceChartStage')
+            .classList.add('anchor-selection-active');
+    applyAnchoredVolumeProfileChartSpacing();
+    updateAnchoredVolumeProfileToggle();
+    const latest = globalCandleData[globalCandleData.length - 1];
+    showAnchoredVolumeProfileLoading(latest.timestamp);
+    await requestAnchoredVolumeProfile(latest.timestamp);
+  }
+
+  function disableAnchoredVolumeProfile() {
+    anchoredVolumeProfileEnabled = false;
+    anchoredVolumeProfileRequestSequence++;
+    anchoredVolumeProfile = null;
+    anchoredVolumeProfileAnchorTimestamp = null;
+    document.getElementById('priceChartStage')
+            .classList.remove('anchor-selection-active');
+    applyAnchoredVolumeProfileChartSpacing();
+    document.getElementById('anchoredVolumeProfileSummary')
+            .classList.remove('active');
+    const status = document.getElementById('anchoredVolumeProfileStatus');
+    status.textContent = '';
+    status.classList.remove('error', 'locked');
+    clearAnchoredVolumeProfileCanvas();
+    updateAnchoredVolumeProfileToggle();
+  }
+
+  function updateAnchoredVolumeProfileToggle() {
+    const button = document.getElementById('anchoredVolumeProfileToggle');
+    const hasCandles = globalCandleData.length > 0;
+    button.disabled = !hasCandles;
+    button.classList.toggle('active', anchoredVolumeProfileEnabled && hasCandles);
+    button.setAttribute(
+            'aria-pressed',
+            String(anchoredVolumeProfileEnabled && hasCandles));
+    button.textContent = anchoredVolumeProfileEnabled
+            ? 'Anchored volume profile: on'
+            : 'Anchored volume profile';
+  }
+
+  function handleAnchoredVolumeProfileChartClick(parameter) {
+    if (!anchoredVolumeProfileEnabled || !parameter?.time) return;
+    const timeKey = chartTimeKey(parameter.time);
+    const selected = globalCandleData.find(candle => candle.time === timeKey);
+    if (!selected || !Number.isFinite(Number(selected.timestamp))) return;
+    void requestAnchoredVolumeProfile(Number(selected.timestamp));
+  }
+
+  function chartTimeKey(time) {
+    if (typeof time === 'string') return time;
+    if (typeof time === 'number') {
+      return new Date(time * 1000).toISOString().slice(0, 10);
+    }
+    if (time && Number.isInteger(time.year)
+            && Number.isInteger(time.month)
+            && Number.isInteger(time.day)) {
+      return `${time.year}-${String(time.month).padStart(2, '0')}`
+              + `-${String(time.day).padStart(2, '0')}`;
+    }
+    return '';
+  }
+
+  async function requestAnchoredVolumeProfile(anchorTimestamp) {
+    if (!anchoredVolumeProfileEnabled
+            || !Number.isFinite(Number(anchorTimestamp))) return;
+    const requestedInterval = currentInterval;
+    const requestedAnchor = Number(anchorTimestamp);
+    const requestId = ++anchoredVolumeProfileRequestSequence;
+    const status = document.getElementById('anchoredVolumeProfileStatus');
+    status.classList.remove('error', 'locked');
+    showAnchoredVolumeProfileLoading(requestedAnchor);
+
+    try {
+      const response = await fetch(
+              `/api/stocks/${encodedTicker}/anchored-volume-profile`
+              + `?interval=${encodeURIComponent(requestedInterval)}`
+              + `&anchor=${encodeURIComponent(requestedAnchor)}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Anchored volume profile request failed');
+      }
+      if (requestId !== anchoredVolumeProfileRequestSequence
+              || !anchoredVolumeProfileEnabled
+              || currentInterval !== requestedInterval) return;
+
+      anchoredVolumeProfile = payload;
+      anchoredVolumeProfileAnchorTimestamp = requestedAnchor;
+      updateAnchoredVolumeProfileSummary(payload);
+      scheduleAnchoredVolumeProfileRender();
+    } catch (error) {
+      if (requestId !== anchoredVolumeProfileRequestSequence) return;
+      anchoredVolumeProfile = null;
+      anchoredVolumeProfileAnchorTimestamp = null;
+      clearAnchoredVolumeProfileCanvas();
+      document.getElementById('anchoredVolumeProfileSummary')
+              .classList.add('active');
+      status.classList.add('error');
+      status.textContent = error.message || 'Anchored volume profile unavailable.';
+      console.warn('Anchored volume profile failed', error);
+    }
+  }
+
+  function showAnchoredVolumeProfileLoading(anchorTimestamp) {
+    document.getElementById('anchoredVolumeProfileSummary')
+            .classList.add('active');
+    document.getElementById('anchoredVolumeProfileRange').textContent =
+            `Anchored ${formatProfileDate(anchorTimestamp)} · Loading profile…`;
+    document.getElementById('anchoredVolumeProfilePoc').textContent = '—';
+    document.getElementById('anchoredVolumeProfileVah').textContent = '—';
+    document.getElementById('anchoredVolumeProfileVal').textContent = '—';
+    const status = document.getElementById('anchoredVolumeProfileStatus');
+    status.classList.remove('error', 'locked');
+    status.textContent = 'Using cached market data where available.';
+  }
+
+  function updateAnchoredVolumeProfileSummary(profile) {
+    const anchor = formatProfileDate(profile.anchorTimestamp);
+    const end = formatProfileDate(profile.endTimestamp);
+    const range = anchor === end ? `Anchored ${anchor}` : `${anchor} → ${end}`;
+    const source = formatProfileCalculationInterval(profile.calculationInterval);
+    const candleCount = `${profile.candlesIncluded} candle`
+            + `${profile.candlesIncluded === 1 ? '' : 's'}`;
+    document.getElementById('anchoredVolumeProfileSummary')
+            .classList.add('active');
+    document.getElementById('anchoredVolumeProfileRange').textContent =
+            `${range} · ${candleCount} · ${source}`;
+    document.getElementById('anchoredVolumeProfilePoc').textContent =
+            formatProfilePrice(profile.pointOfControl);
+    document.getElementById('anchoredVolumeProfileVah').textContent =
+            formatProfilePrice(profile.valueAreaHigh);
+    document.getElementById('anchoredVolumeProfileVal').textContent =
+            formatProfilePrice(profile.valueAreaLow);
+
+    const status = document.getElementById('anchoredVolumeProfileStatus');
+    status.classList.toggle('locked', Boolean(profile.liveRefreshLocked));
+    if (profile.liveRefreshLocked) {
+      const unlock = profile.liveRefreshAvailableAt
+              ? ` until ${formatProfileDateTime(profile.liveRefreshAvailableAt)}`
+              : '';
+      status.textContent = `Live updates paused${unlock}. The saved snapshot remains visible.`;
+      return;
+    }
+    const updated = profile.liveDataRefreshedAt
+            ? `Updated ${formatProfileDateTime(profile.liveDataRefreshedAt)}`
+            : 'Using cached candles';
+    status.textContent = `${updated} · ${profile.liveRefreshesRemaining} live refresh`
+            + `${profile.liveRefreshesRemaining === 1 ? '' : 'es'} remaining`;
+  }
+
+  function formatProfileCalculationInterval(interval) {
+    if (interval === '15min') return '15-minute source';
+    if (interval === '1d+15min') return 'daily + active-day 15-minute source';
+    if (interval === '1wk') return 'weekly source';
+    if (interval === '1mo') return 'monthly source';
+    return 'daily source';
+  }
+
+  function formatProfileDate(timestamp) {
+    if (!timestamp) return 'latest';
+    const date = new Date(Number(timestamp) * 1000);
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(date);
+  }
+
+  function formatProfileDateTime(timestamp) {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(date);
+  }
+
+  function formatProfilePrice(price) {
+    const numeric = Number(price);
+    return Number.isFinite(numeric)
+            ? `${numeric.toFixed(2)} ${stockCurrency}`
+            : 'n/a';
+  }
+
+  function scheduleAnchoredVolumeProfileRender() {
+    if (anchoredVolumeProfileRenderFrame !== null) {
+      cancelAnimationFrame(anchoredVolumeProfileRenderFrame);
+    }
+    anchoredVolumeProfileRenderFrame = requestAnimationFrame(() => {
+      anchoredVolumeProfileRenderFrame = null;
+      renderAnchoredVolumeProfile();
+    });
+  }
+
+  function applyAnchoredVolumeProfileChartSpacing() {
+    requestAnimationFrame(() => {
+      if (!priceChart) return;
+      priceChart.timeScale().applyOptions({
+        rightOffset: anchoredVolumeProfileEnabled
+                ? ANCHORED_PROFILE_RIGHT_OFFSET_BARS
+                : 0
+      });
+      if (anchoredVolumeProfileEnabled) {
+        priceChart.timeScale().scrollToRealTime();
+      }
+      scheduleAnchoredVolumeProfileRender();
+    });
+  }
+
+  function renderAnchoredVolumeProfile() {
+    const canvas = document.getElementById('anchoredVolumeProfileCanvas');
+    const container = document.getElementById('priceChartContainer');
+    if (!anchoredVolumeProfileEnabled
+            || !anchoredVolumeProfile
+            || !priceChart
+            || !candleSeries
+            || !canvas
+            || !container) {
+      clearAnchoredVolumeProfileCanvas();
+      return;
+    }
+
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    if (width <= 0 || height <= 0) return;
+    const pixelRatio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * pixelRatio);
+    canvas.height = Math.round(height * pixelRatio);
+
+    const context = canvas.getContext('2d');
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    const profile = anchoredVolumeProfile;
+    const lightTheme = document.documentElement.dataset.theme === 'light';
+    let priceScaleWidth = 72;
+    try {
+      const measuredPriceScaleWidth = priceChart.priceScale('right').width();
+      if (Number.isFinite(measuredPriceScaleWidth)) {
+        priceScaleWidth = measuredPriceScaleWidth;
+      }
+    } catch (ignored) {
+      // Lightweight Charts 4 exposes this in normal operation; keep a safe fallback.
+    }
+    const profileRight = Math.max(100, width - priceScaleWidth - 10);
+    const preferredWidth = Math.max(150, Math.min(250, width * 0.19));
+    const latestCoordinate = priceChart.timeScale().timeToCoordinate(
+            globalCandleData[globalCandleData.length - 1]?.time);
+    const candleSafeLeft = Number.isFinite(latestCoordinate)
+            ? latestCoordinate + 20
+            : profileRight - preferredWidth;
+    const profileLeft = Math.max(
+            20,
+            profileRight - preferredWidth,
+            candleSafeLeft);
+    const maximumWidth = profileRight - profileLeft;
+    if (maximumWidth < 24) {
+      drawAnchoredProfileAnchor(context, height);
+      return;
+    }
+
+    const profileBackground = context.createLinearGradient(
+            profileLeft - 16, 0, profileRight, 0);
+    profileBackground.addColorStop(
+            0,
+            lightTheme ? 'rgba(255, 255, 255, 0)' : 'rgba(10, 14, 11, 0)');
+    profileBackground.addColorStop(
+            1,
+            lightTheme ? 'rgba(255, 255, 255, 0.58)' : 'rgba(10, 14, 11, 0.34)');
+    context.fillStyle = profileBackground;
+    context.fillRect(profileLeft - 16, 0, profileRight - profileLeft + 16, height);
+
+    (profile.bins || []).forEach(bin => {
+      const topCoordinate = candleSeries.priceToCoordinate(Number(bin.priceHigh));
+      const bottomCoordinate = candleSeries.priceToCoordinate(Number(bin.priceLow));
+      if (!Number.isFinite(topCoordinate) || !Number.isFinite(bottomCoordinate)) return;
+
+      const top = Math.min(topCoordinate, bottomCoordinate);
+      const barHeight = Math.max(1, Math.abs(bottomCoordinate - topCoordinate) - 0.5);
+      const totalWidth = Math.max(
+              0,
+              Math.min(maximumWidth, Number(bin.relativeVolume || 0) * maximumWidth));
+      if (totalWidth <= 0) return;
+      const barLeft = profileRight - totalWidth;
+      context.fillStyle = bin.pointOfControl
+              ? (lightTheme ? 'rgba(167, 101, 8, 0.82)' : 'rgba(255, 189, 89, 0.9)')
+              : (bin.inValueArea
+                      ? (lightTheme ? 'rgba(8, 121, 93, 0.5)' : 'rgba(100, 232, 189, 0.62)')
+                      : (lightTheme ? 'rgba(73, 91, 80, 0.24)' : 'rgba(132, 151, 139, 0.3)'));
+      context.fillRect(barLeft, top, totalWidth, barHeight);
+
+      if (bin.pointOfControl) {
+        context.fillStyle = lightTheme
+                ? 'rgba(167, 101, 8, 0.84)'
+                : 'rgba(255, 220, 155, 0.95)';
+        context.fillRect(profileLeft, top, profileRight - profileLeft, Math.max(1.5, barHeight));
+      }
+    });
+
+    drawAnchoredProfileLevel(
+            context,
+            profileLeft,
+            profileRight,
+            profile.pointOfControl,
+            lightTheme ? '#a76508' : '#ffbd59',
+            false);
+    drawAnchoredProfileLevel(
+            context,
+            profileLeft,
+            profileRight,
+            profile.valueAreaHigh,
+            lightTheme ? '#5c861b' : '#b7f34a',
+            true);
+    drawAnchoredProfileLevel(
+            context,
+            profileLeft,
+            profileRight,
+            profile.valueAreaLow,
+            lightTheme ? '#5c861b' : '#b7f34a',
+            true);
+
+    drawAnchoredProfileAnchor(context, height, lightTheme);
+  }
+
+  function drawAnchoredProfileLevel(
+          context,
+          profileLeft,
+          profileRight,
+          price,
+          color,
+          dashed) {
+    const coordinate = candleSeries.priceToCoordinate(Number(price));
+    if (!Number.isFinite(coordinate)) return;
+    context.save();
+    context.setLineDash(dashed ? [4, 4] : []);
+    context.strokeStyle = color;
+    context.globalAlpha = dashed ? 0.55 : 0.9;
+    context.lineWidth = dashed ? 1 : 1.2;
+    context.beginPath();
+    context.moveTo(profileLeft, coordinate);
+    context.lineTo(profileRight, coordinate);
+    context.stroke();
+    context.restore();
+  }
+
+  function drawAnchoredProfileAnchor(
+          context,
+          height,
+          lightTheme = document.documentElement.dataset.theme === 'light') {
+    const anchorCoordinate = priceChart.timeScale().timeToCoordinate(
+            timestampToChartDate(anchoredVolumeProfile.anchorTimestamp));
+    if (!Number.isFinite(anchorCoordinate) || anchorCoordinate < 0) return;
+    context.save();
+    context.setLineDash([4, 5]);
+    context.strokeStyle = lightTheme
+            ? 'rgba(92, 134, 27, 0.52)'
+            : 'rgba(183, 243, 74, 0.48)';
+    context.lineWidth = 1;
+    context.beginPath();
+    context.moveTo(anchorCoordinate, 24);
+    context.lineTo(anchorCoordinate, height - 24);
+    context.stroke();
+    context.setLineDash([]);
+    context.font = '600 10px Inter, sans-serif';
+    const labelWidth = context.measureText('ANCHOR').width + 12;
+    const labelLeft = Math.max(4, Math.min(
+            anchorCoordinate + 6,
+            document.getElementById('priceChartContainer').clientWidth - labelWidth - 6));
+    context.fillStyle = lightTheme
+            ? 'rgba(255, 255, 255, 0.94)'
+            : 'rgba(18, 24, 20, 0.9)';
+    context.fillRect(labelLeft, 9, labelWidth, 19);
+    context.strokeStyle = lightTheme
+            ? 'rgba(92, 134, 27, 0.34)'
+            : 'rgba(183, 243, 74, 0.35)';
+    context.strokeRect(labelLeft + 0.5, 9.5, labelWidth - 1, 18);
+    context.fillStyle = lightTheme
+            ? 'rgba(70, 107, 13, 0.95)'
+            : 'rgba(207, 239, 156, 0.9)';
+    context.fillText('ANCHOR', labelLeft + 6, 22);
+    context.restore();
+  }
+
+  function clearAnchoredVolumeProfileCanvas() {
+    const canvas = document.getElementById('anchoredVolumeProfileCanvas');
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
   function renderHistoricalElliottStructure(structure) {
     const color = structure.direction === 'BULLISH' ? '#64e8bd' : '#ff647c';
     const series = priceChart.addLineSeries({
@@ -845,6 +1704,9 @@
   }
 
   function setChartMode(mode) {
+    if (mode === 'line' && anchoredVolumeProfileEnabled) {
+      disableAnchoredVolumeProfile();
+    }
     currentMode = mode;
     document.getElementById('lineBtn').classList.toggle('active', mode === 'line');
     document.getElementById('candleBtn').classList.toggle('active', mode === 'candle');
@@ -876,7 +1738,13 @@
           if (newPrice > latestCandle.high) latestCandle.high = newPrice;
           if (newPrice < latestCandle.low) latestCandle.low = newPrice;
 
-          candleSeries.update({ ...latestCandle });
+          candleSeries.update({
+            time: latestCandle.time,
+            open: latestCandle.open,
+            high: latestCandle.high,
+            low: latestCandle.low,
+            close: latestCandle.close
+          });
           lineSeries.update({ time: latestCandle.time, value: newPrice });
         }
       }
@@ -957,6 +1825,300 @@
     document.getElementById('showCongressionalHistoryBtn').disabled = disabled;
   }
 
+  async function configureInsiderActivity(instrumentType) {
+    const panel = document.getElementById('insiderActivityPanel');
+    insiderActivityEligible = instrumentType === 'EQUITY';
+    panel.hidden = !insiderActivityEligible;
+    if (!insiderActivityEligible) return;
+    await loadInsiderActivityState();
+  }
+
+  async function loadInsiderActivityState() {
+    const status = document.getElementById('insiderActivityStatus');
+    setInsiderControlsDisabled(true);
+    try {
+      const response = await fetch(`/api/insider-activity/${encodedTicker}/state`);
+      const state = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(state.error || 'Insider activity is unavailable');
+      applyInsiderActivityState(state);
+    } catch (error) {
+      status.textContent = error.message || 'Insider activity is unavailable';
+      console.warn('Insider activity state failed', error);
+    } finally {
+      setInsiderControlsDisabled(false);
+    }
+  }
+
+  function applyInsiderActivityState(state) {
+    insiderFollowing = Boolean(state.following);
+    const followButton = document.getElementById('followInsiderActivityBtn');
+    followButton.setAttribute('aria-pressed', String(insiderFollowing));
+    followButton.classList.toggle('following', insiderFollowing);
+    followButton.textContent = insiderFollowing
+            ? 'Stop following insider activity'
+            : 'Follow insider activity';
+    document.getElementById('insiderActivityStatus').textContent = state.baselinePending
+            ? 'Following is active · Preparing a no-alert filing baseline'
+            : `${state.followedStocks}/${state.maximumFollowedStocks} insider stocks followed`;
+  }
+
+  function showHistoricalCandlestickIntervalPicker() {
+    const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
+    if (resultsDialog.open) resultsDialog.close();
+    const lookbackDialog = document.getElementById('historicalCandlestickLookbackDialog');
+    if (lookbackDialog.open) lookbackDialog.close();
+    const intervalDialog = document.getElementById('historicalCandlestickIntervalDialog');
+    if (!intervalDialog.open) intervalDialog.showModal();
+  }
+
+  function showHistoricalCandlestickLookbackPicker(interval, initialLookback = null) {
+    if (!Object.hasOwn(HISTORICAL_CANDLESTICK_DEFAULT_LOOKBACKS, interval)) return;
+    selectedHistoricalCandlestickInterval = interval;
+    const intervalDialog = document.getElementById('historicalCandlestickIntervalDialog');
+    if (intervalDialog.open) intervalDialog.close();
+    const labels = {'1d': 'Daily interval', '1wk': 'Weekly interval', '1mo': 'Monthly interval'};
+    document.getElementById('historicalCandlestickLookbackInterval').textContent = labels[interval];
+    const input = document.getElementById('historicalCandlestickLookbackInput');
+    input.value = String(initialLookback ?? HISTORICAL_CANDLESTICK_DEFAULT_LOOKBACKS[interval]);
+    updateHistoricalCandlestickLookbackPreview();
+    const lookbackDialog = document.getElementById('historicalCandlestickLookbackDialog');
+    if (!lookbackDialog.open) lookbackDialog.showModal();
+    input.focus();
+    input.select();
+  }
+
+  function selectedHistoricalCandlestickLookback() {
+    const input = document.getElementById('historicalCandlestickLookbackInput');
+    const lookback = Number(input.value);
+    return Number.isInteger(lookback)
+            && lookback >= HISTORICAL_CANDLESTICK_LOOKBACK_MIN
+            && lookback <= HISTORICAL_CANDLESTICK_LOOKBACK_MAX
+            ? lookback
+            : null;
+  }
+
+  function updateHistoricalCandlestickLookbackPreview() {
+    const input = document.getElementById('historicalCandlestickLookbackInput');
+    const error = document.getElementById('historicalCandlestickLookbackError');
+    const preview = document.getElementById('historicalCandlestickLookbackDate');
+    const lookback = selectedHistoricalCandlestickLookback();
+    const valid = lookback !== null;
+    input.setCustomValidity(valid ? '' : 'Enter a whole number from 1 to 750.');
+    error.textContent = input.value && !valid ? 'Enter a whole number from 1 to 750.' : '';
+    preview.textContent = valid && selectedHistoricalCandlestickInterval
+            ? formatHistoricalCandlestickLookbackDate(selectedHistoricalCandlestickInterval, lookback)
+            : 'Enter a candle count';
+  }
+
+  function formatHistoricalCandlestickLookbackDate(interval, lookback) {
+    const estimatedDate = new Date();
+    estimatedDate.setHours(12, 0, 0, 0);
+    if (interval === '1mo') {
+      estimatedDate.setDate(1);
+      estimatedDate.setMonth(estimatedDate.getMonth() - lookback);
+      return `Around ${new Intl.DateTimeFormat(undefined, {
+        month: 'long',
+        year: 'numeric'
+      }).format(estimatedDate)}`;
+    }
+    if (interval === '1wk') {
+      estimatedDate.setDate(estimatedDate.getDate() - lookback * 7);
+    } else {
+      let sessionsRemaining = lookback;
+      while (sessionsRemaining > 0) {
+        estimatedDate.setDate(estimatedDate.getDate() - 1);
+        const day = estimatedDate.getDay();
+        if (day !== 0 && day !== 6) sessionsRemaining--;
+      }
+    }
+    return `Around ${new Intl.DateTimeFormat(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    }).format(estimatedDate)}`;
+  }
+
+  async function submitHistoricalCandlestickLookback(event) {
+    event.preventDefault();
+    updateHistoricalCandlestickLookbackPreview();
+    const input = document.getElementById('historicalCandlestickLookbackInput');
+    const lookback = selectedHistoricalCandlestickLookback();
+    if (!selectedHistoricalCandlestickInterval || lookback === null) {
+      input.reportValidity();
+      return;
+    }
+    await loadHistoricalCandlestickPatterns(selectedHistoricalCandlestickInterval, lookback);
+  }
+
+  async function loadHistoricalCandlestickPatterns(interval, lookbackCandles) {
+    if (!Object.hasOwn(HISTORICAL_CANDLESTICK_DEFAULT_LOOKBACKS, interval)
+            || !Number.isInteger(lookbackCandles)
+            || lookbackCandles < HISTORICAL_CANDLESTICK_LOOKBACK_MIN
+            || lookbackCandles > HISTORICAL_CANDLESTICK_LOOKBACK_MAX) {
+      showHistoricalCandlestickLookbackPicker(
+              interval,
+              HISTORICAL_CANDLESTICK_DEFAULT_LOOKBACKS[interval]
+      );
+      return;
+    }
+    const intervalDialog = document.getElementById('historicalCandlestickIntervalDialog');
+    if (intervalDialog.open) intervalDialog.close();
+    const lookbackDialog = document.getElementById('historicalCandlestickLookbackDialog');
+    if (lookbackDialog.open) lookbackDialog.close();
+    const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
+    const status = document.getElementById('historicalCandlestickResultsStatus');
+    const rows = document.getElementById('historicalCandlestickResultsRows');
+    const empty = document.getElementById('historicalCandlestickResultsEmpty');
+    rows.replaceChildren();
+    empty.hidden = true;
+    status.textContent = 'Calculating patterns from completed candles…';
+    if (!resultsDialog.open) resultsDialog.showModal();
+
+    if (historicalCandlestickRequestController) {
+      historicalCandlestickRequestController.abort();
+    }
+    historicalCandlestickRequestController = new AbortController();
+    try {
+      const response = await fetch(
+              `/api/stocks/${encodedTicker}/candlestick-patterns/history?interval=${encodeURIComponent(interval)}`
+              + `&lookbackCandles=${encodeURIComponent(lookbackCandles)}`,
+              {
+                cache: 'no-store',
+                headers: {'Cache-Control': 'no-cache'},
+                signal: historicalCandlestickRequestController.signal
+              }
+      );
+      const history = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(history.error || 'Historical candle patterns could not be calculated');
+      selectedHistoricalCandlestickInterval = interval;
+      renderHistoricalCandlestickResults(history);
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      status.textContent = error.message || 'Historical candle patterns could not be calculated';
+      console.warn('Historical candlestick scan failed', error);
+    } finally {
+      historicalCandlestickRequestController = null;
+    }
+  }
+
+  function renderHistoricalCandlestickResults(history) {
+    const rows = document.getElementById('historicalCandlestickResultsRows');
+    const empty = document.getElementById('historicalCandlestickResultsEmpty');
+    const signals = Array.isArray(history.signals) ? history.signals : [];
+    rows.replaceChildren(...signals.map(signal => createHistoricalCandlestickRow(
+            signal,
+            Number(history.lookbackCandles)
+    )));
+    empty.hidden = signals.length > 0;
+    document.getElementById('historicalCandlestickResultsTitle').textContent =
+            `${history.intervalLabel || 'Historical'} candle patterns`;
+    document.getElementById('historicalCandlestickResultsWindow').textContent =
+            `${history.lookbackLabel || 'Recent completed candles'} · `
+            + `${history.evaluationHorizonLabel || 'fixed outcome horizon'} · `
+            + `${Number(history.successThresholdPercent || 0).toFixed(1)}% success threshold`;
+    document.getElementById('historicalCandlestickResultsStatus').textContent =
+            `${signals.length} signal${signals.length === 1 ? '' : 's'} calculated now · `
+            + 'No signal results were cached';
+  }
+
+  function createHistoricalCandlestickRow(signal, lookbackCandles) {
+    const row = document.createElement('tr');
+    row.className = 'historical-candlestick-result-row';
+    const detailUrl = historicalCandlestickDetailUrl(signal, lookbackCandles);
+    row.tabIndex = 0;
+    row.setAttribute('role', 'link');
+    row.addEventListener('click', event => {
+      if (event.target instanceof Element && event.target.closest('a')) return;
+      window.requestStockWatchNavigation(detailUrl);
+    });
+    row.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      window.requestStockWatchNavigation(detailUrl);
+    });
+    row.append(
+            historyCell('Signal date', signal.signalPeriodLabel),
+            historicalCandlestickTypeCell(signal),
+            historicalCandlestickStatusCell(signal),
+            historyCell('Confidence', `${signal.setupScore}/100`, signal.setupStrengthLabel),
+            historyCell('Formation', signal.patternLabel, signal.formationLabel),
+            historicalCandlestickImpactCell(signal),
+            historicalCandlestickDetailCell(detailUrl)
+    );
+    return row;
+  }
+
+  function historicalCandlestickTypeCell(signal) {
+    const cell = document.createElement('td');
+    cell.dataset.label = 'Type';
+    const badge = document.createElement('span');
+    badge.className = `historical-candlestick-type ${String(signal.tradeSignal || '').toLowerCase()}`;
+    badge.textContent = signal.typeLabel || signal.tradeSignal;
+    cell.append(badge);
+    return cell;
+  }
+
+  function historicalCandlestickStatusCell(signal) {
+    const cell = document.createElement('td');
+    cell.dataset.label = 'Status';
+    const badge = document.createElement('span');
+    badge.className = `historical-candlestick-status ${signal.statusClass || 'pending'}`;
+    badge.textContent = signal.statusLabel || 'Awaiting outcome';
+    cell.append(badge);
+    return cell;
+  }
+
+  function historicalCandlestickImpactCell(signal) {
+    const cell = document.createElement('td');
+    cell.dataset.label = 'Historical impact';
+    const strong = document.createElement('strong');
+    const value = Number(signal.directionalReturnPercent);
+    strong.textContent = Number.isFinite(value)
+            ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+            : 'Pending';
+    strong.className = Number.isFinite(value) ? (value >= 0 ? 'positive' : 'negative') : '';
+    const detail = document.createElement('span');
+    detail.textContent = signal.impactLabel || 'Outcome pending';
+    cell.append(strong, detail);
+    return cell;
+  }
+
+  function historicalCandlestickDetailCell(detailUrl) {
+    const cell = document.createElement('td');
+    cell.dataset.label = 'Details';
+    const link = document.createElement('a');
+    link.href = detailUrl;
+    link.className = 'historical-candlestick-detail-link';
+    link.textContent = 'View signal';
+    cell.append(link);
+    return cell;
+  }
+
+  function historicalCandlestickDetailUrl(signal, lookbackCandles) {
+    return `/stock/${encodedTicker}/candlestick-patterns/`
+            + `${encodeURIComponent(signal.interval)}/${encodeURIComponent(signal.signalTimestamp)}/`
+            + `${encodeURIComponent(signal.pattern)}`
+            + `?lookbackCandles=${encodeURIComponent(lookbackCandles)}`;
+  }
+
+  async function reopenHistoricalCandlestickResultsFromUrl() {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('historicalCandles') !== 'true') return;
+    const interval = url.searchParams.get('historicalInterval');
+    if (!['1d', '1wk', '1mo'].includes(interval)) return;
+    const requestedLookback = Number(url.searchParams.get('lookbackCandles'));
+    const lookback = Number.isInteger(requestedLookback)
+            && requestedLookback >= HISTORICAL_CANDLESTICK_LOOKBACK_MIN
+            && requestedLookback <= HISTORICAL_CANDLESTICK_LOOKBACK_MAX
+            ? requestedLookback
+            : HISTORICAL_CANDLESTICK_DEFAULT_LOOKBACKS[interval];
+    url.searchParams.delete('historicalCandles');
+    url.searchParams.delete('historicalInterval');
+    url.searchParams.delete('lookbackCandles');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    await loadHistoricalCandlestickPatterns(interval, lookback);
+  }
+
   async function toggleCongressionalActivityFollow() {
     if (!congressionalActivityEligible || congressionalActivityBusy) return;
     const desiredState = !congressionalFollowing;
@@ -980,6 +2142,172 @@
     } finally {
       setCongressionalControlsDisabled(false);
     }
+  }
+
+  async function toggleInsiderActivityFollow() {
+    if (!insiderActivityEligible || insiderActivityBusy) return;
+    const desiredState = !insiderFollowing;
+    const status = document.getElementById('insiderActivityStatus');
+    setInsiderControlsDisabled(true);
+    status.textContent = desiredState
+            ? 'Preparing the filing baseline and enabling daily checks…'
+            : 'Stopping insider activity alerts…';
+    try {
+      const response = await fetch(`/api/insider-activity/${encodedTicker}/subscription`, {
+        method: 'PUT',
+        headers: secureJsonHeaders(),
+        body: JSON.stringify({ active: desiredState })
+      });
+      const state = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(state.error || 'The follow setting could not be changed');
+      applyInsiderActivityState(state);
+    } catch (error) {
+      status.textContent = error.message || 'The follow setting could not be changed';
+      console.warn('Insider activity follow update failed', error);
+    } finally {
+      setInsiderControlsDisabled(false);
+    }
+  }
+
+  function setInsiderControlsDisabled(disabled) {
+    insiderActivityBusy = disabled;
+    document.getElementById('followInsiderActivityBtn').disabled = disabled;
+    document.getElementById('showInsiderHistoryBtn').disabled = disabled;
+  }
+
+  async function showInsiderHistory() {
+    if (!insiderActivityEligible || insiderActivityBusy) return;
+    const dialog = document.getElementById('insiderHistoryDialog');
+    const status = document.getElementById('insiderHistoryStatus');
+    const rows = document.getElementById('insiderHistoryRows');
+    const empty = document.getElementById('insiderHistoryEmpty');
+    rows.replaceChildren();
+    empty.hidden = true;
+    status.textContent = 'Loading the stored insider archive…';
+    if (!dialog.open) dialog.showModal();
+    setInsiderControlsDisabled(true);
+    let hasCachedTrades = false;
+    try {
+      const cacheResponse = await fetch(`/api/insider-activity/${encodedTicker}/history`);
+      const cachedHistory = await cacheResponse.json().catch(() => ({}));
+      if (!cacheResponse.ok) {
+        throw new Error(cachedHistory.error || 'The stored insider archive could not be loaded');
+      }
+      renderInsiderHistory(cachedHistory);
+      applyInsiderActivityState(cachedHistory);
+      hasCachedTrades = Array.isArray(cachedHistory.trades) && cachedHistory.trades.length > 0;
+      status.textContent = hasCachedTrades
+              ? 'Stored archive loaded · Checking API Ninjas for newly observed rows…'
+              : 'No stored observations yet · Checking API Ninjas latest rows…';
+
+      const refreshResponse = await fetch(
+              `/api/insider-activity/${encodedTicker}/history/refresh`,
+              {
+                method: 'POST',
+                headers: secureJsonHeaders()
+              });
+      const refreshedHistory = await refreshResponse.json().catch(() => ({}));
+      if (!refreshResponse.ok) {
+        throw new Error(refreshedHistory.error || 'New insider rows could not be loaded');
+      }
+      renderInsiderHistory(refreshedHistory);
+      applyInsiderActivityState(refreshedHistory);
+    } catch (error) {
+      status.textContent = error.message || 'Insider history could not be loaded';
+      status.dataset.state = 'unavailable';
+      if (!hasCachedTrades) {
+        empty.hidden = false;
+        empty.textContent = 'No cached insider history is available. '
+                + 'Check the provider access message above.';
+      }
+      console.warn('Insider activity history failed', error);
+    } finally {
+      setInsiderControlsDisabled(false);
+    }
+  }
+
+  function renderInsiderHistory(history) {
+    const trades = Array.isArray(history.trades) ? history.trades : [];
+    document.getElementById('insiderHistoryStatus').removeAttribute('data-state');
+    const empty = document.getElementById('insiderHistoryEmpty');
+    empty.textContent =
+            'No relevant purchase or sale disclosures were found for this stock in the current window.';
+    document.getElementById('insiderHistoryRows')
+            .replaceChildren(...trades.map(createInsiderHistoryRow));
+    empty.hidden = trades.length > 0;
+    const cacheLabels = {
+      CACHE: 'Loaded the stored StockWatch insider archive',
+      REFRESHED: 'Merged newly observed API Ninjas rows into the stored archive',
+      STALE: 'API Ninjas is temporarily unavailable · Showing the last successful cache'
+    };
+    const cachedDate = history.cachedAt ? ` · Cached ${formatDateTime(history.cachedAt)}` : '';
+    document.getElementById('insiderHistoryStatus').textContent =
+            (cacheLabels[history.refreshStatus] || 'Insider history loaded') + cachedDate;
+    document.getElementById('insiderHistoryWindow').textContent =
+            `Stored purchase and sale observations from ${formatCongressionalDate(history.windowStart)} `
+            + `through ${formatCongressionalDate(history.windowEnd)}. Each refresh checks the latest 10 rows.`;
+    document.getElementById('insiderHistoryDisclaimer').textContent =
+            `${history.returnMethodology || ''} ${history.alertBaselineNotice || ''}`.trim();
+  }
+
+  function createInsiderHistoryRow(trade) {
+    const row = document.createElement('tr');
+    row.append(
+            historyCell('Insider', trade.insiderName, trade.ownerRole || 'Role not reported'),
+            historyActivityCell(trade),
+            historyCell(
+                    'Shares / price',
+                    formatInsiderShares(trade.shares),
+                    trade.transactionPrice == null
+                            ? 'Filed price unavailable'
+                            : `at ${formatInsiderMoney(trade.transactionPrice)}`),
+            historyCell('Trade value', formatInsiderMoney(trade.transactionValue)),
+            historyCell(
+                    'Effective date*',
+                    formatCongressionalDate(trade.transactionDate),
+                    'API Ninjas free tier: SEC filing date fallback'),
+            historyCell('Filed', formatCongressionalDate(trade.filingDate)),
+            insiderReturnCell(trade),
+            historySourceCell(trade.sourceUrl)
+    );
+    return row;
+  }
+
+  function insiderReturnCell(trade) {
+    const cell = document.createElement('td');
+    cell.dataset.label = 'Directional return';
+    if (trade.returnPercent == null) {
+      const unavailable = document.createElement('span');
+      unavailable.className = 'insider-return unavailable';
+      unavailable.textContent = 'Awaiting completed price data';
+      cell.append(unavailable);
+      return cell;
+    }
+    const value = Number(trade.returnPercent);
+    const label = document.createElement('strong');
+    label.className = `insider-return ${value >= 0 ? 'positive' : 'negative'}`;
+    label.textContent = `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+    cell.append(label);
+    if (trade.returnAsOf) {
+      const asOf = document.createElement('span');
+      asOf.textContent = `through ${formatCongressionalDate(trade.returnAsOf)}`;
+      cell.append(asOf);
+    }
+    return cell;
+  }
+
+  function formatInsiderShares(value) {
+    if (value == null) return 'Shares unavailable';
+    return `${new Intl.NumberFormat(undefined, {maximumFractionDigits: 2}).format(Number(value))} shares`;
+  }
+
+  function formatInsiderMoney(value) {
+    if (value == null) return 'Unavailable';
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: stockCurrency || 'USD',
+      maximumFractionDigits: 2
+    }).format(Number(value));
   }
 
   async function showCongressionalHistory() {
@@ -1332,7 +2660,7 @@
   async function checkLatestSignal(button) {
     const status = document.getElementById('alertStatus');
     button.disabled = true;
-    status.innerText = 'Checking latest candles...';
+    status.innerText = 'Checking the latest completed candle...';
 
     try {
       const response = await fetch(`/api/alerts/${encodedTicker}/check`, {
@@ -1352,7 +2680,7 @@
       }
 
       if (payload.candlesChecked < 2) {
-        status.innerText = `Need at least 2 candles; found ${payload.candlesChecked}`;
+        status.innerText = `Need at least 2 completed candles; found ${payload.candlesChecked}`;
         return;
       }
 
@@ -1373,7 +2701,10 @@
       const detected = payload.detectedSignals.length
               ? payload.detectedSignals.map(signal => signal.pattern).join(', ')
               : 'none';
-      status.innerText = `No ${formatFamily(payload.patternFamily)} ${payload.signal} signal now. Detected: ${detected}`;
+      const completedDate = payload.latestCompletedTimestamp
+              ? formatSignalDate(payload.latestCompletedTimestamp)
+              : 'the latest completed candle';
+      status.innerText = `No ${formatFamily(payload.patternFamily)} ${payload.signal} signal on ${completedDate}. Detected: ${detected}`;
     } catch (err) {
       status.innerText = 'Check failed';
       console.warn("Signal check failed", err);
@@ -1408,6 +2739,20 @@
     const volumeContainer = document.getElementById('volumeChartContainer');
     priceChart.resize(priceContainer.clientWidth, priceContainer.clientHeight);
     volumeChart.resize(volumeContainer.clientWidth, volumeContainer.clientHeight);
+    scheduleAnchoredVolumeProfileRender();
+  });
+
+  window.addEventListener('stockwatch:themechange', event => {
+    if (!priceChart || !volumeChart) return;
+    const theme = event.detail?.theme;
+    const options = chartThemeOptions(theme);
+    const seriesTheme = chartSeriesThemeOptions(theme);
+    priceChart.applyOptions(options);
+    volumeChart.applyOptions(options);
+    candleSeries.applyOptions(seriesTheme.candles);
+    lineSeries.applyOptions(seriesTheme.line);
+    volumeSeries.setData(themedVolumeData(theme));
+    scheduleAnchoredVolumeProfileRender();
   });
 
   document.querySelectorAll('[data-chart-mode]').forEach(button => {
@@ -1417,12 +2762,41 @@
     button.addEventListener('click', () => changeInterval(button.dataset.chartInterval));
   });
   document.getElementById('elliottOverlayToggle').addEventListener('click', toggleElliottOverlays);
+  document.getElementById('anchoredVolumeProfileToggle')
+          .addEventListener('click', toggleAnchoredVolumeProfile);
   document.getElementById('followCongressionalActivityBtn')
           .addEventListener('click', toggleCongressionalActivityFollow);
   document.getElementById('showCongressionalHistoryBtn')
           .addEventListener('click', showCongressionalHistory);
   document.getElementById('closeCongressionalHistoryBtn')
           .addEventListener('click', () => document.getElementById('congressionalHistoryDialog').close());
+  document.getElementById('followInsiderActivityBtn')
+          .addEventListener('click', toggleInsiderActivityFollow);
+  document.getElementById('showInsiderHistoryBtn')
+          .addEventListener('click', showInsiderHistory);
+  document.getElementById('closeInsiderHistoryBtn')
+          .addEventListener('click', () => document.getElementById('insiderHistoryDialog').close());
+  document.getElementById('showHistoricalCandlestickPatternsBtn')
+          .addEventListener('click', showHistoricalCandlestickIntervalPicker);
+  document.getElementById('closeHistoricalCandlestickIntervalBtn')
+          .addEventListener('click', () => document.getElementById('historicalCandlestickIntervalDialog').close());
+  document.getElementById('closeHistoricalCandlestickLookbackBtn')
+          .addEventListener('click', () => document.getElementById('historicalCandlestickLookbackDialog').close());
+  document.getElementById('backToHistoricalCandlestickIntervalBtn')
+          .addEventListener('click', showHistoricalCandlestickIntervalPicker);
+  document.getElementById('historicalCandlestickLookbackInput')
+          .addEventListener('input', updateHistoricalCandlestickLookbackPreview);
+  document.getElementById('historicalCandlestickLookbackForm')
+          .addEventListener('submit', submitHistoricalCandlestickLookback);
+  document.getElementById('closeHistoricalCandlestickResultsBtn')
+          .addEventListener('click', () => document.getElementById('historicalCandlestickResultsDialog').close());
+  document.getElementById('changeHistoricalCandlestickIntervalBtn')
+          .addEventListener('click', showHistoricalCandlestickIntervalPicker);
+  document.querySelectorAll('[data-historical-candlestick-interval]').forEach(button => {
+    button.addEventListener('click', () => showHistoricalCandlestickLookbackPicker(
+            button.dataset.historicalCandlestickInterval
+    ));
+  });
   bindUnsavedAlertGuards();
 
   window.onload = initCharts;

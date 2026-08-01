@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Company signal board — StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -94,7 +95,7 @@
                     class="lifecycle-unavailable">Not tracked</span>
             </div>
             <div class="signal-event-metrics">
-              <div>
+              <div th:title="${'Score model: ' + event.scoreVersion()}">
                 <span>Score</span>
                 <strong th:text="${event.setupScore() != null ? event.setupScore() + '/100' : 'N/A'}">88/100</strong>
               </div>

@@ -5,6 +5,7 @@ import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AlertRuleService;
 import org.example.stockwatch247.service.EmailVerificationService;
 import org.example.stockwatch247.service.congress.CongressionalActivityService;
+import org.example.stockwatch247.service.insider.InsiderActivityService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -15,6 +16,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.security.Principal;
 import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.Locale;
+import java.util.stream.Stream;
 
 
 
@@ -23,17 +30,20 @@ public class AuthController {
     private final UserRepository userRepository;
     private final AlertRuleService alertRuleService;
     private final CongressionalActivityService congressionalActivityService;
+    private final InsiderActivityService insiderActivityService;
     private final PasswordEncoder passwordEncoder;
     private final EmailVerificationService emailVerificationService;
     private final String dummyPasswordHash;
     public AuthController(UserRepository userRepository,
                           AlertRuleService alertRuleService,
                           CongressionalActivityService congressionalActivityService,
+                          InsiderActivityService insiderActivityService,
                           PasswordEncoder passwordEncoder,
                           EmailVerificationService emailVerificationService) {
         this.userRepository = userRepository;
         this.alertRuleService = alertRuleService;
         this.congressionalActivityService = congressionalActivityService;
+        this.insiderActivityService = insiderActivityService;
         this.passwordEncoder = passwordEncoder;
         this.emailVerificationService = emailVerificationService;
         this.dummyPasswordHash = passwordEncoder.encode("nonexistent-account-timing-equalizer");
@@ -136,16 +146,35 @@ public class AuthController {
                     .getLatestDashboardActivity(currentUser, 10);
             var congressionalFollowedStocks = congressionalActivityService
                     .getFollowedStocks(currentUser);
+            var insiderActivities = insiderActivityService
+                    .getLatestDashboardActivity(currentUser, 10);
+            var insiderFollowedStocks = insiderActivityService
+                    .getFollowedStocks(currentUser);
+            var latestTickerNotifications = Stream.concat(
+                            congressionalActivities.stream().map(this::tickerNotification),
+                            insiderActivities.stream().map(this::tickerNotification))
+                    .sorted(Comparator.comparing(
+                            TickerNotificationView::detectedAt,
+                            Comparator.nullsLast(Comparator.reverseOrder())))
+                    .limit(10)
+                    .toList();
             model.addAttribute("firstName", currentUser.getFirstName());
             model.addAttribute("trackedCompanies", trackedCompanies);
             model.addAttribute("latestSignals", latestSignals);
             model.addAttribute("congressionalActivities", congressionalActivities);
             model.addAttribute("congressionalFollowedStocks", congressionalFollowedStocks);
             model.addAttribute("congressionalFollowedCount", congressionalFollowedStocks.size());
-            model.addAttribute("trackedInstrumentCount", java.util.stream.Stream.concat(
+            model.addAttribute("insiderActivities", insiderActivities);
+            model.addAttribute("insiderFollowedStocks", insiderFollowedStocks);
+            model.addAttribute("insiderFollowedCount", insiderFollowedStocks.size());
+            model.addAttribute("latestTickerNotifications", latestTickerNotifications);
+            model.addAttribute("trackedInstrumentCount", Stream.of(
                             trackedCompanies.stream().map(AlertRuleService.TrackedCompanyView::symbol),
                             congressionalFollowedStocks.stream()
-                                    .map(CongressionalActivityService.FollowedStockView::symbol))
+                                    .map(CongressionalActivityService.FollowedStockView::symbol),
+                            insiderFollowedStocks.stream()
+                                    .map(InsiderActivityService.FollowedStockView::symbol))
+                    .flatMap(stream -> stream)
                     .map(String::toUpperCase)
                     .distinct()
                     .count());
@@ -165,6 +194,10 @@ public class AuthController {
             model.addAttribute("congressionalActivities", java.util.List.of());
             model.addAttribute("congressionalFollowedStocks", java.util.List.of());
             model.addAttribute("congressionalFollowedCount", 0);
+            model.addAttribute("insiderActivities", java.util.List.of());
+            model.addAttribute("insiderFollowedStocks", java.util.List.of());
+            model.addAttribute("insiderFollowedCount", 0);
+            model.addAttribute("latestTickerNotifications", java.util.List.of());
             model.addAttribute("trackedInstrumentCount", 0L);
             model.addAttribute("stockCompanyCount", 0L);
             model.addAttribute("indexEtfCompanyCount", 0L);
@@ -214,5 +247,71 @@ public class AuthController {
         return emailVerificationService.isRequired()
                 ? "redirect:/login?verificationSent=true"
                 : "redirect:/login?registered=true";
+    }
+
+    private TickerNotificationView tickerNotification(
+            CongressionalActivityService.DashboardActivityView activity) {
+        return new TickerNotificationView(
+                "CONGRESSIONAL",
+                "Congressional",
+                activity.symbol(),
+                activity.companyName(),
+                activity.memberName(),
+                activity.chamber(),
+                activity.transactionType(),
+                activity.transactionTypeLabel(),
+                activity.amountRange(),
+                null,
+                null,
+                activity.transactionDate(),
+                activity.disclosureDate(),
+                activity.detectedAt(),
+                activity.deliveryStatus(),
+                activity.sourceUrl());
+    }
+
+    private TickerNotificationView tickerNotification(
+            InsiderActivityService.DashboardActivityView activity) {
+        String amountLabel = activity.transactionValue() != null
+                ? "$" + String.format(Locale.ROOT, "%,.0f", activity.transactionValue())
+                : activity.shares() != null
+                ? activity.shares().stripTrailingZeros().toPlainString() + " shares"
+                : "Value not reported";
+        return new TickerNotificationView(
+                "INSIDER",
+                "Corporate insider",
+                activity.symbol(),
+                activity.companyName(),
+                activity.insiderName(),
+                activity.ownerRole(),
+                activity.transactionType(),
+                activity.transactionTypeLabel(),
+                amountLabel,
+                activity.returnPercent(),
+                activity.returnAsOf(),
+                activity.transactionDate(),
+                activity.filingDate(),
+                activity.detectedAt(),
+                activity.deliveryStatus(),
+                activity.sourceUrl());
+    }
+
+    public record TickerNotificationView(
+            String source,
+            String sourceLabel,
+            String symbol,
+            String companyName,
+            String actorName,
+            String actorRole,
+            String transactionType,
+            String transactionTypeLabel,
+            String amountLabel,
+            BigDecimal returnPercent,
+            LocalDate returnAsOf,
+            LocalDate transactionDate,
+            LocalDate filingDate,
+            Instant detectedAt,
+            String deliveryStatus,
+            String sourceUrl) {
     }
 }

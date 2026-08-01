@@ -61,14 +61,15 @@ class ExpandedCandlestickStatisticalValidationTest {
 
     private static final Map<String, String> FROZEN_SOURCE_HASHES = Map.of(
             "src/main/java/org/example/stockwatch247/service/CandlePatternDetectionService.java",
-            "6F7E3B26C7B51A030C88D28936753C97615FD521DC584FC88915F5422AD75A7F",
+            "E1F2EF86A9CE23C464F9601AF2EE976A9D569CECFA1E4DBE4AB2CC0FEA25D49B",
             "src/main/java/org/example/stockwatch247/service/TechnicalIndicatorEnrichmentService.java",
-            "D4D479A41AAFC3567A8BF5C141C27AF089F58B6F8DE486087B9DCB6565868937",
+            "3087613C08DD25D14B62AE27C9FAC76CFC3604BF4AA18C743693736C1CBF4005",
             "src/main/java/org/example/stockwatch247/service/HistoricalSignalBacktestService.java",
-            "DE7FCF2AF8B6A9C0E4329E223F48AD48DE859E67B979A0A45182885A25B1ADD4",
+            "0122A12997695648EE3BE44CC90F407E2212D87833777E3E1E2F56E29E6CA13F",
             "src/main/java/org/example/stockwatch247/service/CandlestickPatternCalibration.java",
             "738D04485D8E80936884F8F49604664A9CC6260701EB3FABE88CD01171141C68"
     );
+    private static final String SCORE_MODEL_FILE_LABEL = "v4-rollback";
 
     private static final List<IntervalRun> RUNS = List.of(
             new IntervalRun(
@@ -137,7 +138,11 @@ class ExpandedCandlestickStatisticalValidationTest {
                         run.aggregation()
                 );
                 intervalCandles += candles.size();
-                BacktestReport report = backtestService.backtest(candles, run.settings());
+                BacktestReport report = backtestService.backtest(
+                        candles,
+                        run.settings(),
+                        false
+                );
                 analyzedCandles += report.analyzedCandles();
                 report.trades().forEach(trade ->
                         allTrades.add(LabeledTrade.from(run.interval(), entry, trade)));
@@ -167,13 +172,15 @@ class ExpandedCandlestickStatisticalValidationTest {
 
         Files.createDirectories(OUTPUT_DIRECTORY);
         Path tradesFile = OUTPUT_DIRECTORY.resolve(
-                "expanded-candlestick-trades-" + stage.fileLabel() + ".csv"
+                "expanded-candlestick-trades-" + stage.fileLabel()
+                        + "-" + SCORE_MODEL_FILE_LABEL + ".csv"
         );
         writeTrades(tradesFile, allTrades);
 
         String report = buildReport(stage, studyUniverse, coverage, allTrades);
         Path reportFile = OUTPUT_DIRECTORY.resolve(
-                "expanded-candlestick-summary-" + stage.fileLabel() + ".md"
+                "expanded-candlestick-summary-" + stage.fileLabel()
+                        + "-" + SCORE_MODEL_FILE_LABEL + ".md"
         );
         Files.writeString(reportFile, report, StandardCharsets.UTF_8);
         System.out.println(report);
@@ -847,7 +854,13 @@ class ExpandedCandlestickStatisticalValidationTest {
                 long seed
         ) {
             DescriptiveStats descriptive = DescriptiveStats.from(trades);
-            double[] cluster = clusterBootstrap(trades, universe, replicates, seed);
+            // A two-way symbol/year bootstrap is not interpretable when only a
+            // handful of actionable outcomes occupy one or two cluster cells.
+            // Preserve the raw and Wilson statistics, but report the clustered
+            // interval as unavailable instead of failing the complete study.
+            double[] cluster = descriptive.actionable() < 30
+                    ? new double[]{Double.NaN, Double.NaN}
+                    : clusterBootstrap(trades, universe, replicates, seed);
             double margin = Double.isNaN(cluster[0])
                     ? Double.NaN
                     : Math.max(

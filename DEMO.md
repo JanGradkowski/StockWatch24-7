@@ -30,7 +30,7 @@ Technical analysis is the default dashboard view. It summarizes followed instrum
 
 [![Latest technical signals on the dashboard](img/dashboard2.png)](img/dashboard2.png)
 
-The latest-signals board presents each detected pattern with its company, interval, candle period, research horizon, setup score, and additive lifecycle state. A detection remains immediate while later completed candles can resolve it as confirmed, invalidated, or expired. Selecting a row opens the full score report.
+The latest-signals board presents each detected pattern with its company, interval, candle period, research measurement window, heuristic setup score, and additive lifecycle state. A detection remains immediate while later completed candles can resolve it as confirmed, invalidated, or expired. Selecting a row opens the full score report. The current candlestick score is versioned `CANDLE_V4_EXPERIMENTAL`; it is technical-confluence context, not a win probability.
 
 ### Ticker-alert overview
 
@@ -50,7 +50,7 @@ An individual stock workspace combines the latest quote with line/candlestick co
 
 [![NVDA candlestick and synchronized volume charts](img/nvda2.png)](img/nvda2.png)
 
-The price-action chart supports horizontal historical exploration and is paired with a synchronized volume profile. Older candles continue loading as the user navigates left.
+The price-action chart supports horizontal historical exploration and is paired with synchronized trading-volume bars. Older candles continue loading as the user navigates left. Anchored volume-profile mode starts at the latest candle by default; selecting any loaded candle moves the anchor and draws its estimated price-volume distribution through the latest candle, including POC and the 70% value area. The active daily candle uses cached 15-minute bars so the current-day profile has meaningful internal structure instead of a single uniformly filled daily range.
 
 ### Line-chart view
 
@@ -90,13 +90,13 @@ The company board groups every followed method, direction, and interval combinat
 
 [![AB Shooting Star setup-score report](img/ab1.png)](img/ab1.png)
 
-A detected signal opens into a dedicated report containing its heuristic setup score, confidence band, direction, interval, signal period, recorded close, email-delivery status, and—when applicable—the frozen confirmation range and follow-up outcome.
+A detected signal opens into a dedicated report containing its heuristic setup score, confluence band, score-model version, direction, interval, signal period, recorded close, email-delivery status, and—when applicable—the frozen confirmation range and follow-up outcome.
 
 ### Scoring evidence
 
 [![Evidence behind the AB setup score](img/ab2.png)](img/ab2.png)
 
-The evidence section explains why the score received its value. Supporting and cautionary factors are preserved with the signal across pattern geometry, momentum, volatility, price action, and historical calibration.
+The evidence section explains why the score received its value. Supporting and cautionary factors are preserved with the signal across pattern quality, EMA/SMA/MACD trend evidence, completed higher-timeframe context, RSI/CCI momentum, Bollinger location, support/resistance, relative volume, rolling VWAP, and the disclosed OHLCV volume-profile approximation. Indicators rank confluence after detection and never suppress a structurally valid pattern.
 
 ## Continue exploring
 

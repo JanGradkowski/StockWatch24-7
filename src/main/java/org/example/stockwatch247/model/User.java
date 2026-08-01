@@ -40,6 +40,44 @@
         @Column(name = "created_at", updatable = false)
         private LocalDateTime createdAt = LocalDateTime.now();
 
+        @Column(name = "theme_preference", nullable = false, length = 16)
+        private String themePreference = "DARK";
+
+        @Column(name = "mfa_enabled", nullable = false)
+        private boolean mfaEnabled;
+
+        @JsonIgnore
+        @Column(name = "mfa_secret_ciphertext", length = 512)
+        private String mfaSecretCiphertext;
+
+        @JsonIgnore
+        @Column(name = "mfa_secret_iv", length = 64)
+        private String mfaSecretIv;
+
+        @JsonIgnore
+        @Column(name = "security_version", nullable = false)
+        private long securityVersion;
+
+        @JsonIgnore
+        @Column(name = "last_accepted_totp_step")
+        private Long lastAcceptedTotpStep;
+
+        @JsonIgnore
+        @Column(name = "password_changed_at")
+        private LocalDateTime passwordChangedAt;
+
+        @JsonIgnore
+        @Column(name = "deletion_requested_at")
+        private LocalDateTime deletionRequestedAt;
+
+        @JsonIgnore
+        @Column(name = "deletion_cancel_token_hash", length = 64)
+        private String deletionCancelTokenHash;
+
+        @JsonIgnore
+        @Column(name = "deletion_cancel_expires_at")
+        private LocalDateTime deletionCancelExpiresAt;
+
         @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
         private List<AlertRule> alertRules = new ArrayList<>();
 
@@ -130,4 +168,25 @@
         public List<AlertRule> getAlertRules() {
             return alertRules;
         }
+
+        public String getThemePreference() { return themePreference; }
+        public void setThemePreference(String themePreference) { this.themePreference = themePreference; }
+        public boolean isMfaEnabled() { return mfaEnabled; }
+        public void setMfaEnabled(boolean mfaEnabled) { this.mfaEnabled = mfaEnabled; }
+        public String getMfaSecretCiphertext() { return mfaSecretCiphertext; }
+        public void setMfaSecretCiphertext(String value) { this.mfaSecretCiphertext = value; }
+        public String getMfaSecretIv() { return mfaSecretIv; }
+        public void setMfaSecretIv(String value) { this.mfaSecretIv = value; }
+        public long getSecurityVersion() { return securityVersion; }
+        public void setSecurityVersion(long securityVersion) { this.securityVersion = securityVersion; }
+        public Long getLastAcceptedTotpStep() { return lastAcceptedTotpStep; }
+        public void setLastAcceptedTotpStep(Long value) { this.lastAcceptedTotpStep = value; }
+        public LocalDateTime getPasswordChangedAt() { return passwordChangedAt; }
+        public void setPasswordChangedAt(LocalDateTime value) { this.passwordChangedAt = value; }
+        public LocalDateTime getDeletionRequestedAt() { return deletionRequestedAt; }
+        public void setDeletionRequestedAt(LocalDateTime value) { this.deletionRequestedAt = value; }
+        public String getDeletionCancelTokenHash() { return deletionCancelTokenHash; }
+        public void setDeletionCancelTokenHash(String value) { this.deletionCancelTokenHash = value; }
+        public LocalDateTime getDeletionCancelExpiresAt() { return deletionCancelExpiresAt; }
+        public void setDeletionCancelExpiresAt(LocalDateTime value) { this.deletionCancelExpiresAt = value; }
     }

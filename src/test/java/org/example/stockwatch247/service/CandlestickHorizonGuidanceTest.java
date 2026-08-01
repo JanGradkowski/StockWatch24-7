@@ -13,16 +13,16 @@ class CandlestickHorizonGuidanceTest {
         assertThat(CandlestickHorizonGuidance.forSignal(AlertPatternFamily.CANDLESTICK, TimeInterval.DAILY))
                 .get()
                 .extracting(CandlestickHorizonGuidance.Guidance::label)
-                .isEqualTo("10\u201330 trading sessions");
+                .isEqualTo("10 trading sessions");
         assertThat(CandlestickHorizonGuidance.forSignal(AlertPatternFamily.CANDLESTICK, TimeInterval.WEEKLY))
                 .get()
                 .extracting(CandlestickHorizonGuidance.Guidance::label)
-                .isEqualTo("8\u201312 weeks");
+                .isEqualTo("4, 8, and 12 weeks");
         assertThat(CandlestickHorizonGuidance.forSignal(AlertPatternFamily.CANDLESTICK, TimeInterval.MONTHLY))
                 .get()
                 .satisfies(guidance -> {
-                    assertThat(guidance.label()).isEqualTo("About 6 months");
-                    assertThat(guidance.summary()).contains("9-month result is preliminary");
+                    assertThat(guidance.label()).isEqualTo("3, 6, and 9 months");
+                    assertThat(guidance.summary()).contains("exploratory", "aggregate results were weak");
                     assertThat(guidance.disclaimer()).contains("not a recommended holding period");
                 });
     }

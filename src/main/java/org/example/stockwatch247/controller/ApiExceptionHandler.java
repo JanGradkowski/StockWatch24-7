@@ -2,6 +2,7 @@ package org.example.stockwatch247.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.example.stockwatch247.service.congress.CongressionalRefreshLimitException;
+import org.example.stockwatch247.service.insider.InsiderDataUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -30,6 +31,18 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()))
                 .body(Map.of("error", exception.getMessage()));
+    }
+
+    @ExceptionHandler(InsiderDataUnavailableException.class)
+    public ResponseEntity<Map<String, String>> insiderDataUnavailable(
+            InsiderDataUnavailableException exception,
+            HttpServletRequest request) {
+        log.warn("Insider data unavailable on {} {}: {}",
+                request.getMethod(), request.getRequestURI(), exception.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of(
+                        "error", exception.getMessage(),
+                        "code", "INSIDER_DATA_UNAVAILABLE"));
     }
 
     @ExceptionHandler(IllegalStateException.class)

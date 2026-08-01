@@ -104,7 +104,7 @@ class DocumentedElliottWaveBenchmarkTest {
         });
 
         List<Candle> confirmationPrefix = through(result.candles(), LocalDate.parse("2011-10-10"));
-        List<EnrichedCandle> enriched = enrichmentService.enrich(
+        List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
                 confirmationPrefix, confirmationPrefix.size());
         assertThat(detectionService.detectAlertSignals(enriched))
                 .noneMatch(signal -> signal.pattern() == CandlePattern.ELLIOTT_BEARISH_WAVE_V_END);
@@ -129,12 +129,14 @@ class DocumentedElliottWaveBenchmarkTest {
         List<ObservedSignal> signals = new ArrayList<>();
         for (int endExclusive = 34; endExclusive <= candles.size(); endExclusive++) {
             List<Candle> prefix = candles.subList(0, endExclusive);
-            List<EnrichedCandle> enriched = enrichmentService.enrich(prefix, prefix.size());
+            List<EnrichedCandle> enriched =
+                    enrichmentService.enrichForElliott(prefix, prefix.size());
             detectionService.detect(enriched).forEach(signal ->
                     signals.add(new ObservedSignal(date(signal.candleTimestamp()), signal)));
         }
 
-        List<EnrichedCandle> enriched = enrichmentService.enrich(candles, candles.size());
+        List<EnrichedCandle> enriched =
+                enrichmentService.enrichForElliott(candles, candles.size());
         List<ElliottWaveDetectionService.ElliottWaveStructure> structures =
                 detectionService.findHistoricalWaveStructures(enriched);
         return new BenchmarkResult(candles, List.copyOf(signals), structures);

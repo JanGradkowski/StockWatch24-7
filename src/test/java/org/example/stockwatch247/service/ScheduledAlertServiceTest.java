@@ -81,6 +81,8 @@ class ScheduledAlertServiceTest {
         ArgumentCaptor<AlertEvent> savedEvent = ArgumentCaptor.forClass(AlertEvent.class);
         verify(alertEventRepository).save(savedEvent.capture());
         assertThat(savedEvent.getValue().getConfidenceScore()).isLessThan(75);
+        assertThat(savedEvent.getValue().getScoreVersion())
+                .isEqualTo(CandlePatternDetectionService.SETUP_SCORE_VERSION);
         assertThat(savedEvent.getValue().isLifecycleTracked()).isTrue();
         assertThat(savedEvent.getValue().getConfirmationWindowCandles()).isEqualTo(3);
         assertThat(savedEvent.getValue().getConfidenceReasons())
@@ -238,7 +240,7 @@ class ScheduledAlertServiceTest {
                         MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
                 symbol, "1wk", PageRequest.of(0, 299)))
-                .thenReturn(syntheticElliottCandles(symbol).reversed());
+                .thenReturn(syntheticElliottCandles(symbol, "1wk").reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.WEEKLY)).thenReturn(List.of(rule));
         when(alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(any(), any(), any()))
@@ -293,7 +295,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
                 symbol, "1wk", PageRequest.of(0, 299)))
-                .thenReturn(syntheticElliottCandles(symbol).reversed());
+                .thenReturn(syntheticElliottCandles(symbol, "1wk").reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.WEEKLY)).thenReturn(List.of(rule));
         when(elliottWaveDetectionService.detectAlertSignals(any())).thenReturn(List.of());
@@ -352,6 +354,8 @@ class ScheduledAlertServiceTest {
         assertThat(savedEvent.getValue().getPattern())
                 .isEqualTo(CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END);
         assertThat(savedEvent.getValue().getConfidenceScore()).isEqualTo(81);
+        assertThat(savedEvent.getValue().getScoreVersion())
+                .isEqualTo(ElliottWaveDetectionService.SETUP_SCORE_VERSION);
     }
 
     private ScheduledAlertService service(AlertRuleRepository alertRuleRepository,
@@ -449,6 +453,10 @@ class ScheduledAlertServiceTest {
     }
 
     private List<Candle> syntheticElliottCandles(String symbol) {
+        return syntheticElliottCandles(symbol, "1mo");
+    }
+
+    private List<Candle> syntheticElliottCandles(String symbol, String interval) {
         List<Anchor> anchors = List.of(
                 new Anchor(1, 112.0),
                 new Anchor(6, 100.0),
@@ -471,7 +479,8 @@ class ScheduledAlertServiceTest {
                 double progress = (index - start.index()) / (double) (end.index() - start.index());
                 double close = start.price() + (end.price() - start.price()) * progress;
                 candles.add(new Candle(
-                        symbol, "1mo", index * 86_400L, close - 0.4, close + 0.6, close - 0.6, close, 1_500L));
+                        symbol, interval, index * 86_400L,
+                        close - 0.4, close + 0.6, close - 0.6, close, 1_500L));
             }
         }
         return candles;

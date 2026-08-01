@@ -20,7 +20,9 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 
 - User signup, email verification, login, and session security
 - Symbol search, historical candlestick charts, and live-price lookup
+- Persistent light and dark display themes available from every page
 - Twelve Data market data with Yahoo Finance fallback
+- Interactive classic anchored volume profiles with POC, 70% value area, cached historical candles, active-day 15-minute resolution, and two per-user live refreshes per active ticker candle
 - Geometry- and trend-validated candlestick detection with a stock-only heuristic setup score and frozen higher-interval pattern calibration; scoring evidence ranks valid patterns but never creates or suppresses alerts
 - Additive candlestick lifecycle emails: every detection remains immediate, then the first close-based `CONFIRMED`, `INVALIDATED`, or `EXPIRED` outcome is sent within a configurable completed-candle window
 - Weekly and monthly Elliott-wave analysis
@@ -107,7 +109,10 @@ SMTP_PASSWORD=<smtp-password>
 SMTP_AUTH=true
 SMTP_STARTTLS=true
 SMTP_STARTTLS_REQUIRED=true
+MFA_ENCRYPTION_KEY=<at-least-32-random-characters>
 ```
+
+`MFA_ENCRYPTION_KEY` protects authenticator-app secrets at rest. Keep it stable across restarts and instances; changing or losing it makes existing authenticator enrollments unreadable. Production refuses to start with a missing or placeholder key.
 
 Each alert rule belongs to a user. A scheduled symbol/interval check is shared, but every matching active rule is evaluated independently and mail is sent to each rule owner's address. Users' laptops do not need to remain online.
 
@@ -175,8 +180,12 @@ The complete development template is in [`.env.example`](.env.example). Importan
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | Runtime PostgreSQL connection |
 | `DB_MIGRATION_USERNAME`, `DB_MIGRATION_PASSWORD` | Flyway migration role |
 | `TWELVE_DATA_API_KEY` | Twelve Data access |
+| `ANCHORED_VOLUME_PROFILE_PRICE_BINS` | Price rows used by the estimated anchored profile (default `48`) |
+| `ANCHORED_VOLUME_PROFILE_VALUE_AREA_PERCENT` | Volume percentage enclosed by VAH/VAL (default `70`) |
+| `ANCHORED_VOLUME_PROFILE_MAXIMUM_LIVE_REFRESHES` | Per-user provider refreshes for a ticker and active candle (fixed maximum `2`) |
 | `ALERTS_EMAIL_ENABLED` | Enables signal and verification email delivery |
 | `SMTP_*` | SMTP transport and STARTTLS settings |
+| `MFA_ENCRYPTION_KEY` | Stable production secret used to encrypt authenticator-app seeds |
 | `ALERT_SCHEDULE_ENABLED` | Enables scheduled alert recovery and workers |
 | `ALERT_JOB_LEASE_SECONDS` | Worker lease before abandoned work can be reclaimed |
 | `ALERT_CATCH_UP_BATCH_SIZE` | Maximum missed schedule occurrences recovered per pass |

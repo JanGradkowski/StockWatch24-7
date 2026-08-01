@@ -10,4 +10,9 @@ public class ViewController {
     public String viewLandingPage() {
         return "index";
     }
+
+    @GetMapping("/about")
+    public String viewAboutPage() {
+        return "about";
+    }
 }

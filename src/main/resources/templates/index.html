@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="StockWatch 24/7 monitors technical market signals and delivers automated email alerts.">
     <title>StockWatch 24/7 — Markets never sleep</title>
+    <script th:src="@{/js/theme.js}"></script>
     <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body class="landing-page">
@@ -21,6 +22,7 @@
         </a>
         <div class="nav-links">
             <a href="#platform" class="btn-secondary">Platform</a>
+            <a th:href="@{/about}" class="btn-secondary">About &amp; functionalities</a>
             <a th:href="@{/login}" class="btn-primary">Sign in</a>
             <a th:href="@{/signup}" class="btn-accent">Start monitoring</a>
         </div>
@@ -199,6 +201,7 @@
             <span class="logo-word">StockWatch <span>24/7</span></span>
         </a>
         <span class="footer-tagline">Automated technical market monitoring.</span>
+        <a th:href="@{/about}">About &amp; functionalities</a>
         <span>© 2026 StockWatch 24/7</span>
     </footer>
 </div>

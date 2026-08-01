@@ -25,7 +25,7 @@ public class CustomerUserDetailService implements UserDetailsService {
                 .username(user.getEmail()) // Use email as the principal identifier
                 .password(user.getPasswordHash()) // Point to your specific password field
                 .roles("USER")
-                .disabled(verificationRequired && !user.isVerified())
+                .disabled((verificationRequired && !user.isVerified()) || user.getDeletionRequestedAt() != null)
                 .build();
     }
 }

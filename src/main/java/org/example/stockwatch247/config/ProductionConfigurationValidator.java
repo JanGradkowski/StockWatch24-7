@@ -1,6 +1,7 @@
 package org.example.stockwatch247.config;
 
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -29,7 +30,9 @@ public class ProductionConfigurationValidator implements InitializingBean {
     private final boolean startTlsRequired;
     private final String migrationUsername;
     private final String migrationPassword;
+    private final String mfaEncryptionKey;
 
+    @Autowired
     public ProductionConfigurationValidator(
             @Value("${security.require-https:false}") boolean requireHttps,
             @Value("${app.public-base-url:}") String publicBaseUrl,
@@ -45,7 +48,8 @@ public class ProductionConfigurationValidator implements InitializingBean {
             @Value("${spring.mail.properties.mail.smtp.starttls.enable:false}") boolean startTlsEnabled,
             @Value("${spring.mail.properties.mail.smtp.starttls.required:false}") boolean startTlsRequired,
             @Value("${DB_MIGRATION_USERNAME:}") String migrationUsername,
-            @Value("${DB_MIGRATION_PASSWORD:}") String migrationPassword) {
+            @Value("${DB_MIGRATION_PASSWORD:}") String migrationPassword,
+            @Value("${security.mfa.encryption-key:}") String mfaEncryptionKey) {
         this.requireHttps = requireHttps;
         this.publicBaseUrl = publicBaseUrl;
         this.forwardHeadersStrategy = forwardHeadersStrategy;
@@ -61,6 +65,21 @@ public class ProductionConfigurationValidator implements InitializingBean {
         this.startTlsRequired = startTlsRequired;
         this.migrationUsername = migrationUsername;
         this.migrationPassword = migrationPassword;
+        this.mfaEncryptionKey = mfaEncryptionKey;
+    }
+
+    /** Retained for focused tests and non-Spring construction. */
+    public ProductionConfigurationValidator(boolean requireHttps, String publicBaseUrl,
+                                            String forwardHeadersStrategy, String trustedProxyPattern,
+                                            boolean verificationRequired, boolean emailEnabled,
+                                            String mailHost, String mailUsername, String mailPassword,
+                                            String fromAddress, boolean smtpAuth, boolean startTlsEnabled,
+                                            boolean startTlsRequired, String migrationUsername,
+                                            String migrationPassword) {
+        this(requireHttps, publicBaseUrl, forwardHeadersStrategy, trustedProxyPattern,
+                verificationRequired, emailEnabled, mailHost, mailUsername, mailPassword,
+                fromAddress, smtpAuth, startTlsEnabled, startTlsRequired, migrationUsername,
+                migrationPassword, "test-only-mfa-encryption-key-with-32-characters");
     }
 
     @Override
@@ -72,6 +91,11 @@ public class ProductionConfigurationValidator implements InitializingBean {
         validateTrustedProxyPattern();
         require(isBlank(migrationUsername) && isBlank(migrationPassword),
                 "The production web process must not receive database migration credentials.");
+        require(!isBlank(mfaEncryptionKey)
+                        && !"local-development-only-change-me".equals(mfaEncryptionKey)
+                        && !"replace-with-a-long-random-secret".equals(mfaEncryptionKey)
+                        && mfaEncryptionKey.length() >= 32,
+                "MFA_ENCRYPTION_KEY must be a unique production secret of at least 32 characters.");
 
         require(!verificationRequired || emailEnabled,
                 "Email delivery must be enabled when production email verification is required.");

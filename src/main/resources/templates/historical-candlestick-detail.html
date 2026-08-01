@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="${signal.symbol() + ' ' + signal.patternLabel() + ' — Historical signal'}">Historical candlestick signal</title>
+  <script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="bg-animation" aria-hidden="true">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+</div>
+
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<main class="page-container signal-detail-page historical-candlestick-detail-page">
+  <header class="signal-report-header">
+    <div>
+      <div class="signal-report-eyebrow">On-demand historical candlestick analysis</div>
+      <h1 th:text="${signal.patternLabel()}">Bearish Harami</h1>
+      <p class="signal-report-identity">
+        <strong th:text="${signal.symbol()}">MARA</strong>
+        <span aria-hidden="true">&middot;</span>
+        <span th:text="${signal.companyName()}">MARA Holdings, Inc.</span>
+      </p>
+      <div class="signal-report-tags" aria-label="Historical signal classification">
+        <span class="signal-report-tag">Historical candlestick</span>
+        <span class="signal-report-tag direction"
+              th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
+              th:text="${signal.tradeSignal()}">SELL</span>
+        <span class="signal-report-tag interval" th:text="${signal.intervalLabel()}">Weekly</span>
+        <span class="signal-report-tag historical-outcome-pill"
+              th:classappend="${' ' + signal.statusClass()}"
+              th:text="${signal.statusLabel()}">Successful</span>
+        <span class="signal-report-tag" th:text="${signal.signalPeriodLabel()}">13&ndash;17 Jul 2026</span>
+        <span class="signal-report-tag"
+              th:text="${'Score model ' + signal.scoreVersion()}">Score model CANDLE_V4_EXPERIMENTAL</span>
+      </div>
+    </div>
+    <div class="signal-report-actions">
+      <a th:href="${returnUrl}" class="btn-secondary">&larr; Back to historical signals</a>
+      <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary">
+        Open workspace <span class="button-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+    </div>
+  </header>
+
+  <section class="signal-score-layout" aria-labelledby="historical-setup-heading">
+    <article class="signal-score-card" th:classappend="${' ' + signal.setupBand()}">
+      <div class="signal-score-card-topline">
+        <div>
+          <span class="signal-section-kicker">Heuristic confluence at detection</span>
+          <h2 id="historical-setup-heading">Setup score</h2>
+        </div>
+        <span class="signal-confidence-pill" th:text="${signal.setupStrengthLabel()}">Moderate confluence</span>
+      </div>
+
+      <div class="signal-score-visual">
+        <div class="signal-score-orbit" aria-hidden="true">
+          <div class="signal-score-orbit-core">
+            <strong th:text="${signal.setupScore()}">78</strong>
+            <span>/100</span>
+          </div>
+        </div>
+        <div class="signal-score-summary">
+          <p th:text="${signal.setupExplanation()}">Several factors aligned when the signal formed.</p>
+          <p>
+            This experimental score was reconstructed from the information available at that historical candle.
+            It is technical confluence, not a probability of profit.
+          </p>
+          <div class="signal-score-rail"
+               role="meter"
+               aria-valuemin="0"
+               aria-valuemax="100"
+               th:attr="aria-valuenow=${signal.setupScore()},aria-label=${'Setup score ' + signal.setupScore() + ' out of 100'}">
+            <span th:each="segment : ${#numbers.sequence(1, 20)}"
+                  class="signal-score-segment"
+                  th:classappend="${signal.setupScore() >= segment * 5} ? ' active' : ''"></span>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <aside class="signal-snapshot-card" aria-labelledby="historical-snapshot-heading">
+      <div class="signal-section-kicker">At historical detection</div>
+      <h2 id="historical-snapshot-heading">Signal snapshot</h2>
+      <div class="signal-snapshot-grid">
+        <div class="signal-snapshot-item">
+          <span>Type</span>
+          <strong class="snapshot-direction"
+                  th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
+                  th:text="${signal.typeLabel()}">Sell signal</strong>
+        </div>
+        <div class="signal-snapshot-item">
+          <span>Formation</span>
+          <strong th:text="${signal.formationLabel()}">2-candle formation</strong>
+        </div>
+        <div class="signal-snapshot-item">
+          <span>Signal period</span>
+          <strong th:text="${signal.signalPeriodLabel()}">13&ndash;17 Jul 2026</strong>
+        </div>
+        <div class="signal-snapshot-item">
+          <span>Signal close</span>
+          <strong th:text="${#numbers.formatDecimal(signal.entryClose(), 1, 2)}">19.42</strong>
+        </div>
+      </div>
+      <div class="historical-calculation-note">
+        <span aria-hidden="true">↻</span>
+        <div>
+          <strong>Calculated on demand</strong>
+          <small>This historical signal is not stored or cached.</small>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <section class="historical-outcome-section"
+           th:classappend="${' ' + signal.statusClass()}"
+           aria-labelledby="historical-outcome-heading">
+    <div class="historical-outcome-heading">
+      <div>
+        <div class="signal-section-kicker">Observed price outcome</div>
+        <h2 id="historical-outcome-heading" th:text="${signal.statusLabel()}">Successful</h2>
+      </div>
+      <span class="historical-outcome-badge"
+            th:classappend="${' ' + signal.statusClass()}"
+            th:text="${signal.evaluationHorizonLabel()}">10-session horizon</span>
+    </div>
+    <p class="historical-outcome-summary" th:text="${signal.outcomeSummary()}">
+      +4.25% potential gain at the research-horizon close.
+    </p>
+
+    <div class="historical-outcome-grid">
+      <div>
+        <span>Pattern range</span>
+        <strong>
+          <span th:text="${#numbers.formatDecimal(signal.patternLow(), 1, 4)}">96.0000</span>
+          <span aria-hidden="true">&ndash;</span>
+          <span th:text="${#numbers.formatDecimal(signal.patternHigh(), 1, 4)}">102.0000</span>
+        </strong>
+      </div>
+      <div>
+        <span>Success threshold</span>
+        <strong th:text="${#numbers.formatDecimal(signal.successThresholdPercent(), 1, 1) + '% directional move'}">
+          3.0% directional move
+        </strong>
+      </div>
+      <div th:if="${signal.outcomeAvailable()}">
+        <span th:text="${signal.impactLabel()}">Potential gain</span>
+        <strong th:classappend="${signal.directionalReturnPercent() >= 0} ? ' positive' : ' negative'"
+                th:text="${(signal.directionalReturnPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.directionalReturnPercent(), 1, 2) + '%'}">
+          +4.25%
+        </strong>
+      </div>
+      <div th:if="${signal.outcomeAvailable()}">
+        <span>Evaluation close</span>
+        <strong th:text="${#numbers.formatDecimal(signal.evaluationClose(), 1, 2)}">106.34</strong>
+        <small th:text="${signal.evaluationPeriodLabel()}">28 Jul 2026</small>
+      </div>
+      <div th:if="${signal.outcomeAvailable()}">
+        <span>Best favorable move</span>
+        <strong class="positive"
+                th:text="${'+' + #numbers.formatDecimal(signal.bestDirectionalMovePercent(), 1, 2) + '%'}">
+          +6.20%
+        </strong>
+      </div>
+      <div th:if="${signal.outcomeAvailable()}">
+        <span>Worst adverse move</span>
+        <strong class="negative"
+                th:text="${#numbers.formatDecimal(signal.worstDirectionalMovePercent(), 1, 2) + '%'}">
+          -2.10%
+        </strong>
+      </div>
+    </div>
+    <p class="signal-lifecycle-note">
+      This is a close-to-close historical measurement, not a simulated trade. It excludes execution timing,
+      transaction costs, taxes, slippage, position sizing, and overlapping signals.
+    </p>
+  </section>
+
+  <section class="signal-evidence-section" aria-labelledby="historical-evidence-heading">
+    <div class="signal-evidence-heading">
+      <div>
+        <div class="signal-section-kicker">Reconstructed scoring evidence</div>
+        <h2 id="historical-evidence-heading">Why this score</h2>
+        <p>Each category was calculated using only candles available when this pattern completed.</p>
+      </div>
+      <span class="evidence-count">
+        <span th:text="${signal.evidence().size()}">7</span>&nbsp;categories
+      </span>
+    </div>
+
+    <div class="signal-evidence-grid">
+      <article th:each="section, sectionStatus : ${signal.evidence()}"
+               class="signal-evidence-card"
+               th:classappend="${section.statusLabel() == 'No supporting points'} ? ' caution' : ''">
+        <div class="evidence-card-topline">
+          <span class="evidence-number"
+                th:text="${#numbers.formatInteger(sectionStatus.index + 1, 2)}">01</span>
+          <span class="evidence-category" th:text="${section.category()}">Pattern quality</span>
+          <span th:if="${section.scored()}"
+                class="evidence-score"
+                th:text="${section.scoreLabel()}">24/25</span>
+          <span class="evidence-impact" th:text="${section.statusLabel()}">Partial support</span>
+        </div>
+        <ul class="evidence-detail-list">
+          <li th:each="detail : ${section.details()}">
+            <div class="evidence-detail-heading">
+              <strong th:text="${detail.label()}">Pattern rules</strong>
+              <span th:if="${detail.scoreLabel() != null}"
+                    th:text="${detail.scoreLabel() + ' pts'}">4/5 pts</span>
+            </div>
+            <p th:text="${detail.text()}">Pattern evidence.</p>
+          </li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="signal-method-note" aria-labelledby="historical-method-heading">
+    <div class="method-note-index" aria-hidden="true">01</div>
+    <div>
+      <div class="signal-section-kicker">Reading this result</div>
+      <h2 id="historical-method-heading">Historical outcome, not investment performance</h2>
+      <p>
+        “Successful” means the price moved by at least
+        <strong th:text="${#numbers.formatDecimal(signal.successThresholdPercent(), 1, 1) + '%'}">3.0%</strong>
+        in the signal direction by the
+        <strong th:text="${signal.evaluationHorizonLabel()}">10-session horizon</strong>.
+        “Unsuccessful” means it moved that far in the opposite direction. Smaller moves are inconclusive.
+      </p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

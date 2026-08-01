@@ -5,6 +5,8 @@ import org.example.stockwatch247.security.RequestRateLimiter;
 import org.example.stockwatch247.security.RequestBodySizeLimitFilter;
 import org.example.stockwatch247.security.CspNonceFilter;
 import org.example.stockwatch247.security.AbsoluteSessionTimeoutFilter;
+import org.example.stockwatch247.security.AccountSessionValidationFilter;
+import org.example.stockwatch247.security.MfaAuthenticationSuccessHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -45,12 +47,15 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   MfaAuthenticationSuccessHandler mfaSuccessHandler,
+                                                   AccountSessionValidationFilter accountSessionFilter) throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
                         // 1. Public Routes (Added /login here explicitly)
                         .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/webjars/**",
-                                "/signup", "/login", "/verify-email", "/resend-verification", "/about").permitAll()
+                                "/signup", "/login", "/login/2fa", "/verify-email", "/resend-verification",
+                                "/forgot-password", "/reset-password", "/cancel-account-deletion", "/about").permitAll()
 
                         // 2. Protected Routes (Added /stock/** here for the new stock page)
                         .requestMatchers("/home", "/stock/**", "/api/**").authenticated()
@@ -61,7 +66,7 @@ public class SecurityConfig {
                 .formLogin(form -> form
                         .loginPage("/login")
                         .usernameParameter("email")
-                        .defaultSuccessUrl("/home", true)
+                        .successHandler(mfaSuccessHandler)
                         .permitAll()
                 )
                 .logout(logout -> logout
@@ -83,7 +88,8 @@ public class SecurityConfig {
                 )
                 .addFilterAfter(new AbsoluteSessionTimeoutFilter(
                         Duration.ofSeconds(Math.max(300L, absoluteSessionTimeoutSeconds))), SecurityContextHolderFilter.class)
-                .addFilterAfter(new RateLimitFilter(requestRateLimiter), AbsoluteSessionTimeoutFilter.class)
+                .addFilterAfter(accountSessionFilter, AbsoluteSessionTimeoutFilter.class)
+                .addFilterAfter(new RateLimitFilter(requestRateLimiter), AccountSessionValidationFilter.class)
                 .addFilterAfter(new RequestBodySizeLimitFilter(maximumJsonBodyBytes), RateLimitFilter.class)
                 .addFilterAfter(new CspNonceFilter(), RequestBodySizeLimitFilter.class);
 

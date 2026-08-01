@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign in — StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body class="auth-page">
@@ -42,6 +43,10 @@
     <div th:if="${param.verified}" class="auth-message success-msg">Email verified. Your account is ready.</div>
     <div th:if="${param.verificationError}" class="auth-message error-msg">That verification link is invalid or has expired.</div>
     <div th:if="${param.expired}" class="auth-message error-msg">Your session expired. Please sign in again.</div>
+    <div th:if="${param.passwordReset}" class="auth-message success-msg">Password reset. Sign in with your new password.</div>
+    <div th:if="${param.deletionScheduled}" class="auth-message success-msg">Your account is disabled and scheduled for deletion. Check your email if you need to cancel.</div>
+    <div th:if="${param.deletionCancelled}" class="auth-message success-msg">Account deletion cancelled. You can sign in again.</div>
+    <div th:if="${param.deletionCancelError}" class="auth-message error-msg">That cancellation link is invalid or expired.</div>
 
     <form th:action="@{/login}" method="post">
       <div class="form-group">
@@ -55,6 +60,7 @@
       <button type="submit" class="btn-accent auth-btn">Enter dashboard <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
     <p class="auth-switch">New to StockWatch? <a th:href="@{/signup}" class="text-link">Create an account</a></p>
+    <p class="auth-help"><a th:href="@{/forgot-password}" class="text-link">Forgot password?</a></p>
     <p class="auth-help"><a th:href="@{/resend-verification}" class="text-link">Resend verification email</a></p>
   </section>
 </main>

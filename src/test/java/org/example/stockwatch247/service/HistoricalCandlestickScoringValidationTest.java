@@ -75,7 +75,7 @@ class HistoricalCandlestickScoringValidationTest {
                 .toList();
 
         System.out.println();
-        System.out.println("=== Candlestick Stock-Only Score Temporal Validation ===");
+        System.out.println("=== Candlestick V4 Daily Score Temporal Validation ===");
         System.out.printf("Settings: signalCandles=%d, horizon=%d, move=%.1f%%, symbols=%d/%d%n",
                 SETTINGS.signalCandles(),
                 SETTINGS.forwardCandles(),
@@ -112,12 +112,18 @@ class HistoricalCandlestickScoringValidationTest {
                 && trade.trade().tradeSignal() == TradeSignal.BUY);
         printRow("Score 75-100 SELL", trades, trade -> trade.trade().confidenceScore() >= 75
                 && trade.trade().tradeSignal() == TradeSignal.SELL);
-        printRow("Higher TF aligned", trades,
-                trade -> componentPoints(trade.trade(), "Higher-timeframe alignment") > 0);
-        printRow("Price location", trades,
-                trade -> componentPoints(trade.trade(), "Price location") > 0);
-        printRow("Momentum/volatility", trades,
-                trade -> componentPoints(trade.trade(), "Volatility and momentum") > 0);
+        printRow("Native trend", trades,
+                trade -> componentPoints(trade.trade(), "Trend indicators") > 0);
+        printRow("Higher TF trend", trades,
+                trade -> componentPoints(trade.trade(), "Higher-timeframe trend") > 0);
+        printRow("Momentum", trades,
+                trade -> componentPoints(trade.trade(), "Momentum") > 0);
+        printRow("Bollinger", trades,
+                trade -> componentPoints(trade.trade(), "Bollinger volatility/location") > 0);
+        printRow("Support/resistance", trades,
+                trade -> componentPoints(trade.trade(), "Support/resistance") > 0);
+        printRow("Volume participation", trades,
+                trade -> componentPoints(trade.trade(), "Volume participation") > 0);
         Map<String, List<LabeledTrade>> highByPattern = trades.stream()
                 .filter(trade -> trade.trade().confidenceScore() >= 70)
                 .collect(Collectors.groupingBy(trade -> trade.trade().pattern().name()));

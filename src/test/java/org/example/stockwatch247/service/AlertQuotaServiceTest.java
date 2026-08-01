@@ -132,6 +132,7 @@ class AlertQuotaServiceTest {
                 mock(TwelveDataService.class),
                 jdbc,
                 mock(MarketDataService.class),
+                mock(CandleCompletionService.class),
                 new TechnicalIndicatorEnrichmentService(),
                 new CandlePatternDetectionService(),
                 new ElliottWaveDetectionService(),

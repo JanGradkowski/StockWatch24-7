@@ -1,6 +1,8 @@
 package org.example.stockwatch247.security;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -90,5 +92,74 @@ class RateLimitFilterTest {
 
         verify(limiter).tryAcquire(eq("congressional-activity:ip:203.0.113.8"), eq(30),
                 eq(java.time.Duration.ofMinutes(1)));
+    }
+
+    @Test
+    void insiderRefreshUsesPerUserMinuteAndHourlyGuards() throws Exception {
+        RequestRateLimiter limiter = mock(RequestRateLimiter.class);
+        when(limiter.tryAcquire(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+        RateLimitFilter filter = new RateLimitFilter(limiter);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("POST");
+        request.setRequestURI("/api/insider-activity/AAPL/history/refresh");
+        request.setRemoteAddr("203.0.113.8");
+        SecurityContextHolder.getContext().setAuthentication(
+                UsernamePasswordAuthenticationToken.authenticated(
+                        "User@Example.com", "unused", java.util.List.of()));
+
+        try {
+            filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+            verify(limiter).tryAcquire(
+                    eq("insider-activity-minute:user:user@example.com"),
+                    eq(5),
+                    eq(java.time.Duration.ofMinutes(1)));
+            verify(limiter).tryAcquire(
+                    eq("insider-activity-hour:user:user@example.com"),
+                    eq(100),
+                    eq(java.time.Duration.ofHours(1)));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void insiderRefreshHourlyGuardReturns429AfterMinuteGuardPasses() throws Exception {
+        RequestRateLimiter limiter = mock(RequestRateLimiter.class);
+        when(limiter.tryAcquire(
+                eq("insider-activity-minute:ip:203.0.113.8"),
+                eq(5),
+                eq(java.time.Duration.ofMinutes(1)))).thenReturn(true);
+        when(limiter.tryAcquire(
+                eq("insider-activity-hour:ip:203.0.113.8"),
+                eq(100),
+                eq(java.time.Duration.ofHours(1)))).thenReturn(false);
+        RateLimitFilter filter = new RateLimitFilter(limiter);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("POST");
+        request.setRequestURI("/api/insider-activity/AAPL/history/refresh");
+        request.setRemoteAddr("203.0.113.8");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(429);
+        assertThat(response.getHeader("Retry-After")).isEqualTo("3600");
+    }
+
+    @Test
+    void insiderCacheReadDoesNotConsumeProviderBuckets() throws Exception {
+        RequestRateLimiter limiter = mock(RequestRateLimiter.class);
+        RateLimitFilter filter = new RateLimitFilter(limiter);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setRequestURI("/api/insider-activity/AAPL/history");
+        request.setRemoteAddr("203.0.113.8");
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        org.mockito.Mockito.verifyNoInteractions(limiter);
     }
 }

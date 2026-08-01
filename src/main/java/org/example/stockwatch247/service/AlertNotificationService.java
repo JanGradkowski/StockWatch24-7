@@ -2,6 +2,8 @@ package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
+import org.example.stockwatch247.model.InsiderTrade;
+import org.example.stockwatch247.model.InsiderTradeDelivery;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
@@ -47,6 +49,53 @@ public class AlertNotificationService {
         message.setText("Verify your email address by opening this one-time link:\n\n" + verificationUrl
                 + "\n\nIf you did not create this account, you can ignore this email.");
         send(message);
+    }
+
+    public void sendPasswordSecurityCode(User user, String code, boolean reset) {
+        requireEmailDelivery();
+        SimpleMailMessage message = baseMessage(user,
+                reset ? "Reset your StockWatch password" : "Confirm your StockWatch password change");
+        message.setText("Your one-time security code is:\n\n" + code
+                + "\n\nIt expires in 5 minutes and can be used once. "
+                + "If you did not request this, do not share the code and change your password.");
+        send(message);
+    }
+
+    public void sendSecurityNotice(User user, String subject, String body) {
+        requireEmailDelivery();
+        SimpleMailMessage message = baseMessage(user, subject);
+        message.setText(body + "\n\nIf this was not you, reset your password immediately.");
+        send(message);
+    }
+
+    public void sendAccountDeletionNotice(User user, String cancellationUrl) {
+        requireEmailDelivery();
+        SimpleMailMessage message = baseMessage(user, "Your StockWatch account is scheduled for deletion");
+        message.setText("Your account has been disabled and is scheduled for permanent deletion in 7 days.\n\n"
+                + "To cancel the deletion, open this one-time link before the deadline:\n" + cancellationUrl
+                + "\n\nIf this was not you, cancel the deletion and reset your password immediately.");
+        send(message);
+    }
+
+    public void sendAccountDeletedNotice(User user) {
+        requireEmailDelivery();
+        SimpleMailMessage message = baseMessage(user, "Your StockWatch account was deleted");
+        message.setText("The seven-day cancellation period ended and your StockWatch account and associated account data were permanently deleted.");
+        send(message);
+    }
+
+    private SimpleMailMessage baseMessage(User user, String subject) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(user.getEmail());
+        message.setSubject(subject);
+        return message;
+    }
+
+    private void requireEmailDelivery() {
+        if (!emailEnabled) {
+            throw new IllegalStateException("Email delivery is not configured.");
+        }
     }
 
     public void sendSignalEmail(AlertRule rule, DetectedSignal signal) {
@@ -106,6 +155,14 @@ public class AlertNotificationService {
                         rule.getInterval().name().toLowerCase()
                 )
                 : "";
+        String scoreVersion = signal.pattern() != null && signal.pattern().name().startsWith("ELLIOTT_")
+                ? ElliottWaveDetectionService.SETUP_SCORE_VERSION
+                : CandlePatternDetectionService.SETUP_SCORE_VERSION;
+        String scoreNote = CandlePatternDetectionService.SETUP_SCORE_VERSION.equals(scoreVersion)
+                ? "experimental technical confluence; V4 has not demonstrated stable out-of-sample "
+                        + "predictive ordering and is not a probability of profit"
+                : "technical confluence, not a probability of profit";
+        String scoreBreakdown = SignalScoreBreakdown.formatEmail(signal.reasons(), signal.tradeSignal());
         String body = """
                 %s technical pattern was detected for %s.
 
@@ -115,8 +172,12 @@ public class AlertNotificationService {
                 Direction classification: %s
                 Setup strength: %s
                 Heuristic setup score: %d/100
-                Score note: this measures technical confluence, not probability of profit.
-                Score breakdown: %s
+                Score model: %s
+                Score note: %s.
+
+                Score breakdown
+                %s
+
                 Interval: %s%s%s
                 Signal candle period: %s
                 Close price: %.2f
@@ -129,7 +190,9 @@ public class AlertNotificationService {
                 signal.tradeSignal(),
                 setupStrengthLabel(signal.strength()),
                 signal.setupScore(),
-                signal.reasons().isEmpty() ? "not available" : String.join("; ", signal.reasons()),
+                scoreVersion,
+                scoreNote,
+                scoreBreakdown,
                 rule.getInterval(),
                 researchHorizonSection,
                 lifecycleSection,
@@ -285,16 +348,80 @@ public class AlertNotificationService {
         send(message);
     }
 
+    public void sendInsiderTradeEmail(InsiderTradeDelivery delivery) {
+        if (delivery == null || delivery.getTrade() == null
+                || delivery.getSubscription() == null) {
+            throw new IllegalArgumentException("An insider trade delivery is required.");
+        }
+        InsiderTrade trade = delivery.getTrade();
+        String symbol = trade.getTickerSymbol();
+        String activity = trade.getTransactionType().getLabel();
+        String role = trade.getOwnerRole() == null || trade.getOwnerRole().isBlank()
+                ? "Role not reported"
+                : trade.getOwnerRole();
+        String price = trade.getTransactionPrice() == null
+                ? "Not reported"
+                : trade.getTransactionPrice().stripTrailingZeros().toPlainString();
+        String shares = trade.getShares() == null
+                ? "Not reported"
+                : trade.getShares().stripTrailingZeros().toPlainString();
+        String source = trade.getSourceUrl() == null || trade.getSourceUrl().isBlank()
+                ? "SEC filing link: unavailable"
+                : "SEC filing: " + trade.getSourceUrl();
+        String body = """
+                A new corporate insider transaction filing was observed for %s.
+
+                Insider: %s
+                Role: %s
+                Activity: %s
+                Shares: %s
+                Filed transaction price: %s
+                Effective date: %s (SEC filing-date fallback)
+                Filing date: %s
+                %s
+
+                StockWatch tracks filed open-market purchases and sales only.
+                Data provided by API Ninjas. Each free-tier check merges the 10 latest
+                rows into the stored archive and may miss larger bursts between checks.
+                Any displayed return is calculated separately from the filed transaction price
+                to the latest completed daily close and is not a realized portfolio return.
+                Informational and research use only; not financial advice.
+                """.formatted(
+                symbol,
+                trade.getInsiderName(),
+                role,
+                activity,
+                shares,
+                price,
+                trade.getTransactionDate(),
+                trade.getFilingDate(),
+                source);
+
+        if (!emailEnabled) {
+            System.out.println("[EMAIL DISABLED] Insider activity email suppressed for "
+                    + symbol + ".");
+            return;
+        }
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(delivery.getSubscription().getUser().getEmail());
+        message.setSubject("StockWatch insider " + activity.toLowerCase()
+                + " filed: " + symbol);
+        message.setText(body);
+        send(message);
+    }
+
     public boolean isEmailDeliveryEnabled() {
         return emailEnabled;
     }
 
     private String setupStrengthLabel(SignalStength strength) {
         return switch (strength) {
-            case HIGH_CONFIDENCE -> "Strong";
-            case MEDIUM_CONFIDENCE -> "Moderate";
-            case LOW_CONFIDENCE -> "Weak";
-            case WEAK_IGNORE -> "Very weak";
+            case HIGH_CONFIDENCE -> "High confluence";
+            case MEDIUM_CONFIDENCE -> "Moderate confluence";
+            case LOW_CONFIDENCE -> "Low confluence";
+            case WEAK_IGNORE -> "Minimal confluence";
         };
     }
 

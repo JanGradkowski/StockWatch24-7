@@ -15,6 +15,7 @@ import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.repository.UserRepository;
+import org.example.stockwatch247.service.CandlePatternDetectionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -27,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -63,6 +65,31 @@ class StockWatch247ApplicationTests {
     }
 
     @Test
+    @Transactional
+    void authenticatedUserCanRenderSettingsAndPersistAnAccountTheme() throws Exception {
+        String email = "settings-" + Long.toString(System.nanoTime(), 36) + "@example.com";
+        User account = new User();
+        account.setEmail(email);
+        account.setPasswordHash("test-only-password-hash");
+        account.setFirstName("Settings");
+        account.setLastName("Tester");
+        account.setVerified(true);
+        userRepository.saveAndFlush(account);
+
+        mockMvc.perform(get("/settings").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings"))
+                .andExpect(content().string(containsString("General settings")))
+                .andExpect(content().string(containsString("Authenticator app")))
+                .andExpect(content().string(containsString("Danger zone")));
+
+        mockMvc.perform(post("/settings/theme").with(user(email)).with(csrf()).param("theme", "LIGHT"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", "/settings?themeSaved=true"));
+        assertThat(userRepository.findById(account.getId()).orElseThrow().getThemePreference()).isEqualTo("LIGHT");
+    }
+
+    @Test
     void publicResponsesContainSecurityHeaders() throws Exception {
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
@@ -71,6 +98,16 @@ class StockWatch247ApplicationTests {
                 .andExpect(header().string("Content-Security-Policy", containsString("style-src-attr 'none'")))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(header().string("Referrer-Policy", "strict-origin-when-cross-origin"));
+    }
+
+    @Test
+    void aboutAndFunctionalitiesPageIsPublic() throws Exception {
+        mockMvc.perform(get("/about"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("about"))
+                .andExpect(content().string(containsString("Technical signals")))
+                .andExpect(content().string(containsString("CANDLE_V4_EXPERIMENTAL")))
+                .andExpect(content().string(containsString("ELLIOTT_V1")));
     }
 
     @Test
@@ -102,7 +139,17 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(put("/api/congressional-activity/AAPL/subscription")
                         .with(user("security-test@example.com"))
                         .contentType("application/json")
+                .content("{\"active\":true}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/insider-activity/AAPL/subscription")
+                        .with(user("security-test@example.com"))
+                        .contentType("application/json")
                         .content("{\"active\":true}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/insider-activity/AAPL/history/refresh")
+                        .with(user("security-test@example.com")))
                 .andExpect(status().isForbidden());
     }
 
@@ -145,6 +192,47 @@ class StockWatch247ApplicationTests {
                 .andExpect(jsonPath("$.alertBaselineNotice", containsString("never generates old email alerts")));
 
         mockMvc.perform(get("/api/congressional-activity/{symbol}/state", etf.getTickerSymbol())
+                        .with(user(email)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @Transactional
+    void insiderActivityStateIsAvailableForStocksAndRejectedForFunds() throws Exception {
+        String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
+        String email = "insider-state-" + suffix.toLowerCase() + "@example.com";
+        User userEntity = new User();
+        userEntity.setEmail(email);
+        userEntity.setPasswordHash("test-only-password-hash");
+        userEntity.setFirstName("Insider");
+        userEntity.setLastName("State");
+        userEntity.setVerified(true);
+        userRepository.save(userEntity);
+
+        StockAsset equity = new StockAsset();
+        equity.setTickerSymbol("I" + suffix);
+        equity.setCompanyName("Insider State Equity");
+        equity.setExchange("NASDAQ");
+        equity.setCurrency("USD");
+        equity.setInstrumentType(InstrumentType.EQUITY);
+        stockAssetRepository.save(equity);
+
+        StockAsset etf = new StockAsset();
+        etf.setTickerSymbol("J" + suffix);
+        etf.setCompanyName("Insider State ETF");
+        etf.setExchange("NYSE");
+        etf.setCurrency("USD");
+        etf.setInstrumentType(InstrumentType.ETF);
+        stockAssetRepository.save(etf);
+
+        mockMvc.perform(get("/api/insider-activity/{symbol}/state", equity.getTickerSymbol())
+                        .with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eligible").value(true))
+                .andExpect(jsonPath("$.following").value(false))
+                .andExpect(jsonPath("$.historyDays").value(730));
+
+        mockMvc.perform(get("/api/insider-activity/{symbol}/state", etf.getTickerSymbol())
                         .with(user(email)))
                 .andExpect(status().isBadRequest());
     }
@@ -259,6 +347,7 @@ class StockWatch247ApplicationTests {
         event.setSignalCandleTimestamp(Instant.parse("2026-07-13T00:00:00Z").getEpochSecond());
         event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
         event.setConfidenceScore(88);
+        event.setScoreVersion(CandlePatternDetectionService.SETUP_SCORE_VERSION);
         event.setConfidenceReasons(List.of(
                 "strict bullish candle-pattern geometry",
                 "RSI is rising versus the previous candle",
@@ -295,6 +384,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("aria-pressed=\"true\"")))
                 .andExpect(content().string(containsString("Latest signals")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
+                .andExpect(content().string(containsString("CANDLE_V4_EXPERIMENTAL")))
                 .andExpect(content().string(containsString("13\u201317 Jul 2026")))
                 .andExpect(content().string(containsString("Lifecycle status")))
                 .andExpect(content().string(containsString("Confirmed")))
@@ -326,7 +416,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("20\u201324 Jul 2026")))
                 .andExpect(content().string(containsString("Lifecycle processed")))
                 .andExpect(content().string(containsString("Setup score 88 out of 100")))
-                .andExpect(content().string(containsString("strict bullish candle-pattern geometry")))
+                .andExpect(content().string(containsString("Strict bullish candle-pattern geometry.")))
                 .andExpect(content().string(containsString("RSI is rising versus the previous candle")))
                 .andExpect(content().string(containsString("How the setup score works")));
 

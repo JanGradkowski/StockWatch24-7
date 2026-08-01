@@ -112,10 +112,63 @@ class AlertNotificationServiceTest {
         assertThat(message.getSubject()).contains("BULLISH_ENGULFING", "SAP.DE");
         assertThat(message.getText()).contains(
                 "Heuristic setup score: 91/100",
-                "bullish body engulfs",
-                "Research horizon: 10\u201330 trading sessions",
+                "Score model: CANDLE_V4_EXPERIMENTAL",
+                "has not demonstrated stable out-of-sample predictive ordering",
+                "Score breakdown\n- Evidence\n  - Observation: Bullish body engulfs",
+                "Research horizon: 10 trading sessions",
                 "Historical evaluation window only \u2014 not a recommended holding period",
                 "Signal candle period: 10 Jul 2026");
+    }
+
+    @Test
+    void signalEmailPresentsScoredEvidenceAsNestedBullets() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.SELL);
+        DetectedSignal signal = new DetectedSignal(
+                CandlePattern.BEARISH_HARAMI,
+                TradeSignal.SELL,
+                SignalStength.MEDIUM_CONFIDENCE,
+                54,
+                List.of(
+                        "Pattern quality +24/25: all mandatory Bearish harami geometry and prior-trend "
+                                + "rules passed (geometry 25/25, trend 23/25); established uptrend across "
+                                + "5 completed pre-pattern candles",
+                        "Trend indicators +0/20: weekly profile: EMA(8)/EMA(21) order was not aligned "
+                                + "with the signal; fast EMA slope was not aligned with the signal; "
+                                + "slow EMA slope was not aligned with the signal; "
+                                + "MACD(8,21,5) line/signal was not aligned with the signal; "
+                                + "MACD histogram change was not aligned with the signal",
+                        "Momentum +15/15: weekly profile: RSI(10) was 71.3 "
+                                + "(+5/5 for directional reversal location); RSI change was aligned with the signal"
+                ),
+                Instant.parse("2026-07-20T00:00:00Z").getEpochSecond(),
+                100.0
+        );
+
+        service.sendSignalEmail(rule, signal);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "- Pattern quality: 24/25 (partial support)",
+                "  - Pattern rules: All mandatory Bearish harami geometry and prior-trend rules passed",
+                "  - Prior trend: Established uptrend across 5 completed pre-pattern candles.",
+                "- Trend indicators: 0/20 (no supporting points)",
+                "  - Indicator profile: Weekly settings were used.",
+                "  - EMA(8) vs EMA(21): EMA(8)/EMA(21) order did not support the bearish direction.",
+                "  - EMA(8) slope: Fast EMA slope did not support the bearish direction.",
+                "  - EMA(21) slope: Slow EMA slope did not support the bearish direction.",
+                "  - MACD(8, 21, 5) histogram: MACD histogram change did not support the bearish direction.",
+                "- Momentum: 15/15 (full score)",
+                "  - RSI(10) level [5/5 pts]: RSI(10) was 71.3.",
+                "  - RSI(10) change: RSI change supported the bearish direction."
+        );
     }
 
     @Test

@@ -1,12 +1,220 @@
 # Candlestick Signal Backtest Results
 
 Date run: 2026-07-08
+Current implementation rerun: 2026-07-28
 
 This document records the historical backtests performed for the StockWatch24-7 candlestick signal detector after adding TA4J-based indicator enrichment and confidence scoring.
 
 > **Terminology and validity note (2026-07-21):** The 2026-07-08 results below use the detector's former “confidence” terminology and predate mandatory prior-trend validation for every reversal pattern. The production UI now calls this a heuristic **setup score**, not a probability estimate. See the strict-context rerun dated 2026-07-21 for current results.
 
-## Current Pipeline
+> **Current production note (2026-07-28):** New candlestick events again use `CANDLE_V4_EXPERIMENTAL`. The V4.5 and V4.6 Elliott-context experiments did not demonstrate a reliable improvement, so Elliott Wave remains a separate detector and no longer modifies candlestick scores. Existing V4.5/V4.6 rows retain their stored version labels.
+
+## Current Experimental Candlestick V4 Score
+
+### What changed
+
+Candlestick detection and scoring remain separate:
+
+1. Mandatory pattern geometry and mandatory prior-trend context decide whether a named pattern exists.
+2. Every structurally valid directional pattern is still returned by manual checks, automatic checks, and email alerts.
+3. The V4 score ranks technical confluence after detection. Elliott Wave signals are evaluated and displayed independently; they do not modify candlestick scores.
+4. New events persist `score_version = CANDLE_V4_EXPERIMENTAL`. Existing V4.5, V4.6, and legacy rows retain their recorded versions, so formulas are not silently mixed.
+
+The score is explicitly experimental because the implementation tests pass but predictive ordering did not generalize consistently in the chronological diagnostics below.
+
+### Frozen interval profiles
+
+Periods are measured in native bars, not days. A 10-period weekly RSI therefore uses 10 completed weekly bars.
+These profiles apply to the candlestick V4 score. Elliott Wave keeps its separately benchmarked legacy indicator periods and is persisted as `ELLIOTT_V1`; its documented wave structures remain independent.
+
+| Input | Daily | Weekly | Monthly |
+|---|---:|---:|---:|
+| RSI | 14 | 10 | 9 |
+| ATR | 14 | 10 | 9 |
+| Fast / slow EMA | 20 / 50 | 8 / 21 | 6 / 12 |
+| Long SMA | 200 | 40 | 24 |
+| MACD fast / slow / signal | 12 / 26 / 9 | 8 / 21 / 5 | 6 / 12 / 4 |
+| CCI | 20 | 14 | 12 |
+| Bollinger period / deviation | 20 / 2.0 | 13 / 2.0 | 12 / 2.0 |
+| Relative-volume average | 20 | 13 | 12 |
+| Rolling VWAP | 20 | 13 | 12 |
+| OHLCV volume-profile lookback | 60 | 26 | 24 |
+
+The input history requirements for 100 scored candles are 299 daily, 139 weekly, and 123 monthly candles. The service rejects mixed intervals or a requested profile that conflicts with a candle's declared interval.
+
+### Frozen V4 base-score allocation
+
+| Evidence family | Maximum | Inputs |
+|---|---:|---|
+| Pattern quality | 25 | Mandatory geometry quality and prior-trend quality |
+| Native trend indicators | 20 | Fast/slow EMA order and slope, close versus long SMA, MACD line/signal and histogram change |
+| Higher-timeframe trend | 5 | Completed weekly/monthly/quarterly price context only |
+| Momentum | 15 | RSI level and turn, CCI level and turn |
+| Bollinger volatility/location | 10 | Relevant band test, percent-B location, and re-entry |
+| Support/resistance | 15 | Recent pre-pattern extrema, repeated touches, ATR-scaled proximity, and rejection |
+| Volume participation | 10 | Relative volume, rolling VWAP location/slope, and volume-profile location |
+| **Total** | **100** | |
+
+Correlated indicators share family caps. The score is an additive heuristic, not a probability model.
+
+Classic session VWAP cannot be reconstructed from daily, weekly, or monthly OHLCV bars. V4 therefore uses a rolling typical-price VWAP. Likewise, a true exchange volume profile requires trade-level or lower-timeframe volume-at-price data. V4's disclosed approximation divides each candle's volume uniformly across the 24 price bins touched by its high-low range, then calculates the point of control and a contiguous 70% value area. This is deterministic and useful as context, but it is not an exchange-grade volume profile.
+
+### Elliott-context experiment and rollback decision
+
+V4.5 experimentally adjusted weekly and monthly candlestick scores using recent Elliott structures. V4.6 then shortened the eligible lifetime to 1-8 weekly or 1-4 monthly candles and introduced quadratic age decay so the maximum adjustment applied only on the confirmation candle.
+
+Both versions used directional adjustments:
+
+- completed A-B-C correction or standard Wave-V end: up to `+5` when aligned or `-5` when opposed;
+- truncated Wave-V end: up to `+4` or `-4`;
+- active impulse breakout/breakdown: up to `+3` or `-3`;
+- no qualifying, current phase: zero.
+
+The 2,193-stock comparison below showed only negligible weekly differences and materially weaker monthly ordering. The smaller chronological diagnostic also failed to establish a consistent benefit. The added coupling therefore increased complexity without validated predictive value.
+
+**Design decision:** production candlestick scoring was rolled back to V4. Elliott Wave remains available as its own weekly/monthly analysis and alert family, but it cannot promote or demote a candlestick setup score. This separation is simpler to explain, preserves the better-performing monthly V4 ordering, and prevents an experimental wave classification from being presented as candlestick confirmation.
+
+### V4 versus V4.5 versus V4.6 power comparison
+
+The same frozen 2,193-stock power cohort was evaluated with identical detections and outcomes: 7,802,979 daily, 1,620,590 weekly, and 374,262 monthly source candles, with 10,000 two-way symbol/year bootstrap resamples. Daily is identical because Elliott context applies only to weekly and monthly scores. No version produced a usable 85+ higher-interval cohort, so the relevant comparison is score 75-84:
+
+Because V4.6 was specified after the V4.5 result from this cohort had already been inspected, its row is a same-data redesign diagnostic rather than a new untouched validation result.
+
+| Interval | Version | Signals | Actionable | Precision | Average return |
+|---|---|---:|---:|---:|---:|
+| Weekly | V4 | 563 | 292 | 46.23% | -1.18% |
+| Weekly | V4.5 | 550 | 286 | 46.50% | -1.13% |
+| Weekly | V4.6 | 560 | 293 | 46.42% | -1.04% |
+| Monthly | V4 | 33 | 23 | 69.57% | +13.94% |
+| Monthly | V4.5 | 46 | 30 | 63.33% | +11.63% |
+| Monthly | V4.6 | 47 | 31 | 61.29% | +10.84% |
+
+Against V4, V4.6 changed weekly precision by only +0.19 percentage points and average return by +0.14 points. Against V4.5, weekly precision fell 0.08 points while average return improved 0.09 points. Monthly V4.6 was worse than both predecessors: versus V4, precision fell 8.28 points and average return fell 3.10 points.
+
+The smaller 30-stock chronological diagnostic agrees with the negative/mixed conclusion. V4.6 improved on V4.5 in the three weekly score-70+ rows but still trailed V4; the monthly score-70+ rows were unchanged from V4.5 and remained below V4.
+
+Conclusion: shortening the validity window and strengthening decay reduced some stale weekly influence, but did not make Elliott context a reliable scoring improvement. V4.5 and V4.6 are retained only as historical research results; neither is part of current candlestick scoring.
+
+### Historical V4 versus V4.5 validation
+
+The 2026-07-28 paired 30-stock diagnostic evaluated identical candlestick detections and outcomes under both score formulas. At score 70+, V4.5 reduced validation precision and return in all six weekly/monthly horizon rows except for no meaningful improvement at lower thresholds. Examples:
+
+| Interval / horizon | V4 precision / return | V4.5 precision / return |
+|---|---:|---:|
+| Weekly 4 / 4% | 88.89% / +3.55% | 66.67% / +1.32% |
+| Weekly 8 / 8% | 80.00% / +3.58% | 66.67% / +0.05% |
+| Weekly 12 / 12% | 50.00% / +0.98% | 25.00% / -3.98% |
+| Monthly 3 / 6% | 100.00% / +0.26% | 50.00% / -4.00% |
+| Monthly 6 / 12% | 50.00% / -0.99% | 25.00% / -7.66% |
+| Monthly 9 / 18% | 50.00% / -4.88% | 33.33% / -8.24% |
+
+Those 70+ cohorts are small, so the frozen 2,193-stock power cohort was also rerun with the same current source for both formulas: 7,802,979 daily, 1,620,590 weekly, and 374,262 monthly candles, with 10,000 two-way symbol/year bootstrap resamples. The relevant 75-84 comparison was:
+
+| Interval | V4 signals / actionable / precision / return | V4.5 signals / actionable / precision / return |
+|---|---:|---:|
+| Weekly | 563 / 292 / 46.23% / -1.18% | 550 / 286 / 46.50% / -1.13% |
+| Monthly | 33 / 23 / 69.57% / +13.94% | 46 / 30 / 63.33% / +11.63% |
+
+The weekly change is only +0.27 percentage points of precision and +0.05 percentage points of average return. Monthly coverage increased, but precision fell 6.24 points and average return fell 2.31 points. Neither current formula produced a usable 85+ higher-interval cohort in this source snapshot.
+
+Historical conclusion: the V4.5 fixed `+/-5` formulation did not demonstrate a reliable improvement.
+
+### Final daily chronological diagnostic
+
+Command:
+
+```powershell
+.\mvnw.cmd "-Dbacktest.candlestick.scoring.enabled=true" "-Dtest=HistoricalCandlestickScoringValidationTest" test
+```
+
+Settings:
+
+- 30 representative stocks and 30,125 cached daily candles;
+- data span: 2022-07-11 through 2026-07-24;
+- fixed 10-candle / 3.0% directional outcome;
+- development: signals through 2024-12-31;
+- later chronological segment: signals from 2025-01-01;
+- precision excludes inconclusive outcomes; average directional return includes all outcomes;
+- no transaction costs, execution model, position sizing, or overlap constraints.
+
+| Segment | Score cohort | Signals | Success | Failed | Inconclusive | Precision | Avg directional return |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Development | All | 525 | 148 | 139 | 238 | 51.57% | -0.08% |
+| Development | 0-59 | 296 | 75 | 85 | 136 | 46.88% | -0.53% |
+| Development | 60-69 | 194 | 57 | 48 | 89 | 54.29% | +0.35% |
+| Development | 70+ | 35 | 16 | 6 | 13 | 72.73% | +1.41% |
+| Development | 75+ | 5 | 4 | 1 | 0 | 80.00% | +2.53% |
+| 2025+ | All | 475 | 131 | 142 | 202 | 47.99% | -0.02% |
+| 2025+ | 0-59 | 264 | 77 | 83 | 104 | 48.13% | -0.04% |
+| 2025+ | 60-69 | 176 | 46 | 44 | 86 | 51.11% | +0.45% |
+| 2025+ | 70+ | 35 | 8 | 15 | 12 | 34.78% | -2.19% |
+| 2025+ | 75+ | 9 | 1 | 5 | 3 | 16.67% | -6.04% |
+
+The later high-score result is a clear failure of predictive ordering. Development performance at 70+ and 75+ did not generalize; the later result reversed sharply. The 2025+ component cohorts also failed to establish a stable standalone edge:
+
+| 2025+ component present | Signals | Precision | Avg directional return |
+|---|---:|---:|---:|
+| Native trend | 387 | 45.74% | -0.39% |
+| Higher-timeframe trend | 326 | 44.50% | -0.62% |
+| Momentum | 460 | 48.28% | +0.05% |
+| Bollinger | 352 | 52.06% | +0.47% |
+| Support/resistance | 475 | 47.99% | -0.02% |
+| Volume participation | 465 | 48.69% | +0.05% |
+
+These component rows mean only that the family awarded at least some points; they are not controlled estimates of each indicator's incremental value.
+
+### Final weekly and monthly chronological diagnostic
+
+Command:
+
+```powershell
+.\mvnw.cmd "-Dbacktest.candlestick.higher.calibration.enabled=true" "-Dtest=HistoricalHigherIntervalCandlestickCalibrationTest" test
+```
+
+The test name is retained for historical continuity. Score cohorts use production V4; the printed empirical-Bayes pattern table is research reference output and is not a V4 scoring input. Development ends 2019-12-31 and the later segment starts 2020-01-01.
+
+| Interval outcome | 2020+ cohort | Signals | Actionable | Precision | Avg directional return |
+|---|---|---:|---:|---:|---:|
+| Weekly 4 candles / 4% | All | 594 | 333 | 52.55% | +0.48% |
+| Weekly 4 candles / 4% | Score 60+ | 232 | 127 | 57.48% | +1.01% |
+| Weekly 4 candles / 4% | Score 65+ | 87 | 45 | 62.22% | +1.07% |
+| Weekly 4 candles / 4% | Score 70+ | 17 | 9 | 88.89% | +3.55% |
+| Weekly 8 candles / 8% | All | 592 | 264 | 50.76% | +0.40% |
+| Weekly 8 candles / 8% | Score 60+ | 232 | 106 | 58.49% | +1.55% |
+| Weekly 8 candles / 8% | Score 65+ | 87 | 32 | 62.50% | +0.66% |
+| Weekly 8 candles / 8% | Score 70+ | 17 | 5 | 80.00% | +3.58% |
+| Weekly 12 candles / 12% | All | 587 | 218 | 46.79% | -0.66% |
+| Weekly 12 candles / 12% | Score 60+ | 230 | 93 | 55.91% | +0.83% |
+| Weekly 12 candles / 12% | Score 65+ | 85 | 26 | 57.69% | -0.05% |
+| Weekly 12 candles / 12% | Score 70+ | 17 | 6 | 50.00% | +0.98% |
+| Monthly 3 candles / 6% | All | 157 | 100 | 39.00% | -3.21% |
+| Monthly 3 candles / 6% | Score 60+ | 68 | 39 | 35.90% | -2.02% |
+| Monthly 3 candles / 6% | Score 65+ | 22 | 14 | 35.71% | +2.36% |
+| Monthly 3 candles / 6% | Score 70+ | 4 | 1 | 100.00% | +0.26% |
+| Monthly 6 candles / 12% | All | 153 | 87 | 31.03% | -5.58% |
+| Monthly 6 candles / 12% | Score 60+ | 67 | 41 | 29.27% | -3.27% |
+| Monthly 6 candles / 12% | Score 65+ | 22 | 13 | 46.15% | +7.18% |
+| Monthly 6 candles / 12% | Score 70+ | 4 | 2 | 50.00% | -0.99% |
+| Monthly 9 candles / 18% | All | 145 | 79 | 34.18% | -10.51% |
+| Monthly 9 candles / 18% | Score 60+ | 65 | 35 | 40.00% | -4.74% |
+| Monthly 9 candles / 18% | Score 65+ | 21 | 10 | 50.00% | +7.22% |
+| Monthly 9 candles / 18% | Score 70+ | 4 | 2 | 50.00% | -4.88% |
+
+Weekly 65+ is the one encouraging descriptive cohort, but it is not production-grade proof. The 70+ weekly cohort contains only 17 signals and 5-9 actionable outcomes depending on horizon; one 75+ signal exists. Monthly has only four 70+ signals and no 75+ signal in the later segment. The aggregate monthly outcomes are weak. Those sample sizes are far below the previously stated target of at least 400 actionable outcomes per interval and cannot support advertised precision rates.
+
+### Blunt V4 conclusion and production treatment
+
+- The requested diversified indicator mix and interval-specific periods are implemented.
+- Software tests establish arithmetic, interval selection, persistence, disclosure, and non-suppression behavior. They do not establish profitability.
+- Daily V4 high-score ordering failed on the later segment.
+- Weekly results justify further frozen research, not a precision claim.
+- Monthly results do not validate the current manual weights.
+- The score remains labeled `CANDLE_V4_EXPERIMENTAL`, “heuristic confluence,” and not a win probability.
+- Do not gate alerts at 60, 65, 70, 75, 85, or any other score based on these inspected results.
+- Continue emailing every structurally valid `DETECTED` pattern and the factual lifecycle follow-up.
+- A promotion from experimental requires a pre-registered formula and threshold followed by a genuinely untouched, larger, transaction-cost-aware validation set with adequate BUY and SELL samples for each interval.
+
+## Archived 2026-07-08 Pipeline
 
 The tested signal flow is:
 

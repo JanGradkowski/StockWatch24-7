@@ -16,7 +16,7 @@ class CandlePatternDetectionServiceTest {
     private final CandlePatternDetectionService detectionService = new CandlePatternDetectionService();
 
     @Test
-    void detectsBullishEngulfingAfterDeclineAndStoresFiveStockOnlyScoreComponents() {
+    void detectsBullishEngulfingAfterDeclineAndStoresSevenV4ScoreFamilies() {
         List<EnrichedCandle> candles = List.of(
                 candle(1, 110, 111, 107, 108, 1_000, 1_000, 48, 109, 98, 120, 5),
                 candle(2, 108, 109, 104, 105, 1_000, 1_000, 44, 107, 98, 120, 5),
@@ -29,18 +29,22 @@ class CandlePatternDetectionServiceTest {
 
         assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.BUY);
         assertThat(signal.setupScore()).isBetween(0, 100);
-        assertThat(signal.reasons()).hasSize(5);
+        assertThat(signal.reasons()).hasSize(7);
         assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Pattern quality +"));
-        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Higher-timeframe alignment +"));
-        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Price location +"));
-        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Volatility and momentum +"));
-        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Volume +"));
+        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Trend indicators +"));
+        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Higher-timeframe trend +"));
+        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Momentum +"));
+        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Bollinger volatility/location +"));
+        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Support/resistance +"));
+        assertThat(signal.reasons()).anyMatch(reason -> reason.startsWith("Volume participation +"));
         assertThat(signal.reasons()).noneMatch(reason -> reason.startsWith("Market"));
-        assertThat(componentMaximum(signal, "Pattern quality")).isEqualTo(35.7);
-        assertThat(componentMaximum(signal, "Higher-timeframe alignment")).isEqualTo(21.4);
-        assertThat(componentMaximum(signal, "Price location")).isEqualTo(14.3);
-        assertThat(componentMaximum(signal, "Volatility and momentum")).isEqualTo(21.4);
-        assertThat(componentMaximum(signal, "Volume")).isEqualTo(7.2);
+        assertThat(componentMaximum(signal, "Pattern quality")).isEqualTo(25.0);
+        assertThat(componentMaximum(signal, "Trend indicators")).isEqualTo(20.0);
+        assertThat(componentMaximum(signal, "Higher-timeframe trend")).isEqualTo(5.0);
+        assertThat(componentMaximum(signal, "Momentum")).isEqualTo(15.0);
+        assertThat(componentMaximum(signal, "Bollinger volatility/location")).isEqualTo(10.0);
+        assertThat(componentMaximum(signal, "Support/resistance")).isEqualTo(15.0);
+        assertThat(componentMaximum(signal, "Volume participation")).isEqualTo(10.0);
         assertThat(signal.reasons().stream()
                 .mapToDouble(this::componentMaximum)
                 .sum()).isCloseTo(100.0, within(0.001));
@@ -49,7 +53,7 @@ class CandlePatternDetectionServiceTest {
     }
 
     @Test
-    void weeklyPatternAddsFrozenHistoricalCalibrationWithoutChangingValidity() {
+    void weeklyPatternUsesWeeklyV4ProfileWithoutLegacyPatternCalibration() {
         long week = 7L * 86_400L;
         List<EnrichedCandle> candles = List.of(
                 plain(week, 110, 111, 107, 108),
@@ -61,10 +65,12 @@ class CandlePatternDetectionServiceTest {
 
         DetectedSignal signal = signal(CandlePattern.BULLISH_ENGULFING, candles);
 
-        assertThat(signal.reasons()).hasSize(6);
+        assertThat(signal.reasons()).hasSize(7);
+        assertThat(signal.reasons()).noneMatch(reason ->
+                reason.startsWith("Historical pattern calibration +"));
         assertThat(signal.reasons()).anyMatch(reason ->
-                reason.startsWith("Historical pattern calibration +11.4/14.3"));
-        assertThat(componentMaximum(signal, "Pattern quality")).isEqualTo(21.4);
+                reason.startsWith("Momentum +") && reason.contains("weekly profile"));
+        assertThat(componentMaximum(signal, "Pattern quality")).isEqualTo(25.0);
         assertThat(signal.reasons().stream()
                 .mapToDouble(this::componentMaximum)
                 .sum()).isCloseTo(100.0, within(0.001));
@@ -89,10 +95,10 @@ class CandlePatternDetectionServiceTest {
                         candle.low(),
                         candle.close(),
                         candle.volume(),
-                        candle.averageVolume20(),
-                        candle.rsi14(),
-                        candle.ema20(),
-                        candle.sma200(),
+                        candle.averageVolume(),
+                        candle.rsi(),
+                        candle.fastEma(),
+                        candle.longSma(),
                         candle.lowerBollinger(),
                         candle.upperBollinger(),
                         100.0
@@ -104,7 +110,8 @@ class CandlePatternDetectionServiceTest {
 
         assertThat(detectionService.detectAlertSignals(extremeAtr))
                 .anyMatch(signal -> signal.pattern() == CandlePattern.BULLISH_ENGULFING);
-        assertThat(extreme.setupScore()).isLessThanOrEqualTo(ordinary.setupScore());
+        assertThat(extreme.setupScore()).isBetween(0, 100);
+        assertThat(extreme.setupScore()).isNotEqualTo(ordinary.setupScore());
     }
 
     @Test
@@ -408,7 +415,8 @@ class CandlePatternDetectionServiceTest {
     }
 
     private double componentMaximum(String renderedComponent) {
-        int slash = renderedComponent.indexOf('/');
+        int scoreStart = renderedComponent.indexOf(" +");
+        int slash = renderedComponent.indexOf('/', scoreStart);
         int colon = renderedComponent.indexOf(':', slash);
         return Double.parseDouble(renderedComponent.substring(slash + 1, colon));
     }

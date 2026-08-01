@@ -69,6 +69,23 @@ class MarketDataFallbackPipelineTest {
     }
 
     @Test
+    void fifteenMinuteProfileCandlesUseTheSameYahooFallbackPipeline() {
+        List<MarketDataBar> yahooBars = List.of(
+                bar(1, 100, 102, 99, 101),
+                bar(2, 101, 103, 100, 102));
+        TestContext context = context(yahooBars, true);
+
+        MarketDataService.CandleSyncResult result = context.marketDataService()
+                .syncCandles("SAP.DE", "15min", null, true);
+
+        assertThat(result.source()).isEqualTo(MarketDataService.CandleSource.YAHOO_FINANCE);
+        assertThat(context.savedCandles()).hasSize(2);
+        assertThat(context.savedCandles())
+                .allSatisfy(candle -> assertThat(candle.getTimeInterval()).isEqualTo("15min"));
+        verify(context.yahooFinanceService()).getTimeSeries("SAP.DE", "15min", 1000);
+    }
+
+    @Test
     void yahooFallbackCandlesStillProduceElliottWaveSignal() {
         List<MarketDataBar> yahooBars = syntheticElliottBars();
         TestContext context = context(yahooBars, true);
@@ -76,7 +93,7 @@ class MarketDataFallbackPipelineTest {
         MarketDataService.CandleSyncResult result = context.marketDataService()
                 .syncCandles("SAP.DE", "1mo", null, true);
         List<EnrichedCandle> enriched = new TechnicalIndicatorEnrichmentService()
-                .enrich(context.savedCandles(), 80);
+                .enrichForElliott(context.savedCandles(), 80);
         List<DetectedSignal> signals = new ElliottWaveDetectionService().detect(enriched);
 
         assertThat(result.source()).isEqualTo(MarketDataService.CandleSource.YAHOO_FINANCE);
@@ -133,6 +150,7 @@ class MarketDataFallbackPipelineTest {
                     .thenThrow(new IllegalStateException("plan does not include this market"));
         }
         when(yahooFinanceService.getTimeSeries("SAP.DE", "1d", 1000)).thenReturn(yahooBars);
+        when(yahooFinanceService.getTimeSeries("SAP.DE", "15min", 1000)).thenReturn(yahooBars);
         when(yahooFinanceService.getTimeSeries("SAP.DE", "1mo", 1000)).thenReturn(yahooBars);
 
         MarketDataService service = new MarketDataService(
