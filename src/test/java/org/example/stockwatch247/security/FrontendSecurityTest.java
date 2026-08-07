@@ -23,8 +23,10 @@ class FrontendSecurityTest {
                 "home.html",
                 "stock.html",
                 "alert-history.html",
+                "all-signals.html",
                 "signal-detail.html",
-                "historical-candlestick-detail.html");
+                "historical-candlestick-detail.html",
+                "historical-elliott-detail.html");
         templates = new java.util.ArrayList<>(templates);
         templates.addAll(List.of("settings.html", "login-2fa.html", "forgot-password.html", "reset-password.html",
                 "cancel-account-deletion.html"));
@@ -55,6 +57,10 @@ class FrontendSecurityTest {
         assertTrue(stylesheet.contains(".theme-toggle"));
         assertTrue(stylesheet.contains(".theme-toggle.theme-toggle-in-navbar"));
         assertTrue(stylesheet.contains("Light theme refinement"));
+        assertTrue(stylesheet.contains("@keyframes ambient-wave-one"));
+        assertTrue(stylesheet.contains("@keyframes ambient-wave-two"));
+        assertTrue(stylesheet.contains(":root[data-theme=\"light\"] .bg-animation::before"));
+        assertTrue(stylesheet.contains("@media (prefers-reduced-motion: reduce)"));
         assertTrue(theme.contains("persistAccountTheme"));
         assertFalse(theme.contains("innerHTML"));
     }
@@ -65,6 +71,8 @@ class FrontendSecurityTest {
         String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
         String historicalCandlestickDetail = Files.readString(
                 Path.of("src/main/resources/templates/historical-candlestick-detail.html"));
+        String historicalElliottDetail = Files.readString(
+                Path.of("src/main/resources/templates/historical-elliott-detail.html"));
         String about = Files.readString(Path.of("src/main/resources/templates/about.html"));
 
         assertFalse(navbar.contains("innerHTML"));
@@ -83,10 +91,56 @@ class FrontendSecurityTest {
         assertFalse(historicalCandlestickDetail.contains("style="));
         assertFalse(historicalCandlestickDetail.contains("<style>"));
         assertFalse(historicalCandlestickDetail.matches("(?s).*\\son(?:click|load|error)=.*"));
+        assertFalse(historicalElliottDetail.contains("th:utext"));
+        assertFalse(historicalElliottDetail.contains("style="));
+        assertFalse(historicalElliottDetail.matches("(?s).*\\son(?:click|load|error)=.*"));
+        assertTrue(historicalElliottDetail.contains("id=\"historicalElliottDetailChart\""));
+        assertTrue(historicalElliottDetail.contains("id=\"graphicalOutlookTab\""));
+        assertTrue(historicalElliottDetail.contains("id=\"scoreReportTab\""));
+        assertTrue(historicalElliottDetail.contains("id=\"resultsTab\""));
+        assertTrue(historicalElliottDetail.contains("id=\"graphicalOutlookPanel\""));
+        assertTrue(historicalElliottDetail.contains("id=\"scoreReportPanel\""));
+        assertTrue(historicalElliottDetail.contains("id=\"resultsPanel\""));
+        assertTrue(historicalElliottDetail.contains("id=\"signalResultsChart\""));
+        assertTrue(historicalElliottDetail.contains("id=\"resultWindowSlider\""));
+        assertTrue(historicalElliottDetail.contains("signal-detail :: signalDetailBehavior"));
+        assertTrue(historicalElliottDetail.contains("Historical reconstruction")
+                || historicalElliottDetail.contains("Cached historical Elliott analysis"));
+        assertTrue(historicalCandlestickDetail.contains("id=\"graphicalOutlookTab\""));
+        assertTrue(historicalCandlestickDetail.contains("id=\"scoreReportTab\""));
+        assertTrue(historicalCandlestickDetail.contains("id=\"resultsTab\""));
+        assertTrue(historicalCandlestickDetail.contains("id=\"resultsPanel\""));
+        assertTrue(historicalCandlestickDetail.contains("id=\"signalResultsChart\""));
+        assertTrue(historicalCandlestickDetail.contains("id=\"signalResultsData\""));
+        assertTrue(historicalCandlestickDetail.contains("id=\"resultWindowSlider\""));
+        assertTrue(historicalCandlestickDetail.contains("id=\"signalResultsUnavailableDialog\""));
+        assertTrue(historicalCandlestickDetail.contains("results.minimumForwardCandles()"));
+        assertTrue(historicalCandlestickDetail.contains("Results chart color legend"));
+        assertTrue(historicalCandlestickDetail.contains("id=\"signalChart\""));
+        assertTrue(historicalCandlestickDetail.contains("chart.candles()"));
+        assertTrue(historicalCandlestickDetail.contains("signalDetailBehavior"));
+        assertTrue(historicalCandlestickDetail.contains("Post-detection follow-through"));
+        assertTrue(historicalCandlestickDetail.contains("signal.lifecycle().confirmationTriggerPrice()"));
         assertFalse(about.contains("th:utext"));
         assertFalse(about.contains("style="));
         assertFalse(about.contains("<style>"));
         assertFalse(about.matches("(?s).*\\son(?:click|load|error)=.*"));
+    }
+
+    @Test
+    void signupAndAppearanceSettingsExposeSeparateElliottColorChoices() throws IOException {
+        String signup = Files.readString(Path.of("src/main/resources/templates/signup.html"));
+        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
+
+        assertTrue(signup.contains("name=\"elliottMotiveColor\""));
+        assertTrue(signup.contains("name=\"elliottCorrectiveColor\""));
+        assertTrue(signup.contains("value=\"#3B82F6\""));
+        assertTrue(signup.contains("value=\"#A855F7\""));
+        assertTrue(settings.contains("@{/settings/appearance}"));
+        assertTrue(settings.contains("settingsTab == 'appearance'"));
+        assertTrue(settings.contains("Motive I–V"));
+        assertTrue(settings.contains("Corrective A–B–C"));
+        assertTrue(settings.contains("Apply changes"));
     }
 
     @Test
@@ -120,7 +174,12 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("data-check-family=\"ELLIOTT_WAVE\" data-check-interval=\"WEEKLY\" data-check-signal=\"SELL\""));
         assertTrue(stock.contains("patternFamily: button.dataset.checkFamily || 'CANDLESTICK'"));
         assertTrue(stock.contains("refreshHistoricalElliottOverlays"));
-        assertTrue(stock.contains("series.setMarkers(structure.points"));
+        assertTrue(stock.contains("series.setMarkers(points"));
+        assertTrue(stock.contains("ELLIOTT_MOTIVE_COLOR"));
+        assertTrue(stock.contains("ELLIOTT_CORRECTIVE_COLOR"));
+        assertTrue(stock.contains("structure.points.slice(0, 6)"));
+        assertTrue(stock.contains("structure.points.slice(5)"));
+        assertTrue(stock.contains("isCorrectiveElliottPoint"));
         assertTrue(stock.contains("await showCheckedElliottWave(payload.interval)"));
         assertTrue(stock.contains("alertInterval === 'WEEKLY' ? '1wk' : '1mo'"));
         assertTrue(stock.contains("id=\"elliottOverlayToggle\""));
@@ -128,6 +187,16 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("/elliott-waves/history?interval="));
         assertTrue(stock.contains("&from=${encodeURIComponent(oldestTimestamp)}"));
         assertTrue(stock.contains("structure.structureId || elliottStructureFallbackId(structure)"));
+        assertTrue(stock.contains("id=\"elliottWaveHoverCard\""));
+        assertTrue(stock.contains("/elliott-cards?interval="));
+        assertTrue(stock.contains("function nearestElliottSegment(point)"));
+        assertTrue(stock.contains("function rebuildElliottHitTargets()"));
+        assertTrue(stock.contains("function elliottInteractivePoints(segment)"));
+        assertTrue(stock.contains("function historicalElliottCard(segment)"));
+        assertTrue(stock.contains("Historical reconstruction · hypothetical hindsight"));
+        assertTrue(stock.contains("return segment.points;"));
+        assertTrue(stock.contains("item.series.applyOptions({ lineWidth: item.groupId === segment?.groupId ? 4 : 2 })"));
+        assertTrue(stock.contains("Open signal details"));
         assertTrue(stock.contains("status.classList.add('error')"));
         assertTrue(stock.contains("setElliottConfirmationMarkers"));
         assertTrue(stock.contains("structure.confirmationTimestamp"));
@@ -146,10 +215,12 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("id=\"instrumentTypeDisplay\""));
         assertTrue(stock.contains("instrumentType === 'INDEX'"));
         assertTrue(stock.contains("id=\"showHistoricalCandlestickPatternsBtn\""));
-        assertTrue(stock.indexOf("Automated email signals")
+        assertTrue(stock.indexOf("id=\"showHistoricalCandlestickPatternsBtn\"")
+                < stock.indexOf("id=\"priceChartContainer\""));
+        assertTrue(stock.indexOf("id=\"generalWorkspacePanel\"")
                 < stock.indexOf("id=\"showHistoricalCandlestickPatternsBtn\""));
         assertTrue(stock.indexOf("id=\"showHistoricalCandlestickPatternsBtn\"")
-                < stock.indexOf("Candlestick Patterns"));
+                < stock.indexOf("id=\"technicalAnalysisWorkspacePanel\""));
         assertTrue(stock.contains("id=\"historicalCandlestickIntervalDialog\""));
         assertTrue(stock.contains("id=\"historicalCandlestickLookbackDialog\""));
         assertTrue(stock.contains("id=\"historicalCandlestickLookbackInput\""));
@@ -189,6 +260,30 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("applyAnchoredVolumeProfileChartSpacing"));
         assertTrue(stock.contains("ANCHORED_PROFILE_RIGHT_OFFSET_BARS"));
         assertTrue(stock.contains("formatProfileCalculationInterval"));
+        assertTrue(stock.contains("id=\"rsiOverlayToggle\""));
+        assertTrue(stock.contains("id=\"rsiPeriodDialog\""));
+        assertTrue(stock.contains("id=\"rsiPeriodInput\""));
+        assertTrue(stock.contains("id=\"rsiOverboughtInput\""));
+        assertTrue(stock.contains("id=\"rsiOversoldInput\""));
+        assertTrue(stock.contains("value=\"14\""));
+        assertTrue(stock.contains("id=\"rsiChartPanel\""));
+        assertTrue(stock.contains("function calculateWilderRsi(candles, period)"));
+        assertTrue(stock.contains("function themedRsiData(points"));
+        assertTrue(stock.contains("point.value > overboughtBoundary"));
+        assertTrue(stock.contains("point.value < oversoldBoundary"));
+        assertTrue(stock.contains("colors.overbought"));
+        assertTrue(stock.contains("colors.oversold"));
+        assertTrue(stock.contains("oversoldBoundary >= overboughtBoundary"));
+        assertTrue(stock.contains("enableRsiOverlay(period, overboughtBoundary, oversoldBoundary)"));
+        assertTrue(stock.contains("averageGain = ((averageGain * (period - 1)) + gain) / period"));
+        assertTrue(stock.contains("averageLoss = ((averageLoss * (period - 1)) + loss) / period"));
+        assertTrue(stock.contains("priceRange: { minValue: 0, maxValue: 100 }"));
+        String visibleRsiDateAxis = "timeScale: { ...options.timeScale, visible: true }";
+        int initialRsiDateAxis = stock.indexOf(visibleRsiDateAxis);
+        assertTrue(initialRsiDateAxis >= 0);
+        assertTrue(stock.indexOf(visibleRsiDateAxis, initialRsiDateAxis + 1) > initialRsiDateAxis);
+        assertTrue(stock.contains("rsiChart.timeScale().setVisibleLogicalRange(range)"));
+        assertTrue(stock.contains("The indicator uses candles already loaded on this chart."));
         assertFalse(stock.contains("anchoredVolumeProfileRail"));
         assertFalse(stock.contains("setVisibleRange(visibleTimeRange)"));
         assertFalse(stock.contains("timeScale().fitContent()"));
@@ -214,14 +309,50 @@ class FrontendSecurityTest {
         String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
 
         int priceChart = stock.indexOf("id=\"priceChartContainer\"");
+        int rsiChart = stock.indexOf("id=\"rsiChartContainer\"");
         int volumeChart = stock.indexOf("id=\"volumeChartContainer\"");
         int automatedSignals = stock.indexOf("<section class=\"alert-panel\">");
         int congressionalActivity = stock.indexOf("id=\"congressionalActivityPanel\"");
 
         assertTrue(priceChart >= 0);
-        assertTrue(volumeChart > priceChart);
+        assertTrue(rsiChart > priceChart);
+        assertTrue(volumeChart > rsiChart);
         assertTrue(automatedSignals > volumeChart);
         assertTrue(congressionalActivity > automatedSignals);
+    }
+
+    @Test
+    void stockWorkspaceUsesAccessibleStatePreservingSubtabs() throws IOException {
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String stylesheet = Files.readString(Path.of("src/main/resources/static/css/style.css"));
+
+        assertTrue(stock.contains("class=\"stock-workspace-tabs\" role=\"tablist\""));
+        assertTrue(stock.contains("id=\"generalWorkspaceTab\""));
+        assertTrue(stock.contains("id=\"technicalAnalysisWorkspaceTab\""));
+        assertTrue(stock.contains("id=\"tickerAlertsWorkspaceTab\""));
+        assertTrue(stock.contains("id=\"generalWorkspacePanel\""));
+        assertTrue(stock.contains("id=\"technicalAnalysisWorkspacePanel\""));
+        assertTrue(stock.contains("id=\"tickerAlertsWorkspacePanel\""));
+        assertTrue(stock.contains("data-stock-workspace-tab=\"general\""));
+        assertTrue(stock.contains("data-stock-workspace-tab=\"technical-analysis\""));
+        assertTrue(stock.contains("data-stock-workspace-tab=\"ticker-alerts\""));
+        assertTrue(stock.contains("const STOCK_WORKSPACE_SECTIONS = ['general', 'technical-analysis', 'ticker-alerts']"));
+        assertTrue(stock.contains("window.history.replaceState"));
+        assertTrue(stock.contains("window.addEventListener('hashchange'"));
+        assertTrue(stock.contains("event.key === 'ArrowRight'"));
+        assertTrue(stock.contains("event.key === 'ArrowLeft'"));
+        assertTrue(stock.contains("resizeGeneralWorkspaceCharts"));
+        assertTrue(stock.contains("id=\"tickerAlertsEligibilityNotice\""));
+        assertTrue(stock.contains("not for indexes or ETFs"));
+        int workspaceNavigationStyle = stylesheet.indexOf(".stock-workspace-navigation {");
+        int workspaceNavigationStyleEnd = stylesheet.indexOf('}', workspaceNavigationStyle);
+        String workspaceNavigationRules = stylesheet.substring(workspaceNavigationStyle, workspaceNavigationStyleEnd);
+        assertTrue(workspaceNavigationRules.contains("position: relative"));
+        assertFalse(workspaceNavigationRules.contains("position: sticky"));
+        assertTrue(stylesheet.contains("[data-stock-workspace-tab=\"technical-analysis\"]"));
+        assertTrue(stylesheet.contains("--workspace-tab-accent: #9a8cff"));
+        assertTrue(stylesheet.contains("--workspace-tab-accent: #36cbb1"));
+        assertTrue(stylesheet.contains(".stock-workspace-panel[hidden]"));
     }
 
     @Test
@@ -239,7 +370,9 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("stockWorkspace.setAttribute('aria-busy', 'false')"));
         assertTrue(stock.contains("document.body.classList.remove('stock-is-loading')"));
         assertTrue(stock.contains("stockPageLoader.classList.add('is-complete')"));
-        assertTrue(stock.contains("window.onload = initCharts"));
+        assertTrue(stock.contains("window.onload = async () =>"));
+        assertTrue(stock.contains("await initCharts();"));
+        assertTrue(stock.contains("initializeStockWorkspaceTabs();"));
         assertTrue(stock.indexOf("id=\"stockPageLoader\"")
                 < stock.indexOf("<div th:replace=\"~{fragments/navbar :: navbar}\"></div>"));
 
@@ -332,6 +465,10 @@ class FrontendSecurityTest {
 
         assertTrue(dashboard.contains("id=\"technicalAnalysisViewButton\""));
         assertTrue(dashboard.contains("id=\"tickerAlertsViewButton\""));
+        assertTrue(dashboard.contains("id=\"allSignalsDashboardButton\""));
+        assertTrue(dashboard.contains("th:href=\"@{/signals}\""));
+        assertTrue(dashboard.indexOf("id=\"allSignalsDashboardButton\"")
+                < dashboard.indexOf("id=\"technicalAnalysisViewButton\""));
         assertTrue(dashboard.contains("data-dashboard-view-button=\"technical\""));
         assertTrue(dashboard.contains("data-dashboard-view-button=\"alerts\""));
         assertTrue(dashboard.contains("id=\"technicalDashboardMetrics\""));
@@ -369,6 +506,7 @@ class FrontendSecurityTest {
         String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
         String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
         String history = Files.readString(Path.of("src/main/resources/templates/alert-history.html"));
+        String archive = Files.readString(Path.of("src/main/resources/templates/all-signals.html"));
         String signalDetail = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
 
         assertTrue(dashboard.contains("th:each=\"company : ${trackedCompanies}\""));
@@ -405,6 +543,25 @@ class FrontendSecurityTest {
         assertTrue(history.contains("event.lifecycle().label()"));
         assertTrue(history.contains("event.lifecycle().resolutionPeriodLabel()"));
         assertFalse(history.contains("class=\"signal-table\""));
+        assertTrue(history.contains("event.hasBeenRead()"));
+        assertTrue(archive.contains("archive.signals()"));
+        assertTrue(archive.contains("name=\"sort\""));
+        assertTrue(archive.contains("name=\"direction\""));
+        assertTrue(archive.contains("value=\"confidence\""));
+        assertTrue(archive.contains("value=\"interval\""));
+        assertTrue(archive.contains("value=\"status\""));
+        assertTrue(archive.contains("value=\"best-return\""));
+        assertTrue(archive.contains("value=\"worst-return\""));
+        assertTrue(archive.contains("archive.groupKey"));
+        assertTrue(archive.contains("signal.hasBeenRead()"));
+        assertTrue(archive.contains("Signal status"));
+        assertTrue(archive.contains("Confidence score"));
+        assertTrue(archive.contains("signal.lifecycle().label()"));
+        assertTrue(archive.contains("entry.bestDirectionalMovePercent()"));
+        assertTrue(archive.contains("entry.worstDirectionalMovePercent()"));
+        assertTrue(archive.contains("entry.resultWindowLabel()"));
+        assertTrue(archive.contains("direction-aware moves from the signal close"));
+        assertTrue(archive.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
 
         assertTrue(signalDetail.contains("signal.setupScore()"));
         assertTrue(signalDetail.contains("signal.signalPeriodLabel()"));
@@ -412,15 +569,61 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("class=\"signal-lifecycle-timeline\""));
         assertTrue(signalDetail.contains("signal.lifecycle().resolutionPeriodLabel()"));
         assertTrue(signalDetail.contains("signal.lifecycle().updatedAt()"));
+        assertTrue(signalDetail.contains("Wave structure range"));
         assertTrue(signalDetail.contains("Alert recorded"));
         assertTrue(signalDetail.contains("Lifecycle processed"));
         assertTrue(signalDetail.contains("#numbers.sequence(1, 20)"));
+        assertTrue(signalDetail.contains("id=\"graphicalOutlookTab\""));
+        assertTrue(signalDetail.contains("id=\"scoreReportTab\""));
+        assertTrue(signalDetail.contains("id=\"resultsTab\""));
+        assertTrue(signalDetail.contains("id=\"graphicalOutlookPanel\""));
+        assertTrue(signalDetail.contains("id=\"scoreReportPanel\""));
+        assertTrue(signalDetail.contains("id=\"resultsPanel\""));
+        assertTrue(signalDetail.contains("signal.results().available()"));
+        assertTrue(signalDetail.contains("id=\"signalResultsChart\""));
+        assertTrue(signalDetail.contains("id=\"signalResultsData\""));
+        assertTrue(signalDetail.contains("id=\"resultWindowSlider\""));
+        assertTrue(signalDetail.contains("signal.results().minimumForwardCandles()"));
+        assertTrue(signalDetail.contains("signal.results().availableForwardCandles()"));
+        assertTrue(signalDetail.contains("id=\"signalResultsUnavailableDialog\""));
+        assertTrue(signalDetail.contains("function renderSelectedResults()"));
+        assertTrue(signalDetail.contains("const segmentEnd = selectedPoints[Math.min(index + 1"));
+        assertTrue(signalDetail.contains("color: segmentEnd.directionalReturn > 0"));
+        assertTrue(signalDetail.contains("tradeSignal === 'SELL'"));
+        assertTrue(signalDetail.contains("point.close < best.close"));
+        assertTrue(signalDetail.contains("point.close > best.close"));
+        assertTrue(signalDetail.contains("Cached candles only &middot; no API request"));
+        assertTrue(signalDetail.contains("hindsight-based close-to-close measurement"));
+        assertTrue(signalDetail.contains("Results chart color legend"));
+        assertTrue(signalDetail.contains("Favorable move in the signal direction"));
+        assertTrue(signalDetail.contains("Adverse move against the signal"));
+        assertTrue(signalDetail.contains("Signal start at the recorded close"));
+        assertTrue(signalDetail.contains("text: `${tradeSignal} signal start`"));
+        assertTrue(signalDetail.contains("color: colors.signalStart"));
+        assertTrue(signalDetail.contains("Best exit or re-entry in the selected window"));
+        assertTrue(signalDetail.contains("id=\"signalChart\""));
+        assertTrue(signalDetail.contains("signal.chart().candles()"));
+        assertTrue(signalDetail.contains("signal.chart().elliottWave()"));
+        assertTrue(signalDetail.contains("id=\"signalElliottWaveData\""));
+        assertTrue(signalDetail.contains("function renderElliottSegment"));
+        assertTrue(signalDetail.contains("Motive I&ndash;V"));
+        assertTrue(signalDetail.contains("Complete cached interval history"));
+        assertTrue(signalDetail.contains("signal-chart-trend-band"));
+        assertTrue(signalDetail.contains("signal-pattern-callout"));
+        assertTrue(signalDetail.contains("timeToCoordinate"));
+        assertTrue(signalDetail.contains("rectanglesOverlap"));
+        assertTrue(signalDetail.contains("classList.add('elbow-right')"));
+        assertTrue(signalDetail.contains("function focusSignal()"));
+        assertTrue(signalDetail.contains("setVisibleLogicalRange"));
+        assertTrue(signalDetail.contains("stockwatch:themechange"));
         assertTrue(signalDetail.contains("signal.reasons()"));
         assertTrue(signalDetail.contains("reason.scoreLabel()"));
         assertTrue(signalDetail.contains("reason.details()"));
         assertTrue(signalDetail.contains("detail.text()"));
         assertTrue(signalDetail.contains("class=\"evidence-detail-list\""));
         assertTrue(signalDetail.contains("Detailed evidence was not stored for this signal"));
+        assertTrue(signalDetail.contains("Observed price outcome"));
+        assertTrue(signalDetail.contains("signal.observedOutcome().directionalReturnPercent()"));
         assertFalse(signalDetail.contains("th:utext"));
         assertFalse(signalDetail.contains("style="));
         assertFalse(signalDetail.contains("<style>"));

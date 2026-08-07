@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Setup score report &mdash; StockWatch 24/7</title>
+  <title>Signal analysis &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
+  <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -19,14 +20,16 @@
   <nav class="signal-breadcrumb" aria-label="Breadcrumb">
     <a th:href="@{/home}">Dashboard</a>
     <span aria-hidden="true">/</span>
-    <a th:href="@{/alerts/{id}(id=${signal.alertRuleId()})}" th:text="${signal.symbol()}">MARA</a>
+    <a th:if="${signal.alertRuleActive()}"
+       th:href="@{/alerts/{id}(id=${signal.alertRuleId()})}" th:text="${signal.symbol()}">MARA</a>
+    <a th:unless="${signal.alertRuleActive()}" th:href="@{/signals}">All signals</a>
     <span aria-hidden="true">/</span>
-    <span>Setup score</span>
+    <span>Signal analysis</span>
   </nav>
 
   <header class="signal-report-header">
     <div class="signal-report-copy">
-      <div class="eyebrow">Setup score report</div>
+      <div class="eyebrow">Signal analysis</div>
       <div class="signal-report-title-row">
         <h1 class="title" th:text="${signal.patternLabel()}">Bullish Engulfing</h1>
         <span class="signal-report-id" th:text="${'SIGNAL #' + signal.id()}">SIGNAL #142</span>
@@ -53,14 +56,57 @@
               th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</span>
         <span class="signal-report-tag"
               th:text="${'Score model ' + signal.scoreVersion()}">Score model CANDLE_V4_EXPERIMENTAL</span>
+        <span th:if="${signal.scoreVersion() == 'ELLIOTT_V2' and signal.elliottV1EligibilityScore() != null}"
+              class="signal-report-tag"
+              th:text="${'V1 eligibility ' + signal.elliottV1EligibilityScore() + '/100'}">V1 eligibility 88/100</span>
       </div>
     </div>
     <div class="signal-report-actions">
-      <a th:href="@{/alerts/{id}(id=${signal.alertRuleId()})}" class="btn-secondary">Back to signal board</a>
+      <a th:if="${signal.alertRuleActive()}"
+         th:href="@{/alerts/{id}(id=${signal.alertRuleId()})}" class="btn-secondary">Back to signal board</a>
+      <a th:unless="${signal.alertRuleActive()}" th:href="@{/signals}" class="btn-secondary">Back to all signals</a>
       <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary">Open workspace <span class="button-arrow" aria-hidden="true">&rarr;</span></a>
     </div>
   </header>
 
+  <nav class="signal-view-tabs signal-three-view-tabs" aria-label="Signal detail views" role="tablist">
+    <button id="graphicalOutlookTab"
+            class="signal-view-tab active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="graphicalOutlookPanel"
+            data-signal-tab="graphical">
+      <span class="signal-tab-icon" aria-hidden="true">&#9650;</span>
+      <span><strong>Graphical outlook</strong><small>See the setup on its chart</small></span>
+    </button>
+    <button id="scoreReportTab"
+            class="signal-view-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="scoreReportPanel"
+            data-signal-tab="score">
+      <span class="signal-tab-icon score" aria-hidden="true">&#35;</span>
+      <span><strong>Score report</strong><small>Review follow-through and evidence</small></span>
+    </button>
+    <button id="resultsTab"
+            class="signal-view-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="resultsPanel"
+            data-signal-tab="results"
+            th:attr="data-results-available=${signal.results().available()}">
+      <span class="signal-tab-icon results" aria-hidden="true">%</span>
+      <span><strong>Results</strong><small>Measure the cached forward outcome</small></span>
+    </button>
+  </nav>
+
+  <div id="graphicalOutlookPanel"
+       class="signal-view-panel active"
+       role="tabpanel"
+       aria-labelledby="graphicalOutlookTab">
   <section class="signal-score-layout" aria-labelledby="setup-heading">
     <article class="signal-score-card" th:classappend="${' ' + signal.setupBand()}">
       <div class="signal-score-card-topline">
@@ -135,6 +181,83 @@
     </aside>
   </section>
 
+  <section class="signal-chart-card" aria-labelledby="signal-chart-heading">
+    <div class="signal-chart-heading">
+      <div>
+        <div class="signal-section-kicker">Pattern on price</div>
+        <h2 id="signal-chart-heading">
+          <span th:text="${signal.patternLabel()}">Bullish Harami</span>
+          on the <span th:text="${signal.intervalLabel()}">1wk</span> chart
+        </h2>
+        <p th:if="${signal.chart().available()}" th:text="${signal.chart().summary()}">
+          The prior trend and pattern candles are marked on the chart.
+        </p>
+      </div>
+      <span class="signal-chart-cache-badge">Complete cached interval history &middot; no API request</span>
+    </div>
+
+    <div th:if="${signal.chart().available()}" class="signal-chart-legend" aria-label="Chart annotation legend">
+      <th:block th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">
+        <span><i class="signal-chart-key trend" aria-hidden="true"></i><span th:text="${signal.chart().trendLabel()}">Required downtrend</span></span>
+        <span><i class="signal-chart-key pattern" aria-hidden="true"></i>Pattern candles</span>
+        <span><i class="signal-chart-key detection" aria-hidden="true"></i>Detection candle</span>
+      </th:block>
+      <th:block th:if="${signal.chart().elliottWave() != null}">
+        <span><i class="signal-chart-key motive" aria-hidden="true"></i>Motive I&ndash;V</span>
+        <span th:if="${signal.chart().elliottWave().correctionComplete()}"><i class="signal-chart-key corrective" aria-hidden="true"></i>Corrective A&ndash;B&ndash;C</span>
+        <span><i class="signal-chart-key confirmation" aria-hidden="true"></i>Recorded confirmation</span>
+      </th:block>
+    </div>
+
+    <div th:if="${signal.chart().available()}"
+         id="signalChart"
+         class="signal-chart"
+         role="img"
+         th:attr="aria-label=${signal.patternLabel() + ' candlestick chart for ' + signal.symbol()},
+                  data-trend-start=${signal.chart().trendStartTimestamp()},
+                  data-pattern-start=${signal.chart().patternStartTimestamp()},
+                  data-signal-time=${signal.chart().signalTimestamp()},
+                  data-pattern-count=${signal.chart().patternCandleCount()},
+                  data-pattern-label=${signal.patternLabel()},
+                  data-direction=${signal.tradeSignal().name()},
+                  data-family=${signal.patternFamily().name()},
+                  data-interval=${signal.interval().name()},
+                  data-trend-label=${signal.chart().trendLabel()}"></div>
+    <ol th:if="${signal.chart().available()}" id="signalChartData" hidden aria-hidden="true">
+      <li th:each="candle : ${signal.chart().candles()}"
+          th:attr="data-time=${candle.timestamp()},data-open=${candle.open()},data-high=${candle.high()},data-low=${candle.low()},data-close=${candle.close()}"></li>
+    </ol>
+    <ol th:if="${signal.chart().elliottWave() != null}"
+        id="signalElliottWaveData"
+        hidden
+        aria-hidden="true"
+        th:attr="data-direction=${signal.chart().elliottWave().direction()},
+                 data-correction-complete=${signal.chart().elliottWave().correctionComplete()},
+                 data-confirmation-time=${signal.chart().elliottWave().confirmationTimestamp()},
+                 data-wave-two-retracement=${signal.chart().elliottWave().waveTwoRetracement()},
+                 data-wave-four-retracement=${signal.chart().elliottWave().waveFourRetracement()},
+                 data-impulse-variant=${signal.chart().elliottWave().impulseVariant().name()},
+                 data-correction-variant=${signal.chart().elliottWave().correctionVariant().name()}">
+      <li th:each="point : ${signal.chart().elliottWave().points()}"
+          th:attr="data-label=${point.label()},data-time=${point.timestamp()},data-price=${point.price()},data-pivot-type=${point.pivotType()}"></li>
+    </ol>
+
+    <div th:unless="${signal.chart().available()}" class="signal-chart-unavailable">
+      <span aria-hidden="true">i</span>
+      <div>
+        <h3>Chart context is unavailable for this signal</h3>
+        <p th:text="${signal.chart().unavailableReason()}">The original candle is not in the local cache.</p>
+      </div>
+    </div>
+  </section>
+  </div>
+
+  <div id="scoreReportPanel"
+       class="signal-view-panel"
+       role="tabpanel"
+       aria-labelledby="scoreReportTab"
+       hidden>
+
   <section th:if="${signal.lifecycle().tracked()}"
            class="signal-lifecycle-section"
            aria-labelledby="lifecycle-heading">
@@ -193,7 +316,7 @@
     </ol>
     <div class="signal-lifecycle-grid">
       <div>
-        <span>Pattern range</span>
+        <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? 'Wave structure range' : 'Pattern range'}">Pattern range</span>
         <strong>
           <span th:text="${#numbers.formatDecimal(signal.lifecycle().patternLow(), 1, 4)}">96.0000</span>
           <span aria-hidden="true">&ndash;</span>
@@ -204,9 +327,17 @@
         <span>Confirmation trigger</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationTriggerPrice(), 1, 4)}">102.0000</strong>
       </div>
-      <div>
-        <span>Invalidation boundary</span>
+      <div th:if="${signal.lifecycle().invalidationPrice() != null}">
+        <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? 'Structural invalidation boundary' : 'Invalidation boundary'}">Invalidation boundary</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">96.0000</strong>
+      </div>
+      <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().invalidationPrice() == null}">
+        <span>Invalidation rule</span>
+        <strong>Hard Elliott structure rules</strong>
+      </div>
+      <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().elliottEndpointPrice() != null}">
+        <span>Latest Wave V/C endpoint</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().elliottEndpointPrice(), 1, 4)}">108.0000</strong>
       </div>
       <div>
         <span>Observation window</span>
@@ -233,6 +364,71 @@
     <p class="signal-lifecycle-note">
       Confirmation uses completed-candle closes, not intraday boundary touches. The first confirmed,
       invalidated, or expired outcome is terminal and does not replace the original detection.
+    </p>
+  </section>
+
+  <section class="historical-outcome-section"
+           th:classappend="${' ' + signal.observedOutcome().statusClass()}"
+           aria-labelledby="observed-outcome-heading">
+    <div class="historical-outcome-heading">
+      <div>
+        <div class="signal-section-kicker">Observed price outcome</div>
+        <h2 id="observed-outcome-heading" th:text="${signal.observedOutcome().statusLabel()}">Inconclusive</h2>
+      </div>
+      <span th:if="${signal.observedOutcome().evaluationHorizonLabel() != null}"
+            class="historical-outcome-badge"
+            th:classappend="${' ' + signal.observedOutcome().statusClass()}"
+            th:text="${signal.observedOutcome().evaluationHorizonLabel()}">4-week horizon</span>
+    </div>
+    <p class="historical-outcome-summary" th:text="${signal.observedOutcome().summary()}">
+      The observed directional result is shown at the research horizon.
+    </p>
+
+    <div th:if="${signal.observedOutcome().tracked()}" class="historical-outcome-grid">
+      <div>
+        <span>Pattern range</span>
+        <strong>
+          <span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternLow(), 1, 4)}">96.0000</span>
+          <span aria-hidden="true">&ndash;</span>
+          <span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternHigh(), 1, 4)}">102.0000</span>
+        </strong>
+      </div>
+      <div>
+        <span>Success threshold</span>
+        <strong th:text="${#numbers.formatDecimal(signal.observedOutcome().successThresholdPercent(), 1, 1) + '% directional move'}">
+          4.0% directional move
+        </strong>
+      </div>
+      <div th:if="${signal.observedOutcome().outcomeAvailable()}">
+        <span th:text="${signal.observedOutcome().impactLabel()}">Potential gain</span>
+        <strong th:classappend="${signal.observedOutcome().directionalReturnPercent() >= 0} ? ' positive' : ' negative'"
+                th:text="${(signal.observedOutcome().directionalReturnPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.observedOutcome().directionalReturnPercent(), 1, 2) + '%'}">
+          +4.25%
+        </strong>
+      </div>
+      <div th:if="${signal.observedOutcome().outcomeAvailable()}">
+        <span>Evaluation close</span>
+        <strong th:text="${#numbers.formatDecimal(signal.observedOutcome().evaluationClose(), 1, 2)}">106.34</strong>
+        <small th:text="${signal.observedOutcome().evaluationPeriodLabel()}">28 Jul 2026</small>
+      </div>
+      <div th:if="${signal.observedOutcome().outcomeAvailable()}">
+        <span>Best favorable move</span>
+        <strong class="positive"
+                th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">
+          +6.20%
+        </strong>
+      </div>
+      <div th:if="${signal.observedOutcome().outcomeAvailable()}">
+        <span>Worst adverse move</span>
+        <strong class="negative"
+                th:text="${#numbers.formatDecimal(signal.observedOutcome().worstDirectionalMovePercent(), 1, 2) + '%'}">
+          -2.10%
+        </strong>
+      </div>
+    </div>
+    <p th:if="${signal.observedOutcome().tracked()}" class="signal-lifecycle-note">
+      This is a close-to-close historical measurement, not a simulated trade. It excludes execution timing,
+      transaction costs, taxes, slippage, position sizing, and overlapping signals.
     </p>
   </section>
 
@@ -303,6 +499,679 @@
       <p th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE'}">The Elliott detector combines wave structure, proportional relationships, trend context, momentum, and available confirmation evidence. Its score measures technical confluence, not probability of profit or financial advice.</p>
     </div>
   </section>
+  </div>
+
+  <div id="resultsPanel"
+       class="signal-view-panel"
+       role="tabpanel"
+       aria-labelledby="resultsTab"
+       hidden>
+    <section th:if="${signal.results().available()}"
+             id="signalResultsWorkspace"
+             class="signal-results-section"
+             th:attr="data-trade-signal=${signal.results().tradeSignal().name()},
+                      data-signal-close=${signal.results().signalClose()},
+                      data-outcome-label=${signal.results().outcomeLabel()},
+                      data-best-action-label=${signal.results().bestActionLabel()}">
+      <div class="signal-results-heading">
+        <div>
+          <div class="signal-section-kicker">Completed-candle follow-through</div>
+          <h2>Direction-aware result after the signal</h2>
+          <p>
+            The line starts at the recorded signal close and measures each subsequent completed close
+            in the signal&rsquo;s expected direction.
+          </p>
+        </div>
+        <span class="signal-chart-cache-badge">Cached candles only &middot; no API request</span>
+      </div>
+
+      <div class="signal-results-metrics" aria-live="polite">
+        <article>
+          <span id="resultHorizonLabel" th:text="${signal.results().outcomeLabel()}">Gain / loss</span>
+          <strong id="resultHorizonReturn">+0.00%</strong>
+          <small id="resultHorizonDifference">+0.0000 per share</small>
+        </article>
+        <article>
+          <span>Selected-window close</span>
+          <strong id="resultHorizonClose">0.0000</strong>
+          <small id="resultHorizonPeriod">Period unavailable</small>
+        </article>
+        <article class="best-result">
+          <span id="resultBestActionLabel" th:text="${signal.results().bestActionLabel()}">Best sell close</span>
+          <strong id="resultBestClose">0.0000</strong>
+          <small id="resultBestPeriod">Period unavailable</small>
+        </article>
+        <article class="best-result">
+          <span>Best direction-aware outcome</span>
+          <strong id="resultBestReturn">+0.00%</strong>
+          <small id="resultBestDifference">+0.0000 per share</small>
+        </article>
+      </div>
+
+      <div id="signalResultsChart"
+           class="signal-results-chart"
+           role="img"
+           th:attr="aria-label=${'Direction-aware result chart for the ' + signal.tradeSignal().name() + ' signal on ' + signal.symbol()}"></div>
+      <div class="signal-results-legend" aria-label="Results chart color legend">
+        <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the signal direction</span>
+        <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the signal</span>
+        <span><i class="signal-results-key start" aria-hidden="true"></i>Signal start at the recorded close</span>
+        <span><i class="signal-results-key best" aria-hidden="true"></i>Best exit or re-entry in the selected window</span>
+      </div>
+      <ol id="signalResultsData" hidden aria-hidden="true">
+        <li th:each="point : ${signal.results().points()}"
+            th:attr="data-candle-number=${point.candleNumber()},
+                     data-time=${point.timestamp()},
+                     data-period-label=${point.periodLabel()},
+                     data-close=${point.close()},
+                     data-directional-return=${point.directionalReturnPercent()},
+                     data-directional-difference=${point.directionalPriceDifference()}"></li>
+      </ol>
+
+      <div class="signal-results-window-control">
+        <div class="signal-results-window-copy">
+          <label for="resultWindowSlider">Forward evaluation window</label>
+          <p>Choose how many completed candles after the signal to include.</p>
+        </div>
+        <output id="resultWindowValue" for="resultWindowSlider"
+                th:text="${signal.results().minimumForwardCandles() + ' candles'}">10 candles</output>
+        <input id="resultWindowSlider"
+               type="range"
+               th:min="${signal.results().minimumForwardCandles()}"
+               th:max="${signal.results().availableForwardCandles()}"
+               th:value="${signal.results().minimumForwardCandles()}"
+               step="1"
+               th:attr="aria-valuemin=${signal.results().minimumForwardCandles()},
+                        aria-valuemax=${signal.results().availableForwardCandles()},
+                        aria-valuenow=${signal.results().minimumForwardCandles()}">
+        <div class="signal-results-range-labels" aria-hidden="true">
+          <span th:text="${signal.results().minimumForwardCandles()}">10</span>
+          <span th:text="${signal.results().availableForwardCandles()}">42</span>
+        </div>
+      </div>
+
+      <p class="signal-results-disclaimer">
+        This is a hindsight-based close-to-close measurement, not a simulated trade or forecast. It excludes
+        fees, slippage, taxes, dividends, and position sizing. The highlighted best close is only the best
+        completed-candle close visible inside the selected window.
+      </p>
+    </section>
+  </div>
+
+  <dialog th:unless="${signal.results().available()}"
+          id="signalResultsUnavailableDialog"
+          class="unsaved-alert-dialog signal-results-unavailable-dialog"
+          aria-labelledby="signalResultsUnavailableTitle">
+    <div class="unsaved-alert-dialog-content">
+      <span class="unsaved-alert-kicker">Outcome window still forming</span>
+      <h2 id="signalResultsUnavailableTitle">Results need more completed candles</h2>
+      <p th:text="${signal.results().unavailableReason()}">
+        At least 10 completed candles after the signal are required before results can be displayed.
+      </p>
+      <div class="unsaved-alert-dialog-actions">
+        <button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary">Understood</button>
+      </div>
+    </div>
+  </dialog>
 </main>
+<th:block th:fragment="signalDetailBehavior">
+<script th:inline="javascript" th:attr="nonce=${cspNonce}">
+  (function () {
+    'use strict';
+
+    const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
+    const ELLIOTT_CORRECTIVE_COLOR = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
+
+    const tabs = Array.from(document.querySelectorAll('[data-signal-tab]'));
+    const panels = {
+      graphical: document.getElementById('graphicalOutlookPanel'),
+      score: document.getElementById('scoreReportPanel'),
+      results: document.getElementById('resultsPanel')
+    };
+
+    function showResultsUnavailableDialog() {
+      const dialog = document.getElementById('signalResultsUnavailableDialog');
+      if (!dialog) return;
+      if (typeof dialog.showModal === 'function') {
+        if (!dialog.open) dialog.showModal();
+      } else {
+        window.alert(dialog.querySelector('p')?.textContent || 'Results need at least 10 completed candles.');
+      }
+    }
+
+    function activateTab(name, updateHash) {
+      const requestedTab = tabs.find(tab => tab.dataset.signalTab === name);
+      if (name === 'results' && requestedTab?.dataset.resultsAvailable !== 'true') {
+        showResultsUnavailableDialog();
+        return false;
+      }
+      const selected = panels[name] ? name : 'graphical';
+      tabs.forEach(tab => {
+        const active = tab.dataset.signalTab === selected;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', String(active));
+        tab.tabIndex = active ? 0 : -1;
+      });
+      Object.entries(panels).forEach(([panelName, panel]) => {
+        if (!panel) return;
+        const active = panelName === selected;
+        panel.hidden = !active;
+        panel.classList.toggle('active', active);
+      });
+      if (updateHash && window.history && window.history.replaceState) {
+        const hash = selected === 'score'
+          ? '#score-report'
+          : (selected === 'results' ? '#results' : '#graphical-outlook');
+        window.history.replaceState(null, '', hash);
+      }
+      if (selected === 'results') window.setTimeout(ensureResultsChart, 0);
+      return true;
+    }
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => activateTab(tab.dataset.signalTab, true));
+      tab.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const offset = event.key === 'ArrowRight' ? 1 : -1;
+        const next = tabs[(index + offset + tabs.length) % tabs.length];
+        if (activateTab(next.dataset.signalTab, true)) next.focus();
+      });
+    });
+    document.getElementById('closeSignalResultsUnavailableDialog')
+      ?.addEventListener('click', () => document.getElementById('signalResultsUnavailableDialog')?.close());
+    const initialTab = window.location.hash === '#score-report'
+      ? 'score'
+      : (window.location.hash === '#results' ? 'results' : 'graphical');
+    activateTab(initialTab, false);
+
+    const resultsWorkspace = document.getElementById('signalResultsWorkspace');
+    const resultsContainer = document.getElementById('signalResultsChart');
+    const resultsDataList = document.getElementById('signalResultsData');
+    const resultsWindowSlider = document.getElementById('resultWindowSlider');
+    const resultsData = resultsDataList
+      ? Array.from(resultsDataList.children).map(item => ({
+          candleNumber: Number(item.dataset.candleNumber),
+          time: Number(item.dataset.time),
+          periodLabel: item.dataset.periodLabel || 'Period unavailable',
+          close: Number(item.dataset.close),
+          directionalReturn: Number(item.dataset.directionalReturn),
+          directionalDifference: Number(item.dataset.directionalDifference)
+        })).filter(point => Number.isFinite(point.candleNumber)
+          && Number.isFinite(point.time)
+          && Number.isFinite(point.close)
+          && Number.isFinite(point.directionalReturn)
+          && Number.isFinite(point.directionalDifference))
+      : [];
+    let resultsChart = null;
+    let resultsSeries = null;
+
+    function resultsChartColors(theme = document.documentElement.dataset.theme) {
+      const light = theme === 'light';
+      return {
+        text: light ? '#526158' : '#929b91',
+        grid: light ? 'rgba(31, 48, 37, 0.09)' : 'rgba(255, 255, 255, 0.045)',
+        border: light ? 'rgba(27, 43, 33, 0.14)' : 'rgba(255, 255, 255, 0.08)',
+        positive: light ? '#078568' : '#64e8bd',
+        negative: light ? '#d23f59' : '#ff647c',
+        neutral: light ? '#68756d' : '#aeb7ad',
+        signalStart: light ? '#6557d6' : '#9a8cff',
+        best: light ? '#a86700' : '#ffbd59'
+      };
+    }
+
+    function signedNumber(value, decimals, suffix) {
+      return `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}${suffix}`;
+    }
+
+    function updateResultMetric(id, value, positiveClass) {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.textContent = value;
+      element.classList.toggle('positive', positiveClass);
+      element.classList.toggle('negative', !positiveClass);
+    }
+
+    function renderSelectedResults() {
+      if (!resultsSeries || !resultsWindowSlider || resultsData.length < 2 || !resultsWorkspace) return;
+      const minimum = Number(resultsWindowSlider.min);
+      const maximum = Number(resultsWindowSlider.max);
+      const requested = Number(resultsWindowSlider.value);
+      const windowSize = Math.min(maximum, Math.max(minimum, requested));
+      const selectedPoints = resultsData.filter(point => point.candleNumber <= windowSize);
+      if (selectedPoints.length < 2) return;
+
+      const colors = resultsChartColors();
+      resultsSeries.setData(selectedPoints.map((point, index) => {
+        // Lightweight Charts uses a point's color for the segment leaving
+        // that point. Base the segment color on its destination close so a
+        // line ending above zero is favorable even when it starts below zero.
+        const segmentEnd = selectedPoints[Math.min(index + 1, selectedPoints.length - 1)];
+        return {
+          time: point.time,
+          value: point.directionalReturn,
+          color: segmentEnd.directionalReturn > 0
+            ? colors.positive
+            : (segmentEnd.directionalReturn < 0 ? colors.negative : colors.neutral)
+        };
+      }));
+
+      const tradeSignal = resultsWorkspace.dataset.tradeSignal;
+      const candidates = selectedPoints.slice(1);
+      const bestPoint = candidates.reduce((best, point) => {
+        if (!best) return point;
+        if (tradeSignal === 'SELL') return point.close < best.close ? point : best;
+        return point.close > best.close ? point : best;
+      }, null);
+      const horizonPoint = selectedPoints[selectedPoints.length - 1];
+      const startPoint = selectedPoints[0];
+      resultsSeries.setMarkers([{
+        time: startPoint.time,
+        position: tradeSignal === 'SELL' ? 'aboveBar' : 'belowBar',
+        color: colors.signalStart,
+        shape: tradeSignal === 'SELL' ? 'arrowDown' : 'arrowUp',
+        text: `${tradeSignal} signal start`
+      }, {
+        time: bestPoint.time,
+        position: bestPoint.directionalReturn >= 0 ? 'aboveBar' : 'belowBar',
+        color: colors.best,
+        shape: tradeSignal === 'SELL' ? 'arrowUp' : 'arrowDown',
+        text: `${resultsWorkspace.dataset.bestActionLabel} · candle ${bestPoint.candleNumber}`
+      }]);
+      resultsChart.timeScale().fitContent();
+
+      const horizonPositive = horizonPoint.directionalReturn >= 0;
+      const bestPositive = bestPoint.directionalReturn >= 0;
+      updateResultMetric('resultHorizonReturn', signedNumber(horizonPoint.directionalReturn, 2, '%'), horizonPositive);
+      updateResultMetric('resultHorizonDifference', signedNumber(horizonPoint.directionalDifference, 4, ' per share'), horizonPositive);
+      updateResultMetric('resultBestReturn', signedNumber(bestPoint.directionalReturn, 2, '%'), bestPositive);
+      updateResultMetric('resultBestDifference', signedNumber(bestPoint.directionalDifference, 4, ' per share'), bestPositive);
+      document.getElementById('resultHorizonClose').textContent = horizonPoint.close.toFixed(4);
+      document.getElementById('resultHorizonPeriod').textContent = horizonPoint.periodLabel;
+      document.getElementById('resultBestClose').textContent = bestPoint.close.toFixed(4);
+      document.getElementById('resultBestPeriod').textContent = bestPoint.periodLabel;
+      const output = document.getElementById('resultWindowValue');
+      output.textContent = `${windowSize} candles`;
+      resultsWindowSlider.value = String(windowSize);
+      resultsWindowSlider.setAttribute('aria-valuenow', String(windowSize));
+      resultsWindowSlider.setAttribute('aria-valuetext', `${windowSize} completed candles after the signal`);
+    }
+
+    function ensureResultsChart() {
+      if (!resultsContainer || !resultsData.length || typeof LightweightCharts === 'undefined') return;
+      if (!resultsChart) {
+        const colors = resultsChartColors();
+        resultsChart = LightweightCharts.createChart(resultsContainer, {
+          autoSize: true,
+          layout: {
+            textColor: colors.text,
+            fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+            background: { type: 'solid', color: 'transparent' }
+          },
+          grid: {
+            vertLines: { color: colors.grid },
+            horzLines: { color: colors.grid }
+          },
+          crosshair: { mode: 0 },
+          rightPriceScale: { borderColor: colors.border },
+          timeScale: { borderColor: colors.border, timeVisible: true, rightOffset: 2 },
+          handleScroll: true,
+          handleScale: true
+        });
+        resultsSeries = resultsChart.addLineSeries({
+          color: colors.neutral,
+          lineWidth: 3,
+          lastValueVisible: true,
+          priceLineVisible: false,
+          crosshairMarkerVisible: true,
+          priceFormat: {
+            type: 'custom',
+            formatter: value => signedNumber(value, 2, '%')
+          }
+        });
+        resultsSeries.createPriceLine({
+          price: 0,
+          color: colors.border,
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'Signal close'
+        });
+      }
+      renderSelectedResults();
+    }
+
+    resultsWindowSlider?.addEventListener('input', renderSelectedResults);
+    window.addEventListener('stockwatch:themechange', event => {
+      if (!resultsChart || !resultsSeries) return;
+      const colors = resultsChartColors(event.detail.theme);
+      resultsChart.applyOptions({
+        layout: { textColor: colors.text, background: { type: 'solid', color: 'transparent' } },
+        grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+        rightPriceScale: { borderColor: colors.border },
+        timeScale: { borderColor: colors.border }
+      });
+      resultsSeries.applyOptions({ color: colors.neutral });
+      renderSelectedResults();
+    });
+
+    const container = document.getElementById('signalChart');
+    const dataList = document.getElementById('signalChartData');
+    const elliottDataList = document.getElementById('signalElliottWaveData');
+    if (!container || !dataList || typeof LightweightCharts === 'undefined') return;
+
+    const candleData = Array.from(dataList.children).map(item => ({
+      time: Number(item.dataset.time),
+      open: Number(item.dataset.open),
+      high: Number(item.dataset.high),
+      low: Number(item.dataset.low),
+      close: Number(item.dataset.close)
+    })).filter(candle => Object.values(candle).every(Number.isFinite));
+    if (!candleData.length) return;
+
+    function chartColors(theme) {
+      const light = theme === 'light';
+      return {
+        text: light ? '#526158' : '#929b91',
+        grid: light ? 'rgba(31, 48, 37, 0.09)' : 'rgba(255, 255, 255, 0.045)',
+        border: light ? 'rgba(27, 43, 33, 0.14)' : 'rgba(255, 255, 255, 0.08)',
+        up: light ? '#078568' : '#64e8bd',
+        down: light ? '#d23f59' : '#ff647c',
+        trend: light ? '#a86700' : '#ffbd59',
+        pattern: light ? '#6557d6' : '#9a8cff',
+        signal: light ? '#477a12' : '#b7f34a'
+      };
+    }
+
+    const initialColors = chartColors(document.documentElement.dataset.theme);
+    const chart = LightweightCharts.createChart(container, {
+      autoSize: true,
+      layout: {
+        textColor: initialColors.text,
+        fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+        background: { type: 'solid', color: 'transparent' }
+      },
+      grid: {
+        vertLines: { color: initialColors.grid },
+        horzLines: { color: initialColors.grid }
+      },
+      crosshair: { mode: 0 },
+      rightPriceScale: { borderColor: initialColors.border },
+      timeScale: { borderColor: initialColors.border, timeVisible: true, rightOffset: 8 },
+      handleScroll: true,
+      handleScale: true
+    });
+    const candles = chart.addCandlestickSeries({
+      upColor: initialColors.up,
+      downColor: initialColors.down,
+      wickUpColor: initialColors.up,
+      wickDownColor: initialColors.down,
+      borderVisible: false
+    });
+    candles.setData(candleData);
+
+    document.querySelectorAll('.signal-chart-key.motive')
+      .forEach(key => { key.style.backgroundColor = ELLIOTT_MOTIVE_COLOR; });
+    document.querySelectorAll('.signal-chart-key.corrective')
+      .forEach(key => { key.style.backgroundColor = ELLIOTT_CORRECTIVE_COLOR; });
+
+    const elliottWave = elliottDataList ? {
+      direction: elliottDataList.dataset.direction,
+      correctionComplete: elliottDataList.dataset.correctionComplete === 'true',
+      confirmationTimestamp: Number(elliottDataList.dataset.confirmationTime),
+      waveTwoRetracement: Number(elliottDataList.dataset.waveTwoRetracement),
+      waveFourRetracement: Number(elliottDataList.dataset.waveFourRetracement),
+      impulseVariant: elliottDataList.dataset.impulseVariant,
+      correctionVariant: elliottDataList.dataset.correctionVariant,
+      points: Array.from(elliottDataList.children).map(item => ({
+        label: item.dataset.label || '',
+        timestamp: Number(item.dataset.time),
+        price: Number(item.dataset.price),
+        pivotType: item.dataset.pivotType
+      })).filter(point => Number.isFinite(point.timestamp) && Number.isFinite(point.price))
+    } : null;
+
+    function isCorrectiveElliottPoint(point) {
+      return ['A', 'B', 'C'].includes(String(point.label || '').toUpperCase());
+    }
+
+    function elliottPointWarningLabel(wave, point) {
+      const label = String(point.label || '').toUpperCase();
+      if (label === 'II' && (wave.waveTwoRetracement < 0.236 || wave.waveTwoRetracement > 0.786)) {
+        return wave.waveTwoRetracement > 0.786 ? 'deep' : 'shallow';
+      }
+      if (label === 'IV' && (wave.waveFourRetracement < 0.146 || wave.waveFourRetracement > 0.618)) {
+        return wave.waveFourRetracement > 0.618 ? 'deep' : 'shallow';
+      }
+      if (label === 'V' && wave.impulseVariant === 'TRUNCATED_FIFTH') return 'truncated';
+      if (label === 'C' && wave.correctionVariant === 'EXPANDED_FLAT') return 'expanded flat';
+      if (label === 'C' && wave.correctionVariant === 'RUNNING_FLAT') return 'running flat';
+      return '';
+    }
+
+    function renderElliottSegment(wave, points, color, includeMarker) {
+      if (points.length < 2) return;
+      const series = chart.addLineSeries({
+        color,
+        lineWidth: 2,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      series.setData(points.map(point => ({ time: point.timestamp, value: point.price })));
+      series.setMarkers(points
+        .filter(point => point.label && includeMarker(point))
+        .map(point => {
+          const warning = elliottPointWarningLabel(wave, point);
+          return {
+            time: point.timestamp,
+            position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
+            color: warning ? '#ffbd59' : color,
+            shape: 'circle',
+            text: warning ? `${point.label} · ${warning}` : point.label
+          };
+        }));
+    }
+
+    if (elliottWave && elliottWave.points.length >= 2) {
+      renderElliottSegment(
+        elliottWave,
+        elliottWave.points.slice(0, 6),
+        ELLIOTT_MOTIVE_COLOR,
+        point => !isCorrectiveElliottPoint(point)
+      );
+      if (elliottWave.points.length > 6) {
+        renderElliottSegment(
+          elliottWave,
+          elliottWave.points.slice(5),
+          ELLIOTT_CORRECTIVE_COLOR,
+          isCorrectiveElliottPoint
+        );
+      }
+      const confirmationCandle = candleData.find(candle => candle.time === elliottWave.confirmationTimestamp);
+      if (confirmationCandle) {
+        const confirmationSeries = chart.addLineSeries({
+          color: 'rgba(0, 0, 0, 0)',
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false
+        });
+        const buyConfirmation = elliottWave.correctionComplete
+          ? elliottWave.direction === 'BULLISH'
+          : elliottWave.direction === 'BEARISH';
+        const weekly = container.dataset.interval === 'WEEKLY';
+        const endpointLabel = elliottWave.correctionComplete
+          ? (weekly ? 'c' : 'C')
+          : (weekly ? 'v' : 'V');
+        confirmationSeries.setData([{ time: confirmationCandle.time, value: confirmationCandle.close }]);
+        confirmationSeries.setMarkers([{
+          time: confirmationCandle.time,
+          position: buyConfirmation ? 'belowBar' : 'aboveBar',
+          color: elliottWave.correctionComplete ? ELLIOTT_CORRECTIVE_COLOR : ELLIOTT_MOTIVE_COLOR,
+          shape: buyConfirmation ? 'arrowUp' : 'arrowDown',
+          text: `${endpointLabel} confirmed`
+        }]);
+      }
+    }
+
+    const trendStart = Number(container.dataset.trendStart);
+    const patternStart = Number(container.dataset.patternStart);
+    const signalTime = Number(container.dataset.signalTime);
+    const isElliottSignal = container.dataset.family === 'ELLIOTT_WAVE';
+    const trendData = candleData
+      .filter(() => !isElliottSignal)
+      .filter(candle => Number.isFinite(trendStart) && candle.time >= trendStart && candle.time < patternStart)
+      .map(candle => ({ time: candle.time, value: candle.close }));
+    const trendSeries = chart.addLineSeries({
+      color: initialColors.trend,
+      lineWidth: 4,
+      lineStyle: LightweightCharts.LineStyle.Solid,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    trendSeries.setData(trendData);
+
+    const patternCandles = isElliottSignal
+      ? []
+      : candleData.filter(candle => candle.time >= patternStart && candle.time <= signalTime);
+    const annotationLayer = document.createElement('div');
+    annotationLayer.className = 'signal-chart-annotation-layer';
+    annotationLayer.setAttribute('aria-hidden', 'true');
+    container.append(annotationLayer);
+
+    let trendBand = null;
+    if (trendData.length) {
+      trendBand = document.createElement('div');
+      trendBand.className = 'signal-chart-trend-band';
+      const trendBandLabel = document.createElement('span');
+      trendBandLabel.textContent = container.dataset.trendLabel;
+      trendBand.append(trendBandLabel);
+      annotationLayer.append(trendBand);
+    }
+
+    const patternCallouts = patternCandles.map((candle, index) => {
+      const callout = document.createElement('div');
+      callout.className = 'signal-pattern-callout';
+      if (candle.time === signalTime) callout.classList.add('detection');
+      const label = document.createElement('span');
+      label.className = 'signal-pattern-callout-label';
+      label.textContent = candle.time === signalTime
+        ? `Pattern candle ${index + 1} · detection`
+        : `Pattern candle ${index + 1}`;
+      const arrow = document.createElement('span');
+      arrow.className = 'signal-pattern-callout-arrow';
+      callout.append(label, arrow);
+      annotationLayer.append(callout);
+      return { candle, callout, label, index };
+    });
+
+    function rectanglesOverlap(first, second, padding) {
+      return first.left < second.right + padding
+        && first.right > second.left - padding
+        && first.top < second.bottom + padding
+        && first.bottom > second.top - padding;
+    }
+
+    function renderAnnotations() {
+      if (trendBand && trendData.length) {
+        const startX = chart.timeScale().timeToCoordinate(trendData[0].time);
+        const endX = chart.timeScale().timeToCoordinate(trendData[trendData.length - 1].time);
+        const patternX = chart.timeScale().timeToCoordinate(patternStart);
+        if (startX === null || endX === null || patternX === null) {
+          trendBand.hidden = true;
+        } else {
+          const halfSpacing = trendData.length > 1
+            ? Math.max(5, Math.abs(endX - startX) / (trendData.length - 1) / 2)
+            : 8;
+          trendBand.hidden = false;
+          trendBand.style.left = `${Math.max(0, startX - halfSpacing)}px`;
+          trendBand.style.width = `${Math.max(20, patternX - startX + halfSpacing)}px`;
+        }
+      }
+
+      patternCallouts.forEach(({ candle, callout, index }) => {
+        callout.classList.remove('elbow-right');
+        const x = chart.timeScale().timeToCoordinate(candle.time);
+        const y = candles.priceToCoordinate(candle.high);
+        if (x === null || y === null) {
+          callout.hidden = true;
+          return;
+        }
+        const verticalOffset = index % 2 === 0 ? 92 : 146;
+        const top = Math.max(8, y - verticalOffset);
+        callout.hidden = false;
+        callout.style.left = `${x}px`;
+        callout.style.top = `${top}px`;
+        callout.style.setProperty('--signal-callout-arrow-height', `${Math.max(30, y - top - 27)}px`);
+      });
+
+      const detectionCallout = patternCallouts.find(({ candle }) => candle.time === signalTime);
+      if (detectionCallout && !detectionCallout.callout.hidden) {
+        const detectionBounds = detectionCallout.label.getBoundingClientRect();
+        const overlapsPatternLabel = patternCallouts.some(({ candle, callout, label }) =>
+          candle.time !== signalTime
+          && !callout.hidden
+          && rectanglesOverlap(detectionBounds, label.getBoundingClientRect(), 8));
+        if (overlapsPatternLabel) {
+          detectionCallout.callout.classList.add('elbow-right');
+        }
+      }
+    }
+
+    function focusSignal() {
+      if (elliottWave && elliottWave.points.length) {
+        const firstWaveIndex = candleData.findIndex(candle => candle.time === elliottWave.points[0].timestamp);
+        const confirmationIndex = candleData.findIndex(
+          candle => candle.time === elliottWave.confirmationTimestamp
+        );
+        if (firstWaveIndex >= 0 && confirmationIndex >= 0) {
+          chart.timeScale().setVisibleLogicalRange({
+            from: Math.max(-0.5, firstWaveIndex - 4),
+            to: confirmationIndex + 8
+          });
+          return;
+        }
+      }
+      const signalIndex = candleData.findIndex(candle => candle.time === signalTime);
+      if (signalIndex < 0) {
+        chart.timeScale().fitContent();
+        return;
+      }
+      const candlesBeforeSignal = 18;
+      const candlesAfterSignal = 8;
+      chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(-0.5, signalIndex - candlesBeforeSignal),
+        to: signalIndex + candlesAfterSignal
+      });
+    }
+
+    focusSignal();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => requestAnimationFrame(renderAnnotations));
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => requestAnimationFrame(renderAnnotations)).observe(container);
+    }
+    requestAnimationFrame(renderAnnotations);
+
+    window.addEventListener('stockwatch:themechange', event => {
+      const colors = chartColors(event.detail.theme);
+      chart.applyOptions({
+        layout: { textColor: colors.text, background: { type: 'solid', color: 'transparent' } },
+        grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+        rightPriceScale: { borderColor: colors.border },
+        timeScale: { borderColor: colors.border }
+      });
+      candles.applyOptions({
+        upColor: colors.up,
+        downColor: colors.down,
+        wickUpColor: colors.up,
+        wickDownColor: colors.down
+      });
+      trendSeries.applyOptions({ color: colors.trend });
+      requestAnimationFrame(renderAnnotations);
+    });
+  }());
+</script>
+</th:block>
 </body>
 </html>

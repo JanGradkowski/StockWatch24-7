@@ -33,6 +33,19 @@ public class AlertController {
         return alertRuleService.getAlertState(user, SecurityInputValidator.requireMarketSymbol(symbol));
     }
 
+    @GetMapping("/{symbol}/elliott-cards")
+    public List<AlertRuleService.ElliottWaveSignalCard> getElliottSignalCards(
+            @PathVariable String symbol,
+            @RequestParam TimeInterval interval,
+            Principal principal) {
+        User user = currentUser(principal);
+        return alertRuleService.getElliottWaveSignalCards(
+                user,
+                SecurityInputValidator.requireMarketSymbol(symbol),
+                interval
+        );
+    }
+
     @PostMapping("/{symbol}")
     public ResponseEntity<?> setAlert(@PathVariable String symbol,
                                       @RequestBody AlertToggleRequest request,

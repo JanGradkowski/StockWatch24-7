@@ -54,6 +54,7 @@ class DocumentedElliottWaveBenchmarkTest {
             assertThat(observed.date()).isEqualTo(LocalDate.parse("2005-03-14"));
             assertThat(observed.signal().pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
             assertThat(observed.signal().confidenceScore()).isEqualTo(100);
+            assertThat(observed.signal().eligibilityScore()).isEqualTo(100);
         });
     }
 
@@ -73,6 +74,7 @@ class DocumentedElliottWaveBenchmarkTest {
             assertThat(observed.date()).isEqualTo(LocalDate.parse("2010-05-03"));
             assertThat(observed.signal().pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
             assertThat(observed.signal().confidenceScore()).isEqualTo(90);
+            assertThat(observed.signal().eligibilityScore()).isEqualTo(90);
         });
 
         // Known gap: the published A leg completes in the first weekly candle after Wave V,
@@ -101,6 +103,7 @@ class DocumentedElliottWaveBenchmarkTest {
             assertThat(observed.date()).isEqualTo(LocalDate.parse("2011-10-10"));
             assertThat(observed.signal().pattern()).isEqualTo(CandlePattern.ELLIOTT_BEARISH_WAVE_V_END);
             assertThat(observed.signal().confidenceScore()).isEqualTo(72);
+            assertThat(observed.signal().eligibilityScore()).isEqualTo(72);
         });
 
         List<Candle> confirmationPrefix = through(result.candles(), LocalDate.parse("2011-10-10"));

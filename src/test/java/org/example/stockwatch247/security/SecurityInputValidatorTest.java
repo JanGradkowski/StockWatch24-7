@@ -16,6 +16,7 @@ class SecurityInputValidatorTest {
         assertEquals("XWAR", SecurityInputValidator.requireOptionalMicCode(" xwar "));
         assertEquals("jan@example.com", SecurityInputValidator.requireEmail(" Jan@Example.com "));
         assertEquals("1wk", SecurityInputValidator.requireInterval("1wk"));
+        assertEquals("#3B82F6", SecurityInputValidator.requireHexColor(" #3b82f6 "));
     }
 
     @Test
@@ -30,6 +31,10 @@ class SecurityInputValidatorTest {
                 () -> SecurityInputValidator.requireInterval("../../../etc/passwd"));
         assertThrows(IllegalArgumentException.class,
                 () -> SecurityInputValidator.requireOptionalMicCode("XWAR<script>"));
+        assertThrows(IllegalArgumentException.class,
+                () -> SecurityInputValidator.requireHexColor("red; background: url(javascript:alert(1))"));
+        assertThrows(IllegalArgumentException.class,
+                () -> SecurityInputValidator.requireHexColor("#12345"));
     }
 
     @Test

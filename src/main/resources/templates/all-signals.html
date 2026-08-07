@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>All signals &mdash; StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="bg-animation" aria-hidden="true">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+</div>
+
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<main class="page-container signal-archive-page">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb">
+    <a th:href="@{/home}">Dashboard</a>
+    <span aria-hidden="true">/</span>
+    <span>All signals</span>
+  </nav>
+
+  <header class="signal-archive-header">
+    <div>
+      <div class="eyebrow">Account signal archive</div>
+      <h1 class="title">All signals</h1>
+      <p class="subtitle">Every technical signal received by this account remains available here, including signals from rules you no longer follow.</p>
+    </div>
+    <div class="signal-archive-total" aria-label="Total recorded signals">
+      <strong th:text="${archive.totalSignals()}">0</strong>
+      <span th:text="${archive.totalSignals() == 1 ? 'recorded signal' : 'recorded signals'}">recorded signals</span>
+    </div>
+  </header>
+
+  <section class="signal-archive-shell" aria-labelledby="signal-archive-heading">
+    <div class="signal-archive-toolbar">
+      <div>
+        <h2 id="signal-archive-heading" class="panel-title">Signal history</h2>
+        <p class="panel-meta">Unread signals are highlighted. Opening one marks it as read.</p>
+        <p class="panel-meta">Best and worst results are direction-aware moves from the signal close, measured over cached completed candles through resolution or the active lifecycle window.</p>
+      </div>
+      <form method="get" th:action="@{/signals}" class="signal-archive-sort-form" aria-label="Sort all signals">
+        <label>
+          <span>Group and sort by</span>
+          <select name="sort">
+            <option value="date" th:selected="${archive.sort() == 'date'}">Date received</option>
+            <option value="ticker" th:selected="${archive.sort() == 'ticker'}">Ticker</option>
+            <option value="interval" th:selected="${archive.sort() == 'interval'}">Interval</option>
+            <option value="confidence" th:selected="${archive.sort() == 'confidence'}">Confidence score</option>
+            <option value="status" th:selected="${archive.sort() == 'status'}">Signal status</option>
+            <option value="best-return" th:selected="${archive.sort() == 'best-return'}">Best result</option>
+            <option value="worst-return" th:selected="${archive.sort() == 'worst-return'}">Worst result</option>
+          </select>
+        </label>
+        <label>
+          <span>Order</span>
+          <select name="direction">
+            <option value="desc" th:selected="${archive.direction() == 'desc'}">Descending</option>
+            <option value="asc" th:selected="${archive.direction() == 'asc'}">Ascending</option>
+          </select>
+        </label>
+        <button type="submit" class="btn-primary signal-archive-apply">Apply</button>
+      </form>
+    </div>
+
+    <div th:if="${#lists.isEmpty(archive.signals())}" class="latest-signals-empty signal-archive-empty">
+      <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
+      <div>
+        <h3>No signals have been received yet</h3>
+        <p>Validated technical signals will appear here after one of your alert rules produces a match.</p>
+      </div>
+    </div>
+
+    <div th:if="${!#lists.isEmpty(archive.signals())}" class="signal-archive-results">
+      <div class="signal-archive-head" aria-hidden="true">
+        <span>Signal</span><span>Ticker</span><span>Interval</span><span>Received</span><span>Read</span><span>Signal status</span><span>Confidence score</span><span>Best result</span><span>Worst result</span><span></span>
+      </div>
+      <div class="signal-archive-list">
+        <div th:each="entry, row : ${archive.signals()}" th:with="signal=${entry.signal()}" class="signal-archive-entry">
+          <div th:if="${row.first or archive.groupKey(archive.signals().get(row.index - 1)) != archive.groupKey(entry)}"
+               class="signal-archive-group-label"
+               th:classappend="${archive.sort() == 'date'} ? ' date-group' : ''">
+            <strong th:text="${archive.groupLabel(entry)}">02 August 2026</strong>
+            <span th:if="${archive.groupDetail(entry) != null}" th:text="${archive.groupDetail(entry)}">Sorted group</span>
+          </div>
+          <a th:href="@{/alerts/signals/{id}(id=${signal.id()})}"
+             class="signal-archive-row"
+             th:classappend="${signal.hasBeenRead()} ? ' is-read' : ' is-unread'"
+             th:aria-label="${'Open ' + signal.patternLabel() + ' for ' + signal.symbol() + (signal.hasBeenRead() ? ' (read)' : ' (unread)')}">
+            <div class="signal-archive-pattern">
+              <strong th:text="${signal.patternLabel()}">Bullish Engulfing</strong>
+              <div class="latest-signal-tags">
+                <span class="latest-family-tag" th:text="${signal.familyLabel()}">Candlestick</span>
+                <span class="latest-direction-tag"
+                      th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
+                      th:text="${signal.tradeSignal()}">BUY</span>
+              </div>
+            </div>
+            <div class="signal-archive-company">
+              <strong th:text="${signal.symbol()}">AAPL</strong>
+              <span th:text="${signal.companyName()}">Apple Inc.</span>
+            </div>
+            <span class="latest-interval" th:text="${signal.intervalLabel()}">1wk</span>
+            <div class="signal-archive-date">
+              <time th:text="${#temporals.format(signal.sentAt(), 'dd MMM yyyy, HH:mm')}">02 Aug 2026, 11:30</time>
+              <span th:text="${signal.signalPeriodLabel() != null ? 'Candle ' + signal.signalPeriodLabel() : 'Candle period unavailable'}">Candle 27&ndash;31 Jul 2026</span>
+            </div>
+            <span class="signal-read-pill"
+                  th:classappend="${signal.hasBeenRead()} ? ' read' : ' unread'"
+                  th:text="${signal.hasBeenRead()} ? 'Read' : 'Unread'">Unread</span>
+            <span class="signal-lifecycle-pill signal-archive-lifecycle"
+                  th:classappend="${' ' + signal.lifecycle().cssClass()}"
+                  th:title="${signal.lifecycle().summary()}"
+                  th:text="${signal.lifecycle().label()}">Detected</span>
+            <div class="latest-confidence" th:classappend="${' ' + signal.setupBand()}"
+                 title="Heuristic confidence score, not a probability"
+                 th:attr="aria-label=${signal.setupScore() != null ? 'Confidence score ' + signal.setupScore() + ' out of 100' : 'Confidence score unavailable'}">
+              <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
+              <span th:text="${signal.setupScore() != null ? '/100' : 'N/A'}">/100</span>
+            </div>
+            <div class="signal-archive-result best" th:title="${entry.resultWindowLabel()}">
+              <strong th:if="${entry.resultAvailable()}"
+                      th:classappend="${entry.bestDirectionalMovePercent() >= 0} ? ' positive' : ' negative'"
+                      th:text="${(entry.bestDirectionalMovePercent() >= 0 ? '+' : '') + #numbers.formatDecimal(entry.bestDirectionalMovePercent(), 1, 2) + '%'}">+6.20%</strong>
+              <strong th:unless="${entry.resultAvailable()}" class="unavailable">N/A</strong>
+              <span th:text="${entry.resultWindowLabel()}">Through resolution</span>
+            </div>
+            <div class="signal-archive-result worst" th:title="${entry.resultWindowLabel()}">
+              <strong th:if="${entry.resultAvailable()}"
+                      th:classappend="${entry.worstDirectionalMovePercent() >= 0} ? ' positive' : ' negative'"
+                      th:text="${(entry.worstDirectionalMovePercent() >= 0 ? '+' : '') + #numbers.formatDecimal(entry.worstDirectionalMovePercent(), 1, 2) + '%'}">-2.10%</strong>
+              <strong th:unless="${entry.resultAvailable()}" class="unavailable">N/A</strong>
+              <span th:text="${entry.resultWindowLabel()}">Through resolution</span>
+            </div>
+            <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <nav th:if="${archive.totalPages() > 1}" class="signal-archive-pagination" aria-label="Signal archive pages">
+      <a th:if="${archive.hasPrevious()}"
+         th:href="@{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1})}"
+         class="btn-secondary">&larr; Previous</a>
+      <span th:text="${'Page ' + archive.displayPage() + ' of ' + archive.totalPages()}">Page 1 of 3</span>
+      <a th:if="${archive.hasNext()}"
+         th:href="@{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1})}"
+         class="btn-secondary">Next &rarr;</a>
+    </nav>
+  </section>
+
+  <a th:href="@{/home}" class="back-link history-back-link">&larr; Back to dashboard</a>
+</main>
+</body>
+</html>

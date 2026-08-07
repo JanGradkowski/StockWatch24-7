@@ -9,6 +9,7 @@ import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
@@ -23,25 +24,33 @@ import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedS
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 
 @Service
 public class AlertRuleService {
     private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int HIGHER_INTERVAL_SIGNAL_CANDLES = 100;
     private static final int DASHBOARD_LATEST_SIGNAL_LIMIT = 8;
+    private static final int SIGNAL_ARCHIVE_PAGE_SIZE = 50;
     private static final int MAX_ALERT_CHANGES_PER_REQUEST = 16;
+    private static final int SIGNAL_CHART_TREND_CANDLES = 5;
+    private static final int MINIMUM_RESULT_CANDLES = 10;
 
     private final AlertRuleRepository alertRuleRepository;
     private final AlertEventRepository alertEventRepository;
@@ -116,13 +125,284 @@ public class AlertRuleService {
 
     public List<LatestSignalView> getLatestSignalViews(User user) {
         return alertEventRepository
-                .findByAlertRule_UserAndAlertRule_IsActiveTrueOrderBySentAtDescIdDesc(
+                .findByAlertRule_UserAndAlertRule_IsActiveTrueAndReadAtIsNullOrderBySentAtDescIdDesc(
                         user,
                         PageRequest.of(0, DASHBOARD_LATEST_SIGNAL_LIMIT)
                 )
                 .stream()
                 .map(this::toLatestSignalView)
                 .toList();
+    }
+
+    @Transactional
+    public List<ElliottWaveSignalCard> getElliottWaveSignalCards(
+            User user,
+            String rawSymbol,
+            TimeInterval interval) {
+        if (user == null) {
+            throw new IllegalArgumentException("User is required.");
+        }
+        String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        validateFamilyInterval(AlertPatternFamily.ELLIOTT_WAVE, interval);
+
+        List<AlertEvent> events = alertEventRepository.findElliottSignalCards(
+                user,
+                symbol,
+                interval,
+                AlertPatternFamily.ELLIOTT_WAVE
+        );
+        if (events.isEmpty()) {
+            return List.of();
+        }
+
+        long firstIncompleteTimestamp = candleCompletionService.firstIncompleteCandleTimestamp(interval);
+        TreeMap<Long, Candle> completedCandles = new TreeMap<>();
+        candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, toApiInterval(interval))
+                .stream()
+                .filter(this::validChartCandle)
+                .filter(candle -> candle.getTimestamp() < firstIncompleteTimestamp)
+                .forEach(candle -> completedCandles.put(candle.getTimestamp(), candle));
+
+        Map<String, AlertEvent> firstEventByStage = new LinkedHashMap<>();
+        for (AlertEvent event : events) {
+            String key = event.getElliottCycleKey() + ':' + event.getElliottSignalStage();
+            firstEventByStage.putIfAbsent(key, event);
+        }
+        return firstEventByStage.values().stream()
+                .map(event -> toElliottWaveSignalCard(event, interval, completedCandles))
+                .toList();
+    }
+
+    private ElliottWaveSignalCard toElliottWaveSignalCard(
+            AlertEvent event,
+            TimeInterval interval,
+            TreeMap<Long, Candle> completedCandles) {
+        Long signalTimestamp = event.getSignalCandleTimestamp();
+        Candle signalCandle = signalTimestamp == null ? null : completedCandles.get(signalTimestamp);
+        List<Candle> forwardCandles = signalTimestamp == null
+                ? List.of()
+                : completedCandles.tailMap(signalTimestamp, false).values().stream().toList();
+        int availableForwardCandles = forwardCandles.size();
+        boolean outcomeAvailable = validChartCandle(signalCandle)
+                && availableForwardCandles >= MINIMUM_RESULT_CANDLES;
+        Double bestDirectionalReturnPercent = null;
+        Double windowEndDirectionalReturnPercent = null;
+        String unavailableReason = null;
+
+        if (outcomeAvailable) {
+            double signalClose = signalCandle.getClosePrice();
+            List<Candle> outcomeWindow = forwardCandles.subList(0, MINIMUM_RESULT_CANDLES);
+            List<Double> returns = outcomeWindow.stream()
+                    .map(candle -> directionalReturnPercent(
+                            event.getTradeSignal(),
+                            signalClose,
+                            candle.getClosePrice()))
+                    .toList();
+            bestDirectionalReturnPercent = returns.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
+            windowEndDirectionalReturnPercent = returns.getLast();
+        } else if (!validChartCandle(signalCandle)) {
+            unavailableReason = "The completed signal candle is not available in the local cache.";
+        } else {
+            int remaining = MINIMUM_RESULT_CANDLES - availableForwardCandles;
+            unavailableReason = "Waiting for " + remaining + " more completed "
+                    + intervalLabel(interval) + " candle" + (remaining == 1 ? "" : "s") + ".";
+        }
+
+        ElliottSignalStage stage = event.getElliottSignalStage();
+        SignalLifecycleStatus status = event.getLifecycleStatus();
+        boolean sellSignal = event.getTradeSignal() == TradeSignal.SELL;
+        return new ElliottWaveSignalCard(
+                event.getId(),
+                event.getElliottCycleKey(),
+                stage,
+                stage == ElliottSignalStage.CORRECTION_END
+                        ? "ABC correction ending"
+                        : "Wave V ending",
+                event.getTradeSignal(),
+                status,
+                status.name().toLowerCase(Locale.ROOT),
+                signalTimestamp,
+                signalPeriodLabel(interval, signalTimestamp),
+                outcomeAvailable,
+                MINIMUM_RESULT_CANDLES,
+                availableForwardCandles,
+                bestDirectionalReturnPercent,
+                windowEndDirectionalReturnPercent,
+                sellSignal ? "Largest close-based loss avoided" : "Best close-based return",
+                "Hypothetical hindsight over the first 10 completed " + intervalLabel(interval) + " candles.",
+                unavailableReason,
+                "/alerts/signals/" + event.getId()
+        );
+    }
+
+    private double directionalReturnPercent(TradeSignal signal, double entryClose, double laterClose) {
+        double priceMove = laterClose - entryClose;
+        return (signal == TradeSignal.SELL ? -priceMove : priceMove) / entryClose * 100.0;
+    }
+
+    public SignalArchivePage getSignalArchive(User user,
+                                               String requestedSort,
+                                               String requestedDirection,
+                                               int requestedPage) {
+        String sortKey = normalizeArchiveSort(requestedSort);
+        String directionKey = "asc".equalsIgnoreCase(requestedDirection) ? "asc" : "desc";
+        Sort.Direction direction = "asc".equals(directionKey) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        if (isReturnSort(sortKey)) {
+            return getReturnSortedSignalArchive(user, sortKey, directionKey, direction, requestedPage);
+        }
+        Sort archiveSort = archiveSort(sortKey, direction);
+        Page<AlertEvent> archive = alertEventRepository.findByAlertRule_User(
+                user,
+                PageRequest.of(Math.max(0, requestedPage), SIGNAL_ARCHIVE_PAGE_SIZE, archiveSort)
+        );
+        return new SignalArchivePage(
+                archive.getContent().stream().map(this::toSignalArchiveEntry).toList(),
+                archive.getNumber(),
+                archive.getTotalPages(),
+                archive.getTotalElements(),
+                sortKey,
+                directionKey,
+                archive.hasPrevious(),
+                archive.hasNext()
+        );
+    }
+
+    private String normalizeArchiveSort(String requestedSort) {
+        if (requestedSort == null) {
+            return "date";
+        }
+        return switch (requestedSort.toLowerCase(Locale.ROOT)) {
+            case "ticker", "interval", "confidence", "status", "best-return", "worst-return" ->
+                    requestedSort.toLowerCase(Locale.ROOT);
+            default -> "date";
+        };
+    }
+
+    private boolean isReturnSort(String sortKey) {
+        return "best-return".equals(sortKey) || "worst-return".equals(sortKey);
+    }
+
+    private Sort archiveSort(String sortKey, Sort.Direction direction) {
+        if ("date".equals(sortKey)) {
+            return Sort.by(direction, "sentAt").and(Sort.by(direction, "id"));
+        }
+        Sort primary = switch (sortKey) {
+            case "ticker" -> Sort.by(direction, "alertRule.stockAsset.tickerSymbol");
+            case "interval" -> Sort.by(direction, "alertRule.interval");
+            case "confidence" -> Sort.by(new Sort.Order(direction, "confidenceScore").nullsLast());
+            case "status" -> Sort.by(direction, "lifecycleStatus");
+            default -> throw new IllegalArgumentException("Unsupported signal archive sort: " + sortKey);
+        };
+        return primary
+                .and(Sort.by(Sort.Direction.DESC, "sentAt"))
+                .and(Sort.by(Sort.Direction.DESC, "id"));
+    }
+
+    private SignalArchivePage getReturnSortedSignalArchive(User user,
+                                                            String sortKey,
+                                                            String directionKey,
+                                                            Sort.Direction direction,
+                                                            int requestedPage) {
+        List<SignalArchiveEntry> sortedSignals = alertEventRepository.findAllByAlertRule_User(user)
+                .stream()
+                .map(this::toSignalArchiveEntry)
+                .sorted(returnComparator(sortKey, direction))
+                .toList();
+        int totalPages = (sortedSignals.size() + SIGNAL_ARCHIVE_PAGE_SIZE - 1) / SIGNAL_ARCHIVE_PAGE_SIZE;
+        int lastPage = Math.max(0, totalPages - 1);
+        int page = Math.min(Math.max(0, requestedPage), lastPage);
+        int fromIndex = Math.min(page * SIGNAL_ARCHIVE_PAGE_SIZE, sortedSignals.size());
+        int toIndex = Math.min(fromIndex + SIGNAL_ARCHIVE_PAGE_SIZE, sortedSignals.size());
+        return new SignalArchivePage(
+                sortedSignals.subList(fromIndex, toIndex),
+                page,
+                totalPages,
+                sortedSignals.size(),
+                sortKey,
+                directionKey,
+                page > 0,
+                page + 1 < totalPages
+        );
+    }
+
+    private Comparator<SignalArchiveEntry> returnComparator(String sortKey, Sort.Direction direction) {
+        Comparator<Double> numericOrder = direction == Sort.Direction.ASC
+                ? Comparator.nullsLast(Comparator.naturalOrder())
+                : Comparator.nullsLast(Comparator.reverseOrder());
+        Comparator<SignalArchiveEntry> resultOrder = Comparator.comparing(
+                entry -> "worst-return".equals(sortKey)
+                        ? entry.worstDirectionalMovePercent()
+                        : entry.bestDirectionalMovePercent(),
+                numericOrder
+        );
+        return resultOrder
+                .thenComparing(entry -> entry.signal().sentAt(), Comparator.reverseOrder())
+                .thenComparing(entry -> entry.signal().id(), Comparator.reverseOrder());
+    }
+
+    private SignalArchiveEntry toSignalArchiveEntry(AlertEvent event) {
+        LatestSignalView signal = toLatestSignalView(event);
+        SignalResultExcursion result = calculateSignalResultExcursion(event);
+        return new SignalArchiveEntry(
+                signal,
+                result.bestDirectionalMovePercent(),
+                result.worstDirectionalMovePercent(),
+                result.available(),
+                result.windowLabel()
+        );
+    }
+
+    private SignalResultExcursion calculateSignalResultExcursion(AlertEvent event) {
+        if (!event.isLifecycleTracked()) {
+            return SignalResultExcursion.unavailable("Lifecycle result not tracked");
+        }
+        if (event.getClosePrice() == null || !Double.isFinite(event.getClosePrice())
+                || event.getClosePrice() <= 0.0 || event.getSignalCandleTimestamp() == null) {
+            return SignalResultExcursion.unavailable("Recorded close unavailable");
+        }
+        AlertRule rule = event.getAlertRule();
+        int window = event.getConfirmationWindowCandles();
+        if (window <= 0) {
+            return SignalResultExcursion.unavailable("Lifecycle result window unavailable");
+        }
+        long firstIncompleteTimestamp = candleCompletionService
+                .firstIncompleteCandleTimestamp(rule.getInterval());
+        List<Candle> resultCandles = candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                        rule.getStockAsset().getTickerSymbol(),
+                        toApiInterval(rule.getInterval()),
+                        event.getSignalCandleTimestamp(),
+                        firstIncompleteTimestamp,
+                        PageRequest.of(0, window)
+                )
+                .stream()
+                .filter(candle -> candle.getTimestamp() != null
+                        && candle.getHighPrice() != null && Double.isFinite(candle.getHighPrice())
+                        && candle.getLowPrice() != null && Double.isFinite(candle.getLowPrice()))
+                .filter(candle -> event.getResolutionCandleTimestamp() == null
+                        || candle.getTimestamp() <= event.getResolutionCandleTimestamp())
+                .toList();
+        if (resultCandles.isEmpty()) {
+            return SignalResultExcursion.unavailable("Waiting for a completed result candle");
+        }
+
+        double entry = event.getClosePrice();
+        double highestHigh = resultCandles.stream().mapToDouble(Candle::getHighPrice).max().orElse(entry);
+        double lowestLow = resultCandles.stream().mapToDouble(Candle::getLowPrice).min().orElse(entry);
+        double bestMove = event.getTradeSignal() == TradeSignal.SELL
+                ? -percentMove(entry, lowestLow)
+                : percentMove(entry, highestHigh);
+        double worstMove = event.getTradeSignal() == TradeSignal.SELL
+                ? -percentMove(entry, highestHigh)
+                : percentMove(entry, lowestLow);
+        String windowLabel = event.getResolutionCandleTimestamp() == null
+                ? resultCandles.size() + " of " + window + " completed candles"
+                : "Through resolution candle " + resultCandles.size() + " of " + window;
+        return new SignalResultExcursion(bestMove, worstMove, true, windowLabel);
+    }
+
+    private double percentMove(double entry, double exit) {
+        return ((exit - entry) / entry) * 100.0;
     }
 
     public AlertRuleSignalHistory getSignalHistory(User user, Long alertRuleId) {
@@ -154,9 +434,11 @@ public class AlertRuleService {
         );
     }
 
+    @Transactional
     public SignalDetailView getSignalDetail(User user, Long alertEventId) {
         AlertEvent event = alertEventRepository.findOwnedByIdAndUser(alertEventId, user)
                 .orElseThrow(() -> new IllegalArgumentException("Signal event not found."));
+        event.markRead(LocalDateTime.now());
         AlertRule rule = event.getAlertRule();
         CandlestickHorizonGuidance.Guidance horizonGuidance = CandlestickHorizonGuidance
                 .forSignal(rule.getPatternFamily(), rule.getInterval())
@@ -187,10 +469,14 @@ public class AlertRuleService {
                     section.scored()
             ));
         }
+        SignalChartView chart = toSignalChartView(event, rule);
+        ObservedPriceOutcomeView observedOutcome = toObservedPriceOutcome(event, rule, chart);
+        SignalResultsView results = toSignalResults(event, rule, chart);
 
         return new SignalDetailView(
                 event.getId(),
                 rule.getId(),
+                rule.isActive(),
                 rule.getStockAsset().getTickerSymbol(),
                 rule.getStockAsset().getCompanyName(),
                 rule.getInterval(),
@@ -207,16 +493,409 @@ public class AlertRuleService {
                 setupBand(event.getConfidenceScore()),
                 event.getConfidenceScore(),
                 event.getScoreVersion(),
+                event.getElliottV1EligibilityScore(),
                 setupExplanation(event.getConfidenceScore(), event.getScoreVersion()),
                 event.getSignalCandleTimestamp(),
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
                 event.getClosePrice(),
                 event.getSentAt(),
+                chart,
+                observedOutcome,
+                results,
                 toLifecycleView(event, rule.getInterval()),
                 List.copyOf(reasons),
                 !reasons.isEmpty()
         );
+    }
+
+    private SignalResultsView toSignalResults(AlertEvent event,
+                                              AlertRule rule,
+                                              SignalChartView chart) {
+        double signalClose = event.getClosePrice() == null ? Double.NaN : event.getClosePrice();
+        if (!chart.available() || event.getSignalCandleTimestamp() == null
+                || !Double.isFinite(signalClose) || signalClose <= 0.0) {
+            return SignalResultsView.unavailable(
+                    "Results cannot be calculated because the completed signal candle is not available in the local cache.",
+                    0
+            );
+        }
+
+        List<SignalChartCandleView> candles = chart.candles();
+        int signalIndex = -1;
+        for (int index = 0; index < candles.size(); index++) {
+            if (candles.get(index).timestamp() == event.getSignalCandleTimestamp()) {
+                signalIndex = index;
+                break;
+            }
+        }
+        if (signalIndex < 0) {
+            return SignalResultsView.unavailable(
+                    "Results cannot be calculated because the signal candle is missing from the local cache.",
+                    0
+            );
+        }
+
+        int availableForwardCandles = candles.size() - signalIndex - 1;
+        if (availableForwardCandles < MINIMUM_RESULT_CANDLES) {
+            String candleWord = availableForwardCandles == 1 ? "candle is" : "candles are";
+            return SignalResultsView.unavailable(
+                    "Results are not available yet. At least " + MINIMUM_RESULT_CANDLES
+                            + " completed candles after the signal are required to provide a meaningful outcome window. "
+                            + availableForwardCandles + " completed cached " + candleWord + " currently available.",
+                    availableForwardCandles
+            );
+        }
+
+        List<SignalResultPointView> points = new ArrayList<>(availableForwardCandles + 1);
+        points.add(new SignalResultPointView(
+                0,
+                event.getSignalCandleTimestamp(),
+                signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
+                signalClose,
+                0.0,
+                0.0
+        ));
+        for (int offset = 1; offset <= availableForwardCandles; offset++) {
+            SignalChartCandleView candle = candles.get(signalIndex + offset);
+            double rawPriceDifference = candle.close() - signalClose;
+            double directionalPriceDifference = event.getTradeSignal() == TradeSignal.SELL
+                    ? -rawPriceDifference
+                    : rawPriceDifference;
+            points.add(new SignalResultPointView(
+                    offset,
+                    candle.timestamp(),
+                    signalPeriodLabel(rule.getInterval(), candle.timestamp()),
+                    candle.close(),
+                    directionalPriceDifference / signalClose * 100.0,
+                    directionalPriceDifference
+            ));
+        }
+
+        boolean sellSignal = event.getTradeSignal() == TradeSignal.SELL;
+        return new SignalResultsView(
+                true,
+                null,
+                MINIMUM_RESULT_CANDLES,
+                availableForwardCandles,
+                signalClose,
+                event.getSignalCandleTimestamp(),
+                event.getTradeSignal(),
+                sellSignal ? "Decline avoided / rise missed" : "Gain / loss",
+                sellSignal ? "Best re-entry close" : "Best sell close",
+                List.copyOf(points)
+        );
+    }
+
+    private ObservedPriceOutcomeView toObservedPriceOutcome(AlertEvent event,
+                                                            AlertRule rule,
+                                                            SignalChartView chart) {
+        if (normalizeFamily(rule.getPatternFamily()) != AlertPatternFamily.CANDLESTICK) {
+            return ObservedPriceOutcomeView.unavailable(
+                    "The directional outcome model currently applies to named candlestick patterns."
+            );
+        }
+        if (!chart.available() || event.getClosePrice() == null
+                || !Double.isFinite(event.getClosePrice()) || event.getClosePrice() <= 0.0) {
+            return ObservedPriceOutcomeView.unavailable(
+                    "Completed candle history is not available for this outcome calculation."
+            );
+        }
+        ObservedOutcomeProfile profile = observedOutcomeProfile(rule.getInterval());
+        if (profile == null) {
+            return ObservedPriceOutcomeView.unavailable(
+                    "No observed-outcome profile is configured for this interval."
+            );
+        }
+
+        List<SignalChartCandleView> candles = chart.candles();
+        int signalIndex = -1;
+        for (int index = 0; index < candles.size(); index++) {
+            if (candles.get(index).timestamp() == event.getSignalCandleTimestamp()) {
+                signalIndex = index;
+                break;
+            }
+        }
+        if (signalIndex < 0) {
+            return ObservedPriceOutcomeView.unavailable("The signal candle is missing from the cached chart.");
+        }
+
+        int patternStartIndex = Math.max(0, signalIndex - chart.patternCandleCount() + 1);
+        List<SignalChartCandleView> patternCandles = candles.subList(patternStartIndex, signalIndex + 1);
+        double patternHigh = patternCandles.stream().mapToDouble(SignalChartCandleView::high).max()
+                .orElse(event.getClosePrice());
+        double patternLow = patternCandles.stream().mapToDouble(SignalChartCandleView::low).min()
+                .orElse(event.getClosePrice());
+        int availableForwardCandles = candles.size() - signalIndex - 1;
+        if (availableForwardCandles < profile.forwardCandles()) {
+            int remaining = profile.forwardCandles() - availableForwardCandles;
+            return new ObservedPriceOutcomeView(
+                    true,
+                    false,
+                    null,
+                    "Awaiting outcome",
+                    "pending",
+                    "Needs " + remaining + " more completed " + intervalLabel(rule.getInterval())
+                            + (remaining == 1 ? " candle" : " candles")
+                            + " before the " + profile.horizonLabel() + " result is known.",
+                    profile.horizonLabel(),
+                    profile.minimumMovePercent(),
+                    patternHigh,
+                    patternLow,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "Outcome pending"
+            );
+        }
+
+        int evaluationIndex = signalIndex + profile.forwardCandles();
+        SignalChartCandleView evaluationCandle = candles.get(evaluationIndex);
+        List<SignalChartCandleView> futureCandles = candles.subList(signalIndex + 1, evaluationIndex + 1);
+        double entryClose = event.getClosePrice();
+        double rawReturn = percentMove(entryClose, evaluationCandle.close());
+        double directionalReturn = event.getTradeSignal() == TradeSignal.SELL ? -rawReturn : rawReturn;
+        double highestHigh = futureCandles.stream().mapToDouble(SignalChartCandleView::high).max()
+                .orElse(evaluationCandle.close());
+        double lowestLow = futureCandles.stream().mapToDouble(SignalChartCandleView::low).min()
+                .orElse(evaluationCandle.close());
+        double bestMove = event.getTradeSignal() == TradeSignal.SELL
+                ? -percentMove(entryClose, lowestLow)
+                : percentMove(entryClose, highestHigh);
+        double worstMove = event.getTradeSignal() == TradeSignal.SELL
+                ? -percentMove(entryClose, highestHigh)
+                : percentMove(entryClose, lowestLow);
+        String statusLabel;
+        String statusClass;
+        if (directionalReturn >= profile.minimumMovePercent()) {
+            statusLabel = "Successful";
+            statusClass = "success";
+        } else if (directionalReturn <= -profile.minimumMovePercent()) {
+            statusLabel = "Unsuccessful";
+            statusClass = "failure";
+        } else {
+            statusLabel = "Inconclusive";
+            statusClass = "inconclusive";
+        }
+        String summary = String.format(
+                Locale.ROOT,
+                "%+.2f%% directional return at the %s close. Success requires at least %.1f%% in the expected direction.",
+                directionalReturn,
+                profile.horizonLabel(),
+                profile.minimumMovePercent()
+        );
+        String impactLabel = event.getTradeSignal() == TradeSignal.BUY
+                ? directionalReturn >= 0.0 ? "Potential gain" : "Potential loss"
+                : directionalReturn >= 0.0 ? "Potential loss avoided" : "Price rose instead";
+        return new ObservedPriceOutcomeView(
+                true,
+                true,
+                null,
+                statusLabel,
+                statusClass,
+                summary,
+                profile.horizonLabel(),
+                profile.minimumMovePercent(),
+                patternHigh,
+                patternLow,
+                evaluationCandle.timestamp(),
+                signalPeriodLabel(rule.getInterval(), evaluationCandle.timestamp()),
+                evaluationCandle.close(),
+                directionalReturn,
+                bestMove,
+                worstMove,
+                impactLabel
+        );
+    }
+
+    private ObservedOutcomeProfile observedOutcomeProfile(TimeInterval interval) {
+        return switch (interval) {
+            case DAILY -> new ObservedOutcomeProfile(10, "10-session horizon", 3.0);
+            case WEEKLY -> new ObservedOutcomeProfile(4, "4-week horizon", 4.0);
+            case MONTHLY -> new ObservedOutcomeProfile(3, "3-month horizon", 6.0);
+            default -> null;
+        };
+    }
+
+    private SignalChartView toSignalChartView(AlertEvent event, AlertRule rule) {
+        Long signalTimestamp = event.getSignalCandleTimestamp();
+        if (signalTimestamp == null) {
+            return SignalChartView.unavailable("The signal candle timestamp was not recorded.");
+        }
+
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        String interval = toApiInterval(rule.getInterval());
+        long firstIncompleteTimestamp = candleCompletionService.firstIncompleteCandleTimestamp(rule.getInterval());
+        TreeMap<Long, Candle> orderedCandles = new TreeMap<>();
+        candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
+                .stream()
+                .filter(this::validChartCandle)
+                .filter(candle -> candle.getTimestamp() < firstIncompleteTimestamp)
+                .forEach(candle -> orderedCandles.put(candle.getTimestamp(), candle));
+        Candle signalCandle = orderedCandles.get(signalTimestamp);
+        if (!validChartCandle(signalCandle)) {
+            return SignalChartView.unavailable(
+                    "The original OHLC candle is not present in the local cache, so the chart cannot be reconstructed safely."
+            );
+        }
+
+        List<Candle> candles = List.copyOf(orderedCandles.values());
+        int signalIndex = -1;
+        for (int index = 0; index < candles.size(); index++) {
+            if (candles.get(index).getTimestamp().equals(signalTimestamp)) {
+                signalIndex = index;
+                break;
+            }
+        }
+        if (signalIndex < 0) {
+            return SignalChartView.unavailable("The cached signal candle could not be located.");
+        }
+
+        int patternCandleCount = patternCandleCount(event.getPattern());
+        int patternStartIndex = Math.max(0, signalIndex - patternCandleCount + 1);
+        int trendStartIndex = Math.max(0, patternStartIndex - SIGNAL_CHART_TREND_CANDLES);
+        long patternStartTimestamp = candles.get(patternStartIndex).getTimestamp();
+        Long trendStartTimestamp = patternStartIndex > 0
+                ? candles.get(trendStartIndex).getTimestamp()
+                : null;
+        String trendLabel = normalizeFamily(rule.getPatternFamily()) == AlertPatternFamily.ELLIOTT_WAVE
+                ? "Wave structure context"
+                : event.getTradeSignal() == TradeSignal.SELL ? "Required uptrend" : "Required downtrend";
+        String summary = normalizeFamily(rule.getPatternFamily()) == AlertPatternFamily.ELLIOTT_WAVE
+                ? "The marker locates the recorded Elliott detection inside the complete cached interval history."
+                : "The highlighted region and amber guide mark the five-candle prior-trend window used by the detector; labeled arrows identify every candle that formed the pattern.";
+
+        ElliottWaveChartView elliottWave = toSignalElliottWaveView(event, rule, candles, signalIndex);
+        if (normalizeFamily(rule.getPatternFamily()) == AlertPatternFamily.ELLIOTT_WAVE) {
+            summary = elliottWave == null
+                    ? "The cached history no longer reconstructs the Elliott pivots recorded for this signal."
+                    : "The recorded Elliott structure is drawn pivot to pivot using the same motive and corrective overlay as the stock chart.";
+        }
+
+        List<SignalChartCandleView> chartCandles = candles.stream()
+                .map(candle -> new SignalChartCandleView(
+                        candle.getTimestamp(),
+                        candle.getOpenPrice(),
+                        candle.getHighPrice(),
+                        candle.getLowPrice(),
+                        candle.getClosePrice()
+                ))
+                .toList();
+        return new SignalChartView(
+                true,
+                null,
+                chartCandles,
+                trendStartTimestamp,
+                patternStartTimestamp,
+                signalTimestamp,
+                Math.min(patternCandleCount, signalIndex + 1),
+                trendLabel,
+                summary,
+                elliottWave
+        );
+    }
+
+    private ElliottWaveChartView toSignalElliottWaveView(AlertEvent event,
+                                                         AlertRule rule,
+                                                         List<Candle> candles,
+                                                         int signalIndex) {
+        if (normalizeFamily(rule.getPatternFamily()) != AlertPatternFamily.ELLIOTT_WAVE
+                || event.getPattern() == null || signalIndex < 0) {
+            return null;
+        }
+        List<Candle> detectionHistory = List.copyOf(candles.subList(0, signalIndex + 1));
+        List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
+                detectionHistory,
+                detectionHistory.size(),
+                rule.getInterval()
+        );
+        ElliottWaveDetectionService.ElliottWaveStructure structure = elliottWaveDetectionService
+                .findHistoricalWaveStructures(enriched)
+                .stream()
+                .filter(candidate -> matchesRecordedElliottPattern(event.getPattern(), candidate))
+                .filter(candidate -> candidate.confirmationTimestamp() != null
+                        && candidate.confirmationTimestamp() <= event.getSignalCandleTimestamp())
+                .max(Comparator.comparingLong(
+                                (ElliottWaveDetectionService.ElliottWaveStructure candidate) ->
+                                        candidate.confirmationTimestamp())
+                        .thenComparingInt(ElliottWaveDetectionService.ElliottWaveStructure::qualityScore)
+                        .thenComparingLong(candidate -> elliottStructureSpan(candidate.points())))
+                .orElse(null);
+        if (structure == null) {
+            return null;
+        }
+        return new ElliottWaveChartView(
+                structure.direction(),
+                structure.correctionComplete(),
+                structure.points().stream()
+                        .map(point -> new ElliottWaveChartPointView(
+                                rule.getInterval() == TimeInterval.WEEKLY
+                                        ? point.label().toLowerCase(Locale.ROOT)
+                                        : point.label(),
+                                point.timestamp(),
+                                point.price(),
+                                point.pivotType()
+                        ))
+                        .toList(),
+                structure.confirmationTimestamp(),
+                structure.waveTwoRetracement(),
+                structure.waveFourRetracement(),
+                structure.impulseVariant(),
+                structure.correctionVariant()
+        );
+    }
+
+    private boolean matchesRecordedElliottPattern(
+            CandlePattern pattern,
+            ElliottWaveDetectionService.ElliottWaveStructure structure) {
+        String patternName = pattern.name();
+        String expectedDirection = patternName.contains("BEARISH") ? "BEARISH" : "BULLISH";
+        boolean expectedCorrection = patternName.endsWith("CORRECTION");
+        if (!expectedDirection.equals(structure.direction())
+                || expectedCorrection != structure.correctionComplete()) {
+            return false;
+        }
+        if (patternName.contains("TRUNCATED")) {
+            return structure.impulseVariant() == ElliottWaveDetectionService.ImpulseVariant.TRUNCATED_FIFTH;
+        }
+        if (patternName.contains("EXPANDED_FLAT")) {
+            return structure.correctionVariant() == ElliottWaveDetectionService.CorrectionVariant.EXPANDED_FLAT;
+        }
+        if (patternName.contains("RUNNING_FLAT")) {
+            return structure.correctionVariant() == ElliottWaveDetectionService.CorrectionVariant.RUNNING_FLAT;
+        }
+        if (expectedCorrection) {
+            return structure.correctionVariant() == ElliottWaveDetectionService.CorrectionVariant.STANDARD;
+        }
+        return structure.impulseVariant() == ElliottWaveDetectionService.ImpulseVariant.STANDARD;
+    }
+
+    private long elliottStructureSpan(List<ElliottWaveDetectionService.ElliottWavePoint> points) {
+        return points.isEmpty() ? 0L : points.getLast().timestamp() - points.getFirst().timestamp();
+    }
+
+    private boolean validChartCandle(Candle candle) {
+        return candle != null
+                && candle.getTimestamp() != null
+                && candle.getOpenPrice() != null && Double.isFinite(candle.getOpenPrice())
+                && candle.getHighPrice() != null && Double.isFinite(candle.getHighPrice())
+                && candle.getLowPrice() != null && Double.isFinite(candle.getLowPrice())
+                && candle.getClosePrice() != null && Double.isFinite(candle.getClosePrice());
+    }
+
+    private int patternCandleCount(CandlePattern pattern) {
+        if (pattern == null) {
+            return 1;
+        }
+        return switch (pattern) {
+            case MORNING_STAR, EVENING_STAR, THREE_WHITE_SOLDIERS, THREE_BLACK_CROWS -> 3;
+            case BULLISH_ENGULFING, BEARISH_ENGULFING, PIERCING_LINE, DARK_CLOUD_COVER,
+                    BULLISH_HARAMI, BEARISH_HARAMI -> 2;
+            default -> 1;
+        };
     }
 
     private AlertRuleSignalHistory toSignalHistory(AlertRule rule) {
@@ -245,8 +924,8 @@ public class AlertRuleService {
                 .map(AlertRule::getTradeSignal)
                 .distinct()
                 .toList();
-        long eventCount = rules.stream()
-                .mapToLong(alertEventRepository::countByAlertRule)
+        long unreadSignalCount = rules.stream()
+                .mapToLong(alertEventRepository::countByAlertRuleAndReadAtIsNull)
                 .sum();
         return new TrackedCompanyView(
                 representativeRule.getId(),
@@ -259,7 +938,7 @@ public class AlertRuleService {
                 intervalLabels,
                 familyLabels,
                 tradeSignals,
-                eventCount
+                unreadSignalCount
         );
     }
 
@@ -324,6 +1003,7 @@ public class AlertRuleService {
                 signalDate(event.getSignalCandleTimestamp()),
                 signalPeriodLabel(rule.getInterval(), event.getSignalCandleTimestamp()),
                 event.getSentAt(),
+                event.isRead(),
                 toLifecycleView(event, rule.getInterval())
         );
     }
@@ -686,6 +1366,7 @@ public class AlertRuleService {
                 signalPeriodLabel(interval, event.getSignalCandleTimestamp()),
                 event.getClosePrice(),
                 event.getSentAt(),
+                event.isRead(),
                 toLifecycleView(event, interval)
         );
     }
@@ -698,18 +1379,25 @@ public class AlertRuleService {
                 : signalPeriodLabel(interval, event.getResolutionCandleTimestamp());
         String boundaryDirection = event.getTradeSignal() == TradeSignal.BUY ? "above" : "below";
         String invalidationDirection = event.getTradeSignal() == TradeSignal.BUY ? "below" : "above";
+        boolean elliottSignal = event.isElliottSignal();
         String summary;
         if (!tracked) {
             summary = "Follow-up lifecycle tracking was not recorded for this signal.";
         } else {
             summary = switch (status) {
-                case DETECTED -> String.format(
-                        Locale.ROOT,
-                        "Waiting for a completed candle to close %s %.4f. The setup expires after %d candles unless it confirms or invalidates first.",
-                        boundaryDirection,
-                        event.getConfirmationTriggerPrice(),
-                        event.getConfirmationWindowCandles()
-                );
+                case DETECTED -> elliottSignal
+                        ? String.format(
+                                Locale.ROOT,
+                                "Waiting for a completed candle to close %s %.4f. Wave V/C extensions revise this same cycle silently; the %d-candle window restarts from the latest endpoint.",
+                                boundaryDirection,
+                                event.getConfirmationTriggerPrice(),
+                                event.getConfirmationWindowCandles())
+                        : String.format(
+                                Locale.ROOT,
+                                "Waiting for a completed candle to close %s %.4f. The setup expires after %d candles unless it confirms or invalidates first.",
+                                boundaryDirection,
+                                event.getConfirmationTriggerPrice(),
+                                event.getConfirmationWindowCandles());
                 case CONFIRMED -> String.format(
                         Locale.ROOT,
                         "Confirmed on %s when candle %d closed at %.4f, %s the %.4f trigger.",
@@ -719,18 +1407,27 @@ public class AlertRuleService {
                         boundaryDirection,
                         event.getConfirmationTriggerPrice()
                 );
-                case INVALIDATED -> String.format(
-                        Locale.ROOT,
-                        "Invalidated on %s when candle %d closed at %.4f, %s the %.4f boundary.",
-                        resolutionPeriod,
-                        event.getResolutionCandleOffset(),
-                        event.getResolutionClosePrice(),
-                        invalidationDirection,
-                        event.getInvalidationPrice()
-                );
+                case INVALIDATED -> elliottSignal
+                        ? String.format(
+                                Locale.ROOT,
+                                "Invalidated on %s because %s",
+                                resolutionPeriod,
+                                event.getLifecycleResolutionReason() == null
+                                        ? "the stored wave structure stopped satisfying its hard rules."
+                                        : event.getLifecycleResolutionReason())
+                        : String.format(
+                                Locale.ROOT,
+                                "Invalidated on %s when candle %d closed at %.4f, %s the %.4f boundary.",
+                                resolutionPeriod,
+                                event.getResolutionCandleOffset(),
+                                event.getResolutionClosePrice(),
+                                invalidationDirection,
+                                event.getInvalidationPrice());
                 case EXPIRED -> String.format(
                         Locale.ROOT,
-                        "Expired after %d completed candles without a close beyond either lifecycle boundary.",
+                        elliottSignal
+                                ? "Expired after %d completed candles from the latest endpoint revision without structural confirmation."
+                                : "Expired after %d completed candles without a close beyond either lifecycle boundary.",
                         event.getConfirmationWindowCandles()
                 );
             };
@@ -751,7 +1448,10 @@ public class AlertRuleService {
                 resolutionPeriod,
                 event.getResolutionClosePrice(),
                 event.getLifecycleUpdatedAt(),
-                event.getFollowUpSentAt()
+                event.getFollowUpSentAt(),
+                event.getElliottEndpointPrice(),
+                event.getElliottSignalStage(),
+                event.getLifecycleResolutionReason()
         );
     }
 
@@ -947,7 +1647,7 @@ public class AlertRuleService {
             List<String> intervalLabels,
             List<String> familyLabels,
             List<TradeSignal> tradeSignals,
-            long eventCount
+            long unreadSignalCount
     ) {
     }
 
@@ -972,6 +1672,7 @@ public class AlertRuleService {
             LocalDate signalDate,
             String signalPeriodLabel,
             java.time.LocalDateTime sentAt,
+            boolean hasBeenRead,
             SignalLifecycleView lifecycle
     ) {
         public Integer confidenceScore() {
@@ -1013,6 +1714,7 @@ public class AlertRuleService {
             String signalPeriodLabel,
             Double closePrice,
             java.time.LocalDateTime sentAt,
+            boolean hasBeenRead,
             SignalLifecycleView lifecycle
     ) {
         public Integer confidenceScore() {
@@ -1020,9 +1722,132 @@ public class AlertRuleService {
         }
     }
 
+    public record SignalArchivePage(
+            List<SignalArchiveEntry> signals,
+            int page,
+            int totalPages,
+            long totalSignals,
+            String sort,
+            String direction,
+            boolean hasPrevious,
+            boolean hasNext
+    ) {
+        public int displayPage() {
+            return totalPages == 0 ? 0 : page + 1;
+        }
+
+        public String groupKey(SignalArchiveEntry entry) {
+            return entry.groupKey(sort);
+        }
+
+        public String groupLabel(SignalArchiveEntry entry) {
+            return entry.groupLabel(sort);
+        }
+
+        public String groupDetail(SignalArchiveEntry entry) {
+            return entry.groupDetail(sort);
+        }
+    }
+
+    public record SignalArchiveEntry(
+            LatestSignalView signal,
+            Double bestDirectionalMovePercent,
+            Double worstDirectionalMovePercent,
+            boolean resultAvailable,
+            String resultWindowLabel
+    ) {
+        private String groupKey(String sortKey) {
+            return switch (sortKey) {
+                case "ticker" -> signal.symbol();
+                case "interval" -> signal.interval().name();
+                case "confidence" -> confidenceGroupKey();
+                case "status" -> signal.lifecycle().status().name();
+                case "best-return" -> returnGroupKey(bestDirectionalMovePercent);
+                case "worst-return" -> returnGroupKey(worstDirectionalMovePercent);
+                default -> signal.sentAt().toLocalDate().toString();
+            };
+        }
+
+        private String groupLabel(String sortKey) {
+            return switch (sortKey) {
+                case "ticker" -> signal.symbol();
+                case "interval" -> signal.intervalLabel();
+                case "confidence" -> switch (confidenceGroupKey()) {
+                    case "high" -> "High score · 85–100";
+                    case "medium" -> "Moderate score · 75–84";
+                    case "low" -> "Lower score · 0–74";
+                    default -> "Score unavailable";
+                };
+                case "status" -> signal.lifecycle().label();
+                case "best-return" -> returnGroupLabel(bestDirectionalMovePercent);
+                case "worst-return" -> returnGroupLabel(worstDirectionalMovePercent);
+                default -> signal.sentAt().format(DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH));
+            };
+        }
+
+        private String groupDetail(String sortKey) {
+            return switch (sortKey) {
+                case "ticker" -> signal.companyName();
+                case "interval" -> switch (signal.interval()) {
+                    case DAILY -> "Daily signals";
+                    case WEEKLY -> "Weekly signals";
+                    case MONTHLY -> "Monthly signals";
+                    default -> "Signals for this interval";
+                };
+                case "confidence" -> "Rows sorted by exact confidence score";
+                case "status" -> "Signal lifecycle status";
+                case "best-return" -> "Best directional result from the signal close";
+                case "worst-return" -> "Worst directional result from the signal close";
+                default -> null;
+            };
+        }
+
+        private String confidenceGroupKey() {
+            return signal.setupBand() == null ? "unrated" : signal.setupBand();
+        }
+
+        private String returnGroupKey(Double value) {
+            if (value == null) {
+                return "unavailable";
+            }
+            if (value > 0.0) {
+                return "positive";
+            }
+            return value < 0.0 ? "negative" : "flat";
+        }
+
+        private String returnGroupLabel(Double value) {
+            return switch (returnGroupKey(value)) {
+                case "positive" -> "Positive return";
+                case "negative" -> "Negative return";
+                case "flat" -> "Flat return";
+                default -> "Return unavailable";
+            };
+        }
+    }
+
+    private record SignalResultExcursion(
+            Double bestDirectionalMovePercent,
+            Double worstDirectionalMovePercent,
+            boolean available,
+            String windowLabel
+    ) {
+        private static SignalResultExcursion unavailable(String reason) {
+            return new SignalResultExcursion(null, null, false, reason);
+        }
+    }
+
+    private record ObservedOutcomeProfile(
+            int forwardCandles,
+            String horizonLabel,
+            double minimumMovePercent
+    ) {
+    }
+
     public record SignalDetailView(
             Long id,
             Long alertRuleId,
+            boolean alertRuleActive,
             String symbol,
             String companyName,
             TimeInterval interval,
@@ -1039,12 +1864,16 @@ public class AlertRuleService {
             String setupBand,
             Integer setupScore,
             String scoreVersion,
+            Integer elliottV1EligibilityScore,
             String setupExplanation,
             Long signalCandleTimestamp,
             LocalDate signalDate,
             String signalPeriodLabel,
             Double closePrice,
             java.time.LocalDateTime sentAt,
+            SignalChartView chart,
+            ObservedPriceOutcomeView observedOutcome,
+            SignalResultsView results,
             SignalLifecycleView lifecycle,
             List<SignalReasonView> reasons,
             boolean reasonsAvailable
@@ -1066,6 +1895,150 @@ public class AlertRuleService {
         }
     }
 
+    public record SignalChartView(
+            boolean available,
+            String unavailableReason,
+            List<SignalChartCandleView> candles,
+            Long trendStartTimestamp,
+            Long patternStartTimestamp,
+            Long signalTimestamp,
+            int patternCandleCount,
+            String trendLabel,
+            String summary,
+            ElliottWaveChartView elliottWave
+    ) {
+        private static SignalChartView unavailable(String reason) {
+            return new SignalChartView(false, reason, List.of(), null, null, null, 0, null, null, null);
+        }
+
+        public SignalChartView {
+            candles = List.copyOf(candles);
+        }
+    }
+
+    public record SignalChartCandleView(
+            long timestamp,
+            double open,
+            double high,
+            double low,
+            double close
+    ) {
+    }
+
+    public record SignalResultsView(
+            boolean available,
+            String unavailableReason,
+            int minimumForwardCandles,
+            int availableForwardCandles,
+            Double signalClose,
+            Long signalTimestamp,
+            TradeSignal tradeSignal,
+            String outcomeLabel,
+            String bestActionLabel,
+            List<SignalResultPointView> points
+    ) {
+        private static SignalResultsView unavailable(String reason, int availableForwardCandles) {
+            return new SignalResultsView(
+                    false,
+                    reason,
+                    MINIMUM_RESULT_CANDLES,
+                    availableForwardCandles,
+                    null,
+                    null,
+                    null,
+                    "Outcome unavailable",
+                    "Best reversal unavailable",
+                    List.of()
+            );
+        }
+
+        public SignalResultsView {
+            points = List.copyOf(points);
+        }
+    }
+
+    public record SignalResultPointView(
+            int candleNumber,
+            long timestamp,
+            String periodLabel,
+            double close,
+            double directionalReturnPercent,
+            double directionalPriceDifference
+    ) {
+    }
+
+    public record ElliottWaveSignalCard(
+            Long eventId,
+            String cycleKey,
+            ElliottSignalStage stage,
+            String stageLabel,
+            TradeSignal tradeSignal,
+            SignalLifecycleStatus status,
+            String statusClass,
+            Long signalTimestamp,
+            String signalPeriodLabel,
+            boolean outcomeAvailable,
+            int requiredForwardCandles,
+            int availableForwardCandles,
+            Double bestDirectionalReturnPercent,
+            Double windowEndDirectionalReturnPercent,
+            String outcomeLabel,
+            String outcomeNote,
+            String unavailableReason,
+            String detailUrl
+    ) {
+    }
+
+    public record ElliottWaveChartView(
+            String direction,
+            boolean correctionComplete,
+            List<ElliottWaveChartPointView> points,
+            Long confirmationTimestamp,
+            double waveTwoRetracement,
+            double waveFourRetracement,
+            ElliottWaveDetectionService.ImpulseVariant impulseVariant,
+            ElliottWaveDetectionService.CorrectionVariant correctionVariant
+    ) {
+        public ElliottWaveChartView {
+            points = List.copyOf(points);
+        }
+    }
+
+    public record ElliottWaveChartPointView(
+            String label,
+            Long timestamp,
+            double price,
+            String pivotType
+    ) {
+    }
+
+    public record ObservedPriceOutcomeView(
+            boolean tracked,
+            boolean outcomeAvailable,
+            String unavailableReason,
+            String statusLabel,
+            String statusClass,
+            String summary,
+            String evaluationHorizonLabel,
+            double successThresholdPercent,
+            Double patternHigh,
+            Double patternLow,
+            Long evaluationTimestamp,
+            String evaluationPeriodLabel,
+            Double evaluationClose,
+            Double directionalReturnPercent,
+            Double bestDirectionalMovePercent,
+            Double worstDirectionalMovePercent,
+            String impactLabel
+    ) {
+        private static ObservedPriceOutcomeView unavailable(String reason) {
+            return new ObservedPriceOutcomeView(
+                    false, false, reason, "Unavailable", "pending", reason, null, 0.0,
+                    null, null, null, null, null, null, null, null, "Outcome unavailable"
+            );
+        }
+    }
+
     public record SignalLifecycleView(
             SignalLifecycleStatus status,
             String label,
@@ -1082,7 +2055,10 @@ public class AlertRuleService {
             String resolutionPeriodLabel,
             Double resolutionClosePrice,
             java.time.LocalDateTime updatedAt,
-            java.time.LocalDateTime followUpSentAt
+            java.time.LocalDateTime followUpSentAt,
+            Double elliottEndpointPrice,
+            org.example.stockwatch247.model.enums.ElliottSignalStage elliottSignalStage,
+            String resolutionReason
     ) {
     }
 

@@ -111,7 +111,7 @@ public class ChartController {
                         )
                 );
         if (structure.isEmpty()) {
-            return new ElliottWaveOverlay(validatedInterval, labelStyle(validatedInterval), "none", null,
+            return new ElliottWaveOverlay(validatedInterval, labelStyle(validatedInterval), "none", null, null,
                     false, List.of(), null, 0, 0.0, false, 0.0, 0.0,
                     ElliottWaveDetectionService.ImpulseVariant.STANDARD,
                     ElliottWaveDetectionService.CorrectionVariant.NONE, 0.0, 0.0, List.of());
@@ -129,6 +129,7 @@ public class ChartController {
                 validatedInterval,
                 labelStyle(validatedInterval),
                 structureId(detected),
+                elliottWaveDetectionService.lifecycleCycleKey(detected).orElse(null),
                 detected.direction(),
                 detected.correctionComplete(),
                 points,
@@ -175,6 +176,7 @@ public class ChartController {
                         validatedInterval,
                         labelStyle(validatedInterval),
                         structureId(structure),
+                        elliottWaveDetectionService.lifecycleCycleKey(structure).orElse(null),
                         structure.direction(),
                         structure.correctionComplete(),
                         structure.points().stream()
@@ -296,6 +298,7 @@ public class ChartController {
     public record ElliottWaveOverlay(String interval,
                                      String labelStyle,
                                      String structureId,
+                                     String cycleKey,
                                      String direction,
                                      boolean correctionComplete,
                                      List<ElliottWavePointView> points,

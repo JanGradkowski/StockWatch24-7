@@ -274,8 +274,11 @@ public class YahooFinanceService {
                 continue;
             }
 
-            long timestamp = timestamps.get(index).asLong();
-            timestamp = canonicalTimestamp(timestamp, yahooInterval, exchangeZone);
+            long providerTimestamp = timestamps.get(index).asLong();
+            if (!isCanonicalHigherIntervalTimestamp(providerTimestamp, yahooInterval)) {
+                continue;
+            }
+            long timestamp = canonicalTimestamp(providerTimestamp, yahooInterval, exchangeZone);
             long volume = numberAt(volumes, index).map(Double::longValue).orElse(0L);
             bars.add(new MarketDataBar(
                     providerSymbol,
@@ -805,8 +808,25 @@ public class YahooFinanceService {
         if (interval.endsWith("m")) {
             return timestamp;
         }
+        if ("1mo".equals(interval)) {
+            LocalDate utcDate = Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC).toLocalDate();
+            return utcDate.withDayOfMonth(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        }
         LocalDate exchangeDate = Instant.ofEpochSecond(timestamp).atZone(exchangeZone).toLocalDate();
         return exchangeDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+    }
+
+    private boolean isCanonicalHigherIntervalTimestamp(long timestamp,
+                                                       String interval) {
+        if (!"1mo".equals(interval)) {
+            return true;
+        }
+        LocalDate utcDate = Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC).toLocalDate();
+        // Yahoo can append a live, day-sized quote to an otherwise monthly response
+        // while still reporting dataGranularity=1mo. It is not a monthly aggregate
+        // and changes timestamp on every refresh, so accepting it creates several
+        // fake monthly candles in the same calendar month.
+        return utcDate.getDayOfMonth() == 1;
     }
 
     private Optional<Double> numberAt(JsonNode values, int index) {

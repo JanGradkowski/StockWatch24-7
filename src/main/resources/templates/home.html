@@ -31,7 +31,13 @@
       <span>Dashboard view</span>
       <strong>Separate chart signals from company-event alerts</strong>
     </div>
-    <div class="dashboard-view-tabs" role="group" aria-label="Choose dashboard view">
+    <div class="dashboard-view-tabs" role="group" aria-label="Dashboard navigation and views">
+      <a id="allSignalsDashboardButton"
+         th:href="@{/signals}"
+         class="dashboard-view-tab dashboard-view-link">
+        <span>All signals</span>
+        <small>Browse the complete signal archive</small>
+      </a>
       <button id="technicalAnalysisViewButton"
               type="button"
               class="dashboard-view-tab active"
@@ -70,7 +76,7 @@
     <article class="metric-card">
       <span class="metric-label">Latest signals</span>
       <strong class="metric-value" th:text="${#lists.size(latestSignals)}">0</strong>
-      <span class="metric-note">Recent validated technical matches</span>
+      <span class="metric-note">Unread validated technical matches</span>
     </article>
     <article class="metric-card">
       <span class="metric-label">Recovery mode</span>
@@ -122,13 +128,14 @@
 
       <div id="followedInstrumentList" th:if="${!#lists.isEmpty(trackedCompanies)}">
         <div class="alert-list-head company-alert-grid" data-watch-list-head aria-hidden="true" th:hidden="${stockCompanyCount == 0}">
-          <span>Instrument</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>History</span>
+          <span>Instrument</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>Unread</span>
         </div>
         <div class="alert-list">
           <a th:each="company : ${trackedCompanies}"
              class="alert-row company-alert-grid"
              th:href="@{/alerts/{id}(id=${company.representativeAlertId()})}"
              th:attr="data-instrument-group=${company.instrumentGroup()}"
+             th:data-unread-signal-count="${company.unreadSignalCount()}"
              th:hidden="${company.instrumentGroup() != 'stocks'}">
             <div>
               <div class="alert-symbol-line">
@@ -159,8 +166,8 @@
               </div>
             </div>
             <div class="event-count">
-              <strong th:text="${company.eventCount()}">0</strong>
-              <span th:text="${company.eventCount() == 1 ? 'signal' : 'signals'}">signals</span>
+              <strong th:text="${company.unreadSignalCount()}">0</strong>
+              <span th:text="${company.unreadSignalCount() == 1 ? 'new signal' : 'new signals'}">new signals</span>
             </div>
           </a>
         </div>
@@ -192,17 +199,20 @@
                aria-labelledby="latest-signals-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">Fresh from the detector</div>
+            <div class="panel-kicker">Unread from the detector</div>
             <h2 id="latest-signals-heading" class="panel-title">Latest signals <span class="panel-count" th:text="${#lists.size(latestSignals)}">0</span></h2>
           </div>
-          <span class="panel-meta">Select a signal to explore its score</span>
+          <div class="panel-heading-actions">
+            <span class="panel-meta">Select a signal to explore its score</span>
+            <a th:href="@{/signals}" class="btn-secondary panel-action-button">All signals</a>
+          </div>
         </div>
 
         <div th:if="${#lists.isEmpty(latestSignals)}" class="latest-signals-empty">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
-            <h3>No validated patterns yet</h3>
-            <p>Your newest matches will appear here as soon as one of your active rules produces a pattern with valid geometry and stock-specific trend context.</p>
+            <h3>No unread signals</h3>
+            <p>New matches from active rules will appear here. Signals you have opened remain available in the All signals archive.</p>
           </div>
         </div>
 
@@ -213,8 +223,8 @@
           <div class="latest-signal-list">
             <a th:each="signal : ${latestSignals}"
                th:href="@{/alerts/signals/{id}(id=${signal.id()})}"
-               class="latest-signal-row latest-signal-grid"
-               th:aria-label="${'Open ' + signal.patternLabel() + ' score report for ' + signal.symbol()}">
+               class="latest-signal-row latest-signal-grid is-unread"
+               th:aria-label="${'Open unread ' + signal.patternLabel() + ' score report for ' + signal.symbol()}">
               <div class="latest-signal-type">
                 <strong th:text="${signal.patternLabel()}">Bullish Engulfing</strong>
                 <div class="latest-signal-tags">

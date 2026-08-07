@@ -29,6 +29,12 @@ public interface CandleRepository extends JpaRepository<Candle, Long> {
     List<Candle> findBySymbolAndTimeIntervalOrderByTimestampAsc(String symbol, String timeInterval);
     List<Candle> findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
             String symbol, String timeInterval, Long timestamp);
+    List<Candle> findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+            String symbol,
+            String timeInterval,
+            Long startTimestamp,
+            Long endTimestamp,
+            Pageable pageable);
 
     // 4. Cache Density Check: See how many candles we have in a specific historical window
     long countBySymbolAndTimeIntervalAndTimestampBetween(String symbol, String timeInterval, Long startTime, Long endTime);

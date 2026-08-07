@@ -2,6 +2,7 @@ package org.example.stockwatch247;
 
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
+import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
@@ -13,6 +14,7 @@ import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.AlertRuleRepository;
+import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.service.CandlePatternDetectionService;
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
@@ -35,6 +38,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -60,13 +64,16 @@ class StockWatch247ApplicationTests {
     @Autowired
     private AlertEventRepository alertEventRepository;
 
+    @Autowired
+    private CandleRepository candleRepository;
+
     @Test
     void contextLoads() {
     }
 
     @Test
     @Transactional
-    void authenticatedUserCanRenderSettingsAndPersistAnAccountTheme() throws Exception {
+    void authenticatedUserCanRenderSettingsAndPersistAppearancePreferences() throws Exception {
         String email = "settings-" + Long.toString(System.nanoTime(), 36) + "@example.com";
         User account = new User();
         account.setEmail(email);
@@ -83,10 +90,31 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Authenticator app")))
                 .andExpect(content().string(containsString("Danger zone")));
 
-        mockMvc.perform(post("/settings/theme").with(user(email)).with(csrf()).param("theme", "LIGHT"))
+        mockMvc.perform(get("/settings/appearance").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings"))
+                .andExpect(content().string(containsString("Workspace appearance")))
+                .andExpect(content().string(containsString("Motive I–V")))
+                .andExpect(content().string(containsString("Corrective A–B–C")))
+                .andExpect(content().string(containsString("Apply changes")));
+
+        mockMvc.perform(post("/settings/appearance").with(user(email)).with(csrf())
+                        .param("theme", "LIGHT")
+                        .param("elliottMotiveColor", "#2563EB")
+                        .param("elliottCorrectiveColor", "#9333EA"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", "/settings?themeSaved=true"));
-        assertThat(userRepository.findById(account.getId()).orElseThrow().getThemePreference()).isEqualTo("LIGHT");
+                .andExpect(header().string("Location", "/settings/appearance"));
+        User updated = userRepository.findById(account.getId()).orElseThrow();
+        assertThat(updated.getThemePreference()).isEqualTo("LIGHT");
+        assertThat(updated.getElliottMotiveColor()).isEqualTo("#2563EB");
+        assertThat(updated.getElliottCorrectiveColor()).isEqualTo("#9333EA");
+
+        mockMvc.perform(post("/settings/appearance").with(user(email)).with(csrf())
+                        .param("theme", "DARK")
+                        .param("elliottMotiveColor", "#123456")
+                        .param("elliottCorrectiveColor", "#123456"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(flash().attribute("error", "Choose two different Elliott Wave colors."));
     }
 
     @Test
@@ -288,7 +316,13 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(get("/stock/SPX").with(user("index-test@example.com")))
                 .andExpect(status().isOk())
                 .andExpect(view().name("stock"))
-                .andExpect(model().attribute("symbol", "^GSPC"));
+                .andExpect(model().attribute("symbol", "^GSPC"))
+                .andExpect(content().string(containsString("id=\"rsiOverlayToggle\"")))
+                .andExpect(content().string(containsString("id=\"rsiPeriodDialog\"")))
+                .andExpect(content().string(containsString("id=\"rsiChartContainer\"")))
+                .andExpect(content().string(containsString("RSI 14 with 70/30 boundaries is the classic default")))
+                .andExpect(content().string(containsString("id=\"rsiOverboughtInput\"")))
+                .andExpect(content().string(containsString("id=\"rsiOversoldInput\"")));
     }
 
     @Test
@@ -368,6 +402,36 @@ class StockWatch247ApplicationTests {
         event.setFollowUpSentAt(LocalDateTime.of(2026, 7, 24, 22, 16));
         event = alertEventRepository.save(event);
 
+        List<Candle> chartCandles = new ArrayList<>();
+        long chartStart = Instant.parse("2026-06-01T00:00:00Z").getEpochSecond();
+        for (int index = 0; index < 6; index++) {
+            long timestamp = chartStart + index * 7L * 86_400L;
+            double close = 28.0 - index * 1.5;
+            chartCandles.add(new Candle(
+                    symbol, "1wk", timestamp, close + 0.8, close + 1.1, close - 0.6, close, 18_000L));
+        }
+        chartCandles.add(new Candle(
+                symbol,
+                "1wk",
+                Instant.parse("2026-07-13T00:00:00Z").getEpochSecond(),
+                18.50,
+                20.00,
+                18.00,
+                19.42,
+                24_000L
+        ));
+        candleRepository.saveAll(chartCandles);
+        candleRepository.save(new Candle(
+                symbol,
+                "1wk",
+                Instant.parse("2026-07-20T00:00:00Z").getEpochSecond(),
+                19.50,
+                21.50,
+                18.50,
+                20.75,
+                25_000L
+        ));
+
         mockMvc.perform(get("/home").with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("home"))
@@ -389,6 +453,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Lifecycle status")))
                 .andExpect(content().string(containsString("Confirmed")))
                 .andExpect(content().string(containsString("Setup score 88 out of 100")))
+                .andExpect(content().string(containsString("data-unread-signal-count=\"1\"")))
+                .andExpect(content().string(containsString("is-unread\"")))
+                .andExpect(content().string(containsString("href=\"/signals\"")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 
         mockMvc.perform(get("/alerts/{id}", candleBuy.getId()).with(user(email)))
@@ -401,14 +468,43 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Lifecycle status")))
                 .andExpect(content().string(containsString("Resolved 20\u201324 Jul 2026")))
                 .andExpect(content().string(containsString("Confirmed")))
+                .andExpect(content().string(containsString("(unread)")))
+                .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
+
+        mockMvc.perform(get("/signals")
+                        .param("sort", "ticker")
+                        .param("direction", "asc")
+                        .with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("all-signals"))
+                .andExpect(model().attributeExists("archive"))
+                .andExpect(content().string(containsString("Account signal archive")))
+                .andExpect(content().string(containsString("Group and sort by")))
+                .andExpect(content().string(containsString("Signal status")))
+                .andExpect(content().string(containsString("Confidence score")))
+                .andExpect(content().string(containsString("value=\"confidence\"")))
+                .andExpect(content().string(containsString("value=\"status\"")))
+                .andExpect(content().string(containsString("value=\"best-return\"")))
+                .andExpect(content().string(containsString("value=\"worst-return\"")))
+                .andExpect(content().string(containsString("Best result")))
+                .andExpect(content().string(containsString("Worst result")))
+                .andExpect(content().string(containsString("+10.71%")))
+                .andExpect(content().string(containsString("-4.74%")))
+                .andExpect(content().string(containsString("(unread)")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 
         mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("signal-detail"))
                 .andExpect(model().attributeExists("signal"))
+                .andExpect(content().string(containsString("Graphical outlook")))
+                .andExpect(content().string(containsString("Score report")))
+                .andExpect(content().string(containsString("id=\"signalChart\"")))
+                .andExpect(content().string(containsString("Required downtrend")))
+                .andExpect(content().string(containsString("Complete cached interval history")))
                 .andExpect(content().string(containsString("Why this score")))
                 .andExpect(content().string(containsString("Signal lifecycle timeline")))
+                .andExpect(content().string(containsString("Observed price outcome")))
                 .andExpect(content().string(containsString("Detection")))
                 .andExpect(content().string(containsString("Detected")))
                 .andExpect(content().string(containsString("Terminal update")))
@@ -420,6 +516,31 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("RSI is rising versus the previous candle")))
                 .andExpect(content().string(containsString("How the setup score works")));
 
+        assertThat(alertEventRepository.findById(event.getId()).orElseThrow().getReadAt()).isNotNull();
+
+        mockMvc.perform(get("/home").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("data-unread-signal-count=\"0\"")))
+                .andExpect(content().string(containsString("No unread signals")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        containsString("/alerts/signals/" + event.getId()))));
+
+        mockMvc.perform(get("/signals").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("(read)")))
+                .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
+
+        candleBuy.setActive(false);
+        alertRuleRepository.saveAndFlush(candleBuy);
+
+        mockMvc.perform(get("/signals").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
+
+        mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Back to all signals")));
+
         User otherUser = new User();
         otherUser.setEmail("other-" + email);
         otherUser.setPasswordHash("test-only-password-hash");
@@ -429,6 +550,11 @@ class StockWatch247ApplicationTests {
         userRepository.save(otherUser);
 
         mockMvc.perform(get("/home").with(user(otherUser.getEmail())))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        containsString("/alerts/signals/" + event.getId()))));
+
+        mockMvc.perform(get("/signals").with(user(otherUser.getEmail())))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         containsString("/alerts/signals/" + event.getId()))));

@@ -134,27 +134,7 @@ public class AlertNotificationService {
                         guidance.disclaimer()
                 ))
                 .orElse("");
-        String lifecycleSection = lifecycleEvent != null && lifecycleEvent.isLifecycleTracked()
-                ? """
-
-                        Lifecycle status: DETECTED
-                        Confirmation rule: a subsequent completed candle must close %s %.4f
-                        Invalidation rule: a subsequent completed candle must close %s %.4f first
-                        Observation window: %d completed %s candles
-                        Lifecycle note: DETECTED remains the original alert. One CONFIRMED, INVALIDATED, or EXPIRED follow-up will be sent.
-                        """.formatted(
-                        signal.tradeSignal() == org.example.stockwatch247.model.enums.TradeSignal.BUY
-                                ? "above"
-                                : "below",
-                        lifecycleEvent.getConfirmationTriggerPrice(),
-                        signal.tradeSignal() == org.example.stockwatch247.model.enums.TradeSignal.BUY
-                                ? "below"
-                                : "above",
-                        lifecycleEvent.getInvalidationPrice(),
-                        lifecycleEvent.getConfirmationWindowCandles(),
-                        rule.getInterval().name().toLowerCase()
-                )
-                : "";
+        String lifecycleSection = detectedLifecycleSection(rule, signal, lifecycleEvent);
         String scoreVersion = signal.pattern() != null && signal.pattern().name().startsWith("ELLIOTT_")
                 ? ElliottWaveDetectionService.SETUP_SCORE_VERSION
                 : CandlePatternDetectionService.SETUP_SCORE_VERSION;
@@ -214,30 +194,94 @@ public class AlertNotificationService {
         send(message);
     }
 
+    private String detectedLifecycleSection(
+            AlertRule rule,
+            DetectedSignal signal,
+            AlertEvent lifecycleEvent) {
+        if (lifecycleEvent == null || !lifecycleEvent.isLifecycleTracked()) {
+            return "";
+        }
+        String confirmationDirection = signal.tradeSignal()
+                == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "above" : "below";
+        if (rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE) {
+            String structuralRule = lifecycleEvent.getInvalidationPrice() == null
+                    ? "the hard Elliott structure rules; ordinary Wave V/C extensions revise the endpoint"
+                    : "the hard Elliott structure boundary at %.4f".formatted(
+                            lifecycleEvent.getInvalidationPrice());
+            return """
+
+                    Lifecycle status: DETECTED
+                    Confirmation rule: a subsequent completed candle must close %s %.4f
+                    Latest Wave V/C endpoint: %.4f
+                    Invalidation rule: %s
+                    Observation window: %d completed %s candles after the latest endpoint revision
+                    Lifecycle note: endpoint revisions redraw the same cycle without another detection email. One CONFIRMED, INVALIDATED, or EXPIRED follow-up will be sent.
+                    """.formatted(
+                    confirmationDirection,
+                    lifecycleEvent.getConfirmationTriggerPrice(),
+                    lifecycleEvent.getElliottEndpointPrice(),
+                    structuralRule,
+                    lifecycleEvent.getConfirmationWindowCandles(),
+                    rule.getInterval().name().toLowerCase()
+            );
+        }
+        String invalidationDirection = signal.tradeSignal()
+                == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "below" : "above";
+        return """
+
+                Lifecycle status: DETECTED
+                Confirmation rule: a subsequent completed candle must close %s %.4f
+                Invalidation rule: a subsequent completed candle must close %s %.4f first
+                Observation window: %d completed %s candles
+                Lifecycle note: DETECTED remains the original alert. One CONFIRMED, INVALIDATED, or EXPIRED follow-up will be sent.
+                """.formatted(
+                confirmationDirection,
+                lifecycleEvent.getConfirmationTriggerPrice(),
+                invalidationDirection,
+                lifecycleEvent.getInvalidationPrice(),
+                lifecycleEvent.getConfirmationWindowCandles(),
+                rule.getInterval().name().toLowerCase()
+        );
+    }
+
     public void sendSignalLifecycleEmail(AlertEvent event) {
         if (event == null || !event.isLifecycleTracked()) {
-            throw new IllegalArgumentException("A tracked candlestick event is required.");
+            throw new IllegalArgumentException("A tracked signal event is required.");
         }
         SignalLifecycleStatus status = event.getLifecycleStatus();
         if (status == SignalLifecycleStatus.DETECTED) {
-            throw new IllegalArgumentException("A terminal candlestick lifecycle status is required.");
+            throw new IllegalArgumentException("A terminal signal lifecycle status is required.");
         }
 
         AlertRule rule = event.getAlertRule();
         String symbol = rule.getStockAsset().getTickerSymbol();
         String statusLabel = status.name();
+        boolean elliottSignal = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE;
         String outcome = switch (status) {
             case CONFIRMED -> "The expected close-based follow-through occurred.";
-            case INVALIDATED -> "Price closed beyond the opposite pattern boundary before confirmation.";
+            case INVALIDATED -> elliottSignal
+                    ? "The stored Elliott structure stopped satisfying its hard wave rules before confirmation."
+                    : "Price closed beyond the opposite lifecycle boundary before confirmation.";
             case EXPIRED -> "The observation window ended without confirmation or invalidation.";
             case DETECTED -> throw new IllegalStateException("DETECTED is not a terminal outcome.");
         };
+        String lifecycleType = elliottSignal ? "Elliott Wave" : "Candlestick";
+        String rangeLabel = elliottSignal ? "Wave structure range" : "Pattern range";
         String expectedDirection = event.getTradeSignal()
                 == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "above" : "below";
         String invalidationDirection = event.getTradeSignal()
                 == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "below" : "above";
+        String invalidationLine = elliottSignal
+                ? event.getInvalidationPrice() == null
+                ? "Invalidation rule: hard Elliott structure rules (no fixed price boundary)"
+                : "Structural invalidation boundary: %.4f".formatted(event.getInvalidationPrice())
+                : "Invalidation boundary: close %s %.4f".formatted(
+                        invalidationDirection, event.getInvalidationPrice());
+        String resolutionReason = event.getLifecycleResolutionReason() == null
+                ? ""
+                : "\nResolution reason: " + event.getLifecycleResolutionReason();
         String body = """
-                Candlestick lifecycle update for %s.
+                %s lifecycle update for %s.
 
                 Status: %s
                 Outcome: %s
@@ -245,17 +289,18 @@ public class AlertNotificationService {
                 Direction classification: %s
                 Interval: %s
                 Original signal period: %s
-                Pattern range: %.4f to %.4f
+                %s: %.4f to %.4f
                 Confirmation trigger: close %s %.4f
-                Invalidation boundary: close %s %.4f
-                Observation window: %d completed candles
+                %s
+                Observation window: %d completed %s candles
                 Resolution candle: %s
                 Resolution candle number: %d
-                Resolution close: %.4f
+                Resolution close: %.4f%s
 
                 This lifecycle update describes the observed price action after a detected setup.
                 It is informational and is not a recommendation, price target, or guarantee.
                 """.formatted(
+                lifecycleType,
                 symbol,
                 statusLabel,
                 outcome,
@@ -264,17 +309,19 @@ public class AlertNotificationService {
                 rule.getInterval(),
                 SignalPeriodFormatter.format(
                         event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
+                rangeLabel,
                 event.getPatternLow(),
                 event.getPatternHigh(),
                 expectedDirection,
                 event.getConfirmationTriggerPrice(),
-                invalidationDirection,
-                event.getInvalidationPrice(),
+                invalidationLine,
                 event.getConfirmationWindowCandles(),
+                rule.getInterval().name().toLowerCase(),
                 SignalPeriodFormatter.format(
                         event.getResolutionCandleTimestamp(), rule.getInterval(), signalTimeZone),
                 event.getResolutionCandleOffset(),
-                event.getResolutionClosePrice()
+                event.getResolutionClosePrice(),
+                resolutionReason
         );
 
         if (!emailEnabled) {

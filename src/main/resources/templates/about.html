@@ -557,10 +557,10 @@
 
             <div class="about-lifecycle">
                 <div class="about-lifecycle-line" aria-hidden="true"></div>
-                <article><span>1</span><strong>Detected</strong><p>The pattern closes and its high/low boundaries are recorded.</p></article>
+                <article><span>1</span><strong>Detected</strong><p>The candlestick pattern or Elliott turning point closes and its structural boundaries are recorded.</p></article>
                 <article><span>2</span><strong>Confirmed</strong><p>A later completed BUY candle closes above the trigger, or SELL closes below it.</p></article>
                 <article><span>3</span><strong>Invalidated</strong><p>A BUY closes below the invalidation level, or SELL closes above it.</p></article>
-                <article><span>4</span><strong>Expired</strong><p>No boundary wins within the default three completed-candle observation window.</p></article>
+                <article><span>4</span><strong>Expired</strong><p>No boundary wins within three later completed candles for candlesticks or ten for Elliott Wave signals.</p></article>
             </div>
 
             <div class="about-callout">
@@ -568,6 +568,16 @@
                 <p>
                     High/low touches and equality with a boundary do not resolve lifecycle state.
                     Only a later completed candle’s close can confirm or invalidate the setup.
+                </p>
+            </div>
+
+            <div class="about-callout">
+                <strong>Elliott Wave boundaries</strong>
+                <p>
+                    A Wave V setup confirms beyond Wave IV, while a completed correction confirms beyond
+                    Wave B. A later Wave V or C extension revises the same cycle and restarts its observation
+                    window without another detection email. Invalidation is reserved for a hard Elliott rule
+                    failure; a completed ABC correction remains a separate signal stage within the same cycle.
                 </p>
             </div>
         </section>

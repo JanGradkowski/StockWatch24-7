@@ -167,6 +167,7 @@ class ChartControllerElliottWaveTest {
                 assertThat(structure.points().getLast().label()).isEqualTo("C"));
         assertThat(history.structures()).allSatisfy(structure -> {
             assertThat(structure.structureId()).isNotBlank();
+            assertThat(structure.cycleKey()).isNotBlank();
             assertThat(structure.confirmationTimestamp()).isNotNull();
             assertThat(structure.qualityScore()).isGreaterThanOrEqualTo(68);
         });

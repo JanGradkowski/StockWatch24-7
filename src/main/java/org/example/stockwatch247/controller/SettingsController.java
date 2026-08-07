@@ -41,9 +41,11 @@ public class SettingsController {
         this.rateLimiter = rateLimiter;
     }
 
-    @GetMapping("/settings")
-    public String page(Model model, Principal principal, HttpSession session) {
+    @GetMapping({"/settings", "/settings/appearance"})
+    public String page(Model model, Principal principal, HttpSession session, HttpServletRequest request) {
         User user = current(principal);
+        String settingsTab = request.getRequestURI().endsWith("/appearance") ? "appearance" : "general";
+        model.addAttribute("settingsTab", settingsTab);
         model.addAttribute("firstName", user.getFirstName());
         model.addAttribute("user", user);
         model.addAttribute("securityEvents", security.recentEvents(user.getId()));
@@ -64,7 +66,23 @@ public class SettingsController {
     @PostMapping("/settings/theme")
     public String theme(@RequestParam String theme, Principal principal) {
         security.updateTheme(current(principal).getId(), theme);
-        return "redirect:/settings?themeSaved=true";
+        return "redirect:/settings/appearance?appearanceSaved=true";
+    }
+
+    @PostMapping("/settings/appearance")
+    public String appearance(@RequestParam String theme,
+                             @RequestParam String elliottMotiveColor,
+                             @RequestParam String elliottCorrectiveColor,
+                             Principal principal,
+                             RedirectAttributes redirect) {
+        try {
+            security.updateAppearance(current(principal).getId(), theme,
+                    elliottMotiveColor, elliottCorrectiveColor);
+            redirect.addFlashAttribute("success", "Appearance preferences applied.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", exception.getMessage());
+        }
+        return "redirect:/settings/appearance";
     }
 
     @PostMapping(path = "/api/settings/theme", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -228,6 +246,8 @@ public class SettingsController {
         data.put("exportedAt", Instant.now().toString()); data.put("email", user.getEmail());
         data.put("firstName", user.getFirstName()); data.put("lastName", user.getLastName());
         data.put("createdAt", user.getCreatedAt()); data.put("theme", user.getThemePreference());
+        data.put("elliottMotiveColor", user.getElliottMotiveColor());
+        data.put("elliottCorrectiveColor", user.getElliottCorrectiveColor());
         data.put("mfaEnabled", user.isMfaEnabled()); data.put("activeAlertRules", rules);
         return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=stockwatch-account-data.json").body(data);

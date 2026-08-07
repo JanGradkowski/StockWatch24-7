@@ -156,6 +156,21 @@ public class AccountSecurityService {
         User user = locked(userId); user.setThemePreference(normalized); users.save(user);
     }
 
+    @Transactional
+    public void updateAppearance(Long userId, String theme, String motiveColor, String correctiveColor) {
+        String normalizedTheme = "LIGHT".equalsIgnoreCase(theme) ? "LIGHT" : "DARK";
+        String normalizedMotive = SecurityInputValidator.requireHexColor(motiveColor);
+        String normalizedCorrective = SecurityInputValidator.requireHexColor(correctiveColor);
+        if (normalizedMotive.equals(normalizedCorrective)) {
+            throw new IllegalArgumentException("Choose two different Elliott Wave colors.");
+        }
+        User user = locked(userId);
+        user.setThemePreference(normalizedTheme);
+        user.setElliottMotiveColor(normalizedMotive);
+        user.setElliottCorrectiveColor(normalizedCorrective);
+        users.save(user);
+    }
+
     public List<SecurityEvent> recentEvents(Long userId) {
         return events.findTop10ByUserIdOrderByCreatedAtDesc(userId);
     }

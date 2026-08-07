@@ -58,6 +58,20 @@
         <input id="signupPassword" type="password" name="password" required minlength="15" maxlength="72" autocomplete="new-password" placeholder="Create a secure password">
       </div>
       <p class="form-hint">Use at least 15 characters. Longer, unique passwords are strongest.</p>
+      <fieldset class="signup-appearance-fieldset">
+        <legend>Elliott Wave overlay colors</legend>
+        <p>Keep chart overlays distinct from red and green candles. You can change these later in Appearance settings.</p>
+        <div class="elliott-color-grid signup-elliott-colors">
+          <label class="elliott-color-choice" for="signupElliottMotiveColor">
+            <span><strong>Motive I–V</strong><small>Default: electric blue</small></span>
+            <input id="signupElliottMotiveColor" type="color" name="elliottMotiveColor" value="#3B82F6" required>
+          </label>
+          <label class="elliott-color-choice" for="signupElliottCorrectiveColor">
+            <span><strong>Corrective A–B–C</strong><small>Default: vivid violet</small></span>
+            <input id="signupElliottCorrectiveColor" type="color" name="elliottCorrectiveColor" value="#A855F7" required>
+          </label>
+        </div>
+      </fieldset>
       <button type="submit" class="btn-accent auth-btn">Create my workspace <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
 

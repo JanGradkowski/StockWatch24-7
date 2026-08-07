@@ -24,6 +24,10 @@ class HistoricalCandlestickPageControllerTest {
         HistoricalCandlestickService service = mock(HistoricalCandlestickService.class);
         HistoricalCandlestickService.HistoricalSignal signal =
                 mock(HistoricalCandlestickService.HistoricalSignal.class);
+        HistoricalCandlestickService.HistoricalSignalChart chart =
+                mock(HistoricalCandlestickService.HistoricalSignalChart.class);
+        HistoricalCandlestickService.HistoricalSignalResults results =
+                mock(HistoricalCandlestickService.HistoricalSignalResults.class);
         User user = new User();
         user.setFirstName("Jan");
         user.setEmail("jan@example.com");
@@ -36,6 +40,8 @@ class HistoricalCandlestickPageControllerTest {
                 144
         ))
                 .thenReturn(signal);
+        when(service.chartForSignal(signal)).thenReturn(chart);
+        when(service.resultsForSignal(signal, chart)).thenReturn(results);
         HistoricalCandlestickPageController controller =
                 new HistoricalCandlestickPageController(userRepository, service);
         ConcurrentModel model = new ConcurrentModel();
@@ -55,6 +61,8 @@ class HistoricalCandlestickPageControllerTest {
 
         assertThat(view).isEqualTo("historical-candlestick-detail");
         assertThat(model.getAttribute("signal")).isSameAs(signal);
+        assertThat(model.getAttribute("chart")).isSameAs(chart);
+        assertThat(model.getAttribute("results")).isSameAs(results);
         assertThat(model.getAttribute("firstName")).isEqualTo("Jan");
         assertThat(model.getAttribute("returnUrl"))
                 .isEqualTo("/stock/AAPL?historicalCandles=true&historicalInterval=1d&lookbackCandles=144");
@@ -66,5 +74,7 @@ class HistoricalCandlestickPageControllerTest {
                 CandlePattern.BULLISH_ENGULFING,
                 144
         );
+        verify(service).chartForSignal(signal);
+        verify(service).resultsForSignal(signal, chart);
     }
 }

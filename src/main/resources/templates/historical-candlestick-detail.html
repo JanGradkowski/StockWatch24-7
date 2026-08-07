@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title th:text="${signal.symbol() + ' ' + signal.patternLabel() + ' — Historical signal'}">Historical candlestick signal</title>
   <script th:src="@{/js/theme.js}"></script>
+  <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -47,6 +48,44 @@
     </div>
   </header>
 
+  <nav class="signal-view-tabs signal-three-view-tabs" aria-label="Historical signal detail views" role="tablist">
+    <button id="graphicalOutlookTab"
+            class="signal-view-tab active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="graphicalOutlookPanel"
+            data-signal-tab="graphical">
+      <span class="signal-tab-icon" aria-hidden="true">&#9650;</span>
+      <span><strong>Graphical outlook</strong><small>See the historical setup on its chart</small></span>
+    </button>
+    <button id="scoreReportTab"
+            class="signal-view-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="scoreReportPanel"
+            data-signal-tab="score">
+      <span class="signal-tab-icon score" aria-hidden="true">&#35;</span>
+      <span><strong>Score report</strong><small>Review the outcome and scoring evidence</small></span>
+    </button>
+    <button id="resultsTab"
+            class="signal-view-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="resultsPanel"
+            data-signal-tab="results"
+            th:attr="data-results-available=${results.available()}">
+      <span class="signal-tab-icon results" aria-hidden="true">%</span>
+      <span><strong>Results</strong><small>Measure the cached forward outcome</small></span>
+    </button>
+  </nav>
+
+  <div id="graphicalOutlookPanel"
+       class="signal-view-panel active"
+       role="tabpanel"
+       aria-labelledby="graphicalOutlookTab">
   <section class="signal-score-layout" aria-labelledby="historical-setup-heading">
     <article class="signal-score-card" th:classappend="${' ' + signal.setupBand()}">
       <div class="signal-score-card-topline">
@@ -110,10 +149,147 @@
         <span aria-hidden="true">↻</span>
         <div>
           <strong>Calculated on demand</strong>
-          <small>This historical signal is not stored or cached.</small>
+          <small>The result is reconstructed on demand from completed market data.</small>
         </div>
       </div>
     </aside>
+  </section>
+
+  <section class="signal-chart-card" aria-labelledby="signal-chart-heading">
+    <div class="signal-chart-heading">
+      <div>
+        <div class="signal-section-kicker">Pattern on price</div>
+        <h2 id="signal-chart-heading">
+          <span th:text="${signal.patternLabel()}">Bearish Harami</span>
+          on the <span th:text="${signal.intervalLabel()}">1d</span> chart
+        </h2>
+        <p th:if="${chart.available()}" th:text="${chart.summary()}">
+          The prior trend and pattern candles are marked on the chart.
+        </p>
+      </div>
+      <span class="signal-chart-cache-badge">Complete cached interval history &middot; no additional API request</span>
+    </div>
+
+    <div th:if="${chart.available()}" class="signal-chart-legend" aria-label="Chart annotation legend">
+      <span><i class="signal-chart-key trend" aria-hidden="true"></i><span th:text="${chart.trendLabel()}">Required uptrend</span></span>
+      <span><i class="signal-chart-key pattern" aria-hidden="true"></i>Pattern candles</span>
+      <span><i class="signal-chart-key detection" aria-hidden="true"></i>Detection candle</span>
+    </div>
+
+    <div th:if="${chart.available()}"
+         id="signalChart"
+         class="signal-chart"
+         role="img"
+         th:attr="aria-label=${signal.patternLabel() + ' historical candlestick chart for ' + signal.symbol()},
+                  data-trend-start=${chart.trendStartTimestamp()},
+                  data-pattern-start=${chart.patternStartTimestamp()},
+                  data-signal-time=${chart.signalTimestamp()},
+                  data-pattern-count=${chart.patternCandleCount()},
+                  data-pattern-label=${signal.patternLabel()},
+                  data-direction=${signal.tradeSignal().name()},
+                  data-trend-label=${chart.trendLabel()}"></div>
+    <ol th:if="${chart.available()}" id="signalChartData" hidden aria-hidden="true">
+      <li th:each="candle : ${chart.candles()}"
+          th:attr="data-time=${candle.timestamp()},data-open=${candle.open()},data-high=${candle.high()},data-low=${candle.low()},data-close=${candle.close()}"></li>
+    </ol>
+
+    <div th:unless="${chart.available()}" class="signal-chart-unavailable">
+      <span aria-hidden="true">i</span>
+      <div>
+        <h3>Chart context is unavailable for this historical signal</h3>
+        <p th:text="${chart.unavailableReason()}">The original candle is not in the local cache.</p>
+      </div>
+    </div>
+  </section>
+  </div>
+
+  <div id="scoreReportPanel"
+       class="signal-view-panel"
+       role="tabpanel"
+       aria-labelledby="scoreReportTab"
+       hidden>
+  <section class="signal-lifecycle-section" aria-labelledby="historical-lifecycle-heading">
+    <div class="signal-lifecycle-heading">
+      <div>
+        <div class="signal-section-kicker">Post-detection follow-through</div>
+        <h2 id="historical-lifecycle-heading">Signal lifecycle</h2>
+      </div>
+      <span class="signal-lifecycle-pill lifecycle-heading-pill"
+            th:classappend="${' ' + signal.lifecycle().cssClass()}"
+            th:text="${signal.lifecycle().label()}">Confirmed</span>
+    </div>
+    <p class="signal-lifecycle-summary" th:text="${signal.lifecycle().summary()}">
+      The historical lifecycle is reconstructed using completed-candle closes.
+    </p>
+    <ol class="signal-lifecycle-timeline" aria-label="Historical signal lifecycle timeline">
+      <li class="signal-lifecycle-step detected">
+        <span class="lifecycle-step-marker" aria-hidden="true">1</span>
+        <div class="lifecycle-step-copy">
+          <span class="lifecycle-step-label">Detection</span>
+          <strong>Detected</strong>
+          <time th:text="${signal.signalPeriodLabel()}">13&ndash;17 Jul 2026</time>
+          <small>Reconstructed from data available at this completed candle</small>
+        </div>
+      </li>
+      <li th:if="${signal.lifecycle().terminal()}"
+          class="signal-lifecycle-step lifecycle-resolution-step"
+          th:classappend="${' ' + signal.lifecycle().cssClass()}">
+        <span class="lifecycle-step-marker" aria-hidden="true">2</span>
+        <div class="lifecycle-step-copy">
+          <span class="lifecycle-step-label">Terminal update</span>
+          <strong th:text="${signal.lifecycle().label()}">Confirmed</strong>
+          <time th:text="${signal.lifecycle().resolutionPeriodLabel()}">20&ndash;24 Jul 2026</time>
+          <small th:text="${'Resolved on completed candle ' + signal.lifecycle().resolutionCandleOffset()}">
+            Resolved on completed candle 1
+          </small>
+        </div>
+      </li>
+      <li th:unless="${signal.lifecycle().terminal()}" class="signal-lifecycle-step pending">
+        <span class="lifecycle-step-marker" aria-hidden="true">2</span>
+        <div class="lifecycle-step-copy">
+          <span class="lifecycle-step-label">Next update</span>
+          <strong>Awaiting follow-through</strong>
+          <span th:text="${'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">
+            Up to 3 completed candles
+          </span>
+          <small>Not enough completed candles are available to resolve this lifecycle yet</small>
+        </div>
+      </li>
+    </ol>
+    <div class="signal-lifecycle-grid">
+      <div>
+        <span>Pattern range</span>
+        <strong>
+          <span th:text="${#numbers.formatDecimal(signal.lifecycle().patternLow(), 1, 4)}">96.0000</span>
+          <span aria-hidden="true">&ndash;</span>
+          <span th:text="${#numbers.formatDecimal(signal.lifecycle().patternHigh(), 1, 4)}">102.0000</span>
+        </strong>
+      </div>
+      <div>
+        <span>Confirmation trigger</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationTriggerPrice(), 1, 4)}">102.0000</strong>
+      </div>
+      <div>
+        <span>Invalidation boundary</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">96.0000</strong>
+      </div>
+      <div>
+        <span>Observation window</span>
+        <strong th:text="${signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">3 completed candles</strong>
+      </div>
+      <div th:if="${signal.lifecycle().terminal()}">
+        <span>Resolution period</span>
+        <strong th:text="${signal.lifecycle().resolutionPeriodLabel()}">21 Jul 2026</strong>
+      </div>
+      <div th:if="${signal.lifecycle().terminal()}">
+        <span>Resolution close</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().resolutionClosePrice(), 1, 4)}">103.2500</strong>
+      </div>
+    </div>
+    <p class="signal-lifecycle-note">
+      This reconstruction uses the same completed-candle close rules as live alert lifecycle tracking.
+      It does not imply that an alert or follow-up email was sent historically.
+    </p>
   </section>
 
   <section class="historical-outcome-section"
@@ -233,6 +409,121 @@
       </p>
     </div>
   </section>
+  </div>
+
+  <div id="resultsPanel"
+       class="signal-view-panel"
+       role="tabpanel"
+       aria-labelledby="resultsTab"
+       hidden>
+    <section th:if="${results.available()}"
+             id="signalResultsWorkspace"
+             class="signal-results-section"
+             th:attr="data-trade-signal=${results.tradeSignal().name()},
+                      data-signal-close=${results.signalClose()},
+                      data-outcome-label=${results.outcomeLabel()},
+                      data-best-action-label=${results.bestActionLabel()}">
+      <div class="signal-results-heading">
+        <div>
+          <div class="signal-section-kicker">Historical completed-candle follow-through</div>
+          <h2>Direction-aware result after the historical signal</h2>
+          <p>
+            The line starts at the reconstructed signal close and measures each subsequent completed close
+            in the signal&rsquo;s expected direction.
+          </p>
+        </div>
+        <span class="signal-chart-cache-badge">Cached candles only &middot; no additional API request</span>
+      </div>
+
+      <div class="signal-results-metrics" aria-live="polite">
+        <article>
+          <span id="resultHorizonLabel" th:text="${results.outcomeLabel()}">Gain / loss</span>
+          <strong id="resultHorizonReturn">+0.00%</strong>
+          <small id="resultHorizonDifference">+0.0000 per share</small>
+        </article>
+        <article>
+          <span>Selected-window close</span>
+          <strong id="resultHorizonClose">0.0000</strong>
+          <small id="resultHorizonPeriod">Period unavailable</small>
+        </article>
+        <article class="best-result">
+          <span id="resultBestActionLabel" th:text="${results.bestActionLabel()}">Best sell close</span>
+          <strong id="resultBestClose">0.0000</strong>
+          <small id="resultBestPeriod">Period unavailable</small>
+        </article>
+        <article class="best-result">
+          <span>Best direction-aware outcome</span>
+          <strong id="resultBestReturn">+0.00%</strong>
+          <small id="resultBestDifference">+0.0000 per share</small>
+        </article>
+      </div>
+
+      <div id="signalResultsChart"
+           class="signal-results-chart"
+           role="img"
+           th:attr="aria-label=${'Direction-aware historical result chart for the ' + signal.tradeSignal().name() + ' signal on ' + signal.symbol()}"></div>
+      <div class="signal-results-legend" aria-label="Results chart color legend">
+        <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the signal direction</span>
+        <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the signal</span>
+        <span><i class="signal-results-key start" aria-hidden="true"></i>Signal start at the recorded close</span>
+        <span><i class="signal-results-key best" aria-hidden="true"></i>Best exit or re-entry in the selected window</span>
+      </div>
+      <ol id="signalResultsData" hidden aria-hidden="true">
+        <li th:each="point : ${results.points()}"
+            th:attr="data-candle-number=${point.candleNumber()},
+                     data-time=${point.timestamp()},
+                     data-period-label=${point.periodLabel()},
+                     data-close=${point.close()},
+                     data-directional-return=${point.directionalReturnPercent()},
+                     data-directional-difference=${point.directionalPriceDifference()}"></li>
+      </ol>
+
+      <div class="signal-results-window-control">
+        <div class="signal-results-window-copy">
+          <label for="resultWindowSlider">Forward evaluation window</label>
+          <p>Choose how many completed candles after the historical signal to include.</p>
+        </div>
+        <output id="resultWindowValue" for="resultWindowSlider"
+                th:text="${results.minimumForwardCandles() + ' candles'}">10 candles</output>
+        <input id="resultWindowSlider"
+               type="range"
+               th:min="${results.minimumForwardCandles()}"
+               th:max="${results.availableForwardCandles()}"
+               th:value="${results.minimumForwardCandles()}"
+               step="1"
+               th:attr="aria-valuemin=${results.minimumForwardCandles()},
+                        aria-valuemax=${results.availableForwardCandles()},
+                        aria-valuenow=${results.minimumForwardCandles()}">
+        <div class="signal-results-range-labels" aria-hidden="true">
+          <span th:text="${results.minimumForwardCandles()}">10</span>
+          <span th:text="${results.availableForwardCandles()}">42</span>
+        </div>
+      </div>
+
+      <p class="signal-results-disclaimer">
+        This is a hindsight-based close-to-close measurement, not a simulated trade or forecast. It excludes
+        fees, slippage, taxes, dividends, and position sizing. The highlighted best close is only the best
+        completed-candle close visible inside the selected window.
+      </p>
+    </section>
+  </div>
+
+  <dialog th:unless="${results.available()}"
+          id="signalResultsUnavailableDialog"
+          class="unsaved-alert-dialog signal-results-unavailable-dialog"
+          aria-labelledby="signalResultsUnavailableTitle">
+    <div class="unsaved-alert-dialog-content">
+      <span class="unsaved-alert-kicker">Historical outcome window incomplete</span>
+      <h2 id="signalResultsUnavailableTitle">Results need more completed candles</h2>
+      <p th:text="${results.unavailableReason()}">
+        At least 10 completed candles after the historical signal are required before results can be displayed.
+      </p>
+      <div class="unsaved-alert-dialog-actions">
+        <button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary">Understood</button>
+      </div>
+    </div>
+  </dialog>
 </main>
+<th:block th:replace="~{signal-detail :: signalDetailBehavior}"></th:block>
 </body>
 </html>

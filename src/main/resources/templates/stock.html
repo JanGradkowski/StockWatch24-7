@@ -95,6 +95,50 @@
     </div>
   </header>
 
+  <nav class="stock-workspace-navigation" aria-label="Stock workspace sections">
+    <div class="stock-workspace-tabs" role="tablist" aria-label="Choose a stock workspace section">
+      <button id="generalWorkspaceTab"
+              type="button"
+              class="stock-workspace-tab active"
+              role="tab"
+              aria-selected="true"
+              aria-controls="generalWorkspacePanel"
+              tabindex="0"
+              data-stock-workspace-tab="general">
+        <span>General</span>
+        <small>Charts and market history</small>
+      </button>
+      <button id="technicalAnalysisWorkspaceTab"
+              type="button"
+              class="stock-workspace-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="technicalAnalysisWorkspacePanel"
+              tabindex="-1"
+              data-stock-workspace-tab="technical-analysis">
+        <span>Technical analysis</span>
+        <small>Automated signal monitoring</small>
+      </button>
+      <button id="tickerAlertsWorkspaceTab"
+              type="button"
+              class="stock-workspace-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="tickerAlertsWorkspacePanel"
+              tabindex="-1"
+              data-stock-workspace-tab="ticker-alerts">
+        <span>Ticker alerts</span>
+        <small>Congressional and insider activity</small>
+      </button>
+    </div>
+  </nav>
+
+  <div id="generalWorkspacePanel"
+       class="stock-workspace-panel active"
+       role="tabpanel"
+       aria-labelledby="generalWorkspaceTab"
+       data-stock-workspace-panel="general">
+
   <section class="chart-toolbar" aria-label="Chart controls">
     <div class="toolbar-cluster">
       <span class="toolbar-label">View</span>
@@ -108,6 +152,12 @@
                 aria-pressed="false">
           Anchored volume profile
         </button>
+        <button id="rsiOverlayToggle"
+                type="button"
+                class="view-toggle"
+                aria-pressed="false">
+          RSI overlay
+        </button>
       </div>
     </div>
     <div class="toolbar-cluster">
@@ -118,6 +168,19 @@
         <button id="int-1mo" type="button" class="view-toggle" data-chart-interval="1mo">Monthly</button>
       </div>
     </div>
+  </section>
+
+  <section class="stock-workspace-action-card" aria-labelledby="historicalCandlestickActionTitle">
+    <div>
+      <span class="stock-workspace-action-kicker">Pattern research</span>
+      <h2 id="historicalCandlestickActionTitle">Historical candle patterns</h2>
+      <p>Review completed historical candlestick signals for this ticker and compare how they developed.</p>
+    </div>
+    <button id="showHistoricalCandlestickPatternsBtn"
+            type="button"
+            class="btn-secondary historical-candlestick-open-button">
+      Show historical candle patterns
+    </button>
   </section>
 
   <!-- Price Chart Canvas -->
@@ -155,7 +218,41 @@
       <canvas id="anchoredVolumeProfileCanvas"
               class="anchored-volume-profile-canvas"
               aria-hidden="true"></canvas>
+      <div id="elliottWaveHitTargets"
+           class="elliott-wave-hit-targets"
+           aria-label="Interactive Elliott Wave signals"></div>
+      <aside id="elliottWaveHoverCard"
+             class="elliott-wave-hover-card"
+             role="dialog"
+             aria-labelledby="elliottWaveCardTitle"
+             hidden>
+        <button id="elliottWaveCardClose"
+                class="elliott-wave-card-close"
+                type="button"
+                aria-label="Close Elliott Wave details">&times;</button>
+        <p id="elliottWaveCardEyebrow" class="elliott-wave-card-eyebrow"></p>
+        <h3 id="elliottWaveCardTitle"></h3>
+        <p id="elliottWaveCardStage" class="elliott-wave-card-stage"></p>
+        <span id="elliottWaveCardStatus" class="elliott-wave-card-status"></span>
+        <div id="elliottWaveCardOutcome" class="elliott-wave-card-outcome">
+          <span id="elliottWaveCardOutcomeLabel"></span>
+          <strong id="elliottWaveCardOutcomeValue"></strong>
+          <small id="elliottWaveCardWindowEnd"></small>
+        </div>
+        <p id="elliottWaveCardMessage" class="elliott-wave-card-message"></p>
+        <p id="elliottWaveCardNote" class="elliott-wave-card-note"></p>
+        <a id="elliottWaveCardLink" class="elliott-wave-card-link" href="#">Open signal details</a>
+      </aside>
     </div>
+  </section>
+
+  <section id="rsiChartPanel" class="chart-wrapper rsi-chart-wrapper" hidden>
+    <div class="chart-panel-head">
+      <h2 id="rsiChartTitle" class="chart-panel-title">RSI (14)</h2>
+      <span id="rsiChartMeta" class="chart-panel-meta">Wilder RSI · 70 / 30 reference levels</span>
+    </div>
+    <div id="rsiChartStatus" class="rsi-chart-status" aria-live="polite"></div>
+    <div id="rsiChartContainer" class="rsi-chart-container"></div>
   </section>
 
   <!-- Volume Chart Canvas -->
@@ -166,6 +263,15 @@
     </div>
     <div id="volumeChartContainer" class="volume-chart-container"></div>
   </section>
+
+  </div>
+
+  <div id="technicalAnalysisWorkspacePanel"
+       class="stock-workspace-panel"
+       role="tabpanel"
+       aria-labelledby="technicalAnalysisWorkspaceTab"
+       data-stock-workspace-panel="technical-analysis"
+       hidden>
 
   <section class="alert-panel">
     <div class="alert-header">
@@ -180,14 +286,6 @@
           <button id="applyAlertChangesBtn" type="button" class="btn-accent alert-apply-btn" disabled>Apply changes</button>
         </div>
       </div>
-    </div>
-
-    <div class="historical-candlestick-launch-row">
-      <button id="showHistoricalCandlestickPatternsBtn"
-              type="button"
-              class="btn-secondary historical-candlestick-open-button">
-        Show historical candle patterns
-      </button>
     </div>
 
     <div class="alert-sections-layout">
@@ -231,6 +329,24 @@
         </div>
       </div>
     </div>
+  </section>
+
+  </div>
+
+  <div id="tickerAlertsWorkspacePanel"
+       class="stock-workspace-panel"
+       role="tabpanel"
+       aria-labelledby="tickerAlertsWorkspaceTab"
+       data-stock-workspace-panel="ticker-alerts"
+       hidden>
+
+  <section id="tickerAlertsEligibilityNotice"
+           class="ticker-alerts-eligibility-notice"
+           aria-labelledby="tickerAlertsEligibilityTitle"
+           hidden>
+    <span class="stock-workspace-action-kicker">Stock-specific data</span>
+    <h2 id="tickerAlertsEligibilityTitle">Ticker alerts are not available for this instrument</h2>
+    <p>Congressional and corporate-insider disclosures are filed against individual companies. They are therefore available for stocks, but not for indexes or ETFs.</p>
   </section>
 
   <section id="congressionalActivityPanel"
@@ -319,6 +435,8 @@
       </p>
     </div>
   </section>
+
+  </div>
 
   <dialog id="congressionalHistoryDialog"
           class="congressional-history-dialog"
@@ -558,6 +676,73 @@
     </div>
   </dialog>
 
+  <dialog id="rsiPeriodDialog"
+          class="congressional-history-dialog rsi-period-dialog"
+          aria-labelledby="rsiPeriodTitle">
+    <form id="rsiPeriodForm" class="congressional-history-dialog-content rsi-period-dialog-content">
+      <div class="congressional-history-heading rsi-period-dialog-heading">
+        <div>
+          <span class="congressional-panel-kicker">Indicator settings</span>
+          <h2 id="rsiPeriodTitle">Choose the RSI period</h2>
+          <p>RSI 14 with 70/30 boundaries is the classic default. Adjust all three values for your preferred interpretation.</p>
+        </div>
+        <button id="closeRsiPeriodDialogBtn"
+                type="button"
+                class="congressional-dialog-close"
+                aria-label="Close RSI period picker">&times;</button>
+      </div>
+      <div class="rsi-settings-grid">
+        <label class="rsi-period-field" for="rsiPeriodInput">
+          <span>RSI period</span>
+          <input id="rsiPeriodInput"
+                 name="rsiPeriod"
+                 type="number"
+                 min="1"
+                 step="1"
+                 value="14"
+                 inputmode="numeric"
+                 required
+                 aria-describedby="rsiPeriodHelp rsiPeriodError">
+          <small id="rsiPeriodHelp">Positive whole number.</small>
+        </label>
+        <label class="rsi-period-field" for="rsiOverboughtInput">
+          <span>Upper boundary</span>
+          <input id="rsiOverboughtInput"
+                 name="rsiOverbought"
+                 type="number"
+                 min="0"
+                 max="100"
+                 step="any"
+                 value="70"
+                 inputmode="decimal"
+                 required
+                 aria-describedby="rsiBoundaryHelp rsiPeriodError">
+          <small>Line turns red above this level.</small>
+        </label>
+        <label class="rsi-period-field" for="rsiOversoldInput">
+          <span>Lower boundary</span>
+          <input id="rsiOversoldInput"
+                 name="rsiOversold"
+                 type="number"
+                 min="0"
+                 max="100"
+                 step="any"
+                 value="30"
+                 inputmode="decimal"
+                 required
+                 aria-describedby="rsiBoundaryHelp rsiPeriodError">
+          <small>Line turns green below this level.</small>
+        </label>
+      </div>
+      <p id="rsiBoundaryHelp" class="rsi-boundary-help">Boundaries must remain inside 0–100, with the upper boundary greater than the lower boundary. The indicator uses candles already loaded on this chart.</p>
+      <p id="rsiPeriodError" class="rsi-period-error" role="alert"></p>
+      <div class="rsi-period-actions">
+        <button id="cancelRsiPeriodBtn" type="button" class="btn-secondary">Cancel</button>
+        <button type="submit" class="btn-primary">Show RSI</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="unsavedAlertDialog" class="unsaved-alert-dialog" aria-labelledby="unsavedAlertTitle">
     <div class="unsaved-alert-dialog-content">
       <span class="unsaved-alert-kicker">Unapplied changes</span>
@@ -576,6 +761,8 @@
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
   const ticker = /*[[${symbol}]]*/ 'AAPL';
   const selectedMic = /*[[${selectedMic}]]*/ null;
+  const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
+  const ELLIOTT_CORRECTIVE_COLOR = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
   const encodedTicker = encodeURIComponent(ticker);
   const csrfToken = document.querySelector('meta[name="_csrf"]').content;
   const csrfHeader = document.querySelector('meta[name="_csrf_header"]').content;
@@ -614,14 +801,22 @@
     return { 'Content-Type': 'application/json', [csrfHeader]: csrfToken };
   }
 
-  let priceChart, volumeChart;
+  let priceChart, volumeChart, rsiChart;
   const INITIAL_CANDLE_LIMIT = 1000;
   const INITIAL_VISIBLE_CANDLES = 150;
   const HISTORY_PAGE_LIMIT = 500;
   const HISTORY_PREFETCH_THRESHOLD = 120;
 
-  let lineSeries, candleSeries, volumeSeries, elliottConfirmationSeries;
+  let lineSeries, candleSeries, volumeSeries, elliottConfirmationSeries, rsiSeries;
+  let rsiGuideLines = [];
   let historicalElliottSeries = [];
+  let historicalElliottGroups = new Map();
+  let elliottSignalCards = new Map();
+  let activeElliottSegment = null;
+  let elliottCardPinned = false;
+  let elliottCardHovered = false;
+  let elliottCardHideTimer = null;
+  let elliottHitTargetFrame = null;
   let currentMode = 'candle';
   let currentInterval = '1d';
   let elliottOverlaysEnabled = true;
@@ -636,6 +831,10 @@
   let anchoredVolumeProfileRequestSequence = 0;
   let anchoredVolumeProfileRenderFrame = null;
   const ANCHORED_PROFILE_RIGHT_OFFSET_BARS = 30;
+  let rsiOverlayEnabled = false;
+  let rsiPeriod = 14;
+  let rsiOverboughtBoundary = 70;
+  let rsiOversoldBoundary = 30;
 
   let isFetching = false;
   let isLoadingOlder = false;
@@ -723,6 +922,38 @@
     }));
   }
 
+  function rsiSeriesThemeOptions(theme = document.documentElement.dataset.theme) {
+    const light = theme === 'light';
+    return {
+      line: light ? '#5b50c9' : '#9a8cff',
+      overbought: light ? '#c93452' : '#ff647c',
+      overboughtGuide: light ? 'rgba(201, 52, 82, 0.58)' : 'rgba(255, 100, 124, 0.58)',
+      midpoint: light ? 'rgba(82, 97, 88, 0.42)' : 'rgba(180, 189, 180, 0.34)',
+      oversold: light ? '#00785d' : '#64e8bd',
+      oversoldGuide: light ? 'rgba(0, 120, 93, 0.58)' : 'rgba(100, 232, 189, 0.58)'
+    };
+  }
+
+  function themedRsiData(points,
+                         overboughtBoundary = 70,
+                         oversoldBoundary = 30,
+                         theme = document.documentElement.dataset.theme) {
+    const colors = rsiSeriesThemeOptions(theme);
+    return points.map(point => {
+      if (!Number.isFinite(point.value)) return { ...point };
+      const color = point.value > overboughtBoundary
+              ? colors.overbought
+              : (point.value < oversoldBoundary ? colors.oversold : colors.line);
+      return { ...point, color };
+    });
+  }
+
+  function formatRsiBoundary(value) {
+    return Number.isInteger(value)
+            ? String(value)
+            : value.toFixed(2).replace(/\.?0+$/, '');
+  }
+
   const chartOptions = chartThemeOptions();
 
   async function initCharts() {
@@ -739,10 +970,30 @@
         maybeLoadOlderForVisibleRange(range);
         if (range) {
           volumeChart.timeScale().setVisibleLogicalRange(range);
+          if (rsiChart && rsiOverlayEnabled) {
+            rsiChart.timeScale().setVisibleLogicalRange(range);
+          }
         }
         scheduleAnchoredVolumeProfileRender();
+        scheduleElliottHitTargetPositioning();
       });
       priceChart.subscribeClick(handleAnchoredVolumeProfileChartClick);
+      priceChart.subscribeClick(handleElliottWaveChartClick);
+      priceChart.subscribeCrosshairMove(handleElliottWaveCrosshairMove);
+
+      const elliottCard = document.getElementById('elliottWaveHoverCard');
+      elliottCard.addEventListener('mouseenter', () => {
+        elliottCardHovered = true;
+        clearTimeout(elliottCardHideTimer);
+      });
+      elliottCard.addEventListener('mouseleave', () => {
+        elliottCardHovered = false;
+        if (!elliottCardPinned) scheduleElliottCardHide();
+      });
+      document.getElementById('elliottWaveCardClose').addEventListener('click', hideElliottWaveCard);
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && activeElliottSegment) hideElliottWaveCard();
+      });
 
       const seriesTheme = chartSeriesThemeOptions();
       candleSeries = priceChart.addCandlestickSeries(seriesTheme.candles);
@@ -771,6 +1022,7 @@
           instrumentTypeDisplay.textContent = instrumentType === 'INDEX'
                   ? 'Index'
                   : (instrumentType === 'ETF' ? 'ETF' : 'Stock');
+          updateTickerAlertsEligibility(instrumentType);
           await Promise.all([
             configureCongressionalActivity(instrumentType),
             configureInsiderActivity(instrumentType)
@@ -1000,6 +1252,7 @@
       })));
       lineSeries.setData(globalLineData.map(item => ({ ...item })));
       volumeSeries.setData(themedVolumeData());
+      updateRsiOverlay();
     } catch (err) {
       console.error("TradingView setData Crash:", err);
     }
@@ -1011,6 +1264,232 @@
       });
     }
     scheduleAnchoredVolumeProfileRender();
+  }
+
+  function calculateWilderRsi(candles, period) {
+    const points = candles.map(candle => ({ time: candle.time }));
+    if (!Number.isSafeInteger(period) || period < 1 || candles.length <= period) {
+      return points;
+    }
+    const closes = candles.map(candle => Number(candle.close));
+    if (closes.some(close => !Number.isFinite(close))) {
+      return points;
+    }
+
+    let averageGain = 0;
+    let averageLoss = 0;
+    for (let index = 1; index <= period; index++) {
+      const change = closes[index] - closes[index - 1];
+      averageGain += Math.max(change, 0);
+      averageLoss += Math.max(-change, 0);
+    }
+    averageGain /= period;
+    averageLoss /= period;
+    points[period] = { time: candles[period].time, value: rsiValue(averageGain, averageLoss) };
+
+    for (let index = period + 1; index < candles.length; index++) {
+      const change = closes[index] - closes[index - 1];
+      const gain = Math.max(change, 0);
+      const loss = Math.max(-change, 0);
+      averageGain = ((averageGain * (period - 1)) + gain) / period;
+      averageLoss = ((averageLoss * (period - 1)) + loss) / period;
+      points[index] = { time: candles[index].time, value: rsiValue(averageGain, averageLoss) };
+    }
+    return points;
+  }
+
+  function rsiValue(averageGain, averageLoss) {
+    if (averageGain === 0 && averageLoss === 0) return 50;
+    if (averageLoss === 0) return 100;
+    if (averageGain === 0) return 0;
+    return 100 - (100 / (1 + (averageGain / averageLoss)));
+  }
+
+  function ensureRsiChart() {
+    if (rsiChart) return;
+    const container = document.getElementById('rsiChartContainer');
+    const options = chartThemeOptions();
+    const theme = rsiSeriesThemeOptions();
+    rsiChart = LightweightCharts.createChart(container, {
+      ...options,
+      // Keep the RSI pane aligned with the price chart, but give it its own
+      // visible date axis so the crosshair date is readable in this pane too.
+      timeScale: { ...options.timeScale, visible: true },
+      handleScroll: false,
+      handleScale: false
+    });
+    rsiSeries = rsiChart.addLineSeries({
+      color: theme.line,
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: true,
+      priceFormat: {
+        type: 'custom',
+        formatter: value => value.toFixed(0)
+      },
+      autoscaleInfoProvider: () => ({
+        priceRange: { minValue: 0, maxValue: 100 }
+      })
+    });
+    rsiGuideLines = [
+      rsiSeries.createPriceLine({
+        price: rsiOverboughtBoundary,
+        color: theme.overboughtGuide,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: formatRsiBoundary(rsiOverboughtBoundary)
+      }),
+      rsiSeries.createPriceLine({
+        price: 50,
+        color: theme.midpoint,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dotted,
+        axisLabelVisible: false
+      }),
+      rsiSeries.createPriceLine({
+        price: rsiOversoldBoundary,
+        color: theme.oversoldGuide,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: formatRsiBoundary(rsiOversoldBoundary)
+      })
+    ];
+  }
+
+  function updateRsiOverlay() {
+    if (!rsiOverlayEnabled || !rsiSeries) return;
+    const points = calculateWilderRsi(globalCandleData, rsiPeriod);
+    rsiSeries.setData(themedRsiData(
+            points,
+            rsiOverboughtBoundary,
+            rsiOversoldBoundary
+    ));
+    const upperLabel = formatRsiBoundary(rsiOverboughtBoundary);
+    const lowerLabel = formatRsiBoundary(rsiOversoldBoundary);
+    rsiGuideLines[0]?.applyOptions({
+      price: rsiOverboughtBoundary,
+      title: upperLabel
+    });
+    rsiGuideLines[2]?.applyOptions({
+      price: rsiOversoldBoundary,
+      title: lowerLabel
+    });
+    document.getElementById('rsiChartTitle').textContent = `RSI (${rsiPeriod})`;
+    document.getElementById('rsiChartMeta').textContent =
+            `Wilder RSI · ${upperLabel} / ${lowerLabel} reference levels`;
+
+    const status = document.getElementById('rsiChartStatus');
+    status.classList.remove('overbought', 'oversold');
+    let latestPoint = null;
+    for (let index = points.length - 1; index >= 0; index--) {
+      if (Number.isFinite(points[index].value)) {
+        latestPoint = points[index];
+        break;
+      }
+    }
+    if (!latestPoint) {
+      status.textContent = `RSI (${rsiPeriod}) needs at least ${rsiPeriod + 1} loaded candles.`;
+      return;
+    }
+    const zone = latestPoint.value > rsiOverboughtBoundary
+            ? 'Overbought range'
+            : (latestPoint.value < rsiOversoldBoundary ? 'Oversold range' : 'Neutral range');
+    if (latestPoint.value > rsiOverboughtBoundary) status.classList.add('overbought');
+    if (latestPoint.value < rsiOversoldBoundary) status.classList.add('oversold');
+    status.textContent = `Latest RSI (${rsiPeriod}): ${latestPoint.value.toFixed(2)} · ${zone}`;
+  }
+
+  function updateRsiOverlayToggle() {
+    const button = document.getElementById('rsiOverlayToggle');
+    button.classList.toggle('active', rsiOverlayEnabled);
+    button.setAttribute('aria-pressed', String(rsiOverlayEnabled));
+    button.textContent = rsiOverlayEnabled
+            ? `RSI · ${rsiPeriod} · ${formatRsiBoundary(rsiOverboughtBoundary)}/${formatRsiBoundary(rsiOversoldBoundary)}`
+            : 'RSI overlay';
+  }
+
+  function openRsiPeriodDialog() {
+    const dialog = document.getElementById('rsiPeriodDialog');
+    const input = document.getElementById('rsiPeriodInput');
+    document.getElementById('rsiPeriodError').textContent = '';
+    input.value = String(rsiPeriod);
+    document.getElementById('rsiOverboughtInput').value = formatRsiBoundary(rsiOverboughtBoundary);
+    document.getElementById('rsiOversoldInput').value = formatRsiBoundary(rsiOversoldBoundary);
+    if (!dialog.open) dialog.showModal();
+    window.setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
+  }
+
+  function closeRsiPeriodDialog() {
+    const dialog = document.getElementById('rsiPeriodDialog');
+    if (dialog.open) dialog.close();
+  }
+
+  function enableRsiOverlay(period, overboughtBoundary, oversoldBoundary) {
+    rsiPeriod = period;
+    rsiOverboughtBoundary = overboughtBoundary;
+    rsiOversoldBoundary = oversoldBoundary;
+    rsiOverlayEnabled = true;
+    const panel = document.getElementById('rsiChartPanel');
+    panel.hidden = false;
+    ensureRsiChart();
+    updateRsiOverlayToggle();
+    updateRsiOverlay();
+    window.requestAnimationFrame(() => {
+      const container = document.getElementById('rsiChartContainer');
+      rsiChart.resize(container.clientWidth, container.clientHeight);
+      const range = priceChart?.timeScale().getVisibleLogicalRange();
+      if (range) rsiChart.timeScale().setVisibleLogicalRange(range);
+    });
+  }
+
+  function disableRsiOverlay() {
+    rsiOverlayEnabled = false;
+    document.getElementById('rsiChartPanel').hidden = true;
+    updateRsiOverlayToggle();
+  }
+
+  function toggleRsiOverlay() {
+    if (rsiOverlayEnabled) {
+      disableRsiOverlay();
+      return;
+    }
+    openRsiPeriodDialog();
+  }
+
+  function submitRsiPeriod(event) {
+    event.preventDefault();
+    const input = document.getElementById('rsiPeriodInput');
+    const period = Number(input.value);
+    if (!Number.isSafeInteger(period) || period < 1) {
+      document.getElementById('rsiPeriodError').textContent =
+              'Enter a positive whole number, such as 14.';
+      input.focus();
+      return;
+    }
+    const overboughtInput = document.getElementById('rsiOverboughtInput');
+    const oversoldInput = document.getElementById('rsiOversoldInput');
+    const overboughtBoundary = Number(overboughtInput.value);
+    const oversoldBoundary = Number(oversoldInput.value);
+    if (!Number.isFinite(overboughtBoundary) || !Number.isFinite(oversoldBoundary)
+            || oversoldBoundary <= 0 || overboughtBoundary >= 100
+            || oversoldBoundary >= overboughtBoundary) {
+      document.getElementById('rsiPeriodError').textContent =
+              'Choose boundaries inside 0–100, with the upper boundary greater than the lower boundary.';
+      if (!Number.isFinite(overboughtBoundary) || overboughtBoundary >= 100) {
+        overboughtInput.focus();
+      } else {
+        oversoldInput.focus();
+      }
+      return;
+    }
+    closeRsiPeriodDialog();
+    enableRsiOverlay(period, overboughtBoundary, oversoldBoundary);
   }
 
   function maybeLoadOlderForVisibleRange(range) {
@@ -1076,10 +1555,21 @@
     status.textContent = 'Analysing Elliott Wave structures in the loaded range...';
     try {
       const fromQuery = oldestTimestamp === null ? '' : `&from=${encodeURIComponent(oldestTimestamp)}`;
-      const response = await fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(interval)}${fromQuery}`);
+      const cardInterval = interval === '1wk' ? 'WEEKLY' : 'MONTHLY';
+      const [response, cardResponse] = await Promise.all([
+        fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(interval)}${fromQuery}`),
+        fetch(`/api/alerts/${encodedTicker}/elliott-cards?interval=${encodeURIComponent(cardInterval)}`)
+                .catch(() => null)
+      ]);
       if (!response.ok) throw new Error('Elliott Wave request failed');
       const history = await response.json();
+      const cards = cardResponse?.ok ? await cardResponse.json() : [];
       if (requestId !== elliottRequestSequence || currentInterval !== interval || !elliottOverlaysEnabled) return;
+
+      elliottSignalCards = new Map((Array.isArray(cards) ? cards : []).map(card => [
+        elliottSignalCardKey(card.cycleKey, card.stage),
+        card
+      ]));
 
       const uniqueStructures = Array.from(new Map((history.structures || []).map(structure => [
         structure.structureId || elliottStructureFallbackId(structure),
@@ -1087,6 +1577,7 @@
       ])).values());
       uniqueStructures.forEach(structure => renderHistoricalElliottStructure(structure));
       setElliottConfirmationMarkers(uniqueStructures);
+      rebuildElliottHitTargets();
 
       if (uniqueStructures.length === 0) {
         status.textContent = 'No complete I–V or I–V, A–B–C Elliott structure detected in the loaded range.';
@@ -1146,6 +1637,8 @@
   }
 
   function clearElliottOverlays() {
+    hideElliottWaveCard();
+    elliottSignalCards = new Map();
     clearHistoricalElliottSeries();
     if (elliottConfirmationSeries) {
       elliottConfirmationSeries.setData([]);
@@ -1576,7 +2069,31 @@
   }
 
   function renderHistoricalElliottStructure(structure) {
-    const color = structure.direction === 'BULLISH' ? '#64e8bd' : '#ff647c';
+    const groupId = structure.structureId || elliottStructureFallbackId(structure);
+    historicalElliottGroups.set(groupId, { structure, segments: [] });
+    const motivePoints = structure.points.slice(0, 6);
+    renderHistoricalElliottSegment(
+            structure,
+            motivePoints,
+            ELLIOTT_MOTIVE_COLOR,
+            point => !isCorrectiveElliottPoint(point),
+            'WAVE_V_END',
+            groupId
+    );
+    if (structure.points.length > 6) {
+      renderHistoricalElliottSegment(
+              structure,
+              structure.points.slice(5),
+              ELLIOTT_CORRECTIVE_COLOR,
+              isCorrectiveElliottPoint,
+              'CORRECTION_END',
+              groupId
+      );
+    }
+  }
+
+  function renderHistoricalElliottSegment(structure, points, color, includeMarker, stage, groupId) {
+    if (points.length < 2) return;
     const series = priceChart.addLineSeries({
       color,
       lineWidth: 2,
@@ -1584,12 +2101,12 @@
       lastValueVisible: false,
       priceLineVisible: false
     });
-    series.setData(structure.points.map(point => ({
+    series.setData(points.map(point => ({
       time: timestampToChartDate(point.timestamp),
       value: point.price
     })));
-    series.setMarkers(structure.points
-            .filter(point => point.label)
+    series.setMarkers(points
+            .filter(point => point.label && includeMarker(point))
             .map(point => ({
               time: timestampToChartDate(point.timestamp),
               position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
@@ -1598,6 +2115,18 @@
               text: elliottPointMarkerText(structure, point)
             })));
     historicalElliottSeries.push(series);
+    historicalElliottGroups.get(groupId)?.segments.push({
+      structure,
+      groupId,
+      stage,
+      points,
+      color,
+      series
+    });
+  }
+
+  function isCorrectiveElliottPoint(point) {
+    return ['A', 'B', 'C'].includes(String(point.label || '').toUpperCase());
   }
 
   function formatWaveTwoRetracement(retracement) {
@@ -1653,7 +2182,9 @@
                 marker: {
                   time,
                   position: buyConfirmation ? 'belowBar' : 'aboveBar',
-                  color: buyConfirmation ? '#64e8bd' : '#ff647c',
+                  color: structure.correctionComplete
+                          ? ELLIOTT_CORRECTIVE_COLOR
+                          : ELLIOTT_MOTIVE_COLOR,
                   shape: buyConfirmation ? 'arrowUp' : 'arrowDown',
                   text: `${endpointLabel} confirmed`
                 }
@@ -1665,10 +2196,370 @@
     elliottConfirmationSeries.setMarkers(confirmations.map(item => item.marker));
   }
 
+  function elliottSignalCardKey(cycleKey, stage) {
+    return `${cycleKey || ''}:${stage || ''}`;
+  }
+
+  function trackedElliottCard(segment) {
+    return elliottSignalCards.get(elliottSignalCardKey(
+            segment.structure.cycleKey,
+            segment.stage
+    )) || null;
+  }
+
+  function rebuildElliottHitTargets() {
+    const targetLayer = document.getElementById('elliottWaveHitTargets');
+    if (!targetLayer) return;
+    targetLayer.replaceChildren();
+    historicalElliottGroups.forEach(group => group.segments.forEach(segment => {
+      const card = trackedElliottCard(segment);
+      elliottInteractivePoints(segment).forEach(point => {
+        const button = document.createElement('button');
+        const pointLabel = String(point.label || 'origin').toUpperCase();
+        button.type = 'button';
+        button.className = 'elliott-wave-hit-target';
+        button.setAttribute('aria-label', `${pointLabel} point, ${segment.structure.direction || ''} Elliott Wave, ${elliottStageLabel(segment.stage)}, ${card?.status || 'historical signal'}`);
+        button.title = `Open ${elliottStageLabel(segment.stage)} details from point ${pointLabel}`;
+        button._elliottSegment = segment;
+        button._elliottPoint = point;
+        button.addEventListener('mouseenter', () => showElliottWaveCard(
+                segment,
+                elliottPointCoordinate(segment, point),
+                false
+        ));
+        button.addEventListener('mouseleave', () => {
+          if (!elliottCardPinned) scheduleElliottCardHide();
+        });
+        button.addEventListener('focus', () => showElliottWaveCard(
+                segment,
+                elliottPointCoordinate(segment, point),
+                false
+        ));
+        button.addEventListener('blur', () => {
+          if (!elliottCardPinned) scheduleElliottCardHide();
+        });
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          showElliottWaveCard(segment, elliottPointCoordinate(segment, point), true);
+        });
+        targetLayer.appendChild(button);
+      });
+    }));
+    scheduleElliottHitTargetPositioning();
+  }
+
+  function elliottInteractivePoints(segment) {
+    if (segment.stage !== 'CORRECTION_END') return segment.points;
+    return segment.points.filter(point => isCorrectiveElliottPoint(point));
+  }
+
+  function scheduleElliottHitTargetPositioning() {
+    if (elliottHitTargetFrame !== null) return;
+    elliottHitTargetFrame = requestAnimationFrame(() => {
+      elliottHitTargetFrame = null;
+      positionElliottHitTargets();
+    });
+  }
+
+  function positionElliottHitTargets() {
+    if (!priceChart) return;
+    const stage = document.getElementById('priceChartStage');
+    document.querySelectorAll('.elliott-wave-hit-target').forEach(button => {
+      const segment = button._elliottSegment;
+      const point = button._elliottPoint;
+      const x = point
+              ? priceChart.timeScale().timeToCoordinate(timestampToChartDate(point.timestamp))
+              : null;
+      const y = point ? segment.series.priceToCoordinate(Number(point.price)) : null;
+      const visible = Number.isFinite(x) && Number.isFinite(y)
+              && x >= 0 && x <= stage.clientWidth && y >= 0 && y <= stage.clientHeight;
+      button.hidden = !visible;
+      if (visible) {
+        button.style.left = `${x}px`;
+        button.style.top = `${y}px`;
+      }
+    });
+  }
+
+  function handleElliottWaveCrosshairMove(param) {
+    if (elliottCardPinned || elliottCardHovered || anchoredVolumeProfileEnabled
+            || !param?.point || !elliottOverlaysEnabled) return;
+    const segment = nearestElliottSegment(param.point);
+    if (segment) {
+      showElliottWaveCard(segment, param.point, false);
+    } else {
+      scheduleElliottCardHide();
+    }
+  }
+
+  function handleElliottWaveChartClick(param) {
+    if (anchoredVolumeProfileEnabled || !param?.point || !elliottOverlaysEnabled) return;
+    const segment = nearestElliottSegment(param.point);
+    if (segment) {
+      showElliottWaveCard(segment, param.point, true);
+    } else {
+      hideElliottWaveCard();
+    }
+  }
+
+  function nearestElliottSegment(point) {
+    let nearest = null;
+    let nearestDistance = 18;
+    historicalElliottGroups.forEach(group => group.segments.forEach(segment => {
+      for (let index = 1; index < segment.points.length; index++) {
+        const start = elliottPointCoordinate(segment, segment.points[index - 1]);
+        const end = elliottPointCoordinate(segment, segment.points[index]);
+        if (!start || !end) continue;
+        const distance = pointToLineSegmentDistance(point, start, end);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearest = segment;
+        }
+      }
+    }));
+    return nearest;
+  }
+
+  function elliottPointCoordinate(segment, point) {
+    const x = priceChart.timeScale().timeToCoordinate(timestampToChartDate(point.timestamp));
+    const y = segment.series.priceToCoordinate(Number(point.price));
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  }
+
+  function pointToLineSegmentDistance(point, start, end) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y);
+    const progress = Math.max(0, Math.min(1,
+            ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(point.x - (start.x + progress * dx), point.y - (start.y + progress * dy));
+  }
+
+  function showElliottWaveCard(segment, point, pinned) {
+    clearTimeout(elliottCardHideTimer);
+    elliottCardPinned = pinned;
+    setActiveElliottSegment(segment);
+    renderElliottWaveCard(segment);
+    const card = document.getElementById('elliottWaveHoverCard');
+    card.hidden = false;
+    positionElliottWaveCard(segment, point);
+  }
+
+  function renderElliottWaveCard(segment) {
+    const structure = segment.structure;
+    const tracked = trackedElliottCard(segment);
+    const cardData = tracked || historicalElliottCard(segment);
+    const titleDirection = structure.direction === 'BEARISH' ? 'Bearish' : 'Bullish';
+    document.getElementById('elliottWaveCardEyebrow').textContent = 'ELLIOTT WAVE';
+    document.getElementById('elliottWaveCardTitle').textContent = `${titleDirection} structure`;
+    document.getElementById('elliottWaveCardStage').textContent =
+            `${cardData.stageLabel} · ${cardData.tradeSignal} signal · ${cardData.signalPeriodLabel}`;
+
+    const status = document.getElementById('elliottWaveCardStatus');
+    status.className = `elliott-wave-card-status ${cardData.statusClass}`;
+    status.textContent = formatElliottStatus(cardData.status);
+
+    const outcome = document.getElementById('elliottWaveCardOutcome');
+    const message = document.getElementById('elliottWaveCardMessage');
+    const note = document.getElementById('elliottWaveCardNote');
+    const link = document.getElementById('elliottWaveCardLink');
+    link.hidden = !cardData.detailUrl;
+    if (cardData.detailUrl) link.href = cardData.detailUrl;
+    note.textContent = cardData.outcomeNote
+            || 'Hypothetical hindsight using completed cached candle closes.';
+    if (cardData.outcomeAvailable) {
+      outcome.hidden = false;
+      message.hidden = true;
+      document.getElementById('elliottWaveCardOutcomeLabel').textContent = cardData.outcomeLabel;
+      const outcomeValue = document.getElementById('elliottWaveCardOutcomeValue');
+      outcomeValue.textContent = formatSignedPercent(cardData.bestDirectionalReturnPercent);
+      outcomeValue.classList.toggle('positive', Number(cardData.bestDirectionalReturnPercent) >= 0);
+      outcomeValue.classList.toggle('negative', Number(cardData.bestDirectionalReturnPercent) < 0);
+      document.getElementById('elliottWaveCardWindowEnd').textContent = `At candle 10: ${formatSignedPercent(cardData.windowEndDirectionalReturnPercent)}`;
+    } else {
+      outcome.hidden = true;
+      message.hidden = false;
+      message.textContent = cardData.unavailableReason
+              || 'Ten completed candles are required before a result can be shown.';
+    }
+  }
+
+  function historicalElliottCard(segment) {
+    const structure = segment.structure;
+    const tradeSignal = historicalElliottTradeSignal(structure.direction, segment.stage);
+    const signalTimestamp = historicalElliottConfirmationTimestamp(segment);
+    const signalIndex = signalTimestamp === null
+            ? -1
+            : globalCandleData.findIndex(candle => Number(candle.timestamp) === Number(signalTimestamp));
+    const forwardCandles = signalIndex < 0
+            ? []
+            : globalCandleData.slice(signalIndex + 1, signalIndex + 11);
+    const signalClose = signalIndex < 0 ? NaN : Number(globalCandleData[signalIndex].close);
+    const outcomeAvailable = Number.isFinite(signalClose)
+            && signalClose > 0
+            && forwardCandles.length >= 10;
+    let bestDirectionalReturnPercent = null;
+    let windowEndDirectionalReturnPercent = null;
+    if (outcomeAvailable) {
+      const returns = forwardCandles.map(candle => {
+        const rawReturn = (Number(candle.close) - signalClose) / signalClose * 100;
+        return tradeSignal === 'SELL' ? -rawReturn : rawReturn;
+      });
+      bestDirectionalReturnPercent = Math.max(...returns);
+      windowEndDirectionalReturnPercent = returns[9];
+    }
+
+    const availableForwardCandles = signalIndex < 0
+            ? 0
+            : Math.min(10, globalCandleData.length - signalIndex - 1);
+    const endpoint = segment.points[segment.points.length - 1];
+    const historicalDetailUrl = endpoint?.timestamp
+            ? `/stock/${encodedTicker}/elliott-waves/${encodeURIComponent(currentInterval)}/${encodeURIComponent(segment.stage)}/${encodeURIComponent(endpoint.timestamp)}`
+              + `?cycleKey=${encodeURIComponent(structure.cycleKey || '')}`
+            : null;
+    const unavailableReason = signalTimestamp === null
+            ? 'A confirmation candle is not available for this historical wave stage.'
+            : (signalIndex < 0
+                    ? 'The historical confirmation candle is outside the candles currently loaded on this chart.'
+                    : `Waiting for ${10 - availableForwardCandles} more completed candle${10 - availableForwardCandles === 1 ? '' : 's'}.`);
+    return {
+      stageLabel: elliottStageLabel(segment.stage),
+      tradeSignal,
+      status: signalTimestamp === null ? 'DETECTED' : 'CONFIRMED',
+      statusClass: signalTimestamp === null ? 'detected' : 'confirmed',
+      signalTimestamp,
+      signalPeriodLabel: signalTimestamp === null
+              ? formatHistoricalElliottPeriod(segment.points[segment.points.length - 1]?.timestamp)
+              : formatHistoricalElliottPeriod(signalTimestamp),
+      outcomeAvailable,
+      bestDirectionalReturnPercent,
+      windowEndDirectionalReturnPercent,
+      outcomeLabel: tradeSignal === 'SELL'
+              ? 'Largest close-based loss avoided'
+              : 'Best close-based return',
+      outcomeNote: 'Historical reconstruction · hypothetical hindsight using the first 10 completed cached candle closes.',
+      unavailableReason,
+      detailUrl: historicalDetailUrl
+    };
+  }
+
+  function historicalElliottTradeSignal(direction, stage) {
+    const bullishStructure = direction === 'BULLISH';
+    if (stage === 'CORRECTION_END') return bullishStructure ? 'BUY' : 'SELL';
+    return bullishStructure ? 'SELL' : 'BUY';
+  }
+
+  function historicalElliottConfirmationTimestamp(segment) {
+    const structure = segment.structure;
+    const structureStage = structure.correctionComplete ? 'CORRECTION_END' : 'WAVE_V_END';
+    if (structureStage === segment.stage && structure.confirmationTimestamp) {
+      return Number(structure.confirmationTimestamp);
+    }
+
+    const endpoint = segment.points[segment.points.length - 1];
+    const endpointIndex = globalCandleData.findIndex(
+            candle => Number(candle.timestamp) === Number(endpoint?.timestamp));
+    if (endpointIndex < 0) return null;
+    const bullishRebound = historicalElliottTradeSignal(structure.direction, segment.stage) === 'BUY';
+    const lastCandidateIndex = Math.min(globalCandleData.length - 1, endpointIndex + 3);
+    for (let index = endpointIndex + 1; index <= lastCandidateIndex; index++) {
+      const current = globalCandleData[index];
+      const previous = globalCandleData[index - 1];
+      const confirmed = bullishRebound
+              ? Number(current.close) > Number(previous.high)
+              : Number(current.close) < Number(previous.low);
+      if (confirmed) return Number(current.timestamp);
+    }
+    return null;
+  }
+
+  function formatHistoricalElliottPeriod(timestamp) {
+    if (!timestamp) return 'unavailable';
+    const date = new Date(Number(timestamp) * 1000);
+    if (currentInterval === '1mo') {
+      return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+    return `week of ${date.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC'
+    })}`;
+  }
+
+  function elliottStageLabel(stage) {
+    return stage === 'CORRECTION_END' ? 'ABC correction ending' : 'Wave V ending';
+  }
+
+  function formatElliottStatus(status) {
+    const value = String(status || 'DETECTED').toLowerCase();
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
+  function formatSignedPercent(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '—';
+    return `${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}%`;
+  }
+
+  function positionElliottWaveCard(segment, point) {
+    const stage = document.getElementById('priceChartStage');
+    const card = document.getElementById('elliottWaveHoverCard');
+    const endpoint = segment.points[segment.points.length - 1];
+    const anchor = point || elliottPointCoordinate(segment, endpoint) || {
+      x: stage.clientWidth / 2,
+      y: stage.clientHeight / 2
+    };
+    const gap = 14;
+    const maxLeft = Math.max(8, stage.clientWidth - card.offsetWidth - 8);
+    const maxTop = Math.max(8, stage.clientHeight - card.offsetHeight - 8);
+    const preferredLeft = anchor.x + gap + card.offsetWidth > stage.clientWidth
+            ? anchor.x - card.offsetWidth - gap
+            : anchor.x + gap;
+    const preferredTop = anchor.y + gap + card.offsetHeight > stage.clientHeight
+            ? anchor.y - card.offsetHeight - gap
+            : anchor.y + gap;
+    card.style.left = `${Math.max(8, Math.min(maxLeft, preferredLeft))}px`;
+    card.style.top = `${Math.max(8, Math.min(maxTop, preferredTop))}px`;
+  }
+
+  function setActiveElliottSegment(segment) {
+    if (activeElliottSegment?.groupId === segment?.groupId) {
+      activeElliottSegment = segment;
+      return;
+    }
+    historicalElliottGroups.forEach(group => group.segments.forEach(item => {
+      item.series.applyOptions({ lineWidth: item.groupId === segment?.groupId ? 4 : 2 });
+    }));
+    activeElliottSegment = segment;
+  }
+
+  function scheduleElliottCardHide() {
+    clearTimeout(elliottCardHideTimer);
+    elliottCardHideTimer = setTimeout(() => {
+      if (!elliottCardPinned && !elliottCardHovered) hideElliottWaveCard();
+    }, 120);
+  }
+
+  function hideElliottWaveCard() {
+    clearTimeout(elliottCardHideTimer);
+    elliottCardPinned = false;
+    elliottCardHovered = false;
+    historicalElliottGroups.forEach(group => group.segments.forEach(item => {
+      item.series.applyOptions({ lineWidth: 2 });
+    }));
+    activeElliottSegment = null;
+    const card = document.getElementById('elliottWaveHoverCard');
+    if (card) card.hidden = true;
+  }
+
   function clearHistoricalElliottSeries() {
     if (!priceChart) return;
     historicalElliottSeries.forEach(series => priceChart.removeSeries(series));
     historicalElliottSeries = [];
+    historicalElliottGroups = new Map();
+    const targetLayer = document.getElementById('elliottWaveHitTargets');
+    if (targetLayer) targetLayer.replaceChildren();
   }
 
   function timestampToChartDate(timestamp) {
@@ -1746,6 +2637,17 @@
             close: latestCandle.close
           });
           lineSeries.update({ time: latestCandle.time, value: newPrice });
+          const latestLoadedCandle = globalCandleData[globalCandleData.length - 1];
+          if (latestLoadedCandle?.time === latestCandle.time) {
+            latestLoadedCandle.close = latestCandle.close;
+            latestLoadedCandle.high = latestCandle.high;
+            latestLoadedCandle.low = latestCandle.low;
+            const latestLoadedLine = globalLineData[globalLineData.length - 1];
+            if (latestLoadedLine?.time === latestCandle.time) {
+              latestLoadedLine.value = latestCandle.close;
+            }
+            updateRsiOverlay();
+          }
         }
       }
     } catch (err) {
@@ -1781,6 +2683,13 @@
     panel.hidden = !congressionalActivityEligible;
     if (!congressionalActivityEligible) return;
     await loadCongressionalActivityState();
+  }
+
+  function updateTickerAlertsEligibility(instrumentType) {
+    const isEligible = instrumentType === 'EQUITY';
+    const notice = document.getElementById('tickerAlertsEligibilityNotice');
+    notice.hidden = isEligible;
+    document.getElementById('tickerAlertsWorkspaceTab').dataset.instrumentEligible = String(isEligible);
   }
 
   async function loadCongressionalActivityState() {
@@ -2719,9 +3628,10 @@
     updateElliottOverlayToggle();
     if (currentInterval !== chartInterval) {
       await changeInterval(chartInterval);
-      return;
+    } else {
+      await refreshHistoricalElliottOverlays(chartInterval);
     }
-    await refreshHistoricalElliottOverlays(chartInterval);
+    activateStockWorkspace('general');
   }
 
   function formatSignalDate(timestamp) {
@@ -2733,13 +3643,82 @@
     return family === 'ELLIOTT_WAVE' ? 'Elliott Wave' : 'Candlestick';
   }
 
-  window.addEventListener('resize', () => {
+  const STOCK_WORKSPACE_SECTIONS = ['general', 'technical-analysis', 'ticker-alerts'];
+
+  function stockWorkspaceSectionFromHash() {
+    const requestedSection = window.location.hash.slice(1).toLowerCase();
+    return STOCK_WORKSPACE_SECTIONS.includes(requestedSection) ? requestedSection : 'general';
+  }
+
+  function resizeGeneralWorkspaceCharts() {
     if (!priceChart || !volumeChart) return;
     const priceContainer = document.getElementById('priceChartContainer');
     const volumeContainer = document.getElementById('volumeChartContainer');
+    if (!priceContainer.clientWidth || !priceContainer.clientHeight
+            || !volumeContainer.clientWidth || !volumeContainer.clientHeight) return;
     priceChart.resize(priceContainer.clientWidth, priceContainer.clientHeight);
     volumeChart.resize(volumeContainer.clientWidth, volumeContainer.clientHeight);
+    if (rsiChart && rsiOverlayEnabled) {
+      const rsiContainer = document.getElementById('rsiChartContainer');
+      if (rsiContainer.clientWidth && rsiContainer.clientHeight) {
+        rsiChart.resize(rsiContainer.clientWidth, rsiContainer.clientHeight);
+      }
+    }
     scheduleAnchoredVolumeProfileRender();
+    scheduleElliottHitTargetPositioning();
+  }
+
+  function activateStockWorkspace(section, updateHash = true, moveFocus = false) {
+    const nextSection = STOCK_WORKSPACE_SECTIONS.includes(section) ? section : 'general';
+    const tabs = [...document.querySelectorAll('[data-stock-workspace-tab]')];
+
+    tabs.forEach(tab => {
+      const isActive = tab.dataset.stockWorkspaceTab === nextSection;
+      tab.classList.toggle('active', isActive);
+      tab.setAttribute('aria-selected', String(isActive));
+      tab.tabIndex = isActive ? 0 : -1;
+      if (isActive && moveFocus) tab.focus();
+    });
+
+    document.querySelectorAll('[data-stock-workspace-panel]').forEach(panel => {
+      const isActive = panel.dataset.stockWorkspacePanel === nextSection;
+      panel.hidden = !isActive;
+      panel.classList.toggle('active', isActive);
+    });
+
+    if (updateHash && window.location.hash !== `#${nextSection}`) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${nextSection}`);
+    }
+
+    if (nextSection === 'general') {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resizeGeneralWorkspaceCharts));
+    }
+  }
+
+  function initializeStockWorkspaceTabs() {
+    const tabs = [...document.querySelectorAll('[data-stock-workspace-tab]')];
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => activateStockWorkspace(tab.dataset.stockWorkspaceTab));
+      tab.addEventListener('keydown', event => {
+        let nextIndex = null;
+        if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+        if (event.key === 'Home') nextIndex = 0;
+        if (event.key === 'End') nextIndex = tabs.length - 1;
+        if (nextIndex === null) return;
+        event.preventDefault();
+        activateStockWorkspace(tabs[nextIndex].dataset.stockWorkspaceTab, true, true);
+      });
+    });
+
+    window.addEventListener('hashchange', () => {
+      activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
+    });
+    activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
+  }
+
+  window.addEventListener('resize', () => {
+    resizeGeneralWorkspaceCharts();
   });
 
   window.addEventListener('stockwatch:themechange', event => {
@@ -2752,6 +3731,20 @@
     candleSeries.applyOptions(seriesTheme.candles);
     lineSeries.applyOptions(seriesTheme.line);
     volumeSeries.setData(themedVolumeData(theme));
+    if (rsiChart) {
+      const rsiTheme = rsiSeriesThemeOptions(theme);
+      rsiChart.applyOptions({
+        ...options,
+        timeScale: { ...options.timeScale, visible: true },
+        handleScroll: false,
+        handleScale: false
+      });
+      rsiSeries.applyOptions({ color: rsiTheme.line });
+      rsiGuideLines[0]?.applyOptions({ color: rsiTheme.overboughtGuide });
+      rsiGuideLines[1]?.applyOptions({ color: rsiTheme.midpoint });
+      rsiGuideLines[2]?.applyOptions({ color: rsiTheme.oversoldGuide });
+      updateRsiOverlay();
+    }
     scheduleAnchoredVolumeProfileRender();
   });
 
@@ -2764,6 +3757,14 @@
   document.getElementById('elliottOverlayToggle').addEventListener('click', toggleElliottOverlays);
   document.getElementById('anchoredVolumeProfileToggle')
           .addEventListener('click', toggleAnchoredVolumeProfile);
+  document.getElementById('rsiOverlayToggle')
+          .addEventListener('click', toggleRsiOverlay);
+  document.getElementById('rsiPeriodForm')
+          .addEventListener('submit', submitRsiPeriod);
+  document.getElementById('closeRsiPeriodDialogBtn')
+          .addEventListener('click', closeRsiPeriodDialog);
+  document.getElementById('cancelRsiPeriodBtn')
+          .addEventListener('click', closeRsiPeriodDialog);
   document.getElementById('followCongressionalActivityBtn')
           .addEventListener('click', toggleCongressionalActivityFollow);
   document.getElementById('showCongressionalHistoryBtn')
@@ -2799,7 +3800,10 @@
   });
   bindUnsavedAlertGuards();
 
-  window.onload = initCharts;
+  window.onload = async () => {
+    await initCharts();
+    initializeStockWorkspaceTabs();
+  };
 </script>
 </body>
 </html>

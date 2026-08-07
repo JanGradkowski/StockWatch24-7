@@ -9,6 +9,9 @@
     @Table(name = "users") // "user" is a reserved keyword in Postgres, always pluralize it!
     public class User {
 
+        public static final String DEFAULT_ELLIOTT_MOTIVE_COLOR = "#3B82F6";
+        public static final String DEFAULT_ELLIOTT_CORRECTIVE_COLOR = "#A855F7";
+
         @Id
         @GeneratedValue(strategy = GenerationType.IDENTITY)
         private Long id;
@@ -42,6 +45,12 @@
 
         @Column(name = "theme_preference", nullable = false, length = 16)
         private String themePreference = "DARK";
+
+        @Column(name = "elliott_motive_color", nullable = false, length = 7)
+        private String elliottMotiveColor = DEFAULT_ELLIOTT_MOTIVE_COLOR;
+
+        @Column(name = "elliott_corrective_color", nullable = false, length = 7)
+        private String elliottCorrectiveColor = DEFAULT_ELLIOTT_CORRECTIVE_COLOR;
 
         @Column(name = "mfa_enabled", nullable = false)
         private boolean mfaEnabled;
@@ -171,6 +180,10 @@
 
         public String getThemePreference() { return themePreference; }
         public void setThemePreference(String themePreference) { this.themePreference = themePreference; }
+        public String getElliottMotiveColor() { return elliottMotiveColor; }
+        public void setElliottMotiveColor(String value) { this.elliottMotiveColor = value; }
+        public String getElliottCorrectiveColor() { return elliottCorrectiveColor; }
+        public void setElliottCorrectiveColor(String value) { this.elliottCorrectiveColor = value; }
         public boolean isMfaEnabled() { return mfaEnabled; }
         public void setMfaEnabled(boolean mfaEnabled) { this.mfaEnabled = mfaEnabled; }
         public String getMfaSecretCiphertext() { return mfaSecretCiphertext; }

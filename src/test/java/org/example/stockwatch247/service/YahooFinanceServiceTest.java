@@ -563,6 +563,66 @@ class YahooFinanceServiceTest {
     }
 
     @Test
+    void monthlyRequestDropsYahooLiveSnapshotThatUsesADailyTimestamp() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("^GSPC");
+        asset.setCompanyName("S&P 500");
+        asset.setExchange("SNP");
+        asset.setCurrency("USD");
+        asset.setInstrumentType(InstrumentType.INDEX);
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("^GSPC")).thenReturn(Optional.of(asset));
+        when(stockAssetRepository.save(any(StockAsset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        long julyMonthly = LocalDate.of(2026, 7, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        long julyDailySnapshot = LocalDate.of(2026, 7, 29).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        String response = """
+                {
+                  "chart": {
+                    "result": [{
+                      "meta": {
+                        "symbol": "^GSPC",
+                        "currency": "USD",
+                        "exchangeName": "SNP",
+                        "fullExchangeName": "S&P 500",
+                        "shortName": "S&P 500",
+                        "quoteType": "INDEX",
+                        "dataGranularity": "1mo",
+                        "exchangeTimezoneName": "America/New_York"
+                      },
+                      "timestamp": [%d, %d],
+                      "indicators": {"quote": [{
+                        "open": [7478.84, 7418.16],
+                        "high": [7581.50, 7450.84],
+                        "low": [7313.92, 7313.92],
+                        "close": [7489.72, 7316.15],
+                        "volume": [0, 0]
+                      }]}
+                    }],
+                    "error": null
+                  }
+                }
+                """.formatted(julyMonthly, julyDailySnapshot);
+
+        server.expect(requestTo(containsString("interval=1mo")))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+
+        YahooFinanceService service = new YahooFinanceService(
+                restTemplate, new ObjectMapper(), stockAssetRepository,
+                "https://query1.finance.yahoo.com", true);
+
+        List<MarketDataBar> bars = service.getTimeSeries("^GSPC", "1mo", 1000);
+
+        assertThat(bars).singleElement().satisfies(bar -> {
+            assertThat(bar.timestamp()).isEqualTo(julyMonthly);
+            assertThat(bar.close()).isEqualTo(7489.72);
+        });
+        server.verify();
+    }
+
+    @Test
     void historicalPageUsesPeriodBoundsInsteadOfARange() {
         RestTemplate restTemplate = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();

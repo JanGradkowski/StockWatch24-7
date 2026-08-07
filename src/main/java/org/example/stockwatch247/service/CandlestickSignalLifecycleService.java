@@ -2,6 +2,8 @@ package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.Candle;
+import org.example.stockwatch247.model.EnrichedCandle;
+import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.TimeInterval;
@@ -9,6 +11,7 @@ import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,9 +20,9 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Tracks a directional candlestick detection until the first close-based
- * confirmation, invalidation, or expiry. Detection remains an immediate alert;
- * this service only adds one terminal follow-up.
+ * Tracks a directional candlestick or Elliott turning-point detection until
+ * the first close-based confirmation, invalidation, or expiry. Detection
+ * remains an immediate alert; this service only adds one terminal follow-up.
  */
 @Service
 public class CandlestickSignalLifecycleService {
@@ -28,11 +31,14 @@ public class CandlestickSignalLifecycleService {
     private final AlertEventRepository alertEventRepository;
     private final AlertNotificationService notificationService;
     private final int confirmationWindowCandles;
+    private final int elliottConfirmationWindowCandles;
 
+    @Autowired
     public CandlestickSignalLifecycleService(
             AlertEventRepository alertEventRepository,
             AlertNotificationService notificationService,
-            @Value("${alerts.candlestick.lifecycle-window-candles:3}") int confirmationWindowCandles) {
+            @Value("${alerts.candlestick.lifecycle-window-candles:3}") int confirmationWindowCandles,
+            @Value("${alerts.elliott.lifecycle-window-candles:10}") int elliottConfirmationWindowCandles) {
         this.alertEventRepository = alertEventRepository;
         this.notificationService = notificationService;
         this.confirmationWindowCandles = Math.clamp(
@@ -40,6 +46,18 @@ public class CandlestickSignalLifecycleService {
                 1,
                 MAXIMUM_CONFIRMATION_WINDOW
         );
+        this.elliottConfirmationWindowCandles = Math.clamp(
+                elliottConfirmationWindowCandles,
+                1,
+                MAXIMUM_CONFIRMATION_WINDOW
+        );
+    }
+
+    CandlestickSignalLifecycleService(
+            AlertEventRepository alertEventRepository,
+            AlertNotificationService notificationService,
+            int confirmationWindowCandles) {
+        this(alertEventRepository, notificationService, confirmationWindowCandles, 10);
     }
 
     public void initializeTracking(AlertEvent event,
@@ -96,13 +114,91 @@ public class CandlestickSignalLifecycleService {
         event.setInvalidationPrice(
                 signal.tradeSignal() == TradeSignal.BUY ? patternLow : patternHigh);
         event.setConfirmationWindowCandles(confirmationWindowCandles);
+        event.setLifecycleAnchorCandleTimestamp(signal.candleTimestamp());
+        event.setLifecycleResolutionReason(null);
         event.setLifecycleUpdatedAt(LocalDateTime.now());
+    }
+
+    public boolean initializeElliottTracking(
+            AlertEvent event,
+            ElliottWaveDetectionService.ElliottWaveStructure structure) {
+        if (event == null || structure == null || !isElliottPattern(event.getPattern())) {
+            return false;
+        }
+        ElliottWaveSignalLifecyclePolicy.LifecycleBoundaries boundaries =
+                ElliottWaveSignalLifecyclePolicy.boundaries(
+                                event.getPattern(),
+                                event.getTradeSignal(),
+                                structure)
+                        .orElse(null);
+        if (boundaries == null) {
+            return false;
+        }
+
+        event.setLifecycleStatus(SignalLifecycleStatus.DETECTED);
+        event.setPatternHigh(boundaries.structureHigh());
+        event.setPatternLow(boundaries.structureLow());
+        event.setConfirmationTriggerPrice(boundaries.confirmationTrigger());
+        event.setInvalidationPrice(boundaries.invalidationBoundary());
+        event.setConfirmationWindowCandles(elliottConfirmationWindowCandles);
+        event.setElliottCycleKey(boundaries.cycleKey());
+        event.setElliottSignalStage(boundaries.stage());
+        event.setElliottEndpointTimestamp(boundaries.endpointTimestamp());
+        event.setElliottEndpointPrice(boundaries.endpointPrice());
+        event.setElliottTerminalAnchorTimestamp(boundaries.terminalAnchorTimestamp());
+        event.setLifecycleAnchorCandleTimestamp(boundaries.lifecycleAnchorTimestamp());
+        event.setLifecycleResolutionReason(null);
+        event.setLifecycleUpdatedAt(LocalDateTime.now());
+        return true;
+    }
+
+    @Transactional
+    public int initializeUntrackedElliott(
+            String symbol,
+            TimeInterval interval,
+            List<EnrichedCandle> enrichedCandles,
+            ElliottWaveDetectionService elliottWaveDetectionService) {
+        if (symbol == null || symbol.isBlank() || interval == null
+                || enrichedCandles == null || enrichedCandles.isEmpty()
+                || elliottWaveDetectionService == null) {
+            return 0;
+        }
+        List<AlertEvent> events = alertEventRepository.findUntrackedLifecycleEvents(
+                symbol,
+                interval,
+                AlertPatternFamily.ELLIOTT_WAVE,
+                SignalLifecycleStatus.DETECTED
+        );
+        int initialized = 0;
+        for (AlertEvent event : events) {
+            ElliottWaveDetectionService.ElliottWaveStructure structure = elliottWaveDetectionService
+                    .findStructureForSignal(
+                            enrichedCandles,
+                            event.getPattern(),
+                            event.getSignalCandleTimestamp())
+                    .orElse(null);
+            if (initializeElliottTracking(event, structure)) {
+                alertEventRepository.save(event);
+                initialized++;
+            }
+        }
+        return initialized;
     }
 
     @Transactional
     public LifecycleEvaluationResult evaluatePending(String symbol,
                                                      TimeInterval interval,
                                                      List<Candle> availableCandles) {
+        return evaluatePending(symbol, interval, availableCandles, List.of(), null);
+    }
+
+    @Transactional
+    public LifecycleEvaluationResult evaluatePending(
+            String symbol,
+            TimeInterval interval,
+            List<Candle> availableCandles,
+            List<EnrichedCandle> enrichedCandles,
+            ElliottWaveDetectionService elliottWaveDetectionService) {
         List<AlertEvent> pendingEvents = alertEventRepository.findTrackedLifecycleEvents(
                 symbol,
                 interval,
@@ -123,8 +219,16 @@ public class CandlestickSignalLifecycleService {
         int expired = 0;
 
         for (AlertEvent event : pendingEvents) {
-            SignalLifecycleStatus outcome = evaluate(event, candles);
+            boolean revised = refreshElliottEndpoint(
+                    event,
+                    enrichedCandles,
+                    elliottWaveDetectionService
+            );
+            SignalLifecycleStatus outcome = evaluate(event, candles, enrichedCandles);
             if (outcome == null) {
+                if (revised) {
+                    alertEventRepository.save(event);
+                }
                 continue;
             }
 
@@ -146,7 +250,56 @@ public class CandlestickSignalLifecycleService {
         return new LifecycleEvaluationResult(pendingEvents.size(), confirmed, invalidated, expired);
     }
 
-    private SignalLifecycleStatus evaluate(AlertEvent event, List<Candle> candles) {
+    private boolean refreshElliottEndpoint(
+            AlertEvent event,
+            List<EnrichedCandle> enrichedCandles,
+            ElliottWaveDetectionService elliottWaveDetectionService) {
+        if (event == null || !event.isElliottSignal()
+                || event.getElliottCycleKey() == null
+                || event.getElliottSignalStage() == null
+                || enrichedCandles == null || enrichedCandles.isEmpty()
+                || elliottWaveDetectionService == null) {
+            return false;
+        }
+        ElliottWaveDetectionService.ElliottWaveStructure revisedStructure =
+                elliottWaveDetectionService.findLatestStructureForCycle(
+                                enrichedCandles,
+                                event.getElliottCycleKey(),
+                                event.getElliottSignalStage())
+                        .orElse(null);
+        if (revisedStructure == null) {
+            return false;
+        }
+        ElliottWaveSignalLifecyclePolicy.LifecycleBoundaries revised =
+                ElliottWaveSignalLifecyclePolicy.boundaries(
+                                event.getPattern(),
+                                event.getTradeSignal(),
+                                revisedStructure)
+                        .orElse(null);
+        if (revised == null
+                || !event.getElliottCycleKey().equals(revised.cycleKey())
+                || event.getElliottEndpointTimestamp() != null
+                && revised.endpointTimestamp() <= event.getElliottEndpointTimestamp()) {
+            return false;
+        }
+
+        event.setPatternHigh(revised.structureHigh());
+        event.setPatternLow(revised.structureLow());
+        event.setConfirmationTriggerPrice(revised.confirmationTrigger());
+        event.setInvalidationPrice(revised.invalidationBoundary());
+        event.setElliottEndpointTimestamp(revised.endpointTimestamp());
+        event.setElliottEndpointPrice(revised.endpointPrice());
+        event.setElliottTerminalAnchorTimestamp(revised.terminalAnchorTimestamp());
+        event.setLifecycleAnchorCandleTimestamp(revised.lifecycleAnchorTimestamp());
+        event.setLifecycleResolutionReason(null);
+        event.setLifecycleUpdatedAt(LocalDateTime.now());
+        return true;
+    }
+
+    private SignalLifecycleStatus evaluate(
+            AlertEvent event,
+            List<Candle> candles,
+            List<EnrichedCandle> enrichedCandles) {
         if (event == null
                 || event.getLifecycleStatus() != SignalLifecycleStatus.DETECTED
                 || !event.isLifecycleTracked()
@@ -155,17 +308,68 @@ public class CandlestickSignalLifecycleService {
             return null;
         }
 
-        boolean signalCandleAvailable = candles.stream()
-                .anyMatch(candle -> candle.getTimestamp().equals(event.getSignalCandleTimestamp()));
-        if (!signalCandleAvailable) {
+        Long lifecycleAnchor = event.getLifecycleEvaluationAnchorTimestamp();
+        boolean lifecycleAnchorAvailable = lifecycleAnchor != null && candles.stream()
+                .anyMatch(candle -> candle.getTimestamp().equals(lifecycleAnchor));
+        if (!lifecycleAnchorAvailable) {
             return null;
         }
 
         int window = event.getConfirmationWindowCandles();
         List<Candle> subsequentCandles = candles.stream()
-                .filter(candle -> candle.getTimestamp() > event.getSignalCandleTimestamp())
+                .filter(candle -> candle.getTimestamp() > lifecycleAnchor)
                 .limit(window)
                 .toList();
+        if (event.isElliottSignal()) {
+            long lastObservedTimestamp = subsequentCandles.isEmpty()
+                    ? lifecycleAnchor
+                    : subsequentCandles.getLast().getTimestamp();
+            ElliottWaveSignalLifecyclePolicy.StructuralInvalidation structuralInvalidation =
+                    ElliottWaveSignalLifecyclePolicy.structuralInvalidation(
+                                    event.getElliottCycleKey(),
+                                    event.getElliottSignalStage(),
+                                    event.getInvalidationPrice(),
+                                    lifecycleAnchor,
+                                    enrichedCandles == null
+                                            ? List.of()
+                                            : enrichedCandles.stream()
+                                                    .filter(candle -> candle.timestamp() <= lastObservedTimestamp)
+                                                    .toList())
+                            .orElse(null);
+            ElliottWaveSignalLifecyclePolicy.LifecycleResolution resolution =
+                    ElliottWaveSignalLifecyclePolicy.resolve(
+                            event.getTradeSignal(),
+                            event.getConfirmationTriggerPrice(),
+                            subsequentCandles,
+                            window
+                    );
+            boolean structureBreaksFirst = structuralInvalidation != null
+                    && (resolution == null
+                    || structuralInvalidation.timestamp()
+                    <= resolution.resolutionCandle().getTimestamp());
+            if (structureBreaksFirst) {
+                Candle resolutionCandle = candles.stream()
+                        .filter(candle -> candle.getTimestamp().equals(structuralInvalidation.timestamp()))
+                        .findFirst()
+                        .orElse(null);
+                if (resolutionCandle == null) {
+                    return null;
+                }
+                int offset = (int) candles.stream()
+                        .filter(candle -> candle.getTimestamp() > lifecycleAnchor)
+                        .filter(candle -> candle.getTimestamp() <= structuralInvalidation.timestamp())
+                        .count();
+                resolve(event, SignalLifecycleStatus.INVALIDATED, resolutionCandle, offset,
+                        structuralInvalidation.reason());
+                return SignalLifecycleStatus.INVALIDATED;
+            }
+            if (resolution != null) {
+                resolve(event, resolution.status(), resolution.resolutionCandle(),
+                        resolution.candleOffset(), null);
+                return resolution.status();
+            }
+            return null;
+        }
         CandlestickSignalLifecyclePolicy.LifecycleResolution resolution =
                 CandlestickSignalLifecyclePolicy.resolve(
                         event.getTradeSignal(),
@@ -179,7 +383,8 @@ public class CandlestickSignalLifecycleService {
                     event,
                     resolution.status(),
                     resolution.resolutionCandle(),
-                    resolution.candleOffset()
+                    resolution.candleOffset(),
+                    null
             );
             return resolution.status();
         }
@@ -189,11 +394,13 @@ public class CandlestickSignalLifecycleService {
     private void resolve(AlertEvent event,
                          SignalLifecycleStatus outcome,
                          Candle resolutionCandle,
-                         int candleOffset) {
+                         int candleOffset,
+                         String resolutionReason) {
         event.setLifecycleStatus(outcome);
         event.setResolutionCandleTimestamp(resolutionCandle.getTimestamp());
         event.setResolutionCandleOffset(candleOffset);
         event.setResolutionClosePrice(resolutionCandle.getClosePrice());
+        event.setLifecycleResolutionReason(resolutionReason);
         event.setLifecycleUpdatedAt(LocalDateTime.now());
     }
 

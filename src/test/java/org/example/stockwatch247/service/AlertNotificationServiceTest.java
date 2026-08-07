@@ -235,6 +235,41 @@ class AlertNotificationServiceTest {
     }
 
     @Test
+    void labelsElliottWaveLifecycleFollowUpAndStructuralRange() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.SELL);
+        rule.setPatternFamily(AlertPatternFamily.ELLIOTT_WAVE);
+        rule.setInterval(TimeInterval.WEEKLY);
+        AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.INVALIDATED);
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        event.setPatternHigh(125.0);
+        event.setPatternLow(94.0);
+        event.setConfirmationTriggerPrice(112.0);
+        event.setInvalidationPrice(125.0);
+        event.setConfirmationWindowCandles(10);
+        event.setResolutionCandleTimestamp(Instant.parse("2026-07-27T00:00:00Z").getEpochSecond());
+        event.setResolutionCandleOffset(2);
+        event.setResolutionClosePrice(126.0);
+
+        service.sendSignalLifecycleEmail(event);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Elliott Wave lifecycle update",
+                "Wave structure range: 94.0000 to 125.0000",
+                "Confirmation trigger: close below 112.0000",
+                "Structural invalidation boundary: 125.0000",
+                "Observation window: 10 completed weekly candles");
+    }
+
+    @Test
     void identifiesEndOfWaveCInElliottEmailSubjectAndBody() {
         @SuppressWarnings("unchecked")
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
@@ -300,8 +335,14 @@ class AlertNotificationServiceTest {
                 List.of("bullish wave V ended as a truncated fifth"),
                 Instant.parse("2026-07-01T00:00:00Z").getEpochSecond(),
                 195.25);
+        AlertEvent lifecycleEvent = trackedEvent(rule, SignalLifecycleStatus.DETECTED);
+        lifecycleEvent.setPattern(signal.pattern());
+        lifecycleEvent.setConfirmationTriggerPrice(180.0);
+        lifecycleEvent.setInvalidationPrice(null);
+        lifecycleEvent.setConfirmationWindowCandles(10);
+        lifecycleEvent.setElliottEndpointPrice(205.0);
 
-        service.sendSignalEmail(rule, signal);
+        service.sendSignalEmail(rule, signal, lifecycleEvent);
 
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
@@ -309,7 +350,10 @@ class AlertNotificationServiceTest {
         assertThat(messageCaptor.getValue().getSubject()).contains("Elliott wave V completed", "SELL", "SAP.DE");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "End of Elliott impulse (wave V)",
-                "Signal candle period: July 2026");
+                "Signal candle period: July 2026",
+                "Latest Wave V/C endpoint: 205.0000",
+                "ordinary Wave V/C extensions revise the endpoint",
+                "without another detection email");
         assertThat(messageCaptor.getValue().getText()).doesNotContain("Research horizon:");
     }
 

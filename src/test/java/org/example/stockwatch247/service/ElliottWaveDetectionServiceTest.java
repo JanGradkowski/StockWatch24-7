@@ -2,6 +2,7 @@ package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ElliottWaveDetectionServiceTest {
     private final ElliottWaveDetectionService detectionService = new ElliottWaveDetectionService();
+    private final ElliottWaveDetectionService v2DetectionService = new ElliottWaveDetectionService(
+            1, ElliottWaveDetectionService.ScoringModel.V2);
 
     @Test
     void detectsBullishImpulseBreakoutFromAlternatingPivots() {
@@ -97,6 +100,23 @@ class ElliottWaveDetectionServiceTest {
     }
 
     @Test
+    void v2ScoreDoesNotReplaceTheFrozenV1AlertEligibilityGate() {
+        List<EnrichedCandle> candles = bullishAbcCorrectionSeries();
+
+        DetectedSignal signal = v2DetectionService.detectAlertSignals(candles).stream()
+                .filter(candidate -> candidate.pattern() == CandlePattern.ELLIOTT_BULLISH_CORRECTION)
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(signal.eligibilityScore()).isEqualTo(100);
+        assertThat(signal.confidenceScore()).isEqualTo(74);
+        assertThat(signal.reasons().stream()
+                .filter(reason -> reason.matches("^.+ \\+[0-9]+/[0-9]+: .+$")))
+                .hasSize(7);
+        assertThat(signal.reasons().getLast()).startsWith("V1 detection eligibility: 100/100");
+    }
+
+    @Test
     void exposesTheSameFiveWaveAndAbcPointsForChartRendering() {
         ElliottWaveDetectionService.ElliottWaveStructure structure = detectionService
                 .findLatestWaveStructure(bullishAbcCorrectionSeries())
@@ -111,6 +131,29 @@ class ElliottWaveDetectionServiceTest {
                 .anySatisfy(historic -> assertThat(historic.points())
                         .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
                         .containsExactly("", "I", "II", "III", "IV", "V", "A", "B", "C"));
+    }
+
+    @Test
+    void reconstructsTheSevenV2CategoriesForHistoricalElliottDetails() {
+        List<EnrichedCandle> candles = bullishAbcCorrectionSeries();
+        ElliottWaveDetectionService.ElliottWaveStructure structure = detectionService
+                .findLatestWaveStructure(candles)
+                .orElseThrow();
+
+        ElliottWaveDetectionService.ElliottScoreAssessment assessment = v2DetectionService
+                .scoreHistoricalStructure(candles, structure, ElliottSignalStage.CORRECTION_END, 87L);
+
+        assertThat(assessment.score()).isBetween(0, 100);
+        assertThat(assessment.reasons()).hasSize(7);
+        assertThat(assessment.reasons()).extracting(reason -> reason.substring(0, reason.indexOf(" +")))
+                .containsExactly(
+                        "Structural / pivot quality",
+                        "Fibonacci / proportion / alternation",
+                        "Momentum / divergence",
+                        "Stage-specific confirmation",
+                        "Support / resistance / trend context",
+                        "Volume confirmation",
+                        "Timing / count stability");
     }
 
     @Test

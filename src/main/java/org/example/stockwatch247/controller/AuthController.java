@@ -63,16 +63,25 @@ public class AuthController {
             @RequestParam String lastName,
             @RequestParam String email,
             @RequestParam String password,
+            @RequestParam(defaultValue = User.DEFAULT_ELLIOTT_MOTIVE_COLOR) String elliottMotiveColor,
+            @RequestParam(defaultValue = User.DEFAULT_ELLIOTT_CORRECTIVE_COLOR) String elliottCorrectiveColor,
             Model model
     ){
         final String normalizedFirstName;
         final String normalizedLastName;
         final String normalizedEmail;
+        final String normalizedMotiveColor;
+        final String normalizedCorrectiveColor;
         try {
             normalizedFirstName = SecurityInputValidator.requirePersonName(firstName);
             normalizedLastName = SecurityInputValidator.requirePersonName(lastName);
             normalizedEmail = SecurityInputValidator.requireEmail(email);
             SecurityInputValidator.requirePassword(password);
+            normalizedMotiveColor = SecurityInputValidator.requireHexColor(elliottMotiveColor);
+            normalizedCorrectiveColor = SecurityInputValidator.requireHexColor(elliottCorrectiveColor);
+            if (normalizedMotiveColor.equals(normalizedCorrectiveColor)) {
+                throw new IllegalArgumentException("Choose two different Elliott Wave colors.");
+            }
         } catch (IllegalArgumentException e) {
             model.addAttribute("error", e.getMessage());
             return "signup";
@@ -88,6 +97,8 @@ public class AuthController {
         user.setLastName(normalizedLastName);
         user.setEmail(normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(password));
+        user.setElliottMotiveColor(normalizedMotiveColor);
+        user.setElliottCorrectiveColor(normalizedCorrectiveColor);
         user.setVerified(false);
         try {
             emailVerificationService.registerNewUser(user);
@@ -227,6 +238,26 @@ public class AuthController {
         model.addAttribute("firstName", currentUser.getFirstName());
         model.addAttribute("signal", alertRuleService.getSignalDetail(currentUser, alertEventId));
         return "signal-detail";
+    }
+
+    @GetMapping("/signals")
+    public String allSignalsPage(@RequestParam(defaultValue = "date") String sort,
+                                 @RequestParam(defaultValue = "desc") String direction,
+                                 @RequestParam(defaultValue = "0") int page,
+                                 Model model,
+                                 Principal principal) {
+        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        if (currentUser == null) {
+            return "redirect:/login";
+        }
+        model.addAttribute("firstName", currentUser.getFirstName());
+        model.addAttribute("archive", alertRuleService.getSignalArchive(
+                currentUser,
+                sort,
+                direction,
+                page
+        ));
+        return "all-signals";
     }
 
     @GetMapping("/stock/{symbol}")

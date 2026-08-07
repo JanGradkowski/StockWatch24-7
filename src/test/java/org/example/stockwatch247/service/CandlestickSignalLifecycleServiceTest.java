@@ -3,6 +3,7 @@ package org.example.stockwatch247.service;
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.Candle;
+import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
@@ -16,6 +17,7 @@ import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedS
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -24,6 +26,227 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class CandlestickSignalLifecycleServiceTest {
+
+    @Test
+    void silentlyRevisesExtendedWaveVAndRestartsObservationAnchor() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+        AlertEvent event = new AlertEvent();
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(600L);
+        service.initializeElliottTracking(event, bullishWaveVStructure());
+        ElliottWaveDetectionService.ElliottWaveStructure extended = structure(
+                false,
+                List.of(
+                        point("0", 100L, 100.0, "LOW"),
+                        point("I", 200L, 120.0, "HIGH"),
+                        point("II", 300L, 108.0, "LOW"),
+                        point("III", 400L, 135.0, "HIGH"),
+                        point("IV", 500L, 122.0, "LOW"),
+                        point("V", 700L, 145.0, "HIGH")
+                ),
+                800L);
+        when(repository.findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.WEEKLY, SignalLifecycleStatus.DETECTED))
+                .thenReturn(List.of(event));
+        when(detector.findLatestStructureForCycle(
+                List.of(enriched(800L, 142.0)),
+                event.getElliottCycleKey(),
+                event.getElliottSignalStage())).thenReturn(Optional.of(extended));
+
+        CandlestickSignalLifecycleService.LifecycleEvaluationResult result = service.evaluatePending(
+                "AAPL",
+                TimeInterval.WEEKLY,
+                List.of(candle(800L, 143.0, 144.0, 141.0, 142.0)),
+                List.of(enriched(800L, 142.0)),
+                detector);
+
+        assertThat(result.resolved()).isZero();
+        assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.DETECTED);
+        assertThat(event.getElliottEndpointTimestamp()).isEqualTo(700L);
+        assertThat(event.getElliottEndpointPrice()).isEqualTo(145.0);
+        assertThat(event.getLifecycleAnchorCandleTimestamp()).isEqualTo(800L);
+        verify(repository).save(event);
+        verify(notifications, never()).sendSignalLifecycleEmail(event);
+    }
+
+    @Test
+    void silentlyRevisesExtendedWaveCWithinSeparateCorrectionStage() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+        AlertEvent event = new AlertEvent();
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(900L);
+        service.initializeElliottTracking(event, bullishCorrectionStructure());
+        ElliottWaveDetectionService.ElliottWaveStructure extended = structure(
+                true,
+                List.of(
+                        point("0", 100L, 100.0, "LOW"),
+                        point("I", 200L, 120.0, "HIGH"),
+                        point("II", 300L, 110.0, "LOW"),
+                        point("III", 400L, 135.0, "HIGH"),
+                        point("IV", 500L, 123.0, "LOW"),
+                        point("V", 600L, 145.0, "HIGH"),
+                        point("A", 700L, 130.0, "LOW"),
+                        point("B", 800L, 138.0, "HIGH"),
+                        point("C", 1_000L, 115.0, "LOW")
+                ),
+                1_100L);
+        List<EnrichedCandle> enriched = List.of(enriched(1_100L, 118.0));
+        when(repository.findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.WEEKLY, SignalLifecycleStatus.DETECTED))
+                .thenReturn(List.of(event));
+        when(detector.findLatestStructureForCycle(
+                enriched,
+                event.getElliottCycleKey(),
+                event.getElliottSignalStage())).thenReturn(Optional.of(extended));
+
+        CandlestickSignalLifecycleService.LifecycleEvaluationResult result = service.evaluatePending(
+                "AAPL",
+                TimeInterval.WEEKLY,
+                List.of(candle(1_100L, 116.0, 119.0, 114.0, 118.0)),
+                enriched,
+                detector);
+
+        assertThat(result.resolved()).isZero();
+        assertThat(event.getElliottEndpointTimestamp()).isEqualTo(1_000L);
+        assertThat(event.getElliottEndpointPrice()).isEqualTo(115.0);
+        assertThat(event.getLifecycleAnchorCandleTimestamp()).isEqualTo(1_100L);
+        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(138.0);
+        assertThat(event.getInvalidationPrice()).isEqualTo(100.0);
+        verify(repository).save(event);
+        verify(notifications, never()).sendSignalLifecycleEmail(event);
+    }
+
+    @Test
+    void invalidatesWaveVOnlyWhenExtensionBreaksHardImpulseRule() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+        AlertEvent event = new AlertEvent();
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(700L);
+        ElliottWaveDetectionService.ElliottWaveStructure structure = structure(
+                false,
+                List.of(
+                        point("0", 100L, 100.0, "LOW"),
+                        point("I", 200L, 140.0, "HIGH"),
+                        point("II", 300L, 120.0, "LOW"),
+                        point("III", 400L, 150.0, "HIGH"),
+                        point("IV", 500L, 142.0, "LOW"),
+                        point("V", 600L, 165.0, "HIGH")
+                ),
+                700L);
+        service.initializeElliottTracking(event, structure);
+        when(repository.findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.WEEKLY, SignalLifecycleStatus.DETECTED))
+                .thenReturn(List.of(event));
+
+        CandlestickSignalLifecycleService.LifecycleEvaluationResult result = service.evaluatePending(
+                "AAPL",
+                TimeInterval.WEEKLY,
+                List.of(
+                        candle(700L, 164.0, 166.0, 160.0, 163.0),
+                        candle(800L, 170.0, 173.0, 169.0, 172.0)),
+                List.of(enriched(800L, 172.0)),
+                null);
+
+        assertThat(result.invalidated()).isEqualTo(1);
+        assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.INVALIDATED);
+        assertThat(event.getInvalidationPrice()).isEqualTo(172.0);
+        assertThat(event.getLifecycleResolutionReason()).contains("Wave III");
+        verify(notifications).sendSignalLifecycleEmail(event);
+    }
+
+    @Test
+    void initializesElliottWaveVEndWithStableCycleAndRevisableEndpoint() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+        AlertEvent event = new AlertEvent();
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(700L);
+
+        boolean initialized = service.initializeElliottTracking(event, bullishWaveVStructure());
+
+        assertThat(initialized).isTrue();
+        assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.DETECTED);
+        assertThat(event.getPatternLow()).isEqualTo(100.0);
+        assertThat(event.getPatternHigh()).isEqualTo(140.0);
+        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(122.0);
+        assertThat(event.getInvalidationPrice()).isNull();
+        assertThat(event.getElliottCycleKey()).isEqualTo("BULLISH:100:200:300:400:500");
+        assertThat(event.getElliottSignalStage())
+                .isEqualTo(org.example.stockwatch247.model.enums.ElliottSignalStage.WAVE_V_END);
+        assertThat(event.getElliottEndpointTimestamp()).isEqualTo(600L);
+        assertThat(event.getElliottEndpointPrice()).isEqualTo(140.0);
+        assertThat(event.getConfirmationWindowCandles()).isEqualTo(10);
+        assertThat(event.isLifecycleTracked()).isTrue();
+    }
+
+    @Test
+    void initializesCompletedElliottCorrectionWithWaveBConfirmationAndOriginInvalidation() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+        AlertEvent event = new AlertEvent();
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(1_000L);
+
+        boolean initialized = service.initializeElliottTracking(event, bullishCorrectionStructure());
+
+        assertThat(initialized).isTrue();
+        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(138.0);
+        assertThat(event.getInvalidationPrice()).isEqualTo(100.0);
+        assertThat(event.getElliottSignalStage())
+                .isEqualTo(org.example.stockwatch247.model.enums.ElliottSignalStage.CORRECTION_END);
+        assertThat(event.getElliottEndpointPrice()).isEqualTo(120.0);
+        assertThat(event.getConfirmationWindowCandles()).isEqualTo(10);
+    }
+
+    @Test
+    void backfillsUntrackedElliottEventFromCachedStructure() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService elliottWaveDetectionService = mock(ElliottWaveDetectionService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+        AlertEvent event = new AlertEvent();
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(700L);
+        List<EnrichedCandle> cached = List.of(enriched(700L, 130.0));
+        when(repository.findUntrackedLifecycleEvents(
+                "MARA",
+                TimeInterval.WEEKLY,
+                AlertPatternFamily.ELLIOTT_WAVE,
+                SignalLifecycleStatus.DETECTED)).thenReturn(List.of(event));
+        when(elliottWaveDetectionService.findStructureForSignal(
+                cached,
+                event.getPattern(),
+                event.getSignalCandleTimestamp())).thenReturn(Optional.of(bullishWaveVStructure()));
+
+        int initialized = service.initializeUntrackedElliott(
+                "MARA", TimeInterval.WEEKLY, cached, elliottWaveDetectionService);
+
+        assertThat(initialized).isEqualTo(1);
+        assertThat(event.isLifecycleTracked()).isTrue();
+        verify(repository).save(event);
+    }
 
     @Test
     void initializesTwoCandlePatternWithFrozenRangeAndDirectionalBoundaries() {
@@ -205,6 +428,72 @@ class CandlestickSignalLifecycleServiceTest {
                           double low,
                           double close) {
         return new Candle("AAPL", "1d", timestamp, open, high, low, close, 1_000L);
+    }
+
+    private EnrichedCandle enriched(long timestamp, double close) {
+        return new EnrichedCandle(timestamp, close, close + 1.0, close - 1.0, close,
+                1_000.0, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+                Double.NaN, Double.NaN, Double.NaN);
+    }
+
+    private ElliottWaveDetectionService.ElliottWaveStructure bullishWaveVStructure() {
+        return structure(false, List.of(
+                point("0", 100L, 100.0, "LOW"),
+                point("I", 200L, 120.0, "HIGH"),
+                point("II", 300L, 108.0, "LOW"),
+                point("III", 400L, 135.0, "HIGH"),
+                point("IV", 500L, 122.0, "LOW"),
+                point("V", 600L, 140.0, "HIGH")
+        ));
+    }
+
+    private ElliottWaveDetectionService.ElliottWaveStructure bullishCorrectionStructure() {
+        return structure(true, List.of(
+                point("0", 100L, 100.0, "LOW"),
+                point("I", 200L, 120.0, "HIGH"),
+                point("II", 300L, 110.0, "LOW"),
+                point("III", 400L, 135.0, "HIGH"),
+                point("IV", 500L, 123.0, "LOW"),
+                point("V", 600L, 145.0, "HIGH"),
+                point("A", 700L, 130.0, "LOW"),
+                point("B", 800L, 138.0, "HIGH"),
+                point("C", 900L, 120.0, "LOW")
+        ));
+    }
+
+    private ElliottWaveDetectionService.ElliottWaveStructure structure(
+            boolean correctionComplete,
+            List<ElliottWaveDetectionService.ElliottWavePoint> points) {
+        return structure(correctionComplete, points, points.getLast().timestamp());
+    }
+
+    private ElliottWaveDetectionService.ElliottWaveStructure structure(
+            boolean correctionComplete,
+            List<ElliottWaveDetectionService.ElliottWavePoint> points,
+            long confirmationTimestamp) {
+        return new ElliottWaveDetectionService.ElliottWaveStructure(
+                "BULLISH",
+                correctionComplete,
+                points,
+                confirmationTimestamp,
+                85,
+                0.5,
+                false,
+                1.5,
+                0.35,
+                ElliottWaveDetectionService.ImpulseVariant.STANDARD,
+                correctionComplete
+                        ? ElliottWaveDetectionService.CorrectionVariant.STANDARD
+                        : ElliottWaveDetectionService.CorrectionVariant.NONE,
+                correctionComplete ? 0.5 : Double.NaN,
+                correctionComplete ? 1.0 : Double.NaN,
+                List.of()
+        );
+    }
+
+    private ElliottWaveDetectionService.ElliottWavePoint point(
+            String label, long timestamp, double price, String pivotType) {
+        return new ElliottWaveDetectionService.ElliottWavePoint(label, timestamp, price, pivotType);
     }
 
     private record Fixture(

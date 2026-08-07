@@ -1355,14 +1355,26 @@ public class CandlePatternDetectionService {
             int confidenceScore,
             List<String> reasons,
             Long candleTimestamp,
-            Double closePrice
+            Double closePrice,
+            int eligibilityScore
     ) {
         public DetectedSignal {
             reasons = reasons == null ? List.of() : List.copyOf(reasons);
         }
 
+        public DetectedSignal(CandlePattern pattern,
+                              TradeSignal tradeSignal,
+                              SignalStength strength,
+                              int confidenceScore,
+                              List<String> reasons,
+                              Long candleTimestamp,
+                              Double closePrice) {
+            this(pattern, tradeSignal, strength, confidenceScore, reasons, candleTimestamp, closePrice,
+                    confidenceScore);
+        }
+
         public DetectedSignal(CandlePattern pattern, TradeSignal tradeSignal, Long candleTimestamp, Double closePrice) {
-            this(pattern, tradeSignal, SignalStength.LOW_CONFIDENCE, 0, List.of(), candleTimestamp, closePrice);
+            this(pattern, tradeSignal, SignalStength.LOW_CONFIDENCE, 0, List.of(), candleTimestamp, closePrice, 0);
         }
 
         /**

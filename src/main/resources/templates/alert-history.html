@@ -72,12 +72,18 @@
           <a th:each="event : ${column.events()}"
              th:href="@{/alerts/signals/{id}(id=${event.id()})}"
              class="signal-event-card signal-event-link"
-             th:aria-label="${'Open score report for ' + event.patternLabel()}">
+             th:classappend="${event.hasBeenRead()} ? ' is-read' : ' is-unread'"
+             th:aria-label="${'Open score report for ' + event.patternLabel() + (event.hasBeenRead() ? ' (read)' : ' (unread)')}">
             <div class="signal-event-topline">
               <time th:text="${event.signalPeriodLabel() != null ? event.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</time>
-              <span class="label"
-                    th:classappend="${' ' + event.setupBand()}"
-                    th:text="${event.setupStrengthLabel()}">Strong setup</span>
+              <div class="signal-event-badges">
+                <span class="signal-read-pill"
+                      th:classappend="${event.hasBeenRead()} ? ' read' : ' unread'"
+                      th:text="${event.hasBeenRead()} ? 'Read' : 'Unread'">Unread</span>
+                <span class="label"
+                      th:classappend="${' ' + event.setupBand()}"
+                      th:text="${event.setupStrengthLabel()}">Strong setup</span>
+              </div>
             </div>
             <h3 th:text="${event.patternLabel()}">Bullish Engulfing</h3>
             <div class="signal-event-lifecycle"

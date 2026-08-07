@@ -202,16 +202,38 @@ public class ScheduledAlertService {
                 .sorted(Comparator.comparing(Candle::getTimestamp))
                 .toList();
 
-        CandlestickSignalLifecycleService.LifecycleEvaluationResult lifecycleResult =
-                lifecycleService.evaluatePending(symbol, interval, candles);
-        if (lifecycleResult.resolved() > 0) {
-            System.out.println("Resolved " + lifecycleResult.resolved()
-                    + " candlestick lifecycle follow-up(s) for " + symbol + " " + interval + ".");
-        }
-
         if (candles.size() < 2) {
             System.out.println("Skipping alert check for " + symbol + " " + interval + ": not enough candles.");
             return;
+        }
+
+        List<EnrichedCandle> elliottCandles = isElliottEnabled(interval)
+                ? enrichmentService.enrichForElliott(candles, signalCandleCount, interval)
+                : List.of();
+        if (!elliottCandles.isEmpty()) {
+            int initialized = lifecycleService.initializeUntrackedElliott(
+                    symbol,
+                    interval,
+                    elliottCandles,
+                    elliottWaveDetectionService
+            );
+            if (initialized > 0) {
+                System.out.println("Initialized lifecycle tracking for " + initialized
+                        + " historical Elliott signal(s) on " + symbol + " " + interval + ".");
+            }
+        }
+
+        CandlestickSignalLifecycleService.LifecycleEvaluationResult lifecycleResult =
+                lifecycleService.evaluatePending(
+                        symbol,
+                        interval,
+                        candles,
+                        elliottCandles,
+                        elliottWaveDetectionService
+                );
+        if (lifecycleResult.resolved() > 0) {
+            System.out.println("Resolved " + lifecycleResult.resolved()
+                    + " signal lifecycle follow-up(s) for " + symbol + " " + interval + ".");
         }
 
         List<AlertRule> rules = alertRuleRepository
@@ -222,26 +244,56 @@ public class ScheduledAlertService {
 
         List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(candles, signalCandleCount, interval);
         List<DetectedSignal> detectedSignals = detectSignals(
-                candles,
                 enrichedCandles,
-                signalCandleCount,
-                interval
+                elliottCandles
         );
         if (detectedSignals.isEmpty()) {
             return;
         }
 
         for (DetectedSignal signal : detectedSignals) {
-            rules.stream()
-                    .filter(rule -> rule.getTradeSignal() == signal.tradeSignal())
-                    .filter(rule -> rule.getPatternFamily() == signalFamily(signal))
-                    .filter(rule -> !alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(
-                            rule, signal.pattern(), signal.candleTimestamp()))
-                    .forEach(rule -> sendAndRecord(rule, signal, candles));
+            for (AlertRule rule : rules) {
+                if (rule.getTradeSignal() != signal.tradeSignal()
+                        || rule.getPatternFamily() != signalFamily(signal)) {
+                    continue;
+                }
+                if (signalFamily(signal) == AlertPatternFamily.ELLIOTT_WAVE) {
+                    ElliottWaveDetectionService.ElliottWaveStructure structure =
+                            elliottWaveDetectionService.findStructureForSignal(
+                                            elliottCandles,
+                                            signal.pattern(),
+                                            signal.candleTimestamp())
+                                    .orElse(null);
+                    ElliottWaveSignalLifecyclePolicy.LifecycleBoundaries boundaries = structure == null
+                            ? null
+                            : ElliottWaveSignalLifecyclePolicy.boundaries(
+                                            signal.pattern(),
+                                            signal.tradeSignal(),
+                                            structure)
+                                    .orElse(null);
+                    if (boundaries == null || alertEventRepository
+                            .findFirstByAlertRuleAndElliottCycleKeyAndElliottSignalStageOrderByIdAsc(
+                                    rule,
+                                    boundaries.cycleKey(),
+                                    boundaries.stage())
+                            .isPresent()) {
+                        continue;
+                    }
+                    sendAndRecord(rule, signal, candles, structure);
+                    continue;
+                }
+                if (!alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(
+                        rule, signal.pattern(), signal.candleTimestamp())) {
+                    sendAndRecord(rule, signal, candles, null);
+                }
+            }
         }
     }
 
-    private void sendAndRecord(AlertRule rule, DetectedSignal signal, List<Candle> candles) {
+    private void sendAndRecord(AlertRule rule,
+                               DetectedSignal signal,
+                               List<Candle> candles,
+                               ElliottWaveDetectionService.ElliottWaveStructure elliottStructure) {
         AlertEvent event = new AlertEvent();
         event.setAlertRule(rule);
         event.setPattern(signal.pattern());
@@ -249,11 +301,16 @@ public class ScheduledAlertService {
         event.setSignalCandleTimestamp(signal.candleTimestamp());
         event.setSignalStrength(signal.strength());
         event.setConfidenceScore(signal.confidenceScore());
+        if (signalFamily(signal) == AlertPatternFamily.ELLIOTT_WAVE) {
+            event.setElliottV1EligibilityScore(signal.eligibilityScore());
+        }
         event.setScoreVersion(scoreVersion(signal));
         event.setConfidenceReasons(signal.reasons());
         event.setClosePrice(signal.closePrice());
         if (signalFamily(signal) == AlertPatternFamily.CANDLESTICK) {
             lifecycleService.initializeTracking(event, signal, candles);
+        } else {
+            lifecycleService.initializeElliottTracking(event, elliottStructure);
         }
 
         notificationService.sendSignalEmail(rule, signal, event);
@@ -268,20 +325,11 @@ public class ScheduledAlertService {
         };
     }
 
-    private List<DetectedSignal> detectSignals(List<Candle> candles,
-                                               List<EnrichedCandle> candlestickCandles,
-                                               int signalCandleCount,
-                                               TimeInterval interval) {
+    private List<DetectedSignal> detectSignals(List<EnrichedCandle> candlestickCandles,
+                                               List<EnrichedCandle> elliottCandles) {
         List<DetectedSignal> candlestickSignals = detectionService.detectAlertSignals(candlestickCandles);
-        List<EnrichedCandle> elliottCandles = isElliottEnabled(interval)
-                ? enrichmentService.enrichForElliott(
-                    candles,
-                    signalCandleCount,
-                    interval
-                )
-                : List.of();
         List<DetectedSignal> signals = new java.util.ArrayList<>(candlestickSignals);
-        if (isElliottEnabled(interval)) {
+        if (!elliottCandles.isEmpty()) {
             signals.addAll(elliottWaveDetectionService.detectAlertSignals(elliottCandles).stream()
                     .filter(this::isActionableElliottTurningPoint)
                     .toList());

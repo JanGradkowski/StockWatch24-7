@@ -7,6 +7,7 @@ import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.SignalStength;
@@ -18,6 +19,9 @@ import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -49,6 +53,54 @@ class AlertRuleServiceTest {
             Instant.parse("2026-07-01T00:00:00Z").getEpochSecond();
     private static final long WEEK_OF_13_JULY_2026 =
             Instant.parse("2026-07-13T00:00:00Z").getEpochSecond();
+
+    @Test
+    void elliottHoverCardsMatchCycleStageAndUseTenCompletedClosesForSellOutcome() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository, candleRepository);
+        User user = new User();
+        user.setEmail("elliott-card@example.com");
+        AlertRule rule = rule(41L, user, stock(9L, "MARA", "MARA Holdings"),
+                TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        AlertEvent event = new AlertEvent();
+        event.setId(501L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(86_400L);
+        event.setClosePrice(100.0);
+        event.setElliottCycleKey("BULLISH:1:2:3:4:5");
+        event.setElliottSignalStage(ElliottSignalStage.WAVE_V_END);
+        event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+
+        List<Double> closes = List.of(100.0, 96.0, 98.0, 95.0, 90.0, 91.0, 92.0, 93.0, 94.0, 97.0, 99.0);
+        List<Candle> candles = new ArrayList<>();
+        for (int index = 0; index < closes.size(); index++) {
+            double close = closes.get(index);
+            candles.add(new Candle("MARA", "1wk", (index + 1L) * 86_400L,
+                    close, close + 1.0, close - 1.0, close, 1_000L));
+        }
+        when(alertEventRepository.findElliottSignalCards(
+                user, "MARA", TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE))
+                .thenReturn(List.of(event));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc("MARA", "1wk"))
+                .thenReturn(candles);
+
+        AlertRuleService.ElliottWaveSignalCard card = service
+                .getElliottWaveSignalCards(user, "MARA", TimeInterval.WEEKLY)
+                .getFirst();
+
+        assertThat(card.cycleKey()).isEqualTo("BULLISH:1:2:3:4:5");
+        assertThat(card.stage()).isEqualTo(ElliottSignalStage.WAVE_V_END);
+        assertThat(card.status()).isEqualTo(SignalLifecycleStatus.CONFIRMED);
+        assertThat(card.outcomeAvailable()).isTrue();
+        assertThat(card.bestDirectionalReturnPercent()).isEqualTo(10.0);
+        assertThat(card.windowEndDirectionalReturnPercent()).isEqualTo(1.0);
+        assertThat(card.outcomeLabel()).isEqualTo("Largest close-based loss avoided");
+        assertThat(card.detailUrl()).isEqualTo("/alerts/signals/501");
+    }
 
     @Test
     void checkLatestSignalDetectsCurrentMonthlyElliottBuySignal() {
@@ -167,7 +219,8 @@ class AlertRuleServiceTest {
     void activeCompanyViewsCollapseRulesForTheSameInstrument() {
         AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
-        AlertRuleService service = service(alertRuleRepository, alertEventRepository);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository, candleRepository);
         User user = new User();
         user.setEmail("grouped-alerts@example.com");
 
@@ -183,9 +236,9 @@ class AlertRuleServiceTest {
         when(alertRuleRepository
                 .findByUserAndIsActiveTrueOrderByStockAsset_TickerSymbolAscIntervalAscPatternFamilyAscTradeSignalAsc(user))
                 .thenReturn(List.of(appleMonthlyBuy, maraDailyBuy, maraWeeklySell));
-        when(alertEventRepository.countByAlertRule(appleMonthlyBuy)).thenReturn(1L);
-        when(alertEventRepository.countByAlertRule(maraDailyBuy)).thenReturn(2L);
-        when(alertEventRepository.countByAlertRule(maraWeeklySell)).thenReturn(3L);
+        when(alertEventRepository.countByAlertRuleAndReadAtIsNull(appleMonthlyBuy)).thenReturn(1L);
+        when(alertEventRepository.countByAlertRuleAndReadAtIsNull(maraDailyBuy)).thenReturn(1L);
+        when(alertEventRepository.countByAlertRuleAndReadAtIsNull(maraWeeklySell)).thenReturn(2L);
 
         List<AlertRuleService.TrackedCompanyView> companies = service.getActiveCompanyViews(user);
 
@@ -194,7 +247,7 @@ class AlertRuleServiceTest {
         AlertRuleService.TrackedCompanyView maraView = companies.get(1);
         assertThat(maraView.representativeAlertId()).isEqualTo(11L);
         assertThat(maraView.ruleCount()).isEqualTo(2);
-        assertThat(maraView.eventCount()).isEqualTo(5L);
+        assertThat(maraView.unreadSignalCount()).isEqualTo(3L);
         assertThat(maraView.intervalLabels()).containsExactly("1d", "1wk");
         assertThat(maraView.familyLabels()).containsExactly("Candlestick", "Elliott Wave");
         assertThat(maraView.tradeSignals()).containsExactly(TradeSignal.BUY, TradeSignal.SELL);
@@ -256,7 +309,7 @@ class AlertRuleServiceTest {
         latest.setSentAt(LocalDateTime.of(2025, 7, 8, 8, 15));
 
         when(alertEventRepository
-                .findByAlertRule_UserAndAlertRule_IsActiveTrueOrderBySentAtDescIdDesc(
+                .findByAlertRule_UserAndAlertRule_IsActiveTrueAndReadAtIsNullOrderBySentAtDescIdDesc(
                         user,
                         PageRequest.of(0, 8)
                 ))
@@ -282,11 +335,165 @@ class AlertRuleServiceTest {
         assertThat(signal.signalDate()).isNotNull();
         assertThat(signal.signalPeriodLabel()).isEqualTo("13\u201317 Jul 2026");
         assertThat(signal.sentAt()).isEqualTo(LocalDateTime.of(2025, 7, 8, 8, 15));
+        assertThat(signal.hasBeenRead()).isFalse();
         verify(alertEventRepository)
-                .findByAlertRule_UserAndAlertRule_IsActiveTrueOrderBySentAtDescIdDesc(
+                .findByAlertRule_UserAndAlertRule_IsActiveTrueAndReadAtIsNullOrderBySentAtDescIdDesc(
                         user,
                         PageRequest.of(0, 8)
                 );
+    }
+
+    @Test
+    void signalArchiveSortsByTickerAndPreservesReadState() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository, candleRepository);
+        User user = new User();
+        user.setEmail("signal-archive@example.com");
+        AlertRule rule = rule(21L, user, stock(1L, "MARA", "MARA Holdings, Inc."),
+                TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        AlertEvent event = new AlertEvent();
+        event.setId(302L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.BULLISH_ENGULFING);
+        event.setTradeSignal(TradeSignal.BUY);
+        long signalTimestamp = Instant.parse("2026-07-20T00:00:00Z").getEpochSecond();
+        long resolutionTimestamp = Instant.parse("2026-07-22T00:00:00Z").getEpochSecond();
+        event.setSignalCandleTimestamp(signalTimestamp);
+        event.setClosePrice(100.0);
+        event.setPatternHigh(102.0);
+        event.setPatternLow(98.0);
+        event.setConfirmationTriggerPrice(102.0);
+        event.setInvalidationPrice(98.0);
+        event.setConfirmationWindowCandles(3);
+        event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+        event.setResolutionCandleTimestamp(resolutionTimestamp);
+        event.setSentAt(LocalDateTime.of(2026, 7, 17, 22, 15));
+        event.setReadAt(LocalDateTime.of(2026, 7, 18, 9, 0));
+
+        when(alertEventRepository.findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
+        when(candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                        "MARA", "1d", signalTimestamp, DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 3)))
+                .thenReturn(List.of(
+                        new Candle("MARA", "1d",
+                                Instant.parse("2026-07-21T00:00:00Z").getEpochSecond(),
+                                100.0, 110.0, 95.0, 105.0, 1_000L),
+                        new Candle("MARA", "1d", resolutionTimestamp,
+                                105.0, 108.0, 90.0, 107.0, 1_000L)
+                ));
+
+        AlertRuleService.SignalArchivePage archive = service.getSignalArchive(user, "ticker", "asc", 0);
+
+        assertThat(archive.totalSignals()).isEqualTo(1);
+        assertThat(archive.sort()).isEqualTo("ticker");
+        assertThat(archive.direction()).isEqualTo("asc");
+        assertThat(archive.signals().getFirst().signal().hasBeenRead()).isTrue();
+        assertThat(archive.signals().getFirst().bestDirectionalMovePercent()).isEqualTo(10.0);
+        assertThat(archive.signals().getFirst().worstDirectionalMovePercent()).isEqualTo(-10.0);
+        assertThat(archive.signals().getFirst().resultWindowLabel())
+                .isEqualTo("Through resolution candle 2 of 3");
+        org.mockito.ArgumentCaptor<Pageable> pageableCaptor = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(alertEventRepository).findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user), pageableCaptor.capture());
+        Sort requestedSort = pageableCaptor.getValue().getSort();
+        assertThat(requestedSort.getOrderFor("alertRule.stockAsset.tickerSymbol").getDirection())
+                .isEqualTo(Sort.Direction.ASC);
+        assertThat(requestedSort.getOrderFor("sentAt").getDirection()).isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
+    void signalArchiveMeasuresSellResultsInTheSignalDirection() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository, candleRepository);
+        User user = new User();
+        user.setEmail("sell-archive@example.com");
+        AlertRule rule = rule(22L, user, stock(2L, "AAPL", "Apple Inc."),
+                TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.SELL);
+        AlertEvent event = new AlertEvent();
+        event.setId(303L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.BEARISH_ENGULFING);
+        event.setTradeSignal(TradeSignal.SELL);
+        long signalTimestamp = Instant.parse("2026-07-20T00:00:00Z").getEpochSecond();
+        event.setSignalCandleTimestamp(signalTimestamp);
+        event.setClosePrice(100.0);
+        event.setPatternHigh(102.0);
+        event.setPatternLow(98.0);
+        event.setConfirmationTriggerPrice(98.0);
+        event.setInvalidationPrice(102.0);
+        event.setConfirmationWindowCandles(3);
+        event.setSentAt(LocalDateTime.of(2026, 7, 20, 22, 15));
+
+        AlertEvent unavailable = new AlertEvent();
+        unavailable.setId(304L);
+        unavailable.setAlertRule(rule);
+        unavailable.setPattern(CandlePattern.BEARISH_HARAMI);
+        unavailable.setTradeSignal(TradeSignal.SELL);
+        unavailable.setSignalCandleTimestamp(Instant.parse("2026-07-19T00:00:00Z").getEpochSecond());
+        unavailable.setSentAt(LocalDateTime.of(2026, 7, 19, 22, 15));
+
+        when(alertEventRepository.findAllByAlertRule_User(user))
+                .thenReturn(List.of(unavailable, event));
+        when(candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                        "AAPL", "1d", signalTimestamp, DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 3)))
+                .thenReturn(List.of(new Candle(
+                        "AAPL", "1d", Instant.parse("2026-07-21T00:00:00Z").getEpochSecond(),
+                        100.0, 112.0, 92.0, 95.0, 1_000L)));
+
+        AlertRuleService.SignalArchivePage archive = service
+                .getSignalArchive(user, "best-return", "asc", 0);
+        AlertRuleService.SignalArchiveEntry result = archive.signals().getFirst();
+
+        assertThat(result.bestDirectionalMovePercent()).isEqualTo(8.0);
+        assertThat(result.worstDirectionalMovePercent()).isEqualTo(-12.0);
+        assertThat(result.resultWindowLabel()).isEqualTo("1 of 3 completed candles");
+        assertThat(archive.signals()).extracting(entry -> entry.signal().id())
+                .containsExactly(303L, 304L);
+        assertThat(archive.signals().get(1).resultAvailable()).isFalse();
+        assertThat(archive.sort()).isEqualTo("best-return");
+        verify(alertEventRepository).findAllByAlertRule_User(user);
+    }
+
+    @Test
+    void signalArchiveSupportsConfidenceAndLifecycleStatusSorting() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository);
+        User user = new User();
+        user.setEmail("archive-sort@example.com");
+        when(alertEventRepository.findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        service.getSignalArchive(user, "confidence", "desc", 0);
+        service.getSignalArchive(user, "status", "asc", 0);
+        AlertRuleService.SignalArchivePage intervalArchive = service
+                .getSignalArchive(user, "interval", "asc", 0);
+
+        org.mockito.ArgumentCaptor<Pageable> pageableCaptor = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(alertEventRepository, org.mockito.Mockito.times(3))
+                .findByAlertRule_User(org.mockito.ArgumentMatchers.eq(user), pageableCaptor.capture());
+        Sort confidenceSort = pageableCaptor.getAllValues().get(0).getSort();
+        Sort statusSort = pageableCaptor.getAllValues().get(1).getSort();
+        Sort intervalSort = pageableCaptor.getAllValues().get(2).getSort();
+        assertThat(confidenceSort.getOrderFor("confidenceScore").getDirection())
+                .isEqualTo(Sort.Direction.DESC);
+        assertThat(confidenceSort.getOrderFor("confidenceScore").getNullHandling())
+                .isEqualTo(Sort.NullHandling.NULLS_LAST);
+        assertThat(statusSort.getOrderFor("lifecycleStatus").getDirection())
+                .isEqualTo(Sort.Direction.ASC);
+        assertThat(intervalSort.getOrderFor("alertRule.interval").getDirection())
+                .isEqualTo(Sort.Direction.ASC);
+        assertThat(intervalArchive.sort()).isEqualTo("interval");
     }
 
     @Test
@@ -416,6 +623,8 @@ class AlertRuleServiceTest {
 
         AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 301L);
 
+        assertThat(event.isRead()).isTrue();
+        assertThat(event.getReadAt()).isNotNull();
         assertThat(detail.id()).isEqualTo(301L);
         assertThat(detail.alertRuleId()).isEqualTo(21L);
         assertThat(detail.symbol()).isEqualTo("MARA");
@@ -498,6 +707,209 @@ class AlertRuleServiceTest {
     }
 
     @Test
+    void signalDetailBuildsPatternAndTrendAnnotationsFromCachedCandlesOnly() {
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(mock(AlertRuleRepository.class), alertEventRepository, candleRepository);
+        User user = new User();
+        user.setEmail("chart-owner@example.com");
+        String symbol = "MARA";
+        AlertRule rule = rule(
+                23L,
+                user,
+                stock(13L, symbol, "MARA Holdings, Inc."),
+                TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK,
+                TradeSignal.BUY
+        );
+        AlertEvent event = new AlertEvent();
+        long signalTimestamp = Instant.parse("2026-06-15T00:00:00Z").getEpochSecond();
+        event.setId(303L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.BULLISH_HARAMI);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(signalTimestamp);
+        event.setSignalStrength(SignalStength.MEDIUM_CONFIDENCE);
+        event.setConfidenceScore(78);
+        event.setScoreVersion(CandlePatternDetectionService.SETUP_SCORE_VERSION);
+        event.setClosePrice(95.0);
+        when(alertEventRepository.findOwnedByIdAndUser(303L, user)).thenReturn(Optional.of(event));
+
+        List<Candle> priorAscending = new ArrayList<>();
+        long firstTrendTimestamp = Instant.parse("2026-05-04T00:00:00Z").getEpochSecond();
+        for (int index = 0; index < 6; index++) {
+            long timestamp = firstTrendTimestamp + index * 7L * 86_400L;
+            double close = 108.0 - index * 2.0;
+            priorAscending.add(new Candle(symbol, "1wk", timestamp,
+                    close + 1.0, close + 1.5, close - 1.0, close, 10_000L));
+        }
+        Candle signalCandle = new Candle(symbol, "1wk", signalTimestamp,
+                97.0, 98.0, 94.0, 95.0, 12_000L);
+        List<Candle> completeCachedHistory = new ArrayList<>(priorAscending);
+        completeCachedHistory.add(signalCandle);
+        for (int index = 1; index <= 4; index++) {
+            double close = 95.0 + index * 2.0;
+            completeCachedHistory.add(new Candle(
+                    symbol,
+                    "1wk",
+                    signalTimestamp + index * 7L * 86_400L,
+                    close - 0.5,
+                    close + 1.0,
+                    close - 1.0,
+                    close,
+                    13_000L
+            ));
+        }
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1wk"))
+                .thenReturn(completeCachedHistory);
+
+        AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 303L);
+
+        assertThat(detail.chart().available()).isTrue();
+        assertThat(detail.chart().candles()).hasSize(11);
+        assertThat(detail.chart().trendStartTimestamp()).isEqualTo(firstTrendTimestamp);
+        assertThat(detail.chart().patternStartTimestamp())
+                .isEqualTo(priorAscending.getLast().getTimestamp());
+        assertThat(detail.chart().signalTimestamp()).isEqualTo(signalTimestamp);
+        assertThat(detail.chart().patternCandleCount()).isEqualTo(2);
+        assertThat(detail.chart().trendLabel()).isEqualTo("Required downtrend");
+        assertThat(detail.chart().summary()).contains("highlighted region", "labeled arrows");
+        assertThat(detail.observedOutcome().tracked()).isTrue();
+        assertThat(detail.observedOutcome().outcomeAvailable()).isTrue();
+        assertThat(detail.observedOutcome().statusLabel()).isEqualTo("Successful");
+        assertThat(detail.observedOutcome().evaluationHorizonLabel()).isEqualTo("4-week horizon");
+        assertThat(detail.results().available()).isFalse();
+        assertThat(detail.results().minimumForwardCandles()).isEqualTo(10);
+        assertThat(detail.results().availableForwardCandles()).isEqualTo(4);
+        assertThat(detail.results().unavailableReason())
+                .contains("At least 10 completed candles", "4 completed cached candles are currently available");
+    }
+
+    @Test
+    void signalResultsMeasuresSellOutcomeAcrossCompletedCachedCloses() {
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(mock(AlertRuleRepository.class), alertEventRepository, candleRepository);
+        User user = new User();
+        user.setEmail("sell-results-owner@example.com");
+        String symbol = "MARA";
+        AlertRule rule = rule(
+                25L,
+                user,
+                stock(15L, symbol, "MARA Holdings, Inc."),
+                TimeInterval.DAILY,
+                AlertPatternFamily.CANDLESTICK,
+                TradeSignal.SELL
+        );
+        long signalTimestamp = Instant.parse("2026-07-01T00:00:00Z").getEpochSecond();
+        AlertEvent event = new AlertEvent();
+        event.setId(305L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.BEARISH_HARAMI);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(signalTimestamp);
+        event.setSignalStrength(SignalStength.MEDIUM_CONFIDENCE);
+        event.setConfidenceScore(72);
+        event.setScoreVersion(CandlePatternDetectionService.SETUP_SCORE_VERSION);
+        event.setClosePrice(100.0);
+        when(alertEventRepository.findOwnedByIdAndUser(305L, user)).thenReturn(Optional.of(event));
+
+        List<Candle> cachedHistory = new ArrayList<>();
+        cachedHistory.add(new Candle(symbol, "1d", signalTimestamp - 2 * 86_400L,
+                104.0, 105.0, 102.0, 103.0, 10_000L));
+        cachedHistory.add(new Candle(symbol, "1d", signalTimestamp - 86_400L,
+                102.0, 103.0, 100.0, 101.0, 10_000L));
+        cachedHistory.add(new Candle(symbol, "1d", signalTimestamp,
+                101.0, 102.0, 99.0, 100.0, 12_000L));
+        double[] forwardCloses = {102.0, 98.0, 95.0, 97.0, 90.0, 92.0, 105.0, 99.0, 94.0, 91.0, 93.0, 96.0};
+        for (int index = 0; index < forwardCloses.length; index++) {
+            double close = forwardCloses[index];
+            cachedHistory.add(new Candle(
+                    symbol,
+                    "1d",
+                    signalTimestamp + (index + 1L) * 86_400L,
+                    close + 0.5,
+                    close + 1.0,
+                    close - 1.0,
+                    close,
+                    13_000L
+            ));
+        }
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1d"))
+                .thenReturn(cachedHistory);
+
+        AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 305L);
+
+        assertThat(detail.results().available()).isTrue();
+        assertThat(detail.results().availableForwardCandles()).isEqualTo(12);
+        assertThat(detail.results().tradeSignal()).isEqualTo(TradeSignal.SELL);
+        assertThat(detail.results().outcomeLabel()).isEqualTo("Decline avoided / rise missed");
+        assertThat(detail.results().bestActionLabel()).isEqualTo("Best re-entry close");
+        assertThat(detail.results().points()).hasSize(13);
+        assertThat(detail.results().points().getFirst().directionalReturnPercent()).isZero();
+        assertThat(detail.results().points().get(1).directionalReturnPercent()).isEqualTo(-2.0);
+        assertThat(detail.results().points().get(1).directionalPriceDifference()).isEqualTo(-2.0);
+        assertThat(detail.results().points().get(5).close()).isEqualTo(90.0);
+        assertThat(detail.results().points().get(5).directionalReturnPercent()).isEqualTo(10.0);
+        verify(candleRepository).findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1d");
+    }
+
+    @Test
+    void signalDetailReconstructsRecordedElliottWavePivotOverlay() {
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(mock(AlertRuleRepository.class), alertEventRepository, candleRepository);
+        User user = new User();
+        user.setEmail("elliott-chart-owner@example.com");
+        String symbol = "SAP.DE";
+        AlertRule rule = rule(
+                24L,
+                user,
+                stock(14L, symbol, "SAP SE"),
+                TimeInterval.MONTHLY,
+                AlertPatternFamily.ELLIOTT_WAVE,
+                TradeSignal.SELL
+        );
+        List<Candle> cachedHistory = new ArrayList<>(syntheticWaveVEndCandles(symbol, "1mo"));
+        Candle confirmationCandle = cachedHistory.getLast();
+        long signalTimestamp = confirmationCandle.getTimestamp() + 86_400L;
+        cachedHistory.add(new Candle(
+                symbol,
+                "1mo",
+                signalTimestamp,
+                confirmationCandle.getClosePrice(),
+                confirmationCandle.getHighPrice(),
+                confirmationCandle.getLowPrice() - 0.5,
+                confirmationCandle.getClosePrice() - 0.25,
+                confirmationCandle.getVolume()
+        ));
+        AlertEvent event = new AlertEvent();
+        event.setId(304L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(signalTimestamp);
+        event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
+        event.setConfidenceScore(91);
+        event.setScoreVersion(ElliottWaveDetectionService.SETUP_SCORE_VERSION);
+        event.setClosePrice(cachedHistory.getLast().getClosePrice());
+        when(alertEventRepository.findOwnedByIdAndUser(304L, user)).thenReturn(Optional.of(event));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1mo"))
+                .thenReturn(cachedHistory);
+
+        AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 304L);
+
+        assertThat(detail.chart().elliottWave()).isNotNull();
+        assertThat(detail.chart().elliottWave().direction()).isEqualTo("BULLISH");
+        assertThat(detail.chart().elliottWave().correctionComplete()).isFalse();
+        assertThat(detail.chart().elliottWave().confirmationTimestamp()).isLessThan(signalTimestamp);
+        assertThat(detail.chart().elliottWave().points())
+                .extracting(AlertRuleService.ElliottWaveChartPointView::label)
+                .containsExactly("", "I", "II", "III", "IV", "V");
+        assertThat(detail.chart().summary()).contains("pivot to pivot", "stock chart");
+    }
+
+    @Test
     void signalDetailRejectsAnEventThatIsNotOwnedByTheUser() {
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
         AlertRuleService service = service(mock(AlertRuleRepository.class), alertEventRepository);
@@ -533,11 +945,17 @@ class AlertRuleServiceTest {
 
     private AlertRuleService service(AlertRuleRepository alertRuleRepository,
                                      AlertEventRepository alertEventRepository) {
+        return service(alertRuleRepository, alertEventRepository, mock(CandleRepository.class));
+    }
+
+    private AlertRuleService service(AlertRuleRepository alertRuleRepository,
+                                     AlertEventRepository alertEventRepository,
+                                     CandleRepository candleRepository) {
         return new AlertRuleService(
                 alertRuleRepository,
                 alertEventRepository,
                 mock(StockAssetRepository.class),
-                mock(CandleRepository.class),
+                candleRepository,
                 mock(TwelveDataService.class),
                 mock(org.springframework.jdbc.core.JdbcTemplate.class),
                 mock(MarketDataService.class),

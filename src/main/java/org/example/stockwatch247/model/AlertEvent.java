@@ -2,6 +2,7 @@ package org.example.stockwatch247.model;
 
 import jakarta.persistence.*;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.TradeSignal;
@@ -41,6 +42,9 @@ public class AlertEvent {
     @Column(name = "confidence_score")
     private Integer confidenceScore;
 
+    @Column(name = "elliott_v1_eligibility_score")
+    private Integer elliottV1EligibilityScore;
+
     @Column(name = "score_version", nullable = false, length = 32)
     private String scoreVersion = "LEGACY_UNVERSIONED";
 
@@ -52,6 +56,9 @@ public class AlertEvent {
 
     @Column(name = "sent_at", nullable = false)
     private LocalDateTime sentAt = LocalDateTime.now();
+
+    @Column(name = "read_at")
+    private LocalDateTime readAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "lifecycle_status", nullable = false, columnDefinition = "varchar(16)")
@@ -87,6 +94,28 @@ public class AlertEvent {
     @Column(name = "follow_up_sent_at")
     private LocalDateTime followUpSentAt;
 
+    @Column(name = "elliott_cycle_key", length = 192)
+    private String elliottCycleKey;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "elliott_signal_stage", columnDefinition = "varchar(24)")
+    private ElliottSignalStage elliottSignalStage;
+
+    @Column(name = "elliott_endpoint_timestamp")
+    private Long elliottEndpointTimestamp;
+
+    @Column(name = "elliott_endpoint_price")
+    private Double elliottEndpointPrice;
+
+    @Column(name = "elliott_terminal_anchor_timestamp")
+    private Long elliottTerminalAnchorTimestamp;
+
+    @Column(name = "lifecycle_anchor_candle_timestamp")
+    private Long lifecycleAnchorCandleTimestamp;
+
+    @Column(name = "lifecycle_resolution_reason", length = 255)
+    private String lifecycleResolutionReason;
+
     public Long getId() {
         return id;
     }
@@ -115,6 +144,10 @@ public class AlertEvent {
         return confidenceScore;
     }
 
+    public Integer getElliottV1EligibilityScore() {
+        return elliottV1EligibilityScore;
+    }
+
     public String getScoreVersion() {
         return scoreVersion == null || scoreVersion.isBlank()
                 ? "LEGACY_UNVERSIONED"
@@ -137,6 +170,14 @@ public class AlertEvent {
 
     public LocalDateTime getSentAt() {
         return sentAt;
+    }
+
+    public LocalDateTime getReadAt() {
+        return readAt;
+    }
+
+    public boolean isRead() {
+        return readAt != null;
     }
 
     public SignalLifecycleStatus getLifecycleStatus() {
@@ -183,12 +224,50 @@ public class AlertEvent {
         return followUpSentAt;
     }
 
+    public String getElliottCycleKey() {
+        return elliottCycleKey;
+    }
+
+    public ElliottSignalStage getElliottSignalStage() {
+        return elliottSignalStage;
+    }
+
+    public Long getElliottEndpointTimestamp() {
+        return elliottEndpointTimestamp;
+    }
+
+    public Double getElliottEndpointPrice() {
+        return elliottEndpointPrice;
+    }
+
+    public Long getElliottTerminalAnchorTimestamp() {
+        return elliottTerminalAnchorTimestamp;
+    }
+
+    public Long getLifecycleAnchorCandleTimestamp() {
+        return lifecycleAnchorCandleTimestamp;
+    }
+
+    public Long getLifecycleEvaluationAnchorTimestamp() {
+        return lifecycleAnchorCandleTimestamp == null
+                ? signalCandleTimestamp
+                : lifecycleAnchorCandleTimestamp;
+    }
+
+    public String getLifecycleResolutionReason() {
+        return lifecycleResolutionReason;
+    }
+
     public boolean isLifecycleTracked() {
         return confirmationWindowCandles != null
                 && patternHigh != null
                 && patternLow != null
                 && confirmationTriggerPrice != null
-                && invalidationPrice != null;
+                && (invalidationPrice != null || isElliottSignal());
+    }
+
+    public boolean isElliottSignal() {
+        return pattern != null && pattern.name().startsWith("ELLIOTT_");
     }
 
     public void setId(Long id) {
@@ -217,6 +296,10 @@ public class AlertEvent {
 
     public void setConfidenceScore(Integer confidenceScore) {
         this.confidenceScore = confidenceScore;
+    }
+
+    public void setElliottV1EligibilityScore(Integer elliottV1EligibilityScore) {
+        this.elliottV1EligibilityScore = elliottV1EligibilityScore;
     }
 
     public void setScoreVersion(String scoreVersion) {
@@ -251,6 +334,16 @@ public class AlertEvent {
 
     public void setSentAt(LocalDateTime sentAt) {
         this.sentAt = sentAt;
+    }
+
+    public void setReadAt(LocalDateTime readAt) {
+        this.readAt = readAt;
+    }
+
+    public void markRead(LocalDateTime readAt) {
+        if (this.readAt == null) {
+            this.readAt = readAt;
+        }
     }
 
     public void setLifecycleStatus(SignalLifecycleStatus lifecycleStatus) {
@@ -297,5 +390,40 @@ public class AlertEvent {
 
     public void setFollowUpSentAt(LocalDateTime followUpSentAt) {
         this.followUpSentAt = followUpSentAt;
+    }
+
+    public void setElliottCycleKey(String elliottCycleKey) {
+        this.elliottCycleKey = elliottCycleKey;
+    }
+
+    public void setElliottSignalStage(ElliottSignalStage elliottSignalStage) {
+        this.elliottSignalStage = elliottSignalStage;
+    }
+
+    public void setElliottEndpointTimestamp(Long elliottEndpointTimestamp) {
+        this.elliottEndpointTimestamp = elliottEndpointTimestamp;
+    }
+
+    public void setElliottEndpointPrice(Double elliottEndpointPrice) {
+        this.elliottEndpointPrice = elliottEndpointPrice;
+    }
+
+    public void setElliottTerminalAnchorTimestamp(Long elliottTerminalAnchorTimestamp) {
+        this.elliottTerminalAnchorTimestamp = elliottTerminalAnchorTimestamp;
+    }
+
+    public void setLifecycleAnchorCandleTimestamp(Long lifecycleAnchorCandleTimestamp) {
+        this.lifecycleAnchorCandleTimestamp = lifecycleAnchorCandleTimestamp;
+    }
+
+    public void setLifecycleResolutionReason(String lifecycleResolutionReason) {
+        if (lifecycleResolutionReason == null || lifecycleResolutionReason.isBlank()) {
+            this.lifecycleResolutionReason = null;
+            return;
+        }
+        String normalized = lifecycleResolutionReason.trim();
+        this.lifecycleResolutionReason = normalized.length() <= 255
+                ? normalized
+                : normalized.substring(0, 255);
     }
 }

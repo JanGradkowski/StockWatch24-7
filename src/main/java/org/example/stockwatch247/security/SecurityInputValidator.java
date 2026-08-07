@@ -12,6 +12,7 @@ public final class SecurityInputValidator {
     private static final Pattern SEARCH_QUERY = Pattern.compile("[\\p{L}\\p{N} .&'^_-]{1,64}");
     private static final Pattern MIC_CODE = Pattern.compile("[A-Z0-9]{4,12}");
     private static final Pattern PERSON_NAME = Pattern.compile("[\\p{L}\\p{M} .'-]{1,100}");
+    private static final Pattern HEX_COLOR = Pattern.compile("#[0-9A-F]{6}");
     private static final Pattern EMAIL = Pattern.compile(
             "^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$",
             Pattern.CASE_INSENSITIVE);
@@ -77,6 +78,14 @@ public final class SecurityInputValidator {
             throw new IllegalArgumentException("Password must be at least 15 characters and at most 72 UTF-8 bytes.");
         }
         return password;
+    }
+
+    public static String requireHexColor(String rawColor) {
+        String color = rawColor == null ? "" : rawColor.trim().toUpperCase(Locale.ROOT);
+        if (!HEX_COLOR.matcher(color).matches()) {
+            throw new IllegalArgumentException("Choose a valid six-digit color.");
+        }
+        return color;
     }
 
     public static Long requireBeforeTimestamp(Long before) {

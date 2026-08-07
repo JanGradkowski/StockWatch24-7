@@ -2,6 +2,7 @@ package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
@@ -51,13 +52,19 @@ public class ElliottWaveDetectionService {
     private static final int RUNNING_FLAT_PENALTY = 14;
     private static final double[] PIVOT_SENSITIVITIES = {0.75, 1.25, 2.0, 3.0};
     private final int presentSignalLookbackCandles;
+    private final ScoringModel scoringModel;
 
     public ElliottWaveDetectionService() {
-        this(DEFAULT_PRESENT_SIGNAL_LOOKBACK_CANDLES);
+        this(DEFAULT_PRESENT_SIGNAL_LOOKBACK_CANDLES, ScoringModel.V1);
     }
 
     ElliottWaveDetectionService(int presentSignalLookbackCandles) {
+        this(presentSignalLookbackCandles, ScoringModel.V1);
+    }
+
+    ElliottWaveDetectionService(int presentSignalLookbackCandles, ScoringModel scoringModel) {
         this.presentSignalLookbackCandles = Math.max(0, presentSignalLookbackCandles);
+        this.scoringModel = scoringModel == null ? ScoringModel.V1 : scoringModel;
     }
 
     public List<DetectedSignal> detect(List<EnrichedCandle> recentCandles) {
@@ -91,7 +98,7 @@ public class ElliottWaveDetectionService {
 
     public List<DetectedSignal> detectAlertSignals(List<EnrichedCandle> recentCandles) {
         return detect(recentCandles).stream()
-                .filter(signal -> signal.confidenceScore() >= MIN_CONFIDENCE)
+                .filter(signal -> signal.eligibilityScore() >= MIN_CONFIDENCE)
                 .toList();
     }
 
@@ -102,7 +109,7 @@ public class ElliottWaveDetectionService {
                 : patternName.endsWith("CORRECTION") ? "ELLIOTT_CORRECTION" : patternName;
         String key = signalType + ':' + candidate.tradeSignal().name();
         DetectedSignal existing = bestSignals.get(key);
-        if (existing == null || candidate.confidenceScore() > existing.confidenceScore()) {
+        if (existing == null || candidate.eligibilityScore() > existing.eligibilityScore()) {
             bestSignals.put(key, candidate);
         }
     }
@@ -135,6 +142,120 @@ public class ElliottWaveDetectionService {
     }
 
     public List<ElliottWaveStructure> findHistoricalWaveStructures(List<EnrichedCandle> historicalCandles) {
+        return selectNonOverlappingStructures(collectHistoricalWaveStructures(historicalCandles));
+    }
+
+    /**
+     * Returns the lifecycle identity shared by the motive and corrective stages
+     * of one Elliott cycle. It intentionally excludes the revisable V/C endpoint.
+     */
+    public java.util.Optional<String> lifecycleCycleKey(ElliottWaveStructure structure) {
+        return ElliottWaveSignalLifecyclePolicy.cycleKey(structure);
+    }
+
+    public ElliottScoreAssessment scoreHistoricalStructure(
+            List<EnrichedCandle> historicalCandles,
+            ElliottWaveStructure structure,
+            ElliottSignalStage stage,
+            Long confirmationTimestamp) {
+        if (historicalCandles == null || structure == null || stage == null
+                || confirmationTimestamp == null) {
+            return new ElliottScoreAssessment(0, List.of());
+        }
+        List<EnrichedCandle> candles = historicalCandles.stream()
+                .filter(this::hasCompleteData)
+                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
+                .toList();
+        int confirmationIndex = indexAtTimestamp(candles, confirmationTimestamp);
+        if (confirmationIndex < 1) {
+            return new ElliottScoreAssessment(0, List.of());
+        }
+        List<EnrichedCandle> detectionCandles = candles.subList(0, confirmationIndex + 1);
+        boolean correctionEnd = stage == ElliottSignalStage.CORRECTION_END;
+        CandlePattern pattern = historicalPattern(structure, correctionEnd);
+        int productionWindowStart = Math.max(0, detectionCandles.size() - 100);
+        java.util.Optional<DetectedSignal> reconstructedSignal = detect(
+                detectionCandles.subList(productionWindowStart, detectionCandles.size())).stream()
+                .filter(signal -> signal.pattern() == pattern)
+                .filter(signal -> signal.candleTimestamp().equals(confirmationTimestamp))
+                .findFirst();
+        if (reconstructedSignal.isPresent()) {
+            DetectedSignal signal = reconstructedSignal.orElseThrow();
+            return new ElliottScoreAssessment(
+                    signal.confidenceScore(),
+                    signal.reasons().stream()
+                            .filter(reason -> !reason.startsWith("V1 detection eligibility:"))
+                            .toList());
+        }
+        List<Pivot> pivots = new ArrayList<>();
+        for (ElliottWavePoint point : structure.points()) {
+            int index = indexAtTimestamp(detectionCandles, point.timestamp());
+            if (index < 0) {
+                return new ElliottScoreAssessment(0, List.of());
+            }
+            pivots.add(new Pivot(index, "HIGH".equalsIgnoreCase(point.pivotType())
+                    ? PivotType.HIGH : PivotType.LOW, point.price()));
+        }
+        if (pivots.size() < (correctionEnd ? 9 : 6)) {
+            return new ElliottScoreAssessment(0, List.of());
+        }
+        TradeSignal tradeSignal = correctionEnd
+                ? ("BULLISH".equals(structure.direction()) ? TradeSignal.BUY : TradeSignal.SELL)
+                : ("BULLISH".equals(structure.direction()) ? TradeSignal.SELL : TradeSignal.BUY);
+        CorrectionMetrics correction = correctionEnd
+                ? new CorrectionMetrics(structure.correctionRetracement(), structure.waveCToARatio(),
+                structure.correctionVariant())
+                : null;
+        V2Score score = v2Score(pattern, tradeSignal, detectionCandles, pivots, correction,
+                structure.qualityScore());
+        return new ElliottScoreAssessment(score.score(), score.reasons());
+    }
+
+    private int indexAtTimestamp(List<EnrichedCandle> candles, Long timestamp) {
+        for (int index = 0; index < candles.size(); index++) {
+            if (candles.get(index).timestamp().equals(timestamp)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private CandlePattern historicalPattern(ElliottWaveStructure structure, boolean correctionEnd) {
+        boolean bullish = "BULLISH".equals(structure.direction());
+        if (correctionEnd) {
+            return bullish ? bullishCorrectionPattern(structure.correctionVariant())
+                    : bearishCorrectionPattern(structure.correctionVariant());
+        }
+        if (structure.impulseVariant() == ImpulseVariant.TRUNCATED_FIFTH) {
+            return bullish ? CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END
+                    : CandlePattern.ELLIOTT_BEARISH_TRUNCATED_WAVE_V_END;
+        }
+        return bullish ? CandlePattern.ELLIOTT_BULLISH_WAVE_V_END
+                : CandlePattern.ELLIOTT_BEARISH_WAVE_V_END;
+    }
+
+    public java.util.Optional<ElliottWaveStructure> findLatestStructureForCycle(
+            List<EnrichedCandle> historicalCandles,
+            String cycleKey,
+            ElliottSignalStage stage) {
+        if (cycleKey == null || cycleKey.isBlank() || stage == null) {
+            return java.util.Optional.empty();
+        }
+        return collectHistoricalWaveStructures(historicalCandles).stream()
+                .filter(structure -> ElliottWaveSignalLifecyclePolicy.cycleKey(structure)
+                        .filter(cycleKey::equals)
+                        .isPresent())
+                .filter(structure -> structure.correctionComplete()
+                        == (stage == ElliottSignalStage.CORRECTION_END))
+                .max(Comparator.comparingLong(this::terminalPointTimestamp)
+                        .thenComparingLong(structure -> structure.confirmationTimestamp() == null
+                                ? Long.MIN_VALUE
+                                : structure.confirmationTimestamp())
+                        .thenComparingInt(ElliottWaveStructure::qualityScore));
+    }
+
+    private List<ElliottWaveStructure> collectHistoricalWaveStructures(
+            List<EnrichedCandle> historicalCandles) {
         if (historicalCandles == null || historicalCandles.size() < MIN_CANDLES) {
             return List.of();
         }
@@ -158,7 +279,60 @@ public class ElliottWaveDetectionService {
                     .filter(structure -> structure.qualityScore() >= MIN_STRUCTURE_QUALITY)
                     .forEach(structure -> mergeHistoricalStructure(structuresByCycle, structure));
         }
-        return selectNonOverlappingStructures(new ArrayList<>(structuresByCycle.values()));
+        return new ArrayList<>(structuresByCycle.values());
+    }
+
+    private long terminalPointTimestamp(ElliottWaveStructure structure) {
+        if (structure == null || structure.points() == null || structure.points().isEmpty()
+                || structure.points().getLast().timestamp() == null) {
+            return Long.MIN_VALUE;
+        }
+        return structure.points().getLast().timestamp();
+    }
+
+    public java.util.Optional<ElliottWaveStructure> findStructureForSignal(
+            List<EnrichedCandle> historicalCandles,
+            CandlePattern pattern,
+            Long signalTimestamp) {
+        if (historicalCandles == null || pattern == null || signalTimestamp == null
+                || !pattern.name().startsWith("ELLIOTT_")) {
+            return java.util.Optional.empty();
+        }
+        List<EnrichedCandle> detectionHistory = historicalCandles.stream()
+                .filter(this::hasCompleteData)
+                .filter(candle -> candle.timestamp() <= signalTimestamp)
+                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
+                .toList();
+        return findHistoricalWaveStructures(detectionHistory).stream()
+                .filter(structure -> matchesRecordedPattern(pattern, structure))
+                .filter(structure -> structure.confirmationTimestamp() != null
+                        && structure.confirmationTimestamp() <= signalTimestamp)
+                .max(Comparator.comparingLong(ElliottWaveStructure::confirmationTimestamp)
+                        .thenComparingInt(ElliottWaveStructure::qualityScore)
+                        .thenComparingLong(structure -> structureSpan(structure)));
+    }
+
+    private boolean matchesRecordedPattern(CandlePattern pattern, ElliottWaveStructure structure) {
+        String patternName = pattern.name();
+        String expectedDirection = patternName.contains("BEARISH") ? "BEARISH" : "BULLISH";
+        boolean expectedCorrection = patternName.endsWith("CORRECTION");
+        if (!expectedDirection.equals(structure.direction())
+                || expectedCorrection != structure.correctionComplete()) {
+            return false;
+        }
+        if (patternName.contains("TRUNCATED")) {
+            return structure.impulseVariant() == ImpulseVariant.TRUNCATED_FIFTH;
+        }
+        if (patternName.contains("EXPANDED_FLAT")) {
+            return structure.correctionVariant() == CorrectionVariant.EXPANDED_FLAT;
+        }
+        if (patternName.contains("RUNNING_FLAT")) {
+            return structure.correctionVariant() == CorrectionVariant.RUNNING_FLAT;
+        }
+        if (expectedCorrection) {
+            return structure.correctionVariant() == CorrectionVariant.STANDARD;
+        }
+        return structure.impulseVariant() == ImpulseVariant.STANDARD;
     }
 
     private void mergeHistoricalStructure(Map<String, ElliottWaveStructure> structuresByCycle,
@@ -259,7 +433,10 @@ public class ElliottWaveDetectionService {
                 CandlePattern.ELLIOTT_BULLISH_IMPULSE,
                 TradeSignal.BUY,
                 current,
-                evidence
+                evidence,
+                candles,
+                sequence,
+                null
         ));
     }
 
@@ -296,7 +473,10 @@ public class ElliottWaveDetectionService {
                 CandlePattern.ELLIOTT_BEARISH_IMPULSE,
                 TradeSignal.SELL,
                 current,
-                evidence
+                evidence,
+                candles,
+                sequence,
+                null
         ));
     }
 
@@ -326,7 +506,10 @@ public class ElliottWaveDetectionService {
                         : CandlePattern.ELLIOTT_BULLISH_WAVE_V_END,
                 TradeSignal.SELL,
                 current,
-                evidence
+                evidence,
+                candles,
+                withPivot(sequence, wave5),
+                null
         ));
     }
 
@@ -356,7 +539,10 @@ public class ElliottWaveDetectionService {
                         : CandlePattern.ELLIOTT_BEARISH_WAVE_V_END,
                 TradeSignal.BUY,
                 current,
-                evidence
+                evidence,
+                candles,
+                withPivot(sequence, wave5),
+                null
         ));
     }
 
@@ -398,7 +584,10 @@ public class ElliottWaveDetectionService {
                 bullishCorrectionPattern(correction.variant()),
                 TradeSignal.BUY,
                 current,
-                evidence
+                evidence,
+                candles,
+                complete,
+                correction
         ));
     }
 
@@ -440,7 +629,10 @@ public class ElliottWaveDetectionService {
                 bearishCorrectionPattern(correction.variant()),
                 TradeSignal.SELL,
                 current,
-                evidence
+                evidence,
+                candles,
+                complete,
+                correction
         ));
     }
 
@@ -1571,22 +1763,368 @@ public class ElliottWaveDetectionService {
     private DetectedSignal signal(CandlePattern pattern,
                                   TradeSignal tradeSignal,
                                   EnrichedCandle current,
-                                  WaveEvidence evidence) {
-        int confidenceScore = clampScore(evidence.score());
-        List<String> reasons = new ArrayList<>(evidence.reasons());
-        if (confidenceScore < MIN_CONFIDENCE) {
-            reasons.add("Elliott Wave classification confidence is below the calibrated signal range; pattern is still detected");
+                                  WaveEvidence evidence,
+                                  List<EnrichedCandle> candles,
+                                  List<Pivot> pivots,
+                                  CorrectionMetrics correction) {
+        int eligibilityScore = clampScore(evidence.score());
+        boolean actionableEnding = pattern.name().endsWith("WAVE_V_END")
+                || pattern.name().endsWith("CORRECTION");
+        V2Score v2 = actionableEnding && scoringModel == ScoringModel.V2
+                ? v2Score(pattern, tradeSignal, candles, pivots, correction, eligibilityScore)
+                : new V2Score(eligibilityScore, List.copyOf(evidence.reasons()));
+        List<String> reasons = new ArrayList<>(v2.reasons());
+        if (scoringModel == ScoringModel.V2) {
+            reasons.add("V1 detection eligibility: " + eligibilityScore
+                    + "/100 (audit only; it selected and qualified the wave but is not part of the V2 total)");
         }
 
         return new DetectedSignal(
                 pattern,
                 tradeSignal,
-                classifyStrength(confidenceScore),
-                confidenceScore,
+                classifyStrength(v2.score()),
+                v2.score(),
                 reasons,
                 current.timestamp(),
-                current.close()
+                current.close(),
+                eligibilityScore
         );
+    }
+
+    private List<Pivot> withPivot(List<Pivot> pivots, Pivot pivot) {
+        List<Pivot> result = new ArrayList<>(pivots);
+        result.add(pivot);
+        return List.copyOf(result);
+    }
+
+    private V2Score v2Score(CandlePattern pattern,
+                            TradeSignal tradeSignal,
+                            List<EnrichedCandle> candles,
+                            List<Pivot> pivots,
+                            CorrectionMetrics correction,
+                            int eligibilityScore) {
+        boolean correctionEnd = pattern.name().endsWith("CORRECTION");
+        boolean waveVEnd = pattern.name().endsWith("WAVE_V_END");
+        boolean bullishImpulse = pivots.getFirst().type() == PivotType.LOW;
+        List<String> reasons = new ArrayList<>();
+
+        CategoryScore structure = structuralV2(pivots, correctionEnd, pattern, eligibilityScore);
+        reasons.add(structure.reason("Structural / pivot quality"));
+        CategoryScore proportions = proportionV2(pivots, correctionEnd, correction);
+        reasons.add(proportions.reason("Fibonacci / proportion / alternation"));
+        CategoryScore momentum = momentumV2(candles, pivots, tradeSignal, waveVEnd, bullishImpulse);
+        reasons.add(momentum.reason("Momentum / divergence"));
+        CategoryScore confirmation = confirmationV2(candles, tradeSignal);
+        reasons.add(confirmation.reason("Stage-specific confirmation"));
+        CategoryScore levels = levelsV2(candles, pivots, tradeSignal, waveVEnd);
+        reasons.add(levels.reason("Support / resistance / trend context"));
+        CategoryScore volume = volumeV2(candles, pivots, waveVEnd);
+        reasons.add(volume.reason("Volume confirmation"));
+        CategoryScore timing = timingV2(pivots, correctionEnd);
+        reasons.add(timing.reason("Timing / count stability"));
+
+        int score = structure.earned() + proportions.earned() + momentum.earned()
+                + confirmation.earned() + levels.earned() + volume.earned() + timing.earned();
+        return new V2Score(clampScore(score), List.copyOf(reasons));
+    }
+
+    private CategoryScore structuralV2(List<Pivot> pivots,
+                                       boolean correctionEnd,
+                                       CandlePattern pattern,
+                                       int eligibilityScore) {
+        int points = correctionEnd ? 6 : 18;
+        List<String> details = new ArrayList<>();
+        details.add("all mandatory Elliott rules passed (+" + (correctionEnd ? 6 : 18)
+                + "/" + (correctionEnd ? 6 : 18) + ")");
+        double wave1 = Math.abs(pivots.get(1).price() - pivots.get(0).price());
+        double wave3 = Math.abs(pivots.get(3).price() - pivots.get(2).price());
+        if (correctionEnd) {
+            int prior = Math.max(0, Math.min(16,
+                    (int) Math.round((eligibilityScore - MIN_CONFIDENCE) * 16.0 / 25.0)));
+            points += prior;
+            details.add("frozen V1 qualification retained as a structural prior (+" + prior + "/16)");
+            if (wave3 >= wave1) {
+                points += 2;
+                details.add("wave III is at least as long as wave I (+2)");
+            }
+            points += 3;
+            details.add("distinct A, B and C pivots completed (+3)");
+            if (!pattern.name().contains("EXPANDED_FLAT") && !pattern.name().contains("RUNNING_FLAT")) {
+                points += 1;
+                details.add("standard correction geometry (+1)");
+            }
+            if (pivots.get(5).index() - pivots.get(0).index() >= MIN_IMPULSE_SPAN_CANDLES) {
+                points += 2;
+                details.add("motive structure has sufficient span (+2)");
+            }
+        } else {
+            if (wave3 >= wave1) {
+                points += 5;
+                details.add("wave III is at least as long as wave I (+5)");
+            }
+            if (!pattern.name().contains("TRUNCATED")) {
+                points += 3;
+                details.add("wave V exceeded wave III (+3)");
+            }
+            if (pivots.get(5).index() - pivots.get(0).index() >= MIN_IMPULSE_SPAN_CANDLES) {
+                points += 2;
+                details.add("five-wave structure has sufficient span (+2)");
+            }
+            if (minimumLegSpan(pivots, 5) >= MIN_LEG_SPAN_CANDLES) {
+                points += 2;
+                details.add("every motive leg has stable spacing (+2)");
+            }
+        }
+        return new CategoryScore(Math.min(30, points), 30, String.join("; ", details));
+    }
+
+    private CategoryScore proportionV2(List<Pivot> pivots,
+                                       boolean correctionEnd,
+                                       CorrectionMetrics correction) {
+        double wave1 = Math.abs(pivots.get(1).price() - pivots.get(0).price());
+        double wave3 = Math.abs(pivots.get(3).price() - pivots.get(2).price());
+        double wave2 = safeRatio(Math.abs(pivots.get(1).price() - pivots.get(2).price()), wave1);
+        double wave4 = safeRatio(Math.abs(pivots.get(3).price() - pivots.get(4).price()), wave3);
+        int points = 0;
+        List<String> details = new ArrayList<>();
+        if (correctionEnd) {
+            points += zonePoints(correction.retracement(), COMMON_CORRECTION_MIN_RETRACEMENT,
+                    COMMON_CORRECTION_MAX_RETRACEMENT, NORMAL_CORRECTION_MIN_RETRACEMENT,
+                    NORMAL_CORRECTION_MAX_RETRACEMENT, 6, 4, "ABC retracement", details);
+            points += zonePoints(correction.waveCToARatio(), COMMON_WAVE_C_TO_A_MIN_RATIO,
+                    COMMON_WAVE_C_TO_A_MAX_RATIO, NORMAL_WAVE_C_TO_A_MIN_RATIO,
+                    NORMAL_WAVE_C_TO_A_MAX_RATIO, 6, 4, "wave C versus A", details);
+            points += zonePoints(wave2, COMMON_WAVE_TWO_MIN_RETRACEMENT, COMMON_WAVE_TWO_MAX_RETRACEMENT,
+                    NORMAL_WAVE_TWO_MIN_RETRACEMENT, NORMAL_WAVE_TWO_MAX_RETRACEMENT,
+                    3, 2, "wave II", details);
+            points += zonePoints(wave4, COMMON_WAVE_FOUR_MIN_RETRACEMENT, COMMON_WAVE_FOUR_MAX_RETRACEMENT,
+                    NORMAL_WAVE_FOUR_MIN_RETRACEMENT, NORMAL_WAVE_FOUR_MAX_RETRACEMENT,
+                    3, 2, "wave IV", details);
+            if (Math.abs(wave2 - wave4) >= 0.12) {
+                points += 2;
+                details.add("waves II and IV show alternation (+2)");
+            }
+        } else {
+            points += zonePoints(wave2, COMMON_WAVE_TWO_MIN_RETRACEMENT, COMMON_WAVE_TWO_MAX_RETRACEMENT,
+                    NORMAL_WAVE_TWO_MIN_RETRACEMENT, NORMAL_WAVE_TWO_MAX_RETRACEMENT,
+                    5, 3, "wave II", details);
+            points += zonePoints(wave4, COMMON_WAVE_FOUR_MIN_RETRACEMENT, COMMON_WAVE_FOUR_MAX_RETRACEMENT,
+                    NORMAL_WAVE_FOUR_MIN_RETRACEMENT, NORMAL_WAVE_FOUR_MAX_RETRACEMENT,
+                    5, 3, "wave IV", details);
+            if (Math.abs(wave2 - wave4) >= 0.12) {
+                points += 4;
+                details.add("waves II and IV show alternation (+4)");
+            } else {
+                points += 2;
+                details.add("waves II and IV have limited alternation (+2)");
+            }
+            double waveThreeRatio = safeRatio(wave3, wave1);
+            if (between(waveThreeRatio, 1.0, 2.618)) {
+                points += 3;
+                details.add("wave III proportion is typical (+3)");
+            }
+            double wave5 = Math.abs(pivots.get(5).price() - pivots.get(4).price());
+            if (between(safeRatio(wave5, wave1), 0.382, 2.618)) {
+                points += 3;
+                details.add("wave V proportion is plausible (+3)");
+            }
+        }
+        return new CategoryScore(Math.min(20, points), 20,
+                details.isEmpty() ? "no common proportion zones were met" : String.join("; ", details));
+    }
+
+    private int zonePoints(double value,
+                           double commonMin,
+                           double commonMax,
+                           double normalMin,
+                           double normalMax,
+                           int commonPoints,
+                           int normalPoints,
+                           String label,
+                           List<String> details) {
+        if (between(value, commonMin, commonMax)) {
+            details.add(label + " is in its common zone (+" + commonPoints + ")");
+            return commonPoints;
+        }
+        if (between(value, normalMin, normalMax)) {
+            details.add(label + " is within normal bounds (+" + normalPoints + ")");
+            return normalPoints;
+        }
+        return 0;
+    }
+
+    private CategoryScore momentumV2(List<EnrichedCandle> candles,
+                                     List<Pivot> pivots,
+                                     TradeSignal tradeSignal,
+                                     boolean waveVEnd,
+                                     boolean bullishImpulse) {
+        int points = 0;
+        List<String> details = new ArrayList<>();
+        Pivot comparison = waveVEnd ? pivots.get(3) : pivots.get(6);
+        Pivot terminal = pivots.getLast();
+        EnrichedCandle earlier = candles.get(comparison.index());
+        EnrichedCandle later = candles.get(terminal.index());
+        boolean terminalIsHigh = terminal.type() == PivotType.HIGH;
+        if (diverges(earlier.rsi(), later.rsi(), terminalIsHigh)) {
+            points += waveVEnd ? 6 : 5;
+            details.add("RSI divergence appears at the terminal pivot (+" + (waveVEnd ? 6 : 5) + ")");
+        }
+        if (diverges(earlier.macdHistogram(), later.macdHistogram(), terminalIsHigh)) {
+            points += waveVEnd ? 5 : 4;
+            details.add("MACD histogram divergence appears at the terminal pivot (+" + (waveVEnd ? 5 : 4) + ")");
+        }
+        EnrichedCandle current = candles.getLast();
+        EnrichedCandle previous = candles.get(candles.size() - 2);
+        if (movesWithSignal(previous.rsi(), current.rsi(), tradeSignal)) {
+            points += 2;
+            details.add("RSI turned with the signal (+2)");
+        }
+        if (movesWithSignal(previous.macdHistogram(), current.macdHistogram(), tradeSignal)) {
+            points += 2;
+            details.add("MACD histogram turned with the signal (+2)");
+        }
+        if (!waveVEnd && isAvailable(current.rsi())
+                && (tradeSignal == TradeSignal.BUY ? current.rsi() < 70 : current.rsi() > 30)) {
+            points += 2;
+            details.add("reversal is not momentum-exhausted (+2)");
+        }
+        return new CategoryScore(Math.min(15, points), 15,
+                details.isEmpty() ? "no momentum divergence or turn was confirmed" : String.join("; ", details));
+    }
+
+    private boolean diverges(double earlier, double later, boolean terminalIsHigh) {
+        return isAvailable(earlier) && isAvailable(later)
+                && (terminalIsHigh ? later < earlier : later > earlier);
+    }
+
+    private boolean movesWithSignal(double previous, double current, TradeSignal signal) {
+        return isAvailable(previous) && isAvailable(current)
+                && (signal == TradeSignal.BUY ? current > previous : current < previous);
+    }
+
+    private CategoryScore confirmationV2(List<EnrichedCandle> candles, TradeSignal signal) {
+        EnrichedCandle current = candles.getLast();
+        EnrichedCandle previous = candles.get(candles.size() - 2);
+        int points = 7;
+        List<String> details = new ArrayList<>();
+        details.add("close broke the prior candle extreme (+7)");
+        if (signal == TradeSignal.BUY ? current.close() > current.open() : current.close() < current.open()) {
+            points += 3;
+            details.add("confirmation candle closed in the signal direction (+3)");
+        }
+        double range = current.high() - current.low();
+        if (range > 0.0) {
+            double closeLocation = (current.close() - current.low()) / range;
+            if (signal == TradeSignal.BUY ? closeLocation >= 0.65 : closeLocation <= 0.35) {
+                points += 3;
+                details.add("close finished decisively within its range (+3)");
+            }
+        }
+        if (isAvailable(current.fastEma())
+                && (signal == TradeSignal.BUY ? current.close() > current.fastEma() : current.close() < current.fastEma())) {
+            points += 2;
+            details.add("close confirmed through the fast EMA (+2)");
+        }
+        return new CategoryScore(Math.min(15, points), 15, String.join("; ", details));
+    }
+
+    private CategoryScore levelsV2(List<EnrichedCandle> candles,
+                                   List<Pivot> pivots,
+                                   TradeSignal signal,
+                                   boolean waveVEnd) {
+        EnrichedCandle current = candles.getLast();
+        EnrichedCandle terminal = candles.get(pivots.getLast().index());
+        int points = 0;
+        List<String> details = new ArrayList<>();
+        if (waveVEnd) {
+            if (isAvailable(terminal.upperBollinger()) && isAvailable(terminal.lowerBollinger())
+                    && (signal == TradeSignal.SELL ? terminal.high() >= terminal.upperBollinger()
+                    : terminal.low() <= terminal.lowerBollinger())) {
+                points += 4;
+                details.add("wave V tested an outer Bollinger band (+4)");
+            }
+            if (isAvailable(current.upperBollinger()) && isAvailable(current.lowerBollinger())
+                    && current.close() < current.upperBollinger() && current.close() > current.lowerBollinger()) {
+                points += 2;
+                details.add("confirmation closed back inside the bands (+2)");
+            }
+            if (isAvailable(terminal.longSma()) && isAvailable(terminal.atr()) && terminal.atr() > 0
+                    && Math.abs(terminal.close() - terminal.longSma()) >= terminal.atr() * 2.0) {
+                points += 2;
+                details.add("terminal price was extended from the long trend (+2)");
+            }
+        } else {
+            if (isAvailable(current.fastEma())
+                    && (signal == TradeSignal.BUY ? current.close() > current.fastEma() : current.close() < current.fastEma())) {
+                points += 3;
+                details.add("close aligned with the fast EMA (+3)");
+            }
+            if (isAvailable(current.slowEma())
+                    && (signal == TradeSignal.BUY ? current.close() > current.slowEma() : current.close() < current.slowEma())) {
+                points += 3;
+                details.add("close aligned with the slow EMA (+3)");
+            }
+            if (isAvailable(terminal.upperBollinger()) && isAvailable(terminal.lowerBollinger())
+                    && (signal == TradeSignal.BUY ? terminal.low() <= terminal.lowerBollinger()
+                    : terminal.high() >= terminal.upperBollinger())) {
+                points += 2;
+                details.add("wave C tested an outer volatility level (+2)");
+            }
+        }
+        if (isAvailable(current.rollingVwap())
+                && (signal == TradeSignal.BUY ? current.close() > current.rollingVwap()
+                : current.close() < current.rollingVwap())) {
+            points += 2;
+            details.add("close confirmed on the signal side of rolling VWAP (+2)");
+        }
+        return new CategoryScore(Math.min(10, points), 10,
+                details.isEmpty() ? "no additional level confluence was present" : String.join("; ", details));
+    }
+
+    private CategoryScore volumeV2(List<EnrichedCandle> candles,
+                                   List<Pivot> pivots,
+                                   boolean waveVEnd) {
+        EnrichedCandle current = candles.getLast();
+        EnrichedCandle terminal = candles.get(pivots.getLast().index());
+        EnrichedCandle comparison = candles.get((waveVEnd ? pivots.get(3) : pivots.get(6)).index());
+        int points = 0;
+        List<String> details = new ArrayList<>();
+        if (isAvailable(comparison.volume()) && terminal.volume() <= comparison.volume()) {
+            points += waveVEnd ? 3 : 2;
+            details.add("terminal-leg volume did not expand versus the comparison pivot (+"
+                    + (waveVEnd ? 3 : 2) + ")");
+        }
+        if (isAvailable(current.averageVolume()) && current.averageVolume() > 0.0
+                && current.volume() >= current.averageVolume() * 1.2) {
+            points += waveVEnd ? 2 : 3;
+            details.add("confirmation volume was at least 1.2x average (+" + (waveVEnd ? 2 : 3) + ")");
+        }
+        return new CategoryScore(Math.min(5, points), 5,
+                details.isEmpty() ? "volume supplied no additional confirmation" : String.join("; ", details));
+    }
+
+    private CategoryScore timingV2(List<Pivot> pivots, boolean correctionEnd) {
+        int points = 0;
+        List<String> details = new ArrayList<>();
+        if (pivots.get(5).index() - pivots.get(0).index() >= MIN_IMPULSE_SPAN_CANDLES) {
+            points += 3;
+            details.add("motive count spans enough candles (+3)");
+        }
+        int lastLeg = correctionEnd ? 8 : 5;
+        if (minimumLegSpan(pivots, lastLeg) >= MIN_LEG_SPAN_CANDLES) {
+            points += 2;
+            details.add("terminal count has no compressed one-candle leg (+2)");
+        }
+        return new CategoryScore(points, 5,
+                details.isEmpty() ? "the count is temporally compressed" : String.join("; ", details));
+    }
+
+    private int minimumLegSpan(List<Pivot> pivots, int lastIndex) {
+        int minimum = Integer.MAX_VALUE;
+        for (int index = 1; index <= lastIndex; index++) {
+            minimum = Math.min(minimum, pivots.get(index).index() - pivots.get(index - 1).index());
+        }
+        return minimum;
     }
 
     private SignalStength classifyStrength(int confidenceScore) {
@@ -1657,6 +2195,11 @@ public class ElliottWaveDetectionService {
         LOW
     }
 
+    enum ScoringModel {
+        V1,
+        V2
+    }
+
     private enum SwingDirection {
         UNKNOWN,
         UP,
@@ -1683,7 +2226,22 @@ public class ElliottWaveDetectionService {
                                      CorrectionVariant variant) {
     }
 
+    private record V2Score(int score, List<String> reasons) {
+    }
+
+    private record CategoryScore(int earned, int maximum, String details) {
+        private String reason(String category) {
+            return category + " +" + earned + "/" + maximum + ": " + details;
+        }
+    }
+
     public record ElliottWavePoint(String label, Long timestamp, double price, String pivotType) {
+    }
+
+    public record ElliottScoreAssessment(int score, List<String> reasons) {
+        public ElliottScoreAssessment {
+            reasons = reasons == null ? List.of() : List.copyOf(reasons);
+        }
     }
 
     public record ElliottWaveStructure(String direction,
