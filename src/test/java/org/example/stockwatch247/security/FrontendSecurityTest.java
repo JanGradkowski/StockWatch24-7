@@ -24,6 +24,11 @@ class FrontendSecurityTest {
                 "stock.html",
                 "alert-history.html",
                 "all-signals.html",
+                "all-activity-signals.html",
+                "activity-signal-detail.html",
+                "technical-outlook.html",
+                "virtual-trades.html",
+                "virtual-trade.html",
                 "signal-detail.html",
                 "historical-candlestick-detail.html",
                 "historical-elliott-detail.html");
@@ -221,6 +226,9 @@ class FrontendSecurityTest {
                 < stock.indexOf("id=\"showHistoricalCandlestickPatternsBtn\""));
         assertTrue(stock.indexOf("id=\"showHistoricalCandlestickPatternsBtn\"")
                 < stock.indexOf("id=\"technicalAnalysisWorkspacePanel\""));
+        assertTrue(stock.contains("id=\"historicalCandlestickViewDialog\""));
+        assertTrue(stock.contains("data-historical-candlestick-view=\"graphical\""));
+        assertTrue(stock.contains("data-historical-candlestick-view=\"list\""));
         assertTrue(stock.contains("id=\"historicalCandlestickIntervalDialog\""));
         assertTrue(stock.contains("id=\"historicalCandlestickLookbackDialog\""));
         assertTrue(stock.contains("id=\"historicalCandlestickLookbackInput\""));
@@ -230,9 +238,18 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("data-historical-candlestick-interval=\"1wk\""));
         assertTrue(stock.contains("data-historical-candlestick-interval=\"1mo\""));
         assertTrue(stock.contains("/candlestick-patterns/history?interval="));
+        assertTrue(stock.contains("&fullHistory=true"));
         assertTrue(stock.contains("&lookbackCandles=${encodeURIComponent(lookbackCandles)}"));
         assertTrue(stock.contains("cache: 'no-store'"));
         assertTrue(stock.contains("createHistoricalCandlestickRow"));
+        assertTrue(stock.contains("id=\"historicalCandlestickHitTargets\""));
+        assertTrue(stock.contains("id=\"historicalCandlestickHoverCard\""));
+        assertTrue(stock.contains("function rebuildHistoricalCandlestickHitTargets()"));
+        assertTrue(stock.contains("function positionHistoricalCandlestickHitTargets()"));
+        assertTrue(stock.contains("function highlightHistoricalCandlestickSignal(signal)"));
+        assertTrue(stock.contains("signal.trendStartTimestamp"));
+        assertTrue(stock.contains("historicalCandlestickDetailUrl(signal, null, true)"));
+        assertTrue(stock.contains("activeHistoricalCandlestickSignals.length"));
         assertTrue(stock.contains("reopenHistoricalCandlestickResultsFromUrl"));
 
         String navbar = Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html"));
@@ -290,7 +307,7 @@ class FrontendSecurityTest {
         int loadChartData = stock.indexOf("async function loadChartData(interval)");
         int paginationReady = stock.indexOf("isFetching = false;", loadChartData);
         int initialOverlayRefresh = stock.indexOf(
-                "await refreshHistoricalElliottOverlays(interval);", loadChartData);
+                "refreshHistoricalElliottOverlays(interval)", loadChartData);
         assertTrue(paginationReady > loadChartData);
         assertTrue(paginationReady < initialOverlayRefresh);
 
@@ -419,6 +436,11 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("last 365 days"));
         assertTrue(stock.contains("never generates old email alerts"));
         assertTrue(stock.contains("rows.replaceChildren"));
+        assertTrue(stock.contains("function activityHistoryDetailUrl(trade, source)"));
+        assertTrue(stock.contains("/activity-signals/${source}/trades/${encodeURIComponent(trade.id)}"));
+        assertTrue(stock.contains("makeActivityHistoryRowInteractive(row, detailUrl, trade.memberName)"));
+        assertTrue(stock.contains("makeActivityHistoryRowInteractive(row, detailUrl, trade.insiderName)"));
+        assertTrue(stock.contains("if (event.target.closest('a, button')) return"));
         assertFalse(stock.contains("innerHTML"));
 
         assertTrue(dashboard.contains("th:each=\"activity : ${congressionalActivities}\""));
@@ -494,7 +516,9 @@ class FrontendSecurityTest {
         assertTrue(insiderActivity > congressionalActivity);
 
         assertTrue(dashboardScript.contains("function initializeDashboardViews()"));
-        assertTrue(dashboardScript.contains("activateView(\"technical\")"));
+        assertTrue(dashboardScript.contains("window.location.hash === \"#ticker-alerts\""));
+        assertTrue(dashboardScript.contains("data-notification-read-all"));
+        assertTrue(dashboardScript.contains("reloadTickerAlerts"));
         assertTrue(dashboardScript.contains("section.hidden = section.dataset.dashboardView !== view"));
         assertTrue(dashboardScript.contains("view === \"alerts\""));
         assertTrue(dashboardScript.contains("button.setAttribute(\"aria-pressed\", String(selected))"));
@@ -507,6 +531,10 @@ class FrontendSecurityTest {
         String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
         String history = Files.readString(Path.of("src/main/resources/templates/alert-history.html"));
         String archive = Files.readString(Path.of("src/main/resources/templates/all-signals.html"));
+        String activityArchive = Files.readString(
+                Path.of("src/main/resources/templates/all-activity-signals.html"));
+        String activityDetail = Files.readString(
+                Path.of("src/main/resources/templates/activity-signal-detail.html"));
         String signalDetail = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
 
         assertTrue(dashboard.contains("th:each=\"company : ${trackedCompanies}\""));
@@ -530,6 +558,16 @@ class FrontendSecurityTest {
         assertTrue(dashboardScript.contains("row.hidden = !visible"));
         assertTrue(dashboardScript.contains("button.setAttribute(\"aria-pressed\", String(selected))"));
         assertFalse(dashboardScript.contains("innerHTML"));
+
+        assertTrue(activityDetail.contains("class=\"signal-report-header\""));
+        assertTrue(activityDetail.contains("class=\"signal-view-tabs signal-three-view-tabs\""));
+        assertTrue(activityDetail.contains("class=\"signal-view-tab active\""));
+        assertTrue(activityDetail.contains("class=\"signal-chart-card\""));
+        assertTrue(activityDetail.contains("class=\"signal-evidence-section\""));
+        assertTrue(activityDetail.contains("class=\"signal-results-section\""));
+        assertTrue(activityDetail.contains("function activateTab(name, updateHash)"));
+        assertFalse(activityDetail.contains("signal-detail-tab"));
+        assertFalse(activityDetail.contains("activity-detail-hero"));
 
         assertTrue(history.contains("th:each=\"column, columnStatus : ${history.columns()}\""));
         assertTrue(history.contains("column.alert().familyLabel()"));
@@ -562,6 +600,17 @@ class FrontendSecurityTest {
         assertTrue(archive.contains("entry.resultWindowLabel()"));
         assertTrue(archive.contains("direction-aware moves from the signal close"));
         assertTrue(archive.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
+        assertTrue(dashboard.contains("data-notification-read"));
+        assertTrue(dashboard.contains("@{/activity-signals}"));
+        assertTrue(dashboardScript.contains("initializeNotificationReadButtons"));
+        assertTrue(dashboardScript.contains("X-CSRF-TOKEN"));
+        assertFalse(dashboardScript.contains("innerHTML"));
+        assertTrue(activityArchive.contains("archive.signals()"));
+        assertTrue(activityArchive.contains("value=\"company\""));
+        assertTrue(activityArchive.contains("value=\"transaction\""));
+        assertTrue(activityArchive.contains("value=\"type\""));
+        assertTrue(activityArchive.contains("value=\"actor\""));
+        assertTrue(activityArchive.contains("signal.hasBeenRead()"));
 
         assertTrue(signalDetail.contains("signal.setupScore()"));
         assertTrue(signalDetail.contains("signal.signalPeriodLabel()"));

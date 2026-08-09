@@ -145,6 +145,10 @@
       <div class="button-group">
         <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line">Line</button>
         <button id="candleBtn" type="button" class="view-toggle active" data-chart-mode="candle">Candles</button>
+        <button id="candlestickOverlayToggle"
+                type="button"
+                class="view-toggle"
+                aria-pressed="false">Candlestick signals</button>
         <button id="elliottOverlayToggle" type="button" class="view-toggle" aria-pressed="false" disabled>Elliott overlays</button>
         <button id="anchoredVolumeProfileToggle"
                 type="button"
@@ -189,6 +193,7 @@
       <h2 class="chart-panel-title">Price action</h2>
       <span class="chart-panel-meta">Scroll horizontally to explore history</span>
     </div>
+    <div id="candlestickOverlayStatus" class="elliott-overlay-status candlestick-overlay-status" aria-live="polite"></div>
     <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite"></div>
     <div id="anchoredVolumeProfileSummary" class="anchored-volume-profile-summary">
       <div class="anchored-volume-profile-range">
@@ -221,6 +226,9 @@
       <div id="elliottWaveHitTargets"
            class="elliott-wave-hit-targets"
            aria-label="Interactive Elliott Wave signals"></div>
+      <div id="historicalCandlestickHitTargets"
+           class="elliott-wave-hit-targets historical-candlestick-hit-targets"
+           aria-label="Interactive historical candlestick signals"></div>
       <aside id="elliottWaveHoverCard"
              class="elliott-wave-hover-card"
              role="dialog"
@@ -242,6 +250,37 @@
         <p id="elliottWaveCardMessage" class="elliott-wave-card-message"></p>
         <p id="elliottWaveCardNote" class="elliott-wave-card-note"></p>
         <a id="elliottWaveCardLink" class="elliott-wave-card-link" href="#">Open signal details</a>
+      </aside>
+      <aside id="historicalCandlestickHoverCard"
+             class="elliott-wave-hover-card historical-candlestick-hover-card"
+             role="dialog"
+             aria-labelledby="historicalCandlestickCardTitle"
+             hidden>
+        <button id="historicalCandlestickCardClose"
+                class="elliott-wave-card-close"
+                type="button"
+                aria-label="Close candlestick signal details">&times;</button>
+        <p class="elliott-wave-card-eyebrow">HISTORICAL CANDLESTICK SIGNAL</p>
+        <h3 id="historicalCandlestickCardTitle"></h3>
+        <p id="historicalCandlestickCardStage" class="elliott-wave-card-stage"></p>
+        <span id="historicalCandlestickCardStatus" class="elliott-wave-card-status"></span>
+        <div id="historicalCandlestickCardOutcome" class="elliott-wave-card-outcome">
+          <span id="historicalCandlestickCardOutcomeLabel"></span>
+          <strong id="historicalCandlestickCardOutcomeValue"></strong>
+          <small id="historicalCandlestickCardOutcomeWindow"></small>
+        </div>
+        <p id="historicalCandlestickCardTrend" class="elliott-wave-card-message"></p>
+        <p id="historicalCandlestickCardNote" class="elliott-wave-card-note"></p>
+        <div id="historicalCandlestickCardClusterNavigation"
+             class="historical-candlestick-card-navigation"
+             hidden>
+          <button id="previousHistoricalCandlestickSignal" type="button" aria-label="Previous nearby signal">&larr;</button>
+          <span id="historicalCandlestickCardClusterPosition"></span>
+          <button id="nextHistoricalCandlestickSignal" type="button" aria-label="Next nearby signal">&rarr;</button>
+        </div>
+        <a id="historicalCandlestickCardLink"
+           class="elliott-wave-card-link historical-candlestick-card-link"
+           href="#">Open historical signal details</a>
       </aside>
     </div>
   </section>
@@ -272,6 +311,19 @@
        aria-labelledby="technicalAnalysisWorkspaceTab"
        data-stock-workspace-panel="technical-analysis"
        hidden>
+
+  <section class="stock-workspace-action-card technical-outlook-launcher"
+           aria-labelledby="fullTechnicalOutlookTitle">
+    <div>
+      <span class="stock-workspace-action-kicker">Complete technical workspace</span>
+      <h2 id="fullTechnicalOutlookTitle">Full Technical Outlook</h2>
+      <p>Review the synchronized chart, category-balanced outlook, auditable indicator votes, recent signals, and market-relative performance.</p>
+    </div>
+    <a class="btn-accent full-technical-outlook-button"
+       th:href="@{/stock/{symbol}/technical-outlook(symbol=${symbol})}">
+      Open Full Technical Outlook
+    </a>
+  </section>
 
   <section class="alert-panel">
     <div class="alert-header">
@@ -521,6 +573,40 @@
       <p id="insiderHistoryDisclaimer" class="congressional-history-disclaimer">
         Returns are mark-to-market research measurements, not realized portfolio returns.
       </p>
+    </div>
+  </dialog>
+
+  <dialog id="historicalCandlestickViewDialog"
+          class="congressional-history-dialog historical-candlestick-dialog view-picker-dialog"
+          aria-labelledby="historicalCandlestickViewTitle">
+    <div class="congressional-history-dialog-content">
+      <div class="congressional-history-heading">
+        <div>
+          <span class="congressional-panel-kicker">Historical candle patterns</span>
+          <h2 id="historicalCandlestickViewTitle">How would you like to explore them?</h2>
+          <p>Use the complete chart overlay for visual context, or keep the detailed research table.</p>
+        </div>
+        <button id="closeHistoricalCandlestickViewBtn"
+                type="button"
+                class="congressional-dialog-close"
+                aria-label="Close historical candlestick view picker">&times;</button>
+      </div>
+      <div class="historical-candlestick-view-grid">
+        <button type="button"
+                class="historical-candlestick-view-option graphical"
+                data-historical-candlestick-view="graphical">
+          <span>Recommended</span>
+          <strong>Graphical overlay</strong>
+          <small>Show every detected pattern for the chart interval, directly on its candle with required-trend context.</small>
+        </button>
+        <button type="button"
+                class="historical-candlestick-view-option"
+                data-historical-candlestick-view="list">
+          <span>Research table</span>
+          <strong>List view</strong>
+          <small>Choose an interval and scan window, then compare every signal in the existing table.</small>
+        </button>
+      </div>
     </div>
   </dialog>
 
@@ -817,6 +903,18 @@
   let elliottCardHovered = false;
   let elliottCardHideTimer = null;
   let elliottHitTargetFrame = null;
+  let historicalCandlestickOverlayEnabled = false;
+  let historicalCandlestickOverlayHistory = null;
+  let historicalCandlestickOverlaySignals = [];
+  let historicalCandlestickOverlayRequestSequence = 0;
+  let historicalCandlestickHitTargetFrame = null;
+  let historicalCandlestickTrendSeries = null;
+  let historicalCandlestickFormationSeries = null;
+  let activeHistoricalCandlestickSignals = [];
+  let activeHistoricalCandlestickSignalIndex = 0;
+  let historicalCandlestickCardPinned = false;
+  let historicalCandlestickCardHovered = false;
+  let historicalCandlestickCardHideTimer = null;
   let currentMode = 'candle';
   let currentInterval = '1d';
   let elliottOverlaysEnabled = true;
@@ -976,6 +1074,7 @@
         }
         scheduleAnchoredVolumeProfileRender();
         scheduleElliottHitTargetPositioning();
+        scheduleHistoricalCandlestickHitTargetPositioning();
       });
       priceChart.subscribeClick(handleAnchoredVolumeProfileChartClick);
       priceChart.subscribeClick(handleElliottWaveChartClick);
@@ -1071,6 +1170,8 @@
     elliottRequestSequence++;
     clearElliottOverlays();
     updateElliottOverlayToggle();
+    historicalCandlestickOverlayRequestSequence++;
+    clearHistoricalCandlestickOverlayVisuals();
     anchoredVolumeProfileRequestSequence++;
     anchoredVolumeProfile = null;
     anchoredVolumeProfileAnchorTimestamp = null;
@@ -1110,7 +1211,10 @@
       chartLoadController = null;
       scheduleViewportHistoryFill();
 
-      await refreshHistoricalElliottOverlays(interval);
+      await Promise.all([
+        refreshHistoricalElliottOverlays(interval),
+        refreshHistoricalCandlestickOverlay(interval)
+      ]);
       if (anchoredVolumeProfileEnabled && globalCandleData.length > 0) {
         await requestAnchoredVolumeProfile(
                 globalCandleData[globalCandleData.length - 1].timestamp);
@@ -1154,7 +1258,10 @@
         pageAdvanced = true;
         hasMoreHistory = pageMayHaveMore(page, data, HISTORY_PAGE_LIMIT);
         processAndSetData(data, true);
-        await refreshHistoricalElliottOverlays(requestedInterval);
+        await Promise.all([
+          refreshHistoricalElliottOverlays(requestedInterval),
+          refreshHistoricalCandlestickOverlay(requestedInterval)
+        ]);
       } else {
         hasMoreHistory = Boolean(page.hasMore);
         if (hasMoreHistory && page.source === 'CACHE_REFRESH_IN_PROGRESS') {
@@ -1264,6 +1371,9 @@
       });
     }
     scheduleAnchoredVolumeProfileRender();
+    if (historicalCandlestickOverlayEnabled) {
+      rebuildHistoricalCandlestickHitTargets();
+    }
   }
 
   function calculateWilderRsi(candles, period) {
@@ -2336,6 +2446,7 @@
   }
 
   function showElliottWaveCard(segment, point, pinned) {
+    hideHistoricalCandlestickCard();
     clearTimeout(elliottCardHideTimer);
     elliottCardPinned = pinned;
     setActiveElliottSegment(segment);
@@ -2771,7 +2882,403 @@
             : `${state.followedStocks}/${state.maximumFollowedStocks} insider stocks followed`;
   }
 
+  function showHistoricalCandlestickViewPicker() {
+    const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
+    if (resultsDialog.open) resultsDialog.close();
+    const lookbackDialog = document.getElementById('historicalCandlestickLookbackDialog');
+    if (lookbackDialog.open) lookbackDialog.close();
+    const intervalDialog = document.getElementById('historicalCandlestickIntervalDialog');
+    if (intervalDialog.open) intervalDialog.close();
+    const viewDialog = document.getElementById('historicalCandlestickViewDialog');
+    if (!viewDialog.open) viewDialog.showModal();
+  }
+
+  function chooseHistoricalCandlestickView(view) {
+    const viewDialog = document.getElementById('historicalCandlestickViewDialog');
+    if (viewDialog.open) viewDialog.close();
+    if (view === 'list') {
+      showHistoricalCandlestickIntervalPicker();
+      return;
+    }
+    if (view === 'graphical') {
+      void enableHistoricalCandlestickOverlay();
+    }
+  }
+
+  async function enableHistoricalCandlestickOverlay() {
+    historicalCandlestickOverlayEnabled = true;
+    setChartMode('candle');
+    updateHistoricalCandlestickOverlayToggle();
+    await refreshHistoricalCandlestickOverlay(currentInterval);
+    document.getElementById('candlestickOverlayToggle').focus({ preventScroll: true });
+  }
+
+  function disableHistoricalCandlestickOverlay() {
+    historicalCandlestickOverlayEnabled = false;
+    historicalCandlestickOverlayRequestSequence++;
+    historicalCandlestickOverlayHistory = null;
+    historicalCandlestickOverlaySignals = [];
+    clearHistoricalCandlestickOverlayVisuals();
+    document.getElementById('candlestickOverlayStatus').textContent = '';
+    updateHistoricalCandlestickOverlayToggle();
+  }
+
+  function toggleHistoricalCandlestickOverlay() {
+    if (historicalCandlestickOverlayEnabled) {
+      disableHistoricalCandlestickOverlay();
+      return;
+    }
+    void enableHistoricalCandlestickOverlay();
+  }
+
+  function updateHistoricalCandlestickOverlayToggle() {
+    const button = document.getElementById('candlestickOverlayToggle');
+    button.classList.toggle('active', historicalCandlestickOverlayEnabled);
+    button.setAttribute('aria-pressed', String(historicalCandlestickOverlayEnabled));
+    button.textContent = historicalCandlestickOverlayEnabled
+            ? 'Candlestick signals: on'
+            : 'Candlestick signals';
+  }
+
+  async function refreshHistoricalCandlestickOverlay(interval) {
+    if (!historicalCandlestickOverlayEnabled) return;
+    const requestId = ++historicalCandlestickOverlayRequestSequence;
+    const status = document.getElementById('candlestickOverlayStatus');
+    historicalCandlestickOverlayHistory = null;
+    historicalCandlestickOverlaySignals = [];
+    clearHistoricalCandlestickOverlayVisuals();
+    status.classList.remove('error', 'warning');
+    status.textContent = `Calculating every ${historicalCandlestickIntervalLabel(interval).toLowerCase()} pattern in the stored archive...`;
+    try {
+      const response = await fetch(
+              `/api/stocks/${encodedTicker}/candlestick-patterns/history?interval=${encodeURIComponent(interval)}`
+              + '&fullHistory=true',
+              { cache: 'no-store', headers: {'Cache-Control': 'no-cache'} }
+      );
+      const history = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(history.error || 'Historical candlestick overlay could not be calculated');
+      }
+      if (requestId !== historicalCandlestickOverlayRequestSequence
+              || !historicalCandlestickOverlayEnabled
+              || currentInterval !== interval) return;
+      historicalCandlestickOverlayHistory = history;
+      historicalCandlestickOverlaySignals = Array.isArray(history.signals) ? history.signals : [];
+      rebuildHistoricalCandlestickHitTargets();
+      updateHistoricalCandlestickOverlayStatus();
+    } catch (error) {
+      if (requestId !== historicalCandlestickOverlayRequestSequence) return;
+      status.classList.add('error');
+      status.textContent = error.message || 'Historical candlestick overlay could not be calculated';
+      console.warn('Historical candlestick overlay failed', error);
+    }
+  }
+
+  function historicalCandlestickIntervalLabel(interval) {
+    return {'1d': 'Daily', '1wk': 'Weekly', '1mo': 'Monthly'}[interval] || 'Historical';
+  }
+
+  function updateHistoricalCandlestickOverlayStatus() {
+    if (!historicalCandlestickOverlayEnabled || !historicalCandlestickOverlayHistory) return;
+    const loadedTimestamps = new Set(globalCandleData.map(candle => Number(candle.timestamp)));
+    const loadedSignalCount = historicalCandlestickOverlaySignals
+            .filter(signal => loadedTimestamps.has(Number(signal.signalTimestamp))).length;
+    const total = historicalCandlestickOverlaySignals.length;
+    const archiveCandles = Number(historicalCandlestickOverlayHistory.completedCandlesLoaded || 0);
+    const olderNotice = loadedSignalCount < total
+            ? ` ${loadedSignalCount} are currently inside the loaded chart; scroll left to reveal older candles.`
+            : ' Every signal is currently inside the loaded chart.';
+    document.getElementById('candlestickOverlayStatus').textContent = total === 0
+            ? `No valid ${historicalCandlestickIntervalLabel(currentInterval).toLowerCase()} candlestick signals were found across ${archiveCandles} completed candles.`
+            : `Showing ${total} historical signal${total === 1 ? '' : 's'} across all ${archiveCandles} completed candles.${olderNotice}`;
+  }
+
+  function clearHistoricalCandlestickOverlayVisuals() {
+    const targetLayer = document.getElementById('historicalCandlestickHitTargets');
+    if (targetLayer) targetLayer.replaceChildren();
+    hideHistoricalCandlestickCard();
+    historicalCandlestickTrendSeries?.setData([]);
+    historicalCandlestickFormationSeries?.setData([]);
+  }
+
+  function rebuildHistoricalCandlestickHitTargets() {
+    const targetLayer = document.getElementById('historicalCandlestickHitTargets');
+    if (!targetLayer) return;
+    targetLayer.replaceChildren();
+    if (!historicalCandlestickOverlayEnabled) return;
+    const loadedTimestamps = new Set(globalCandleData.map(candle => Number(candle.timestamp)));
+    historicalCandlestickOverlaySignals
+            .filter(signal => loadedTimestamps.has(Number(signal.signalTimestamp)))
+            .forEach(signal => {
+              const button = document.createElement('button');
+              const direction = String(signal.tradeSignal || '').toLowerCase();
+              button.type = 'button';
+              button.className = `historical-candlestick-hit-target ${direction}`;
+              button.textContent = direction === 'sell' ? 'S' : 'B';
+              button._historicalCandlestickSignal = signal;
+              button._historicalCandlestickCluster = [signal];
+              button.setAttribute('aria-label', `${signal.patternLabel}, ${signal.typeLabel}, ${signal.signalPeriodLabel}`);
+              button.addEventListener('mouseenter', () => showHistoricalCandlestickCardFromTarget(button, false));
+              button.addEventListener('mouseleave', () => {
+                if (!historicalCandlestickCardPinned) scheduleHistoricalCandlestickCardHide();
+              });
+              button.addEventListener('focus', () => showHistoricalCandlestickCardFromTarget(button, false));
+              button.addEventListener('blur', () => {
+                if (!historicalCandlestickCardPinned) scheduleHistoricalCandlestickCardHide();
+              });
+              button.addEventListener('click', event => {
+                event.stopPropagation();
+                showHistoricalCandlestickCardFromTarget(button, true);
+              });
+              targetLayer.append(button);
+            });
+    scheduleHistoricalCandlestickHitTargetPositioning();
+    updateHistoricalCandlestickOverlayStatus();
+  }
+
+  function scheduleHistoricalCandlestickHitTargetPositioning() {
+    if (historicalCandlestickHitTargetFrame !== null) return;
+    historicalCandlestickHitTargetFrame = requestAnimationFrame(() => {
+      historicalCandlestickHitTargetFrame = null;
+      positionHistoricalCandlestickHitTargets();
+    });
+  }
+
+  function positionHistoricalCandlestickHitTargets() {
+    if (!priceChart || !candleSeries || !historicalCandlestickOverlayEnabled) return;
+    const stage = document.getElementById('priceChartStage');
+    const candleByTimestamp = new Map(globalCandleData.map(candle => [Number(candle.timestamp), candle]));
+    const candidates = [];
+    document.querySelectorAll('.historical-candlestick-hit-target').forEach(button => {
+      button.hidden = true;
+      const signal = button._historicalCandlestickSignal;
+      const candle = candleByTimestamp.get(Number(signal?.signalTimestamp));
+      if (!signal || !candle) return;
+      const x = priceChart.timeScale().timeToCoordinate(candle.time);
+      const buy = String(signal.tradeSignal).toUpperCase() === 'BUY';
+      const candlePrice = buy ? Number(candle.low) : Number(candle.high);
+      const candleY = candleSeries.priceToCoordinate(candlePrice);
+      const y = Number(candleY) + (buy ? 22 : -22);
+      if (!Number.isFinite(x) || !Number.isFinite(y)
+              || x < 0 || x > stage.clientWidth || y < 0 || y > stage.clientHeight) return;
+      candidates.push({button, signal, x, y, buy});
+    });
+    candidates.sort((left, right) => left.x - right.x || left.y - right.y);
+    const clusters = [];
+    for (const candidate of candidates) {
+      const previous = clusters[clusters.length - 1];
+      const joinsPrevious = previous
+              && previous.buy === candidate.buy
+              && Math.abs(candidate.x - previous.lastX) < 28;
+      if (joinsPrevious) {
+        previous.items.push(candidate);
+        previous.lastX = candidate.x;
+      } else {
+        clusters.push({buy: candidate.buy, lastX: candidate.x, items: [candidate]});
+      }
+    }
+    clusters.forEach(cluster => {
+      const representative = cluster.items[0];
+      const signals = cluster.items.map(item => item.signal);
+      const averageX = cluster.items.reduce((sum, item) => sum + item.x, 0) / cluster.items.length;
+      const edgeY = cluster.buy
+              ? Math.max(...cluster.items.map(item => item.y))
+              : Math.min(...cluster.items.map(item => item.y));
+      representative.button.hidden = false;
+      representative.button._historicalCandlestickCluster = signals;
+      representative.button.textContent = signals.length > 1
+              ? String(signals.length)
+              : (cluster.buy ? 'B' : 'S');
+      representative.button.classList.toggle('cluster', signals.length > 1);
+      representative.button.title = signals.length > 1
+              ? `${signals.length} nearby ${cluster.buy ? 'buy' : 'sell'} signals - open and cycle through them`
+              : `Open ${signals[0].patternLabel} details`;
+      representative.button.style.left = `${averageX}px`;
+      representative.button.style.top = `${edgeY}px`;
+    });
+  }
+
+  function showHistoricalCandlestickCardFromTarget(button, pinned) {
+    const signals = button._historicalCandlestickCluster || [button._historicalCandlestickSignal];
+    const point = {
+      x: Number.parseFloat(button.style.left),
+      y: Number.parseFloat(button.style.top)
+    };
+    showHistoricalCandlestickCard(signals, 0, point, pinned);
+  }
+
+  function showHistoricalCandlestickCard(signals, index, point, pinned) {
+    if (!signals?.length) return;
+    hideElliottWaveCard();
+    clearTimeout(historicalCandlestickCardHideTimer);
+    historicalCandlestickCardPinned = pinned;
+    activeHistoricalCandlestickSignals = signals;
+    activeHistoricalCandlestickSignalIndex = Math.max(0, Math.min(signals.length - 1, index));
+    renderActiveHistoricalCandlestickCard();
+    const card = document.getElementById('historicalCandlestickHoverCard');
+    card.hidden = false;
+    positionHistoricalCandlestickCard(point || historicalCandlestickSignalCoordinate(
+            activeHistoricalCandlestickSignals[activeHistoricalCandlestickSignalIndex]));
+  }
+
+  function renderActiveHistoricalCandlestickCard() {
+    const signal = activeHistoricalCandlestickSignals[activeHistoricalCandlestickSignalIndex];
+    if (!signal) return;
+    document.getElementById('historicalCandlestickCardTitle').textContent = signal.patternLabel || signal.pattern;
+    document.getElementById('historicalCandlestickCardStage').textContent =
+            `${signal.signalPeriodLabel} - ${signal.typeLabel || signal.tradeSignal} - ${signal.formationLabel}`;
+    const status = document.getElementById('historicalCandlestickCardStatus');
+    status.className = `elliott-wave-card-status ${signal.statusClass || 'pending'}`;
+    status.textContent = signal.statusLabel || 'Awaiting outcome';
+    const value = Number(signal.directionalReturnPercent);
+    const outcomeValue = document.getElementById('historicalCandlestickCardOutcomeValue');
+    outcomeValue.textContent = Number.isFinite(value) ? formatSignedPercent(value) : 'Pending';
+    outcomeValue.className = Number.isFinite(value) ? (value >= 0 ? 'positive' : 'negative') : '';
+    document.getElementById('historicalCandlestickCardOutcomeLabel').textContent =
+            signal.impactLabel || 'Observed outcome';
+    document.getElementById('historicalCandlestickCardOutcomeWindow').textContent =
+            `${signal.evaluationHorizonLabel || 'Fixed result window'} - ${Number(signal.setupScore || 0)}/100 setup score`;
+    document.getElementById('historicalCandlestickCardTrend').textContent =
+            `${signal.trendLabel || (String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'Required downtrend' : 'Required uptrend')} before the ${signal.formationLabel || 'pattern formation'}.`;
+    document.getElementById('historicalCandlestickCardNote').textContent =
+            signal.outcomeSummary || 'The observed outcome is calculated from completed cached candle closes.';
+    document.getElementById('historicalCandlestickCardLink').href =
+            historicalCandlestickDetailUrl(signal, null, true);
+    const navigation = document.getElementById('historicalCandlestickCardClusterNavigation');
+    navigation.hidden = activeHistoricalCandlestickSignals.length <= 1;
+    document.getElementById('historicalCandlestickCardClusterPosition').textContent =
+            `${activeHistoricalCandlestickSignalIndex + 1} of ${activeHistoricalCandlestickSignals.length} nearby signals`;
+    highlightHistoricalCandlestickSignal(signal);
+  }
+
+  function moveHistoricalCandlestickCard(direction) {
+    if (activeHistoricalCandlestickSignals.length <= 1) return;
+    activeHistoricalCandlestickSignalIndex = (
+            activeHistoricalCandlestickSignalIndex + direction + activeHistoricalCandlestickSignals.length
+    ) % activeHistoricalCandlestickSignals.length;
+    renderActiveHistoricalCandlestickCard();
+    positionHistoricalCandlestickCard(historicalCandlestickSignalCoordinate(
+            activeHistoricalCandlestickSignals[activeHistoricalCandlestickSignalIndex]));
+  }
+
+  function historicalCandlestickSignalCoordinate(signal) {
+    const candle = globalCandleData.find(item => Number(item.timestamp) === Number(signal?.signalTimestamp));
+    if (!candle || !priceChart || !candleSeries) return null;
+    const x = priceChart.timeScale().timeToCoordinate(candle.time);
+    const buy = String(signal.tradeSignal).toUpperCase() === 'BUY';
+    const y = candleSeries.priceToCoordinate(buy ? Number(candle.low) : Number(candle.high));
+    return Number.isFinite(x) && Number.isFinite(y) ? {x, y} : null;
+  }
+
+  function ensureHistoricalCandlestickHighlightSeries() {
+    if (!historicalCandlestickTrendSeries) {
+      historicalCandlestickTrendSeries = priceChart.addLineSeries({
+        color: '#ffbd59',
+        lineWidth: 3,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+    }
+    if (!historicalCandlestickFormationSeries) {
+      historicalCandlestickFormationSeries = priceChart.addLineSeries({
+        color: '#b7f34a',
+        lineWidth: 4,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+    }
+  }
+
+  function highlightHistoricalCandlestickSignal(signal) {
+    if (!priceChart || !globalCandleData.length) return;
+    ensureHistoricalCandlestickHighlightSeries();
+    const signalIndex = globalCandleData.findIndex(
+            candle => Number(candle.timestamp) === Number(signal.signalTimestamp));
+    if (signalIndex < 0) return;
+    let trendStartIndex = globalCandleData.findIndex(
+            candle => Number(candle.timestamp) === Number(signal.trendStartTimestamp));
+    let patternStartIndex = globalCandleData.findIndex(
+            candle => Number(candle.timestamp) === Number(signal.patternStartTimestamp));
+    if (patternStartIndex < 0) {
+      patternStartIndex = Math.max(0, signalIndex - Number(signal.formationCandles || 1) + 1);
+    }
+    if (trendStartIndex < 0) trendStartIndex = Math.max(0, patternStartIndex - 5);
+    const trendCandles = globalCandleData.slice(trendStartIndex, patternStartIndex + 1);
+    const formationCandles = globalCandleData.slice(patternStartIndex, signalIndex + 1);
+    historicalCandlestickTrendSeries.setData(trendCandles.map(candle => ({
+      time: candle.time,
+      value: Number(candle.close)
+    })));
+    historicalCandlestickFormationSeries.applyOptions({
+      color: String(signal.tradeSignal).toUpperCase() === 'BUY' ? '#64e8bd' : '#ff647c'
+    });
+    historicalCandlestickFormationSeries.setData(formationCandles.map(candle => ({
+      time: candle.time,
+      value: Number(candle.close)
+    })));
+    historicalCandlestickTrendSeries.setMarkers(trendCandles.length ? [{
+      time: trendCandles[0].time,
+      position: String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'belowBar' : 'aboveBar',
+      color: '#ffbd59',
+      shape: 'circle',
+      text: signal.trendLabel || 'Required trend'
+    }] : []);
+    historicalCandlestickFormationSeries.setMarkers(formationCandles.length ? [{
+      time: formationCandles[formationCandles.length - 1].time,
+      position: String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'belowBar' : 'aboveBar',
+      color: String(signal.tradeSignal).toUpperCase() === 'BUY' ? '#64e8bd' : '#ff647c',
+      shape: String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'arrowUp' : 'arrowDown',
+      text: signal.patternLabel
+    }] : []);
+  }
+
+  function positionHistoricalCandlestickCard(point) {
+    const stage = document.getElementById('priceChartStage');
+    const card = document.getElementById('historicalCandlestickHoverCard');
+    const anchor = point && Number.isFinite(point.x) && Number.isFinite(point.y)
+            ? point
+            : {x: stage.clientWidth / 2, y: stage.clientHeight / 2};
+    const gap = 14;
+    const maxLeft = Math.max(8, stage.clientWidth - card.offsetWidth - 8);
+    const maxTop = Math.max(8, stage.clientHeight - card.offsetHeight - 8);
+    const preferredLeft = anchor.x + gap + card.offsetWidth > stage.clientWidth
+            ? anchor.x - card.offsetWidth - gap
+            : anchor.x + gap;
+    const preferredTop = anchor.y + gap + card.offsetHeight > stage.clientHeight
+            ? anchor.y - card.offsetHeight - gap
+            : anchor.y + gap;
+    card.style.left = `${Math.max(8, Math.min(maxLeft, preferredLeft))}px`;
+    card.style.top = `${Math.max(8, Math.min(maxTop, preferredTop))}px`;
+  }
+
+  function scheduleHistoricalCandlestickCardHide() {
+    clearTimeout(historicalCandlestickCardHideTimer);
+    historicalCandlestickCardHideTimer = setTimeout(() => {
+      if (!historicalCandlestickCardPinned && !historicalCandlestickCardHovered) {
+        hideHistoricalCandlestickCard();
+      }
+    }, 120);
+  }
+
+  function hideHistoricalCandlestickCard() {
+    clearTimeout(historicalCandlestickCardHideTimer);
+    historicalCandlestickCardPinned = false;
+    historicalCandlestickCardHovered = false;
+    activeHistoricalCandlestickSignals = [];
+    activeHistoricalCandlestickSignalIndex = 0;
+    const card = document.getElementById('historicalCandlestickHoverCard');
+    if (card) card.hidden = true;
+    historicalCandlestickTrendSeries?.setData([]);
+    historicalCandlestickTrendSeries?.setMarkers([]);
+    historicalCandlestickFormationSeries?.setData([]);
+    historicalCandlestickFormationSeries?.setMarkers([]);
+  }
+
   function showHistoricalCandlestickIntervalPicker() {
+    const viewDialog = document.getElementById('historicalCandlestickViewDialog');
+    if (viewDialog.open) viewDialog.close();
     const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
     if (resultsDialog.open) resultsDialog.close();
     const lookbackDialog = document.getElementById('historicalCandlestickLookbackDialog');
@@ -3003,16 +3510,19 @@
     return cell;
   }
 
-  function historicalCandlestickDetailUrl(signal, lookbackCandles) {
-    return `/stock/${encodedTicker}/candlestick-patterns/`
+  function historicalCandlestickDetailUrl(signal, lookbackCandles, fullHistory = false) {
+    const baseUrl = `/stock/${encodedTicker}/candlestick-patterns/`
             + `${encodeURIComponent(signal.interval)}/${encodeURIComponent(signal.signalTimestamp)}/`
-            + `${encodeURIComponent(signal.pattern)}`
-            + `?lookbackCandles=${encodeURIComponent(lookbackCandles)}`;
+            + `${encodeURIComponent(signal.pattern)}`;
+    return fullHistory
+            ? `${baseUrl}?fullHistory=true`
+            : `${baseUrl}?lookbackCandles=${encodeURIComponent(lookbackCandles)}`;
   }
 
   async function reopenHistoricalCandlestickResultsFromUrl() {
     const url = new URL(window.location.href);
-    if (url.searchParams.get('historicalCandles') !== 'true') return;
+    const requestedView = url.searchParams.get('historicalCandles');
+    if (requestedView !== 'true' && requestedView !== 'graphical') return;
     const interval = url.searchParams.get('historicalInterval');
     if (!['1d', '1wk', '1mo'].includes(interval)) return;
     const requestedLookback = Number(url.searchParams.get('lookbackCandles'));
@@ -3025,6 +3535,11 @@
     url.searchParams.delete('historicalInterval');
     url.searchParams.delete('lookbackCandles');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    if (requestedView === 'graphical') {
+      if (currentInterval !== interval) await changeInterval(interval);
+      await enableHistoricalCandlestickOverlay();
+      return;
+    }
     await loadHistoricalCandlestickPatterns(interval, lookback);
   }
 
@@ -3161,6 +3676,7 @@
 
   function createInsiderHistoryRow(trade) {
     const row = document.createElement('tr');
+    const detailUrl = activityHistoryDetailUrl(trade, 'insider');
     row.append(
             historyCell('Insider', trade.insiderName, trade.ownerRole || 'Role not reported'),
             historyActivityCell(trade),
@@ -3177,8 +3693,9 @@
                     'API Ninjas free tier: SEC filing date fallback'),
             historyCell('Filed', formatCongressionalDate(trade.filingDate)),
             insiderReturnCell(trade),
-            historySourceCell(trade.sourceUrl)
+            historySourceCell(trade, detailUrl)
     );
+    makeActivityHistoryRowInteractive(row, detailUrl, trade.insiderName);
     return row;
   }
 
@@ -3271,15 +3788,45 @@
 
   function createCongressionalHistoryRow(trade) {
     const row = document.createElement('tr');
+    const detailUrl = activityHistoryDetailUrl(trade, 'congressional');
     row.append(
             historyCell('Member', trade.memberName, trade.chamber),
             historyActivityCell(trade),
             historyCell('Reported value', trade.amountRange),
             historyCell('Transaction date', formatCongressionalDate(trade.transactionDate)),
             historyCell('Disclosure date', formatCongressionalDate(trade.disclosureDate)),
-            historySourceCell(trade.sourceUrl)
+            historySourceCell(trade, detailUrl)
     );
+    makeActivityHistoryRowInteractive(row, detailUrl, trade.memberName);
     return row;
+  }
+
+  function activityHistoryDetailUrl(trade, source) {
+    if (trade?.notificationId != null) {
+      return `/activity-signals/${source}/${encodeURIComponent(trade.notificationId)}`;
+    }
+    if (trade?.id != null) {
+      return `/activity-signals/${source}/trades/${encodeURIComponent(trade.id)}`;
+    }
+    return null;
+  }
+
+  function makeActivityHistoryRowInteractive(row, detailUrl, actorName) {
+    if (!detailUrl) return;
+    row.classList.add('activity-history-row-link');
+    row.tabIndex = 0;
+    row.setAttribute('role', 'link');
+    row.setAttribute('aria-label', `View activity signal for ${actorName || 'this trade'}`);
+    const navigate = () => window.requestStockWatchNavigation(detailUrl);
+    row.addEventListener('click', event => {
+      if (event.target.closest('a, button')) return;
+      navigate();
+    });
+    row.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      navigate();
+    });
   }
 
   function historyCell(label, primary, secondary) {
@@ -3306,9 +3853,17 @@
     return cell;
   }
 
-  function historySourceCell(sourceUrl) {
+  function historySourceCell(trade, detailUrl) {
     const cell = document.createElement('td');
     cell.dataset.label = 'Filing';
+    if (detailUrl) {
+      const signalLink = document.createElement('a');
+      signalLink.href = detailUrl;
+      signalLink.className = 'history-signal-detail-link';
+      signalLink.textContent = 'View signal';
+      cell.append(signalLink);
+    }
+    const sourceUrl = trade?.sourceUrl;
     if (typeof sourceUrl === 'string' && /^https?:\/\//i.test(sourceUrl)) {
       const link = document.createElement('a');
       link.href = sourceUrl;
@@ -3316,7 +3871,7 @@
       link.rel = 'noopener noreferrer';
       link.textContent = 'Official filing';
       cell.append(link);
-    } else {
+    } else if (!detailUrl) {
       cell.textContent = 'Unavailable';
     }
     return cell;
@@ -3666,6 +4221,7 @@
     }
     scheduleAnchoredVolumeProfileRender();
     scheduleElliottHitTargetPositioning();
+    scheduleHistoricalCandlestickHitTargetPositioning();
   }
 
   function activateStockWorkspace(section, updateHash = true, moveFocus = false) {
@@ -3755,6 +4311,8 @@
     button.addEventListener('click', () => changeInterval(button.dataset.chartInterval));
   });
   document.getElementById('elliottOverlayToggle').addEventListener('click', toggleElliottOverlays);
+  document.getElementById('candlestickOverlayToggle')
+          .addEventListener('click', toggleHistoricalCandlestickOverlay);
   document.getElementById('anchoredVolumeProfileToggle')
           .addEventListener('click', toggleAnchoredVolumeProfile);
   document.getElementById('rsiOverlayToggle')
@@ -3778,7 +4336,14 @@
   document.getElementById('closeInsiderHistoryBtn')
           .addEventListener('click', () => document.getElementById('insiderHistoryDialog').close());
   document.getElementById('showHistoricalCandlestickPatternsBtn')
-          .addEventListener('click', showHistoricalCandlestickIntervalPicker);
+          .addEventListener('click', showHistoricalCandlestickViewPicker);
+  document.getElementById('closeHistoricalCandlestickViewBtn')
+          .addEventListener('click', () => document.getElementById('historicalCandlestickViewDialog').close());
+  document.querySelectorAll('[data-historical-candlestick-view]').forEach(button => {
+    button.addEventListener('click', () => chooseHistoricalCandlestickView(
+            button.dataset.historicalCandlestickView
+    ));
+  });
   document.getElementById('closeHistoricalCandlestickIntervalBtn')
           .addEventListener('click', () => document.getElementById('historicalCandlestickIntervalDialog').close());
   document.getElementById('closeHistoricalCandlestickLookbackBtn')
@@ -3797,6 +4362,26 @@
     button.addEventListener('click', () => showHistoricalCandlestickLookbackPicker(
             button.dataset.historicalCandlestickInterval
     ));
+  });
+  const historicalCandlestickCard = document.getElementById('historicalCandlestickHoverCard');
+  historicalCandlestickCard.addEventListener('mouseenter', () => {
+    historicalCandlestickCardHovered = true;
+    clearTimeout(historicalCandlestickCardHideTimer);
+  });
+  historicalCandlestickCard.addEventListener('mouseleave', () => {
+    historicalCandlestickCardHovered = false;
+    if (!historicalCandlestickCardPinned) scheduleHistoricalCandlestickCardHide();
+  });
+  document.getElementById('historicalCandlestickCardClose')
+          .addEventListener('click', hideHistoricalCandlestickCard);
+  document.getElementById('previousHistoricalCandlestickSignal')
+          .addEventListener('click', () => moveHistoricalCandlestickCard(-1));
+  document.getElementById('nextHistoricalCandlestickSignal')
+          .addEventListener('click', () => moveHistoricalCandlestickCard(1));
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && activeHistoricalCandlestickSignals.length) {
+      hideHistoricalCandlestickCard();
+    }
   });
   bindUnsavedAlertGuards();
 

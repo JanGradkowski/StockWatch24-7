@@ -38,6 +38,12 @@
         <span>All signals</span>
         <small>Browse the complete signal archive</small>
       </a>
+      <a id="virtualTradesDashboardButton"
+         th:href="@{/virtual-trades}"
+         class="dashboard-view-tab dashboard-view-link virtual-trades-dashboard-link">
+        <span>Virtual trades</span>
+        <small>Review every tracked paper decision</small>
+      </a>
       <button id="technicalAnalysisViewButton"
               type="button"
               class="dashboard-view-tab active"
@@ -297,6 +303,8 @@
       <section id="latestTickerNotifications"
                class="glass-panel dashboard-panel latest-signals-panel ticker-notifications-panel"
                data-dashboard-view="alerts"
+               data-notification-panel
+               th:attr="data-unread-count=${tickerNotificationUnreadCount}"
                hidden
                aria-labelledby="latest-ticker-notifications-heading">
         <div class="panel-heading">
@@ -304,25 +312,41 @@
             <div class="panel-kicker">Fresh from followed company events</div>
             <h2 id="latest-ticker-notifications-heading" class="panel-title">
               Latest notifications
-              <span class="panel-count" th:text="${#lists.size(latestTickerNotifications)}">0</span>
+              <span class="panel-count" data-notification-count th:text="${tickerNotificationUnreadCount}">0</span>
             </h2>
           </div>
-          <span class="panel-meta">Congressional disclosures and insider filings</span>
-        </div>
-
-        <div th:if="${#lists.isEmpty(latestTickerNotifications)}"
-             class="latest-signals-empty">
-          <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
-          <div>
-            <h3>No ticker notifications yet</h3>
-            <p>Follow congressional or insider activity from a stock workspace. Newly observed filings will appear here without being mixed into technical signals.</p>
+          <div class="panel-heading-actions">
+            <span class="panel-meta"
+                  th:text="${tickerNotificationUnreadCount > 10 ? 'Showing the latest 10 of ' + tickerNotificationUnreadCount + ' unread notifications' : 'Congressional disclosures and insider filings'}">Congressional disclosures and insider filings</span>
+            <button type="button"
+                    class="btn-secondary panel-action-button notification-clear-button"
+                    data-notification-read-all
+                    data-read-all-source="ALL"
+                    th:hidden="${tickerNotificationUnreadCount == 0}"
+                    data-read-endpoints="/api/congressional-activity/notifications/read-all|/api/insider-activity/notifications/read-all">Mark all as read</button>
+            <a th:href="@{/activity-signals}" class="btn-secondary panel-action-button">All activity signals</a>
           </div>
         </div>
 
-        <div th:if="${!#lists.isEmpty(latestTickerNotifications)}"
-             class="ticker-notification-list">
+        <p id="tickerNotificationReadStatus" class="watch-filter-announcement" aria-live="polite"></p>
+
+        <div class="latest-signals-empty"
+             data-notification-empty
+             th:hidden="${!#lists.isEmpty(latestTickerNotifications)}">
+          <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
+          <div>
+            <h3>No unread ticker notifications</h3>
+            <p>Newly observed filings will appear here. Notifications you mark as read remain available in All activity signals.</p>
+          </div>
+        </div>
+
+        <div class="ticker-notification-list"
+             data-notification-list
+             th:hidden="${#lists.isEmpty(latestTickerNotifications)}">
           <article th:each="notification : ${latestTickerNotifications}"
-                   class="ticker-notification-row">
+                   class="ticker-notification-row"
+                   data-notification-row
+                   th:attr="data-notification-key=${notification.notificationKey()}">
             <div class="ticker-notification-source"
                  th:classappend="${notification.source() == 'INSIDER'} ? ' insider' : ' congressional'">
               <span th:text="${notification.sourceLabel()}">Corporate insider</span>
@@ -353,8 +377,17 @@
             </div>
             <div class="congressional-row-actions">
               <span class="congressional-delivery-status" th:text="${notification.deliveryStatus()}">Email sent</span>
-              <a th:href="@{/stock/{symbol}(symbol=${notification.symbol()})}">Open stock</a>
+              <a class="notification-action-button notification-detail-button"
+                 th:href="${notification.detailUrl()}">View signal</a>
+              <button type="button"
+                      class="notification-action-button notification-read-button"
+                      data-notification-read
+                      th:attr="data-notification-key=${notification.notificationKey()},data-read-endpoint=${notification.readEndpoint()}"
+                      th:aria-label="${'Mark ' + notification.sourceLabel() + ' notification for ' + notification.symbol() + ' as read'}">Mark as read</button>
+              <a class="notification-action-button notification-stock-button"
+                 th:href="@{/stock/{symbol}(symbol=${notification.symbol()})}">Open stock</a>
               <a th:if="${notification.sourceUrl() != null}"
+                 class="notification-action-button notification-filing-button"
                  th:href="${notification.sourceUrl()}"
                  target="_blank"
                  rel="noopener noreferrer">Official filing</a>
@@ -366,6 +399,8 @@
       <section id="congressionalActivityDashboard"
                class="glass-panel dashboard-panel congressional-dashboard-panel"
                data-dashboard-view="alerts"
+               data-notification-panel
+               th:attr="data-unread-count=${congressionalUnreadCount}"
                hidden
                aria-labelledby="congressional-dashboard-heading">
         <div class="panel-heading">
@@ -373,10 +408,19 @@
             <div class="panel-kicker">Public disclosure monitor</div>
             <h2 id="congressional-dashboard-heading" class="panel-title">
               Congressional activity
-              <span class="panel-count" th:text="${#lists.size(congressionalActivities)}">0</span>
+              <span class="panel-count" data-notification-count th:text="${congressionalUnreadCount}">0</span>
             </h2>
           </div>
-          <span class="panel-meta">Relevant window: last 365 days</span>
+          <div class="panel-heading-actions">
+            <span class="panel-meta"
+                  th:text="${congressionalUnreadCount > 10 ? 'Showing the latest 10 of ' + congressionalUnreadCount + ' unread disclosures' : 'Relevant window: last 365 days'}">Relevant window: last 365 days</span>
+            <button type="button"
+                    class="btn-secondary panel-action-button notification-clear-button"
+                    data-notification-read-all
+                    data-read-all-source="CONGRESSIONAL"
+                    th:hidden="${congressionalUnreadCount == 0}"
+                    data-read-endpoints="/api/congressional-activity/notifications/read-all">Mark all as read</button>
+          </div>
         </div>
 
         <div th:if="${!#lists.isEmpty(congressionalFollowedStocks)}"
@@ -391,11 +435,12 @@
           </a>
         </div>
 
-        <div th:if="${#lists.isEmpty(congressionalActivities)}"
-             class="latest-signals-empty congressional-empty">
+        <div class="latest-signals-empty congressional-empty"
+             data-notification-empty
+             th:hidden="${!#lists.isEmpty(congressionalActivities)}">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
-            <h3>No new followed disclosures yet</h3>
+            <h3>No unread congressional disclosures</h3>
             <p th:if="${#lists.isEmpty(congressionalFollowedStocks)}">
               Open a stock and switch on congressional activity alerts to start following newly reported purchases and sales.
             </p>
@@ -405,10 +450,13 @@
           </div>
         </div>
 
-        <div th:if="${!#lists.isEmpty(congressionalActivities)}"
-             class="congressional-dashboard-list">
+        <div class="congressional-dashboard-list"
+             data-notification-list
+             th:hidden="${#lists.isEmpty(congressionalActivities)}">
           <article th:each="activity : ${congressionalActivities}"
-                   class="congressional-dashboard-row">
+                   class="congressional-dashboard-row"
+                   data-notification-row
+                   th:attr="data-notification-key=${'CONGRESSIONAL-' + activity.id()}">
             <div class="congressional-activity-direction"
                  th:classappend="${activity.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'">
               <span th:text="${activity.transactionTypeLabel()}">Purchase</span>
@@ -434,8 +482,17 @@
             </div>
             <div class="congressional-row-actions">
               <span class="congressional-delivery-status" th:text="${activity.deliveryStatus()}">Email sent</span>
-              <a th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}">Open stock</a>
+              <a class="notification-action-button notification-detail-button"
+                 th:href="@{/activity-signals/congressional/{id}(id=${activity.id()})}">View signal</a>
+              <button type="button"
+                      class="notification-action-button notification-read-button"
+                      data-notification-read
+                      th:attr="data-notification-key=${'CONGRESSIONAL-' + activity.id()},data-read-endpoint=@{/api/congressional-activity/notifications/{id}/read(id=${activity.id()})}"
+                      th:aria-label="${'Mark congressional notification for ' + activity.symbol() + ' as read'}">Mark as read</button>
+              <a class="notification-action-button notification-stock-button"
+                 th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}">Open stock</a>
               <a th:if="${activity.sourceUrl() != null}"
+                 class="notification-action-button notification-filing-button"
                  th:href="${activity.sourceUrl()}"
                  target="_blank"
                  rel="noopener noreferrer">Official filing</a>
@@ -454,6 +511,8 @@
       <section id="insiderActivityDashboard"
                class="glass-panel dashboard-panel congressional-dashboard-panel insider-dashboard-panel"
                data-dashboard-view="alerts"
+               data-notification-panel
+               th:attr="data-unread-count=${insiderUnreadCount}"
                hidden
                aria-labelledby="insider-dashboard-heading">
         <div class="panel-heading">
@@ -461,10 +520,19 @@
             <div class="panel-kicker">SEC corporate filing monitor</div>
             <h2 id="insider-dashboard-heading" class="panel-title">
               Corporate insider activity
-              <span class="panel-count" th:text="${#lists.size(insiderActivities)}">0</span>
+              <span class="panel-count" data-notification-count th:text="${insiderUnreadCount}">0</span>
             </h2>
           </div>
-          <span class="panel-meta">Daily checks · Open-market purchases and sales</span>
+          <div class="panel-heading-actions">
+            <span class="panel-meta"
+                  th:text="${insiderUnreadCount > 10 ? 'Showing the latest 10 of ' + insiderUnreadCount + ' unread filings' : 'Daily checks · Open-market purchases and sales'}">Daily checks · Open-market purchases and sales</span>
+            <button type="button"
+                    class="btn-secondary panel-action-button notification-clear-button"
+                    data-notification-read-all
+                    data-read-all-source="INSIDER"
+                    th:hidden="${insiderUnreadCount == 0}"
+                    data-read-endpoints="/api/insider-activity/notifications/read-all">Mark all as read</button>
+          </div>
         </div>
 
         <div th:if="${!#lists.isEmpty(insiderFollowedStocks)}"
@@ -479,11 +547,12 @@
           </a>
         </div>
 
-        <div th:if="${#lists.isEmpty(insiderActivities)}"
-             class="latest-signals-empty congressional-empty">
+        <div class="latest-signals-empty congressional-empty"
+             data-notification-empty
+             th:hidden="${!#lists.isEmpty(insiderActivities)}">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
-            <h3>No new followed insider filings yet</h3>
+            <h3>No unread corporate insider filings</h3>
             <p th:if="${#lists.isEmpty(insiderFollowedStocks)}">
               Open a stock and follow corporate insider activity to monitor newly filed purchases and sales.
             </p>
@@ -493,10 +562,13 @@
           </div>
         </div>
 
-        <div th:if="${!#lists.isEmpty(insiderActivities)}"
-             class="congressional-dashboard-list">
+        <div class="congressional-dashboard-list"
+             data-notification-list
+             th:hidden="${#lists.isEmpty(insiderActivities)}">
           <article th:each="activity : ${insiderActivities}"
-                   class="congressional-dashboard-row insider-dashboard-row">
+                   class="congressional-dashboard-row insider-dashboard-row"
+                   data-notification-row
+                   th:attr="data-notification-key=${'INSIDER-' + activity.id()}">
             <div class="congressional-activity-direction"
                  th:classappend="${activity.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'">
               <span th:text="${activity.transactionTypeLabel()}">Purchase</span>
@@ -527,8 +599,17 @@
             </div>
             <div class="congressional-row-actions">
               <span class="congressional-delivery-status" th:text="${activity.deliveryStatus()}">Email sent</span>
-              <a th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}">Open stock</a>
+              <a class="notification-action-button notification-detail-button"
+                 th:href="@{/activity-signals/insider/{id}(id=${activity.id()})}">View signal</a>
+              <button type="button"
+                      class="notification-action-button notification-read-button"
+                      data-notification-read
+                      th:attr="data-notification-key=${'INSIDER-' + activity.id()},data-read-endpoint=@{/api/insider-activity/notifications/{id}/read(id=${activity.id()})}"
+                      th:aria-label="${'Mark corporate insider notification for ' + activity.symbol() + ' as read'}">Mark as read</button>
+              <a class="notification-action-button notification-stock-button"
+                 th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}">Open stock</a>
               <a th:if="${activity.sourceUrl() != null}"
+                 class="notification-action-button notification-filing-button"
                  th:href="${activity.sourceUrl()}"
                  target="_blank"
                  rel="noopener noreferrer">SEC filing</a>

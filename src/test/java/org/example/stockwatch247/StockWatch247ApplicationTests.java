@@ -1,23 +1,41 @@
 package org.example.stockwatch247;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.Candle;
+import org.example.stockwatch247.model.CongressionalTrade;
+import org.example.stockwatch247.model.CongressionalTradeDelivery;
+import org.example.stockwatch247.model.CongressionalTradeSubscription;
+import org.example.stockwatch247.model.InsiderTrade;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.VirtualTrade;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.CongressionalDeliveryStatus;
+import org.example.stockwatch247.model.enums.CongressionalTradeType;
 import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.InsiderTradeType;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
+import org.example.stockwatch247.model.enums.VirtualTradeSide;
+import org.example.stockwatch247.model.enums.VirtualTradeStatus;
 import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.CandleRepository;
+import org.example.stockwatch247.repository.CongressionalTradeDeliveryRepository;
+import org.example.stockwatch247.repository.CongressionalTradeRepository;
+import org.example.stockwatch247.repository.CongressionalTradeSubscriptionRepository;
+import org.example.stockwatch247.repository.InsiderTradeRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.repository.UserRepository;
+import org.example.stockwatch247.repository.VirtualTradeRepository;
 import org.example.stockwatch247.service.CandlePatternDetectionService;
+import org.example.stockwatch247.service.TechnicalOutlookService;
+import org.example.stockwatch247.service.VirtualTradeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -26,7 +44,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -67,8 +88,355 @@ class StockWatch247ApplicationTests {
     @Autowired
     private CandleRepository candleRepository;
 
+    @Autowired
+    private CongressionalTradeRepository congressionalTradeRepository;
+
+    @Autowired
+    private CongressionalTradeSubscriptionRepository congressionalTradeSubscriptionRepository;
+
+    @Autowired
+    private CongressionalTradeDeliveryRepository congressionalTradeDeliveryRepository;
+
+    @Autowired
+    private InsiderTradeRepository insiderTradeRepository;
+
+    @Autowired
+    private VirtualTradeRepository virtualTradeRepository;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Test
     void contextLoads() {
+    }
+
+    @Test
+    @Transactional
+    void authenticatedUserCanOpenTheFullTechnicalOutlookWorkspace() throws Exception {
+        String email = "technical-outlook-" + Long.toString(System.nanoTime(), 36) + "@example.com";
+        User account = new User();
+        account.setEmail(email);
+        account.setPasswordHash("test-only-password-hash");
+        account.setFirstName("Technical");
+        account.setLastName("Outlook");
+        account.setVerified(true);
+        userRepository.saveAndFlush(account);
+
+        mockMvc.perform(get("/stock/AAPL/technical-outlook").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("technical-outlook"))
+                .andExpect(model().attribute("symbol", "AAPL"))
+                .andExpect(content().string(containsString("Full Technical Outlook")))
+                .andExpect(content().string(containsString("General outlook")))
+                .andExpect(content().string(containsString("Score report")))
+                .andExpect(content().string(containsString("Market comparison")));
+    }
+
+    @Test
+    @Transactional
+    void authenticatedUserCanRenderVirtualTradeArchiveAndClosedTradeDetail() throws Exception {
+        String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
+        String email = "virtual-trade-" + suffix.toLowerCase() + "@example.com";
+        User account = new User();
+        account.setEmail(email);
+        account.setPasswordHash("test-only-password-hash");
+        account.setFirstName("Virtual");
+        account.setLastName("Trader");
+        account.setVerified(true);
+        userRepository.saveAndFlush(account);
+
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("V" + suffix.substring(0, Math.min(7, suffix.length())));
+        asset.setCompanyName("Virtual Trade Test Company");
+        asset.setExchange("NASDAQ");
+        asset.setCurrency("USD");
+        asset.setInstrumentType(InstrumentType.EQUITY);
+        stockAssetRepository.saveAndFlush(asset);
+
+        TechnicalOutlookService.ScoreView score = new TechnicalOutlookService.ScoreView(
+                4, 3, 1, 3, 8, 0.375, "Moderate buy outlook");
+        VirtualTradeService.TechnicalSnapshot snapshot = new VirtualTradeService.TechnicalSnapshot(
+                "TECHNICAL_OUTLOOK_V1", Instant.now().getEpochSecond(), "1d", "Daily", Instant.now().getEpochSecond(),
+                "Current completed candle", score, score, List.of(), List.of(), List.of());
+        Instant entryAt = Instant.now().minusSeconds(86_400);
+        VirtualTrade trade = new VirtualTrade();
+        trade.setUser(account);
+        trade.setStockAsset(asset);
+        trade.setSide(VirtualTradeSide.SELL);
+        trade.setStatus(VirtualTradeStatus.CLOSED);
+        trade.setAnalysisInterval(TimeInterval.DAILY);
+        trade.setEntryPrice(new BigDecimal("100.00000000"));
+        trade.setEntryAt(entryAt);
+        trade.setEntryQuoteTimestamp(entryAt.getEpochSecond());
+        trade.setEntryCandleTimestamp(entryAt.getEpochSecond());
+        trade.setEntryQuoteSource("Integration quote");
+        trade.setCurrency("USD");
+        trade.setEntrySnapshot(objectMapper.writeValueAsString(snapshot));
+        trade.setExitPrice(new BigDecimal("90.00000000"));
+        trade.setExitAt(Instant.now());
+        trade.setExitQuoteTimestamp(Instant.now().getEpochSecond());
+        trade.setExitQuoteSource("Integration close");
+        trade.setExitSnapshot(objectMapper.writeValueAsString(snapshot));
+        trade.setClientRequestId(java.util.UUID.randomUUID().toString());
+        trade.setCreatedAt(entryAt);
+        trade.setUpdatedAt(Instant.now());
+        virtualTradeRepository.saveAndFlush(trade);
+
+        mockMvc.perform(get("/virtual-trades").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("virtual-trades"))
+                .andExpect(content().string(containsString("Virtual trades")))
+                .andExpect(content().string(containsString("Avoided loss")));
+
+        mockMvc.perform(get("/virtual-trades/{id}", trade.getId()).with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("virtual-trade"))
+                .andExpect(content().string(containsString("Technical comparison")))
+                .andExpect(content().string(containsString("Results")))
+                .andExpect(content().string(containsString("not a short sale")));
+    }
+
+    @Test
+    @Transactional
+    void authenticatedUserCanRenderAndSortTheActivitySignalArchive() throws Exception {
+        String email = "activity-archive-" + Long.toString(System.nanoTime(), 36) + "@example.com";
+        User account = new User();
+        account.setEmail(email);
+        account.setPasswordHash("test-only-password-hash");
+        account.setFirstName("Activity");
+        account.setLastName("Tester");
+        account.setVerified(true);
+        userRepository.saveAndFlush(account);
+
+        mockMvc.perform(get("/activity-signals")
+                        .param("sort", "actor")
+                        .param("direction", "asc")
+                        .with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("all-activity-signals"))
+                .andExpect(model().attributeExists("archive"))
+                .andExpect(content().string(containsString("All activity signals")))
+                .andExpect(content().string(containsString("Buyer / seller name")))
+                .andExpect(content().string(containsString("No activity signals have been received yet")));
+    }
+
+    @Test
+    @Transactional
+    void authenticatedUserCanOpenStoredActivityFromStockHistory() throws Exception {
+        String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
+        String email = "stored-activity-" + suffix.toLowerCase() + "@example.com";
+        User account = new User();
+        account.setEmail(email);
+        account.setPasswordHash("test-only-password-hash");
+        account.setFirstName("History");
+        account.setLastName("Viewer");
+        account.setVerified(true);
+        userRepository.saveAndFlush(account);
+
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("H" + suffix.substring(0, Math.min(7, suffix.length())));
+        asset.setCompanyName("Stored Activity Company");
+        asset.setExchange("NASDAQ");
+        asset.setCurrency("USD");
+        asset.setInstrumentType(InstrumentType.EQUITY);
+        stockAssetRepository.saveAndFlush(asset);
+
+        Instant now = Instant.now();
+        CongressionalTrade congressionalTrade = new CongressionalTrade();
+        congressionalTrade.setStockAsset(asset);
+        congressionalTrade.setProvider("TEST");
+        congressionalTrade.setProviderFingerprint(String.format("%064d", System.nanoTime()));
+        congressionalTrade.setMemberName("Stored Congressional Member");
+        congressionalTrade.setChamber("Senate");
+        congressionalTrade.setTickerSymbol(asset.getTickerSymbol());
+        congressionalTrade.setAssetName(asset.getCompanyName());
+        congressionalTrade.setTransactionType(CongressionalTradeType.PURCHASE);
+        congressionalTrade.setAmountRange("$15,001 - $50,000");
+        congressionalTrade.setTransactionDate(LocalDate.now().minusDays(10));
+        congressionalTrade.setDisclosureDate(LocalDate.now().minusDays(2));
+        congressionalTrade.setSourceUrl("https://example.com/congressional-filing");
+        congressionalTrade.setFirstSeenAt(now);
+        congressionalTrade.setLastSeenAt(now);
+        congressionalTradeRepository.saveAndFlush(congressionalTrade);
+
+        InsiderTrade insiderTrade = new InsiderTrade();
+        insiderTrade.setStockAsset(asset);
+        insiderTrade.setProvider("TEST");
+        insiderTrade.setProviderFingerprint(String.format("%064d", System.nanoTime() + 1));
+        insiderTrade.setTickerSymbol(asset.getTickerSymbol());
+        insiderTrade.setInsiderName("Stored Corporate Insider");
+        insiderTrade.setOwnerRole("Chief Financial Officer");
+        insiderTrade.setTransactionType(InsiderTradeType.SALE);
+        insiderTrade.setTransactionCode("S");
+        insiderTrade.setTransactionDate(LocalDate.now().minusDays(8));
+        insiderTrade.setFilingDate(LocalDate.now().minusDays(7));
+        insiderTrade.setShares(new BigDecimal("1250"));
+        insiderTrade.setTransactionPrice(new BigDecimal("42.50"));
+        insiderTrade.setSourceUrl("https://example.com/insider-filing");
+        insiderTrade.setFirstSeenAt(now);
+        insiderTrade.setLastSeenAt(now);
+        insiderTradeRepository.saveAndFlush(insiderTrade);
+
+        mockMvc.perform(get("/activity-signals/congressional/trades/{id}", congressionalTrade.getId())
+                        .with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("activity-signal-detail"))
+                .andExpect(content().string(containsString("Stored Congressional Member")));
+
+        mockMvc.perform(get("/activity-signals/insider/trades/{id}", insiderTrade.getId())
+                        .with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("activity-signal-detail"))
+                .andExpect(content().string(containsString("Stored Corporate Insider")));
+    }
+
+    @Test
+    @Transactional
+    void activityNotificationCanBeReadWithoutLeavingThePermanentArchive() throws Exception {
+        String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
+        String email = "activity-read-" + suffix.toLowerCase() + "@example.com";
+        User account = new User();
+        account.setEmail(email);
+        account.setPasswordHash("test-only-password-hash");
+        account.setFirstName("Activity");
+        account.setLastName("Owner");
+        account.setVerified(true);
+        userRepository.saveAndFlush(account);
+
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("R" + suffix.substring(0, Math.min(8, suffix.length())));
+        asset.setCompanyName("Archive Test Company " + suffix);
+        asset.setExchange("NASDAQ");
+        asset.setCurrency("USD");
+        asset.setInstrumentType(InstrumentType.EQUITY);
+        stockAssetRepository.saveAndFlush(asset);
+
+        Instant now = Instant.now();
+        CongressionalTradeSubscription subscription = new CongressionalTradeSubscription();
+        subscription.setUser(account);
+        subscription.setStockAsset(asset);
+        subscription.setActive(true);
+        subscription.setActivatedAt(now.minusSeconds(3600));
+        subscription.setBaselineCompletedAt(now.minusSeconds(3500));
+        subscription.setCreatedAt(now.minusSeconds(3600));
+        subscription.setUpdatedAt(now.minusSeconds(3500));
+        congressionalTradeSubscriptionRepository.saveAndFlush(subscription);
+
+        CongressionalTrade trade = new CongressionalTrade();
+        trade.setStockAsset(asset);
+        trade.setProvider("TEST");
+        trade.setProviderFingerprint(String.format("%064d", System.nanoTime()));
+        trade.setMemberName("Archive Test Member");
+        trade.setChamber("House");
+        trade.setTickerSymbol(asset.getTickerSymbol());
+        trade.setAssetName(asset.getCompanyName());
+        trade.setTransactionType(CongressionalTradeType.PURCHASE);
+        trade.setAmountRange("$1,001 - $15,000");
+        trade.setTransactionDate(LocalDate.now().minusDays(20));
+        trade.setDisclosureDate(LocalDate.now().minusDays(1));
+        trade.setSourceUrl("https://example.com/filing");
+        trade.setFirstSeenAt(now);
+        trade.setLastSeenAt(now);
+        congressionalTradeRepository.saveAndFlush(trade);
+
+        CongressionalTradeDelivery delivery = new CongressionalTradeDelivery();
+        delivery.setSubscription(subscription);
+        delivery.setTrade(trade);
+        delivery.setStatus(CongressionalDeliveryStatus.SENT);
+        delivery.setAttempts(1);
+        delivery.setAvailableAt(now);
+        delivery.setSentAt(now);
+        delivery.setCreatedAt(now);
+        delivery.setUpdatedAt(now);
+        congressionalTradeDeliveryRepository.saveAndFlush(delivery);
+        String notificationKey = "CONGRESSIONAL-" + delivery.getId();
+
+        LocalDate firstCandleDate = LocalDate.now().minusDays(30);
+        for (int day = 0; day < 30; day++) {
+            LocalDate candleDate = firstCandleDate.plusDays(day);
+            double price = 90.0 + day;
+            candleRepository.save(new Candle(
+                    asset.getTickerSymbol(),
+                    "1d",
+                    candleDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond(),
+                    price - 1,
+                    price + 2,
+                    price - 2,
+                    price,
+                    100_000L + day));
+        }
+        candleRepository.flush();
+
+        mockMvc.perform(get("/home").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(model().attribute("congressionalUnreadCount", 1L))
+                .andExpect(model().attribute("tickerNotificationUnreadCount", 1L))
+                .andExpect(content().string(containsString(notificationKey)))
+                .andExpect(content().string(containsString("Mark as read")))
+                .andExpect(content().string(containsString("View signal")));
+
+        mockMvc.perform(get("/activity-signals/congressional/{id}", delivery.getId())
+                        .with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("activity-signal-detail"))
+                .andExpect(model().attributeExists("signal"))
+                .andExpect(header().string("Content-Security-Policy",
+                        containsString("style-src-attr 'unsafe-inline'")))
+                .andExpect(content().string(containsString("Graphical outlook")))
+                .andExpect(content().string(containsString("Technical analysis")))
+                .andExpect(content().string(containsString("Transaction details")))
+                .andExpect(content().string(containsString("id=\"signalChart\"")))
+                .andExpect(content().string(containsString("id=\"signalResultsChart\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        containsString("Chart context is unavailable for this signal"))))
+                .andExpect(content().string(containsString("Archive Test Member")))
+                .andExpect(content().string(containsString("Daily close proxy")));
+
+        mockMvc.perform(post("/api/congressional-activity/notifications/{id}/read", delivery.getId())
+                        .with(user(email))
+                        .with(csrf()))
+                .andExpect(status().isOk());
+
+        assertThat(congressionalTradeDeliveryRepository.findById(delivery.getId())
+                .orElseThrow().getReadAt()).isNotNull();
+
+        mockMvc.perform(get("/home").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(model().attribute("congressionalUnreadCount", 0L))
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString(notificationKey))));
+
+        mockMvc.perform(get("/activity-signals")
+                        .param("sort", "company")
+                        .param("direction", "asc")
+                        .with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Archive Test Member")))
+                .andExpect(content().string(containsString("Archive Test Company")))
+                .andExpect(content().string(containsString("(read)")));
+
+        User otherAccount = new User();
+        otherAccount.setEmail("other-" + email);
+        otherAccount.setPasswordHash("test-only-password-hash");
+        otherAccount.setFirstName("Other");
+        otherAccount.setLastName("Account");
+        otherAccount.setVerified(true);
+        userRepository.saveAndFlush(otherAccount);
+        mockMvc.perform(post("/api/congressional-activity/notifications/{id}/read", delivery.getId())
+                        .with(user(otherAccount.getEmail()))
+                        .with(csrf()))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/activity-signals/congressional/{id}", delivery.getId())
+                        .with(user(otherAccount.getEmail())))
+                .andExpect(status().isBadRequest());
+
+        delivery.setReadAt(null);
+        congressionalTradeDeliveryRepository.saveAndFlush(delivery);
+        mockMvc.perform(post("/api/congressional-activity/notifications/read-all")
+                        .with(user(email))
+                        .with(csrf()))
+                .andExpect(status().isOk());
+        assertThat(congressionalTradeDeliveryRepository.findById(delivery.getId())
+                .orElseThrow().getReadAt()).isNotNull();
     }
 
     @Test

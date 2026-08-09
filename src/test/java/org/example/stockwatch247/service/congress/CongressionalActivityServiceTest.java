@@ -1,5 +1,7 @@
 package org.example.stockwatch247.service.congress;
 
+import org.example.stockwatch247.model.CongressionalTradeDelivery;
+import org.example.stockwatch247.model.CongressionalTrade;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.CongressionalTradeType;
@@ -134,6 +136,56 @@ class CongressionalActivityServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
         verify(fixture.store, never()).claimHistoryRefresh(
                 anyLong(), anyLong(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void markingAnOwnedNotificationReadIsIdempotent() {
+        Fixture fixture = new Fixture();
+        CongressionalTradeDelivery delivery = new CongressionalTradeDelivery();
+        delivery.setId(41L);
+        when(fixture.deliveryRepository.findOwnedByIdAndUser(41L, fixture.user))
+                .thenReturn(Optional.of(delivery));
+
+        fixture.service.markActivityRead(fixture.user, 41L);
+        Instant firstReadAt = delivery.getReadAt();
+        fixture.service.markActivityRead(fixture.user, 41L);
+
+        assertThat(firstReadAt).isNotNull();
+        assertThat(delivery.getReadAt()).isEqualTo(firstReadAt);
+    }
+
+    @Test
+    void stockHistoryExposesTheOwnedNotificationIdForDetailNavigation() {
+        Fixture fixture = new Fixture();
+        LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+        CongressionalTrade trade = new CongressionalTrade();
+        trade.setId(31L);
+        trade.setStockAsset(fixture.asset);
+        trade.setMemberName("Example Member");
+        trade.setChamber("House");
+        trade.setTickerSymbol("AAPL");
+        trade.setTransactionType(CongressionalTradeType.PURCHASE);
+        trade.setAmountRange("$1,001 - $15,000");
+        trade.setTransactionDate(today.minusDays(4));
+        trade.setDisclosureDate(today.minusDays(1));
+        CongressionalTradeDelivery delivery = new CongressionalTradeDelivery();
+        delivery.setId(41L);
+        delivery.setTrade(trade);
+        when(fixture.store.claimHistoryRefresh(
+                eq(7L), eq(11L), any(), any(), any(), any(), any()))
+                .thenReturn(new HistoryCacheClaim(CacheClaimStatus.FRESH, Instant.now(), true));
+        when(fixture.tradeRepository
+                .findByStockAssetAndTransactionDateGreaterThanEqualOrderByDisclosureDateDescTransactionDateDescIdDesc(
+                        eq(fixture.asset), any()))
+                .thenReturn(List.of(trade));
+        when(fixture.deliveryRepository.findOwnedByTradeIds(fixture.user, List.of(31L)))
+                .thenReturn(List.of(delivery));
+
+        var response = fixture.service.getHistory(fixture.user, "AAPL");
+
+        assertThat(response.trades()).singleElement()
+                .extracting(CongressionalActivityService.TradeView::notificationId)
+                .isEqualTo(41L);
     }
 
     private static final class Fixture {

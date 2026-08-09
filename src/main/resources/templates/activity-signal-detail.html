@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="${signal.symbol() + ' activity signal analysis — StockWatch 24/7'}">Activity signal analysis &mdash; StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
+  <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="bg-animation" aria-hidden="true">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+</div>
+
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<main class="page-container signal-detail-page">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb">
+    <a th:href="@{/home}">Dashboard</a>
+    <span aria-hidden="true">/</span>
+    <a th:href="@{/activity-signals}">All activity signals</a>
+    <span aria-hidden="true">/</span>
+    <span>Signal analysis</span>
+  </nav>
+
+  <header class="signal-report-header">
+    <div class="signal-report-copy">
+      <div class="eyebrow">Activity signal analysis</div>
+      <div class="signal-report-title-row">
+        <h1 class="title" th:text="${signal.source() == 'INSIDER' ? 'Insider ' + signal.transactionTypeLabel() : 'Congressional ' + signal.transactionTypeLabel()}">Insider sale</h1>
+        <span class="signal-report-id" th:text="${'SIGNAL #' + signal.id()}">SIGNAL #142</span>
+      </div>
+      <p class="subtitle">
+        <strong th:text="${signal.symbol()}">JNJ</strong>
+        <span aria-hidden="true">&middot;</span>
+        <span th:text="${signal.companyName()}">Johnson &amp; Johnson</span>
+      </p>
+      <div class="signal-report-tags" aria-label="Signal classification">
+        <span class="signal-report-tag" th:text="${signal.sourceLabel()}">Corporate insider activity</span>
+        <span class="signal-report-tag direction"
+              th:classappend="${signal.transactionType() == 'PURCHASE'} ? ' buy' : ' sell'"
+              th:text="${signal.transactionType() == 'PURCHASE' ? 'BUY' : 'SELL'}">SELL</span>
+        <span class="signal-report-tag interval">1d</span>
+        <span class="signal-report-tag" th:text="${#temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">07 Aug 2026</span>
+        <span th:if="${signal.actorRole() != null}" class="signal-report-tag" th:text="${signal.actorRole()}">EVP</span>
+      </div>
+    </div>
+    <div class="signal-report-actions">
+      <a th:href="@{/activity-signals}" class="btn-secondary">Back to all signals</a>
+      <a th:if="${signal.filingUrl() != null}" th:href="${signal.filingUrl()}"
+         class="btn-secondary" target="_blank" rel="noopener noreferrer">Official filing</a>
+      <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary">Open workspace <span class="button-arrow" aria-hidden="true">&rarr;</span></a>
+    </div>
+  </header>
+
+  <nav class="signal-view-tabs signal-three-view-tabs" aria-label="Signal detail views" role="tablist">
+    <button id="graphicalOutlookTab" class="signal-view-tab active" type="button" role="tab"
+            aria-selected="true" aria-controls="graphicalOutlookPanel" data-signal-tab="graphical">
+      <span class="signal-tab-icon" aria-hidden="true">&#9650;</span>
+      <span><strong>Graphical outlook</strong><small>See the transaction on its chart</small></span>
+    </button>
+    <button id="scoreReportTab" class="signal-view-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="scoreReportPanel" data-signal-tab="score">
+      <span class="signal-tab-icon score" aria-hidden="true">&#35;</span>
+      <span><strong>Technical analysis</strong><small>Review indicators and nearby signals</small></span>
+    </button>
+    <button id="resultsTab" class="signal-view-tab" type="button" role="tab"
+            aria-selected="false" aria-controls="resultsPanel" data-signal-tab="results"
+            th:attr="data-results-available=${signal.results().available()}">
+      <span class="signal-tab-icon results" aria-hidden="true">%</span>
+      <span><strong>Results</strong><small>Measure the cached forward outcome</small></span>
+    </button>
+  </nav>
+
+  <div id="graphicalOutlookPanel" class="signal-view-panel active" role="tabpanel" aria-labelledby="graphicalOutlookTab">
+    <section class="signal-chart-card" aria-labelledby="signal-chart-heading">
+      <div class="signal-chart-heading">
+        <div>
+          <div class="signal-section-kicker">Transaction on price</div>
+          <h2 id="signal-chart-heading">
+            <span th:text="${signal.transactionTypeLabel()}">Sale</span>
+            on the daily <span th:text="${signal.symbol()}">JNJ</span> chart
+          </h2>
+          <p th:if="${signal.chart().available()}">
+            The filed transaction date and reported execution price are marked against complete cached daily candles.
+          </p>
+        </div>
+        <span class="signal-chart-cache-badge">Complete cached daily history &middot; no API request</span>
+      </div>
+
+      <div th:if="${signal.chart().available()}" class="signal-chart-legend" aria-label="Chart annotation legend">
+        <span><i class="signal-chart-key detection" aria-hidden="true"></i><span th:text="${signal.transactionTypeLabel() + ' date'}">Sale date</span></span>
+        <span><i class="signal-chart-key pattern" aria-hidden="true"></i><span th:text="${signal.proxyEntryPrice() ? 'Daily close proxy' : 'Reported execution price'}">Reported execution price</span></span>
+      </div>
+
+      <div th:if="${signal.chart().available()}" id="signalChart" class="signal-chart" role="img"
+           th:attr="aria-label=${signal.transactionTypeLabel() + ' chart for ' + signal.symbol()},
+                    data-signal-time=${signal.chart().signalTimestamp()},
+                    data-entry-price=${signal.chart().entryPrice()},
+                    data-direction=${signal.transactionType() == 'PURCHASE' ? 'BUY' : 'SELL'},
+                    data-action-label=${signal.transactionTypeLabel()}"></div>
+      <ol th:if="${signal.chart().available()}" id="signalChartData" hidden aria-hidden="true">
+        <li th:each="candle : ${signal.chart().candles()}"
+            th:attr="data-time=${candle.timestamp()},data-open=${candle.open()},data-high=${candle.high()},data-low=${candle.low()},data-close=${candle.close()}"></li>
+      </ol>
+
+      <div th:unless="${signal.chart().available()}" class="signal-chart-unavailable">
+        <span aria-hidden="true">i</span>
+        <div>
+          <h3>Chart context is unavailable for this signal</h3>
+          <p th:text="${signal.chart().unavailableReason()}">The transaction candle is not in the local cache.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="signal-lifecycle-section" aria-labelledby="activity-details-heading">
+      <div class="signal-lifecycle-heading">
+        <div>
+          <div class="signal-section-kicker">Filed activity</div>
+          <h2 id="activity-details-heading">Transaction details</h2>
+        </div>
+        <span class="signal-lifecycle-pill lifecycle-heading-pill"
+              th:classappend="${signal.transactionType() == 'PURCHASE'} ? ' confirmed' : ' invalidated'"
+              th:text="${signal.transactionTypeLabel()}">Sale</span>
+      </div>
+      <p class="signal-lifecycle-summary">
+        <strong th:text="${signal.actorName()}">Elizabeth Forminard</strong>
+        <span th:if="${signal.actorRole() != null}" th:text="${' · ' + signal.actorRole()}"> · EVP</span>
+        <span th:text="${' · ' + signal.companyName()}"> · Johnson &amp; Johnson</span>
+      </p>
+      <div class="signal-lifecycle-grid">
+        <div><span>Buyer / seller</span><strong th:text="${signal.actorName()}">Reporting person</strong></div>
+        <div><span>Role / chamber</span><strong th:text="${signal.actorRole() != null ? signal.actorRole() : 'Not reported'}">EVP</strong></div>
+        <div><span>Company</span><strong th:text="${signal.companyName() + ' · ' + signal.symbol()}">Johnson &amp; Johnson · JNJ</strong></div>
+        <div><span>Transaction</span><strong th:text="${signal.transactionTypeLabel()}">Sale</strong></div>
+        <div><span>Transaction date</span><strong th:text="${#temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">07 Aug 2026</strong></div>
+        <div><span>Filing date</span><strong th:text="${#temporals.format(signal.filingDate(), 'dd MMM yyyy')}">07 Aug 2026</strong></div>
+        <div>
+          <span>Execution price</span>
+          <strong th:if="${signal.transactionPrice() != null}" th:text="${signal.currency() + ' ' + #numbers.formatDecimal(signal.transactionPrice(), 1, 2)}">USD 257.76</strong>
+          <strong th:unless="${signal.transactionPrice() != null}">Not disclosed</strong>
+        </div>
+        <div><span>Shares</span><strong th:text="${signal.shares() != null ? #numbers.formatDecimal(signal.shares(), 1, 2) : 'Not disclosed'}">9,344</strong></div>
+        <div>
+          <span>Total trade value</span>
+          <strong th:if="${signal.transactionValue() != null}" th:text="${signal.currency() + ' ' + #numbers.formatDecimal(signal.transactionValue(), 1, 2)}">USD 2,408,462.72</strong>
+          <strong th:if="${signal.transactionValue() == null and signal.amountRange() != null}" th:text="${signal.amountRange()}">$15,001 - $50,000</strong>
+          <strong th:if="${signal.transactionValue() == null and signal.amountRange() == null}">Not disclosed</strong>
+        </div>
+        <div>
+          <span>Directional return</span>
+          <strong th:if="${signal.generalReturnPercent() != null}"
+                  th:classappend="${signal.generalReturnPercent().signum() >= 0} ? ' positive' : ' negative'"
+                  th:text="${(signal.generalReturnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.generalReturnPercent(), 1, 2) + '%'}">+4.20%</strong>
+          <strong th:unless="${signal.generalReturnPercent() != null}">Awaiting completed price data</strong>
+        </div>
+      </div>
+      <p class="signal-lifecycle-note" th:text="${signal.disclosureNotice()}">Results use the execution price reported in the filing.</p>
+      <p th:if="${signal.filingUrl() != null}" class="signal-lifecycle-delivery">
+        <a th:href="${signal.filingUrl()}" target="_blank" rel="noopener noreferrer">Open the official filing &rarr;</a>
+      </p>
+    </section>
+  </div>
+
+  <div id="scoreReportPanel" class="signal-view-panel" role="tabpanel" aria-labelledby="scoreReportTab" hidden>
+    <section class="signal-evidence-section" aria-labelledby="technical-snapshot-heading">
+      <div class="signal-evidence-heading">
+        <div>
+          <div class="signal-section-kicker">At the transaction candle</div>
+          <h2 id="technical-snapshot-heading">Daily technical snapshot</h2>
+          <p th:if="${signal.technical().snapshotDate() != null}"
+             th:text="${'Indicators reconstructed from the completed daily candle on ' + #temporals.format(signal.technical().snapshotDate(), 'dd MMM yyyy')}">Indicators at the trade.</p>
+        </div>
+        <span th:if="${signal.technical().available()}" class="evidence-count"><span th:text="${signal.technical().indicators().size()}">12</span>&nbsp;indicators</span>
+      </div>
+
+      <div th:if="${signal.technical().available()}" class="signal-evidence-grid">
+        <article th:each="indicator, status : ${signal.technical().indicators()}" class="signal-evidence-card">
+          <div class="evidence-card-topline">
+            <span class="evidence-number" th:text="${#numbers.formatInteger(status.count, 2)}">01</span>
+            <span class="evidence-category" th:text="${indicator.name()}">RSI</span>
+            <span class="evidence-score" th:text="${indicator.value()}">52.40</span>
+            <span class="evidence-impact">At trade</span>
+          </div>
+          <ul class="evidence-detail-list">
+            <li>
+              <div class="evidence-detail-heading"><strong>Interpretation</strong></div>
+              <p th:text="${indicator.context()}">Neutral momentum zone</p>
+            </li>
+          </ul>
+        </article>
+      </div>
+      <div th:unless="${signal.technical().available()}" class="signal-evidence-unavailable">
+        <div class="legacy-signal-mark" aria-hidden="true">i</div>
+        <div><h3>Technical snapshot unavailable</h3><p th:text="${signal.technical().unavailableReason()}">The daily candle could not be reconstructed.</p></div>
+      </div>
+    </section>
+
+    <section class="signal-evidence-section" aria-labelledby="related-signals-heading">
+      <div class="signal-evidence-heading">
+        <div>
+          <div class="signal-section-kicker">Around the transaction date</div>
+          <h2 id="related-signals-heading">Related technical signals</h2>
+          <p>Owned daily, weekly, and monthly candlestick or Elliott Wave signals detected near this activity.</p>
+        </div>
+        <span class="evidence-count">
+          <span th:text="${signal.relatedSignals().candlestickSignals().size() + signal.relatedSignals().elliottSignals().size()}">2</span>&nbsp;signals
+        </span>
+      </div>
+
+      <div th:if="${!#lists.isEmpty(signal.relatedSignals().candlestickSignals()) or !#lists.isEmpty(signal.relatedSignals().elliottSignals())}"
+           class="signal-evidence-grid">
+        <a th:each="related : ${signal.relatedSignals().candlestickSignals()}" th:href="${related.detailUrl()}" class="signal-evidence-card activity-related-signal-card">
+          <div class="evidence-card-topline">
+            <span class="evidence-number">C</span><span class="evidence-category">Candlestick</span>
+            <span class="evidence-score" th:text="${related.intervalLabel()}">Daily</span><span class="evidence-impact" th:text="${related.tradeSignalLabel()}">Buy</span>
+          </div>
+          <ul class="evidence-detail-list"><li><div class="evidence-detail-heading"><strong th:text="${related.patternLabel()}">Hammer</strong><span th:text="${#temporals.format(related.signalDate(), 'dd MMM yyyy')}">07 Aug 2026</span></div><p>Open the full technical signal analysis.</p></li></ul>
+        </a>
+        <a th:each="related : ${signal.relatedSignals().elliottSignals()}" th:href="${related.detailUrl()}" class="signal-evidence-card activity-related-signal-card">
+          <div class="evidence-card-topline">
+            <span class="evidence-number">E</span><span class="evidence-category">Elliott Wave</span>
+            <span class="evidence-score" th:text="${related.intervalLabel()}">Weekly</span><span class="evidence-impact" th:text="${related.tradeSignalLabel()}">Buy</span>
+          </div>
+          <ul class="evidence-detail-list"><li><div class="evidence-detail-heading"><strong th:text="${related.patternLabel()}">Elliott Wave</strong><span th:text="${#temporals.format(related.signalDate(), 'dd MMM yyyy')}">07 Aug 2026</span></div><p>Open the full Elliott Wave signal analysis.</p></li></ul>
+        </a>
+      </div>
+      <div th:if="${#lists.isEmpty(signal.relatedSignals().candlestickSignals()) and #lists.isEmpty(signal.relatedSignals().elliottSignals())}"
+           class="signal-evidence-unavailable">
+        <div class="legacy-signal-mark" aria-hidden="true">i</div>
+        <div><h3>No related technical signals</h3><p>No owned daily, weekly, or monthly candlestick or Elliott Wave signal was detected near this transaction.</p></div>
+      </div>
+    </section>
+
+    <section class="signal-method-note" aria-labelledby="activity-method-heading">
+      <div class="method-note-index" aria-hidden="true">01</div>
+      <div>
+        <div class="signal-section-kicker">Reading the report</div>
+        <h2 id="activity-method-heading">Historical context, not a recommendation</h2>
+        <p>The indicator snapshot uses only completed cached candles available for the transaction period. Related signals are limited to this account&rsquo;s saved technical alerts. <strong>This is research context, not financial advice or evidence that the filer traded on these indicators.</strong></p>
+      </div>
+    </section>
+  </div>
+
+  <div id="resultsPanel" class="signal-view-panel" role="tabpanel" aria-labelledby="resultsTab" hidden>
+    <section th:if="${signal.results().available()}" id="signalResultsWorkspace" class="signal-results-section"
+             th:attr="data-trade-signal=${signal.transactionType() == 'PURCHASE' ? 'BUY' : 'SELL'},
+                      data-signal-close=${signal.results().entryPrice()},
+                      data-outcome-label=${signal.results().outcomeLabel()},
+                      data-best-action-label=${signal.results().bestActionLabel()}">
+      <div class="signal-results-heading">
+        <div>
+          <div class="signal-section-kicker">Completed-candle follow-through</div>
+          <h2>Direction-aware result after the transaction</h2>
+          <p>The line starts at the reported execution price, or the disclosed daily-close proxy, and measures each subsequent completed daily close in the transaction direction.</p>
+        </div>
+        <span class="signal-chart-cache-badge">Cached candles only &middot; no API request</span>
+      </div>
+
+      <div class="signal-results-metrics" aria-live="polite">
+        <article><span id="resultHorizonLabel" th:text="${signal.results().outcomeLabel()}">Gain / loss</span><strong id="resultHorizonReturn">+0.00%</strong><small id="resultHorizonDifference">+0.0000 per share</small></article>
+        <article><span>Selected-window close</span><strong id="resultHorizonClose">0.0000</strong><small id="resultHorizonPeriod">Period unavailable</small></article>
+        <article class="best-result"><span id="resultBestActionLabel" th:text="${signal.results().bestActionLabel()}">Best sell close</span><strong id="resultBestClose">0.0000</strong><small id="resultBestPeriod">Period unavailable</small></article>
+        <article class="best-result"><span>Best direction-aware outcome</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference">+0.0000 per share</small></article>
+      </div>
+
+      <div id="signalResultsChart" class="signal-results-chart" role="img"
+           th:attr="aria-label=${'Direction-aware activity result chart for ' + signal.symbol()}"></div>
+      <div class="signal-results-legend" aria-label="Results chart color legend">
+        <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the transaction direction</span>
+        <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the transaction direction</span>
+        <span><i class="signal-results-key start" aria-hidden="true"></i>Transaction start</span>
+        <span><i class="signal-results-key best" aria-hidden="true"></i>Best close in the selected window</span>
+      </div>
+      <ol id="signalResultsData" hidden aria-hidden="true">
+        <li th:each="point : ${signal.results().points()}"
+            th:attr="data-candle-number=${point.candleNumber()},data-time=${point.timestamp()},data-period-label=${point.periodLabel()},data-close=${point.close()},data-directional-return=${point.directionalReturnPercent()},data-directional-difference=${point.directionalPriceDifference()}"></li>
+      </ol>
+
+      <div class="signal-results-window-control">
+        <div class="signal-results-window-copy"><label for="resultWindowSlider">Forward evaluation window</label><p>Choose how many completed candles after the transaction to include.</p></div>
+        <output id="resultWindowValue" for="resultWindowSlider" th:text="${signal.results().minimumForwardCandles() + ' candles'}">10 candles</output>
+        <input id="resultWindowSlider" type="range" th:min="${signal.results().minimumForwardCandles()}" th:max="${signal.results().availableForwardCandles()}" th:value="${signal.results().minimumForwardCandles()}" step="1"
+               th:attr="aria-valuemin=${signal.results().minimumForwardCandles()},aria-valuemax=${signal.results().availableForwardCandles()},aria-valuenow=${signal.results().minimumForwardCandles()}">
+        <div class="signal-results-range-labels" aria-hidden="true"><span th:text="${signal.results().minimumForwardCandles()}">10</span><span th:text="${signal.results().availableForwardCandles()}">42</span></div>
+      </div>
+      <p class="signal-results-disclaimer">This is a hindsight-based close measurement, not a simulated trade or forecast. It excludes fees, slippage, taxes, dividends, position sizing, and—for congressional disclosures—unknown execution timing inside the reported value range.</p>
+    </section>
+  </div>
+
+  <dialog th:unless="${signal.results().available()}" id="signalResultsUnavailableDialog" class="unsaved-alert-dialog signal-results-unavailable-dialog" aria-labelledby="signalResultsUnavailableTitle">
+    <div class="unsaved-alert-dialog-content">
+      <span class="unsaved-alert-kicker">Outcome window still forming</span>
+      <h2 id="signalResultsUnavailableTitle">Results need more completed candles</h2>
+      <p th:text="${signal.results().unavailableReason()}">At least 10 completed candles after the transaction are required.</p>
+      <div class="unsaved-alert-dialog-actions"><button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary">Understood</button></div>
+    </div>
+  </dialog>
+
+  <a th:href="@{/activity-signals}" class="back-link history-back-link">&larr; Back to all activity signals</a>
+</main>
+
+<script th:inline="javascript" th:attr="nonce=${cspNonce}">
+(function () {
+  'use strict';
+
+  const tabs = Array.from(document.querySelectorAll('[data-signal-tab]'));
+  const panels = {
+    graphical: document.getElementById('graphicalOutlookPanel'),
+    score: document.getElementById('scoreReportPanel'),
+    results: document.getElementById('resultsPanel')
+  };
+  let resultsChart = null;
+  let resultsSeries = null;
+
+  function showResultsUnavailableDialog() {
+    const dialog = document.getElementById('signalResultsUnavailableDialog');
+    if (!dialog) return;
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      window.alert(dialog.querySelector('p')?.textContent || 'Results need more completed candles.');
+    }
+  }
+
+  function activateTab(name, updateHash) {
+    const requestedTab = tabs.find(tab => tab.dataset.signalTab === name);
+    if (name === 'results' && requestedTab?.dataset.resultsAvailable !== 'true') {
+      showResultsUnavailableDialog();
+      return false;
+    }
+    const selected = panels[name] ? name : 'graphical';
+    tabs.forEach(tab => {
+      const active = tab.dataset.signalTab === selected;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
+    Object.entries(panels).forEach(([panelName, panel]) => {
+      if (!panel) return;
+      const active = panelName === selected;
+      panel.hidden = !active;
+      panel.classList.toggle('active', active);
+    });
+    if (updateHash && window.history && window.history.replaceState) {
+      const hash = selected === 'score' ? '#score-report' : selected === 'results' ? '#results' : '#graphical-outlook';
+      window.history.replaceState(null, '', hash);
+    }
+    if (selected === 'results') window.setTimeout(ensureResultsChart, 0);
+    return true;
+  }
+
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => activateTab(tab.dataset.signalTab, true));
+    tab.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const offset = event.key === 'ArrowRight' ? 1 : -1;
+      const nextIndex = (index + offset + tabs.length) % tabs.length;
+      const next = tabs[nextIndex];
+      if (activateTab(next.dataset.signalTab, true)) next.focus();
+    });
+  });
+  document.getElementById('closeSignalResultsUnavailableDialog')?.addEventListener('click', () => document.getElementById('signalResultsUnavailableDialog')?.close());
+  const initialTab = window.location.hash === '#score-report' ? 'score' : window.location.hash === '#results' ? 'results' : 'graphical';
+  activateTab(initialTab, false);
+
+  function chartColors(theme = document.documentElement.dataset.theme) {
+    const light = theme === 'light';
+    return {
+      text: light ? '#526158' : '#929b91',
+      grid: light ? 'rgba(31,48,37,.09)' : 'rgba(255,255,255,.045)',
+      border: light ? 'rgba(27,43,33,.14)' : 'rgba(255,255,255,.08)',
+      up: light ? '#078568' : '#64e8bd',
+      down: light ? '#d23f59' : '#ff647c',
+      positive: light ? '#078568' : '#64e8bd',
+      negative: light ? '#d23f59' : '#ff647c',
+      neutral: light ? '#68756d' : '#aeb7ad',
+      signal: light ? '#477a12' : '#b7f34a',
+      entry: light ? '#6557d6' : '#9a8cff',
+      best: light ? '#a86700' : '#ffbd59'
+    };
+  }
+
+  const chartContainer = document.getElementById('signalChart');
+  const chartDataList = document.getElementById('signalChartData');
+  let priceChart = null;
+  let candleSeries = null;
+  if (chartContainer && chartDataList && typeof LightweightCharts !== 'undefined') {
+    const colors = chartColors();
+    const candleData = Array.from(chartDataList.children).map(item => ({
+      time: Number(item.dataset.time), open: Number(item.dataset.open), high: Number(item.dataset.high),
+      low: Number(item.dataset.low), close: Number(item.dataset.close)
+    })).filter(candle => Object.values(candle).every(Number.isFinite));
+    priceChart = LightweightCharts.createChart(chartContainer, {
+      autoSize: true,
+      layout: {textColor: colors.text, fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', background: {type: 'solid', color: 'transparent'}},
+      grid: {vertLines: {color: colors.grid}, horzLines: {color: colors.grid}},
+      crosshair: {mode: 0}, rightPriceScale: {borderColor: colors.border},
+      timeScale: {borderColor: colors.border, timeVisible: true, rightOffset: 8}, handleScroll: true, handleScale: true
+    });
+    candleSeries = priceChart.addCandlestickSeries({upColor: colors.up, downColor: colors.down, wickUpColor: colors.up, wickDownColor: colors.down, borderVisible: false});
+    candleSeries.setData(candleData);
+    const signalTime = Number(chartContainer.dataset.signalTime);
+    const entryPrice = Number(chartContainer.dataset.entryPrice);
+    const direction = chartContainer.dataset.direction;
+    const actionLabel = chartContainer.dataset.actionLabel || 'Transaction';
+    candleSeries.setMarkers([{time: signalTime, position: direction === 'SELL' ? 'aboveBar' : 'belowBar', color: colors.signal, shape: direction === 'SELL' ? 'arrowDown' : 'arrowUp', text: `${actionLabel} · ${entryPrice.toFixed(2)}`}]);
+    candleSeries.createPriceLine({price: entryPrice, color: colors.entry, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Entry'});
+    const signalIndex = candleData.findIndex(candle => candle.time === signalTime);
+    if (signalIndex >= 0) priceChart.timeScale().setVisibleLogicalRange({from: Math.max(-.5, signalIndex - 18), to: signalIndex + 8});
+    else priceChart.timeScale().fitContent();
+  }
+
+  const resultsWorkspace = document.getElementById('signalResultsWorkspace');
+  const resultsContainer = document.getElementById('signalResultsChart');
+  const resultsDataList = document.getElementById('signalResultsData');
+  const resultsWindowSlider = document.getElementById('resultWindowSlider');
+  const resultsData = resultsDataList ? Array.from(resultsDataList.children).map(item => ({
+    candleNumber: Number(item.dataset.candleNumber), time: Number(item.dataset.time), periodLabel: item.dataset.periodLabel || 'Period unavailable',
+    close: Number(item.dataset.close), directionalReturn: Number(item.dataset.directionalReturn), directionalDifference: Number(item.dataset.directionalDifference)
+  })).filter(point => Object.values({n:point.candleNumber,t:point.time,c:point.close,r:point.directionalReturn,d:point.directionalDifference}).every(Number.isFinite)) : [];
+
+  function signedNumber(value, decimals, suffix) { return `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}${suffix}`; }
+  function updateResultMetric(id, value, positive) {
+    const element = document.getElementById(id); if (!element) return;
+    element.textContent = value; element.classList.toggle('positive', positive); element.classList.toggle('negative', !positive);
+  }
+  function renderSelectedResults() {
+    if (!resultsSeries || !resultsWindowSlider || resultsData.length < 2 || !resultsWorkspace) return;
+    const windowSize = Math.min(Number(resultsWindowSlider.max), Math.max(Number(resultsWindowSlider.min), Number(resultsWindowSlider.value)));
+    const selected = resultsData.filter(point => point.candleNumber <= windowSize);
+    if (selected.length < 2) return;
+    const colors = chartColors();
+    resultsSeries.setData(selected.map((point, index) => {
+      const end = selected[Math.min(index + 1, selected.length - 1)];
+      return {time: point.time, value: point.directionalReturn, color: end.directionalReturn > 0 ? colors.positive : end.directionalReturn < 0 ? colors.negative : colors.neutral};
+    }));
+    const tradeSignal = resultsWorkspace.dataset.tradeSignal;
+    const best = selected.slice(1).reduce((winner, point) => !winner || (tradeSignal === 'SELL' ? point.close < winner.close : point.close > winner.close) ? point : winner, null);
+    const horizon = selected[selected.length - 1];
+    resultsSeries.setMarkers([
+      {time: selected[0].time, position: tradeSignal === 'SELL' ? 'aboveBar' : 'belowBar', color: colors.entry, shape: tradeSignal === 'SELL' ? 'arrowDown' : 'arrowUp', text: `${tradeSignal} transaction start`},
+      {time: best.time, position: best.directionalReturn >= 0 ? 'aboveBar' : 'belowBar', color: colors.best, shape: tradeSignal === 'SELL' ? 'arrowUp' : 'arrowDown', text: `${resultsWorkspace.dataset.bestActionLabel} · candle ${best.candleNumber}`}
+    ]);
+    resultsChart.timeScale().fitContent();
+    updateResultMetric('resultHorizonReturn', signedNumber(horizon.directionalReturn, 2, '%'), horizon.directionalReturn >= 0);
+    updateResultMetric('resultHorizonDifference', signedNumber(horizon.directionalDifference, 4, ' per share'), horizon.directionalReturn >= 0);
+    updateResultMetric('resultBestReturn', signedNumber(best.directionalReturn, 2, '%'), best.directionalReturn >= 0);
+    updateResultMetric('resultBestDifference', signedNumber(best.directionalDifference, 4, ' per share'), best.directionalReturn >= 0);
+    document.getElementById('resultHorizonClose').textContent = horizon.close.toFixed(4);
+    document.getElementById('resultHorizonPeriod').textContent = horizon.periodLabel;
+    document.getElementById('resultBestClose').textContent = best.close.toFixed(4);
+    document.getElementById('resultBestPeriod').textContent = best.periodLabel;
+    document.getElementById('resultWindowValue').textContent = `${windowSize} candles`;
+    resultsWindowSlider.value = String(windowSize);
+    resultsWindowSlider.setAttribute('aria-valuenow', String(windowSize));
+  }
+  function ensureResultsChart() {
+    if (!resultsContainer || !resultsData.length || typeof LightweightCharts === 'undefined') return;
+    if (!resultsChart) {
+      const colors = chartColors();
+      resultsChart = LightweightCharts.createChart(resultsContainer, {autoSize:true,layout:{textColor:colors.text,fontFamily:'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',background:{type:'solid',color:'transparent'}},grid:{vertLines:{color:colors.grid},horzLines:{color:colors.grid}},crosshair:{mode:0},rightPriceScale:{borderColor:colors.border},timeScale:{borderColor:colors.border,timeVisible:true,rightOffset:2},handleScroll:true,handleScale:true});
+      resultsSeries = resultsChart.addLineSeries({color:colors.neutral,lineWidth:3,lastValueVisible:true,priceLineVisible:false,crosshairMarkerVisible:true,priceFormat:{type:'custom',formatter:value=>signedNumber(value,2,'%')}});
+      resultsSeries.createPriceLine({price:0,color:colors.border,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'Transaction price'});
+    }
+    renderSelectedResults();
+  }
+  resultsWindowSlider?.addEventListener('input', renderSelectedResults);
+
+  window.addEventListener('stockwatch:themechange', event => {
+    const colors = chartColors(event.detail.theme);
+    if (priceChart && candleSeries) {
+      priceChart.applyOptions({layout:{textColor:colors.text,background:{type:'solid',color:'transparent'}},grid:{vertLines:{color:colors.grid},horzLines:{color:colors.grid}},rightPriceScale:{borderColor:colors.border},timeScale:{borderColor:colors.border}});
+      candleSeries.applyOptions({upColor:colors.up,downColor:colors.down,wickUpColor:colors.up,wickDownColor:colors.down});
+    }
+    if (resultsChart && resultsSeries) {
+      resultsChart.applyOptions({layout:{textColor:colors.text,background:{type:'solid',color:'transparent'}},grid:{vertLines:{color:colors.grid},horzLines:{color:colors.grid}},rightPriceScale:{borderColor:colors.border},timeScale:{borderColor:colors.border}});
+      renderSelectedResults();
+    }
+  });
+}());
+</script>
+</body>
+</html>

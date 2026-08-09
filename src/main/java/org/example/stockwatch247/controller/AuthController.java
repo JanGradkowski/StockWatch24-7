@@ -19,7 +19,9 @@ import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
 
@@ -27,6 +29,7 @@ import java.util.stream.Stream;
 
 @Controller
 public class AuthController {
+    private static final int ACTIVITY_ARCHIVE_PAGE_SIZE = 25;
     private final UserRepository userRepository;
     private final AlertRuleService alertRuleService;
     private final CongressionalActivityService congressionalActivityService;
@@ -159,6 +162,10 @@ public class AuthController {
                     .getFollowedStocks(currentUser);
             var insiderActivities = insiderActivityService
                     .getLatestDashboardActivity(currentUser, 10);
+            long congressionalUnreadCount = congressionalActivityService
+                    .unreadActivityCount(currentUser);
+            long insiderUnreadCount = insiderActivityService
+                    .unreadActivityCount(currentUser);
             var insiderFollowedStocks = insiderActivityService
                     .getFollowedStocks(currentUser);
             var latestTickerNotifications = Stream.concat(
@@ -173,12 +180,16 @@ public class AuthController {
             model.addAttribute("trackedCompanies", trackedCompanies);
             model.addAttribute("latestSignals", latestSignals);
             model.addAttribute("congressionalActivities", congressionalActivities);
+            model.addAttribute("congressionalUnreadCount", congressionalUnreadCount);
             model.addAttribute("congressionalFollowedStocks", congressionalFollowedStocks);
             model.addAttribute("congressionalFollowedCount", congressionalFollowedStocks.size());
             model.addAttribute("insiderActivities", insiderActivities);
+            model.addAttribute("insiderUnreadCount", insiderUnreadCount);
             model.addAttribute("insiderFollowedStocks", insiderFollowedStocks);
             model.addAttribute("insiderFollowedCount", insiderFollowedStocks.size());
             model.addAttribute("latestTickerNotifications", latestTickerNotifications);
+            model.addAttribute("tickerNotificationUnreadCount",
+                    congressionalUnreadCount + insiderUnreadCount);
             model.addAttribute("trackedInstrumentCount", Stream.of(
                             trackedCompanies.stream().map(AlertRuleService.TrackedCompanyView::symbol),
                             congressionalFollowedStocks.stream()
@@ -203,12 +214,15 @@ public class AuthController {
             model.addAttribute("trackedCompanies", java.util.List.of());
             model.addAttribute("latestSignals", java.util.List.of());
             model.addAttribute("congressionalActivities", java.util.List.of());
+            model.addAttribute("congressionalUnreadCount", 0L);
             model.addAttribute("congressionalFollowedStocks", java.util.List.of());
             model.addAttribute("congressionalFollowedCount", 0);
             model.addAttribute("insiderActivities", java.util.List.of());
+            model.addAttribute("insiderUnreadCount", 0L);
             model.addAttribute("insiderFollowedStocks", java.util.List.of());
             model.addAttribute("insiderFollowedCount", 0);
             model.addAttribute("latestTickerNotifications", java.util.List.of());
+            model.addAttribute("tickerNotificationUnreadCount", 0L);
             model.addAttribute("trackedInstrumentCount", 0L);
             model.addAttribute("stockCompanyCount", 0L);
             model.addAttribute("indexEtfCompanyCount", 0L);
@@ -260,6 +274,21 @@ public class AuthController {
         return "all-signals";
     }
 
+    @GetMapping("/activity-signals")
+    public String allActivitySignalsPage(@RequestParam(defaultValue = "date") String sort,
+                                         @RequestParam(defaultValue = "desc") String direction,
+                                         @RequestParam(defaultValue = "0") int page,
+                                         Model model,
+                                         Principal principal) {
+        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        if (currentUser == null) {
+            return "redirect:/login";
+        }
+        model.addAttribute("firstName", currentUser.getFirstName());
+        model.addAttribute("archive", getActivityArchive(currentUser, sort, direction, page));
+        return "all-activity-signals";
+    }
+
     @GetMapping("/stock/{symbol}")
     public String stockPage(@PathVariable String symbol,
                             @RequestParam(required = false) String mic,
@@ -283,6 +312,7 @@ public class AuthController {
     private TickerNotificationView tickerNotification(
             CongressionalActivityService.DashboardActivityView activity) {
         return new TickerNotificationView(
+                activity.id(),
                 "CONGRESSIONAL",
                 "Congressional",
                 activity.symbol(),
@@ -298,7 +328,8 @@ public class AuthController {
                 activity.disclosureDate(),
                 activity.detectedAt(),
                 activity.deliveryStatus(),
-                activity.sourceUrl());
+                activity.sourceUrl(),
+                activity.hasBeenRead());
     }
 
     private TickerNotificationView tickerNotification(
@@ -309,6 +340,7 @@ public class AuthController {
                 ? activity.shares().stripTrailingZeros().toPlainString() + " shares"
                 : "Value not reported";
         return new TickerNotificationView(
+                activity.id(),
                 "INSIDER",
                 "Corporate insider",
                 activity.symbol(),
@@ -324,10 +356,74 @@ public class AuthController {
                 activity.filingDate(),
                 activity.detectedAt(),
                 activity.deliveryStatus(),
-                activity.sourceUrl());
+                activity.sourceUrl(),
+                activity.hasBeenRead());
+    }
+
+    private ActivitySignalArchivePage getActivityArchive(User user,
+                                                         String requestedSort,
+                                                         String requestedDirection,
+                                                         int requestedPage) {
+        String sort = normalizeActivitySort(requestedSort);
+        String direction = "asc".equalsIgnoreCase(requestedDirection) ? "asc" : "desc";
+        List<TickerNotificationView> notifications = Stream.concat(
+                        congressionalActivityService.getAllActivity(user).stream().map(this::tickerNotification),
+                        insiderActivityService.getAllActivity(user).stream().map(this::tickerNotification))
+                .sorted(activityComparator(sort, direction))
+                .toList();
+        int totalPages = (notifications.size() + ACTIVITY_ARCHIVE_PAGE_SIZE - 1)
+                / ACTIVITY_ARCHIVE_PAGE_SIZE;
+        int lastPage = Math.max(0, totalPages - 1);
+        int page = Math.min(Math.max(0, requestedPage), lastPage);
+        int fromIndex = Math.min(page * ACTIVITY_ARCHIVE_PAGE_SIZE, notifications.size());
+        int toIndex = Math.min(fromIndex + ACTIVITY_ARCHIVE_PAGE_SIZE, notifications.size());
+        return new ActivitySignalArchivePage(
+                notifications.subList(fromIndex, toIndex),
+                page,
+                totalPages,
+                notifications.size(),
+                sort,
+                direction,
+                page > 0,
+                page + 1 < totalPages);
+    }
+
+    private String normalizeActivitySort(String requestedSort) {
+        if (requestedSort == null) {
+            return "date";
+        }
+        return switch (requestedSort.toLowerCase(Locale.ROOT)) {
+            case "company", "transaction", "type", "actor" ->
+                    requestedSort.toLowerCase(Locale.ROOT);
+            default -> "date";
+        };
+    }
+
+    private Comparator<TickerNotificationView> activityComparator(String sort, String direction) {
+        Comparator<String> textOrder = Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER);
+        Comparator<TickerNotificationView> primary = switch (sort) {
+            case "company" -> Comparator.comparing(TickerNotificationView::companyName, textOrder)
+                    .thenComparing(TickerNotificationView::symbol, textOrder);
+            case "transaction" -> Comparator.comparing(
+                    TickerNotificationView::transactionTypeLabel, textOrder);
+            case "type" -> Comparator.comparing(TickerNotificationView::sourceLabel, textOrder);
+            case "actor" -> Comparator.comparing(TickerNotificationView::actorName, textOrder);
+            default -> Comparator.comparing(
+                    TickerNotificationView::transactionDate,
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+        };
+        if ("desc".equals(direction)) {
+            primary = primary.reversed();
+        }
+        return primary
+                .thenComparing(TickerNotificationView::detectedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(TickerNotificationView::source)
+                .thenComparing(TickerNotificationView::id, Comparator.reverseOrder());
     }
 
     public record TickerNotificationView(
+            Long id,
             String source,
             String sourceLabel,
             String symbol,
@@ -343,6 +439,67 @@ public class AuthController {
             LocalDate filingDate,
             Instant detectedAt,
             String deliveryStatus,
-            String sourceUrl) {
+            String sourceUrl,
+            boolean hasBeenRead) {
+        public String notificationKey() {
+            return source + "-" + id;
+        }
+
+        public String readEndpoint() {
+            return "INSIDER".equals(source)
+                    ? "/api/insider-activity/notifications/" + id + "/read"
+                    : "/api/congressional-activity/notifications/" + id + "/read";
+        }
+
+        public String detailUrl() {
+            return "/activity-signals/" + source.toLowerCase(Locale.ROOT) + "/" + id;
+        }
+    }
+
+    public record ActivitySignalArchivePage(
+            List<TickerNotificationView> signals,
+            int page,
+            int totalPages,
+            long totalSignals,
+            String sort,
+            String direction,
+            boolean hasPrevious,
+            boolean hasNext) {
+        public int displayPage() {
+            return totalPages == 0 ? 0 : page + 1;
+        }
+
+        public String groupKey(TickerNotificationView signal) {
+            return switch (sort) {
+                case "company" -> signal.companyName().toLowerCase(Locale.ROOT);
+                case "transaction" -> signal.transactionType();
+                case "type" -> signal.source();
+                case "actor" -> signal.actorName().toLowerCase(Locale.ROOT);
+                default -> signal.transactionDate().toString();
+            };
+        }
+
+        public String groupLabel(TickerNotificationView signal) {
+            return switch (sort) {
+                case "company" -> signal.companyName();
+                case "transaction" -> signal.transactionTypeLabel();
+                case "type" -> signal.sourceLabel();
+                case "actor" -> signal.actorName();
+                default -> signal.transactionDate().format(
+                        DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH));
+            };
+        }
+
+        public String groupDetail(TickerNotificationView signal) {
+            return switch (sort) {
+                case "company" -> signal.symbol();
+                case "transaction" -> "Transaction direction";
+                case "type" -> "Activity signal source";
+                case "actor" -> signal.actorRole() != null
+                        ? signal.actorRole()
+                        : signal.companyName();
+                default -> null;
+            };
+        }
     }
 }

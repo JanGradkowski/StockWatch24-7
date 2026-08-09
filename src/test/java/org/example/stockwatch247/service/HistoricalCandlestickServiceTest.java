@@ -124,8 +124,10 @@ class HistoricalCandlestickServiceTest {
             assertThat(signal.status())
                     .isEqualTo(HistoricalCandlestickService.HistoricalOutcome.SUCCESS);
             assertThat(signal.directionalReturnPercent()).isEqualTo(5.0);
-            assertThat(signal.impactLabel()).isEqualTo("Potential gain");
-            assertThat(signal.lifecycle().terminal()).isTrue();
+                    assertThat(signal.impactLabel()).isEqualTo("Potential gain");
+                    assertThat(signal.lifecycle().terminal()).isTrue();
+                    assertThat(signal.trendLabel()).isEqualTo("Required downtrend");
+                    assertThat(signal.trendStartTimestamp()).isLessThan(signal.patternStartTimestamp());
         });
         assertThat(first.signals()).filteredOn(signal -> signal.signalTimestamp() == pendingTimestamp)
                 .singleElement()
@@ -139,6 +141,46 @@ class HistoricalCandlestickServiceTest {
         verify(marketDataService, times(2)).syncCandles(symbol, "1d", null);
         verify(candleRepository, times(2)).findBySymbolAndTimeIntervalOrderByTimestampDesc(
                 symbol, "1d", PageRequest.of(0, 268));
+    }
+
+    @Test
+    void fullHistoryScanUsesEveryCompletedStoredCandleWithoutTheListLimit() {
+        String symbol = "AAPL";
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        TechnicalIndicatorEnrichmentService enrichmentService = mock(TechnicalIndicatorEnrichmentService.class);
+        CandlePatternDetectionService detectionService = mock(CandlePatternDetectionService.class);
+        CandleCompletionService completionService = mock(CandleCompletionService.class);
+        List<Candle> candles = candles(symbol, "1d", 900);
+        when(marketDataService.syncCandles(symbol, "1d", null))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.CACHE, 0, null));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1d"))
+                .thenReturn(candles);
+        when(completionService.isComplete(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.eq(TimeInterval.DAILY))).thenReturn(true);
+        when(enrichmentService.enrich(candles, candles.size(), TimeInterval.DAILY))
+                .thenReturn(List.of());
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)).thenReturn(Optional.empty());
+        HistoricalCandlestickService service = new HistoricalCandlestickService(
+                candleRepository,
+                stockAssetRepository,
+                marketDataService,
+                enrichmentService,
+                detectionService,
+                completionService,
+                "Europe/Brussels",
+                3
+        );
+
+        HistoricalCandlestickService.HistoricalScan scan = service.scanAll(symbol, "1d");
+
+        assertThat(scan.lookbackCandles()).isEqualTo(900);
+        assertThat(scan.completedCandlesLoaded()).isEqualTo(900);
+        assertThat(scan.lookbackLabel()).contains("All 900 completed daily candles");
+        verify(candleRepository).findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1d");
     }
 
     @Test

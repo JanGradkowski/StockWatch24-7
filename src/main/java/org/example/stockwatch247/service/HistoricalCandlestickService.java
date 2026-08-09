@@ -76,11 +76,7 @@ public class HistoricalCandlestickService {
     public HistoricalScan scan(String symbol, String apiInterval, int lookbackCandles) {
         ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
         int validatedLookbackCandles = requireLookbackCandles(lookbackCandles);
-        MarketDataService.CandleSyncResult syncResult =
-                marketDataService.syncCandles(symbol, apiInterval, null);
-        if (!syncResult.successful()) {
-            throw new IllegalStateException("Candle refresh failed.");
-        }
+        synchronizeCandles(symbol, apiInterval);
 
         int analysisCandles = validatedLookbackCandles + PRE_WINDOW_CONTEXT_CANDLES;
         int requiredCandles = enrichmentService.requiredInputCandles(
@@ -123,6 +119,71 @@ public class HistoricalCandlestickService {
                 completedCandles.size(),
                 signals
         );
+    }
+
+    public HistoricalScan scanAll(String symbol, String apiInterval) {
+        ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
+        synchronizeCandles(symbol, apiInterval);
+        List<Candle> completedCandles = candleRepository
+                .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, apiInterval)
+                .stream()
+                .filter(this::hasCompletePriceData)
+                .filter(candle -> completionService.isComplete(candle.getTimestamp(), profile.interval()))
+                .sorted(Comparator.comparing(Candle::getTimestamp))
+                .toList();
+        String companyName = companyName(symbol);
+        List<HistoricalSignal> signals = analyze(
+                symbol,
+                companyName,
+                completedCandles,
+                profile,
+                completedCandles.size()
+        );
+        return new HistoricalScan(
+                symbol,
+                companyName,
+                apiInterval,
+                profile.intervalLabel(),
+                completedCandles.size(),
+                "All " + completedCandles.size() + " completed "
+                        + profile.intervalLabel().toLowerCase(Locale.ROOT) + " candles in the local archive",
+                profile.forwardCandles(),
+                profile.horizonLabel(),
+                profile.minimumMovePercent(),
+                completedCandles.size(),
+                signals
+        );
+    }
+
+    public HistoricalSignal findSignalInFullHistory(
+            String symbol,
+            String apiInterval,
+            long signalTimestamp,
+            CandlePattern pattern) {
+        if (pattern == null || pattern == CandlePattern.ANY || pattern.name().startsWith("ELLIOTT_")) {
+            throw new IllegalArgumentException("A historical candlestick pattern is required.");
+        }
+        return scanAll(symbol, apiInterval).signals().stream()
+                .filter(signal -> signal.signalTimestamp() == signalTimestamp)
+                .filter(signal -> signal.pattern() == pattern)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Historical candlestick signal is outside the completed candle archive."));
+    }
+
+    private void synchronizeCandles(String symbol, String apiInterval) {
+        MarketDataService.CandleSyncResult syncResult =
+                marketDataService.syncCandles(symbol, apiInterval, null);
+        if (!syncResult.successful()) {
+            throw new IllegalStateException("Candle refresh failed.");
+        }
+    }
+
+    private String companyName(String symbol) {
+        return stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
+                .map(StockAsset::getCompanyName)
+                .filter(name -> name != null && !name.isBlank())
+                .orElse(symbol);
     }
 
     public HistoricalSignal findSignal(String symbol,
@@ -337,6 +398,7 @@ public class HistoricalCandlestickService {
         OutcomeEvaluation evaluation = evaluateOutcome(signal, candles, signalIndex, profile);
         int formationCandles = CandlestickSignalLifecyclePolicy.patternCandleCount(signal.pattern());
         int formationStart = Math.max(0, signalIndex - formationCandles + 1);
+        int trendStart = Math.max(0, formationStart - SIGNAL_CHART_TREND_CANDLES);
         List<Candle> formation = candles.subList(formationStart, signalIndex + 1);
         double patternHigh = formation.stream().mapToDouble(Candle::getHighPrice).max().orElse(signal.closePrice());
         double patternLow = formation.stream().mapToDouble(Candle::getLowPrice).min().orElse(signal.closePrice());
@@ -394,6 +456,9 @@ public class HistoricalCandlestickService {
                 evaluation.bestDirectionalMovePercent(),
                 evaluation.worstDirectionalMovePercent(),
                 impactLabel(signal.tradeSignal(), evaluation.directionalReturnPercent()),
+                candles.get(trendStart).getTimestamp(),
+                candles.get(formationStart).getTimestamp(),
+                signal.tradeSignal() == TradeSignal.SELL ? "Required uptrend" : "Required downtrend",
                 lifecycle,
                 evidence
         );
@@ -801,6 +866,9 @@ public class HistoricalCandlestickService {
             Double bestDirectionalMovePercent,
             Double worstDirectionalMovePercent,
             String impactLabel,
+            long trendStartTimestamp,
+            long patternStartTimestamp,
+            String trendLabel,
             @JsonIgnore HistoricalLifecycleView lifecycle,
             @JsonIgnore List<EvidenceSection> evidence
     ) {

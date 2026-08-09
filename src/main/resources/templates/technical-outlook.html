@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="${symbol + ' — Full Technical Outlook'}">Full Technical Outlook</title>
+  <script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <meta name="_csrf" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:content="${_csrf.headerName}">
+</head>
+<body>
+<div class="bg-animation" aria-hidden="true">
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+</div>
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<main id="technicalOutlookPage"
+      class="page-container signal-detail-page technical-outlook-page"
+      th:attr="data-symbol=${symbol}">
+  <header class="signal-report-header technical-outlook-header">
+    <div class="signal-report-heading">
+      <div class="signal-report-eyebrow">Interval-aware technical workspace</div>
+      <h1><span th:text="${symbol}">AAPL</span> Full Technical Outlook</h1>
+      <p>Completed-candle evidence, transparent rules, recent signals, and market-relative strength in one synchronized report.</p>
+    </div>
+    <div class="signal-report-actions">
+      <a class="btn-secondary" th:href="@{/stock/{symbol}(symbol=${symbol})}">Back to stock</a>
+    </div>
+  </header>
+
+  <section class="technical-outlook-controlbar" aria-label="Technical outlook controls">
+    <div>
+      <span class="technical-outlook-control-label">Analysis interval</span>
+      <div class="signal-view-tabs outlook-interval-tabs" role="group" aria-label="Analysis interval">
+        <button type="button" class="signal-view-tab active" data-outlook-interval="1d">Daily</button>
+        <button type="button" class="signal-view-tab" data-outlook-interval="1wk">Weekly</button>
+        <button type="button" class="signal-view-tab" data-outlook-interval="1mo">Monthly</button>
+      </div>
+    </div>
+    <div id="outlookFreshness" class="technical-outlook-freshness" aria-live="polite">Loading completed candles…</div>
+  </section>
+
+  <nav class="signal-view-tabs signal-four-view-tabs technical-outlook-tabs"
+       role="tablist" aria-label="Technical outlook sections">
+    <button id="generalOutlookTab" type="button" class="signal-view-tab active" role="tab"
+            aria-selected="true" aria-controls="generalOutlookPanel" data-outlook-tab="general">General outlook</button>
+    <button id="scoreReportTab" type="button" class="signal-view-tab" role="tab"
+            aria-selected="false" aria-controls="scoreReportPanel" data-outlook-tab="score">Score report</button>
+    <button id="marketComparisonTab" type="button" class="signal-view-tab" role="tab"
+            aria-selected="false" aria-controls="marketComparisonPanel" data-outlook-tab="market">Market comparison</button>
+    <button id="virtualTradesTab" type="button" class="signal-view-tab" role="tab"
+            aria-selected="false" aria-controls="virtualTradesPanel" data-outlook-tab="trades">Virtual trades</button>
+  </nav>
+
+  <div id="outlookError" class="technical-outlook-error" role="alert" hidden></div>
+  <div id="outlookLoading" class="technical-outlook-loading" role="status">
+    <span class="technical-outlook-loader" aria-hidden="true"></span>
+    <span>Building the technical outlook…</span>
+  </div>
+
+  <section id="generalOutlookPanel" class="technical-outlook-panel" role="tabpanel"
+           aria-labelledby="generalOutlookTab" data-outlook-panel="general">
+    <section class="technical-outlook-summary" aria-labelledby="headlineOutlookTitle">
+      <div class="technical-outlook-summary-main">
+        <span class="signal-report-eyebrow">Category-balanced Technical Outlook</span>
+        <h2 id="headlineOutlookTitle">Awaiting completed candles</h2>
+        <p id="headlineOutlookScore">The score will appear when analysis is ready.</p>
+      </div>
+      <div class="technical-outlook-votes" aria-label="Headline votes">
+        <div class="technical-vote buy"><span>Buy</span><strong id="headlineBuy">—</strong></div>
+        <div class="technical-vote neutral"><span>Neutral</span><strong id="headlineNeutral">—</strong></div>
+        <div class="technical-vote sell"><span>Sell</span><strong id="headlineSell">—</strong></div>
+      </div>
+      <div id="categoryVoteGrid" class="technical-category-grid"></div>
+    </section>
+
+    <section class="virtual-trade-launch-card" aria-labelledby="virtualTradeLaunchTitle">
+      <div>
+        <span class="signal-report-eyebrow">Paper decision &middot; no real order</span>
+        <h2 id="virtualTradeLaunchTitle">Record a virtual trade at the current quote</h2>
+        <p>A buy tracks hypothetical return. A sell tracks avoided loss or missed upside and is never treated as a short position. The current technical state will be frozen as an immutable entry snapshot.</p>
+      </div>
+      <div class="virtual-trade-launch-actions">
+        <button type="button" class="btn-accent virtual-buy-button" data-create-virtual-trade="BUY">Virtual Buy</button>
+        <button type="button" class="btn-secondary virtual-sell-button" data-create-virtual-trade="SELL">Virtual Sell</button>
+      </div>
+    </section>
+
+    <section class="signal-chart-card technical-outlook-chart-card" aria-labelledby="outlookChartTitle">
+      <div class="signal-chart-card-heading technical-outlook-chart-heading">
+        <div>
+          <span class="signal-report-eyebrow">Synchronized completed candles</span>
+          <h2 id="outlookChartTitle">Price action and technical overlays</h2>
+        </div>
+        <div class="technical-overlay-controls" aria-label="Price overlays">
+          <label><input type="checkbox" data-price-overlay="ema" checked> Moving averages</label>
+          <label><input type="checkbox" data-price-overlay="bollinger" checked> Bollinger Bands</label>
+          <label><input type="checkbox" data-price-overlay="vwap" checked> VWAP</label>
+          <label><input type="checkbox" data-price-overlay="levels" checked> Support / resistance</label>
+          <label><input type="checkbox" data-price-overlay="elliott" checked> Elliott structures</label>
+        </div>
+      </div>
+      <div class="technical-chart-legend">
+        <span class="legend-fast">Fast EMA</span><span class="legend-slow">Slow EMA</span>
+        <span class="legend-long">Long SMA</span><span class="legend-band">Bollinger</span>
+        <span class="legend-vwap">VWAP</span><span class="legend-level">Support / resistance</span>
+      </div>
+      <div id="technicalOutlookPriceChart" class="technical-outlook-price-chart" aria-label="Candlestick technical outlook chart"></div>
+      <p class="technical-chart-note">Markers identify virtual trades, recent technical signals, RSI state changes, and followed congressional or insider activity. Elliott structures are available on weekly and monthly intervals.</p>
+    </section>
+  </section>
+
+  <section id="scoreReportPanel" class="technical-outlook-panel" role="tabpanel"
+           aria-labelledby="scoreReportTab" data-outlook-panel="score" hidden>
+    <section class="signal-evidence-section technical-raw-score" aria-labelledby="rawScoreTitle">
+      <div class="signal-section-heading">
+        <div><span class="signal-report-eyebrow">Fully auditable equal vote</span><h2 id="rawScoreTitle">Raw indicator vote</h2></div>
+        <strong id="rawScoreClassification">—</strong>
+      </div>
+      <div class="technical-raw-score-line">
+        <span id="rawVoteCounts">—</span><span id="rawNetScore">—</span>
+      </div>
+      <p>Every available input receives exactly +1, 0, or -1. Missing data is excluded rather than treated as neutral.</p>
+    </section>
+
+    <section class="signal-evidence-section" aria-labelledby="indicatorAnalysisTitle">
+      <div class="signal-section-heading">
+        <div><span class="signal-report-eyebrow">Value, meaning, rule, and state change</span><h2 id="indicatorAnalysisTitle">Indicator analysis</h2></div>
+      </div>
+      <div id="indicatorCardGrid" class="technical-indicator-grid"></div>
+    </section>
+
+    <section class="signal-lifecycle-section" aria-labelledby="recentTechnicalSignalsTitle">
+      <div class="signal-section-heading">
+        <div><span class="signal-report-eyebrow">Interval-aware recency</span><h2 id="recentTechnicalSignalsTitle">Recent technical signals</h2></div>
+        <span id="recentSignalCount">0 signals</span>
+      </div>
+      <p>Recent means the latest ten native candles for each detector interval—not one shared calendar window.</p>
+      <div id="recentTechnicalSignals" class="technical-recent-signal-grid"></div>
+    </section>
+
+    <details class="technical-methodology">
+      <summary>Scoring methodology and thresholds</summary>
+      <div id="technicalMethodologyCopy"></div>
+    </details>
+  </section>
+
+  <section id="marketComparisonPanel" class="technical-outlook-panel" role="tabpanel"
+           aria-labelledby="marketComparisonTab" data-outlook-panel="market" hidden>
+    <section class="signal-results-section technical-market-section" aria-labelledby="relativeStrengthTitle">
+      <div class="signal-section-heading">
+        <div><span class="signal-report-eyebrow">Stock versus its broad market</span><h2 id="relativeStrengthTitle">Relative strength</h2></div>
+        <span id="relativeTrendBadge" class="technical-relative-badge">Loading</span>
+      </div>
+      <p id="benchmarkDescription">Resolving the appropriate regional benchmark…</p>
+      <div id="marketHorizonGrid" class="technical-market-horizon-grid"></div>
+      <div class="technical-relative-chart-card">
+        <div><h3>Normalized stock / market ratio</h3><p>100 is the starting ratio for the visible history. A rising line means the stock is outperforming the benchmark.</p></div>
+        <div id="relativeStrengthChart" class="technical-relative-chart" aria-label="Normalized stock versus market ratio chart"></div>
+      </div>
+      <p class="technical-chart-note">Market-relative strength is one descriptive input in the category-balanced outlook. It is not a forecast.</p>
+    </section>
+  </section>
+
+  <section id="virtualTradesPanel" class="technical-outlook-panel" role="tabpanel"
+           aria-labelledby="virtualTradesTab" data-outlook-panel="trades" hidden>
+    <section class="signal-lifecycle-section technical-outlook-trades-section">
+      <div class="signal-section-heading">
+        <div><span class="signal-report-eyebrow">Paper decisions for this company</span><h2>Virtual trades</h2></div>
+        <a th:href="@{/virtual-trades}" class="btn-secondary">All virtual trades</a>
+      </div>
+      <p>Open decisions update as prices change. Closing one freezes the final quote and technical state.</p>
+      <div id="companyVirtualTrades" class="company-virtual-trades-grid"></div>
+    </section>
+  </section>
+</main>
+
+<dialog id="createVirtualTradeDialog" class="unsaved-alert-dialog virtual-trade-create-dialog" aria-labelledby="createVirtualTradeTitle">
+  <div class="unsaved-alert-dialog-content">
+    <span class="unsaved-alert-kicker">Paper trading &middot; no real order</span>
+    <h2 id="createVirtualTradeTitle">Create virtual trade</h2>
+    <p id="createVirtualTradeExplanation">The current quote and technical state will be captured when you confirm.</p>
+    <div class="virtual-trade-size-mode" role="group" aria-label="Virtual trade sizing">
+      <button type="button" class="active" data-virtual-size-mode="none">Percentage only</button>
+      <button type="button" data-virtual-size-mode="quantity">Quantity</button>
+      <button type="button" data-virtual-size-mode="notional">Virtual amount</button>
+    </div>
+    <label id="virtualTradeSizeField" class="virtual-trade-size-field" hidden>
+      <span id="virtualTradeSizeLabel">Quantity</span>
+      <input id="virtualTradeSizeInput" type="number" min="0.00000001" max="1000000000000" step="any" inputmode="decimal">
+      <small id="virtualTradeSizeHelp">Enter a positive virtual size.</small>
+    </label>
+    <div id="createVirtualTradeStatus" class="technical-outlook-freshness" role="status"></div>
+    <div class="unsaved-alert-dialog-actions">
+      <button id="cancelCreateVirtualTrade" type="button" class="btn-secondary">Cancel</button>
+      <button id="confirmCreateVirtualTrade" type="button" class="btn-accent">Create virtual trade</button>
+    </div>
+  </div>
+</dialog>
+
+<script th:attr="nonce=${cspNonce}">
+(() => {
+  const page = document.getElementById('technicalOutlookPage');
+  const symbol = page.dataset.symbol;
+  const encodedSymbol = encodeURIComponent(symbol);
+  let currentInterval = '1d';
+  let requestController = null;
+  let priceChart = null;
+  let ratioChart = null;
+  let miniCharts = [];
+  let priceSeriesByOverlay = new Map();
+  let lastOutlook = null;
+  let companyTrades = [];
+  let pendingTradeSide = 'BUY';
+  let virtualSizeMode = 'none';
+  let pendingTradeRequestId = null;
+
+  const colors = () => document.documentElement.dataset.theme === 'light'
+          ? { text: '#26322b', grid: 'rgba(38,50,43,.09)', border: 'rgba(38,50,43,.18)',
+              up: '#078568', down: '#d23f59', fast: '#7b5cc7', slow: '#d68b24', long: '#477a12',
+              band: '#5473d3', vwap: '#008e9b', level: '#9b6e35', line: '#5b50c9' }
+          : { text: '#e8ede9', grid: 'rgba(232,237,233,.07)', border: 'rgba(232,237,233,.15)',
+              up: '#64e8bd', down: '#ff647c', fast: '#b696ff', slow: '#ffc261', long: '#b7f34a',
+              band: '#7598ff', vwap: '#47d4df', level: '#e2aa65', line: '#9a8cff' };
+
+  function chartOptions(height) {
+    const palette = colors();
+    return {
+      height,
+      layout: { background: { type: 'solid', color: 'transparent' }, textColor: palette.text },
+      grid: { vertLines: { color: palette.grid }, horzLines: { color: palette.grid } },
+      rightPriceScale: { borderColor: palette.border },
+      timeScale: { borderColor: palette.border, timeVisible: false, rightOffset: 4 },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      handleScroll: true,
+      handleScale: true
+    };
+  }
+
+  function chartDate(timestamp) {
+    return new Date(Number(timestamp) * 1000).toISOString().slice(0, 10);
+  }
+
+  function formatNumber(value, digits = 2) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric.toLocaleString(undefined, { maximumFractionDigits: digits }) : '—';
+  }
+
+  function signed(value, suffix = '') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? `${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}${suffix}` : '—';
+  }
+
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function clearCharts() {
+    if (priceChart) priceChart.remove();
+    if (ratioChart) ratioChart.remove();
+    miniCharts.forEach(chart => chart.remove());
+    priceChart = null;
+    ratioChart = null;
+    miniCharts = [];
+    priceSeriesByOverlay = new Map();
+  }
+
+  async function loadOutlook(interval) {
+    currentInterval = interval;
+    if (requestController) requestController.abort();
+    requestController = new AbortController();
+    document.getElementById('outlookLoading').hidden = false;
+    document.getElementById('outlookError').hidden = true;
+    document.querySelectorAll('[data-outlook-interval]').forEach(button =>
+            button.classList.toggle('active', button.dataset.outlookInterval === interval));
+    try {
+      const response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook?interval=${encodeURIComponent(interval)}`,
+              { signal: requestController.signal });
+      if (!response.ok) throw new Error('The technical outlook could not be loaded.');
+      const outlook = await response.json();
+      if (!outlook.available) throw new Error('No completed candles are available for this interval yet.');
+      try {
+        const tradesResponse = await fetch(`/api/virtual-trades?symbol=${encodedSymbol}`, { signal: requestController.signal });
+        companyTrades = tradesResponse.ok ? await tradesResponse.json() : [];
+      } catch (tradeError) {
+        if (tradeError.name === 'AbortError') throw tradeError;
+        companyTrades = [];
+      }
+      lastOutlook = outlook;
+      render(outlook);
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      const message = document.getElementById('outlookError');
+      message.textContent = error.message || 'The technical outlook is temporarily unavailable.';
+      message.hidden = false;
+      clearCharts();
+    } finally {
+      document.getElementById('outlookLoading').hidden = true;
+    }
+  }
+
+  function render(outlook) {
+    clearCharts();
+    document.getElementById('outlookFreshness').textContent = `${outlook.intervalLabel} · ${outlook.freshness}`;
+    renderSummary(outlook);
+    renderPriceChart(outlook);
+    renderScoreReport(outlook);
+    renderMarketComparison(outlook.marketComparison);
+    renderCompanyTrades();
+  }
+
+  function renderSummary(outlook) {
+    const score = outlook.headlineScore;
+    document.getElementById('headlineOutlookTitle').textContent = score.classification;
+    document.getElementById('headlineOutlookScore').textContent =
+            `${score.buy} buy · ${score.neutral} neutral · ${score.sell} sell · Net technical score: ${score.net > 0 ? '+' : ''}${score.net} / ${score.denominator}`;
+    document.getElementById('headlineBuy').textContent = score.buy;
+    document.getElementById('headlineNeutral').textContent = score.neutral;
+    document.getElementById('headlineSell').textContent = score.sell;
+    const grid = document.getElementById('categoryVoteGrid');
+    grid.replaceChildren();
+    outlook.categories.forEach(category => {
+      const card = element('article', `technical-category-card ${category.classification.toLowerCase()}`);
+      card.append(element('span', '', category.label));
+      card.append(element('strong', '', category.classification));
+      card.append(element('small', '', category.inputs.join(' · ')));
+      grid.append(card);
+    });
+  }
+
+  function lineData(candles, field) {
+    return candles.filter(candle => Number.isFinite(Number(candle[field])))
+            .map(candle => ({ time: chartDate(candle.timestamp), value: Number(candle[field]) }));
+  }
+
+  function addOverlay(name, options, data) {
+    if (!data.length) return null;
+    const series = priceChart.addLineSeries({
+      ...options, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
+    });
+    series.setData(data);
+    priceSeriesByOverlay.set(name, [...(priceSeriesByOverlay.get(name) || []), series]);
+    return series;
+  }
+
+  function rollingLevels(candles, mode) {
+    return candles.map((candle, index) => {
+      if (index < 19) return null;
+      const windowValues = candles.slice(index - 19, index + 1);
+      const value = mode === 'support'
+              ? Math.min(...windowValues.map(item => Number(item.low)))
+              : Math.max(...windowValues.map(item => Number(item.high)));
+      return { time: chartDate(candle.timestamp), value };
+    }).filter(Boolean);
+  }
+
+  function renderPriceChart(outlook) {
+    const palette = colors();
+    const container = document.getElementById('technicalOutlookPriceChart');
+    priceChart = LightweightCharts.createChart(container, chartOptions(Math.max(520, Math.min(680, window.innerHeight * .68))));
+    const candles = outlook.candles;
+    const candleSeries = priceChart.addCandlestickSeries({
+      upColor: palette.up, downColor: palette.down, wickUpColor: palette.up, wickDownColor: palette.down,
+      borderVisible: false
+    });
+    candleSeries.setData(candles.map(candle => ({
+      time: chartDate(candle.timestamp), open: candle.open, high: candle.high, low: candle.low, close: candle.close
+    })));
+    addOverlay('ema', { color: palette.fast, lineWidth: 2, title: 'Fast EMA' }, lineData(candles, 'fastEma'));
+    addOverlay('ema', { color: palette.slow, lineWidth: 2, title: 'Slow EMA' }, lineData(candles, 'slowEma'));
+    addOverlay('ema', { color: palette.long, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: 'Long SMA' }, lineData(candles, 'longSma'));
+    addOverlay('bollinger', { color: palette.band, lineWidth: 1 }, lineData(candles, 'bollingerLower'));
+    addOverlay('bollinger', { color: palette.band, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted }, lineData(candles, 'bollingerMiddle'));
+    addOverlay('bollinger', { color: palette.band, lineWidth: 1 }, lineData(candles, 'bollingerUpper'));
+    addOverlay('vwap', { color: palette.vwap, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed }, lineData(candles, 'vwap'));
+    addOverlay('levels', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'support'));
+    addOverlay('levels', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'resistance'));
+
+    const markers = signalMarkers(outlook).concat(activityMarkers(outlook), indicatorEventMarkers(outlook), virtualTradeMarkers(outlook));
+    markers.sort((left, right) => String(left.time).localeCompare(String(right.time)));
+    candleSeries.setMarkers(markers);
+    priceChart.timeScale().fitContent();
+    renderElliottStructures(outlook, priceChart);
+    applyOverlayVisibility();
+  }
+
+  function signalMarkers(outlook) {
+    return outlook.recentSignals
+            .filter(signal => signal.interval === intervalEnum(currentInterval))
+            .map(signal => ({
+              time: chartDate(signal.timestamp),
+              position: signal.direction === 'BUY' ? 'belowBar' : 'aboveBar',
+              color: signal.direction === 'BUY' ? colors().up : colors().down,
+              shape: signal.direction === 'BUY' ? 'arrowUp' : 'arrowDown',
+              text: `${signal.family === 'ELLIOTT_WAVE' ? 'EW' : 'C'} ${signal.direction}`
+            }));
+  }
+
+  function activityMarkers(outlook) {
+    const candleDates = outlook.candles.map(candle => chartDate(candle.timestamp));
+    return outlook.activityMarkers.map(marker => {
+      const matchedDate = candleDates.find(date => date >= marker.date) || candleDates[candleDates.length - 1];
+      return {
+      time: matchedDate,
+      position: marker.direction === 'BUY' ? 'belowBar' : 'aboveBar',
+      color: marker.source === 'CONGRESSIONAL' ? '#b696ff' : '#47d4df',
+      shape: 'circle', text: marker.source === 'CONGRESSIONAL' ? 'Congress' : 'Insider'
+      };
+    }).filter(marker => marker.time);
+  }
+
+  function indicatorEventMarkers(outlook) {
+    const rsi = outlook.indicators.find(indicator => indicator.key === 'rsi');
+    if (!rsi) return [];
+    const points = rsi.series;
+    return points.flatMap((point, index) => {
+      if (index === 0 || point.vote === 0 || point.vote === points[index - 1].vote) return [];
+      return [{
+        time: chartDate(point.timestamp), position: point.vote > 0 ? 'belowBar' : 'aboveBar',
+        color: point.vote > 0 ? colors().up : colors().down, shape: 'square',
+        text: point.vote > 0 ? 'RSI oversold' : 'RSI overbought'
+      }];
+    });
+  }
+
+  function virtualTradeMarkers(outlook) {
+    const candleDates = outlook.candles.map(candle => chartDate(candle.timestamp));
+    const nearest = timestamp => candleDates.find(date => date >= chartDate(timestamp)) || candleDates[candleDates.length - 1];
+    return companyTrades.flatMap(trade => {
+      const markers = [{
+        time: nearest(trade.entryQuoteTimestamp),
+        position: trade.side === 'BUY' ? 'belowBar' : 'aboveBar',
+        color: trade.side === 'BUY' ? colors().up : colors().down,
+        shape: trade.side === 'BUY' ? 'arrowUp' : 'arrowDown',
+        text: trade.side === 'BUY' ? 'Virtual Buy' : 'Virtual Sell'
+      }];
+      if (trade.status === 'CLOSED' && trade.evaluationAt) {
+        markers.push({ time: nearest(Date.parse(trade.evaluationAt) / 1000), position: 'aboveBar',
+          color: colors().line, shape: 'circle', text: 'Trade closed' });
+      }
+      return markers;
+    }).filter(marker => marker.time);
+  }
+
+  async function renderElliottStructures(outlook, chart) {
+    if (currentInterval === '1d' || !outlook.candles.length) return;
+    try {
+      const from = outlook.candles[0].timestamp;
+      const response = await fetch(`/api/stocks/${encodedSymbol}/elliott-waves/history?interval=${encodeURIComponent(currentInterval)}&from=${encodeURIComponent(from)}`);
+      if (!response.ok || currentInterval !== outlook.interval) return;
+      const history = await response.json();
+      const palette = colors();
+      (history.structures || []).slice(-8).forEach(structure => {
+        const series = chart.addLineSeries({
+          color: String(structure.direction).toUpperCase().includes('BULL') ? palette.up : palette.down,
+          lineWidth: 3, priceLineVisible: false, lastValueVisible: false,
+          crosshairMarkerVisible: true
+        });
+        series.setData((structure.points || []).map(point => ({ time: chartDate(point.timestamp), value: point.price })));
+        priceSeriesByOverlay.set('elliott', [...(priceSeriesByOverlay.get('elliott') || []), series]);
+      });
+      applyOverlayVisibility();
+    } catch (error) {
+      console.warn('Elliott structures unavailable', error);
+    }
+  }
+
+  function applyOverlayVisibility() {
+    document.querySelectorAll('[data-price-overlay]').forEach(input => {
+      (priceSeriesByOverlay.get(input.dataset.priceOverlay) || []).forEach(series =>
+              series.applyOptions({ visible: input.checked }));
+    });
+  }
+
+  function intervalEnum(interval) {
+    return interval === '1wk' ? 'WEEKLY' : interval === '1mo' ? 'MONTHLY' : 'DAILY';
+  }
+
+  function renderScoreReport(outlook) {
+    const raw = outlook.rawScore;
+    document.getElementById('rawScoreClassification').textContent = raw.classification;
+    document.getElementById('rawVoteCounts').textContent = `${raw.buy} buy · ${raw.neutral} neutral · ${raw.sell} sell`;
+    document.getElementById('rawNetScore').textContent = `Net ${raw.net > 0 ? '+' : ''}${raw.net} / ${raw.denominator}`;
+    renderIndicators(outlook.indicators);
+    renderRecentSignals(outlook.recentSignals);
+    const method = document.getElementById('technicalMethodologyCopy');
+    method.replaceChildren();
+    [outlook.methodology.rawVoteRule, outlook.methodology.categoryRule,
+      outlook.methodology.thresholds, outlook.methodology.disclaimer]
+            .forEach(copy => method.append(element('p', '', copy)));
+  }
+
+  function renderIndicators(indicators) {
+    const grid = document.getElementById('indicatorCardGrid');
+    grid.replaceChildren();
+    indicators.forEach((indicator, index) => {
+      const card = element('article', `technical-indicator-card ${indicator.classification.toLowerCase()}`);
+      const header = element('div', 'technical-indicator-card-head');
+      const titleWrap = element('div');
+      titleWrap.append(element('span', '', indicator.category.replaceAll('_', ' ')));
+      titleWrap.append(element('h3', '', indicator.label));
+      header.append(titleWrap, element('strong', `indicator-vote ${indicator.classification.toLowerCase()}`, indicator.classification));
+      const value = element('div', 'technical-indicator-value', indicator.currentValue === null
+              ? 'Unavailable' : `${formatNumber(indicator.currentValue)} ${indicator.unit}`);
+      const explanation = element('p', 'technical-indicator-explanation', indicator.explanation);
+      const rule = element('p', 'technical-indicator-rule', `Rule: ${indicator.rule}`);
+      const change = indicator.stateChangedAt
+              ? `Latest state began ${indicator.candlesSinceStateChange} completed candle${indicator.candlesSinceStateChange === 1 ? '' : 's'} ago · ${chartDate(indicator.stateChangedAt)}`
+              : 'State-change candle unavailable';
+      const state = element('p', 'technical-indicator-state', change);
+      const chartContainer = element('div', 'technical-indicator-mini-chart');
+      chartContainer.id = `indicatorMiniChart${index}`;
+      const expand = element('button', 'technical-indicator-expand', 'Expand chart');
+      expand.type = 'button';
+      expand.addEventListener('click', () => {
+        const expanded = card.classList.toggle('expanded');
+        expand.textContent = expanded ? 'Collapse chart' : 'Expand chart';
+        window.setTimeout(() => {
+          const chart = miniCharts[index];
+          if (chart) chart.applyOptions({ width: chartContainer.clientWidth, height: expanded ? 300 : 150 });
+        }, 0);
+      });
+      card.append(header, value, explanation, rule, state, chartContainer, expand);
+      grid.append(card);
+      renderIndicatorMiniChart(indicator, chartContainer, index);
+    });
+  }
+
+  function renderIndicatorMiniChart(indicator, container, index) {
+    const chart = LightweightCharts.createChart(container, {
+      ...chartOptions(150),
+      width: Math.max(300, Math.min(660, (page.clientWidth - 100) / 2)),
+      leftPriceScale: { visible: false }, rightPriceScale: { visible: true, borderVisible: false },
+      timeScale: { visible: false, borderVisible: false },
+      grid: { vertLines: { visible: false }, horzLines: { color: colors().grid } },
+      handleScroll: false, handleScale: false
+    });
+    const series = chart.addLineSeries({
+      color: indicator.vote > 0 ? colors().up : indicator.vote < 0 ? colors().down : colors().line,
+      lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: true
+    });
+    series.setData(indicator.series.filter(point => point.value !== null)
+            .map(point => ({ time: chartDate(point.timestamp), value: point.value })));
+    (indicator.referenceLines || []).forEach(reference => series.createPriceLine({
+      price: reference, color: colors().border, lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true
+    }));
+    chart.timeScale().fitContent();
+    miniCharts[index] = chart;
+  }
+
+  function renderRecentSignals(signals) {
+    document.getElementById('recentSignalCount').textContent = `${signals.length} signal${signals.length === 1 ? '' : 's'}`;
+    const grid = document.getElementById('recentTechnicalSignals');
+    grid.replaceChildren();
+    if (!signals.length) {
+      grid.append(element('p', 'technical-empty-state', 'No owned candlestick or Elliott signal was detected in the latest ten native candles of its interval.'));
+      return;
+    }
+    signals.forEach(signal => {
+      const card = element('a', `technical-recent-signal ${signal.direction.toLowerCase()}`);
+      card.href = signal.detailUrl;
+      const meta = element('div', 'technical-recent-signal-meta');
+      meta.append(element('span', '', signal.family === 'ELLIOTT_WAVE' ? 'Elliott Wave' : 'Candlestick'));
+      meta.append(element('span', '', signal.intervalLabel));
+      meta.append(element('span', '', chartDate(signal.timestamp)));
+      const heading = element('div', 'technical-recent-signal-heading');
+      heading.append(element('h3', '', signal.label), element('strong', '', signal.direction));
+      const details = element('p', '', `${signal.lifecycle} · ${signal.score === null ? signal.strength : `${signal.score}/100`} · ${signal.observedResult}`);
+      card.append(meta, heading, details, element('span', 'technical-recent-signal-open', 'Open signal details →'));
+      grid.append(card);
+    });
+  }
+
+  function renderMarketComparison(market) {
+    const badge = document.getElementById('relativeTrendBadge');
+    const description = document.getElementById('benchmarkDescription');
+    const grid = document.getElementById('marketHorizonGrid');
+    grid.replaceChildren();
+    if (!market.available) {
+      badge.textContent = 'Data unavailable';
+      badge.dataset.trend = 'unavailable';
+      description.textContent = `${market.benchmarkName} (${market.benchmarkSymbol}) is the selected broad-market benchmark, but there is not enough aligned daily history yet.`;
+      document.getElementById('relativeStrengthChart').replaceChildren();
+      return;
+    }
+    badge.textContent = `${market.relativeTrend.toLowerCase()} · ${signed(market.ratioChange, '%')}`;
+    badge.dataset.trend = market.relativeTrend.toLowerCase();
+    description.textContent = `${symbol} is compared with ${market.benchmarkName} (${market.benchmarkSymbol}). Excess return is the stock return minus benchmark return.`;
+    market.horizons.forEach(horizon => {
+      const card = element('article', 'technical-market-horizon');
+      card.append(element('span', '', horizon.label));
+      if (!horizon.available) {
+        card.append(element('strong', '', 'Insufficient history'));
+      } else {
+        card.append(element('strong', Number(horizon.excessReturn) >= 0 ? 'positive' : 'negative', `${signed(horizon.excessReturn, '%')} excess`));
+        card.append(element('small', '', `${symbol} ${signed(horizon.stockReturn, '%')} · Market ${signed(horizon.benchmarkReturn, '%')}`));
+      }
+      grid.append(card);
+    });
+    const container = document.getElementById('relativeStrengthChart');
+    ratioChart = LightweightCharts.createChart(container, {
+      ...chartOptions(380),
+      width: Math.max(320, page.clientWidth - 80)
+    });
+    const line = ratioChart.addLineSeries({ color: colors().line, lineWidth: 3, priceLineVisible: false });
+    line.setData(market.ratioSeries.map(point => ({ time: chartDate(point.timestamp), value: point.value })));
+    line.createPriceLine({ price: 100, color: colors().border, lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed, title: 'Start 100' });
+    ratioChart.timeScale().fitContent();
+  }
+
+  function renderCompanyTrades() {
+    const grid = document.getElementById('companyVirtualTrades');
+    grid.replaceChildren();
+    if (!companyTrades.length) {
+      grid.append(element('p', 'technical-empty-state', `No virtual trades have been recorded for ${symbol} yet.`));
+      return;
+    }
+    companyTrades.forEach(trade => {
+      const card = element('a', `company-virtual-trade-card ${trade.side.toLowerCase()}`);
+      card.href = trade.detailUrl;
+      const heading = element('div', 'company-virtual-trade-heading');
+      heading.append(element('strong', '', trade.sideLabel), element('span', `virtual-trade-status-pill ${trade.status.toLowerCase()}`, trade.statusLabel));
+      const price = element('p', '', `Entry ${formatNumber(trade.entryPrice, 4)} ${trade.currency} · ${trade.intervalLabel}`);
+      const outcome = element('div', `company-virtual-trade-outcome ${trade.resultPercent >= 0 ? 'positive' : 'negative'}`);
+      outcome.append(element('strong', '', `${trade.resultPercent >= 0 ? '+' : ''}${Number(trade.resultPercent).toFixed(2)}%`), element('span', '', trade.outcomeLabel));
+      if (trade.monetaryResult !== null) outcome.append(element('small', '', `${Number(trade.monetaryResult) >= 0 ? '+' : ''}${formatNumber(trade.monetaryResult, 2)} ${trade.currency}`));
+      card.append(heading, price, outcome, element('span', 'technical-recent-signal-open', 'Open virtual trade →'));
+      grid.append(card);
+    });
+  }
+
+  function activateTab(name) {
+    document.querySelectorAll('[data-outlook-tab]').forEach(button => {
+      const active = button.dataset.outlookTab === name;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    document.querySelectorAll('[data-outlook-panel]').forEach(panel => panel.hidden = panel.dataset.outlookPanel !== name);
+    window.setTimeout(() => {
+      if (name === 'general' && priceChart) {
+        priceChart.applyOptions({ width: document.getElementById('technicalOutlookPriceChart').clientWidth });
+      }
+      if (name === 'market' && ratioChart) {
+        ratioChart.applyOptions({ width: document.getElementById('relativeStrengthChart').clientWidth });
+        ratioChart.timeScale().fitContent();
+      }
+      if (name === 'score') {
+        miniCharts.forEach((chart, index) => {
+          const container = document.getElementById(`indicatorMiniChart${index}`);
+          if (container) {
+            chart.applyOptions({ width: container.clientWidth });
+            chart.timeScale().fitContent();
+          }
+        });
+      }
+    }, 0);
+  }
+
+  const createDialog = document.getElementById('createVirtualTradeDialog');
+  document.querySelectorAll('[data-create-virtual-trade]').forEach(button => button.addEventListener('click', () => {
+    pendingTradeSide = button.dataset.createVirtualTrade;
+    pendingTradeRequestId = crypto.randomUUID();
+    document.getElementById('createVirtualTradeTitle').textContent = pendingTradeSide === 'BUY' ? `Virtual Buy ${symbol}` : `Virtual Sell ${symbol}`;
+    document.getElementById('createVirtualTradeExplanation').textContent = pendingTradeSide === 'BUY'
+            ? 'This tracks the return from hypothetically buying at the captured current quote.'
+            : 'This tracks avoided loss if price falls and missed upside if it rises. It is not a short sale.';
+    document.getElementById('createVirtualTradeStatus').textContent = `${lastOutlook?.intervalLabel || 'Daily'} technical state will be frozen at entry.`;
+    document.getElementById('virtualTradeSizeInput').value = '';
+    createDialog.showModal();
+  }));
+  document.getElementById('cancelCreateVirtualTrade').addEventListener('click', () => createDialog.close());
+  document.querySelectorAll('[data-virtual-size-mode]').forEach(button => button.addEventListener('click', () => {
+    virtualSizeMode = button.dataset.virtualSizeMode;
+    document.querySelectorAll('[data-virtual-size-mode]').forEach(option => option.classList.toggle('active', option === button));
+    const field = document.getElementById('virtualTradeSizeField');
+    field.hidden = virtualSizeMode === 'none';
+    document.getElementById('virtualTradeSizeLabel').textContent = virtualSizeMode === 'quantity' ? 'Number of shares' : 'Virtual investment amount';
+    document.getElementById('virtualTradeSizeHelp').textContent = virtualSizeMode === 'quantity'
+            ? 'The virtual amount will be calculated from the captured price.'
+            : 'The virtual share quantity will be calculated from the captured price.';
+  }));
+  document.getElementById('confirmCreateVirtualTrade').addEventListener('click', async event => {
+    const size = document.getElementById('virtualTradeSizeInput').value;
+    if (virtualSizeMode !== 'none' && (!size || Number(size) <= 0)) {
+      document.getElementById('createVirtualTradeStatus').textContent = 'Enter a positive virtual size.';
+      return;
+    }
+    event.currentTarget.disabled = true;
+    event.currentTarget.textContent = 'Capturing quote…';
+    const body = { side: pendingTradeSide, interval: currentInterval,
+      quantity: virtualSizeMode === 'quantity' ? size : null,
+      notionalValue: virtualSizeMode === 'notional' ? size : null,
+      clientRequestId: pendingTradeRequestId };
+    try {
+      const response = await fetch(`/api/virtual-trades/${encodedSymbol}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json',
+          [document.querySelector('meta[name="_csrf_header"]').content]: document.querySelector('meta[name="_csrf"]').content },
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || 'The virtual trade could not be created.');
+      }
+      const trade = await response.json();
+      window.location.assign(trade.detailUrl);
+    } catch (error) {
+      document.getElementById('createVirtualTradeStatus').textContent = error.message;
+      event.currentTarget.disabled = false;
+      event.currentTarget.textContent = 'Create virtual trade';
+    }
+  });
+
+  document.querySelectorAll('[data-outlook-tab]').forEach(button =>
+          button.addEventListener('click', () => activateTab(button.dataset.outlookTab)));
+  document.querySelectorAll('[data-outlook-interval]').forEach(button =>
+          button.addEventListener('click', () => loadOutlook(button.dataset.outlookInterval)));
+  document.querySelectorAll('[data-price-overlay]').forEach(input =>
+          input.addEventListener('change', applyOverlayVisibility));
+  window.addEventListener('resize', () => {
+    if (priceChart) priceChart.applyOptions({ width: document.getElementById('technicalOutlookPriceChart').clientWidth });
+    if (ratioChart) ratioChart.applyOptions({ width: document.getElementById('relativeStrengthChart').clientWidth });
+    miniCharts.forEach((chart, index) => {
+      const container = document.getElementById(`indicatorMiniChart${index}`);
+      if (container) chart.applyOptions({ width: container.clientWidth });
+    });
+  });
+  document.addEventListener('stockwatch:themechange', () => lastOutlook && render(lastOutlook));
+  loadOutlook('1d');
+})();
+</script>
+</body>
+</html>

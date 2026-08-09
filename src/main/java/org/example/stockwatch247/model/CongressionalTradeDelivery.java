@@ -55,6 +55,9 @@ public class CongressionalTradeDelivery {
     @Column(name = "sent_at")
     private Instant sentAt;
 
+    @Column(name = "read_at")
+    private Instant readAt;
+
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 
@@ -98,6 +101,14 @@ public class CongressionalTradeDelivery {
 
     public Instant getSentAt() {
         return sentAt;
+    }
+
+    public Instant getReadAt() {
+        return readAt;
+    }
+
+    public boolean isRead() {
+        return readAt != null;
     }
 
     public String getLastError() {
@@ -146,6 +157,16 @@ public class CongressionalTradeDelivery {
 
     public void setSentAt(Instant sentAt) {
         this.sentAt = sentAt;
+    }
+
+    public void setReadAt(Instant readAt) {
+        this.readAt = readAt;
+    }
+
+    public void markRead(Instant readAt) {
+        if (this.readAt == null) {
+            this.readAt = readAt;
+        }
     }
 
     public void setLastError(String lastError) {

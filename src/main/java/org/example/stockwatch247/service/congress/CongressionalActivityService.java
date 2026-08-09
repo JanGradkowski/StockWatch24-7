@@ -28,6 +28,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -165,13 +167,16 @@ public class CongressionalActivityService {
             }
         }
 
-        List<TradeView> trades = tradeRepository
+        List<CongressionalTrade> storedTrades = tradeRepository
                 .findByStockAssetAndTransactionDateGreaterThanEqualOrderByDisclosureDateDescTransactionDateDescIdDesc(
                         asset,
                         windowStart)
                 .stream()
                 .filter(trade -> !trade.getTransactionDate().isAfter(windowEnd))
-                .map(this::toTradeView)
+                .toList();
+        Map<Long, Long> deliveryIds = ownedDeliveryIds(user, storedTrades);
+        List<TradeView> trades = storedTrades.stream()
+                .map(trade -> toTradeView(trade, deliveryIds.get(trade.getId())))
                 .toList();
         CongressionalTradeSubscription subscription = subscriptionRepository
                 .findByUserAndStockAsset(user, asset)
@@ -212,13 +217,40 @@ public class CongressionalActivityService {
     @Transactional(readOnly = true)
     public List<DashboardActivityView> getLatestDashboardActivity(User user, int limit) {
         LocalDate earliest = LocalDate.now(ZoneOffset.UTC).minusDays(historyDays - 1L);
-        return deliveryRepository.findLatestForUser(
+        return deliveryRepository.findLatestUnreadForUser(
                         user,
                         earliest,
                         PageRequest.of(0, Math.max(1, Math.min(limit, 50))))
                 .stream()
                 .map(this::toDashboardView)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DashboardActivityView> getAllActivity(User user) {
+        return deliveryRepository.findAllForUser(user)
+                .stream()
+                .map(this::toDashboardView)
+                .toList();
+    }
+
+    @Transactional
+    public void markActivityRead(User user, Long deliveryId) {
+        CongressionalTradeDelivery delivery = deliveryRepository
+                .findOwnedByIdAndUser(deliveryId, user)
+                .orElseThrow(() -> new IllegalArgumentException("Activity notification not found."));
+        delivery.markRead(Instant.now());
+    }
+
+    @Transactional(readOnly = true)
+    public long unreadActivityCount(User user) {
+        LocalDate earliest = LocalDate.now(ZoneOffset.UTC).minusDays(historyDays - 1L);
+        return deliveryRepository.countUnreadForUser(user, earliest);
+    }
+
+    @Transactional
+    public int markAllActivityRead(User user) {
+        return deliveryRepository.markAllUnreadForUser(user, Instant.now());
     }
 
     @Transactional(readOnly = true)
@@ -256,9 +288,24 @@ public class CongressionalActivityService {
         return asset;
     }
 
-    private TradeView toTradeView(CongressionalTrade trade) {
+    private Map<Long, Long> ownedDeliveryIds(User user, List<CongressionalTrade> trades) {
+        if (trades.isEmpty()) {
+            return Map.of();
+        }
+        return deliveryRepository.findOwnedByTradeIds(
+                        user,
+                        trades.stream().map(CongressionalTrade::getId).toList())
+                .stream()
+                .collect(Collectors.toMap(
+                        delivery -> delivery.getTrade().getId(),
+                        CongressionalTradeDelivery::getId,
+                        (first, ignored) -> first));
+    }
+
+    private TradeView toTradeView(CongressionalTrade trade, Long notificationId) {
         return new TradeView(
                 trade.getId(),
+                notificationId,
                 trade.getMemberName(),
                 trade.getChamber(),
                 trade.getTickerSymbol(),
@@ -286,7 +333,8 @@ public class CongressionalActivityService {
                 trade.getDisclosureDate(),
                 delivery.getCreatedAt(),
                 deliveryStatusLabel(delivery.getStatus()),
-                trade.getSourceUrl());
+                trade.getSourceUrl(),
+                delivery.getReadAt());
     }
 
     private String deliveryStatusLabel(CongressionalDeliveryStatus status) {
@@ -372,6 +420,7 @@ public class CongressionalActivityService {
 
     public record TradeView(
             long id,
+            Long notificationId,
             String memberName,
             String chamber,
             String ticker,
@@ -400,7 +449,11 @@ public class CongressionalActivityService {
             LocalDate disclosureDate,
             Instant detectedAt,
             String deliveryStatus,
-            String sourceUrl) {
+            String sourceUrl,
+            Instant readAt) {
+        public boolean hasBeenRead() {
+            return readAt != null;
+        }
     }
 
     public record SourceAttribution(String name, String url, String disclaimer) {

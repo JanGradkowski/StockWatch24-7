@@ -133,7 +133,7 @@ class CongressionalTradeStoreIntegrationTest {
                 newTradeId);
         assertThat(deliveryCount).isEqualTo(1);
         String expectedTicker = asset.getTickerSymbol();
-        assertThat(deliveryRepository.findLatestForUser(
+        assertThat(deliveryRepository.findLatestUnreadForUser(
                 user,
                 today.minusDays(364),
                 PageRequest.of(0, 10)))

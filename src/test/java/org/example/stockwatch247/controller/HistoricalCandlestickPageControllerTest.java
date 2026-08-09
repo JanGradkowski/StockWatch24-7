@@ -53,6 +53,7 @@ class HistoricalCandlestickPageControllerTest {
                 "1d",
                 1_750_000_000L,
                 "bullish_engulfing",
+                false,
                 144,
                 principal,
                 model,
@@ -76,5 +77,35 @@ class HistoricalCandlestickPageControllerTest {
         );
         verify(service).chartForSignal(signal);
         verify(service).resultsForSignal(signal, chart);
+    }
+
+    @Test
+    void fullHistoryDetailReturnsToTheGraphicalOverlay() {
+        UserRepository userRepository = mock(UserRepository.class);
+        HistoricalCandlestickService service = mock(HistoricalCandlestickService.class);
+        HistoricalCandlestickService.HistoricalSignal signal =
+                mock(HistoricalCandlestickService.HistoricalSignal.class);
+        HistoricalCandlestickService.HistoricalSignalChart chart =
+                mock(HistoricalCandlestickService.HistoricalSignalChart.class);
+        HistoricalCandlestickService.HistoricalSignalResults results =
+                mock(HistoricalCandlestickService.HistoricalSignalResults.class);
+        when(service.findSignalInFullHistory(
+                "AAPL", "1wk", 1_750_000_000L, CandlePattern.BEARISH_ENGULFING))
+                .thenReturn(signal);
+        when(service.chartForSignal(signal)).thenReturn(chart);
+        when(service.resultsForSignal(signal, chart)).thenReturn(results);
+        HistoricalCandlestickPageController controller =
+                new HistoricalCandlestickPageController(userRepository, service);
+        ConcurrentModel model = new ConcurrentModel();
+
+        String view = controller.historicalCandlestickDetail(
+                "AAPL", "1wk", 1_750_000_000L, "bearish_engulfing",
+                true, null, () -> "missing@example.com", model, new MockHttpServletResponse());
+
+        assertThat(view).isEqualTo("historical-candlestick-detail");
+        assertThat(model.getAttribute("returnUrl"))
+                .isEqualTo("/stock/AAPL?historicalCandles=graphical&historicalInterval=1wk");
+        verify(service).findSignalInFullHistory(
+                "AAPL", "1wk", 1_750_000_000L, CandlePattern.BEARISH_ENGULFING);
     }
 }

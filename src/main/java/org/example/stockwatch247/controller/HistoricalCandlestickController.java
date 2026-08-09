@@ -24,9 +24,15 @@ public class HistoricalCandlestickController {
     public ResponseEntity<HistoricalScan> historicalCandlestickPatterns(
             @PathVariable String symbol,
             @RequestParam String interval,
+            @RequestParam(defaultValue = "false") boolean fullHistory,
             @RequestParam(required = false) Integer lookbackCandles) {
         String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
+        if (fullHistory) {
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .body(historicalCandlestickService.scanAll(validatedSymbol, validatedInterval));
+        }
         int selectedLookback = lookbackCandles == null
                 ? historicalCandlestickService.defaultLookbackCandles(validatedInterval)
                 : lookbackCandles;

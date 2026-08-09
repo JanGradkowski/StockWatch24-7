@@ -173,11 +173,12 @@ public class InsiderActivityService {
             StockAsset asset,
             RefreshStatus refreshStatus) {
         LocalDate windowStart = todayUtc().minusDays(historyDays - 1L);
-        List<TradeView> trades = tradeRepository
+        List<InsiderTrade> storedTrades = tradeRepository
                 .findByStockAssetAndTransactionDateGreaterThanEqualOrderByFilingDateDescTransactionDateDescIdDesc(
-                        asset, windowStart)
-                .stream()
-                .map(this::toTradeView)
+                        asset, windowStart);
+        Map<Long, Long> deliveryIds = ownedDeliveryIds(user, storedTrades);
+        List<TradeView> trades = storedTrades.stream()
+                .map(trade -> toTradeView(trade, deliveryIds.get(trade.getId())))
                 .toList();
         ActivityState activityState = stateFor(user, asset);
         Instant cachedAt = refreshStateRepository.findById(asset.getId())
@@ -263,13 +264,40 @@ public class InsiderActivityService {
     @Transactional(readOnly = true)
     public List<DashboardActivityView> getLatestDashboardActivity(User user, int limit) {
         LocalDate earliest = todayUtc().minusDays(historyDays - 1L);
-        return deliveryRepository.findLatestForUser(
+        return deliveryRepository.findLatestUnreadForUser(
                         user,
                         earliest,
                         PageRequest.of(0, Math.max(1, Math.min(limit, 50))))
                 .stream()
                 .map(this::toDashboardView)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DashboardActivityView> getAllActivity(User user) {
+        return deliveryRepository.findAllForUser(user)
+                .stream()
+                .map(this::toArchiveDashboardView)
+                .toList();
+    }
+
+    @Transactional
+    public void markActivityRead(User user, Long deliveryId) {
+        InsiderTradeDelivery delivery = deliveryRepository
+                .findOwnedByIdAndUser(deliveryId, user)
+                .orElseThrow(() -> new IllegalArgumentException("Activity notification not found."));
+        delivery.markRead(Instant.now());
+    }
+
+    @Transactional(readOnly = true)
+    public long unreadActivityCount(User user) {
+        LocalDate earliest = todayUtc().minusDays(historyDays - 1L);
+        return deliveryRepository.countUnreadForUser(user, earliest);
+    }
+
+    @Transactional
+    public int markAllActivityRead(User user) {
+        return deliveryRepository.markAllUnreadForUser(user, Instant.now());
     }
 
     private void refreshAsset(StockAsset asset, boolean notifyFollowers) {
@@ -410,13 +438,32 @@ public class InsiderActivityService {
         return asset;
     }
 
+    private Map<Long, Long> ownedDeliveryIds(User user, List<InsiderTrade> trades) {
+        if (trades.isEmpty()) {
+            return Map.of();
+        }
+        return deliveryRepository.findOwnedByTradeIds(
+                        user,
+                        trades.stream().map(InsiderTrade::getId).toList())
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        delivery -> delivery.getTrade().getId(),
+                        InsiderTradeDelivery::getId,
+                        (first, ignored) -> first));
+    }
+
     private TradeView toTradeView(InsiderTrade trade) {
+        return toTradeView(trade, null);
+    }
+
+    private TradeView toTradeView(InsiderTrade trade, Long notificationId) {
         ReturnSnapshot snapshot = calculateReturn(trade);
         BigDecimal transactionValue = trade.getShares() != null && trade.getTransactionPrice() != null
                 ? trade.getShares().multiply(trade.getTransactionPrice())
                 : null;
         return new TradeView(
                 trade.getId(),
+                notificationId,
                 trade.getTickerSymbol(),
                 trade.getInsiderName(),
                 trade.getOwnerRole(),
@@ -454,7 +501,34 @@ public class InsiderActivityService {
                 trade.returnAsOf(),
                 delivery.getCreatedAt(),
                 deliveryStatusLabel(delivery.getStatus()),
-                trade.sourceUrl());
+                trade.sourceUrl(),
+                delivery.getReadAt());
+    }
+
+    private DashboardActivityView toArchiveDashboardView(InsiderTradeDelivery delivery) {
+        InsiderTrade trade = delivery.getTrade();
+        BigDecimal transactionValue = trade.getShares() != null && trade.getTransactionPrice() != null
+                ? trade.getShares().multiply(trade.getTransactionPrice())
+                : null;
+        return new DashboardActivityView(
+                delivery.getId(),
+                trade.getTickerSymbol(),
+                trade.getStockAsset().getCompanyName(),
+                trade.getInsiderName(),
+                trade.getOwnerRole(),
+                trade.getTransactionType().name(),
+                trade.getTransactionType().getLabel(),
+                trade.getTransactionDate(),
+                trade.getFilingDate(),
+                trade.getShares(),
+                trade.getTransactionPrice(),
+                transactionValue,
+                null,
+                null,
+                delivery.getCreatedAt(),
+                deliveryStatusLabel(delivery.getStatus()),
+                trade.getSourceUrl(),
+                delivery.getReadAt());
     }
 
     private ReturnSnapshot calculateReturn(InsiderTrade trade) {
@@ -583,6 +657,7 @@ public class InsiderActivityService {
 
     public record TradeView(
             long id,
+            Long notificationId,
             String ticker,
             String insiderName,
             String ownerRole,
@@ -621,6 +696,10 @@ public class InsiderActivityService {
             LocalDate returnAsOf,
             Instant detectedAt,
             String deliveryStatus,
-            String sourceUrl) {
+            String sourceUrl,
+            Instant readAt) {
+        public boolean hasBeenRead() {
+            return readAt != null;
+        }
     }
 }

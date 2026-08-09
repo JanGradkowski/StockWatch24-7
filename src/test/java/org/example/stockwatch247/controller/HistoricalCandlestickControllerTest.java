@@ -34,10 +34,17 @@ class HistoricalCandlestickControllerTest {
         HistoricalCandlestickController controller = new HistoricalCandlestickController(service);
 
         ResponseEntity<HistoricalCandlestickService.HistoricalScan> response =
-                controller.historicalCandlestickPatterns("aapl", "1d", 144);
+                controller.historicalCandlestickPatterns("aapl", "1d", false, 144);
 
         assertThat(response.getBody()).isSameAs(scan);
         assertThat(response.getHeaders().getCacheControl()).contains("no-store");
         verify(service).scan("AAPL", "1d", 144);
+
+        when(service.scanAll("AAPL", "1d")).thenReturn(scan);
+        ResponseEntity<HistoricalCandlestickService.HistoricalScan> fullHistoryResponse =
+                controller.historicalCandlestickPatterns("aapl", "1d", true, null);
+        assertThat(fullHistoryResponse.getBody()).isSameAs(scan);
+        assertThat(fullHistoryResponse.getHeaders().getCacheControl()).contains("no-store");
+        verify(service).scanAll("AAPL", "1d");
     }
 }

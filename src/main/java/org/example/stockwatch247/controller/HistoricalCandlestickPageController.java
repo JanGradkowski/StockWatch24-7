@@ -33,6 +33,7 @@ public class HistoricalCandlestickPageController {
             @PathVariable String interval,
             @PathVariable long timestamp,
             @PathVariable String pattern,
+            @RequestParam(defaultValue = "false") boolean fullHistory,
             @RequestParam(required = false) Integer lookbackCandles,
             Principal principal,
             Model model,
@@ -53,24 +54,22 @@ public class HistoricalCandlestickPageController {
                 : lookbackCandles;
         User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
         model.addAttribute("firstName", currentUser == null ? "Trader" : currentUser.getFirstName());
-        HistoricalCandlestickService.HistoricalSignal signal = historicalCandlestickService.findSignal(
-                validatedSymbol,
-                validatedInterval,
-                timestamp,
-                validatedPattern,
-                selectedLookback
-        );
+        HistoricalCandlestickService.HistoricalSignal signal = fullHistory
+                ? historicalCandlestickService.findSignalInFullHistory(
+                        validatedSymbol, validatedInterval, timestamp, validatedPattern)
+                : historicalCandlestickService.findSignal(
+                        validatedSymbol, validatedInterval, timestamp, validatedPattern, selectedLookback);
         model.addAttribute("signal", signal);
         HistoricalCandlestickService.HistoricalSignalChart chart =
                 historicalCandlestickService.chartForSignal(signal);
         model.addAttribute("chart", chart);
         model.addAttribute("results", historicalCandlestickService.resultsForSignal(signal, chart));
-        model.addAttribute(
-                "returnUrl",
-                "/stock/" + validatedSymbol
+        model.addAttribute("returnUrl", fullHistory
+                ? "/stock/" + validatedSymbol
+                        + "?historicalCandles=graphical&historicalInterval=" + validatedInterval
+                : "/stock/" + validatedSymbol
                         + "?historicalCandles=true&historicalInterval=" + validatedInterval
-                        + "&lookbackCandles=" + selectedLookback
-        );
+                        + "&lookbackCandles=" + selectedLookback);
         response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
         response.setHeader("Pragma", "no-cache");
         return "historical-candlestick-detail";

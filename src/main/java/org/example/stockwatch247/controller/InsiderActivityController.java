@@ -64,6 +64,16 @@ public class InsiderActivityController {
                 request.active());
     }
 
+    @PostMapping("/notifications/{deliveryId}/read")
+    public void markNotificationRead(@PathVariable Long deliveryId, Principal principal) {
+        activityService.markActivityRead(requireUser(principal), deliveryId);
+    }
+
+    @PostMapping("/notifications/read-all")
+    public void markAllNotificationsRead(Principal principal) {
+        activityService.markAllActivityRead(requireUser(principal));
+    }
+
     private User requireUser(Principal principal) {
         if (principal == null) {
             throw new IllegalStateException("Authentication is required.");

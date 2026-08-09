@@ -3,6 +3,7 @@ package org.example.stockwatch247.service.insider;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.InsiderActivityRefreshState;
 import org.example.stockwatch247.model.InsiderTrade;
+import org.example.stockwatch247.model.InsiderTradeDelivery;
 import org.example.stockwatch247.model.InsiderTradeSubscription;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
@@ -235,6 +236,25 @@ class InsiderActivityServiceTest {
         verify(fixture.provider(), times(2)).fetchTickerTrades("AAPL");
     }
 
+    @Test
+    void markingAnOwnedNotificationReadIsIdempotent() {
+        StockAsset asset = stock();
+        User user = new User();
+        user.setId(9L);
+        Fixture fixture = fixture(asset);
+        InsiderTradeDelivery delivery = new InsiderTradeDelivery();
+        delivery.setId(42L);
+        when(fixture.deliveries().findOwnedByIdAndUser(42L, user))
+                .thenReturn(Optional.of(delivery));
+
+        fixture.service().markActivityRead(user, 42L);
+        Instant firstReadAt = delivery.getReadAt();
+        fixture.service().markActivityRead(user, 42L);
+
+        assertThat(firstReadAt).isNotNull();
+        assertThat(delivery.getReadAt()).isEqualTo(firstReadAt);
+    }
+
     private Fixture fixture(StockAsset asset) {
         StockAssetRepository stocks = mock(StockAssetRepository.class);
         InsiderTradeRepository trades = mock(InsiderTradeRepository.class);
@@ -268,6 +288,7 @@ class InsiderActivityServiceTest {
                 stocks,
                 trades,
                 subscriptions,
+                deliveries,
                 refreshStates,
                 candles,
                 completion,
@@ -312,6 +333,7 @@ class InsiderActivityServiceTest {
             StockAssetRepository stocks,
             InsiderTradeRepository trades,
             InsiderTradeSubscriptionRepository subscriptions,
+            InsiderTradeDeliveryRepository deliveries,
             InsiderActivityRefreshStateRepository refreshStates,
             CandleRepository candles,
             CandleCompletionService completion,

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Virtual trades &mdash; StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="bg-animation" aria-hidden="true"><div class="glow-orb orb-1"></div><div class="glow-orb orb-2"></div></div>
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<main class="page-container signal-archive-page virtual-trades-archive-page">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb">
+    <a th:href="@{/home}">Dashboard</a><span aria-hidden="true">/</span><span>Virtual trades</span>
+  </nav>
+  <header class="signal-archive-header">
+    <div>
+      <div class="eyebrow">Paper decisions &middot; no real orders</div>
+      <h1 class="title">Virtual trades</h1>
+      <p class="subtitle">Review every virtual buy and sell decision. Buys show return; sells show avoided loss or missed upside and never imply a short position.</p>
+    </div>
+    <div class="signal-archive-total" aria-label="Total virtual trades">
+      <strong th:text="${archive.totalTrades()}">0</strong>
+      <span th:text="${archive.totalTrades() == 1 ? 'virtual trade' : 'virtual trades'}">virtual trades</span>
+    </div>
+  </header>
+
+  <section class="signal-archive-shell" aria-labelledby="virtualTradesHeading">
+    <div class="signal-archive-toolbar">
+      <div>
+        <h2 id="virtualTradesHeading" class="panel-title">Trade history</h2>
+        <p class="panel-meta">Open trades update from the latest cached price. Closing one freezes its final price, outcome, and technical comparison.</p>
+      </div>
+      <form method="get" th:action="@{/virtual-trades}" class="signal-archive-sort-form" aria-label="Sort virtual trades">
+        <label><span>Group and sort by</span><select name="sort">
+          <option value="date" th:selected="${archive.sort() == 'date'}">Date</option>
+          <option value="ticker" th:selected="${archive.sort() == 'ticker'}">Ticker</option>
+          <option value="side" th:selected="${archive.sort() == 'side'}">Buy or sell</option>
+          <option value="status" th:selected="${archive.sort() == 'status'}">Open or closed</option>
+          <option value="return" th:selected="${archive.sort() == 'return'}">Outcome</option>
+        </select></label>
+        <label><span>Order</span><select name="direction">
+          <option value="desc" th:selected="${archive.direction() == 'desc'}">Descending</option>
+          <option value="asc" th:selected="${archive.direction() == 'asc'}">Ascending</option>
+        </select></label>
+        <button type="submit" class="btn-primary signal-archive-apply">Apply</button>
+      </form>
+    </div>
+
+    <div th:if="${#lists.isEmpty(archive.trades())}" class="latest-signals-empty signal-archive-empty">
+      <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
+      <div><h3>No virtual trades yet</h3><p>Open a stock&rsquo;s Full Technical Outlook to record your first virtual buy or sell decision.</p></div>
+    </div>
+
+    <div th:if="${!#lists.isEmpty(archive.trades())}" class="signal-archive-results virtual-trade-archive-results">
+      <div class="virtual-trade-archive-head" aria-hidden="true">
+        <span>Decision</span><span>Company</span><span>Entry</span><span>Evaluation</span><span>Outcome</span><span>Status</span><span></span>
+      </div>
+      <div class="signal-archive-list">
+        <div th:each="trade, row : ${archive.trades()}" class="signal-archive-entry">
+          <div th:if="${row.first or archive.groupKey(archive.trades().get(row.index - 1)) != archive.groupKey(trade)}"
+               class="signal-archive-group-label">
+            <strong th:text="${archive.groupLabel(trade)}">08 August 2026</strong>
+          </div>
+          <a th:href="@{/virtual-trades/{id}(id=${trade.id()})}"
+             class="virtual-trade-archive-row"
+             th:classappend="${' ' + #strings.toLowerCase(trade.side())}">
+            <div class="virtual-trade-decision">
+              <span class="virtual-trade-side-pill" th:text="${trade.sideLabel()}">Virtual Buy</span>
+              <strong th:text="${trade.intervalLabel() + ' outlook'}">Daily outlook</strong>
+            </div>
+            <div><strong th:text="${trade.symbol()}">AAPL</strong><span th:text="${trade.companyName()}">Apple Inc.</span></div>
+            <div><strong th:text="${#numbers.formatDecimal(trade.entryPrice(), 1, 4) + ' ' + trade.currency()}">100 USD</strong><time th:text="${#temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')}">08 Aug</time></div>
+            <div><strong th:text="${#numbers.formatDecimal(trade.evaluationPrice(), 1, 4) + ' ' + trade.currency()}">105 USD</strong><span th:text="${trade.evaluationSource()}">Latest completed candle</span></div>
+            <div class="virtual-trade-outcome" th:classappend="${trade.resultPercent() >= 0 ? ' positive' : ' negative'}">
+              <strong th:text="${(trade.resultPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.resultPercent(), 1, 2) + '%'}">+5.00%</strong>
+              <span th:text="${trade.outcomeLabel()}">Gain</span>
+              <small th:if="${trade.monetaryResult() != null}" th:text="${(trade.monetaryResult().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.monetaryResult(), 1, 2) + ' ' + trade.currency()}">+50 USD</small>
+            </div>
+            <span class="virtual-trade-status-pill" th:classappend="${' ' + #strings.toLowerCase(trade.status())}" th:text="${trade.statusLabel()}">Tracking</span>
+            <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+  <a th:href="@{/home}" class="back-link history-back-link">&larr; Back to dashboard</a>
+</main>
+</body>
+</html>

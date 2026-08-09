@@ -8,6 +8,7 @@ import org.example.stockwatch247.service.congress.CongressionalActivityService.A
 import org.example.stockwatch247.service.congress.CongressionalActivityService.HistoryResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -54,6 +55,16 @@ public class CongressionalActivityController {
                 requireUser(principal),
                 SecurityInputValidator.requireMarketSymbol(symbol),
                 request.active());
+    }
+
+    @PostMapping("/notifications/{deliveryId}/read")
+    public void markNotificationRead(@PathVariable Long deliveryId, Principal principal) {
+        activityService.markActivityRead(requireUser(principal), deliveryId);
+    }
+
+    @PostMapping("/notifications/read-all")
+    public void markAllNotificationsRead(Principal principal) {
+        activityService.markAllActivityRead(requireUser(principal));
     }
 
     private User requireUser(Principal principal) {
