@@ -49,6 +49,11 @@
       </form>
     </div>
 
+    <p th:if="${virtualTradeDeleteMessage}" class="signal-delete-feedback success"
+       th:text="${virtualTradeDeleteMessage}">Virtual trade deleted.</p>
+    <p th:if="${virtualTradeDeleteError}" class="signal-delete-feedback error"
+       th:text="${virtualTradeDeleteError}">The virtual trade could not be deleted.</p>
+
     <div th:if="${#lists.isEmpty(archive.trades())}" class="latest-signals-empty signal-archive-empty">
       <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
       <div><h3>No virtual trades yet</h3><p>Open a stock&rsquo;s Full Technical Outlook to record your first virtual buy or sell decision.</p></div>
@@ -56,7 +61,7 @@
 
     <div th:if="${!#lists.isEmpty(archive.trades())}" class="signal-archive-results virtual-trade-archive-results">
       <div class="virtual-trade-archive-head" aria-hidden="true">
-        <span>Decision</span><span>Company</span><span>Entry</span><span>Evaluation</span><span>Outcome</span><span>Status</span><span></span>
+        <span>Decision</span><span>Company</span><span>Entry</span><span>Evaluation</span><span>Outcome</span><span>Status</span><span></span><span>Action</span>
       </div>
       <div class="signal-archive-list">
         <div th:each="trade, row : ${archive.trades()}" class="signal-archive-entry">
@@ -64,9 +69,10 @@
                class="signal-archive-group-label">
             <strong th:text="${archive.groupLabel(trade)}">08 August 2026</strong>
           </div>
-          <a th:href="@{/virtual-trades/{id}(id=${trade.id()})}"
-             class="virtual-trade-archive-row"
-             th:classappend="${' ' + #strings.toLowerCase(trade.side())}">
+          <div class="virtual-trade-archive-record">
+            <a th:href="@{/virtual-trades/{id}(id=${trade.id()})}"
+               class="virtual-trade-archive-row"
+               th:classappend="${' ' + #strings.toLowerCase(trade.side())}">
             <div class="virtual-trade-decision">
               <span class="virtual-trade-side-pill" th:text="${trade.sideLabel()}">Virtual Buy</span>
               <strong th:text="${trade.intervalLabel() + ' outlook'}">Daily outlook</strong>
@@ -77,16 +83,39 @@
             <div class="virtual-trade-outcome" th:classappend="${trade.resultPercent() >= 0 ? ' positive' : ' negative'}">
               <strong th:text="${(trade.resultPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.resultPercent(), 1, 2) + '%'}">+5.00%</strong>
               <span th:text="${trade.outcomeLabel()}">Gain</span>
+              <small th:text="${'From captured entry · ' + #temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')}">From captured entry · 08 Aug 2026, 10:00</small>
               <small th:if="${trade.monetaryResult() != null}" th:text="${(trade.monetaryResult().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.monetaryResult(), 1, 2) + ' ' + trade.currency()}">+50 USD</small>
             </div>
             <span class="virtual-trade-status-pill" th:classappend="${' ' + #strings.toLowerCase(trade.status())}" th:text="${trade.statusLabel()}">Tracking</span>
             <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
-          </a>
+            </a>
+            <form method="post"
+                  th:action="@{/virtual-trades/{id}/delete(id=${trade.id()})}"
+                  data-virtual-trade-delete-form
+                  th:attr="data-trade-label=${trade.sideLabel() + ' for ' + trade.symbol()}">
+              <input type="hidden" name="sort" th:value="${archive.sort()}">
+              <input type="hidden" name="direction" th:value="${archive.direction()}">
+              <button type="submit" class="signal-archive-delete-button"
+                      th:attr="aria-label=${'Delete ' + trade.sideLabel() + ' for ' + trade.symbol()}">Delete</button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
   </section>
-  <a th:href="@{/home}" class="back-link history-back-link">&larr; Back to dashboard</a>
 </main>
+
+<dialog class="unsaved-alert-dialog signal-delete-dialog" data-virtual-trade-delete-dialog aria-labelledby="virtual-trade-delete-dialog-title">
+  <div class="unsaved-alert-dialog-content">
+    <span class="unsaved-alert-kicker">Permanent archive action</span>
+    <h2 id="virtual-trade-delete-dialog-title">Delete virtual trade?</h2>
+    <p data-virtual-trade-delete-message>This removes the virtual trade from your account and cannot be undone.</p>
+    <div class="unsaved-alert-dialog-actions">
+      <button type="button" class="btn-secondary" data-virtual-trade-delete-cancel>Cancel</button>
+      <button type="button" class="signal-delete-confirm-button" data-virtual-trade-delete-confirm>Delete</button>
+    </div>
+  </div>
+</dialog>
+<script th:src="@{/js/virtual-trade-deletion.js}"></script>
 </body>
 </html>

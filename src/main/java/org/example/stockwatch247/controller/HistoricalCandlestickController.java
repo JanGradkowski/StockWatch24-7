@@ -1,6 +1,12 @@
 package org.example.stockwatch247.controller;
 
 import org.example.stockwatch247.security.SecurityInputValidator;
+import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.repository.UserRepository;
+import org.example.stockwatch247.service.AnalysisPreferencesService;
+import org.example.stockwatch247.service.CandlePatternDetectionService;
+import org.example.stockwatch247.service.CandlestickPatternPreferencesService;
 import org.example.stockwatch247.service.HistoricalCandlestickService;
 import org.example.stockwatch247.service.HistoricalCandlestickService.HistoricalScan;
 import org.springframework.http.CacheControl;
@@ -10,14 +16,31 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/api/stocks")
 public class HistoricalCandlestickController {
     private final HistoricalCandlestickService historicalCandlestickService;
+    private final UserRepository userRepository;
+    private final AnalysisPreferencesService analysisPreferences;
+    private final CandlestickPatternPreferencesService patternPreferences;
 
-    public HistoricalCandlestickController(HistoricalCandlestickService historicalCandlestickService) {
+    @Autowired
+    public HistoricalCandlestickController(HistoricalCandlestickService historicalCandlestickService,
+                                           UserRepository userRepository,
+                                           AnalysisPreferencesService analysisPreferences,
+                                           CandlestickPatternPreferencesService patternPreferences) {
         this.historicalCandlestickService = historicalCandlestickService;
+        this.userRepository = userRepository;
+        this.analysisPreferences = analysisPreferences;
+        this.patternPreferences = patternPreferences;
+    }
+
+    HistoricalCandlestickController(HistoricalCandlestickService historicalCandlestickService) {
+        this(historicalCandlestickService, null, null, null);
     }
 
     @GetMapping("/{symbol}/candlestick-patterns/history")
@@ -25,24 +48,59 @@ public class HistoricalCandlestickController {
             @PathVariable String symbol,
             @RequestParam String interval,
             @RequestParam(defaultValue = "false") boolean fullHistory,
-            @RequestParam(required = false) Integer lookbackCandles) {
+            @RequestParam(required = false) Integer lookbackCandles,
+            Principal principal) {
         String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
+        CandlePatternDetectionService.TrendDetectionRules trendRules = trendRules(principal, validatedInterval);
+        CandlestickPatternPreferencesService.PreferencesView definitions = patternDefinitions(principal);
         if (fullHistory) {
             return ResponseEntity.ok()
                     .cacheControl(CacheControl.noStore())
-                    .body(historicalCandlestickService.scanAll(validatedSymbol, validatedInterval));
+                    .body(analysisPreferences == null
+                            ? historicalCandlestickService.scanAll(validatedSymbol, validatedInterval)
+                            : historicalCandlestickService.scanAll(validatedSymbol, validatedInterval, trendRules, definitions));
         }
         int selectedLookback = lookbackCandles == null
                 ? historicalCandlestickService.defaultLookbackCandles(validatedInterval)
                 : lookbackCandles;
-        HistoricalScan scan = historicalCandlestickService.scan(
-                validatedSymbol,
-                validatedInterval,
-                selectedLookback
-        );
+        HistoricalScan scan = analysisPreferences == null
+                ? historicalCandlestickService.scan(validatedSymbol, validatedInterval, selectedLookback)
+                : historicalCandlestickService.scan(
+                validatedSymbol, validatedInterval, selectedLookback, trendRules, definitions);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(scan);
+    }
+
+    ResponseEntity<HistoricalScan> historicalCandlestickPatterns(String symbol,
+                                                                  String interval,
+                                                                  boolean fullHistory,
+                                                                  Integer lookbackCandles) {
+        return historicalCandlestickPatterns(symbol, interval, fullHistory, lookbackCandles, null);
+    }
+
+    private CandlePatternDetectionService.TrendDetectionRules trendRules(Principal principal,
+                                                                          String apiInterval) {
+        TimeInterval interval = switch (apiInterval) {
+            case "1wk", "weekly" -> TimeInterval.WEEKLY;
+            case "1mo", "monthly" -> TimeInterval.MONTHLY;
+            default -> TimeInterval.DAILY;
+        };
+        if (principal == null || userRepository == null || analysisPreferences == null) {
+            return CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval);
+        }
+        User user = userRepository.findByEmailIgnoreCase(principal.getName())
+                .orElseThrow(() -> new IllegalArgumentException("Account not found."));
+        return analysisPreferences.trendDetectionRules(analysisPreferences.profile(user, interval));
+    }
+
+    private CandlestickPatternPreferencesService.PreferencesView patternDefinitions(Principal principal) {
+        if (principal == null || userRepository == null || patternPreferences == null) {
+            return CandlestickPatternPreferencesService.factoryPreferences();
+        }
+        User user = userRepository.findByEmailIgnoreCase(principal.getName())
+                .orElseThrow(() -> new IllegalArgumentException("Account not found."));
+        return patternPreferences.get(user);
     }
 }

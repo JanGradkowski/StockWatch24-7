@@ -69,6 +69,14 @@ class TechnicalOutlookServiceTest {
         assertThat(outlook.indicators()).extracting(TechnicalOutlookService.IndicatorView::key)
                 .contains("rsi", "ema", "sma", "macd", "cci", "bollinger", "atr", "vwap",
                         "relativeVolume", "volumeProfile", "supportResistance");
+        assertThat(outlook.indicators()).extracting(TechnicalOutlookService.IndicatorView::label)
+                .contains("RSI 14", "EMA 20 / EMA 50", "Price vs SMA 200",
+                        "MACD 12/26/9 histogram", "CCI 20", "ATR 14", "Rolling VWAP 20",
+                        "Support / resistance 20");
+        assertThat(outlook.indicatorSettings().rsiPeriod()).isEqualTo(14);
+        assertThat(outlook.indicatorSettings().fastEmaPeriod()).isEqualTo(20);
+        assertThat(outlook.indicatorSettings().slowEmaPeriod()).isEqualTo(50);
+        assertThat(outlook.indicatorSettings().longSmaPeriod()).isEqualTo(200);
         assertThat(outlook.rawScore().denominator()).isEqualTo(11);
         assertThat(outlook.categories()).extracting(TechnicalOutlookService.CategoryView::key)
                 .containsExactly("TREND", "MOMENTUM", "VOLATILITY", "VOLUME", "PRICE_LOCATION");

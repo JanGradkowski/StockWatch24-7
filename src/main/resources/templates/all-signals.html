@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>All signals &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
+  <script defer th:src="@{/js/signal-archive-selection.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -22,7 +23,7 @@
     <span>All signals</span>
   </nav>
 
-  <header class="signal-archive-header">
+  <header class="signal-archive-header technical-signal-archive-header">
     <div>
       <div class="eyebrow">Account signal archive</div>
       <h1 class="title">All signals</h1>
@@ -39,7 +40,7 @@
       <div>
         <h2 id="signal-archive-heading" class="panel-title">Signal history</h2>
         <p class="panel-meta">Unread signals are highlighted. Opening one marks it as read.</p>
-        <p class="panel-meta">Best and worst results are direction-aware moves from the signal close, measured over cached completed candles through resolution or the active lifecycle window.</p>
+        <p class="panel-meta">Best and worst results are direction-aware moves from the applicable measurement start.</p>
       </div>
       <form method="get" th:action="@{/signals}" class="signal-archive-sort-form" aria-label="Sort all signals">
         <label>
@@ -65,6 +66,11 @@
       </form>
     </div>
 
+    <div th:if="${signalDeleteMessage}" class="signal-delete-feedback success" role="status"
+         th:text="${signalDeleteMessage}">Signal deleted.</div>
+    <div th:if="${signalDeleteError}" class="signal-delete-feedback error" role="alert"
+         th:text="${signalDeleteError}">The signal could not be deleted.</div>
+
     <div th:if="${#lists.isEmpty(archive.signals())}" class="latest-signals-empty signal-archive-empty">
       <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
       <div>
@@ -73,72 +79,108 @@
       </div>
     </div>
 
-    <div th:if="${!#lists.isEmpty(archive.signals())}" class="signal-archive-results">
-      <div class="signal-archive-head" aria-hidden="true">
-        <span>Signal</span><span>Ticker</span><span>Interval</span><span>Received</span><span>Read</span><span>Signal status</span><span>Confidence score</span><span>Best result</span><span>Worst result</span><span></span>
+    <form th:if="${!#lists.isEmpty(archive.signals())}"
+          method="post"
+          th:action="@{/signals/delete}"
+          class="signal-delete-form"
+          data-signal-delete-form
+          data-archive-kind="signal">
+      <input type="hidden" name="sort" th:value="${archive.sort()}">
+      <input type="hidden" name="direction" th:value="${archive.direction()}">
+      <input type="hidden" name="page" th:value="${archive.page()}">
+
+      <div class="signal-delete-toolbar">
+        <label class="signal-select-all-control">
+          <input type="checkbox" class="signal-select-checkbox" data-select-all>
+          <span>Select this page</span>
+        </label>
+        <span class="signal-selection-count" aria-live="polite"><strong data-selected-count>0</strong> selected</span>
+        <button type="submit" class="signal-bulk-delete-button" data-bulk-delete disabled>Delete selected</button>
       </div>
-      <div class="signal-archive-list">
-        <div th:each="entry, row : ${archive.signals()}" th:with="signal=${entry.signal()}" class="signal-archive-entry">
-          <div th:if="${row.first or archive.groupKey(archive.signals().get(row.index - 1)) != archive.groupKey(entry)}"
-               class="signal-archive-group-label"
-               th:classappend="${archive.sort() == 'date'} ? ' date-group' : ''">
-            <strong th:text="${archive.groupLabel(entry)}">02 August 2026</strong>
-            <span th:if="${archive.groupDetail(entry) != null}" th:text="${archive.groupDetail(entry)}">Sorted group</span>
+
+      <div class="signal-archive-results">
+        <div class="signal-archive-head" aria-hidden="true">
+          <span>Signal</span><span>Ticker</span><span>Interval</span><span>Received</span><span>Read</span><span>Signal status</span><span>Confidence score</span><span>Best result</span><span>Worst result</span><span></span>
+        </div>
+        <div class="signal-archive-list">
+          <div th:each="entry, row : ${archive.signals()}" th:with="signal=${entry.signal()}" class="signal-archive-entry">
+            <div th:if="${row.first or archive.groupKey(archive.signals().get(row.index - 1)) != archive.groupKey(entry)}"
+                 class="signal-archive-group-label"
+                 th:classappend="${archive.sort() == 'date'} ? ' date-group' : ''">
+              <strong th:text="${archive.groupLabel(entry)}">02 August 2026</strong>
+              <span th:if="${archive.groupDetail(entry) != null}" th:text="${archive.groupDetail(entry)}">Sorted group</span>
+            </div>
+            <div class="signal-archive-record">
+              <label class="signal-select-control">
+                <input type="checkbox"
+                       name="signalIds"
+                       th:value="${signal.id()}"
+                       class="signal-select-checkbox"
+                       data-signal-checkbox
+                       th:aria-label="${'Select ' + signal.patternLabel() + ' for ' + signal.symbol()}">
+              </label>
+              <a th:href="@{/alerts/signals/{id}(id=${signal.id()})}"
+                 class="signal-archive-row"
+                 th:classappend="${signal.hasBeenRead()} ? ' is-read' : ' is-unread'"
+                 th:aria-label="${'Open ' + signal.patternLabel() + ' for ' + signal.symbol() + (signal.hasBeenRead() ? ' (read)' : ' (unread)')}">
+                <div class="signal-archive-pattern">
+                  <strong th:text="${signal.patternLabel()}">Bullish Engulfing</strong>
+                  <div class="latest-signal-tags">
+                    <span class="latest-family-tag" th:text="${signal.familyLabel()}">Candlestick</span>
+                    <span class="latest-direction-tag"
+                          th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
+                          th:text="${signal.directionLabel()}">Potential buy</span>
+                  </div>
+                </div>
+                <div class="signal-archive-company">
+                  <strong th:text="${signal.symbol()}">AAPL</strong>
+                  <span th:text="${signal.companyName()}">Apple Inc.</span>
+                </div>
+                <span class="latest-interval" th:text="${signal.intervalLabel()}">Weekly</span>
+                <div class="signal-archive-date">
+                  <time th:text="${#temporals.format(signal.sentAt(), 'dd MMM yyyy, HH:mm')}">02 Aug 2026, 11:30</time>
+                  <span th:text="${signal.signalPeriodLabel() != null ? 'Candle ' + signal.signalPeriodLabel() : 'Candle period unavailable'}">Candle 27&ndash;31 Jul 2026</span>
+                </div>
+                <span class="signal-read-pill"
+                      th:classappend="${signal.hasBeenRead()} ? ' read' : ' unread'"
+                      th:text="${signal.hasBeenRead()} ? 'Read' : 'Unread'">Unread</span>
+                <span class="signal-lifecycle-pill signal-archive-lifecycle"
+                      th:classappend="${' ' + signal.lifecycle().cssClass()}"
+                      th:title="${signal.lifecycle().summary()}"
+                      th:text="${signal.lifecycle().label()}">Detected</span>
+                <div class="latest-confidence" th:classappend="${' ' + signal.setupBand()}"
+                     title="Heuristic confidence score, not a probability"
+                     th:attr="aria-label=${signal.setupScore() != null ? 'Confidence score ' + signal.setupScore() + ' out of 100' : 'Confidence score unavailable'}">
+                  <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
+                  <span th:text="${signal.setupScore() != null ? '/100' : 'N/A'}">/100</span>
+                </div>
+                <div class="signal-archive-result best" th:title="${entry.measurementStartLabel()}">
+                  <strong th:if="${entry.resultAvailable()}"
+                          th:classappend="${entry.bestDirectionalMovePercent() >= 0} ? ' positive' : ' negative'"
+                          th:text="${(entry.bestDirectionalMovePercent() >= 0 ? '+' : '') + #numbers.formatDecimal(entry.bestDirectionalMovePercent(), 1, 2) + '%'}">+6.20%</strong>
+                  <strong th:unless="${entry.resultAvailable()}" class="unavailable">N/A</strong>
+                  <span th:text="${entry.measurementStartLabel()}">From signal candle close · 03 Aug 2026</span>
+                </div>
+                <div class="signal-archive-result worst" th:title="${entry.measurementStartLabel()}">
+                  <strong th:if="${entry.resultAvailable()}"
+                          th:classappend="${entry.worstDirectionalMovePercent() >= 0} ? ' positive' : ' negative'"
+                          th:text="${(entry.worstDirectionalMovePercent() >= 0 ? '+' : '') + #numbers.formatDecimal(entry.worstDirectionalMovePercent(), 1, 2) + '%'}">-2.10%</strong>
+                  <strong th:unless="${entry.resultAvailable()}" class="unavailable">N/A</strong>
+                  <span th:text="${entry.measurementStartLabel()}">From signal candle close · 03 Aug 2026</span>
+                </div>
+                <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+              </a>
+              <button type="submit"
+                      name="singleSignalId"
+                      th:value="${signal.id()}"
+                      class="signal-archive-delete-button"
+                      data-single-delete
+                      th:attr="data-signal-label=${signal.patternLabel() + ' for ' + signal.symbol()},aria-label=${'Delete ' + signal.patternLabel() + ' for ' + signal.symbol()}">Delete</button>
+            </div>
           </div>
-          <a th:href="@{/alerts/signals/{id}(id=${signal.id()})}"
-             class="signal-archive-row"
-             th:classappend="${signal.hasBeenRead()} ? ' is-read' : ' is-unread'"
-             th:aria-label="${'Open ' + signal.patternLabel() + ' for ' + signal.symbol() + (signal.hasBeenRead() ? ' (read)' : ' (unread)')}">
-            <div class="signal-archive-pattern">
-              <strong th:text="${signal.patternLabel()}">Bullish Engulfing</strong>
-              <div class="latest-signal-tags">
-                <span class="latest-family-tag" th:text="${signal.familyLabel()}">Candlestick</span>
-                <span class="latest-direction-tag"
-                      th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-                      th:text="${signal.tradeSignal()}">BUY</span>
-              </div>
-            </div>
-            <div class="signal-archive-company">
-              <strong th:text="${signal.symbol()}">AAPL</strong>
-              <span th:text="${signal.companyName()}">Apple Inc.</span>
-            </div>
-            <span class="latest-interval" th:text="${signal.intervalLabel()}">1wk</span>
-            <div class="signal-archive-date">
-              <time th:text="${#temporals.format(signal.sentAt(), 'dd MMM yyyy, HH:mm')}">02 Aug 2026, 11:30</time>
-              <span th:text="${signal.signalPeriodLabel() != null ? 'Candle ' + signal.signalPeriodLabel() : 'Candle period unavailable'}">Candle 27&ndash;31 Jul 2026</span>
-            </div>
-            <span class="signal-read-pill"
-                  th:classappend="${signal.hasBeenRead()} ? ' read' : ' unread'"
-                  th:text="${signal.hasBeenRead()} ? 'Read' : 'Unread'">Unread</span>
-            <span class="signal-lifecycle-pill signal-archive-lifecycle"
-                  th:classappend="${' ' + signal.lifecycle().cssClass()}"
-                  th:title="${signal.lifecycle().summary()}"
-                  th:text="${signal.lifecycle().label()}">Detected</span>
-            <div class="latest-confidence" th:classappend="${' ' + signal.setupBand()}"
-                 title="Heuristic confidence score, not a probability"
-                 th:attr="aria-label=${signal.setupScore() != null ? 'Confidence score ' + signal.setupScore() + ' out of 100' : 'Confidence score unavailable'}">
-              <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
-              <span th:text="${signal.setupScore() != null ? '/100' : 'N/A'}">/100</span>
-            </div>
-            <div class="signal-archive-result best" th:title="${entry.resultWindowLabel()}">
-              <strong th:if="${entry.resultAvailable()}"
-                      th:classappend="${entry.bestDirectionalMovePercent() >= 0} ? ' positive' : ' negative'"
-                      th:text="${(entry.bestDirectionalMovePercent() >= 0 ? '+' : '') + #numbers.formatDecimal(entry.bestDirectionalMovePercent(), 1, 2) + '%'}">+6.20%</strong>
-              <strong th:unless="${entry.resultAvailable()}" class="unavailable">N/A</strong>
-              <span th:text="${entry.resultWindowLabel()}">Through resolution</span>
-            </div>
-            <div class="signal-archive-result worst" th:title="${entry.resultWindowLabel()}">
-              <strong th:if="${entry.resultAvailable()}"
-                      th:classappend="${entry.worstDirectionalMovePercent() >= 0} ? ' positive' : ' negative'"
-                      th:text="${(entry.worstDirectionalMovePercent() >= 0 ? '+' : '') + #numbers.formatDecimal(entry.worstDirectionalMovePercent(), 1, 2) + '%'}">-2.10%</strong>
-              <strong th:unless="${entry.resultAvailable()}" class="unavailable">N/A</strong>
-              <span th:text="${entry.resultWindowLabel()}">Through resolution</span>
-            </div>
-            <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
-          </a>
         </div>
       </div>
-    </div>
+    </form>
 
     <nav th:if="${archive.totalPages() > 1}" class="signal-archive-pagination" aria-label="Signal archive pages">
       <a th:if="${archive.hasPrevious()}"
@@ -151,7 +193,18 @@
     </nav>
   </section>
 
-  <a th:href="@{/home}" class="back-link history-back-link">&larr; Back to dashboard</a>
 </main>
+
+<dialog class="unsaved-alert-dialog signal-delete-dialog" data-delete-dialog aria-labelledby="signal-delete-dialog-title">
+  <div class="unsaved-alert-dialog-content">
+    <span class="unsaved-alert-kicker">Permanent archive action</span>
+    <h2 id="signal-delete-dialog-title" data-delete-dialog-title>Delete signal?</h2>
+    <p data-delete-dialog-message>This removes the signal from your account archive and cannot be undone.</p>
+    <div class="unsaved-alert-dialog-actions">
+      <button type="button" class="btn-secondary" data-delete-cancel>Cancel</button>
+      <button type="button" class="signal-delete-confirm-button" data-delete-confirm>Delete</button>
+    </div>
+  </div>
+</dialog>
 </body>
 </html>

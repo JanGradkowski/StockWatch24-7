@@ -45,6 +45,9 @@ public class InsiderTradeDelivery {
     @Column(name = "read_at")
     private Instant readAt;
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 
@@ -61,6 +64,7 @@ public class InsiderTradeDelivery {
     public Instant getSentAt() { return sentAt; }
     public Instant getReadAt() { return readAt; }
     public boolean isRead() { return readAt != null; }
+    public Instant getDeletedAt() { return deletedAt; }
     public String getLastError() { return lastError; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
@@ -74,6 +78,11 @@ public class InsiderTradeDelivery {
     public void markRead(Instant readAt) {
         if (this.readAt == null) {
             this.readAt = readAt;
+        }
+    }
+    public void markDeleted(Instant deletedAt) {
+        if (this.deletedAt == null) {
+            this.deletedAt = deletedAt;
         }
     }
     public void setLastError(String lastError) { this.lastError = lastError; }

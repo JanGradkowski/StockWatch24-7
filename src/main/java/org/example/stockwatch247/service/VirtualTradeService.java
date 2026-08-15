@@ -129,6 +129,15 @@ public class VirtualTradeService {
         return toTradeView(tradeRepository.saveAndFlush(trade), quote);
     }
 
+    @Transactional
+    public void delete(User user, Long tradeId) {
+        VirtualTrade trade = owned(user, tradeId);
+        Instant deletedAt = Instant.now();
+        trade.markDeleted(deletedAt);
+        trade.setUpdatedAt(deletedAt);
+        tradeRepository.saveAndFlush(trade);
+    }
+
     @Transactional(readOnly = true)
     public List<TradeView> companyTrades(User user, String symbol) {
         StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);

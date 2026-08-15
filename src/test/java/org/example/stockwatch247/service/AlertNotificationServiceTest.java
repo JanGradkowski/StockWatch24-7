@@ -189,7 +189,8 @@ class AlertNotificationServiceTest {
                 Instant.parse("2026-07-20T00:00:00Z").getEpochSecond(),
                 100.0
         );
-        AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.DETECTED);
+        AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.POTENTIAL);
+        event.setConfirmationTriggerPrice(100.0);
 
         service.sendSignalEmail(rule, signal, event);
 
@@ -197,11 +198,12 @@ class AlertNotificationServiceTest {
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getText()).contains(
-                "Lifecycle status: DETECTED",
-                "close above 105.0000",
-                "close below 95.0000",
-                "Observation window: 3 completed daily candles",
-                "One CONFIRMED, INVALIDATED, or EXPIRED follow-up will be sent");
+                "Potential one-candle reversal",
+                "POTENTIAL BUY — AWAITING CONFIRMATION",
+                "This is not a signal yet",
+                "must have a green body and close above the candidate candle close at 100.0000",
+                "candidate is REJECTED and never becomes a signal",
+                "becomes DETECTED and its 10-candle outcome window starts from that next candle's close");
     }
 
     @Test
@@ -215,7 +217,9 @@ class AlertNotificationServiceTest {
         AlertRule rule = dailyRule(TradeSignal.BUY);
         AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.CONFIRMED);
         event.setPattern(CandlePattern.HAMMER);
-        event.setResolutionCandleTimestamp(Instant.parse("2026-07-21T00:00:00Z").getEpochSecond());
+        event.setDetectionCandleTimestamp(Instant.parse("2026-07-21T00:00:00Z").getEpochSecond());
+        event.setDetectionClosePrice(101.0);
+        event.setResolutionCandleTimestamp(Instant.parse("2026-07-22T00:00:00Z").getEpochSecond());
         event.setResolutionCandleOffset(1);
         event.setResolutionClosePrice(106.0);
 
@@ -228,10 +232,73 @@ class AlertNotificationServiceTest {
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Status: CONFIRMED",
                 "expected close-based follow-through occurred",
-                "Confirmation trigger: close above 105.0000",
+                "Direction classification: CONFIRMED BUY",
+                "Outcome confirmation trigger: close above 105.0000",
+                "Observation window: 10 completed daily candles",
                 "Resolution candle number: 1",
                 "Resolution close: 106.0000",
+                "Result measurement start: detection candle close on 21 Jul 2026 at 101.0000",
                 "not a recommendation");
+    }
+
+    @Test
+    void explainsThatFailedNextCandleGateRejectsTheCandidateRatherThanInvalidatingASignal() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.SELL);
+        AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.REJECTED);
+        event.setPattern(CandlePattern.HANGING_MAN);
+        event.setClosePrice(100.0);
+        event.setConfirmationTriggerPrice(100.0);
+        event.setResolutionCandleTimestamp(Instant.parse("2026-07-21T00:00:00Z").getEpochSecond());
+        event.setResolutionCandleOffset(1);
+        event.setResolutionClosePrice(101.0);
+
+        service.sendSignalLifecycleEmail(event);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getSubject()).contains("candidate rejected", "HANGING_MAN", "AAPL");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Status: REJECTED",
+                "Potential direction: SELL",
+                "required red-body close below the candidate close at 100.0000",
+                "candidate never became a signal",
+                "no outcome window or result is calculated");
+    }
+
+    @Test
+    void explainsThatAPassedNextCandleGateCreatesTheRealSignal() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.BUY);
+        AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.DETECTED);
+        event.setPattern(CandlePattern.HAMMER);
+        event.setDetectionCandleTimestamp(Instant.parse("2026-07-21T00:00:00Z").getEpochSecond());
+        event.setDetectionClosePrice(101.0);
+
+        service.sendSignalLifecycleEmail(event);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getSubject()).contains("signal detected", "HAMMER", "AAPL");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Status: DETECTED",
+                "mandatory next-candle gate passed",
+                "This is now a real signal",
+                "Detection close: 101.0000",
+                "Result measurement starts from this detection close",
+                "Outcome window: 10 completed daily candles");
     }
 
     @Test
@@ -384,7 +451,7 @@ class AlertNotificationServiceTest {
                 rule.getTradeSignal() == TradeSignal.BUY ? 105.0 : 95.0);
         event.setInvalidationPrice(
                 rule.getTradeSignal() == TradeSignal.BUY ? 95.0 : 105.0);
-        event.setConfirmationWindowCandles(3);
+        event.setConfirmationWindowCandles(10);
         return event;
     }
 }

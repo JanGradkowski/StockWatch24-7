@@ -99,6 +99,9 @@ public class VirtualTrade {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     public Long getId() { return id; }
     public User getUser() { return user; }
     public StockAsset getStockAsset() { return stockAsset; }
@@ -122,6 +125,7 @@ public class VirtualTrade {
     public String getClientRequestId() { return clientRequestId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getDeletedAt() { return deletedAt; }
 
     public void setId(Long id) { this.id = id; }
     public void setUser(User user) { this.user = user; }
@@ -146,4 +150,11 @@ public class VirtualTrade {
     public void setClientRequestId(String clientRequestId) { this.clientRequestId = clientRequestId; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
+
+    public void markDeleted(Instant deletedAt) {
+        if (this.deletedAt == null) {
+            this.deletedAt = deletedAt;
+        }
+    }
 }

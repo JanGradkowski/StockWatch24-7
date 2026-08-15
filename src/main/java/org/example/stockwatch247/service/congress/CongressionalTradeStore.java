@@ -468,6 +468,7 @@ public class CongressionalTradeStore {
         return jdbcTemplate.query("""
                         select delivery.id,
                                delivery.attempts,
+                               users.id as user_id,
                                users.email,
                                trade.ticker_symbol,
                                trade.member_name,
@@ -488,6 +489,7 @@ public class CongressionalTradeStore {
                 (resultSet, rowNumber) -> new ClaimedDelivery(
                         resultSet.getLong("id"),
                         resultSet.getInt("attempts"),
+                        resultSet.getLong("user_id"),
                         resultSet.getString("email"),
                         resultSet.getString("ticker_symbol"),
                         resultSet.getString("member_name"),
@@ -615,6 +617,7 @@ public class CongressionalTradeStore {
     public record ClaimedDelivery(
             long deliveryId,
             int attempt,
+            long userId,
             String recipientEmail,
             String ticker,
             String memberName,
@@ -625,6 +628,13 @@ public class CongressionalTradeStore {
             LocalDate disclosureDate,
             String assetName,
             String sourceUrl) {
+        public ClaimedDelivery(long deliveryId, int attempt, String recipientEmail, String ticker,
+                               String memberName, String chamber, String transactionType,
+                               String amountRange, LocalDate transactionDate, LocalDate disclosureDate,
+                               String assetName, String sourceUrl) {
+            this(deliveryId, attempt, 0L, recipientEmail, ticker, memberName, chamber,
+                    transactionType, amountRange, transactionDate, disclosureDate, assetName, sourceUrl);
+        }
     }
 
     private record HistoryCacheRow(

@@ -24,6 +24,16 @@ final class CandlestickSignalLifecyclePolicy {
                                        double invalidationPrice,
                                        List<Candle> subsequentCandles,
                                        int confirmationWindowCandles) {
+        return resolve(null, tradeSignal, confirmationTriggerPrice, invalidationPrice,
+                subsequentCandles, confirmationWindowCandles);
+    }
+
+    static LifecycleResolution resolve(CandlePattern pattern,
+                                       TradeSignal tradeSignal,
+                                       double confirmationTriggerPrice,
+                                       double invalidationPrice,
+                                       List<Candle> subsequentCandles,
+                                       int confirmationWindowCandles) {
         if ((tradeSignal != TradeSignal.BUY && tradeSignal != TradeSignal.SELL)
                 || confirmationWindowCandles < 1) {
             return null;
@@ -67,6 +77,37 @@ final class CandlestickSignalLifecyclePolicy {
                     THREE_WHITE_SOLDIERS, THREE_BLACK_CROWS -> 3;
             default -> 0;
         };
+    }
+
+    static boolean requiresNextCandleConfirmation(CandlePattern pattern) {
+        return pattern == CandlePattern.HAMMER
+                || pattern == CandlePattern.HANGING_MAN
+                || pattern == CandlePattern.INVERTED_HAMMER
+                || pattern == CandlePattern.SHOOTING_STAR;
+    }
+
+    static LifecycleResolution resolveCandidateGate(CandlePattern pattern,
+                                                    TradeSignal tradeSignal,
+                                                    double candidateClose,
+                                                    List<Candle> subsequentCandles) {
+        if (!requiresNextCandleConfirmation(pattern)
+                || (tradeSignal != TradeSignal.BUY && tradeSignal != TradeSignal.SELL)
+                || subsequentCandles == null || subsequentCandles.isEmpty()) {
+            return null;
+        }
+        Candle next = subsequentCandles.getFirst();
+        boolean favorableClose = tradeSignal == TradeSignal.BUY
+                ? next.getClosePrice() > candidateClose
+                : next.getClosePrice() < candidateClose;
+        boolean confirmingBody = tradeSignal == TradeSignal.BUY
+                ? next.getClosePrice() > next.getOpenPrice()
+                : next.getClosePrice() < next.getOpenPrice();
+        return new LifecycleResolution(
+                favorableClose && confirmingBody
+                        ? SignalLifecycleStatus.DETECTED
+                        : SignalLifecycleStatus.REJECTED,
+                next,
+                1);
     }
 
     private static SignalLifecycleStatus closeBasedOutcome(TradeSignal tradeSignal,

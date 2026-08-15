@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="scoringSettings(preferences)" class="scoring-settings-stack">
+  <section class="settings-card scoring-overview-card">
+    <div class="settings-card-heading">
+      <div><span class="settings-number">01</span><h2>Signal detail scoring</h2></div>
+      <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
+            th:text="${preferences.custom()} ? 'Custom weights' : 'Factory weights'">Factory weights</span>
+    </div>
+    <p class="analysis-settings-intro">Choose the evidence shown in setup scores and how much each included category is worth. Candlestick and Elliott Wave profiles are independent for daily, weekly, and monthly signals.</p>
+    <div class="analysis-safety-strip scoring-safety-strip">
+      <strong>Exactly 100 points</strong>
+      <span>Every profile must total 100 before changes can be applied.</span>
+      <span>The original detector score remains stored for audit; these weights control the score shown on signal detail reports.</span>
+    </div>
+  </section>
+
+  <form id="signalScoringForm" th:action="@{/settings/scoring}" method="post" class="scoring-preferences-form">
+    <section th:each="profile, stat : ${preferences.profiles()}"
+             class="settings-card scoring-profile-card"
+             th:attr="data-scoring-profile=${profile.key()}"
+             th:id="${'scoring-profile-' + stat.index}">
+      <div class="settings-card-heading scoring-profile-heading">
+        <div>
+          <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 2, 2)}">02</span>
+          <div><p class="scoring-family-label" th:text="${profile.familyLabel()}">Candlestick</p><h2 th:text="${profile.intervalLabel() + ' scoring'}">Daily scoring</h2></div>
+        </div>
+        <button type="submit" class="danger-outline-button"
+                th:form="${'scoring-reset-' + stat.index}">Reset this profile</button>
+      </div>
+
+      <div class="scoring-total-row" role="status" aria-live="polite">
+        <span>Included point total</span>
+        <strong class="scoring-total" th:text="${profile.totalPoints() + ' / 100'}">100 / 100</strong>
+        <small class="scoring-total-message">Ready to apply</small>
+      </div>
+
+      <div class="scoring-component-list">
+        <div th:each="component : ${profile.components()}" class="scoring-component-row">
+          <label class="scoring-include-control">
+            <input type="checkbox" class="scoring-include"
+                   th:name="${profile.key() + '.' + component.key() + '.included'}"
+                   th:checked="${component.included()}">
+            <span><strong th:text="${component.label()}">Pattern quality</strong><small th:text="${component.description()}">Description</small></span>
+          </label>
+          <label class="scoring-points-control">
+            <span>Points</span>
+            <input type="number" class="scoring-points" min="0" max="100" step="1" required
+                   th:name="${profile.key() + '.' + component.key() + '.points'}"
+                   th:value="${component.points()}">
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-card analysis-save-card scoring-save-card">
+      <div><strong>Apply scoring changes</strong><p>All six included totals are checked in the browser and again on the server.</p></div>
+      <button id="applyScoringChanges" type="submit" class="btn-accent">Apply changes</button>
+    </section>
+  </form>
+
+  <form th:each="profile, stat : ${preferences.profiles()}"
+        th:id="${'scoring-reset-' + stat.index}"
+        th:action="@{/settings/scoring/reset}" method="post">
+    <input type="hidden" name="family" th:value="${profile.family().name()}">
+    <input type="hidden" name="interval" th:value="${profile.interval().name()}">
+  </form>
+
+  <section class="settings-card analysis-factory-zone">
+    <div class="settings-card-heading"><div><span class="settings-number">08</span><h2>Factory restoration</h2></div><p>Restore all six scoring profiles without changing analysis, detection, email, or account settings.</p></div>
+    <form th:action="@{/settings/scoring/reset}" method="post" class="settings-action-row">
+      <input type="hidden" name="family" value="all">
+      <div><h3>Restore every scoring profile</h3><p>Candlestick and Elliott Wave weights return to the detector defaults for daily, weekly, and monthly intervals.</p></div>
+      <button type="submit" class="danger-button">Restore factory scoring</button>
+    </form>
+  </section>
+</div>
+</body>
+</html>

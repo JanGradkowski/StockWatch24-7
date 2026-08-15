@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="candlestickPatternSettings(preferences)" class="candlestick-pattern-settings-stack">
+  <section class="settings-card analysis-profile-overview candlestick-pattern-overview">
+    <div class="settings-card-heading">
+      <div><span class="settings-number">01</span><h2>Candlestick pattern definitions</h2></div>
+      <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
+            th:text="${preferences.custom()} ? 'Custom definitions' : 'Factory definitions'">Factory definitions</span>
+    </div>
+    <p class="analysis-settings-intro">Control the completed-candle measurements that make each formation count as a named pattern. These definitions apply to daily, weekly, and monthly alerts and historical scans.</p>
+    <div class="analysis-safety-strip candlestick-definition-guide">
+      <strong>How values are measured</strong>
+      <span><b>Percent (%)</b> compares a real body with the candle's complete high-to-low range.</span>
+      <span><b>Multiple (×)</b> compares a shadow or body with another body or the recent median body.</span>
+    </div>
+    <p class="candlestick-pattern-note">The separate <a th:href="@{/settings/detection}">Detection settings</a> control how StockWatch identifies an uptrend or downtrend. Existing stored signals are not rewritten.</p>
+    <div class="form-group candlestick-pattern-search">
+      <label for="candlestickPatternFilter">Find a pattern</label>
+      <input id="candlestickPatternFilter" type="search" placeholder="For example: engulfing, shadow, bullish" autocomplete="off">
+    </div>
+  </section>
+
+  <form id="candlestickPatternDefinitionsForm" th:action="@{/settings/candlestick-patterns}" method="post" class="candlestick-pattern-preferences-form">
+    <section class="settings-card candlestick-pattern-card" th:each="profile, stat : ${preferences.profiles}"
+             th:attr="data-pattern-search=${profile.label + ' ' + profile.formation + ' ' + profile.description}"
+             th:id="${'candlestick-pattern-' + profile.key}">
+      <div class="settings-card-heading candlestick-pattern-heading">
+        <div>
+          <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 2, 2)}">02</span>
+          <div><p class="scoring-family-label" th:text="${profile.formation}">Two-candle bullish reversal</p><h2 th:text="${profile.label}">Bullish Engulfing</h2></div>
+        </div>
+        <div class="candlestick-pattern-heading-actions">
+          <span class="analysis-profile-state candlestick-pattern-state" th:classappend="${profile.factoryProfile} ? '' : ' custom'" th:text="${profile.factoryProfile} ? 'Factory' : 'Custom'">Factory</span>
+          <button class="danger-outline-button" type="submit" th:form="${profile.key + '-reset-form'}">Reset this pattern</button>
+        </div>
+      </div>
+
+      <p class="candlestick-pattern-description" th:text="${profile.description}">A description of the formation.</p>
+      <div class="analysis-safety-strip candlestick-fixed-rule-strip">
+        <strong>Rules that stay fixed</strong>
+        <span th:text="${profile.fixedRules}">The required candle directions and ordering stay fixed.</span>
+      </div>
+
+      <div class="candlestick-pattern-rule-grid">
+        <fieldset class="analysis-setting-group candlestick-trend-group">
+          <legend>Prior price action</legend>
+          <p>Choose where this candle formation is allowed to qualify as this named pattern.</p>
+          <label class="candlestick-select-control" th:for="${profile.key + '-trend'}">
+            <span>Required price action before the formation<small>Factory: <b th:text="${profile.factoryTrendRequirement.label()}">Required downtrend</b></small></span>
+            <select th:id="${profile.key + '-trend'}" th:name="${profile.key + '.trendRequirement'}" required>
+              <option th:each="requirement : ${trendRequirements}" th:value="${requirement.name()}" th:text="${requirement.label()}" th:selected="${requirement == profile.trendRequirement}">No prior trend required</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset class="analysis-setting-group candlestick-threshold-group">
+          <legend>Adjustable measurements</legend>
+          <p>Every measurement shows exactly what it compares. The note below it explains how to make matching stricter.</p>
+          <div class="candlestick-threshold-list">
+            <div class="candlestick-threshold-row" th:each="setting : ${profile.settings}">
+              <label class="candlestick-threshold-copy" th:for="${profile.key + '-' + setting.key}">
+                <strong th:text="${setting.label}">Minimum second body versus first body</strong>
+                <small th:text="${setting.description}">What this value measures.</small>
+                <em th:text="${setting.effect}">Raising this value makes matching stricter.</em>
+              </label>
+              <label class="candlestick-value-control" th:for="${profile.key + '-' + setting.key}">
+                <span>Value <small>Factory: <b th:text="${setting.factoryValue + setting.unit}">1.0×</b></small></span>
+                <span><input type="number" required inputmode="decimal" th:id="${profile.key + '-' + setting.key}" th:name="${profile.key + '.' + setting.key}" th:min="${setting.min}" th:max="${setting.max}" th:step="${setting.step}" th:value="${setting.value}"><b th:text="${setting.unit}">%</b></span>
+              </label>
+            </div>
+          </div>
+        </fieldset>
+      </div>
+    </section>
+
+    <p id="candlestickPatternEmpty" class="settings-card settings-muted candlestick-pattern-empty" hidden>No pattern matches that search.</p>
+
+    <section class="settings-card analysis-save-card candlestick-pattern-save-card">
+      <div><strong>Apply pattern definitions</strong><p>Changes affect future alerts, current-signal checks, and newly generated historical scans.</p></div>
+      <button class="btn-accent" type="submit">Apply changes</button>
+    </section>
+  </form>
+
+  <form th:each="profile : ${preferences.profiles}" th:id="${profile.key + '-reset-form'}" th:action="@{/settings/candlestick-patterns/reset}" method="post" class="hidden-reset-form"><input type="hidden" name="pattern" th:value="${profile.pattern.name()}"></form>
+
+  <section class="settings-card analysis-factory-zone candlestick-pattern-factory-zone">
+    <div class="settings-card-heading"><div><span class="settings-number">17</span><h2>Factory restoration</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
+    <form th:action="@{/settings/candlestick-patterns/reset}" method="post" class="settings-action-row">
+      <input type="hidden" name="pattern" value="all">
+      <div><h3>Restore every pattern definition</h3><p>Returns all candle measurements and prior-price-action requirements to StockWatch factory values.</p></div>
+      <button class="danger-button" type="submit">Restore factory definitions</button>
+    </form>
+  </section>
+</div>
+</body>
+</html>

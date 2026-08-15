@@ -95,6 +95,7 @@ class HistoricalCandlestickLifecycleBacktestTest {
                 });
         assertThat(count(lifecycleSignals, ignored -> true))
                 .isEqualTo(count(lifecycleSignals, signal -> signal.status() == SignalLifecycleStatus.CONFIRMED)
+                        + count(lifecycleSignals, signal -> signal.status() == SignalLifecycleStatus.REJECTED)
                         + count(lifecycleSignals, signal -> signal.status() == SignalLifecycleStatus.INVALIDATED)
                         + count(lifecycleSignals, signal -> signal.status() == SignalLifecycleStatus.EXPIRED));
 
@@ -134,19 +135,42 @@ class HistoricalCandlestickLifecycleBacktestTest {
                 .orElseThrow();
         assertThat(patternHigh).isGreaterThan(patternLow);
 
-        double confirmationTrigger = trade.tradeSignal() == TradeSignal.BUY ? patternHigh : patternLow;
+        double confirmationTrigger = CandlestickSignalLifecyclePolicy
+                .requiresNextCandleConfirmation(trade.pattern())
+                ? trade.entryClose()
+                : trade.tradeSignal() == TradeSignal.BUY ? patternHigh : patternLow;
         double invalidationPrice = trade.tradeSignal() == TradeSignal.BUY ? patternLow : patternHigh;
         List<Candle> subsequentCandles = candles.subList(
                 signalIndex + 1,
                 signalIndex + LIFECYCLE_WINDOW + 1
         );
-        LifecycleResolution resolution = CandlestickSignalLifecyclePolicy.resolve(
-                trade.tradeSignal(),
-                confirmationTrigger,
-                invalidationPrice,
-                subsequentCandles,
-                LIFECYCLE_WINDOW
-        );
+        LifecycleResolution resolution;
+        if (CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(trade.pattern())) {
+            LifecycleResolution gate = CandlestickSignalLifecyclePolicy.resolveCandidateGate(
+                    trade.pattern(), trade.tradeSignal(), trade.entryClose(), subsequentCandles);
+            if (gate.status() == SignalLifecycleStatus.REJECTED) {
+                resolution = gate;
+            } else {
+                LifecycleResolution outcome = CandlestickSignalLifecyclePolicy.resolve(
+                        trade.tradeSignal(),
+                        trade.tradeSignal() == TradeSignal.BUY ? patternHigh : patternLow,
+                        invalidationPrice,
+                        subsequentCandles.subList(1, subsequentCandles.size()),
+                        LIFECYCLE_WINDOW - 1
+                );
+                resolution = new LifecycleResolution(
+                        outcome.status(), outcome.resolutionCandle(), outcome.candleOffset() + 1);
+            }
+        } else {
+            resolution = CandlestickSignalLifecyclePolicy.resolve(
+                    trade.pattern(),
+                    trade.tradeSignal(),
+                    confirmationTrigger,
+                    invalidationPrice,
+                    subsequentCandles,
+                    LIFECYCLE_WINDOW
+            );
+        }
         assertThat(resolution).isNotNull();
 
         return new LifecycleSignal(
@@ -201,6 +225,7 @@ class HistoricalCandlestickLifecycleBacktestTest {
                 count(signals, signal -> signal.trade().tradeSignal() == TradeSignal.SELL)
         );
         printLifecycleRow("CONFIRMED", signals, SignalLifecycleStatus.CONFIRMED);
+        printLifecycleRow("REJECTED", signals, SignalLifecycleStatus.REJECTED);
         printLifecycleRow("INVALIDATED", signals, SignalLifecycleStatus.INVALIDATED);
         printLifecycleRow("EXPIRED", signals, SignalLifecycleStatus.EXPIRED);
 
@@ -209,11 +234,13 @@ class HistoricalCandlestickLifecycleBacktestTest {
         for (int offset = 1; offset <= LIFECYCLE_WINDOW; offset++) {
             int fixedOffset = offset;
             System.out.printf(
-                    "  candle %d             total=%4d confirmed=%4d invalidated=%4d expired=%4d%n",
+                    "  candle %d             total=%4d confirmed=%4d rejected=%4d invalidated=%4d expired=%4d%n",
                     offset,
                     count(signals, signal -> signal.resolutionOffset() == fixedOffset),
                     count(signals, signal -> signal.resolutionOffset() == fixedOffset
                             && signal.status() == SignalLifecycleStatus.CONFIRMED),
+                    count(signals, signal -> signal.resolutionOffset() == fixedOffset
+                            && signal.status() == SignalLifecycleStatus.REJECTED),
                     count(signals, signal -> signal.resolutionOffset() == fixedOffset
                             && signal.status() == SignalLifecycleStatus.INVALIDATED),
                     count(signals, signal -> signal.resolutionOffset() == fixedOffset

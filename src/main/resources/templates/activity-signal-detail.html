@@ -6,6 +6,7 @@
   <title th:text="${signal.symbol() + ' activity signal analysis — StockWatch 24/7'}">Activity signal analysis &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -42,13 +43,12 @@
         <span class="signal-report-tag direction"
               th:classappend="${signal.transactionType() == 'PURCHASE'} ? ' buy' : ' sell'"
               th:text="${signal.transactionType() == 'PURCHASE' ? 'BUY' : 'SELL'}">SELL</span>
-        <span class="signal-report-tag interval">1d</span>
+        <span class="signal-report-tag interval">Daily</span>
         <span class="signal-report-tag" th:text="${#temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">07 Aug 2026</span>
         <span th:if="${signal.actorRole() != null}" class="signal-report-tag" th:text="${signal.actorRole()}">EVP</span>
       </div>
     </div>
     <div class="signal-report-actions">
-      <a th:href="@{/activity-signals}" class="btn-secondary">Back to all signals</a>
       <a th:if="${signal.filingUrl() != null}" th:href="${signal.filingUrl()}"
          class="btn-secondary" target="_blank" rel="noopener noreferrer">Official filing</a>
       <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary">Open workspace <span class="button-arrow" aria-hidden="true">&rarr;</span></a>
@@ -79,15 +79,34 @@
       <div class="signal-chart-heading">
         <div>
           <div class="signal-section-kicker">Transaction on price</div>
-          <h2 id="signal-chart-heading">
+          <h2 id="signal-chart-heading" data-detail-chart-heading>
             <span th:text="${signal.transactionTypeLabel()}">Sale</span>
-            on the daily <span th:text="${signal.symbol()}">JNJ</span> chart
+            on the <span data-detail-chart-interval-label>daily</span> <span th:text="${signal.symbol()}">JNJ</span> chart
           </h2>
-          <p th:if="${signal.chart().available()}">
+          <p th:if="${signal.chart().available()}" data-detail-chart-summary>
             The filed transaction date and reported execution price are marked against complete cached daily candles.
           </p>
         </div>
-        <span class="signal-chart-cache-badge">Complete cached daily history &middot; no API request</span>
+        <div class="signal-chart-heading-actions">
+          <span class="signal-chart-cache-badge" data-detail-chart-status>Complete cached daily history &middot; no API request</span>
+          <div class="signal-detail-interval-switcher"
+               role="group"
+               aria-label="Chart candle interval"
+               data-detail-interval-controls
+               data-chart-kind="activity"
+               data-native-interval="1d"
+               data-native-label="Daily"
+               th:attr="data-symbol=${signal.symbol()},
+                        data-signal-label=${signal.transactionTypeLabel()},
+                        data-transaction-date=${signal.transactionDate()},
+                        data-entry-price=${signal.chart().entryPrice()},
+                        data-direction=${signal.transactionType() == 'PURCHASE' ? 'BUY' : 'SELL'},
+                        data-action-label=${signal.transactionTypeLabel()}">
+            <button type="button" class="signal-detail-interval-button active" data-detail-interval="1d" aria-pressed="true"><span>Daily</span><small>Transaction interval</small></button>
+            <button type="button" class="signal-detail-interval-button" data-detail-interval="1wk" aria-pressed="false"><span>Weekly</span></button>
+            <button type="button" class="signal-detail-interval-button" data-detail-interval="1mo" aria-pressed="false"><span>Monthly</span></button>
+          </div>
+        </div>
       </div>
 
       <div th:if="${signal.chart().available()}" class="signal-chart-legend" aria-label="Chart annotation legend">
@@ -95,18 +114,24 @@
         <span><i class="signal-chart-key pattern" aria-hidden="true"></i><span th:text="${signal.proxyEntryPrice() ? 'Daily close proxy' : 'Reported execution price'}">Reported execution price</span></span>
       </div>
 
-      <div th:if="${signal.chart().available()}" id="signalChart" class="signal-chart" role="img"
+      <div th:if="${signal.chart().available()}" id="signalChart" class="signal-chart" role="img" data-native-detail-chart
            th:attr="aria-label=${signal.transactionTypeLabel() + ' chart for ' + signal.symbol()},
                     data-signal-time=${signal.chart().signalTimestamp()},
                     data-entry-price=${signal.chart().entryPrice()},
                     data-direction=${signal.transactionType() == 'PURCHASE' ? 'BUY' : 'SELL'},
                     data-action-label=${signal.transactionTypeLabel()}"></div>
+      <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
+           th:attr="aria-label=${'Alternate interval transaction chart for ' + signal.symbol()}" role="img"></div>
+      <div class="signal-chart-unavailable signal-detail-interval-error" data-detail-interval-error hidden>
+        <span aria-hidden="true">!</span>
+        <div><h3>Chart interval is unavailable</h3><p data-detail-interval-error-message>Completed candles could not be loaded for this interval.</p></div>
+      </div>
       <ol th:if="${signal.chart().available()}" id="signalChartData" hidden aria-hidden="true">
         <li th:each="candle : ${signal.chart().candles()}"
             th:attr="data-time=${candle.timestamp()},data-open=${candle.open()},data-high=${candle.high()},data-low=${candle.low()},data-close=${candle.close()}"></li>
       </ol>
 
-      <div th:unless="${signal.chart().available()}" class="signal-chart-unavailable">
+      <div th:unless="${signal.chart().available()}" class="signal-chart-unavailable" data-native-chart-unavailable>
         <span aria-hidden="true">i</span>
         <div>
           <h3>Chart context is unavailable for this signal</h3>
@@ -155,6 +180,10 @@
                   th:classappend="${signal.generalReturnPercent().signum() >= 0} ? ' positive' : ' negative'"
                   th:text="${(signal.generalReturnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.generalReturnPercent(), 1, 2) + '%'}">+4.20%</strong>
           <strong th:unless="${signal.generalReturnPercent() != null}">Awaiting completed price data</strong>
+          <small th:if="${signal.generalReturnPercent() != null and !signal.proxyEntryPrice()}"
+                 th:text="${'From reported transaction price on ' + #temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">From reported transaction price on 07 Aug 2026</small>
+          <small th:if="${signal.generalReturnPercent() != null and signal.proxyEntryPrice()}"
+                 th:text="${'From daily-close proxy aligned to ' + #temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">From daily-close proxy aligned to 07 Aug 2026</small>
         </div>
       </div>
       <p class="signal-lifecycle-note" th:text="${signal.disclosureNotice()}">Results use the execution price reported in the filing.</p>
@@ -299,7 +328,6 @@
     </div>
   </dialog>
 
-  <a th:href="@{/activity-signals}" class="back-link history-back-link">&larr; Back to all activity signals</a>
 </main>
 
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">

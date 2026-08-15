@@ -14,7 +14,7 @@ public interface VirtualTradeRepository extends JpaRepository<VirtualTrade, Long
     @Query("""
             select trade from VirtualTrade trade
             join fetch trade.stockAsset
-            where trade.user = :user
+            where trade.user = :user and trade.deletedAt is null
             order by trade.entryAt desc, trade.id desc
             """)
     List<VirtualTrade> findAllForUser(@Param("user") User user);
@@ -22,7 +22,7 @@ public interface VirtualTradeRepository extends JpaRepository<VirtualTrade, Long
     @Query("""
             select trade from VirtualTrade trade
             join fetch trade.stockAsset
-            where trade.user = :user and trade.stockAsset = :stockAsset
+            where trade.user = :user and trade.stockAsset = :stockAsset and trade.deletedAt is null
             order by trade.entryAt desc, trade.id desc
             """)
     List<VirtualTrade> findAllForUserAndStockAsset(@Param("user") User user,
@@ -31,7 +31,7 @@ public interface VirtualTradeRepository extends JpaRepository<VirtualTrade, Long
     @Query("""
             select trade from VirtualTrade trade
             join fetch trade.stockAsset
-            where trade.id = :id and trade.user = :user
+            where trade.id = :id and trade.user = :user and trade.deletedAt is null
             """)
     Optional<VirtualTrade> findOwnedById(@Param("id") Long id, @Param("user") User user);
 

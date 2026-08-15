@@ -318,6 +318,10 @@ public class HistoricalElliottWaveService {
             List<PointView> points,
             List<CandleView> candles,
             ResultView result) {
+
+        public String intervalLabel() {
+            return timeInterval == TimeInterval.MONTHLY ? "Monthly" : "Weekly";
+        }
     }
 
     public record ScoreSectionView(String category, String scoreLabel, String status,

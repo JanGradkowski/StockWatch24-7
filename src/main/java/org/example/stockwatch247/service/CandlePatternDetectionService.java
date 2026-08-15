@@ -3,7 +3,11 @@ package org.example.stockwatch247.service;
 import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.SignalStength;
+import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
+import org.example.stockwatch247.service.CandlestickPatternPreferencesService.PatternProfile;
+import org.example.stockwatch247.service.CandlestickPatternPreferencesService.PreferencesView;
+import org.example.stockwatch247.service.CandlestickPatternPreferencesService.TrendRequirement;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -26,6 +30,7 @@ public class CandlePatternDetectionService {
     private static final int BODY_COMPARISON_LOOKBACK = 20;
     private static final int TREND_LOOKBACK = 5;
     private static final int MIN_TREND_CANDLES = 3;
+    private static final double MIN_TREND_MOVE_PERCENT = 1.5;
     /*
      * V4 is an explainable setup rank, not a probability forecast. Correlated
      * indicators share family caps so an individual price move cannot collect
@@ -38,8 +43,39 @@ public class CandlePatternDetectionService {
     private static final int BOLLINGER_MAX_TENTHS = 100;
     private static final int SUPPORT_RESISTANCE_MAX_TENTHS = 150;
     private static final int VOLUME_MAX_TENTHS = 100;
+    private final CandlestickAdaptiveTrendService adaptiveTrendService =
+            new CandlestickAdaptiveTrendService();
 
     public List<DetectedSignal> detect(List<EnrichedCandle> recentCandles) {
+        return detect(recentCandles, TrendDetectionRules.factory(),
+                CandlestickPatternPreferencesService.factoryPreferences());
+    }
+
+    /**
+     * Uses the validated interval- and direction-specific factory trend model.
+     * Explicit user trend settings continue to use {@link #detect(List, TrendDetectionRules)}.
+     */
+    public List<DetectedSignal> detectFactory(List<EnrichedCandle> recentCandles,
+                                               TimeInterval interval) {
+        return detect(recentCandles, TrendDetectionRules.adaptiveFactory(interval),
+                CandlestickPatternPreferencesService.factoryPreferences());
+    }
+
+    public List<DetectedSignal> detect(List<EnrichedCandle> recentCandles,
+                                       TrendDetectionRules trendRules) {
+        return detect(recentCandles, trendRules, CandlestickPatternPreferencesService.factoryPreferences());
+    }
+
+    public List<DetectedSignal> detect(List<EnrichedCandle> recentCandles,
+                                       TrendDetectionRules trendRules,
+                                       PreferencesView definitions) {
+        if (trendRules == null) {
+            throw new IllegalArgumentException("Candlestick trend-detection rules are required.");
+        }
+        if (definitions == null) {
+            throw new IllegalArgumentException("Candlestick pattern definitions are required.");
+        }
+        trendRules.validate();
         if (recentCandles == null || recentCandles.size() < 2) {
             return List.of();
         }
@@ -57,113 +93,133 @@ public class CandlePatternDetectionService {
         EnrichedCandle current = candles.get(last);
         EnrichedCandle previous = candles.get(last - 1);
 
-        if (isGeometricDoji(current)) {
+        TrendContext singleCandleBuyTrend = trendBefore(candles, last, trendRules, TradeSignal.BUY);
+        TrendContext singleCandleSellTrend = trendBefore(candles, last, trendRules, TradeSignal.SELL);
+        PatternProfile doji = definitions.profile(CandlePattern.DOJI);
+        if (matchesTrend(doji, singleCandleBuyTrend, singleCandleSellTrend)
+                && isGeometricDoji(current, doji)) {
             signals.add(neutralSignal(CandlePattern.DOJI, current, List.of(
-                    "Pattern geometry: the real body is no more than 10% of the candle range",
+                    "Pattern geometry: the real body is no more than " + formatThreshold(doji.value("maxBodyPercent"))
+                            + "% of the candle range",
                     isAvailable(current.atr())
                             ? "Volatility context: ATR was available for interpretation"
                             : "Volatility context: ATR was unavailable"
             )));
         }
 
-        TrendContext singleCandleTrend = trendBefore(candles, last);
         CandleStatistics singleCandleStatistics = statisticsBefore(candles, last);
-        if (isGeometricHammerShape(current)) {
-            if (singleCandleTrend.direction() == TrendDirection.DOWN) {
-                addSignal(signals, CandlePattern.HAMMER, TradeSignal.BUY,
-                        evaluateSetup(CandlePattern.HAMMER, candles, last, last,
-                                TradeSignal.BUY, singleCandleTrend, singleCandleStatistics));
-            } else if (singleCandleTrend.direction() == TrendDirection.UP) {
-                addSignal(signals, CandlePattern.HANGING_MAN, TradeSignal.SELL,
-                        evaluateSetup(CandlePattern.HANGING_MAN, candles, last, last,
-                                TradeSignal.SELL, singleCandleTrend, singleCandleStatistics));
-            }
+        PatternProfile hammer = definitions.profile(CandlePattern.HAMMER);
+        if (matchesTrend(hammer, singleCandleBuyTrend, singleCandleSellTrend) && isGeometricHammerShape(current, hammer)) {
+            addSignal(signals, CandlePattern.HAMMER, TradeSignal.BUY,
+                    evaluateSetup(CandlePattern.HAMMER, candles, last, last,
+                            TradeSignal.BUY, singleCandleBuyTrend, singleCandleStatistics));
         }
-
-        if (isGeometricShootingStarShape(current)) {
-            if (singleCandleTrend.direction() == TrendDirection.UP) {
-                addSignal(signals, CandlePattern.SHOOTING_STAR, TradeSignal.SELL,
-                        evaluateSetup(CandlePattern.SHOOTING_STAR, candles, last, last,
-                                TradeSignal.SELL, singleCandleTrend, singleCandleStatistics));
-            } else if (singleCandleTrend.direction() == TrendDirection.DOWN) {
-                addSignal(signals, CandlePattern.INVERTED_HAMMER, TradeSignal.BUY,
-                        evaluateSetup(CandlePattern.INVERTED_HAMMER, candles, last, last,
-                                TradeSignal.BUY, singleCandleTrend, singleCandleStatistics));
-            }
+        PatternProfile hangingMan = definitions.profile(CandlePattern.HANGING_MAN);
+        if (matchesTrend(hangingMan, singleCandleBuyTrend, singleCandleSellTrend) && isGeometricHammerShape(current, hangingMan)) {
+            addSignal(signals, CandlePattern.HANGING_MAN, TradeSignal.SELL,
+                    evaluateSetup(CandlePattern.HANGING_MAN, candles, last, last,
+                            TradeSignal.SELL, singleCandleSellTrend, singleCandleStatistics));
+        }
+        PatternProfile shootingStar = definitions.profile(CandlePattern.SHOOTING_STAR);
+        if (matchesTrend(shootingStar, singleCandleBuyTrend, singleCandleSellTrend) && isGeometricShootingStarShape(current, shootingStar)) {
+            addSignal(signals, CandlePattern.SHOOTING_STAR, TradeSignal.SELL,
+                    evaluateSetup(CandlePattern.SHOOTING_STAR, candles, last, last,
+                            TradeSignal.SELL, singleCandleSellTrend, singleCandleStatistics));
+        }
+        PatternProfile invertedHammer = definitions.profile(CandlePattern.INVERTED_HAMMER);
+        if (matchesTrend(invertedHammer, singleCandleBuyTrend, singleCandleSellTrend) && isGeometricShootingStarShape(current, invertedHammer)) {
+            addSignal(signals, CandlePattern.INVERTED_HAMMER, TradeSignal.BUY,
+                    evaluateSetup(CandlePattern.INVERTED_HAMMER, candles, last, last,
+                            TradeSignal.BUY, singleCandleBuyTrend, singleCandleStatistics));
         }
 
         int twoCandleStart = last - 1;
-        TrendContext twoCandleTrend = trendBefore(candles, twoCandleStart);
+        TrendContext twoCandleBuyTrend = trendBefore(
+                candles, twoCandleStart, trendRules, TradeSignal.BUY);
+        TrendContext twoCandleSellTrend = trendBefore(
+                candles, twoCandleStart, trendRules, TradeSignal.SELL);
         CandleStatistics twoCandleStatistics = statisticsBefore(candles, twoCandleStart);
 
-        if (twoCandleTrend.direction() == TrendDirection.DOWN
-                && isGeometricBullishEngulfing(previous, current)) {
+        PatternProfile bullishEngulfing = definitions.profile(CandlePattern.BULLISH_ENGULFING);
+        if (matchesTrend(bullishEngulfing, twoCandleBuyTrend, twoCandleSellTrend)
+                && isGeometricBullishEngulfing(previous, current, bullishEngulfing)) {
             addSignal(signals, CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY,
                     evaluateSetup(CandlePattern.BULLISH_ENGULFING, candles, last, twoCandleStart,
-                            TradeSignal.BUY, twoCandleTrend, twoCandleStatistics));
+                            TradeSignal.BUY, twoCandleBuyTrend, twoCandleStatistics));
         }
-        if (twoCandleTrend.direction() == TrendDirection.UP
-                && isGeometricBearishEngulfing(previous, current)) {
+        PatternProfile bearishEngulfing = definitions.profile(CandlePattern.BEARISH_ENGULFING);
+        if (matchesTrend(bearishEngulfing, twoCandleBuyTrend, twoCandleSellTrend)
+                && isGeometricBearishEngulfing(previous, current, bearishEngulfing)) {
             addSignal(signals, CandlePattern.BEARISH_ENGULFING, TradeSignal.SELL,
                     evaluateSetup(CandlePattern.BEARISH_ENGULFING, candles, last, twoCandleStart,
-                            TradeSignal.SELL, twoCandleTrend, twoCandleStatistics));
+                            TradeSignal.SELL, twoCandleSellTrend, twoCandleStatistics));
         }
-        if (twoCandleTrend.direction() == TrendDirection.DOWN
-                && isGeometricPiercingLine(previous, current, twoCandleStatistics)) {
+        PatternProfile piercing = definitions.profile(CandlePattern.PIERCING_LINE);
+        if (matchesTrend(piercing, twoCandleBuyTrend, twoCandleSellTrend)
+                && isGeometricPiercingLine(previous, current, twoCandleStatistics, piercing)) {
             addSignal(signals, CandlePattern.PIERCING_LINE, TradeSignal.BUY,
                     evaluateSetup(CandlePattern.PIERCING_LINE, candles, last, twoCandleStart,
-                            TradeSignal.BUY, twoCandleTrend, twoCandleStatistics));
+                            TradeSignal.BUY, twoCandleBuyTrend, twoCandleStatistics));
         }
-        if (twoCandleTrend.direction() == TrendDirection.UP
-                && isGeometricDarkCloudCover(previous, current, twoCandleStatistics)) {
+        PatternProfile darkCloud = definitions.profile(CandlePattern.DARK_CLOUD_COVER);
+        if (matchesTrend(darkCloud, twoCandleBuyTrend, twoCandleSellTrend)
+                && isGeometricDarkCloudCover(previous, current, twoCandleStatistics, darkCloud)) {
             addSignal(signals, CandlePattern.DARK_CLOUD_COVER, TradeSignal.SELL,
                     evaluateSetup(CandlePattern.DARK_CLOUD_COVER, candles, last, twoCandleStart,
-                            TradeSignal.SELL, twoCandleTrend, twoCandleStatistics));
+                            TradeSignal.SELL, twoCandleSellTrend, twoCandleStatistics));
         }
-        if (twoCandleTrend.direction() == TrendDirection.DOWN
-                && isGeometricBullishHarami(previous, current, twoCandleStatistics)) {
+        PatternProfile bullishHarami = definitions.profile(CandlePattern.BULLISH_HARAMI);
+        if (matchesTrend(bullishHarami, twoCandleBuyTrend, twoCandleSellTrend)
+                && isGeometricBullishHarami(previous, current, twoCandleStatistics, bullishHarami)) {
             addSignal(signals, CandlePattern.BULLISH_HARAMI, TradeSignal.BUY,
                     evaluateSetup(CandlePattern.BULLISH_HARAMI, candles, last, twoCandleStart,
-                            TradeSignal.BUY, twoCandleTrend, twoCandleStatistics));
+                            TradeSignal.BUY, twoCandleBuyTrend, twoCandleStatistics));
         }
-        if (twoCandleTrend.direction() == TrendDirection.UP
-                && isGeometricBearishHarami(previous, current, twoCandleStatistics)) {
+        PatternProfile bearishHarami = definitions.profile(CandlePattern.BEARISH_HARAMI);
+        if (matchesTrend(bearishHarami, twoCandleBuyTrend, twoCandleSellTrend)
+                && isGeometricBearishHarami(previous, current, twoCandleStatistics, bearishHarami)) {
             addSignal(signals, CandlePattern.BEARISH_HARAMI, TradeSignal.SELL,
                     evaluateSetup(CandlePattern.BEARISH_HARAMI, candles, last, twoCandleStart,
-                            TradeSignal.SELL, twoCandleTrend, twoCandleStatistics));
+                            TradeSignal.SELL, twoCandleSellTrend, twoCandleStatistics));
         }
 
         if (candles.size() >= 3) {
             int threeCandleStart = last - 2;
             EnrichedCandle first = candles.get(threeCandleStart);
             EnrichedCandle middle = candles.get(last - 1);
-            TrendContext threeCandleTrend = trendBefore(candles, threeCandleStart);
+            TrendContext threeCandleBuyTrend = trendBefore(
+                    candles, threeCandleStart, trendRules, TradeSignal.BUY);
+            TrendContext threeCandleSellTrend = trendBefore(
+                    candles, threeCandleStart, trendRules, TradeSignal.SELL);
             CandleStatistics threeCandleStatistics = statisticsBefore(candles, threeCandleStart);
 
-            if (threeCandleTrend.direction() == TrendDirection.DOWN
-                    && isGeometricMorningStar(first, middle, current, threeCandleStatistics)) {
+            PatternProfile morningStar = definitions.profile(CandlePattern.MORNING_STAR);
+            if (matchesTrend(morningStar, threeCandleBuyTrend, threeCandleSellTrend)
+                    && isGeometricMorningStar(first, middle, current, threeCandleStatistics, morningStar)) {
                 addSignal(signals, CandlePattern.MORNING_STAR, TradeSignal.BUY,
                         evaluateSetup(CandlePattern.MORNING_STAR, candles, last, threeCandleStart,
-                                TradeSignal.BUY, threeCandleTrend, threeCandleStatistics));
+                                TradeSignal.BUY, threeCandleBuyTrend, threeCandleStatistics));
             }
-            if (threeCandleTrend.direction() == TrendDirection.UP
-                    && isGeometricEveningStar(first, middle, current, threeCandleStatistics)) {
+            PatternProfile eveningStar = definitions.profile(CandlePattern.EVENING_STAR);
+            if (matchesTrend(eveningStar, threeCandleBuyTrend, threeCandleSellTrend)
+                    && isGeometricEveningStar(first, middle, current, threeCandleStatistics, eveningStar)) {
                 addSignal(signals, CandlePattern.EVENING_STAR, TradeSignal.SELL,
                         evaluateSetup(CandlePattern.EVENING_STAR, candles, last, threeCandleStart,
-                                TradeSignal.SELL, threeCandleTrend, threeCandleStatistics));
+                                TradeSignal.SELL, threeCandleSellTrend, threeCandleStatistics));
             }
-            if ((threeCandleTrend.direction() == TrendDirection.DOWN
-                    || threeCandleTrend.direction() == TrendDirection.BASE)
-                    && isGeometricThreeWhiteSoldiers(first, middle, current, threeCandleStatistics)) {
+            PatternProfile soldiers = definitions.profile(CandlePattern.THREE_WHITE_SOLDIERS);
+            if (matchesTrend(soldiers, threeCandleBuyTrend, threeCandleSellTrend)
+                    && isGeometricThreeWhiteSoldiers(first, middle, current, threeCandleStatistics, soldiers)) {
                 addSignal(signals, CandlePattern.THREE_WHITE_SOLDIERS, TradeSignal.BUY,
                         evaluateSetup(CandlePattern.THREE_WHITE_SOLDIERS, candles, last, threeCandleStart,
-                                TradeSignal.BUY, threeCandleTrend, threeCandleStatistics));
+                                TradeSignal.BUY, threeCandleBuyTrend, threeCandleStatistics));
             }
-            if (threeCandleTrend.direction() == TrendDirection.UP
-                    && isGeometricThreeBlackCrows(first, middle, current, threeCandleStatistics)) {
+            PatternProfile crows = definitions.profile(CandlePattern.THREE_BLACK_CROWS);
+            if (matchesTrend(crows, threeCandleBuyTrend, threeCandleSellTrend)
+                    && isGeometricThreeBlackCrows(first, middle, current, threeCandleStatistics, crows)) {
                 addSignal(signals, CandlePattern.THREE_BLACK_CROWS, TradeSignal.SELL,
                         evaluateSetup(CandlePattern.THREE_BLACK_CROWS, candles, last, threeCandleStart,
-                                TradeSignal.SELL, threeCandleTrend, threeCandleStatistics));
+                                TradeSignal.SELL, threeCandleSellTrend, threeCandleStatistics));
             }
         }
 
@@ -182,6 +238,28 @@ public class CandlePatternDetectionService {
                 .toList();
     }
 
+    public List<DetectedSignal> detectAlertSignalsFactory(List<EnrichedCandle> recentCandles,
+                                                           TimeInterval interval) {
+        return detectFactory(recentCandles, interval).stream()
+                .filter(signal -> signal.tradeSignal() != TradeSignal.HOLD)
+                .toList();
+    }
+
+    public List<DetectedSignal> detectAlertSignals(List<EnrichedCandle> recentCandles,
+                                                    TrendDetectionRules trendRules) {
+        return detect(recentCandles, trendRules).stream()
+                .filter(signal -> signal.tradeSignal() != TradeSignal.HOLD)
+                .toList();
+    }
+
+    public List<DetectedSignal> detectAlertSignals(List<EnrichedCandle> recentCandles,
+                                                    TrendDetectionRules trendRules,
+                                                    PreferencesView definitions) {
+        return detect(recentCandles, trendRules, definitions).stream()
+                .filter(signal -> signal.tradeSignal() != TradeSignal.HOLD)
+                .toList();
+    }
+
     /**
      * Exposes the detector's exact pre-pattern trend classification to
      * package-level research harnesses so matched controls cannot drift from
@@ -189,8 +267,18 @@ public class CandlePatternDetectionService {
      */
     PriorTrendAssessment assessPriorTrendForLatestPattern(List<EnrichedCandle> recentCandles,
                                                            int patternCandleCount) {
+        return assessPriorTrendForLatestPattern(
+                recentCandles, patternCandleCount, TrendDetectionRules.factory());
+    }
+
+    PriorTrendAssessment assessPriorTrendForLatestPattern(List<EnrichedCandle> recentCandles,
+                                                           int patternCandleCount,
+                                                           TrendDetectionRules trendRules) {
         if (patternCandleCount < 1) {
             throw new IllegalArgumentException("patternCandleCount must be positive.");
+        }
+        if (trendRules == null) {
+            throw new IllegalArgumentException("Candlestick trend-detection rules are required.");
         }
         if (recentCandles == null || recentCandles.isEmpty()) {
             return PriorTrendAssessment.none();
@@ -205,8 +293,144 @@ public class CandlePatternDetectionService {
             return PriorTrendAssessment.none();
         }
 
-        TrendContext context = trendBefore(candles, patternStartIndex);
-        return new PriorTrendAssessment(context.direction(), context.scorePoints(), context.description());
+        TrendContext context = trendBefore(candles, patternStartIndex, trendRules);
+        return context.asAssessment();
+    }
+
+    PriorTrendAssessment assessFactoryPriorTrendForLatestPattern(
+            List<EnrichedCandle> recentCandles,
+            int patternCandleCount,
+            TimeInterval interval,
+            TradeSignal direction) {
+        if (patternCandleCount < 1 || recentCandles == null || recentCandles.isEmpty()) {
+            return PriorTrendAssessment.none();
+        }
+        List<EnrichedCandle> candles = recentCandles.stream()
+                .filter(this::hasCompleteData)
+                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
+                .toList();
+        int patternStartIndex = candles.size() - patternCandleCount;
+        if (patternStartIndex < 0) {
+            return PriorTrendAssessment.none();
+        }
+        TrendContext context = trendBefore(candles, patternStartIndex,
+                TrendDetectionRules.adaptiveFactory(interval), direction);
+        return context.asAssessment();
+    }
+
+    PriorTrendAssessment assessPriorTrendForLatestPattern(
+            List<EnrichedCandle> recentCandles,
+            int patternCandleCount,
+            TrendDetectionRules trendRules,
+            TradeSignal direction) {
+        if (patternCandleCount < 1 || recentCandles == null || recentCandles.isEmpty()
+                || trendRules == null || direction == null) {
+            return PriorTrendAssessment.none();
+        }
+        List<EnrichedCandle> candles = recentCandles.stream()
+                .filter(this::hasCompleteData)
+                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
+                .toList();
+        int patternStartIndex = candles.size() - patternCandleCount;
+        if (patternStartIndex < 0) return PriorTrendAssessment.none();
+        return trendBefore(candles, patternStartIndex, trendRules, direction).asAssessment();
+    }
+
+    /**
+     * Returns geometry-only directional candidates for a prepared chronological
+     * candle series. Research sweeps can calculate geometry once and then apply
+     * many prior-trend configurations without re-running the expensive indicator
+     * and candle-shape work. Production detection still uses {@link #detect}.
+     */
+    List<GeometricPatternCandidate> geometricCandidatesAt(List<EnrichedCandle> candles,
+                                                           int last) {
+        if (candles == null || last < 1 || last >= candles.size()) {
+            return List.of();
+        }
+        EnrichedCandle current = candles.get(last);
+        EnrichedCandle previous = candles.get(last - 1);
+        if (!hasCompleteData(current) || !hasCompleteData(previous)) {
+            return List.of();
+        }
+
+        List<GeometricPatternCandidate> candidates = new ArrayList<>();
+        if (isGeometricHammerShape(current)) {
+            candidates.add(new GeometricPatternCandidate(
+                    CandlePattern.HAMMER, TradeSignal.BUY, TrendDirection.DOWN, false, 1));
+            candidates.add(new GeometricPatternCandidate(
+                    CandlePattern.HANGING_MAN, TradeSignal.SELL, TrendDirection.UP, false, 1));
+        }
+        if (isGeometricShootingStarShape(current)) {
+            candidates.add(new GeometricPatternCandidate(
+                    CandlePattern.SHOOTING_STAR, TradeSignal.SELL, TrendDirection.UP, false, 1));
+            candidates.add(new GeometricPatternCandidate(
+                    CandlePattern.INVERTED_HAMMER, TradeSignal.BUY, TrendDirection.DOWN, false, 1));
+        }
+
+        int twoCandleStart = last - 1;
+        CandleStatistics twoStatistics = statisticsBefore(candles, twoCandleStart);
+        if (isGeometricBullishEngulfing(previous, current)) {
+            candidates.add(candidate(CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY, TrendDirection.DOWN, 2));
+        }
+        if (isGeometricBearishEngulfing(previous, current)) {
+            candidates.add(candidate(CandlePattern.BEARISH_ENGULFING, TradeSignal.SELL, TrendDirection.UP, 2));
+        }
+        if (isGeometricPiercingLine(previous, current, twoStatistics)) {
+            candidates.add(candidate(CandlePattern.PIERCING_LINE, TradeSignal.BUY, TrendDirection.DOWN, 2));
+        }
+        if (isGeometricDarkCloudCover(previous, current, twoStatistics)) {
+            candidates.add(candidate(CandlePattern.DARK_CLOUD_COVER, TradeSignal.SELL, TrendDirection.UP, 2));
+        }
+        if (isGeometricBullishHarami(previous, current, twoStatistics)) {
+            candidates.add(candidate(CandlePattern.BULLISH_HARAMI, TradeSignal.BUY, TrendDirection.DOWN, 2));
+        }
+        if (isGeometricBearishHarami(previous, current, twoStatistics)) {
+            candidates.add(candidate(CandlePattern.BEARISH_HARAMI, TradeSignal.SELL, TrendDirection.UP, 2));
+        }
+
+        if (last >= 2) {
+            int threeCandleStart = last - 2;
+            EnrichedCandle first = candles.get(threeCandleStart);
+            EnrichedCandle middle = candles.get(last - 1);
+            CandleStatistics threeStatistics = statisticsBefore(candles, threeCandleStart);
+            if (isGeometricMorningStar(first, middle, current, threeStatistics)) {
+                candidates.add(candidate(CandlePattern.MORNING_STAR, TradeSignal.BUY, TrendDirection.DOWN, 3));
+            }
+            if (isGeometricEveningStar(first, middle, current, threeStatistics)) {
+                candidates.add(candidate(CandlePattern.EVENING_STAR, TradeSignal.SELL, TrendDirection.UP, 3));
+            }
+            if (isGeometricThreeWhiteSoldiers(first, middle, current, threeStatistics)) {
+                candidates.add(new GeometricPatternCandidate(
+                        CandlePattern.THREE_WHITE_SOLDIERS,
+                        TradeSignal.BUY,
+                        TrendDirection.DOWN,
+                        true,
+                        3));
+            }
+            if (isGeometricThreeBlackCrows(first, middle, current, threeStatistics)) {
+                candidates.add(candidate(CandlePattern.THREE_BLACK_CROWS, TradeSignal.SELL, TrendDirection.UP, 3));
+            }
+        }
+        return List.copyOf(candidates);
+    }
+
+    PriorTrendAssessment assessPreparedPriorTrend(List<EnrichedCandle> chronologicalCandles,
+                                                   int patternStartIndex,
+                                                   TrendDetectionRules trendRules) {
+        if (chronologicalCandles == null || chronologicalCandles.isEmpty()
+                || patternStartIndex < 0 || patternStartIndex >= chronologicalCandles.size()) {
+            return PriorTrendAssessment.none();
+        }
+        TrendContext context = trendBefore(chronologicalCandles, patternStartIndex, trendRules);
+        return context.asAssessment();
+    }
+
+    private GeometricPatternCandidate candidate(CandlePattern pattern,
+                                                TradeSignal tradeSignal,
+                                                TrendDirection trendDirection,
+                                                int patternCandleCount) {
+        return new GeometricPatternCandidate(
+                pattern, tradeSignal, trendDirection, false, patternCandleCount);
     }
 
     private void addSignal(List<DetectedSignal> signals,
@@ -222,7 +446,8 @@ public class CandlePatternDetectionService {
                 setupScore,
                 evidence.renderedComponents(),
                 candle.timestamp(),
-                candle.close()
+                candle.close(),
+                evidence.trendStartTimestamp()
         ));
     }
 
@@ -277,7 +502,11 @@ public class CandlePatternDetectionService {
         components.add(supportResistanceComponent(candles, setupIndex, signalIndex, direction));
         components.add(volumeComponent(candles, signalIndex, direction));
 
-        return new SignalEvidence(current, components);
+        Long trendStartTimestamp = trend.trendStartIndex() >= 0
+                && trend.trendStartIndex() < candles.size()
+                ? candles.get(trend.trendStartIndex()).timestamp()
+                : null;
+        return new SignalEvidence(current, components, trendStartTimestamp);
     }
 
     private ScoreComponent trendIndicatorComponent(List<EnrichedCandle> candles,
@@ -951,39 +1180,51 @@ public class CandlePatternDetectionService {
     }
 
     private boolean isGeometricDoji(EnrichedCandle candle) {
-        return body(candle) <= range(candle) * 0.1;
+        return isGeometricDoji(candle, factoryProfile(CandlePattern.DOJI));
     }
-
+    private boolean isGeometricDoji(EnrichedCandle candle, PatternProfile profile) {
+        return body(candle) <= range(candle) * profile.fraction("maxBodyPercent");
+    }
     private boolean isGeometricHammerShape(EnrichedCandle candle) {
-        return body(candle) >= range(candle) * 0.02
-                && lowerShadow(candle) >= body(candle) * 2.0
-                && upperShadow(candle) <= body(candle) * 0.5
-                && body(candle) <= range(candle) * 0.3;
+        return isGeometricHammerShape(candle, factoryProfile(CandlePattern.HAMMER));
     }
-
+    private boolean isGeometricHammerShape(EnrichedCandle candle, PatternProfile profile) {
+        return body(candle) >= range(candle) * profile.fraction("minBodyPercent")
+                && lowerShadow(candle) >= body(candle) * profile.value("minLongShadowBodyMultiple")
+                && upperShadow(candle) <= body(candle) * profile.value("maxShortShadowBodyMultiple")
+                && body(candle) <= range(candle) * profile.fraction("maxBodyPercent");
+    }
     private boolean isGeometricShootingStarShape(EnrichedCandle candle) {
-        return body(candle) >= range(candle) * 0.02
-                && upperShadow(candle) >= body(candle) * 2.0
-                && lowerShadow(candle) <= body(candle) * 0.5
-                && body(candle) <= range(candle) * 0.3;
+        return isGeometricShootingStarShape(candle, factoryProfile(CandlePattern.SHOOTING_STAR));
     }
-
+    private boolean isGeometricShootingStarShape(EnrichedCandle candle, PatternProfile profile) {
+        return body(candle) >= range(candle) * profile.fraction("minBodyPercent")
+                && upperShadow(candle) >= body(candle) * profile.value("minLongShadowBodyMultiple")
+                && lowerShadow(candle) <= body(candle) * profile.value("maxShortShadowBodyMultiple")
+                && body(candle) <= range(candle) * profile.fraction("maxBodyPercent");
+    }
     private boolean isGeometricBullishEngulfing(EnrichedCandle previous, EnrichedCandle current) {
+        return isGeometricBullishEngulfing(previous, current, factoryProfile(CandlePattern.BULLISH_ENGULFING));
+    }
+    private boolean isGeometricBullishEngulfing(EnrichedCandle previous, EnrichedCandle current, PatternProfile profile) {
         return isBearish(previous)
                 && isBullish(current)
-                && body(previous) >= range(previous) * 0.2
-                && body(current) >= body(previous)
-                && body(current) >= range(current) * 0.45
+                && body(previous) >= range(previous) * profile.fraction("previousMinBodyPercent")
+                && body(current) >= body(previous) * profile.value("currentMinPreviousBodyMultiple")
+                && body(current) >= range(current) * profile.fraction("currentMinBodyPercent")
                 && current.open() <= previous.close()
                 && current.close() >= previous.open();
     }
 
     private boolean isGeometricBearishEngulfing(EnrichedCandle previous, EnrichedCandle current) {
+        return isGeometricBearishEngulfing(previous, current, factoryProfile(CandlePattern.BEARISH_ENGULFING));
+    }
+    private boolean isGeometricBearishEngulfing(EnrichedCandle previous, EnrichedCandle current, PatternProfile profile) {
         return isBullish(previous)
                 && isBearish(current)
-                && body(previous) >= range(previous) * 0.2
-                && body(current) >= body(previous)
-                && body(current) >= range(current) * 0.45
+                && body(previous) >= range(previous) * profile.fraction("previousMinBodyPercent")
+                && body(current) >= body(previous) * profile.value("currentMinPreviousBodyMultiple")
+                && body(current) >= range(current) * profile.fraction("currentMinBodyPercent")
                 && current.open() >= previous.close()
                 && current.close() <= previous.open();
     }
@@ -991,111 +1232,147 @@ public class CandlePatternDetectionService {
     private boolean isGeometricPiercingLine(EnrichedCandle previous,
                                             EnrichedCandle current,
                                             CandleStatistics statistics) {
-        double previousMidpoint = (previous.open() + previous.close()) / 2.0;
+        return isGeometricPiercingLine(previous, current, statistics, factoryProfile(CandlePattern.PIERCING_LINE));
+    }
+    private boolean isGeometricPiercingLine(EnrichedCandle previous, EnrichedCandle current,
+                                            CandleStatistics statistics, PatternProfile profile) {
+        double requiredClose = previous.close() + body(previous) * profile.fraction("penetrationPercent");
         return isBearish(previous)
                 && isBullish(current)
-                && isLongBody(previous, statistics)
-                && isStrongBody(current, statistics)
+                && isLongBody(previous, statistics, profile, "previousMinBodyPercent", "previousMinMedianMultiple")
+                && isStrongBody(current, statistics, profile)
                 && current.open() < previous.close()
-                && current.close() > previousMidpoint
+                && current.close() > requiredClose
                 && current.close() < previous.open();
     }
 
     private boolean isGeometricDarkCloudCover(EnrichedCandle previous,
                                                EnrichedCandle current,
                                                CandleStatistics statistics) {
-        double previousMidpoint = (previous.open() + previous.close()) / 2.0;
+        return isGeometricDarkCloudCover(previous, current, statistics, factoryProfile(CandlePattern.DARK_CLOUD_COVER));
+    }
+    private boolean isGeometricDarkCloudCover(EnrichedCandle previous, EnrichedCandle current,
+                                               CandleStatistics statistics, PatternProfile profile) {
+        double requiredClose = previous.close() - body(previous) * profile.fraction("penetrationPercent");
         return isBullish(previous)
                 && isBearish(current)
-                && isLongBody(previous, statistics)
-                && isStrongBody(current, statistics)
+                && isLongBody(previous, statistics, profile, "previousMinBodyPercent", "previousMinMedianMultiple")
+                && isStrongBody(current, statistics, profile)
                 && current.open() > previous.close()
-                && current.close() < previousMidpoint
+                && current.close() < requiredClose
                 && current.close() > previous.open();
     }
 
     private boolean isGeometricBullishHarami(EnrichedCandle previous,
                                              EnrichedCandle current,
                                              CandleStatistics statistics) {
+        return isGeometricBullishHarami(previous, current, statistics, factoryProfile(CandlePattern.BULLISH_HARAMI));
+    }
+    private boolean isGeometricBullishHarami(EnrichedCandle previous, EnrichedCandle current,
+                                             CandleStatistics statistics, PatternProfile profile) {
         return isBearish(previous)
                 && isBullish(current)
-                && isLongBody(previous, statistics)
+                && isLongBody(previous, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
                 && current.open() >= previous.close()
                 && current.close() <= previous.open()
-                && isHaramiSmallBody(previous, current, statistics);
+                && isHaramiSmallBody(previous, current, statistics, profile);
     }
 
     private boolean isGeometricBearishHarami(EnrichedCandle previous,
                                              EnrichedCandle current,
                                              CandleStatistics statistics) {
+        return isGeometricBearishHarami(previous, current, statistics, factoryProfile(CandlePattern.BEARISH_HARAMI));
+    }
+    private boolean isGeometricBearishHarami(EnrichedCandle previous, EnrichedCandle current,
+                                             CandleStatistics statistics, PatternProfile profile) {
         return isBullish(previous)
                 && isBearish(current)
-                && isLongBody(previous, statistics)
+                && isLongBody(previous, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
                 && current.open() <= previous.close()
                 && current.close() >= previous.open()
-                && isHaramiSmallBody(previous, current, statistics);
+                && isHaramiSmallBody(previous, current, statistics, profile);
     }
 
     private boolean isGeometricMorningStar(EnrichedCandle first,
                                            EnrichedCandle middle,
                                            EnrichedCandle current,
                                            CandleStatistics statistics) {
+        return isGeometricMorningStar(first, middle, current, statistics, factoryProfile(CandlePattern.MORNING_STAR));
+    }
+    private boolean isGeometricMorningStar(EnrichedCandle first, EnrichedCandle middle,
+                                           EnrichedCandle current, CandleStatistics statistics, PatternProfile profile) {
         return isBearish(first)
                 && isBullish(current)
-                && isLongBody(first, statistics)
-                && isSmallBody(middle, statistics)
-                && isStrongBody(current, statistics)
-                && current.close() > (first.open() + first.close()) / 2.0;
+                && isLongBody(first, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
+                && isSmallBody(middle, statistics, profile)
+                && isStrongBody(current, statistics, profile)
+                && current.close() > first.close() + body(first) * profile.fraction("penetrationPercent");
     }
 
     private boolean isGeometricEveningStar(EnrichedCandle first,
                                            EnrichedCandle middle,
                                            EnrichedCandle current,
                                            CandleStatistics statistics) {
+        return isGeometricEveningStar(first, middle, current, statistics, factoryProfile(CandlePattern.EVENING_STAR));
+    }
+    private boolean isGeometricEveningStar(EnrichedCandle first, EnrichedCandle middle,
+                                           EnrichedCandle current, CandleStatistics statistics, PatternProfile profile) {
         return isBullish(first)
                 && isBearish(current)
-                && isLongBody(first, statistics)
-                && isSmallBody(middle, statistics)
-                && isStrongBody(current, statistics)
-                && current.close() < (first.open() + first.close()) / 2.0;
+                && isLongBody(first, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
+                && isSmallBody(middle, statistics, profile)
+                && isStrongBody(current, statistics, profile)
+                && current.close() < first.close() - body(first) * profile.fraction("penetrationPercent");
     }
 
     private boolean isGeometricThreeWhiteSoldiers(EnrichedCandle first,
                                                   EnrichedCandle second,
                                                   EnrichedCandle third,
                                                   CandleStatistics statistics) {
+        return isGeometricThreeWhiteSoldiers(first, second, third, statistics,
+                factoryProfile(CandlePattern.THREE_WHITE_SOLDIERS));
+    }
+    private boolean isGeometricThreeWhiteSoldiers(EnrichedCandle first, EnrichedCandle second,
+                                                  EnrichedCandle third, CandleStatistics statistics,
+                                                  PatternProfile profile) {
         return isBullish(first)
                 && isBullish(second)
                 && isBullish(third)
-                && isRelativelyLongDirectionalBody(first, statistics)
-                && isRelativelyLongDirectionalBody(second, statistics)
-                && isRelativelyLongDirectionalBody(third, statistics)
+                && isRelativelyLongDirectionalBody(first, statistics, profile)
+                && isRelativelyLongDirectionalBody(second, statistics, profile)
+                && isRelativelyLongDirectionalBody(third, statistics, profile)
                 && second.close() > first.close()
                 && third.close() > second.close()
                 && opensWithin(first, second)
                 && opensWithin(second, third)
-                && upperShadow(first) <= body(first) * 0.3
-                && upperShadow(second) <= body(second) * 0.3
-                && upperShadow(third) <= body(third) * 0.3;
+                && upperShadow(first) <= body(first) * profile.value("maxDirectionalShadowBodyMultiple")
+                && upperShadow(second) <= body(second) * profile.value("maxDirectionalShadowBodyMultiple")
+                && upperShadow(third) <= body(third) * profile.value("maxDirectionalShadowBodyMultiple");
     }
 
     private boolean isGeometricThreeBlackCrows(EnrichedCandle first,
                                                EnrichedCandle second,
                                                EnrichedCandle third,
                                                CandleStatistics statistics) {
+        return isGeometricThreeBlackCrows(first, second, third, statistics,
+                factoryProfile(CandlePattern.THREE_BLACK_CROWS));
+    }
+    private boolean isGeometricThreeBlackCrows(EnrichedCandle first, EnrichedCandle second,
+                                               EnrichedCandle third, CandleStatistics statistics,
+                                               PatternProfile profile) {
         return isBearish(first)
                 && isBearish(second)
                 && isBearish(third)
-                && isRelativelyLongDirectionalBody(first, statistics)
-                && isRelativelyLongDirectionalBody(second, statistics)
-                && isRelativelyLongDirectionalBody(third, statistics)
+                && isRelativelyLongDirectionalBody(first, statistics, profile)
+                && isRelativelyLongDirectionalBody(second, statistics, profile)
+                && isRelativelyLongDirectionalBody(third, statistics, profile)
                 && second.close() < first.close()
                 && third.close() < second.close()
                 && opensWithin(first, second)
                 && opensWithin(second, third)
-                && lowerShadow(first) <= body(first) * 0.3
-                && lowerShadow(second) <= body(second) * 0.3
-                && lowerShadow(third) <= body(third) * 0.3;
+                && lowerShadow(first) <= body(first) * profile.value("maxDirectionalShadowBodyMultiple")
+                && lowerShadow(second) <= body(second) * profile.value("maxDirectionalShadowBodyMultiple")
+                && lowerShadow(third) <= body(third) * profile.value("maxDirectionalShadowBodyMultiple");
     }
 
     private boolean isLongBody(EnrichedCandle candle, CandleStatistics statistics) {
@@ -1104,16 +1381,33 @@ public class CandlePatternDetectionService {
                 && body(candle) >= statistics.medianBody() * 1.1;
     }
 
+    private boolean isLongBody(EnrichedCandle candle, CandleStatistics statistics, PatternProfile profile,
+                               String percentKey, String medianKey) {
+        return statistics.hasEnoughData()
+                && body(candle) >= range(candle) * profile.fraction(percentKey)
+                && body(candle) >= statistics.medianBody() * profile.value(medianKey);
+    }
+
     private boolean isStrongBody(EnrichedCandle candle, CandleStatistics statistics) {
         return statistics.hasEnoughData()
                 && body(candle) >= range(candle) * 0.5
                 && body(candle) >= statistics.medianBody() * 0.9;
+    }
+    private boolean isStrongBody(EnrichedCandle candle, CandleStatistics statistics, PatternProfile profile) {
+        return statistics.hasEnoughData()
+                && body(candle) >= range(candle) * profile.fraction("currentMinBodyPercent")
+                && body(candle) >= statistics.medianBody() * profile.value("currentMinMedianMultiple");
     }
 
     private boolean isSmallBody(EnrichedCandle candle, CandleStatistics statistics) {
         return statistics.hasEnoughData()
                 && body(candle) <= range(candle) * 0.3
                 && body(candle) <= statistics.medianBody() * 0.75;
+    }
+    private boolean isSmallBody(EnrichedCandle candle, CandleStatistics statistics, PatternProfile profile) {
+        return statistics.hasEnoughData()
+                && body(candle) <= range(candle) * profile.fraction("middleMaxBodyPercent")
+                && body(candle) <= statistics.medianBody() * profile.value("middleMaxMedianMultiple");
     }
 
     private boolean isHaramiSmallBody(EnrichedCandle first,
@@ -1123,6 +1417,12 @@ public class CandlePatternDetectionService {
                 && body(second) <= body(first) * 0.45
                 && body(second) <= statistics.medianBody() * 0.75;
     }
+    private boolean isHaramiSmallBody(EnrichedCandle first, EnrichedCandle second,
+                                      CandleStatistics statistics, PatternProfile profile) {
+        return statistics.hasEnoughData()
+                && body(second) <= body(first) * profile.fraction("secondMaxFirstBodyPercent")
+                && body(second) <= statistics.medianBody() * profile.value("secondMaxMedianMultiple");
+    }
 
     private boolean isRelativelyLongDirectionalBody(EnrichedCandle candle,
                                                     CandleStatistics statistics) {
@@ -1130,17 +1430,152 @@ public class CandlePatternDetectionService {
                 && body(candle) >= range(candle) * 0.5
                 && body(candle) >= statistics.medianBody() * 0.8;
     }
+    private boolean isRelativelyLongDirectionalBody(EnrichedCandle candle, CandleStatistics statistics,
+                                                    PatternProfile profile) {
+        return statistics.hasEnoughData()
+                && body(candle) >= range(candle) * profile.fraction("candleMinBodyPercent")
+                && body(candle) >= statistics.medianBody() * profile.value("candleMinMedianMultiple");
+    }
 
-    private TrendContext trendBefore(List<EnrichedCandle> candles, int patternStartIndex) {
+    private static PatternProfile factoryProfile(CandlePattern pattern) {
+        return CandlestickPatternPreferencesService.factoryPreferences().profile(pattern);
+    }
+
+    private static boolean matchesTrend(PatternProfile profile, TrendContext buyTrend, TrendContext sellTrend) {
+        return switch (profile.trendRequirement()) {
+            case NONE -> true;
+            case DOWN -> buyTrend.direction() == TrendDirection.DOWN;
+            case UP -> sellTrend.direction() == TrendDirection.UP;
+            case DOWN_OR_BASE -> buyTrend.direction() == TrendDirection.DOWN || buyTrend.direction() == TrendDirection.BASE;
+        };
+    }
+
+    private static String formatThreshold(double value) {
+        return value == Math.rint(value) ? Long.toString((long) value) : Double.toString(value);
+    }
+
+    private TrendContext trendBefore(List<EnrichedCandle> candles,
+                                     int patternStartIndex,
+                                     TrendDetectionRules trendRules) {
         int endIndex = patternStartIndex - 1;
         if (endIndex < 0) {
-            return TrendContext.none(0);
+            return TrendContext.none(0, trendRules.minimumCandles());
         }
-        int startIndex = Math.max(0, endIndex - TREND_LOOKBACK + 1);
-        int candleCount = endIndex - startIndex + 1;
-        if (candleCount < MIN_TREND_CANDLES) {
-            return TrendContext.none(candleCount);
+        int availableCandles = endIndex + 1;
+        int maximumWindow = Math.min(availableCandles, trendRules.lookbackCandles());
+        if (maximumWindow < trendRules.minimumCandles()) {
+            return TrendContext.none(maximumWindow, trendRules.minimumCandles());
         }
+
+        return trendBeforeExactWindow(
+                candles,
+                endIndex,
+                maximumWindow,
+                trendRules.minimumMovePercent(),
+                Math.min(trendRules.minimumCandles(), maximumWindow - 1),
+                trendRules.terminalMedianDistanceAtr());
+    }
+
+    private TrendContext trendBefore(List<EnrichedCandle> candles,
+                                     int patternStartIndex,
+                                     TrendDetectionRules trendRules,
+                                     TradeSignal direction) {
+        if (!trendRules.adaptiveFactory()) {
+            return trendBefore(candles, patternStartIndex, trendRules);
+        }
+        CandlestickAdaptiveTrendService.TrendModelParameters parameters =
+                factoryAdaptiveParameters(trendRules, direction);
+        if (parameters == null) {
+            return trendBefore(candles, patternStartIndex, trendRules);
+        }
+        CandlestickAdaptiveTrendService.TrendAssessment assessment =
+                adaptiveTrendService.assess(candles, patternStartIndex, parameters);
+        boolean adaptiveDirectional = isDirectionalTrend(assessment.direction());
+        if (trendRules.directionalParticipationEnabled()) {
+            TrendContext originalRule = trendBefore(
+                    candles,
+                    patternStartIndex,
+                    new TrendDetectionRules(
+                            trendRules.minimumCandles(),
+                            trendRules.lookbackCandles(),
+                            trendRules.minimumMovePercent()));
+            TrendDirection combinedDirection = combineIndependentTrendDirections(
+                    assessment.direction(), originalRule.direction());
+            boolean conflict = adaptiveDirectional
+                    && isDirectionalTrend(originalRule.direction())
+                    && assessment.direction() != originalRule.direction();
+            boolean useAdaptiveLeg = combinedDirection == assessment.direction()
+                    && adaptiveDirectional;
+            return new TrendContext(
+                    combinedDirection,
+                    isDirectionalTrend(combinedDirection) ? 20 : 0,
+                    assessment.description() + "; independent original move/count model: "
+                            + originalRule.description() + "; conflict-aware OR result: "
+                            + (conflict ? "rejected because the models identified opposite directions"
+                            : isDirectionalTrend(combinedDirection)
+                                    ? "accepted " + combinedDirection.name().toLowerCase(Locale.ROOT)
+                                            + " because at least one model identified it"
+                                    : "neither model identified a directional trend"),
+                    useAdaptiveLeg
+                            ? assessment.structure().trendStartIndex()
+                            : originalRule.trendStartIndex(),
+                    useAdaptiveLeg
+                            ? assessment.structure().trendEndIndex()
+                            : originalRule.trendEndIndex());
+        }
+        return new TrendContext(
+                assessment.direction(),
+                adaptiveDirectional ? 20 : 0,
+                assessment.description(),
+                assessment.structure().trendStartIndex(),
+                assessment.structure().trendEndIndex());
+    }
+
+    TrendDirection combineIndependentTrendDirections(TrendDirection adaptive,
+                                                      TrendDirection original) {
+        boolean adaptiveDirectional = isDirectionalTrend(adaptive);
+        boolean originalDirectional = isDirectionalTrend(original);
+        if (adaptiveDirectional && originalDirectional) {
+            return adaptive == original ? adaptive : TrendDirection.SIDEWAYS;
+        }
+        if (adaptiveDirectional) return adaptive;
+        if (originalDirectional) return original;
+        if (adaptive == TrendDirection.BASE || original == TrendDirection.BASE) {
+            return TrendDirection.BASE;
+        }
+        return TrendDirection.SIDEWAYS;
+    }
+
+    private boolean isDirectionalTrend(TrendDirection direction) {
+        return direction == TrendDirection.UP || direction == TrendDirection.DOWN;
+    }
+
+    private CandlestickAdaptiveTrendService.TrendModelParameters factoryAdaptiveParameters(
+            TrendDetectionRules trendRules,
+            TradeSignal direction) {
+        TimeInterval interval = trendRules.interval();
+        if (interval == null || direction == null) {
+            return null;
+        }
+        if (interval == TimeInterval.DAILY
+                || interval == TimeInterval.WEEKLY
+                || interval == TimeInterval.MONTHLY) {
+            return new CandlestickAdaptiveTrendService.TrendModelParameters(
+                    CandlestickAdaptiveTrendService.TrendPolicy.STRUCTURE_WITH_REGRESSION_VETO,
+                    new CandlestickAdaptiveTrendService.SwingParameters(
+                            2, 2, 30, 0.0, 0.25, trendRules.terminalMedianDistanceAtr()),
+                    new CandlestickAdaptiveTrendService.RegressionParameters(25, 0.15, 0.20));
+        }
+        return null;
+    }
+
+    private TrendContext trendBeforeExactWindow(List<EnrichedCandle> candles,
+                                                int endIndex,
+                                                int candleCount,
+                                                double minimumMovePercent,
+                                                int requiredDirectionalTransitions,
+                                                double terminalMedianDistanceAtr) {
+        int startIndex = endIndex - candleCount + 1;
 
         int higherCloses = 0;
         int lowerCloses = 0;
@@ -1166,9 +1601,11 @@ public class CandlePatternDetectionService {
         EnrichedCandle first = candles.get(startIndex);
         EnrichedCandle last = candles.get(endIndex);
         int transitions = candleCount - 1;
-        int requiredTransitions = (int) Math.ceil(transitions * 0.6);
+        int requiredTransitions = Math.max(1, requiredDirectionalTransitions);
         double netMove = last.close() - first.close();
-        double minimumMove = Math.max(Math.abs(first.close()) * 0.015, 0.000001);
+        double minimumMove = Math.max(
+                Math.abs(first.close()) * minimumMovePercent / 100.0,
+                0.000001);
         double directionalEfficiency = grossCloseMove > 0.0
                 ? Math.abs(netMove) / grossCloseMove
                 : 0.0;
@@ -1185,12 +1622,16 @@ public class CandlePatternDetectionService {
         boolean emaDown = emaAligned(candles, endIndex, TrendDirection.DOWN);
 
         if (netMove >= minimumMove && upwardSequence) {
-            return trendContext(TrendDirection.UP, candleCount, transitions,
+            TrendContext context = trendContext(TrendDirection.UP, candleCount, transitions,
                     higherCloses, higherHighAndLow, netMove, minimumMove, emaUp, first.close());
+            return applyFixedTerminalMedianGate(
+                    context, candles, startIndex, endIndex, terminalMedianDistanceAtr);
         }
         if (-netMove >= minimumMove && downwardSequence) {
-            return trendContext(TrendDirection.DOWN, candleCount, transitions,
+            TrendContext context = trendContext(TrendDirection.DOWN, candleCount, transitions,
                     lowerCloses, lowerHighAndLow, -netMove, minimumMove, emaDown, first.close());
+            return applyFixedTerminalMedianGate(
+                    context, candles, startIndex, endIndex, terminalMedianDistanceAtr);
         }
 
         double contextHigh = Double.NEGATIVE_INFINITY;
@@ -1212,10 +1653,54 @@ public class CandlePatternDetectionService {
                             candleCount,
                             first.close() == 0.0
                                     ? 0.0
-                                    : (contextHigh - contextLow) / Math.abs(first.close()) * 100.0)
+                                    : (contextHigh - contextLow) / Math.abs(first.close()) * 100.0),
+                    startIndex,
+                    endIndex
             );
         }
-        return TrendContext.none(candleCount);
+        return TrendContext.none(candleCount, candleCount);
+    }
+
+    private TrendContext applyFixedTerminalMedianGate(TrendContext context,
+                                                      List<EnrichedCandle> candles,
+                                                      int startIndex,
+                                                      int endIndex,
+                                                      double minimumDistanceAtr) {
+        if (minimumDistanceAtr < 0.0) {
+            return new TrendContext(context.direction(), context.scorePoints(), context.description(),
+                    startIndex, endIndex);
+        }
+        List<Double> closes = new ArrayList<>();
+        List<Double> atrValues = new ArrayList<>();
+        for (int index = startIndex; index <= endIndex; index++) {
+            EnrichedCandle candle = candles.get(index);
+            closes.add(candle.close());
+            double atr = candle.atr();
+            if (Double.isFinite(atr) && atr > 0.0) atrValues.add(atr);
+        }
+        if (closes.isEmpty() || atrValues.isEmpty()) {
+            return new TrendContext(TrendDirection.SIDEWAYS, 0,
+                    context.description() + "; terminal-position check failed because ATR was unavailable",
+                    startIndex, endIndex);
+        }
+        double medianClose = median(closes);
+        double medianAtr = median(atrValues);
+        double terminalClose = candles.get(endIndex).close();
+        double margin = minimumDistanceAtr * medianAtr;
+        boolean accepted = context.direction() == TrendDirection.UP
+                ? terminalClose >= medianClose + margin
+                : terminalClose <= medianClose - margin;
+        String comparison = context.direction() == TrendDirection.UP ? "above" : "below";
+        String detail = String.format(Locale.ROOT,
+                "terminal-position check %s: final completed pre-pattern close %.4f must be at least %.2f ATR %s the trend-leg median close %.4f",
+                accepted ? "passed" : "failed", terminalClose, minimumDistanceAtr,
+                comparison, medianClose);
+        return new TrendContext(
+                accepted ? context.direction() : TrendDirection.SIDEWAYS,
+                accepted ? context.scorePoints() : 0,
+                context.description() + "; " + detail,
+                startIndex,
+                endIndex);
     }
 
     private TrendContext trendContext(TrendDirection direction,
@@ -1253,7 +1738,7 @@ public class CandlePatternDetectionService {
                 transitions,
                 transitionLabel,
                 emaAligned ? ", EMA aligned" : "");
-        return new TrendContext(direction, points, description);
+        return new TrendContext(direction, points, description, -1, -1);
     }
 
     private boolean emaAligned(List<EnrichedCandle> candles,
@@ -1356,7 +1841,8 @@ public class CandlePatternDetectionService {
             List<String> reasons,
             Long candleTimestamp,
             Double closePrice,
-            int eligibilityScore
+            int eligibilityScore,
+            Long trendStartTimestamp
     ) {
         public DetectedSignal {
             reasons = reasons == null ? List.of() : List.copyOf(reasons);
@@ -1370,11 +1856,36 @@ public class CandlePatternDetectionService {
                               Long candleTimestamp,
                               Double closePrice) {
             this(pattern, tradeSignal, strength, confidenceScore, reasons, candleTimestamp, closePrice,
-                    confidenceScore);
+                    confidenceScore, null);
+        }
+
+        public DetectedSignal(CandlePattern pattern,
+                              TradeSignal tradeSignal,
+                              SignalStength strength,
+                              int confidenceScore,
+                              List<String> reasons,
+                              Long candleTimestamp,
+                              Double closePrice,
+                              Long trendStartTimestamp) {
+            this(pattern, tradeSignal, strength, confidenceScore, reasons, candleTimestamp, closePrice,
+                    confidenceScore, trendStartTimestamp);
+        }
+
+        public DetectedSignal(CandlePattern pattern,
+                              TradeSignal tradeSignal,
+                              SignalStength strength,
+                              int confidenceScore,
+                              List<String> reasons,
+                              Long candleTimestamp,
+                              Double closePrice,
+                              int eligibilityScore) {
+            this(pattern, tradeSignal, strength, confidenceScore, reasons, candleTimestamp, closePrice,
+                    eligibilityScore, null);
         }
 
         public DetectedSignal(CandlePattern pattern, TradeSignal tradeSignal, Long candleTimestamp, Double closePrice) {
-            this(pattern, tradeSignal, SignalStength.LOW_CONFIDENCE, 0, List.of(), candleTimestamp, closePrice, 0);
+            this(pattern, tradeSignal, SignalStength.LOW_CONFIDENCE, 0, List.of(), candleTimestamp,
+                    closePrice, 0, null);
         }
 
         /**
@@ -1386,7 +1897,117 @@ public class CandlePatternDetectionService {
         }
     }
 
-    private record SignalEvidence(EnrichedCandle candle, List<ScoreComponent> components) {
+    public record TrendDetectionRules(int minimumCandles,
+                                      int lookbackCandles,
+                                      double minimumMovePercent,
+                                      TimeInterval interval,
+                                      boolean adaptiveFactory,
+                                      double terminalMedianDistanceAtr,
+                                      boolean directionalParticipationEnabled) {
+        public TrendDetectionRules(int minimumCandles,
+                                   int lookbackCandles,
+                                   double minimumMovePercent) {
+            this(minimumCandles, lookbackCandles, minimumMovePercent,
+                    null, false, -1.0, false);
+        }
+
+        public TrendDetectionRules(int minimumCandles,
+                                   int lookbackCandles,
+                                   double minimumMovePercent,
+                                   double terminalMedianDistanceAtr) {
+            this(minimumCandles, lookbackCandles, minimumMovePercent,
+                    null, false, terminalMedianDistanceAtr, false);
+        }
+
+        public TrendDetectionRules {
+            validate(minimumCandles, lookbackCandles, minimumMovePercent);
+            if (adaptiveFactory && interval != TimeInterval.DAILY
+                    && interval != TimeInterval.WEEKLY
+                    && interval != TimeInterval.MONTHLY) {
+                throw new IllegalArgumentException(
+                        "Adaptive factory trend detection requires a daily, weekly, or monthly interval.");
+            }
+            if (adaptiveFactory && (!Double.isFinite(terminalMedianDistanceAtr)
+                    || terminalMedianDistanceAtr < 0.0 || terminalMedianDistanceAtr > 10.0)) {
+                throw new IllegalArgumentException(
+                        "Adaptive terminal median distance must be between 0 and 10 ATR.");
+            }
+            if (!adaptiveFactory && (!Double.isFinite(terminalMedianDistanceAtr)
+                    || terminalMedianDistanceAtr < -1.0 || terminalMedianDistanceAtr > 10.0)) {
+                throw new IllegalArgumentException(
+                        "Terminal median distance must be disabled (-1) or between 0 and 10 ATR.");
+            }
+            if (adaptiveFactory && directionalParticipationEnabled) {
+                new CandlestickAdaptiveTrendService.DirectionalParticipationParameters(
+                        minimumCandles, lookbackCandles, minimumMovePercent).validate();
+            }
+        }
+
+        public static TrendDetectionRules factory() {
+            return new TrendDetectionRules(
+                    MIN_TREND_CANDLES,
+                    TREND_LOOKBACK,
+                    MIN_TREND_MOVE_PERCENT);
+        }
+
+        public static TrendDetectionRules adaptiveFactory(TimeInterval interval) {
+            double terminalMedianDistanceAtr = interval == TimeInterval.DAILY ? 0.25 : 0.0;
+            return adaptiveFactory(interval, terminalMedianDistanceAtr);
+        }
+
+        public static TrendDetectionRules adaptiveFactory(TimeInterval interval,
+                                                          double terminalMedianDistanceAtr) {
+            return switch (interval) {
+                case DAILY -> new TrendDetectionRules(
+                        4, 6, 3.0, interval, true, terminalMedianDistanceAtr, true);
+                case WEEKLY -> new TrendDetectionRules(
+                        4, 6, 3.0, interval, true, terminalMedianDistanceAtr, true);
+                case MONTHLY -> new TrendDetectionRules(
+                        4, 6, 3.0, interval, true, terminalMedianDistanceAtr, true);
+                default -> throw new IllegalArgumentException(
+                        "Only daily, weekly, and monthly factory trend models are supported.");
+            };
+        }
+
+        public static TrendDetectionRules adaptiveFactory(
+                TimeInterval interval,
+                double terminalMedianDistanceAtr,
+                boolean directionalParticipationEnabled,
+                int minimumDirectionalTransitions,
+                int participationWindowCandles,
+                double minimumDirectionalMovePercent) {
+            return new TrendDetectionRules(
+                    minimumDirectionalTransitions, participationWindowCandles,
+                    minimumDirectionalMovePercent, interval, true,
+                    terminalMedianDistanceAtr, directionalParticipationEnabled);
+        }
+
+        private void validate() {
+            validate(minimumCandles, lookbackCandles, minimumMovePercent);
+        }
+
+        private static void validate(int minimumCandles,
+                                     int lookbackCandles,
+                                     double minimumMovePercent) {
+            if (minimumCandles < 2 || minimumCandles > 100) {
+                throw new IllegalArgumentException("Minimum trend candles must be between 2 and 100.");
+            }
+            if (lookbackCandles < 2 || lookbackCandles > 100) {
+                throw new IllegalArgumentException("Trend lookback candles must be between 2 and 100.");
+            }
+            if (minimumCandles > lookbackCandles) {
+                throw new IllegalArgumentException("Minimum trend candles cannot exceed the trend lookback.");
+            }
+            if (!Double.isFinite(minimumMovePercent)
+                    || minimumMovePercent < 0.0 || minimumMovePercent > 50.0) {
+                throw new IllegalArgumentException("Minimum trend move must be between 0% and 50%.");
+            }
+        }
+    }
+
+    private record SignalEvidence(EnrichedCandle candle,
+                                  List<ScoreComponent> components,
+                                  Long trendStartTimestamp) {
         private SignalEvidence {
             components = List.copyOf(components);
         }
@@ -1431,21 +2052,55 @@ public class CandlePatternDetectionService {
         }
     }
 
-    private record TrendContext(TrendDirection direction, int scorePoints, String description) {
-        private static TrendContext none(int candleCount) {
+    private record TrendContext(TrendDirection direction,
+                                int scorePoints,
+                                String description,
+                                int trendStartIndex,
+                                int trendEndIndex) {
+        private static TrendContext none(int candleCount, int minimumCandles) {
             return new TrendContext(
                     TrendDirection.SIDEWAYS,
                     0,
-                    candleCount < MIN_TREND_CANDLES
-                            ? "fewer than three completed pre-pattern candles were available"
-                            : "no established directional trend was present before the pattern"
+                    candleCount < minimumCandles
+                            ? String.format(Locale.ROOT,
+                            "fewer than %d completed pre-pattern candles were available",
+                            minimumCandles)
+                            : "no established directional trend was present before the pattern",
+                    -1,
+                    -1
             );
+        }
+
+        private PriorTrendAssessment asAssessment() {
+            return new PriorTrendAssessment(
+                    direction, scorePoints, description, trendStartIndex, trendEndIndex);
         }
     }
 
-    record PriorTrendAssessment(TrendDirection direction, int scorePoints, String description) {
+    record PriorTrendAssessment(TrendDirection direction,
+                                int scorePoints,
+                                String description,
+                                int trendStartIndex,
+                                int trendEndIndex) {
+        PriorTrendAssessment(TrendDirection direction, int scorePoints, String description) {
+            this(direction, scorePoints, description, -1, -1);
+        }
+
         private static PriorTrendAssessment none() {
-            return new PriorTrendAssessment(TrendDirection.SIDEWAYS, 0, "no prior trend was available");
+            return new PriorTrendAssessment(
+                    TrendDirection.SIDEWAYS, 0, "no prior trend was available", -1, -1);
+        }
+    }
+
+    record GeometricPatternCandidate(CandlePattern pattern,
+                                     TradeSignal tradeSignal,
+                                     TrendDirection requiredTrend,
+                                     boolean acceptsBase,
+                                     int patternCandleCount) {
+        boolean accepts(PriorTrendAssessment assessment) {
+            return assessment != null
+                    && (assessment.direction() == requiredTrend
+                    || acceptsBase && assessment.direction() == TrendDirection.BASE);
         }
     }
 

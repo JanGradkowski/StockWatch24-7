@@ -4,6 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.enums.AlertPatternFamily;
+import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.AccountSession;
@@ -14,6 +17,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import org.springframework.util.MultiValueMap;
 
 import java.security.Principal;
 import java.time.Instant;
@@ -31,24 +35,48 @@ public class SettingsController {
     private final AccountDeletionService deletion;
     private final TotpService totp;
     private final RequestRateLimiter rateLimiter;
+    private final AnalysisPreferencesService analysisPreferences;
+    private final SignalScoringPreferencesService scoringPreferences;
+    private final CandlestickPatternPreferencesService candlestickPatternPreferences;
 
     public SettingsController(UserRepository users, AlertRuleRepository alertRules,
                               AccountSecurityService security, PasswordSecurityCodeService passwordCodes,
                               AccountDeletionService deletion, TotpService totp,
-                              RequestRateLimiter rateLimiter) {
+                              RequestRateLimiter rateLimiter,
+                              AnalysisPreferencesService analysisPreferences,
+                              SignalScoringPreferencesService scoringPreferences,
+                              CandlestickPatternPreferencesService candlestickPatternPreferences) {
         this.users = users; this.alertRules = alertRules; this.security = security;
         this.passwordCodes = passwordCodes; this.deletion = deletion; this.totp = totp;
         this.rateLimiter = rateLimiter;
+        this.analysisPreferences = analysisPreferences;
+        this.scoringPreferences = scoringPreferences;
+        this.candlestickPatternPreferences = candlestickPatternPreferences;
     }
 
-    @GetMapping({"/settings", "/settings/appearance"})
+    @GetMapping({"/settings", "/settings/appearance", "/settings/analysis-alerts", "/settings/detection",
+            "/settings/scoring", "/settings/candlestick-patterns"})
     public String page(Model model, Principal principal, HttpSession session, HttpServletRequest request) {
         User user = current(principal);
-        String settingsTab = request.getRequestURI().endsWith("/appearance") ? "appearance" : "general";
+        String settingsTab = request.getRequestURI().endsWith("/appearance") ? "appearance"
+                : request.getRequestURI().endsWith("/analysis-alerts") ? "analysis"
+                : request.getRequestURI().endsWith("/scoring") ? "scoring"
+                : request.getRequestURI().endsWith("/candlestick-patterns") ? "candlestick-patterns"
+                : request.getRequestURI().endsWith("/detection") ? "detection" : "general";
         model.addAttribute("settingsTab", settingsTab);
         model.addAttribute("firstName", user.getFirstName());
         model.addAttribute("user", user);
         model.addAttribute("securityEvents", security.recentEvents(user.getId()));
+        if ("analysis".equals(settingsTab) || "detection".equals(settingsTab)) {
+            model.addAttribute("analysisPreferences", analysisPreferences.get(user));
+        }
+        if ("scoring".equals(settingsTab)) {
+            model.addAttribute("scoringPreferences", scoringPreferences.get(user));
+        }
+        if ("candlestick-patterns".equals(settingsTab)) {
+            model.addAttribute("candlestickPatternPreferences", candlestickPatternPreferences.get(user));
+            model.addAttribute("trendRequirements", CandlestickPatternPreferencesService.TrendRequirement.values());
+        }
         Object setup = session.getAttribute(AccountSession.MFA_SETUP_SECRET);
         Object setupAt = session.getAttribute(AccountSession.MFA_SETUP_AT);
         if (setup instanceof String secret && setupAt instanceof Long started
@@ -63,6 +91,134 @@ public class SettingsController {
         return "settings";
     }
 
+    @PostMapping("/settings/analysis-alerts")
+    public String analysisAlerts(@RequestParam MultiValueMap<String, String> form,
+                                 Principal principal,
+                                 RedirectAttributes redirect) {
+        try {
+            analysisPreferences.save(current(principal), form);
+            redirect.addFlashAttribute("success", "Analysis and alert preferences applied to future signals.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", exception.getMessage());
+        }
+        return "redirect:/settings/analysis-alerts";
+    }
+
+    @PostMapping("/settings/analysis-alerts/reset")
+    public String resetAnalysisAlerts(@RequestParam(defaultValue = "all") String scope,
+                                      Principal principal,
+                                      RedirectAttributes redirect) {
+        User user = current(principal);
+        try {
+            if ("all".equalsIgnoreCase(scope)) {
+                analysisPreferences.resetAll(user);
+                redirect.addFlashAttribute("success", "All analysis and alert preferences were restored to factory settings.");
+            } else {
+                TimeInterval interval = TimeInterval.valueOf(scope.trim().toUpperCase());
+                analysisPreferences.resetInterval(user, interval);
+                redirect.addFlashAttribute("success", scope.substring(0, 1).toUpperCase()
+                        + scope.substring(1).toLowerCase() + " settings were restored to factory values.");
+            }
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", "Choose a valid factory-reset scope.");
+        }
+        return "redirect:/settings/analysis-alerts";
+    }
+
+    @PostMapping("/settings/detection")
+    public String detection(@RequestParam MultiValueMap<String, String> form,
+                            Principal principal,
+                            RedirectAttributes redirect) {
+        try {
+            analysisPreferences.updateDetectionRules(current(principal), form);
+            redirect.addFlashAttribute("success", "Candlestick detection rules applied to future detections.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", exception.getMessage());
+        }
+        return "redirect:/settings/detection";
+    }
+
+    @PostMapping("/settings/detection/reset")
+    public String resetDetection(@RequestParam(defaultValue = "all") String scope,
+                                 Principal principal,
+                                 RedirectAttributes redirect) {
+        try {
+            TimeInterval interval = "all".equalsIgnoreCase(scope)
+                    ? null
+                    : TimeInterval.valueOf(scope.trim().toUpperCase());
+            analysisPreferences.resetDetectionRules(current(principal), interval);
+            redirect.addFlashAttribute("success", interval == null
+                    ? "All candlestick detection rules were restored to factory settings."
+                    : interval.name().substring(0, 1)
+                    + interval.name().substring(1).toLowerCase()
+                    + " candlestick detection rules were restored to factory settings.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", "Choose a valid factory-reset scope.");
+        }
+        return "redirect:/settings/detection";
+    }
+
+    @PostMapping("/settings/scoring")
+    public String scoring(@RequestParam MultiValueMap<String, String> form,
+                          Principal principal,
+                          RedirectAttributes redirect) {
+        try {
+            scoringPreferences.save(current(principal), form);
+            redirect.addFlashAttribute("success", "Scoring changes applied. Every included profile totals 100 points.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", exception.getMessage());
+        }
+        return "redirect:/settings/scoring";
+    }
+
+    @PostMapping("/settings/scoring/reset")
+    public String resetScoring(@RequestParam(defaultValue = "all") String family,
+                               @RequestParam(required = false) String interval,
+                               Principal principal,
+                               RedirectAttributes redirect) {
+        try {
+            AlertPatternFamily selectedFamily = "all".equalsIgnoreCase(family)
+                    ? null : AlertPatternFamily.valueOf(family.trim().toUpperCase());
+            TimeInterval selectedInterval = interval == null || interval.isBlank()
+                    ? null : TimeInterval.valueOf(interval.trim().toUpperCase());
+            scoringPreferences.reset(current(principal), selectedFamily, selectedInterval);
+            redirect.addFlashAttribute("success", selectedFamily == null
+                    ? "All scoring profiles were restored to factory settings."
+                    : "The selected scoring profile was restored to factory settings.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", "Choose a valid scoring profile to reset.");
+        }
+        return "redirect:/settings/scoring";
+    }
+
+    @PostMapping("/settings/candlestick-patterns")
+    public String candlestickPatterns(@RequestParam MultiValueMap<String, String> form,
+                                      Principal principal, RedirectAttributes redirect) {
+        try {
+            candlestickPatternPreferences.save(current(principal), form);
+            redirect.addFlashAttribute("success", "Candlestick pattern definitions applied to future detections.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", exception.getMessage());
+        }
+        return "redirect:/settings/candlestick-patterns";
+    }
+
+    @PostMapping("/settings/candlestick-patterns/reset")
+    public String resetCandlestickPatterns(@RequestParam(defaultValue = "all") String pattern,
+                                           Principal principal, RedirectAttributes redirect) {
+        try {
+            CandlePattern selected = "all".equalsIgnoreCase(pattern) ? null
+                    : CandlePattern.valueOf(pattern.trim().toUpperCase());
+            candlestickPatternPreferences.reset(current(principal), selected);
+            redirect.addFlashAttribute("success", selected == null
+                    ? "All candlestick pattern definitions were restored to factory settings."
+                    : "The selected candlestick pattern was restored to factory settings.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", "Choose a valid candlestick pattern to reset.");
+        }
+        return "redirect:/settings/candlestick-patterns";
+    }
+
     @PostMapping("/settings/theme")
     public String theme(@RequestParam String theme, Principal principal) {
         security.updateTheme(current(principal).getId(), theme);
@@ -73,11 +229,12 @@ public class SettingsController {
     public String appearance(@RequestParam String theme,
                              @RequestParam String elliottMotiveColor,
                              @RequestParam String elliottCorrectiveColor,
+                             @RequestParam String elliottSubwaveColor,
                              Principal principal,
                              RedirectAttributes redirect) {
         try {
             security.updateAppearance(current(principal).getId(), theme,
-                    elliottMotiveColor, elliottCorrectiveColor);
+                    elliottMotiveColor, elliottCorrectiveColor, elliottSubwaveColor);
             redirect.addFlashAttribute("success", "Appearance preferences applied.");
         } catch (IllegalArgumentException exception) {
             redirect.addFlashAttribute("error", exception.getMessage());
@@ -248,6 +405,10 @@ public class SettingsController {
         data.put("createdAt", user.getCreatedAt()); data.put("theme", user.getThemePreference());
         data.put("elliottMotiveColor", user.getElliottMotiveColor());
         data.put("elliottCorrectiveColor", user.getElliottCorrectiveColor());
+        data.put("elliottSubwaveColor", user.getElliottSubwaveColor());
+        data.put("analysisPreferences", analysisPreferences.get(user));
+        data.put("signalScoringPreferences", scoringPreferences.get(user));
+        data.put("candlestickPatternPreferences", candlestickPatternPreferences.get(user));
         data.put("mfaEnabled", user.isMfaEnabled()); data.put("activeAlertRules", rules);
         return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=stockwatch-account-data.json").body(data);

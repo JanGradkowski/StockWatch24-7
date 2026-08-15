@@ -186,7 +186,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("virtual-trades"))
                 .andExpect(content().string(containsString("Virtual trades")))
-                .andExpect(content().string(containsString("Avoided loss")));
+                .andExpect(content().string(containsString("Avoided loss")))
+                .andExpect(content().string(containsString("Delete")))
+                .andExpect(content().string(containsString("/virtual-trades/" + trade.getId() + "/delete")));
 
         mockMvc.perform(get("/virtual-trades/{id}", trade.getId()).with(user(email)))
                 .andExpect(status().isOk())
@@ -194,6 +196,21 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Technical comparison")))
                 .andExpect(content().string(containsString("Results")))
                 .andExpect(content().string(containsString("not a short sale")));
+
+        mockMvc.perform(post("/virtual-trades/{id}/delete", trade.getId())
+                        .param("sort", "ticker")
+                        .param("direction", "asc")
+                        .with(user(email))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", "/virtual-trades?sort=ticker&direction=asc"))
+                .andExpect(flash().attribute("virtualTradeDeleteMessage", "Virtual trade deleted."));
+
+        assertThat(virtualTradeRepository.findById(trade.getId()).orElseThrow().getDeletedAt()).isNotNull();
+        assertThat(virtualTradeRepository.findAllForUser(account)).isEmpty();
+
+        mockMvc.perform(get("/virtual-trades/{id}", trade.getId()).with(user(email)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -386,6 +403,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Technical analysis")))
                 .andExpect(content().string(containsString("Transaction details")))
                 .andExpect(content().string(containsString("id=\"signalChart\"")))
+                .andExpect(content().string(containsString("data-chart-kind=\"activity\"")))
+                .andExpect(content().string(containsString("data-detail-interval=\"1wk\"")))
+                .andExpect(content().string(containsString("data-alternate-detail-chart")))
                 .andExpect(content().string(containsString("id=\"signalResultsChart\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         containsString("Chart context is unavailable for this signal"))))
@@ -412,6 +432,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Archive Test Member")))
                 .andExpect(content().string(containsString("Archive Test Company")))
+                .andExpect(content().string(containsString("Select this page")))
+                .andExpect(content().string(containsString("name=\"signalKeys\"")))
+                .andExpect(content().string(containsString("name=\"singleSignalKey\"")))
                 .andExpect(content().string(containsString("(read)")));
 
         User otherAccount = new User();
@@ -437,6 +460,39 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk());
         assertThat(congressionalTradeDeliveryRepository.findById(delivery.getId())
                 .orElseThrow().getReadAt()).isNotNull();
+
+        mockMvc.perform(post("/activity-signals/delete")
+                        .param("singleSignalKey", "CONGRESSIONAL:" + delivery.getId())
+                        .with(user(otherAccount.getEmail()))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(view().name("redirect:/activity-signals"))
+                .andExpect(flash().attributeExists("signalDeleteError"));
+        assertThat(congressionalTradeDeliveryRepository.existsById(delivery.getId())).isTrue();
+
+        mockMvc.perform(post("/activity-signals/delete")
+                        .param("singleSignalKey", "CONGRESSIONAL:" + delivery.getId())
+                        .with(user(email)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/activity-signals/delete")
+                        .param("singleSignalKey", "CONGRESSIONAL:" + delivery.getId())
+                        .param("sort", "company")
+                        .param("direction", "asc")
+                        .with(user(email))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(view().name("redirect:/activity-signals"))
+                .andExpect(flash().attribute("signalDeleteMessage", "1 activity signal deleted."));
+        assertThat(congressionalTradeDeliveryRepository.findById(delivery.getId())
+                .orElseThrow().getDeletedAt()).isNotNull();
+        mockMvc.perform(get("/activity-signals").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        containsString("Archive Test Member"))));
+        mockMvc.perform(get("/activity-signals/congressional/{id}", delivery.getId())
+                        .with(user(email)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -454,35 +510,90 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(get("/settings").with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("settings"))
+                .andExpect(content().string(containsString(
+                        "<h1 id=\"settingsPageTitle\"><span>General settings</span></h1>")))
                 .andExpect(content().string(containsString("General settings")))
                 .andExpect(content().string(containsString("Authenticator app")))
-                .andExpect(content().string(containsString("Danger zone")));
+                .andExpect(content().string(containsString("Danger zone")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        containsString("Personal analysis profile"))));
 
         mockMvc.perform(get("/settings/appearance").with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("settings"))
+                .andExpect(content().string(containsString(
+                        "<h1 id=\"settingsPageTitle\"><span>Appearance</span></h1>")))
                 .andExpect(content().string(containsString("Workspace appearance")))
                 .andExpect(content().string(containsString("Motive I–V")))
                 .andExpect(content().string(containsString("Corrective A–B–C")))
                 .andExpect(content().string(containsString("Apply changes")));
 
+        mockMvc.perform(get("/settings/analysis-alerts").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings"))
+                .andExpect(content().string(containsString(
+                        "<h1 id=\"settingsPageTitle\"><span>Analysis &amp; Alerts</span></h1>")))
+                .andExpect(content().string(containsString("Personal analysis profile")))
+                .andExpect(content().string(containsString("Signal resolution")))
+                .andExpect(content().string(containsString("RSI period")))
+                .andExpect(content().string(containsString("Restore all factory settings")));
+
+        mockMvc.perform(get("/settings/detection").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings"))
+                .andExpect(content().string(containsString(
+                        "<h1 id=\"settingsPageTitle\"><span>Detection settings</span></h1>")))
+                .andExpect(content().string(containsString("Candlestick trend detection")))
+                .andExpect(content().string(containsString("Minimum trend move (%)")))
+                .andExpect(content().string(containsString("Required directional confirmations")))
+                .andExpect(content().string(containsString("Adaptive trend structure plus an independently calculated original move/count rule")))
+                .andExpect(content().string(containsString("opposite directional results reject the trend")))
+                .andExpect(content().string(containsString("value=\"3.0\"")))
+                .andExpect(content().string(containsString("Original-rule window candles")))
+                .andExpect(content().string(containsString("Restore detection defaults")));
+
+        mockMvc.perform(get("/settings/scoring").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings"))
+                .andExpect(content().string(containsString(
+                        "<h1 id=\"settingsPageTitle\"><span>Scoring settings</span></h1>")))
+                .andExpect(content().string(containsString("Signal detail scoring")))
+                .andExpect(content().string(containsString("Candlestick")))
+                .andExpect(content().string(containsString("Elliott Wave")))
+                .andExpect(content().string(containsString("Included point total")))
+                .andExpect(content().string(containsString("100 / 100")))
+                .andExpect(content().string(containsString("Apply changes")));
+
+        mockMvc.perform(get("/settings/candlestick-patterns").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(view().name("settings"))
+                .andExpect(content().string(containsString(
+                        "<h1 id=\"settingsPageTitle\"><span>Candlestick Patterns</span></h1>")))
+                .andExpect(content().string(containsString("Candlestick pattern definitions")))
+                .andExpect(content().string(containsString("Minimum second body versus first body")))
+                .andExpect(content().string(containsString("Raise this to require the engulfing candle")))
+                .andExpect(content().string(containsString("Restore factory definitions")));
+
         mockMvc.perform(post("/settings/appearance").with(user(email)).with(csrf())
                         .param("theme", "LIGHT")
                         .param("elliottMotiveColor", "#2563EB")
-                        .param("elliottCorrectiveColor", "#9333EA"))
+                        .param("elliottCorrectiveColor", "#9333EA")
+                        .param("elliottSubwaveColor", "#F59E0B"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", "/settings/appearance"));
         User updated = userRepository.findById(account.getId()).orElseThrow();
         assertThat(updated.getThemePreference()).isEqualTo("LIGHT");
         assertThat(updated.getElliottMotiveColor()).isEqualTo("#2563EB");
         assertThat(updated.getElliottCorrectiveColor()).isEqualTo("#9333EA");
+        assertThat(updated.getElliottSubwaveColor()).isEqualTo("#F59E0B");
 
         mockMvc.perform(post("/settings/appearance").with(user(email)).with(csrf())
                         .param("theme", "DARK")
                         .param("elliottMotiveColor", "#123456")
-                        .param("elliottCorrectiveColor", "#123456"))
+                        .param("elliottCorrectiveColor", "#123456")
+                        .param("elliottSubwaveColor", "#F59E0B"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(flash().attribute("error", "Choose two different Elliott Wave colors."));
+                .andExpect(flash().attribute("error", "Choose three different Elliott Wave colors."));
     }
 
     @Test
@@ -868,6 +979,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Graphical outlook")))
                 .andExpect(content().string(containsString("Score report")))
                 .andExpect(content().string(containsString("id=\"signalChart\"")))
+                .andExpect(content().string(containsString("data-chart-kind=\"technical\"")))
+                .andExpect(content().string(containsString("data-native-interval-notice")))
+                .andExpect(content().string(containsString("data-detail-interval=\"1mo\"")))
                 .andExpect(content().string(containsString("Required downtrend")))
                 .andExpect(content().string(containsString("Complete cached interval history")))
                 .andExpect(content().string(containsString("Why this score")))
@@ -907,7 +1021,9 @@ class StockWatch247ApplicationTests {
 
         mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email)))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Back to all signals")));
+                .andExpect(content().string(containsString("class=\"history-back-button\"")))
+                .andExpect(content().string(containsString("data-history-back")))
+                .andExpect(content().string(containsString("/js/history-back.js")));
 
         User otherUser = new User();
         otherUser.setEmail("other-" + email);
@@ -930,6 +1046,38 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(otherUser.getEmail())))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string("{\"error\":\"Invalid request.\"}"));
+
+        mockMvc.perform(post("/signals/delete")
+                        .param("singleSignalId", event.getId().toString())
+                        .with(user(otherUser.getEmail()))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(view().name("redirect:/signals"))
+                .andExpect(flash().attributeExists("signalDeleteError"));
+        assertThat(alertEventRepository.existsById(event.getId())).isTrue();
+
+        mockMvc.perform(post("/signals/delete")
+                        .param("singleSignalId", event.getId().toString())
+                        .with(user(email)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/signals/delete")
+                        .param("singleSignalId", event.getId().toString())
+                        .param("sort", "ticker")
+                        .param("direction", "asc")
+                        .with(user(email))
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(view().name("redirect:/signals"))
+                .andExpect(flash().attribute("signalDeleteMessage", "1 signal deleted."));
+        assertThat(alertEventRepository.findById(event.getId())
+                .orElseThrow().getDeletedAt()).isNotNull();
+        mockMvc.perform(get("/signals").with(user(email)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        containsString("/alerts/signals/" + event.getId()))));
+        mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email)))
+                .andExpect(status().isBadRequest());
     }
 
     private AlertRule alertRule(User user,

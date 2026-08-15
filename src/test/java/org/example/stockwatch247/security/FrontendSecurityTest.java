@@ -13,6 +13,207 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class FrontendSecurityTest {
 
     @Test
+    void priceChartsExposePersistentInteractiveFibonacciDrawingTools() throws IOException {
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String signal = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
+        String historicalCandle = Files.readString(
+                Path.of("src/main/resources/templates/historical-candlestick-detail.html"));
+        String historicalElliott = Files.readString(
+                Path.of("src/main/resources/templates/historical-elliott-detail.html"));
+        String intervals = Files.readString(
+                Path.of("src/main/resources/static/js/detail-chart-intervals.js"));
+        String fibonacci = Files.readString(
+                Path.of("src/main/resources/static/js/fibonacci-drawing-tool.js"));
+
+        assertTrue(stock.contains("@{/js/fibonacci-drawing-tool.js}"));
+        assertTrue(stock.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(stock.contains("fibonacciDrawingTool?.setContext"));
+        assertTrue(signal.contains("@{/js/fibonacci-drawing-tool.js}"));
+        assertTrue(signal.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(signal.contains("role=\"group\""));
+        assertTrue(historicalCandle.contains("@{/js/fibonacci-drawing-tool.js}"));
+        assertTrue(historicalElliott.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(intervals.contains("alternateFibonacciTool"));
+        assertTrue(intervals.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(fibonacci.contains("0.236"));
+        assertTrue(fibonacci.contains("0.382"));
+        assertTrue(fibonacci.contains("0.618"));
+        assertTrue(fibonacci.contains("0.786"));
+        assertTrue(fibonacci.contains("localStorage.setItem"));
+        assertTrue(fibonacci.contains("setPointerCapture"));
+        assertTrue(fibonacci.contains("event.key === 'Delete'"));
+        assertTrue(fibonacci.contains("coordinateToTime"));
+        assertTrue(fibonacci.contains("coordinateToPrice"));
+        assertFalse(fibonacci.contains("innerHTML"));
+    }
+
+    @Test
+    void virtualTradeSurfacesExposeConfirmedCspSafeDeletion() throws IOException {
+        String archive = Files.readString(Path.of("src/main/resources/templates/virtual-trades.html"));
+        String outlook = Files.readString(Path.of("src/main/resources/templates/technical-outlook.html"));
+        String deletionScript = Files.readString(
+                Path.of("src/main/resources/static/js/virtual-trade-deletion.js"));
+
+        assertTrue(archive.contains("/virtual-trades/{id}/delete"));
+        assertTrue(archive.contains("data-virtual-trade-delete-dialog"));
+        assertTrue(archive.contains("@{/js/virtual-trade-deletion.js}"));
+        assertTrue(outlook.contains("/api/virtual-trades/${encodeURIComponent(tradeId)}/delete"));
+        assertTrue(outlook.contains("id=\"deleteVirtualTradeDialog\""));
+        assertTrue(outlook.contains("company-virtual-trade-delete"));
+        assertFalse(outlook.contains("innerHTML"));
+        assertFalse(deletionScript.contains("innerHTML"));
+    }
+
+    @Test
+    void settingsExposeStrictPerFamilyAndIntervalScoringProfiles() throws IOException {
+        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
+        String scoring = Files.readString(
+                Path.of("src/main/resources/templates/fragments/scoring-settings.html"));
+        String script = Files.readString(
+                Path.of("src/main/resources/static/js/scoring-settings.js"));
+
+        assertTrue(settings.contains("@{/settings/scoring}"));
+        assertTrue(settings.contains("settingsTab == 'scoring'"));
+        assertTrue(scoring.contains("Included point total"));
+        assertTrue(scoring.contains("@{/settings/scoring/reset}"));
+        assertTrue(script.contains("total === 100"));
+        assertTrue(script.contains("apply.disabled = !valid"));
+        assertFalse(scoring.contains("innerHTML"));
+        assertFalse(script.contains("innerHTML"));
+    }
+
+    @Test
+    void settingsExposeIntervalSpecificCandlestickDetectionRulesAndScopedReset() throws IOException {
+        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
+        String detection = Files.readString(
+                Path.of("src/main/resources/templates/fragments/detection-settings.html"));
+
+        assertTrue(settings.contains("@{/settings/detection}"));
+        assertTrue(settings.contains("settingsTab == 'detection'"));
+        assertTrue(settings.contains("detection-reset-trigger"));
+        assertTrue(detection.contains("trendMinimumMovePercent"));
+        assertTrue(detection.contains("trendMinimumCandles"));
+        assertTrue(detection.contains("trendLookbackCandles"));
+        assertTrue(detection.contains("@{/settings/detection/reset}"));
+        assertFalse(detection.contains("innerHTML"));
+    }
+
+    @Test
+    void settingsExplainEveryCustomCandlestickDefinitionAndAvoidUnsafeRendering() throws IOException {
+        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
+        String definitions = Files.readString(
+                Path.of("src/main/resources/templates/fragments/candlestick-pattern-settings.html"));
+        String script = Files.readString(
+                Path.of("src/main/resources/static/js/candlestick-pattern-settings.js"));
+
+        assertTrue(settings.contains("@{/settings/candlestick-patterns}"));
+        assertTrue(settings.contains("settingsTab == 'candlestick-patterns'"));
+        assertTrue(definitions.contains("Rules that stay fixed"));
+        assertTrue(definitions.contains("Factory:"));
+        assertTrue(definitions.contains("setting.description"));
+        assertTrue(definitions.contains("setting.effect"));
+        assertTrue(definitions.contains("@{/settings/candlestick-patterns/reset}"));
+        assertFalse(script.contains("innerHTML"));
+    }
+
+    @Test
+    void technicalOutlookShowsAndEditsTheSavedIndicatorPeriods() throws IOException {
+        String outlook = Files.readString(
+                Path.of("src/main/resources/templates/technical-outlook.html"));
+        String controller = Files.readString(
+                Path.of("src/main/java/org/example/stockwatch247/controller/TechnicalOutlookController.java"));
+        String service = Files.readString(
+                Path.of("src/main/java/org/example/stockwatch247/service/TechnicalOutlookService.java"));
+
+        assertTrue(outlook.contains("id=\"editIndicatorPeriods\""));
+        assertTrue(outlook.contains("id=\"indicatorPeriodDialog\""));
+        assertTrue(outlook.contains("data-period-field=\"rsiPeriod\""));
+        assertTrue(outlook.contains("data-period-field=\"fastEmaPeriod\""));
+        assertTrue(outlook.contains("data-period-field=\"supportResistancePeriod\""));
+        assertTrue(outlook.contains("renderIndicatorPeriodLabels(outlook)"));
+        assertTrue(outlook.contains("rollingLevels(candles, mode, period)"));
+        assertTrue(outlook.contains("settings.supportResistancePeriod"));
+        assertTrue(outlook.contains("technical-outlook/indicator-periods"));
+        assertFalse(outlook.contains("innerHTML"));
+        assertTrue(controller.contains("updateIndicatorPeriods"));
+        assertTrue(service.contains("String rsiLabel = \"RSI \" + rules.rsiPeriod()"));
+        assertTrue(service.contains("String emaPairLabel = fastEmaLabel + \" / \" + slowEmaLabel"));
+        assertTrue(service.contains("IndicatorSettingsView.from(rules)"));
+    }
+
+    @Test
+    void authenticatedPageBackNavigationUsesOneReusableHistoryControl() throws IOException {
+        String fragment = Files.readString(
+                Path.of("src/main/resources/templates/fragments/history-back.html"));
+        String behavior = Files.readString(
+                Path.of("src/main/resources/static/js/history-back.js"));
+        String stylesheet = Files.readString(
+                Path.of("src/main/resources/static/css/style.css"));
+        String navbar = Files.readString(
+                Path.of("src/main/resources/templates/fragments/navbar.html"));
+        String dashboard = Files.readString(
+                Path.of("src/main/resources/templates/home.html"));
+
+        assertTrue(fragment.contains("th:fragment=\"historyBack(fallbackUrl)\""));
+        assertTrue(fragment.contains("data-history-back"));
+        assertTrue(fragment.contains("@{/js/history-back.js}"));
+        assertFalse(fragment.matches("(?s).*\\son(?:click|load|error)=.*"));
+        assertTrue(behavior.contains("window.history.back()"));
+        assertTrue(behavior.contains("window.location.assign(fallbackUrl)"));
+        assertTrue(behavior.contains("window.requestStockWatchHistoryBack = navigateBack"));
+        assertTrue(behavior.contains("stockwatch:page-state:"));
+        assertTrue(behavior.contains("window.addEventListener('pagehide', capturePageState)"));
+        assertTrue(behavior.contains("window.addEventListener('pageshow', restorePageState)"));
+        assertTrue(behavior.contains("event.persisted"));
+        assertFalse(behavior.contains("innerHTML"));
+        assertTrue(stylesheet.contains(".history-back-button"));
+        assertTrue(stylesheet.contains(".history-back-disabled .history-back-button"));
+        assertTrue(navbar.contains("firstName != null"));
+        assertTrue(navbar.contains("fragments/history-back :: historyBack"));
+        assertTrue(dashboard.contains("<body class=\"history-back-disabled\">"));
+
+        for (String template : List.of(
+                "all-signals.html", "all-activity-signals.html", "alert-history.html",
+                "virtual-trades.html", "signal-detail.html", "activity-signal-detail.html",
+                "technical-outlook.html", "historical-candlestick-detail.html",
+                "historical-elliott-detail.html", "settings.html", "stock.html",
+                "virtual-trade.html")) {
+            String source = Files.readString(Path.of("src/main/resources/templates", template));
+            assertTrue(source.contains("fragments/navbar :: navbar"), template);
+        }
+
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        assertTrue(stock.contains("setAlertBeforeUnloadGuard(!pageExitAllowed && changedCount > 0)"));
+        assertTrue(stock.contains("window.removeEventListener('beforeunload', handleUnsavedAlertBeforeUnload)"));
+        assertFalse(stock.contains("window.addEventListener('beforeunload', event =>"));
+    }
+
+    @Test
+    void templatesDoNotExposeApiIntervalCodesAsVisibleText() throws IOException {
+        Path templateRoot = Path.of("src/main/resources/templates");
+        java.util.regex.Pattern visibleIntervalCode = java.util.regex.Pattern.compile(
+                "(?is)>[^<]*(?<![a-z0-9])(1d|1wk|1mo)(?![a-z0-9])[^<]*<");
+
+        try (java.util.stream.Stream<Path> templates = Files.walk(templateRoot)) {
+            for (Path template : templates.filter(path -> path.toString().endsWith(".html")).toList()) {
+                String source = Files.readString(template)
+                        .replaceAll("(?is)<!--.*?-->", "")
+                        .replaceAll("(?is)<script\\b.*?</script>", "")
+                        .replaceAll("(?is)<style\\b.*?</style>", "");
+                assertFalse(visibleIntervalCode.matcher(source).find(),
+                        () -> template + " contains a visible API interval code");
+            }
+        }
+
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String detailIntervals = Files.readString(
+                Path.of("src/main/resources/static/js/detail-chart-intervals.js"));
+        assertTrue(stock.contains("historicalCandlestickIntervalLabel(interval).toLowerCase()"));
+        assertTrue(detailIntervals.contains("intervalLabel.textContent = label.toLowerCase()"));
+        assertFalse(detailIntervals.contains("(native ? nativeLabel : interval)"));
+    }
+
+    @Test
     void everyPageLoadsThePersistentCspSafeThemeToggle() throws IOException {
         List<String> templates = List.of(
                 "index.html",
@@ -124,7 +325,7 @@ class FrontendSecurityTest {
         assertTrue(historicalCandlestickDetail.contains("id=\"signalChart\""));
         assertTrue(historicalCandlestickDetail.contains("chart.candles()"));
         assertTrue(historicalCandlestickDetail.contains("signalDetailBehavior"));
-        assertTrue(historicalCandlestickDetail.contains("Post-detection follow-through"));
+        assertTrue(historicalCandlestickDetail.contains("Candidate validation and follow-through"));
         assertTrue(historicalCandlestickDetail.contains("signal.lifecycle().confirmationTriggerPrice()"));
         assertFalse(about.contains("th:utext"));
         assertFalse(about.contains("style="));
@@ -143,6 +344,8 @@ class FrontendSecurityTest {
         assertTrue(signup.contains("value=\"#A855F7\""));
         assertTrue(settings.contains("@{/settings/appearance}"));
         assertTrue(settings.contains("settingsTab == 'appearance'"));
+        assertTrue(settings.contains("name=\"elliottSubwaveColor\""));
+        assertTrue(settings.contains("Hovered subwaves"));
         assertTrue(settings.contains("Motive I–V"));
         assertTrue(settings.contains("Corrective A–B–C"));
         assertTrue(settings.contains("Apply changes"));
@@ -182,6 +385,8 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("series.setMarkers(points"));
         assertTrue(stock.contains("ELLIOTT_MOTIVE_COLOR"));
         assertTrue(stock.contains("ELLIOTT_CORRECTIVE_COLOR"));
+        assertTrue(stock.contains("ELLIOTT_SUBWAVE_COLOR"));
+        assertTrue(stock.contains("StockWatchElliottSubwaveOverlay"));
         assertTrue(stock.contains("structure.points.slice(0, 6)"));
         assertTrue(stock.contains("structure.points.slice(5)"));
         assertTrue(stock.contains("isCorrectiveElliottPoint"));
@@ -191,6 +396,7 @@ class FrontendSecurityTest {
         assertFalse(stock.contains("id=\"historicElliottBtn\""));
         assertTrue(stock.contains("/elliott-waves/history?interval="));
         assertTrue(stock.contains("&from=${encodeURIComponent(oldestTimestamp)}"));
+        assertTrue(stock.contains("Number.isSafeInteger(oldestTimestamp) && oldestTimestamp > 0"));
         assertTrue(stock.contains("structure.structureId || elliottStructureFallbackId(structure)"));
         assertTrue(stock.contains("id=\"elliottWaveHoverCard\""));
         assertTrue(stock.contains("/elliott-cards?interval="));
@@ -319,6 +525,21 @@ class FrontendSecurityTest {
         assertFalse(candlestickSection.contains("data-alert-family=\"ELLIOTT_WAVE\""));
         assertTrue(elliottSection.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\""));
         assertTrue(elliottSection.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"MONTHLY\""));
+    }
+
+    @Test
+    void elliottSubwaveHoverOverlayCannotMutateTheChartTimeline() throws IOException {
+        String overlay = Files.readString(Path.of(
+                "src/main/resources/static/js/elliott-subwave-overlay.js"));
+
+        assertTrue(overlay.contains("createElementNS"));
+        assertTrue(overlay.contains("elliott-subwave-svg"));
+        assertTrue(overlay.contains("mouseleave"));
+        assertFalse(overlay.contains("addLineSeries"));
+        assertFalse(overlay.contains("removeSeries"));
+        assertFalse(overlay.contains("setData"));
+        assertFalse(overlay.contains("setVisibleLogicalRange"));
+        assertFalse(overlay.contains("fitContent"));
     }
 
     @Test
@@ -533,9 +754,13 @@ class FrontendSecurityTest {
         String archive = Files.readString(Path.of("src/main/resources/templates/all-signals.html"));
         String activityArchive = Files.readString(
                 Path.of("src/main/resources/templates/all-activity-signals.html"));
+        String archiveSelectionScript = Files.readString(
+                Path.of("src/main/resources/static/js/signal-archive-selection.js"));
         String activityDetail = Files.readString(
                 Path.of("src/main/resources/templates/activity-signal-detail.html"));
         String signalDetail = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
+        String detailChartIntervals = Files.readString(
+                Path.of("src/main/resources/static/js/detail-chart-intervals.js"));
 
         assertTrue(dashboard.contains("th:each=\"company : ${trackedCompanies}\""));
         assertTrue(dashboard.contains("company.representativeAlertId()"));
@@ -565,6 +790,11 @@ class FrontendSecurityTest {
         assertTrue(activityDetail.contains("class=\"signal-chart-card\""));
         assertTrue(activityDetail.contains("class=\"signal-evidence-section\""));
         assertTrue(activityDetail.contains("class=\"signal-results-section\""));
+        assertTrue(activityDetail.contains("data-chart-kind=\"activity\""));
+        assertTrue(activityDetail.contains("data-detail-interval=\"1d\""));
+        assertTrue(activityDetail.contains("data-detail-interval=\"1wk\""));
+        assertTrue(activityDetail.contains("data-detail-interval=\"1mo\""));
+        assertTrue(activityDetail.contains("data-alternate-detail-chart"));
         assertTrue(activityDetail.contains("function activateTab(name, updateHash)"));
         assertFalse(activityDetail.contains("signal-detail-tab"));
         assertFalse(activityDetail.contains("activity-detail-hero"));
@@ -597,9 +827,16 @@ class FrontendSecurityTest {
         assertTrue(archive.contains("signal.lifecycle().label()"));
         assertTrue(archive.contains("entry.bestDirectionalMovePercent()"));
         assertTrue(archive.contains("entry.worstDirectionalMovePercent()"));
-        assertTrue(archive.contains("entry.resultWindowLabel()"));
-        assertTrue(archive.contains("direction-aware moves from the signal close"));
+        assertTrue(archive.contains("From signal candle close"));
+        assertFalse(archive.contains("Through resolution candle"));
+        assertFalse(archive.contains("entry.resultWindowLabel()"));
+        assertTrue(archive.contains("direction-aware moves from the applicable measurement start"));
         assertTrue(archive.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
+        assertTrue(archive.contains("@{/signals/delete}"));
+        assertTrue(archive.contains("name=\"signalIds\""));
+        assertTrue(archive.contains("name=\"singleSignalId\""));
+        assertTrue(archive.contains("data-select-all"));
+        assertTrue(archive.contains("data-delete-dialog"));
         assertTrue(dashboard.contains("data-notification-read"));
         assertTrue(dashboard.contains("@{/activity-signals}"));
         assertTrue(dashboardScript.contains("initializeNotificationReadButtons"));
@@ -611,6 +848,14 @@ class FrontendSecurityTest {
         assertTrue(activityArchive.contains("value=\"type\""));
         assertTrue(activityArchive.contains("value=\"actor\""));
         assertTrue(activityArchive.contains("signal.hasBeenRead()"));
+        assertTrue(activityArchive.contains("@{/activity-signals/delete}"));
+        assertTrue(activityArchive.contains("name=\"signalKeys\""));
+        assertTrue(activityArchive.contains("name=\"singleSignalKey\""));
+        assertTrue(activityArchive.contains("data-select-all"));
+        assertTrue(activityArchive.contains("data-delete-dialog"));
+        assertTrue(archiveSelectionScript.contains("form.requestSubmit"));
+        assertTrue(archiveSelectionScript.contains("selectAll.indeterminate"));
+        assertFalse(archiveSelectionScript.contains("innerHTML"));
 
         assertTrue(signalDetail.contains("signal.setupScore()"));
         assertTrue(signalDetail.contains("signal.signalPeriodLabel()"));
@@ -646,11 +891,22 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("Results chart color legend"));
         assertTrue(signalDetail.contains("Favorable move in the signal direction"));
         assertTrue(signalDetail.contains("Adverse move against the signal"));
-        assertTrue(signalDetail.contains("Signal start at the recorded close"));
-        assertTrue(signalDetail.contains("text: `${tradeSignal} signal start`"));
+        assertTrue(signalDetail.contains("Applicable measurement start"));
+        assertTrue(signalDetail.contains("text: `${tradeSignal} measurement start`"));
         assertTrue(signalDetail.contains("color: colors.signalStart"));
         assertTrue(signalDetail.contains("Best exit or re-entry in the selected window"));
         assertTrue(signalDetail.contains("id=\"signalChart\""));
+        assertTrue(signalDetail.contains("data-chart-kind=\"technical\""));
+        assertTrue(signalDetail.contains("data-signal-family=${signal.patternFamily().name()}"));
+        assertTrue(signalDetail.contains("data-native-interval-notice"));
+        assertTrue(signalDetail.contains("data-return-native-interval"));
+        assertTrue(signalDetail.contains("data-alternate-detail-chart"));
+        assertTrue(detailChartIntervals.contains("interval === nativeInterval"));
+        assertTrue(detailChartIntervals.contains("chartKind === 'activity'"));
+        assertTrue(detailChartIntervals.contains("nativeLegend.hidden = chartKind === 'technical'"));
+        assertTrue(detailChartIntervals.contains("Elliott Wave overlays are interval-specific"));
+        assertTrue(detailChartIntervals.contains("/candles?interval="));
+        assertFalse(detailChartIntervals.contains("innerHTML"));
         assertTrue(signalDetail.contains("signal.chart().candles()"));
         assertTrue(signalDetail.contains("signal.chart().elliottWave()"));
         assertTrue(signalDetail.contains("id=\"signalElliottWaveData\""));
@@ -660,12 +916,15 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("signal-chart-trend-band"));
         assertTrue(signalDetail.contains("signal-pattern-callout"));
         assertTrue(signalDetail.contains("timeToCoordinate"));
+        assertTrue(signalDetail.contains("const visibleLeft = Math.max(0, rawLeft)"));
+        assertTrue(signalDetail.contains("const visibleRight = Math.min(chartWidth, rawRight)"));
+        assertTrue(signalDetail.contains("trendBand.hidden = visibleRight <= visibleLeft"));
         assertTrue(signalDetail.contains("rectanglesOverlap"));
         assertTrue(signalDetail.contains("classList.add('elbow-right')"));
         assertTrue(signalDetail.contains("function focusSignal()"));
         assertTrue(signalDetail.contains("setVisibleLogicalRange"));
         assertTrue(signalDetail.contains("stockwatch:themechange"));
-        assertTrue(signalDetail.contains("signal.reasons()"));
+        assertTrue(signalDetail.contains("displayScore.sections()"));
         assertTrue(signalDetail.contains("reason.scoreLabel()"));
         assertTrue(signalDetail.contains("reason.details()"));
         assertTrue(signalDetail.contains("detail.text()"));
@@ -673,6 +932,8 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("Detailed evidence was not stored for this signal"));
         assertTrue(signalDetail.contains("Observed price outcome"));
         assertTrue(signalDetail.contains("signal.observedOutcome().directionalReturnPercent()"));
+        assertTrue(signalDetail.contains("From signal candle close"));
+        assertFalse(signalDetail.contains("result-measurement-basis"));
         assertFalse(signalDetail.contains("th:utext"));
         assertFalse(signalDetail.contains("style="));
         assertFalse(signalDetail.contains("<style>"));

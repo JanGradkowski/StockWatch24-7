@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VirtualTradeServiceTest {
@@ -120,6 +121,20 @@ class VirtualTradeServiceTest {
         assertThat(closed.outcomeLabel()).isEqualTo("Missed upside");
         assertThat(stored.getExitPrice()).isEqualByComparingTo("110.00000000");
         assertThat(stored.getExitSnapshot()).contains("TECHNICAL_OUTLOOK_V1");
+    }
+
+    @Test
+    void deletingTradeSoftDeletesOnlyAnOwnedVisibleTrade() {
+        VirtualTrade trade = new VirtualTrade();
+        trade.setId(123L);
+        trade.setUpdatedAt(Instant.parse("2026-08-01T10:00:00Z"));
+        when(tradeRepository.findOwnedById(123L, user)).thenReturn(Optional.of(trade));
+
+        service.delete(user, 123L);
+
+        assertThat(trade.getDeletedAt()).isNotNull();
+        assertThat(trade.getUpdatedAt()).isEqualTo(trade.getDeletedAt());
+        verify(tradeRepository).saveAndFlush(trade);
     }
 
     private Map<String, Object> quote(double price, long timestamp) {

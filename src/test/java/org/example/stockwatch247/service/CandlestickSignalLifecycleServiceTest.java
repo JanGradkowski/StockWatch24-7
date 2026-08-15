@@ -272,6 +272,111 @@ class CandlestickSignalLifecycleServiceTest {
     }
 
     @Test
+    void initializesOneCandleReversalWithSignalCloseAsConfirmationThreshold() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3);
+        AlertEvent event = new AlertEvent();
+        DetectedSignal signal = signal(CandlePattern.HANGING_MAN, TradeSignal.SELL, 200L, 101.0);
+
+        service.initializeTracking(event, signal, List.of(
+                candle(200L, 103.0, 105.0, 98.0, 101.0)
+        ));
+
+        assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.POTENTIAL);
+        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(101.0);
+        assertThat(event.getInvalidationPrice()).isEqualTo(105.0);
+        assertThat(event.getConfirmationWindowCandles()).isEqualTo(10);
+        assertThat(event.getDetectionCandleTimestamp()).isNull();
+    }
+
+    @Test
+    void detectsOneCandleSellOnlyWhenImmediateNextCandleIsRedAndClosesLower() {
+        Fixture fixture = oneCandleFixture(TradeSignal.SELL, 105.0, 95.0, 100.0);
+        when(fixture.repository().findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.POTENTIAL))
+                .thenReturn(List.of(fixture.event()));
+
+        CandlestickSignalLifecycleService.LifecycleEvaluationResult result =
+                fixture.service().evaluatePending("AAPL", TimeInterval.DAILY, List.of(
+                        candle(100L, 99.0, 105.0, 95.0, 100.0),
+                        candle(200L, 100.0, 102.0, 97.0, 99.0)
+                ));
+
+        assertThat(result.detected()).isEqualTo(1);
+        assertThat(result.resolved()).isZero();
+        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.DETECTED);
+        assertThat(fixture.event().getDetectionCandleTimestamp()).isEqualTo(200L);
+        assertThat(fixture.event().getDetectionClosePrice()).isEqualTo(99.0);
+        assertThat(fixture.event().getResolutionCandleTimestamp()).isNull();
+    }
+
+    @Test
+    void rejectsOneCandleCandidateAfterFailedGateAndIgnoresLaterDecline() {
+        Fixture fixture = oneCandleFixture(TradeSignal.SELL, 105.0, 95.0, 100.0);
+        when(fixture.repository().findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.POTENTIAL))
+                .thenReturn(List.of(fixture.event()));
+
+        CandlestickSignalLifecycleService.LifecycleEvaluationResult result =
+                fixture.service().evaluatePending("AAPL", TimeInterval.DAILY, List.of(
+                        candle(100L, 99.0, 105.0, 95.0, 100.0),
+                        candle(200L, 100.0, 103.0, 98.0, 101.0),
+                        candle(300L, 101.0, 102.0, 94.0, 96.0)
+                ));
+
+        assertThat(result.rejected()).isEqualTo(1);
+        assertThat(result.confirmed()).isZero();
+        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.REJECTED);
+        assertThat(fixture.event().getResolutionCandleTimestamp()).isEqualTo(200L);
+        assertThat(fixture.event().getResolutionCandleOffset()).isEqualTo(1);
+        verify(fixture.notifications()).sendSignalLifecycleEmail(fixture.event());
+    }
+
+    @Test
+    void adverseGateCandleRejectsCandidateRatherThanInvalidatingASignal() {
+        Fixture fixture = oneCandleFixture(TradeSignal.SELL, 105.0, 95.0, 100.0);
+        when(fixture.repository().findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.POTENTIAL))
+                .thenReturn(List.of(fixture.event()));
+
+        fixture.service().evaluatePending("AAPL", TimeInterval.DAILY, List.of(
+                candle(100L, 99.0, 105.0, 95.0, 100.0),
+                candle(200L, 102.0, 108.0, 101.0, 106.0)
+        ));
+
+        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.REJECTED);
+        assertThat(fixture.event().getResolutionCandleTimestamp()).isEqualTo(200L);
+    }
+
+    @Test
+    void detectedOneCandleSignalThenUsesItsOwnOutcomeWindowFromDetectionClose() {
+        Fixture fixture = oneCandleFixture(TradeSignal.SELL, 105.0, 95.0, 100.0);
+        when(fixture.repository().findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.POTENTIAL))
+                .thenReturn(List.of(fixture.event()), List.of());
+        when(fixture.repository().findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.DETECTED))
+                .thenReturn(List.of(), List.of(fixture.event()));
+        List<Candle> candles = List.of(
+                candle(100L, 99.0, 105.0, 95.0, 100.0),
+                candle(200L, 100.0, 102.0, 97.0, 99.0),
+                candle(300L, 98.0, 99.0, 93.0, 94.0));
+
+        fixture.service().evaluatePending("AAPL", TimeInterval.DAILY, candles);
+        CandlestickSignalLifecycleService.LifecycleEvaluationResult result =
+                fixture.service().evaluatePending("AAPL", TimeInterval.DAILY, candles);
+
+        assertThat(result.confirmed()).isEqualTo(1);
+        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.CONFIRMED);
+        assertThat(fixture.event().getDetectionCandleTimestamp()).isEqualTo(200L);
+        assertThat(fixture.event().getDetectionClosePrice()).isEqualTo(99.0);
+        assertThat(fixture.event().getResolutionCandleTimestamp()).isEqualTo(300L);
+        assertThat(fixture.event().getResolutionCandleOffset()).isEqualTo(1);
+    }
+
+    @Test
     void confirmsBuyOnFirstSubsequentCloseAbovePatternHighAndSendsOneFollowUp() {
         Fixture fixture = fixture(TradeSignal.BUY, 105.0, 95.0);
         when(fixture.repository().findTrackedLifecycleEvents(
@@ -372,6 +477,45 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(fixture.event().getResolutionCandleTimestamp()).isEqualTo(400L);
     }
 
+    @Test
+    void customConfirmationMoveMustBeReachedInAdditionToTheStructuralTrigger() {
+        Fixture fixture = fixture(TradeSignal.BUY, 101.0, 95.0);
+        fixture.event().setClosePrice(100.0);
+        fixture.event().setLifecycleConfirmationPercent(5.0);
+        when(fixture.repository().findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.DETECTED))
+                .thenReturn(List.of(fixture.event()));
+
+        fixture.service().evaluatePending("AAPL", TimeInterval.DAILY, List.of(
+                candle(100L, 99.0, 101.0, 98.0, 100.0),
+                candle(200L, 100.0, 103.0, 99.0, 102.0),
+                candle(300L, 102.0, 107.0, 101.0, 106.0)
+        ));
+
+        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.CONFIRMED);
+        assertThat(fixture.event().getResolutionCandleTimestamp()).isEqualTo(300L);
+        assertThat(fixture.event().getResolutionCandleOffset()).isEqualTo(2);
+    }
+
+    @Test
+    void customAdverseMoveCanInvalidateBeforeTheStructuralBoundary() {
+        Fixture fixture = fixture(TradeSignal.BUY, 105.0, 95.0);
+        fixture.event().setClosePrice(100.0);
+        fixture.event().setLifecycleInvalidationPercent(2.0);
+        when(fixture.repository().findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.DETECTED))
+                .thenReturn(List.of(fixture.event()));
+
+        fixture.service().evaluatePending("AAPL", TimeInterval.DAILY, List.of(
+                candle(100L, 99.0, 105.0, 95.0, 100.0),
+                candle(200L, 100.0, 101.0, 96.0, 97.0)
+        ));
+
+        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.INVALIDATED);
+        assertThat(fixture.event().getResolutionClosePrice()).isEqualTo(97.0);
+        assertThat(fixture.event().getResolutionCandleOffset()).isEqualTo(1);
+    }
+
     private Fixture fixture(TradeSignal direction, double patternHigh, double patternLow) {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
@@ -380,8 +524,8 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEvent event = new AlertEvent();
         event.setAlertRule(rule(direction));
         event.setPattern(direction == TradeSignal.BUY
-                ? CandlePattern.HAMMER
-                : CandlePattern.SHOOTING_STAR);
+                ? CandlePattern.BULLISH_ENGULFING
+                : CandlePattern.BEARISH_ENGULFING);
         event.setTradeSignal(direction);
         event.setSignalCandleTimestamp(100L);
         event.setLifecycleStatus(SignalLifecycleStatus.DETECTED);
@@ -391,6 +535,21 @@ class CandlestickSignalLifecycleServiceTest {
         event.setInvalidationPrice(direction == TradeSignal.BUY ? patternLow : patternHigh);
         event.setConfirmationWindowCandles(3);
         return new Fixture(repository, notifications, service, event);
+    }
+
+    private Fixture oneCandleFixture(TradeSignal direction,
+                                     double patternHigh,
+                                     double patternLow,
+                                     double signalClose) {
+        Fixture fixture = fixture(direction, patternHigh, patternLow);
+        fixture.event().setPattern(direction == TradeSignal.BUY
+                ? CandlePattern.HAMMER
+                : CandlePattern.HANGING_MAN);
+        fixture.event().setClosePrice(signalClose);
+        fixture.event().setConfirmationTriggerPrice(signalClose);
+        fixture.event().setLifecycleStatus(SignalLifecycleStatus.POTENTIAL);
+        fixture.event().setConfirmationWindowCandles(10);
+        return fixture;
     }
 
     private AlertRule rule(TradeSignal direction) {

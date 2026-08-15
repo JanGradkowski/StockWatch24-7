@@ -35,6 +35,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -248,7 +249,7 @@ class AlertRuleServiceTest {
         assertThat(maraView.representativeAlertId()).isEqualTo(11L);
         assertThat(maraView.ruleCount()).isEqualTo(2);
         assertThat(maraView.unreadSignalCount()).isEqualTo(3L);
-        assertThat(maraView.intervalLabels()).containsExactly("1d", "1wk");
+        assertThat(maraView.intervalLabels()).containsExactly("Daily", "Weekly");
         assertThat(maraView.familyLabels()).containsExactly("Candlestick", "Elliott Wave");
         assertThat(maraView.tradeSignals()).containsExactly(TradeSignal.BUY, TradeSignal.SELL);
         assertThat(maraView.instrumentType()).isEqualTo(InstrumentType.EQUITY);
@@ -325,7 +326,7 @@ class AlertRuleServiceTest {
         assertThat(signal.patternLabel()).isEqualTo("Bullish Engulfing");
         assertThat(signal.familyLabel()).isEqualTo("Candlestick");
         assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.BUY);
-        assertThat(signal.intervalLabel()).isEqualTo("1wk");
+        assertThat(signal.intervalLabel()).isEqualTo("Weekly");
         assertThat(signal.researchHorizonLabel()).isEqualTo("4, 8, and 12 weeks");
         assertThat(signal.researchHorizonSummary()).contains("not stable");
         assertThat(signal.researchHorizonDisclaimer()).contains("not a recommended holding period");
@@ -396,7 +397,7 @@ class AlertRuleServiceTest {
         assertThat(archive.signals().getFirst().bestDirectionalMovePercent()).isEqualTo(10.0);
         assertThat(archive.signals().getFirst().worstDirectionalMovePercent()).isEqualTo(-10.0);
         assertThat(archive.signals().getFirst().resultWindowLabel())
-                .isEqualTo("Through resolution candle 2 of 3");
+                .isEqualTo("2 of 3 completed candles");
         org.mockito.ArgumentCaptor<Pageable> pageableCaptor = org.mockito.ArgumentCaptor.forClass(Pageable.class);
         verify(alertEventRepository).findByAlertRule_User(
                 org.mockito.ArgumentMatchers.eq(user), pageableCaptor.capture());
@@ -404,6 +405,63 @@ class AlertRuleServiceTest {
         assertThat(requestedSort.getOrderFor("alertRule.stockAsset.tickerSymbol").getDirection())
                 .isEqualTo(Sort.Direction.ASC);
         assertThat(requestedSort.getOrderFor("sentAt").getDirection()).isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
+    void confirmedOneCandleArchiveMeasuresFromDetectionClose() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository, candleRepository);
+        User user = new User();
+        user.setEmail("confirmed-one-candle@example.com");
+        AlertRule rule = rule(23L, user, stock(3L, "AAPL", "Apple Inc."),
+                TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.SELL);
+        long signalTimestamp = Instant.parse("2026-07-20T00:00:00Z").getEpochSecond();
+        long detectionTimestamp = Instant.parse("2026-07-21T00:00:00Z").getEpochSecond();
+        AlertEvent event = new AlertEvent();
+        event.setId(305L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.HANGING_MAN);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(signalTimestamp);
+        event.setClosePrice(100.0);
+        event.setPatternHigh(105.0);
+        event.setPatternLow(95.0);
+        event.setConfirmationTriggerPrice(100.0);
+        event.setInvalidationPrice(105.0);
+        event.setConfirmationWindowCandles(10);
+        event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+        event.setDetectionCandleTimestamp(detectionTimestamp);
+        event.setDetectionClosePrice(99.0);
+        event.setResolutionCandleTimestamp(Instant.parse("2026-07-22T00:00:00Z").getEpochSecond());
+        event.setResolutionCandleOffset(1);
+        event.setResolutionClosePrice(92.0);
+        event.setSentAt(LocalDateTime.of(2026, 7, 20, 22, 15));
+
+        when(alertEventRepository.findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
+        when(candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                        "AAPL", "1d", detectionTimestamp, DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 10)))
+                .thenReturn(List.of(new Candle(
+                        "AAPL", "1d", Instant.parse("2026-07-22T00:00:00Z").getEpochSecond(),
+                        98.0, 100.0, 90.0, 92.0, 1_000L)));
+
+        AlertRuleService.SignalArchiveEntry entry =
+                service.getSignalArchive(user, "date", "desc", 0).signals().getFirst();
+
+        assertThat(entry.signal().directionLabel()).isEqualTo("Confirmed sell");
+        assertThat(entry.measurementStartLabel())
+                .startsWith("From detection candle close")
+                .contains("21 Jul 2026");
+        assertThat(entry.bestDirectionalMovePercent()).isCloseTo(9.0909, within(0.0001));
+        assertThat(entry.worstDirectionalMovePercent()).isCloseTo(-1.0101, within(0.0001));
+        verify(candleRepository)
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                        "AAPL", "1d", detectionTimestamp, DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 10));
     }
 
     @Test

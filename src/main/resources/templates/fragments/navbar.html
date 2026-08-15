@@ -33,6 +33,10 @@
           th:attr="data-theme-endpoint=@{/api/settings/theme},data-csrf-token=${_csrf.token}"></span>
   </nav>
 
+  <th:block th:if="${firstName != null}">
+    <div th:replace="~{fragments/history-back :: historyBack(@{/home})}"></div>
+  </th:block>
+
   <script th:attr="nonce=${cspNonce}">
     document.addEventListener("DOMContentLoaded", function() {
       const searchInput = document.getElementById('globalTickerSearch');

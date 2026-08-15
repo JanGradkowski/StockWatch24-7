@@ -7,6 +7,8 @@ import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.model.enums.SignalStength;
+import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.CandleRepository;
@@ -41,6 +43,8 @@ public class ScheduledAlertService {
     private final CandlestickSignalLifecycleService lifecycleService;
     private final AlertCheckJobStore jobStore;
     private final AlertScheduleRecoveryService scheduleRecoveryService;
+    private final AnalysisPreferencesService preferencesService;
+    private final CandlestickPatternPreferencesService patternPreferencesService;
     private final boolean scheduleEnabled;
     private final boolean weeklyElliottEnabled;
     private final boolean monthlyElliottEnabled;
@@ -65,7 +69,9 @@ public class ScheduledAlertService {
                                  @Value("${alerts.elliott.monthly-enabled:true}") boolean monthlyElliottEnabled,
                                  @Value("${alerts.schedule.job-lease-seconds:300}") long jobLeaseSeconds,
                                  @Value("${alerts.schedule.retry-delay-seconds:60}") long retryDelaySeconds,
-                                 @Value("${alerts.schedule.maximum-attempts:3}") int maximumAttempts) {
+                                 @Value("${alerts.schedule.maximum-attempts:3}") int maximumAttempts,
+                                 AnalysisPreferencesService preferencesService,
+                                 CandlestickPatternPreferencesService patternPreferencesService) {
         this.alertRuleRepository = alertRuleRepository;
         this.alertEventRepository = alertEventRepository;
         this.candleRepository = candleRepository;
@@ -77,12 +83,38 @@ public class ScheduledAlertService {
         this.lifecycleService = lifecycleService;
         this.jobStore = jobStore;
         this.scheduleRecoveryService = scheduleRecoveryService;
+        this.preferencesService = preferencesService;
+        this.patternPreferencesService = patternPreferencesService;
         this.scheduleEnabled = scheduleEnabled;
         this.weeklyElliottEnabled = weeklyElliottEnabled;
         this.monthlyElliottEnabled = monthlyElliottEnabled;
         this.jobLease = Duration.ofSeconds(Math.max(1L, jobLeaseSeconds));
         this.retryDelay = Duration.ofSeconds(Math.max(1L, retryDelaySeconds));
         this.maximumAttempts = Math.max(1, maximumAttempts);
+    }
+
+    ScheduledAlertService(AlertRuleRepository alertRuleRepository,
+                          AlertEventRepository alertEventRepository,
+                          CandleRepository candleRepository,
+                          MarketDataService marketDataService,
+                          TechnicalIndicatorEnrichmentService enrichmentService,
+                          CandlePatternDetectionService detectionService,
+                          ElliottWaveDetectionService elliottWaveDetectionService,
+                          AlertNotificationService notificationService,
+                          CandlestickSignalLifecycleService lifecycleService,
+                          AlertCheckJobStore jobStore,
+                          AlertScheduleRecoveryService scheduleRecoveryService,
+                          boolean scheduleEnabled,
+                          boolean weeklyElliottEnabled,
+                          boolean monthlyElliottEnabled,
+                          long jobLeaseSeconds,
+                          long retryDelaySeconds,
+                          int maximumAttempts) {
+        this(alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                enrichmentService, detectionService, elliottWaveDetectionService, notificationService,
+                lifecycleService, jobStore, scheduleRecoveryService, scheduleEnabled,
+                weeklyElliottEnabled, monthlyElliottEnabled, jobLeaseSeconds, retryDelaySeconds,
+                maximumAttempts, null, null);
     }
 
     @Scheduled(cron = "${alerts.schedule.daily-cron:0 0 0 * * TUE-SAT}", zone = "${alerts.schedule.zone:Europe/Brussels}")
@@ -243,16 +275,9 @@ public class ScheduledAlertService {
         }
 
         List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(candles, signalCandleCount, interval);
-        List<DetectedSignal> detectedSignals = detectSignals(
-                enrichedCandles,
-                elliottCandles
-        );
-        if (detectedSignals.isEmpty()) {
-            return;
-        }
-
-        for (DetectedSignal signal : detectedSignals) {
-            for (AlertRule rule : rules) {
+        for (AlertRule rule : rules) {
+            List<DetectedSignal> detectedSignals = detectSignals(enrichedCandles, elliottCandles, rule, interval);
+            for (DetectedSignal signal : detectedSignals) {
                 if (rule.getTradeSignal() != signal.tradeSignal()
                         || rule.getPatternFamily() != signalFamily(signal)) {
                     continue;
@@ -294,27 +319,170 @@ public class ScheduledAlertService {
                                DetectedSignal signal,
                                List<Candle> candles,
                                ElliottWaveDetectionService.ElliottWaveStructure elliottStructure) {
+        AnalysisPreferencesService.PreferencesView preferences = preferencesService == null
+                ? AnalysisPreferencesService.factoryPreferences()
+                : preferencesService.get(rule.getUser());
+        AnalysisPreferencesService.IntervalProfile profile = preferences.profile(rule.getInterval());
+        DetectedSignal personalizedSignal = preferences.custom()
+                ? personalizeSignal(rule, signal, candles, profile)
+                : signal;
         AlertEvent event = new AlertEvent();
         event.setAlertRule(rule);
         event.setPattern(signal.pattern());
         event.setTradeSignal(signal.tradeSignal());
         event.setSignalCandleTimestamp(signal.candleTimestamp());
-        event.setSignalStrength(signal.strength());
-        event.setConfidenceScore(signal.confidenceScore());
+        event.setSignalStrength(personalizedSignal.strength());
+        event.setConfidenceScore(personalizedSignal.confidenceScore());
+        event.setFactoryConfidenceScore(signal.confidenceScore());
+        event.setAnalysisProfileVersion(AnalysisPreferencesService.PROFILE_VERSION);
+        event.setAnalysisProfileSnapshot(preferencesService == null ? null : preferencesService.snapshot(profile));
         if (signalFamily(signal) == AlertPatternFamily.ELLIOTT_WAVE) {
             event.setElliottV1EligibilityScore(signal.eligibilityScore());
         }
-        event.setScoreVersion(scoreVersion(signal));
-        event.setConfidenceReasons(signal.reasons());
+        event.setScoreVersion(preferences.custom() ? "PERSONALIZED_V1" : scoreVersion(signal));
+        event.setConfidenceReasons(personalizedSignal.reasons());
         event.setClosePrice(signal.closePrice());
         if (signalFamily(signal) == AlertPatternFamily.CANDLESTICK) {
-            lifecycleService.initializeTracking(event, signal, candles);
+            lifecycleService.initializeTracking(event, personalizedSignal, candles, profile);
         } else {
-            lifecycleService.initializeElliottTracking(event, elliottStructure);
+            lifecycleService.initializeElliottTracking(event, elliottStructure, profile);
         }
 
-        notificationService.sendSignalEmail(rule, signal, event);
+        if (notificationService.sendSignalEmail(rule, personalizedSignal, event)) {
+            event.setInitialEmailSentAt(java.time.LocalDateTime.now());
+        }
         alertEventRepository.save(event);
+    }
+
+    private DetectedSignal personalizeSignal(AlertRule rule,
+                                             DetectedSignal factorySignal,
+                                             List<Candle> candles,
+                                             AnalysisPreferencesService.IntervalProfile profile) {
+        if (preferencesService == null) {
+            return factorySignal;
+        }
+        TechnicalIndicatorProfile technicalProfile = preferencesService.technicalProfile(profile);
+        List<EnrichedCandle> personalizedCandles = enrichmentService.enrich(
+                candles, signalCandleCount(rule.getInterval()), technicalProfile);
+        List<DetectedSignal> candidates = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
+                ? elliottWaveDetectionService.detect(personalizedCandles)
+                : detectionService.detect(personalizedCandles,
+                preferencesService.trendDetectionRules(profile));
+        DetectedSignal scored = candidates.stream()
+                .filter(candidate -> candidate.pattern() == factorySignal.pattern())
+                .filter(candidate -> candidate.tradeSignal() == factorySignal.tradeSignal())
+                .filter(candidate -> candidate.candleTimestamp().equals(factorySignal.candleTimestamp()))
+                .findFirst()
+                .orElse(factorySignal);
+        EnrichedCandle current = personalizedCandles.stream()
+                .filter(candle -> candle.timestamp().equals(factorySignal.candleTimestamp()))
+                .findFirst().orElse(null);
+        ProfileAlignment alignment = profileAlignment(
+                personalizedCandles, current, factorySignal.tradeSignal(), profile);
+        int personalizedScore = Math.clamp(scored.confidenceScore() + alignment.adjustment(), 0, 100);
+        List<String> reasons = new java.util.ArrayList<>(scored.reasons());
+        reasons.add(alignment.availableVotes() == 0
+                ? "Personal profile: no enabled directional indicator was available on the signal candle."
+                : "Personal profile: %d aligned, %d neutral, and %d opposed across %d enabled indicators (%+d points)."
+                        .formatted(alignment.aligned(), alignment.neutral(), alignment.opposed(),
+                                alignment.availableVotes(), alignment.adjustment()));
+        return new DetectedSignal(scored.pattern(), scored.tradeSignal(), strength(personalizedScore),
+                personalizedScore, List.copyOf(reasons), scored.candleTimestamp(), scored.closePrice(),
+                factorySignal.eligibilityScore(), scored.trendStartTimestamp());
+    }
+
+    private ProfileAlignment profileAlignment(List<EnrichedCandle> candles,
+                                              EnrichedCandle current,
+                                              TradeSignal direction,
+                                              AnalysisPreferencesService.IntervalProfile profile) {
+        if (current == null || direction != TradeSignal.BUY && direction != TradeSignal.SELL) {
+            return ProfileAlignment.empty();
+        }
+        List<Integer> votes = new java.util.ArrayList<>();
+        addVote(votes, profile.scoreRsi(), current.rsi(), current.rsi() <= profile.rsiBuyThreshold() ? 1
+                : current.rsi() >= profile.rsiSellThreshold() ? -1 : 0);
+        double emaDifference = percentDifference(current.fastEma(), current.slowEma());
+        addVote(votes, profile.scoreEma(), emaDifference, thresholdVote(emaDifference, profile.emaThresholdPercent()));
+        double smaDifference = percentDifference(current.close(), current.longSma());
+        addVote(votes, profile.scoreLongSma(), smaDifference,
+                thresholdVote(smaDifference, profile.longSmaThresholdPercent()));
+        double macdPercent = current.close() == 0 ? Double.NaN
+                : current.macdHistogram() / current.close() * 100.0;
+        addVote(votes, profile.scoreMacd(), macdPercent,
+                thresholdVote(macdPercent, profile.macdThresholdPercent()));
+        addVote(votes, profile.scoreCci(), current.cci(), current.cci() <= profile.cciBuyThreshold() ? 1
+                : current.cci() >= profile.cciSellThreshold() ? -1 : 0);
+        double bandPosition = bandPosition(current.close(), current.lowerBollinger(), current.upperBollinger());
+        addVote(votes, profile.scoreBollinger(), bandPosition,
+                bandPosition <= 0 ? 1 : bandPosition >= 100 ? -1 : 0);
+        double relativeVolume = current.averageVolume() == 0 ? Double.NaN
+                : current.volume() / current.averageVolume()
+                * (current.close() > current.open() ? 1 : current.close() < current.open() ? -1 : 0);
+        addVote(votes, profile.scoreRelativeVolume(), relativeVolume,
+                thresholdVote(relativeVolume, profile.relativeVolumeThreshold()));
+        double vwapDifference = percentDifference(current.close(), current.rollingVwap());
+        addVote(votes, profile.scoreVwap(), vwapDifference,
+                thresholdVote(vwapDifference, profile.vwapThresholdPercent()));
+        double valueAreaPosition = bandPosition(current.close(), current.volumeProfileValueAreaLow(),
+                current.volumeProfileValueAreaHigh());
+        addVote(votes, profile.scoreVolumeProfile(), valueAreaPosition,
+                valueAreaPosition < 0 ? 1 : valueAreaPosition > 100 ? -1 : 0);
+        double boundaryDistance = supportResistanceDistance(candles, current, profile.supportResistancePeriod());
+        int boundaryVote = boundaryDistance >= 0 && boundaryDistance <= profile.supportResistanceAtrDistance() ? 1
+                : boundaryDistance < 0 && boundaryDistance >= -profile.supportResistanceAtrDistance() ? -1 : 0;
+        addVote(votes, profile.scoreSupportResistance(), boundaryDistance, boundaryVote);
+
+        int directionVote = direction == TradeSignal.BUY ? 1 : -1;
+        int aligned = (int) votes.stream().filter(vote -> vote == directionVote).count();
+        int neutral = (int) votes.stream().filter(vote -> vote == 0).count();
+        int opposed = votes.size() - aligned - neutral;
+        int adjustment = votes.isEmpty() ? 0
+                : (int) Math.round((double) (aligned - opposed) / votes.size() * 10.0);
+        return new ProfileAlignment(adjustment, aligned, neutral, opposed, votes.size());
+    }
+
+    private void addVote(List<Integer> votes, boolean enabled, double value, int vote) {
+        if (enabled && Double.isFinite(value)) votes.add(vote);
+    }
+
+    private int thresholdVote(double value, double threshold) {
+        return value > threshold ? 1 : value < -threshold ? -1 : 0;
+    }
+
+    private double percentDifference(double value, double baseline) {
+        return !Double.isFinite(value) || !Double.isFinite(baseline) || baseline == 0
+                ? Double.NaN : (value - baseline) / Math.abs(baseline) * 100.0;
+    }
+
+    private double bandPosition(double value, double low, double high) {
+        return !Double.isFinite(value) || !Double.isFinite(low) || !Double.isFinite(high) || high <= low
+                ? Double.NaN : (value - low) / (high - low) * 100.0;
+    }
+
+    private double supportResistanceDistance(List<EnrichedCandle> candles,
+                                             EnrichedCandle current,
+                                             int lookback) {
+        int currentIndex = candles.indexOf(current);
+        if (currentIndex < lookback - 1 || !Double.isFinite(current.atr()) || current.atr() <= 0) {
+            return Double.NaN;
+        }
+        List<EnrichedCandle> window = candles.subList(currentIndex - lookback + 1, currentIndex + 1);
+        double support = window.stream().mapToDouble(EnrichedCandle::low).min().orElse(Double.NaN);
+        double resistance = window.stream().mapToDouble(EnrichedCandle::high).max().orElse(Double.NaN);
+        double supportDistance = (current.close() - support) / current.atr();
+        double resistanceDistance = (resistance - current.close()) / current.atr();
+        return supportDistance <= resistanceDistance ? supportDistance : -resistanceDistance;
+    }
+
+    private record ProfileAlignment(int adjustment, int aligned, int neutral, int opposed, int availableVotes) {
+        private static ProfileAlignment empty() { return new ProfileAlignment(0, 0, 0, 0, 0); }
+    }
+
+    private SignalStength strength(int score) {
+        if (score >= 85) return SignalStength.HIGH_CONFIDENCE;
+        if (score >= 75) return SignalStength.MEDIUM_CONFIDENCE;
+        if (score > 0) return SignalStength.LOW_CONFIDENCE;
+        return SignalStength.WEAK_IGNORE;
     }
 
     private String toApiInterval(TimeInterval interval) {
@@ -326,8 +494,23 @@ public class ScheduledAlertService {
     }
 
     private List<DetectedSignal> detectSignals(List<EnrichedCandle> candlestickCandles,
-                                               List<EnrichedCandle> elliottCandles) {
-        List<DetectedSignal> candlestickSignals = detectionService.detectAlertSignals(candlestickCandles);
+                                               List<EnrichedCandle> elliottCandles,
+                                               AlertRule rule,
+                                               TimeInterval interval) {
+        List<DetectedSignal> candlestickSignals;
+        if (preferencesService == null) {
+            candlestickSignals = detectionService.detectAlertSignalsFactory(
+                    candlestickCandles, interval);
+        } else {
+            AnalysisPreferencesService.IntervalProfile profile = preferencesService
+                    .profile(rule.getUser(), interval);
+            candlestickSignals = detectionService.detectAlertSignals(
+                    candlestickCandles,
+                    preferencesService.trendDetectionRules(profile),
+                    patternPreferencesService == null
+                            ? CandlestickPatternPreferencesService.factoryPreferences()
+                            : patternPreferencesService.get(rule.getUser()));
+        }
         List<DetectedSignal> signals = new java.util.ArrayList<>(candlestickSignals);
         if (!elliottCandles.isEmpty()) {
             signals.addAll(elliottWaveDetectionService.detectAlertSignals(elliottCandles).stream()

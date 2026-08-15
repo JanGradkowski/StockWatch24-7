@@ -6,6 +6,9 @@
   <title>Signal analysis &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
+  <script th:src="@{/js/elliott-subwave-overlay.js}"></script>
+  <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -43,8 +46,8 @@
         <span class="signal-report-tag" th:text="${signal.familyLabel()}">Candlestick</span>
         <span class="signal-report-tag direction"
               th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-              th:text="${signal.tradeSignal()}">BUY</span>
-        <span class="signal-report-tag interval" th:text="${signal.intervalLabel()}">1wk</span>
+              th:text="${signal.directionLabel()}">Potential buy</span>
+        <span class="signal-report-tag interval" th:text="${signal.intervalLabel()}">Weekly</span>
         <span th:if="${signal.lifecycle().tracked()}"
               class="signal-report-tag signal-lifecycle-pill"
               th:classappend="${' ' + signal.lifecycle().cssClass()}"
@@ -56,15 +59,15 @@
               th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</span>
         <span class="signal-report-tag"
               th:text="${'Score model ' + signal.scoreVersion()}">Score model CANDLE_V4_EXPERIMENTAL</span>
+        <span th:if="${displayScore.customApplied()}" class="signal-report-tag">Custom scoring weights</span>
+        <span th:if="${signal.analysisProfileVersion() != null}" class="signal-report-tag"
+              th:text="${signal.analysisProfileLabel()}">Custom profile</span>
         <span th:if="${signal.scoreVersion() == 'ELLIOTT_V2' and signal.elliottV1EligibilityScore() != null}"
               class="signal-report-tag"
               th:text="${'V1 eligibility ' + signal.elliottV1EligibilityScore() + '/100'}">V1 eligibility 88/100</span>
       </div>
     </div>
     <div class="signal-report-actions">
-      <a th:if="${signal.alertRuleActive()}"
-         th:href="@{/alerts/{id}(id=${signal.alertRuleId()})}" class="btn-secondary">Back to signal board</a>
-      <a th:unless="${signal.alertRuleActive()}" th:href="@{/signals}" class="btn-secondary">Back to all signals</a>
       <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary">Open workspace <span class="button-arrow" aria-hidden="true">&rarr;</span></a>
     </div>
   </header>
@@ -108,24 +111,32 @@
        role="tabpanel"
        aria-labelledby="graphicalOutlookTab">
   <section class="signal-score-layout" aria-labelledby="setup-heading">
-    <article class="signal-score-card" th:classappend="${' ' + signal.setupBand()}">
+    <article class="signal-score-card" th:classappend="${' ' + displayScore.band()}">
       <div class="signal-score-card-topline">
         <div>
           <span class="signal-section-kicker">Heuristic confluence</span>
           <h2 id="setup-heading">Setup score</h2>
         </div>
-        <span class="signal-confidence-pill" th:text="${signal.setupStrengthLabel()}">Strong setup</span>
+        <span class="signal-confidence-pill" th:text="${displayScore.strengthLabel()}">Strong setup</span>
       </div>
 
       <div class="signal-score-visual">
         <div class="signal-score-orbit" aria-hidden="true">
           <div class="signal-score-orbit-core">
-            <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
+            <strong th:text="${displayScore.score()}">88</strong>
             <span>/100</span>
           </div>
         </div>
         <div class="signal-score-summary">
-          <p th:text="${signal.setupExplanation()}">Strong setup: broad confluence across the stock's pattern quality and technical evidence.</p>
+          <p th:text="${displayScore.explanation()}">Strong setup: broad confluence across the selected technical evidence.</p>
+          <p th:if="${displayScore.customApplied() and signal.setupScore() != displayScore.score()}"
+             class="signal-factory-score-note">
+            Original recorded score:
+            <strong th:text="${signal.setupScore() + '/100'}">84/100</strong>.
+            The headline score uses your current scoring weights; the saved detector score is unchanged.
+          </p>
+          <p th:if="${!displayScore.customApplied() and displayScore.profileNote() != null and #strings.contains(displayScore.profileNote(), 'does not contain')}"
+             class="signal-factory-score-note" th:text="${displayScore.profileNote()}"></p>
           <p th:if="${#strings.contains(signal.scoreVersion(), 'EXPERIMENTAL')}">
             Experimental means the inputs and arithmetic are implemented and tested, but the score has not earned a predictive accuracy claim.
             It must not be read as a win probability or trade recommendation.
@@ -134,10 +145,10 @@
                role="meter"
                aria-valuemin="0"
                aria-valuemax="100"
-               th:attr="aria-valuenow=${signal.setupScore() != null ? signal.setupScore() : 0},aria-label=${'Setup score ' + (signal.setupScore() != null ? signal.setupScore() : 'not available') + ' out of 100'}">
+               th:attr="aria-valuenow=${displayScore.score()},aria-label=${'Setup score ' + displayScore.score() + ' out of 100'}">
             <span th:each="segment : ${#numbers.sequence(1, 20)}"
                   class="signal-score-segment"
-                  th:classappend="${signal.setupScore() != null and signal.setupScore() >= segment * 5} ? ' active' : ''"></span>
+                  th:classappend="${displayScore.score() >= segment * 5} ? ' active' : ''"></span>
           </div>
           <div class="signal-score-thresholds" aria-label="Setup score thresholds">
             <span><i class="threshold-dot low" aria-hidden="true"></i>Low confluence &lt;75</span>
@@ -156,11 +167,11 @@
           <span>Direction</span>
           <strong class="snapshot-direction"
                   th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-                  th:text="${signal.tradeSignal()}">BUY</strong>
+                  th:text="${signal.directionLabel()}">Potential buy</strong>
         </div>
         <div class="signal-snapshot-item">
           <span>Interval</span>
-          <strong th:text="${signal.intervalLabel()}">1wk</strong>
+          <strong th:text="${signal.intervalLabel()}">Weekly</strong>
         </div>
         <div class="signal-snapshot-item">
           <span>Signal period</span>
@@ -171,11 +182,11 @@
           <strong th:text="${signal.closePrice() != null ? #numbers.formatDecimal(signal.closePrice(), 1, 2) : 'Not available'}">19.42</strong>
         </div>
       </div>
-      <div class="signal-email-status">
+      <div class="signal-email-status" th:classappend="${signal.initialEmailSentAt() == null} ? ' website-only' : ''">
         <span class="email-status-icon" aria-hidden="true">&#10003;</span>
         <div>
-          <strong>Alert email delivered</strong>
-          <time th:text="${signal.sentAt() != null ? #temporals.format(signal.sentAt(), 'dd MMM yyyy, HH:mm') : 'Delivery time unavailable'}">08 Jul 2026, 08:15</time>
+          <strong th:text="${signal.initialEmailSentAt() != null ? 'Alert email delivered' : 'Website notification only'}">Alert email delivered</strong>
+          <time th:text="${signal.initialEmailSentAt() != null ? #temporals.format(signal.initialEmailSentAt(), 'dd MMM yyyy, HH:mm') : 'Email was disabled by market-delivery preferences'}">08 Jul 2026, 08:15</time>
         </div>
       </div>
     </aside>
@@ -185,18 +196,43 @@
     <div class="signal-chart-heading">
       <div>
         <div class="signal-section-kicker">Pattern on price</div>
-        <h2 id="signal-chart-heading">
+        <h2 id="signal-chart-heading" data-detail-chart-heading>
           <span th:text="${signal.patternLabel()}">Bullish Harami</span>
-          on the <span th:text="${signal.intervalLabel()}">1wk</span> chart
+          on the <span data-detail-chart-interval-label th:text="${signal.intervalLabel()}">weekly</span> chart
         </h2>
-        <p th:if="${signal.chart().available()}" th:text="${signal.chart().summary()}">
+        <p th:if="${signal.chart().available()}" data-detail-chart-summary th:text="${signal.chart().summary()}">
           The prior trend and pattern candles are marked on the chart.
         </p>
       </div>
-      <span class="signal-chart-cache-badge">Complete cached interval history &middot; no API request</span>
+      <div class="signal-chart-heading-actions">
+        <span class="signal-chart-cache-badge" data-detail-chart-status>Complete cached interval history &middot; no API request</span>
+        <div class="signal-detail-interval-switcher"
+             role="group"
+             aria-label="Chart candle interval"
+             data-detail-interval-controls
+             data-chart-kind="technical"
+             th:attr="data-symbol=${signal.symbol()},
+                      data-native-interval=${signal.interval().name() == 'DAILY' ? '1d' : (signal.interval().name() == 'WEEKLY' ? '1wk' : '1mo')},
+                      data-native-label=${signal.intervalLabel()},
+                      data-signal-label=${signal.patternLabel()},
+                      data-signal-family=${signal.patternFamily().name()}">
+          <button type="button" class="signal-detail-interval-button"
+                  th:classappend="${signal.interval().name() == 'DAILY'} ? ' active' : ''"
+                  data-detail-interval="1d"
+                  th:attr="aria-pressed=${signal.interval().name() == 'DAILY'}"><span>Daily</span><small th:if="${signal.interval().name() == 'DAILY'}">Signal interval</small></button>
+          <button type="button" class="signal-detail-interval-button"
+                  th:classappend="${signal.interval().name() == 'WEEKLY'} ? ' active' : ''"
+                  data-detail-interval="1wk"
+                  th:attr="aria-pressed=${signal.interval().name() == 'WEEKLY'}"><span>Weekly</span><small th:if="${signal.interval().name() == 'WEEKLY'}">Signal interval</small></button>
+          <button type="button" class="signal-detail-interval-button"
+                  th:classappend="${signal.interval().name() == 'MONTHLY'} ? ' active' : ''"
+                  data-detail-interval="1mo"
+                  th:attr="aria-pressed=${signal.interval().name() == 'MONTHLY'}"><span>Monthly</span><small th:if="${signal.interval().name() == 'MONTHLY'}">Signal interval</small></button>
+        </div>
+      </div>
     </div>
 
-    <div th:if="${signal.chart().available()}" class="signal-chart-legend" aria-label="Chart annotation legend">
+    <div th:if="${signal.chart().available()}" class="signal-chart-legend" aria-label="Chart annotation legend" data-native-signal-legend>
       <th:block th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">
         <span><i class="signal-chart-key trend" aria-hidden="true"></i><span th:text="${signal.chart().trendLabel()}">Required downtrend</span></span>
         <span><i class="signal-chart-key pattern" aria-hidden="true"></i>Pattern candles</span>
@@ -205,14 +241,25 @@
       <th:block th:if="${signal.chart().elliottWave() != null}">
         <span><i class="signal-chart-key motive" aria-hidden="true"></i>Motive I&ndash;V</span>
         <span th:if="${signal.chart().elliottWave().correctionComplete()}"><i class="signal-chart-key corrective" aria-hidden="true"></i>Corrective A&ndash;B&ndash;C</span>
+        <span><i class="signal-chart-key subwave" aria-hidden="true"></i>Subwaves on hover</span>
         <span><i class="signal-chart-key confirmation" aria-hidden="true"></i>Recorded confirmation</span>
       </th:block>
+    </div>
+
+    <div class="signal-native-interval-notice" data-native-interval-notice hidden>
+      <span class="signal-native-interval-icon" aria-hidden="true">i</span>
+      <div>
+        <h3 data-native-interval-title>Signal annotations are hidden on this interval</h3>
+        <p data-native-interval-message>The signal and its supporting structure are shown only on the interval where they were detected.</p>
+      </div>
+      <button type="button" class="btn-secondary" data-return-native-interval>Return to signal interval</button>
     </div>
 
     <div th:if="${signal.chart().available()}"
          id="signalChart"
          class="signal-chart"
-         role="img"
+         data-native-detail-chart
+         role="group"
          th:attr="aria-label=${signal.patternLabel() + ' candlestick chart for ' + signal.symbol()},
                   data-trend-start=${signal.chart().trendStartTimestamp()},
                   data-pattern-start=${signal.chart().patternStartTimestamp()},
@@ -223,6 +270,12 @@
                   data-family=${signal.patternFamily().name()},
                   data-interval=${signal.interval().name()},
                   data-trend-label=${signal.chart().trendLabel()}"></div>
+    <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
+         th:attr="aria-label=${'Alternate interval price chart for ' + signal.symbol()}" role="group"></div>
+    <div class="signal-chart-unavailable signal-detail-interval-error" data-detail-interval-error hidden>
+      <span aria-hidden="true">!</span>
+      <div><h3>Chart interval is unavailable</h3><p data-detail-interval-error-message>Completed candles could not be loaded for this interval.</p></div>
+    </div>
     <ol th:if="${signal.chart().available()}" id="signalChartData" hidden aria-hidden="true">
       <li th:each="candle : ${signal.chart().candles()}"
           th:attr="data-time=${candle.timestamp()},data-open=${candle.open()},data-high=${candle.high()},data-low=${candle.low()},data-close=${candle.close()}"></li>
@@ -242,7 +295,7 @@
           th:attr="data-label=${point.label()},data-time=${point.timestamp()},data-price=${point.price()},data-pivot-type=${point.pivotType()}"></li>
     </ol>
 
-    <div th:unless="${signal.chart().available()}" class="signal-chart-unavailable">
+    <div th:unless="${signal.chart().available()}" class="signal-chart-unavailable" data-native-chart-unavailable>
       <span aria-hidden="true">i</span>
       <div>
         <h3>Chart context is unavailable for this signal</h3>
@@ -263,7 +316,7 @@
            aria-labelledby="lifecycle-heading">
     <div class="signal-lifecycle-heading">
       <div>
-        <div class="signal-section-kicker">Post-detection follow-through</div>
+        <div class="signal-section-kicker">Candidate validation and follow-through</div>
         <h2 id="lifecycle-heading">Signal lifecycle</h2>
       </div>
       <span class="signal-lifecycle-pill lifecycle-heading-pill"
@@ -277,8 +330,8 @@
       <li class="signal-lifecycle-step detected">
         <span class="lifecycle-step-marker" aria-hidden="true">1</span>
         <div class="lifecycle-step-copy">
-          <span class="lifecycle-step-label">Detection</span>
-          <strong>Detected</strong>
+          <span class="lifecycle-step-label" th:text="${signal.lifecycle().immediateConfirmationRequired() ? 'Candidate geometry' : 'Detection'}">Detection</span>
+          <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? 'Potential candidate' : 'Detected'}">Detected</strong>
           <time th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Signal period unavailable'}">13&ndash;17 Jul 2026</time>
           <small th:if="${signal.sentAt() != null}">
             Alert recorded
@@ -286,10 +339,21 @@
           </small>
         </div>
       </li>
+      <li th:if="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().detectionCandleTimestamp() != null}"
+          class="signal-lifecycle-step detected">
+        <span class="lifecycle-step-marker" aria-hidden="true">2</span>
+        <div class="lifecycle-step-copy">
+          <span class="lifecycle-step-label">Detection gate passed</span>
+          <strong>Detected signal</strong>
+          <time th:text="${signal.lifecycle().detectionPeriodLabel()}">20 Jul 2026</time>
+          <small th:text="${'Outcome measurement starts from the ' + #numbers.formatDecimal(signal.lifecycle().detectionClosePrice(), 1, 4) + ' close'}">Outcome measurement starts here</small>
+        </div>
+      </li>
       <li th:if="${signal.lifecycle().terminal()}"
           class="signal-lifecycle-step lifecycle-resolution-step"
           th:classappend="${' ' + signal.lifecycle().cssClass()}">
-        <span class="lifecycle-step-marker" aria-hidden="true">2</span>
+        <span class="lifecycle-step-marker" aria-hidden="true"
+              th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().detectionCandleTimestamp() != null ? '3' : '2'}">2</span>
         <div class="lifecycle-step-copy">
           <span class="lifecycle-step-label">Terminal update</span>
           <strong th:text="${signal.lifecycle().label()}">Confirmed</strong>
@@ -302,11 +366,12 @@
       </li>
       <li th:unless="${signal.lifecycle().terminal()}"
           class="signal-lifecycle-step pending">
-        <span class="lifecycle-step-marker" aria-hidden="true">2</span>
+        <span class="lifecycle-step-marker" aria-hidden="true"
+              th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'DETECTED' ? '3' : '2'}">2</span>
         <div class="lifecycle-step-copy">
           <span class="lifecycle-step-label">Next update</span>
-          <strong>Awaiting follow-through</strong>
-          <span th:text="${'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">Up to 3 completed candles</span>
+          <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Awaiting mandatory detection gate' : 'Awaiting outcome resolution') : 'Awaiting follow-through'}">Awaiting follow-through</strong>
+          <span th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Immediately following completed candle' : 'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles from detection') : 'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">Up to 3 completed candles</span>
           <small th:if="${signal.lifecycle().updatedAt() != null}">
             Tracking started
             <time th:text="${#temporals.format(signal.lifecycle().updatedAt(), 'dd MMM yyyy, HH:mm')}">17 Jul 2026, 22:15</time>
@@ -324,10 +389,13 @@
         </strong>
       </div>
       <div>
-        <span>Confirmation trigger</span>
-        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationTriggerPrice(), 1, 4)}">102.0000</strong>
+        <span th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL' ? 'Mandatory detection gate' : 'Confirmation trigger'}">Confirmation trigger</span>
+        <strong th:if="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL'}"
+                th:text="${(signal.tradeSignal().name() == 'BUY' ? 'Green close above ' : 'Red close below ') + #numbers.formatDecimal(signal.closePrice(), 1, 4)}">Green close above 102.0000</strong>
+        <strong th:unless="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL'}"
+                th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationTriggerPrice(), 1, 4)}">102.0000</strong>
       </div>
-      <div th:if="${signal.lifecycle().invalidationPrice() != null}">
+      <div th:if="${signal.lifecycle().invalidationPrice() != null and !(signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL')}">
         <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? 'Structural invalidation boundary' : 'Invalidation boundary'}">Invalidation boundary</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">96.0000</strong>
       </div>
@@ -341,7 +409,15 @@
       </div>
       <div>
         <span>Observation window</span>
-        <strong th:text="${signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">3 completed candles</strong>
+        <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? '1 mandatory gate candle' : signal.lifecycle().confirmationWindowCandles() + ' completed candles from detection') : signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">3 completed candles</strong>
+      </div>
+      <div th:if="${signal.lifecycle().confirmationMovePercent() != null}">
+        <span>Required favorable move</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationMovePercent(), 1, 2) + '%'}">2.00%</strong>
+      </div>
+      <div th:if="${signal.lifecycle().invalidationMovePercent() != null}">
+        <span>Maximum adverse move</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationMovePercent(), 1, 2) + '%'}">2.00%</strong>
       </div>
       <div th:if="${signal.lifecycle().terminal()}">
         <span>Resolution period</span>
@@ -361,9 +437,9 @@
        th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() == null}">
       Lifecycle resolved; no follow-up delivery timestamp was recorded.
     </p>
-    <p class="signal-lifecycle-note">
-      Confirmation uses completed-candle closes, not intraday boundary touches. The first confirmed,
-      invalidated, or expired outcome is terminal and does not replace the original detection.
+    <p class="signal-lifecycle-note"
+       th:text="${signal.lifecycle().immediateConfirmationRequired() ? 'The mandatory gate and later outcome rules use completed-candle closes, not intraday touches. A rejected candidate never becomes a signal; after detection, the first confirmed, invalidated, or expired outcome is terminal.' : 'Confirmation uses completed-candle closes, not intraday boundary touches. The first confirmed, invalidated, or expired outcome is terminal and does not replace the original detection.'}">
+      Lifecycle decisions use completed-candle closes, not intraday boundary touches.
     </p>
   </section>
 
@@ -383,7 +459,6 @@
     <p class="historical-outcome-summary" th:text="${signal.observedOutcome().summary()}">
       The observed directional result is shown at the research horizon.
     </p>
-
     <div th:if="${signal.observedOutcome().tracked()}" class="historical-outcome-grid">
       <div>
         <span>Pattern range</span>
@@ -417,6 +492,7 @@
                 th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">
           +6.20%
         </strong>
+        <small th:text="${signal.observedOutcome().measurementStartLabel()}">From signal candle close · 03 Aug 2026</small>
       </div>
       <div th:if="${signal.observedOutcome().outcomeAvailable()}">
         <span>Worst adverse move</span>
@@ -424,6 +500,7 @@
                 th:text="${#numbers.formatDecimal(signal.observedOutcome().worstDirectionalMovePercent(), 1, 2) + '%'}">
           -2.10%
         </strong>
+        <small th:text="${signal.observedOutcome().measurementStartLabel()}">From signal candle close · 03 Aug 2026</small>
       </div>
     </div>
     <p th:if="${signal.observedOutcome().tracked()}" class="signal-lifecycle-note">
@@ -439,15 +516,15 @@
         <h2 id="evidence-heading">Why this score</h2>
         <p>These are the evidence notes saved with the signal when its alert email was created.</p>
       </div>
-      <span th:if="${signal.reasonsAvailable()}" class="evidence-count"><span th:text="${signal.reasons().size()}">5</span>&nbsp;factors</span>
+      <span th:if="${displayScore.evidenceAvailable()}" class="evidence-count"><span th:text="${displayScore.sections().size()}">5</span>&nbsp;factors</span>
     </div>
 
-    <div th:if="${signal.reasonsAvailable()}" class="signal-evidence-grid">
-      <article th:each="reason : ${signal.reasons()}"
+    <div th:if="${displayScore.evidenceAvailable()}" class="signal-evidence-grid">
+      <article th:each="reason, reasonStat : ${displayScore.sections()}"
                class="signal-evidence-card"
                th:classappend="${reason.caution()} ? ' caution' : ''">
         <div class="evidence-card-topline">
-          <span class="evidence-number" th:text="${#numbers.formatInteger(reason.order(), 2)}">01</span>
+          <span class="evidence-number" th:text="${#numbers.formatInteger(reasonStat.index + 1, 2)}">01</span>
           <span class="evidence-category" th:text="${reason.category()}">Pattern geometry</span>
           <span th:if="${reason.scored()}"
                 class="evidence-score"
@@ -467,7 +544,7 @@
       </article>
     </div>
 
-    <div th:unless="${signal.reasonsAvailable()}" class="signal-evidence-unavailable">
+    <div th:unless="${displayScore.evidenceAvailable()}" class="signal-evidence-unavailable">
       <div class="legacy-signal-mark" aria-hidden="true">i</div>
       <div>
         <h3>Detailed evidence was not stored for this signal</h3>
@@ -516,10 +593,10 @@
       <div class="signal-results-heading">
         <div>
           <div class="signal-section-kicker">Completed-candle follow-through</div>
-          <h2>Direction-aware result after the signal</h2>
+          <h2>Direction-aware result from the measurement start</h2>
           <p>
-            The line starts at the recorded signal close and measures each subsequent completed close
-            in the signal&rsquo;s expected direction.
+            <span th:text="${signal.results().measurementStartLabel()}">From signal candle close</span>.
+            Each subsequent completed close is measured in the signal&rsquo;s expected direction.
           </p>
         </div>
         <span class="signal-chart-cache-badge">Cached candles only &middot; no API request</span>
@@ -555,7 +632,7 @@
       <div class="signal-results-legend" aria-label="Results chart color legend">
         <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the signal direction</span>
         <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the signal</span>
-        <span><i class="signal-results-key start" aria-hidden="true"></i>Signal start at the recorded close</span>
+        <span><i class="signal-results-key start" aria-hidden="true"></i>Applicable measurement start</span>
         <span><i class="signal-results-key best" aria-hidden="true"></i>Best exit or re-entry in the selected window</span>
       </div>
       <ol id="signalResultsData" hidden aria-hidden="true">
@@ -571,7 +648,7 @@
       <div class="signal-results-window-control">
         <div class="signal-results-window-copy">
           <label for="resultWindowSlider">Forward evaluation window</label>
-          <p>Choose how many completed candles after the signal to include.</p>
+          <p>Choose how many completed candles after the measurement start to include.</p>
         </div>
         <output id="resultWindowValue" for="resultWindowSlider"
                 th:text="${signal.results().minimumForwardCandles() + ' candles'}">10 candles</output>
@@ -621,6 +698,7 @@
 
     const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
     const ELLIOTT_CORRECTIVE_COLOR = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
+    const ELLIOTT_SUBWAVE_COLOR = /*[[${elliottSubwaveColor}]]*/ '#F59E0B';
 
     const tabs = Array.from(document.querySelectorAll('[data-signal-tab]'));
     const panels = {
@@ -770,7 +848,7 @@
         position: tradeSignal === 'SELL' ? 'aboveBar' : 'belowBar',
         color: colors.signalStart,
         shape: tradeSignal === 'SELL' ? 'arrowDown' : 'arrowUp',
-        text: `${tradeSignal} signal start`
+        text: `${tradeSignal} measurement start`
       }, {
         time: bestPoint.time,
         position: bestPoint.directionalReturn >= 0 ? 'aboveBar' : 'belowBar',
@@ -794,7 +872,7 @@
       output.textContent = `${windowSize} candles`;
       resultsWindowSlider.value = String(windowSize);
       resultsWindowSlider.setAttribute('aria-valuenow', String(windowSize));
-      resultsWindowSlider.setAttribute('aria-valuetext', `${windowSize} completed candles after the signal`);
+      resultsWindowSlider.setAttribute('aria-valuetext', `${windowSize} completed candles after the measurement start`);
     }
 
     function ensureResultsChart() {
@@ -914,6 +992,8 @@
       .forEach(key => { key.style.backgroundColor = ELLIOTT_MOTIVE_COLOR; });
     document.querySelectorAll('.signal-chart-key.corrective')
       .forEach(key => { key.style.backgroundColor = ELLIOTT_CORRECTIVE_COLOR; });
+    document.querySelectorAll('.signal-chart-key.subwave')
+      .forEach(key => { key.style.backgroundColor = ELLIOTT_SUBWAVE_COLOR; });
 
     const elliottWave = elliottDataList ? {
       direction: elliottDataList.dataset.direction,
@@ -949,8 +1029,10 @@
       return '';
     }
 
+    const elliottRootSeries = [];
+
     function renderElliottSegment(wave, points, color, includeMarker) {
-      if (points.length < 2) return;
+      if (points.length < 2) return null;
       const series = chart.addLineSeries({
         color,
         lineWidth: 2,
@@ -971,6 +1053,8 @@
             text: warning ? `${point.label} · ${warning}` : point.label
           };
         }));
+      elliottRootSeries.push(series);
+      return series;
     }
 
     if (elliottWave && elliottWave.points.length >= 2) {
@@ -1011,6 +1095,7 @@
           shape: buyConfirmation ? 'arrowUp' : 'arrowDown',
           text: `${endpointLabel} confirmed`
         }]);
+        elliottRootSeries.push(confirmationSeries);
       }
     }
 
@@ -1081,12 +1166,24 @@
         if (startX === null || endX === null || patternX === null) {
           trendBand.hidden = true;
         } else {
-          const halfSpacing = trendData.length > 1
-            ? Math.max(5, Math.abs(endX - startX) / (trendData.length - 1) / 2)
-            : 8;
-          trendBand.hidden = false;
-          trendBand.style.left = `${Math.max(0, startX - halfSpacing)}px`;
-          trendBand.style.width = `${Math.max(20, patternX - startX + halfSpacing)}px`;
+          const firstNeighborX = trendData.length > 1
+            ? chart.timeScale().timeToCoordinate(trendData[1].time)
+            : patternX;
+          const startHalfSpacing = firstNeighborX === null
+            ? 0
+            : Math.abs(firstNeighborX - startX) / 2;
+          const endHalfSpacing = Math.abs(patternX - endX) / 2;
+          const rawLeft = startX - startHalfSpacing;
+          const rawRight = patternX - endHalfSpacing;
+          const chartWidth = annotationLayer.clientWidth || container.clientWidth;
+          const visibleLeft = Math.max(0, rawLeft);
+          const visibleRight = Math.min(chartWidth, rawRight);
+
+          trendBand.hidden = visibleRight <= visibleLeft;
+          if (!trendBand.hidden) {
+            trendBand.style.left = `${visibleLeft}px`;
+            trendBand.style.width = `${visibleRight - visibleLeft}px`;
+          }
         }
       }
 
@@ -1147,6 +1244,31 @@
     }
 
     focusSignal();
+    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
+      new StockWatchFibonacciDrawingTool({
+        chart,
+        series: candles,
+        container,
+        storageKey: `${window.location.pathname}:native:${container.dataset.interval || 'signal'}`
+      });
+    }
+    if (elliottWave && typeof StockWatchElliottSubwaveOverlay !== 'undefined') {
+      const rawInterval = container.dataset.interval === 'MONTHLY' ? '1mo' : '1wk';
+      new StockWatchElliottSubwaveOverlay({
+        chart,
+        candleSeries: candles,
+        container,
+        symbol: /*[[${signal.symbol()}]]*/ '',
+        interval: rawInterval,
+        points: elliottWave.points,
+        asOfTimestamp: Number.isFinite(elliottWave.confirmationTimestamp)
+          && elliottWave.confirmationTimestamp > 0
+          ? elliottWave.confirmationTimestamp
+          : signalTime,
+        color: ELLIOTT_SUBWAVE_COLOR,
+        autoSubscribe: true
+      });
+    }
     chart.timeScale().subscribeVisibleLogicalRangeChange(() => requestAnimationFrame(renderAnnotations));
     if (typeof ResizeObserver !== 'undefined') {
       new ResizeObserver(() => requestAnimationFrame(renderAnnotations)).observe(container);

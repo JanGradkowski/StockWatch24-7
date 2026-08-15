@@ -623,6 +623,67 @@ class YahooFinanceServiceTest {
     }
 
     @Test
+    void weeklyRequestDropsNullAndEpochTimestampSnapshots() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("ZTS");
+        asset.setCompanyName("Zoetis Inc.");
+        asset.setExchange("NYSE");
+        asset.setCurrency("USD");
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("ZTS")).thenReturn(Optional.of(asset));
+
+        long providerTimestamp = LocalDate.of(2026, 8, 3)
+                .atTime(16, 0)
+                .atZone(ZoneId.of("America/New_York"))
+                .toEpochSecond();
+        long expectedTimestamp = LocalDate.of(2026, 8, 3)
+                .atStartOfDay(ZoneOffset.UTC)
+                .toEpochSecond();
+        String response = """
+                {
+                  "chart": {
+                    "result": [{
+                      "meta": {
+                        "symbol": "ZTS",
+                        "currency": "USD",
+                        "exchangeName": "NYQ",
+                        "fullExchangeName": "NYSE",
+                        "shortName": "Zoetis Inc.",
+                        "dataGranularity": "1wk",
+                        "exchangeTimezoneName": "America/New_York"
+                      },
+                      "timestamp": [%d, null, 0],
+                      "indicators": {"quote": [{
+                        "open": [72.0, 122.85, 122.85],
+                        "high": [74.0, 122.93, 122.93],
+                        "low": [71.0, 122.84, 122.84],
+                        "close": [72.66, 122.87, 122.87],
+                        "volume": [1000000, 597475, 597475]
+                      }]}
+                    }],
+                    "error": null
+                  }
+                }
+                """.formatted(providerTimestamp);
+
+        server.expect(requestTo(containsString("/v8/finance/chart/ZTS?")))
+                .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
+        YahooFinanceService service = new YahooFinanceService(
+                restTemplate, new ObjectMapper(), stockAssetRepository,
+                "https://query1.finance.yahoo.com", true);
+
+        List<MarketDataBar> bars = service.getTimeSeries("ZTS", "1wk", 1000);
+
+        assertThat(bars).singleElement().satisfies(bar -> {
+            assertThat(bar.timestamp()).isEqualTo(expectedTimestamp);
+            assertThat(bar.close()).isEqualTo(72.66);
+        });
+        server.verify();
+    }
+
+    @Test
     void historicalPageUsesPeriodBoundsInsteadOfARange() {
         RestTemplate restTemplate = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();

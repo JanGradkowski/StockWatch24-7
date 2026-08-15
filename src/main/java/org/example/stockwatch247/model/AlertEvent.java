@@ -8,6 +8,7 @@ import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.TradeSignal;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Entity
@@ -42,6 +43,15 @@ public class AlertEvent {
     @Column(name = "confidence_score")
     private Integer confidenceScore;
 
+    @Column(name = "factory_confidence_score")
+    private Integer factoryConfidenceScore;
+
+    @Column(name = "analysis_profile_version", length = 32)
+    private String analysisProfileVersion;
+
+    @Column(name = "analysis_profile_snapshot", columnDefinition = "text")
+    private String analysisProfileSnapshot;
+
     @Column(name = "elliott_v1_eligibility_score")
     private Integer elliottV1EligibilityScore;
 
@@ -57,8 +67,14 @@ public class AlertEvent {
     @Column(name = "sent_at", nullable = false)
     private LocalDateTime sentAt = LocalDateTime.now();
 
+    @Column(name = "initial_email_sent_at")
+    private LocalDateTime initialEmailSentAt;
+
     @Column(name = "read_at")
     private LocalDateTime readAt;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "lifecycle_status", nullable = false, columnDefinition = "varchar(16)")
@@ -78,6 +94,18 @@ public class AlertEvent {
 
     @Column(name = "confirmation_window_candles")
     private Integer confirmationWindowCandles;
+
+    @Column(name = "lifecycle_confirmation_percent")
+    private Double lifecycleConfirmationPercent;
+
+    @Column(name = "lifecycle_invalidation_percent")
+    private Double lifecycleInvalidationPercent;
+
+    @Column(name = "detection_candle_timestamp")
+    private Long detectionCandleTimestamp;
+
+    @Column(name = "detection_close_price")
+    private Double detectionClosePrice;
 
     @Column(name = "resolution_candle_timestamp")
     private Long resolutionCandleTimestamp;
@@ -144,6 +172,10 @@ public class AlertEvent {
         return confidenceScore;
     }
 
+    public Integer getFactoryConfidenceScore() { return factoryConfidenceScore; }
+    public String getAnalysisProfileVersion() { return analysisProfileVersion; }
+    public String getAnalysisProfileSnapshot() { return analysisProfileSnapshot; }
+
     public Integer getElliottV1EligibilityScore() {
         return elliottV1EligibilityScore;
     }
@@ -172,12 +204,18 @@ public class AlertEvent {
         return sentAt;
     }
 
+    public LocalDateTime getInitialEmailSentAt() { return initialEmailSentAt; }
+
     public LocalDateTime getReadAt() {
         return readAt;
     }
 
     public boolean isRead() {
         return readAt != null;
+    }
+
+    public Instant getDeletedAt() {
+        return deletedAt;
     }
 
     public SignalLifecycleStatus getLifecycleStatus() {
@@ -203,6 +241,12 @@ public class AlertEvent {
     public Integer getConfirmationWindowCandles() {
         return confirmationWindowCandles;
     }
+
+    public Double getLifecycleConfirmationPercent() { return lifecycleConfirmationPercent; }
+    public Double getLifecycleInvalidationPercent() { return lifecycleInvalidationPercent; }
+
+    public Long getDetectionCandleTimestamp() { return detectionCandleTimestamp; }
+    public Double getDetectionClosePrice() { return detectionClosePrice; }
 
     public Long getResolutionCandleTimestamp() {
         return resolutionCandleTimestamp;
@@ -298,9 +342,15 @@ public class AlertEvent {
         this.confidenceScore = confidenceScore;
     }
 
+    public void setFactoryConfidenceScore(Integer value) { this.factoryConfidenceScore = value; }
+    public void setAnalysisProfileVersion(String value) { this.analysisProfileVersion = value; }
+    public void setAnalysisProfileSnapshot(String value) { this.analysisProfileSnapshot = value; }
+
     public void setElliottV1EligibilityScore(Integer elliottV1EligibilityScore) {
         this.elliottV1EligibilityScore = elliottV1EligibilityScore;
     }
+
+    public void setInitialEmailSentAt(LocalDateTime value) { this.initialEmailSentAt = value; }
 
     public void setScoreVersion(String scoreVersion) {
         if (scoreVersion == null || scoreVersion.isBlank()) {
@@ -346,6 +396,12 @@ public class AlertEvent {
         }
     }
 
+    public void markDeleted(Instant deletedAt) {
+        if (this.deletedAt == null) {
+            this.deletedAt = deletedAt;
+        }
+    }
+
     public void setLifecycleStatus(SignalLifecycleStatus lifecycleStatus) {
         this.lifecycleStatus = lifecycleStatus == null
                 ? SignalLifecycleStatus.DETECTED
@@ -371,6 +427,12 @@ public class AlertEvent {
     public void setConfirmationWindowCandles(Integer confirmationWindowCandles) {
         this.confirmationWindowCandles = confirmationWindowCandles;
     }
+
+    public void setLifecycleConfirmationPercent(Double value) { this.lifecycleConfirmationPercent = value; }
+    public void setLifecycleInvalidationPercent(Double value) { this.lifecycleInvalidationPercent = value; }
+
+    public void setDetectionCandleTimestamp(Long value) { this.detectionCandleTimestamp = value; }
+    public void setDetectionClosePrice(Double value) { this.detectionClosePrice = value; }
 
     public void setResolutionCandleTimestamp(Long resolutionCandleTimestamp) {
         this.resolutionCandleTimestamp = resolutionCandleTimestamp;

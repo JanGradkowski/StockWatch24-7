@@ -1,13 +1,16 @@
 package org.example.stockwatch247.model.enums;
 
 /**
- * Additive lifecycle for a detected directional technical signal.
+ * Lifecycle for a directional technical setup.
  *
- * <p>DETECTED is the original alert. The remaining values are terminal
- * follow-up outcomes and never replace or suppress that initial alert.</p>
+ * <p>One-candle reversals begin as POTENTIAL and must pass an immediate
+ * next-candle gate before becoming DETECTED. Other signal families continue
+ * to begin at DETECTED.</p>
  */
 public enum SignalLifecycleStatus {
+    POTENTIAL,
     DETECTED,
+    REJECTED,
     CONFIRMED,
     INVALIDATED,
     EXPIRED

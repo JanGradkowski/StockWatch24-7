@@ -96,6 +96,9 @@ class ElliottWaveDetectionServiceTest {
             assertThat(signal.tradeSignal()).isEqualTo(TradeSignal.BUY);
             assertThat(signal.candleTimestamp()).isEqualTo(87L);
             assertThat(signal.reasons()).anyMatch(reason -> reason.contains("wave C ended"));
+            assertThat(signal.reasons().stream()
+                    .filter(reason -> reason.matches("^.+ \\+[0-9]+/[0-9]+: .+$")))
+                    .hasSize(7);
         });
     }
 
@@ -470,6 +473,85 @@ class ElliottWaveDetectionServiceTest {
                     .isEqualTo(ElliottWaveDetectionService.ImpulseVariant.TRUNCATED_FIFTH);
             assertThat(structure.qualityWarnings()).contains("Truncated Wave V — reduced confidence");
         });
+    }
+
+    @Test
+    void exposesOneValidatedFiveWaveDegreeInsideAMotiveParent() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 100.0),
+                anchor(8, 121.0),
+                anchor(16, 110.0),
+                anchor(27, 145.0),
+                anchor(35, 128.0),
+                anchor(46, 152.0)
+        ));
+
+        ElliottWaveDetectionService.ElliottSubdivision subdivision = detectionService
+                .findSubdivision(candles, "III", 100.0, 152.0)
+                .orElseThrow();
+
+        assertThat(subdivision.structureLabel()).contains("Motive");
+        assertThat(subdivision.confidence()).isGreaterThanOrEqualTo(60);
+        assertThat(subdivision.points())
+                .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
+                .containsExactly("", "i", "ii", "iii", "iv", "v");
+    }
+
+    @Test
+    void exposesAbcInsideACorrectiveParentWithoutForcingFiveWaves() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 150.0),
+                anchor(10, 130.0),
+                anchor(19, 142.0),
+                anchor(30, 124.0)
+        ));
+
+        ElliottWaveDetectionService.ElliottSubdivision subdivision = detectionService
+                .findSubdivision(candles, "IV", 150.0, 124.0)
+                .orElseThrow();
+
+        assertThat(subdivision.structureLabel()).isEqualTo("Corrective A-B-C");
+        assertThat(subdivision.points())
+                .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
+                .containsExactly("", "a", "b", "c");
+    }
+
+    @Test
+    void recognizesAContractingTriangleInsideWaveFour() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 150.0),
+                anchor(8, 120.0),
+                anchor(15, 140.0),
+                anchor(22, 125.0),
+                anchor(29, 136.0),
+                anchor(36, 128.0)
+        ));
+
+        ElliottWaveDetectionService.ElliottSubdivision subdivision = detectionService
+                .findSubdivision(candles, "IV", 150.0, 128.0)
+                .orElseThrow();
+
+        assertThat(subdivision.structureLabel()).contains("triangle");
+        assertThat(subdivision.points())
+                .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
+                .containsExactly("", "a", "b", "c", "d", "e");
+    }
+
+    @Test
+    void exposesADashedProvisionalCountWhenStrictRulesCannotValidateTheParent() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 100.0),
+                anchor(30, 140.0)
+        ));
+
+        assertThat(detectionService.findSubdivision(candles, "III", 100.0, 140.0))
+                .hasValueSatisfying(subdivision -> {
+                    assertThat(subdivision.validated()).isFalse();
+                    assertThat(subdivision.structureLabel()).contains("Provisional motive");
+                    assertThat(subdivision.points())
+                            .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
+                            .containsExactly("", "i", "ii", "iii", "iv", "v");
+                });
     }
 
     @Test

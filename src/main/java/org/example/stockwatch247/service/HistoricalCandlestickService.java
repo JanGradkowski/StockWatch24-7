@@ -32,11 +32,11 @@ import java.util.Locale;
  */
 @Service
 public class HistoricalCandlestickService {
+    private static final int ONE_CANDLE_OUTCOME_WINDOW_CANDLES = 10;
     public static final String SCORE_VERSION = CandlePatternDetectionService.SETUP_SCORE_VERSION;
     public static final int MIN_LOOKBACK_CANDLES = 1;
     public static final int MAX_LOOKBACK_CANDLES = 750;
-    private static final int PRE_WINDOW_CONTEXT_CANDLES = 8;
-    private static final int SIGNAL_CHART_TREND_CANDLES = 5;
+    private static final int PRE_WINDOW_CONTEXT_CANDLES = 35;
     private static final int MINIMUM_RESULT_CANDLES = 10;
 
     private final CandleRepository candleRepository;
@@ -75,6 +75,20 @@ public class HistoricalCandlestickService {
 
     public HistoricalScan scan(String symbol, String apiInterval, int lookbackCandles) {
         ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
+        return scan(symbol, apiInterval, lookbackCandles,
+                CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(profile.interval()));
+    }
+
+    public HistoricalScan scan(String symbol, String apiInterval, int lookbackCandles,
+                               CandlePatternDetectionService.TrendDetectionRules trendRules) {
+        return scan(symbol, apiInterval, lookbackCandles, trendRules,
+                CandlestickPatternPreferencesService.factoryPreferences());
+    }
+
+    public HistoricalScan scan(String symbol, String apiInterval, int lookbackCandles,
+                               CandlePatternDetectionService.TrendDetectionRules trendRules,
+                               CandlestickPatternPreferencesService.PreferencesView definitions) {
+        ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
         int validatedLookbackCandles = requireLookbackCandles(lookbackCandles);
         synchronizeCandles(symbol, apiInterval);
 
@@ -104,7 +118,9 @@ public class HistoricalCandlestickService {
                 companyName,
                 completedCandles,
                 profile,
-                validatedLookbackCandles
+                validatedLookbackCandles,
+                trendRules,
+                definitions
         );
         return new HistoricalScan(
                 symbol,
@@ -123,6 +139,19 @@ public class HistoricalCandlestickService {
 
     public HistoricalScan scanAll(String symbol, String apiInterval) {
         ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
+        return scanAll(symbol, apiInterval,
+                CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(profile.interval()));
+    }
+
+    public HistoricalScan scanAll(String symbol, String apiInterval,
+                                  CandlePatternDetectionService.TrendDetectionRules trendRules) {
+        return scanAll(symbol, apiInterval, trendRules, CandlestickPatternPreferencesService.factoryPreferences());
+    }
+
+    public HistoricalScan scanAll(String symbol, String apiInterval,
+                                  CandlePatternDetectionService.TrendDetectionRules trendRules,
+                                  CandlestickPatternPreferencesService.PreferencesView definitions) {
+        ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
         synchronizeCandles(symbol, apiInterval);
         List<Candle> completedCandles = candleRepository
                 .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, apiInterval)
@@ -137,7 +166,9 @@ public class HistoricalCandlestickService {
                 companyName,
                 completedCandles,
                 profile,
-                completedCandles.size()
+                completedCandles.size(),
+                trendRules,
+                definitions
         );
         return new HistoricalScan(
                 symbol,
@@ -164,6 +195,31 @@ public class HistoricalCandlestickService {
             throw new IllegalArgumentException("A historical candlestick pattern is required.");
         }
         return scanAll(symbol, apiInterval).signals().stream()
+                .filter(signal -> signal.signalTimestamp() == signalTimestamp)
+                .filter(signal -> signal.pattern() == pattern)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Historical candlestick signal is outside the completed candle archive."));
+    }
+
+    public HistoricalSignal findSignalInFullHistory(
+            String symbol,
+            String apiInterval,
+            long signalTimestamp,
+            CandlePattern pattern,
+            CandlePatternDetectionService.TrendDetectionRules trendRules) {
+        return findSignalInFullHistory(symbol, apiInterval, signalTimestamp, pattern, trendRules,
+                CandlestickPatternPreferencesService.factoryPreferences());
+    }
+
+    public HistoricalSignal findSignalInFullHistory(String symbol, String apiInterval, long signalTimestamp,
+                                                    CandlePattern pattern,
+                                                    CandlePatternDetectionService.TrendDetectionRules trendRules,
+                                                    CandlestickPatternPreferencesService.PreferencesView definitions) {
+        if (pattern == null || pattern == CandlePattern.ANY || pattern.name().startsWith("ELLIOTT_")) {
+            throw new IllegalArgumentException("A historical candlestick pattern is required.");
+        }
+        return scanAll(symbol, apiInterval, trendRules, definitions).signals().stream()
                 .filter(signal -> signal.signalTimestamp() == signalTimestamp)
                 .filter(signal -> signal.pattern() == pattern)
                 .findFirst()
@@ -198,6 +254,31 @@ public class HistoricalCandlestickService {
                 pattern,
                 profile.defaultLookbackCandles()
         );
+    }
+
+    public HistoricalSignal findSignal(String symbol,
+                                       String apiInterval,
+                                       long signalTimestamp,
+                                       CandlePattern pattern,
+                                       int lookbackCandles,
+                                       CandlePatternDetectionService.TrendDetectionRules trendRules) {
+        return findSignal(symbol, apiInterval, signalTimestamp, pattern, lookbackCandles, trendRules,
+                CandlestickPatternPreferencesService.factoryPreferences());
+    }
+
+    public HistoricalSignal findSignal(String symbol, String apiInterval, long signalTimestamp,
+                                       CandlePattern pattern, int lookbackCandles,
+                                       CandlePatternDetectionService.TrendDetectionRules trendRules,
+                                       CandlestickPatternPreferencesService.PreferencesView definitions) {
+        if (pattern == null || pattern == CandlePattern.ANY || pattern.name().startsWith("ELLIOTT_")) {
+            throw new IllegalArgumentException("A historical candlestick pattern is required.");
+        }
+        return scan(symbol, apiInterval, lookbackCandles, trendRules, definitions).signals().stream()
+                .filter(signal -> signal.signalTimestamp() == signalTimestamp)
+                .filter(signal -> signal.pattern() == pattern)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Historical candlestick signal is outside the current analysis window."));
     }
 
     public HistoricalSignal findSignal(String symbol,
@@ -242,9 +323,8 @@ public class HistoricalCandlestickService {
         }
 
         int patternStartIndex = Math.max(0, signalIndex - signal.formationCandles() + 1);
-        int trendStartIndex = Math.max(0, patternStartIndex - SIGNAL_CHART_TREND_CANDLES);
         Long trendStartTimestamp = patternStartIndex > 0
-                ? candles.get(trendStartIndex).getTimestamp()
+                ? signal.trendStartTimestamp()
                 : null;
         List<HistoricalChartCandle> chartCandles = candles.stream()
                 .map(candle -> new HistoricalChartCandle(
@@ -264,7 +344,7 @@ public class HistoricalCandlestickService {
                 signal.signalTimestamp(),
                 Math.min(signal.formationCandles(), signalIndex + 1),
                 signal.tradeSignal() == TradeSignal.SELL ? "Required uptrend" : "Required downtrend",
-                "The highlighted region and amber guide mark the five-candle prior-trend window used by the detector; labeled arrows identify every candle that formed the pattern."
+                "The highlighted region and amber guide trace the identified trend leg inside the detector's broader completed context; labeled arrows identify every candle that formed the pattern."
         );
     }
 
@@ -279,26 +359,48 @@ public class HistoricalCandlestickService {
         }
 
         List<HistoricalChartCandle> candles = chart.candles();
-        int signalIndex = -1;
+        boolean confirmationRequired =
+                CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern());
+        if (confirmationRequired && signal.lifecycle().status() == SignalLifecycleStatus.POTENTIAL) {
+            return HistoricalSignalResults.unavailable(
+                    "Results are waiting for the mandatory next-candle detection gate.", 0);
+        }
+        if (confirmationRequired && signal.lifecycle().status() == SignalLifecycleStatus.REJECTED) {
+            return HistoricalSignalResults.unavailable(
+                    "No results are measured because this candidate was rejected and never became a signal.", 0);
+        }
+        long measurementTimestamp = confirmationRequired
+                ? signal.lifecycle().detectionCandleTimestamp()
+                : signal.signalTimestamp();
+        double measurementClose = confirmationRequired
+                ? signal.lifecycle().detectionClosePrice()
+                : signal.entryClose();
+        String measurementPeriod = confirmationRequired
+                ? signal.lifecycle().detectionPeriodLabel()
+                : signal.signalPeriodLabel();
+        String measurementStartLabel = (confirmationRequired
+                ? "From detection candle close · "
+                : "From signal candle close · ") + measurementPeriod;
+        int measurementIndex = -1;
         for (int index = 0; index < candles.size(); index++) {
-            if (candles.get(index).timestamp() == signal.signalTimestamp()) {
-                signalIndex = index;
+            if (candles.get(index).timestamp() == measurementTimestamp) {
+                measurementIndex = index;
                 break;
             }
         }
-        if (signalIndex < 0) {
+        if (measurementIndex < 0) {
             return HistoricalSignalResults.unavailable(
-                    "Results cannot be calculated because the signal candle is missing from the local cache.",
+                    "Results cannot be calculated because the measurement-start candle is missing from the local cache.",
                     0
             );
         }
 
-        int availableForwardCandles = candles.size() - signalIndex - 1;
+        int availableForwardCandles = candles.size() - measurementIndex - 1;
         if (availableForwardCandles < MINIMUM_RESULT_CANDLES) {
             String candleWord = availableForwardCandles == 1 ? "candle is" : "candles are";
             return HistoricalSignalResults.unavailable(
                     "Results are not available yet. At least " + MINIMUM_RESULT_CANDLES
-                            + " completed candles after the signal are required to provide a meaningful outcome window. "
+                            + " completed candles after the measurement start are required to provide a meaningful outcome window. "
                             + availableForwardCandles + " completed cached " + candleWord + " currently available.",
                     availableForwardCandles
             );
@@ -308,15 +410,15 @@ public class HistoricalCandlestickService {
         List<HistoricalResultPoint> points = new ArrayList<>(availableForwardCandles + 1);
         points.add(new HistoricalResultPoint(
                 0,
-                signal.signalTimestamp(),
-                signal.signalPeriodLabel(),
-                signal.entryClose(),
+                measurementTimestamp,
+                measurementPeriod,
+                measurementClose,
                 0.0,
                 0.0
         ));
         for (int offset = 1; offset <= availableForwardCandles; offset++) {
-            HistoricalChartCandle candle = candles.get(signalIndex + offset);
-            double rawDifference = candle.close() - signal.entryClose();
+            HistoricalChartCandle candle = candles.get(measurementIndex + offset);
+            double rawDifference = candle.close() - measurementClose;
             double directionalDifference = signal.tradeSignal() == TradeSignal.SELL
                     ? -rawDifference
                     : rawDifference;
@@ -325,7 +427,7 @@ public class HistoricalCandlestickService {
                     candle.timestamp(),
                     SignalPeriodFormatter.format(candle.timestamp(), profile.interval(), signalTimeZone),
                     candle.close(),
-                    directionalDifference / signal.entryClose() * 100.0,
+                    directionalDifference / measurementClose * 100.0,
                     directionalDifference
             ));
         }
@@ -336,12 +438,13 @@ public class HistoricalCandlestickService {
                 null,
                 MINIMUM_RESULT_CANDLES,
                 availableForwardCandles,
-                signal.entryClose(),
-                signal.signalTimestamp(),
+                measurementClose,
+                measurementTimestamp,
                 signal.tradeSignal(),
                 sellSignal ? "Decline avoided / rise missed" : "Gain / loss",
                 sellSignal ? "Best re-entry close" : "Best sell close",
-                List.copyOf(points)
+                List.copyOf(points),
+                measurementStartLabel
         );
     }
 
@@ -349,7 +452,9 @@ public class HistoricalCandlestickService {
                                            String companyName,
                                            List<Candle> candles,
                                            ScanProfile profile,
-                                           int lookbackCandles) {
+                                           int lookbackCandles,
+                                           CandlePatternDetectionService.TrendDetectionRules trendRules,
+                                           CandlestickPatternPreferencesService.PreferencesView definitions) {
         if (candles.size() < 2) {
             return List.of();
         }
@@ -368,18 +473,25 @@ public class HistoricalCandlestickService {
             int firstContextIndex = Math.max(0, signalIndex - 99);
             List<EnrichedCandle> context = enriched.subList(firstContextIndex, signalIndex + 1);
             long signalTimestamp = enriched.get(signalIndex).timestamp();
-            List<DetectedSignal> detected = detectionService.detectAlertSignals(context).stream()
+            List<DetectedSignal> detected = (definitions.custom()
+                    ? detectionService.detectAlertSignals(context, trendRules, definitions)
+                    : detectionService.detectAlertSignals(context, trendRules)).stream()
                     .filter(signal -> signal.candleTimestamp() == signalTimestamp)
                     .toList();
             for (DetectedSignal signal : detected) {
-                signals.add(toHistoricalSignal(
+                HistoricalSignal historicalSignal = toHistoricalSignal(
                         symbol,
                         companyName,
                         signal,
                         candles,
                         signalIndex,
-                        profile
-                ));
+                        profile,
+                        trendRules,
+                        definitions
+                );
+                if (historicalSignal.lifecycle().status() != SignalLifecycleStatus.REJECTED) {
+                    signals.add(historicalSignal);
+                }
             }
         }
         return signals.stream()
@@ -394,11 +506,22 @@ public class HistoricalCandlestickService {
                                                 DetectedSignal signal,
                                                 List<Candle> candles,
                                                 int signalIndex,
-                                                ScanProfile profile) {
-        OutcomeEvaluation evaluation = evaluateOutcome(signal, candles, signalIndex, profile);
+                                                ScanProfile profile,
+                                                CandlePatternDetectionService.TrendDetectionRules trendRules,
+                                                CandlestickPatternPreferencesService.PreferencesView definitions) {
         int formationCandles = CandlestickSignalLifecyclePolicy.patternCandleCount(signal.pattern());
         int formationStart = Math.max(0, signalIndex - formationCandles + 1);
-        int trendStart = Math.max(0, formationStart - SIGNAL_CHART_TREND_CANDLES);
+        int trendContextStart = Math.max(0, formationStart
+                - trendContextCandles(profile.interval(), signal.tradeSignal(), trendRules));
+        int trendStart = indexOfTimestamp(candles, signal.trendStartTimestamp());
+        if (trendStart < trendContextStart || trendStart >= formationStart) {
+            trendStart = CandlestickTrendLegLocator.locateStartIndex(
+                    candles,
+                    trendContextStart,
+                    formationStart,
+                    signal.tradeSignal()
+            );
+        }
         List<Candle> formation = candles.subList(formationStart, signalIndex + 1);
         double patternHigh = formation.stream().mapToDouble(Candle::getHighPrice).max().orElse(signal.closePrice());
         double patternLow = formation.stream().mapToDouble(Candle::getLowPrice).min().orElse(signal.closePrice());
@@ -410,6 +533,8 @@ public class HistoricalCandlestickService {
                 patternLow,
                 profile
         );
+        OutcomeEvaluation evaluation = evaluateOutcome(
+                signal, candles, signalIndex, profile, lifecycle);
         List<EvidenceSection> evidence = signal.reasons().stream()
                 .map(reason -> toEvidenceSection(
                         SignalScoreBreakdown.parse(reason, "Evidence", signal.tradeSignal())
@@ -424,7 +549,7 @@ public class HistoricalCandlestickService {
                 signal.pattern(),
                 patternLabel(signal.pattern()),
                 signal.tradeSignal(),
-                signal.tradeSignal() == TradeSignal.BUY ? "Buy signal" : "Sell signal",
+                signalTypeLabel(signal, lifecycle),
                 signal.strength(),
                 setupStrengthLabel(signal.strength(), signal.setupScore()),
                 setupBand(signal.setupScore()),
@@ -443,8 +568,10 @@ public class HistoricalCandlestickService {
                 patternHigh,
                 patternLow,
                 evaluation.status(),
-                evaluation.statusLabel(),
-                evaluation.statusClass(),
+                CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern())
+                        ? lifecycle.label() : evaluation.statusLabel(),
+                CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern())
+                        ? lifecycle.cssClass() : evaluation.statusClass(),
                 evaluation.summary(),
                 profile.forwardCandles(),
                 profile.horizonLabel(),
@@ -458,10 +585,27 @@ public class HistoricalCandlestickService {
                 impactLabel(signal.tradeSignal(), evaluation.directionalReturnPercent()),
                 candles.get(trendStart).getTimestamp(),
                 candles.get(formationStart).getTimestamp(),
-                signal.tradeSignal() == TradeSignal.SELL ? "Required uptrend" : "Required downtrend",
+                definitions.profile(signal.pattern()).trendRequirement().label(),
                 lifecycle,
                 evidence
         );
+    }
+
+    private int indexOfTimestamp(List<Candle> candles, Long timestamp) {
+        if (timestamp == null) return -1;
+        for (int index = 0; index < candles.size(); index++) {
+            if (candles.get(index).getTimestamp().equals(timestamp)) return index;
+        }
+        return -1;
+    }
+
+    private int trendContextCandles(TimeInterval interval,
+                                    TradeSignal direction,
+                                    CandlePatternDetectionService.TrendDetectionRules trendRules) {
+        if (!trendRules.adaptiveFactory()) {
+            return trendRules.lookbackCandles();
+        }
+        return 30;
     }
 
     private HistoricalLifecycleView evaluateLifecycle(DetectedSignal signal,
@@ -470,22 +614,43 @@ public class HistoricalCandlestickService {
                                                        double patternHigh,
                                                        double patternLow,
                                                        ScanProfile profile) {
+        boolean candidateGateRequired =
+                CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern());
         double confirmationTrigger = signal.tradeSignal() == TradeSignal.BUY ? patternHigh : patternLow;
         double invalidationBoundary = signal.tradeSignal() == TradeSignal.BUY ? patternLow : patternHigh;
         List<Candle> subsequentCandles = signalIndex + 1 >= candles.size()
                 ? List.of()
                 : candles.subList(signalIndex + 1, candles.size());
-        CandlestickSignalLifecyclePolicy.LifecycleResolution resolution =
-                CandlestickSignalLifecyclePolicy.resolve(
-                        signal.tradeSignal(),
-                        confirmationTrigger,
-                        invalidationBoundary,
-                        subsequentCandles,
-                        confirmationWindowCandles
-                );
-        SignalLifecycleStatus status = resolution == null
-                ? SignalLifecycleStatus.DETECTED
-                : resolution.status();
+        CandlestickSignalLifecyclePolicy.LifecycleResolution gate = candidateGateRequired
+                ? CandlestickSignalLifecyclePolicy.resolveCandidateGate(
+                        signal.pattern(), signal.tradeSignal(), signal.closePrice(), subsequentCandles)
+                : null;
+        Long detectionTimestamp = candidateGateRequired && gate != null
+                && gate.status() == SignalLifecycleStatus.DETECTED
+                ? gate.resolutionCandle().getTimestamp() : null;
+        Double detectionClose = candidateGateRequired && gate != null
+                && gate.status() == SignalLifecycleStatus.DETECTED
+                ? gate.resolutionCandle().getClosePrice() : null;
+        int outcomeWindow = candidateGateRequired
+                ? ONE_CANDLE_OUTCOME_WINDOW_CANDLES : confirmationWindowCandles;
+        CandlestickSignalLifecyclePolicy.LifecycleResolution resolution;
+        SignalLifecycleStatus status;
+        if (candidateGateRequired && gate == null) {
+            status = SignalLifecycleStatus.POTENTIAL;
+            resolution = null;
+        } else if (candidateGateRequired && gate.status() == SignalLifecycleStatus.REJECTED) {
+            status = SignalLifecycleStatus.REJECTED;
+            resolution = gate;
+        } else {
+            int outcomeStartIndex = candidateGateRequired ? 1 : 0;
+            List<Candle> outcomeCandles = subsequentCandles.size() <= outcomeStartIndex
+                    ? List.of()
+                    : subsequentCandles.subList(outcomeStartIndex, subsequentCandles.size());
+            resolution = CandlestickSignalLifecyclePolicy.resolve(
+                    signal.tradeSignal(), confirmationTrigger, invalidationBoundary,
+                    outcomeCandles, outcomeWindow);
+            status = resolution == null ? SignalLifecycleStatus.DETECTED : resolution.status();
+        }
         String resolutionPeriod = resolution == null
                 ? null
                 : SignalPeriodFormatter.format(
@@ -496,13 +661,34 @@ public class HistoricalCandlestickService {
         String boundaryDirection = signal.tradeSignal() == TradeSignal.BUY ? "above" : "below";
         String invalidationDirection = signal.tradeSignal() == TradeSignal.BUY ? "below" : "above";
         String summary = switch (status) {
-            case DETECTED -> String.format(
+            case POTENTIAL -> String.format(
                     Locale.ROOT,
-                    "Waiting for a completed candle to close %s %.4f. The setup expires after %d candles unless it confirms or invalidates first.",
+                    "Potential %s candidate only. The next candle must have a %s body and close %s the %.4f candidate close before this becomes a signal.",
+                    signal.tradeSignal().name().toLowerCase(Locale.ROOT),
+                    signal.tradeSignal() == TradeSignal.BUY ? "green" : "red",
                     boundaryDirection,
-                    confirmationTrigger,
-                    confirmationWindowCandles
-            );
+                    signal.closePrice());
+            case REJECTED -> String.format(
+                    Locale.ROOT,
+                    "Rejected on %s because the next candle did not provide the required %s-body close %s the %.4f candidate close. It never became a signal.",
+                    resolutionPeriod,
+                    signal.tradeSignal() == TradeSignal.BUY ? "green" : "red",
+                    boundaryDirection,
+                    signal.closePrice());
+            case DETECTED -> candidateGateRequired
+                    ? String.format(
+                            Locale.ROOT,
+                            "Detected on %s after the next-candle gate passed at %.4f. The %d-candle outcome window is measured from that detection close.",
+                            SignalPeriodFormatter.format(detectionTimestamp, profile.interval(), signalTimeZone),
+                            detectionClose,
+                            outcomeWindow)
+                    : String.format(
+                            Locale.ROOT,
+                            "Waiting for a completed candle to close %s %.4f. The setup expires after %d candles unless it confirms or invalidates first.",
+                            boundaryDirection,
+                            confirmationTrigger,
+                            confirmationWindowCandles
+                    );
             case CONFIRMED -> String.format(
                     Locale.ROOT,
                     "Confirmed on %s when candle %d closed at %.4f, %s the %.4f trigger.",
@@ -524,20 +710,27 @@ public class HistoricalCandlestickService {
             case EXPIRED -> String.format(
                     Locale.ROOT,
                     "Expired after %d completed candles without a close beyond either lifecycle boundary.",
-                    confirmationWindowCandles
+                    outcomeWindow
             );
         };
         return new HistoricalLifecycleView(
                 status,
                 lifecycleLabel(status),
                 status.name().toLowerCase(Locale.ROOT),
-                status != SignalLifecycleStatus.DETECTED,
+                status != SignalLifecycleStatus.POTENTIAL
+                        && status != SignalLifecycleStatus.DETECTED,
+                candidateGateRequired,
                 summary,
                 patternHigh,
                 patternLow,
                 confirmationTrigger,
                 invalidationBoundary,
-                confirmationWindowCandles,
+                outcomeWindow,
+                detectionTimestamp,
+                detectionTimestamp == null ? null : SignalPeriodFormatter.format(
+                        detectionTimestamp, profile.interval(), signalTimeZone),
+                detectionClose,
+                resolution == null ? null : resolution.resolutionCandle().getTimestamp(),
                 resolution == null ? null : resolution.candleOffset(),
                 resolutionPeriod,
                 resolution == null ? null : resolution.resolutionCandle().getClosePrice()
@@ -546,7 +739,9 @@ public class HistoricalCandlestickService {
 
     private String lifecycleLabel(SignalLifecycleStatus status) {
         return switch (status) {
+            case POTENTIAL -> "Potential";
             case DETECTED -> "Detected";
+            case REJECTED -> "Rejected";
             case CONFIRMED -> "Confirmed";
             case INVALIDATED -> "Invalidated";
             case EXPIRED -> "Expired";
@@ -556,8 +751,37 @@ public class HistoricalCandlestickService {
     private OutcomeEvaluation evaluateOutcome(DetectedSignal signal,
                                               List<Candle> candles,
                                               int signalIndex,
-                                              ScanProfile profile) {
-        int availableForwardCandles = candles.size() - signalIndex - 1;
+                                              ScanProfile profile,
+                                              HistoricalLifecycleView lifecycle) {
+        boolean confirmationRequired =
+                CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern());
+        if (confirmationRequired && lifecycle.status() == SignalLifecycleStatus.POTENTIAL) {
+            return pendingOutcome("This is only a potential candidate until the immediately following candle passes the mandatory detection gate.");
+        }
+        if (confirmationRequired && lifecycle.status() == SignalLifecycleStatus.REJECTED) {
+            return terminalWithoutOutcome(
+                    lifecycle,
+                    "No outcome is measured because this candidate never became a signal.");
+        }
+        int measurementIndex = signalIndex;
+        double measurementClose = signal.closePrice();
+        String measurementLabel = "the completed signal candle close on "
+                + SignalPeriodFormatter.format(signal.candleTimestamp(), profile.interval(), signalTimeZone);
+        if (confirmationRequired) {
+            measurementIndex = -1;
+            for (int index = signalIndex + 1; index < candles.size(); index++) {
+                if (candles.get(index).getTimestamp().equals(lifecycle.detectionCandleTimestamp())) {
+                    measurementIndex = index;
+                    break;
+                }
+            }
+            if (measurementIndex < 0 || lifecycle.detectionClosePrice() == null) {
+                return pendingOutcome("The detection candle is unavailable, so results cannot be measured safely.");
+            }
+            measurementClose = lifecycle.detectionClosePrice();
+            measurementLabel = "the detection candle close on " + lifecycle.detectionPeriodLabel();
+        }
+        int availableForwardCandles = candles.size() - measurementIndex - 1;
         if (availableForwardCandles < profile.forwardCandles()) {
             int remaining = profile.forwardCandles() - availableForwardCandles;
             return new OutcomeEvaluation(
@@ -576,12 +800,12 @@ public class HistoricalCandlestickService {
             );
         }
 
-        int evaluationIndex = signalIndex + profile.forwardCandles();
+        int evaluationIndex = measurementIndex + profile.forwardCandles();
         Candle evaluationCandle = candles.get(evaluationIndex);
-        List<Candle> futureCandles = candles.subList(signalIndex + 1, evaluationIndex + 1);
+        List<Candle> futureCandles = candles.subList(measurementIndex + 1, evaluationIndex + 1);
         double directionalReturn = directionalReturnPercent(
                 signal.tradeSignal(),
-                signal.closePrice(),
+                measurementClose,
                 evaluationCandle.getClosePrice()
         );
         double highestHigh = futureCandles.stream().mapToDouble(Candle::getHighPrice).max()
@@ -589,11 +813,11 @@ public class HistoricalCandlestickService {
         double lowestLow = futureCandles.stream().mapToDouble(Candle::getLowPrice).min()
                 .orElse(evaluationCandle.getClosePrice());
         double bestMove = signal.tradeSignal() == TradeSignal.BUY
-                ? percentMove(signal.closePrice(), highestHigh)
-                : -percentMove(signal.closePrice(), lowestLow);
+                ? percentMove(measurementClose, highestHigh)
+                : -percentMove(measurementClose, lowestLow);
         double worstMove = signal.tradeSignal() == TradeSignal.BUY
-                ? percentMove(signal.closePrice(), lowestLow)
-                : -percentMove(signal.closePrice(), highestHigh);
+                ? percentMove(measurementClose, lowestLow)
+                : -percentMove(measurementClose, highestHigh);
 
         HistoricalOutcome outcome;
         if (directionalReturn >= profile.minimumMovePercent()) {
@@ -616,7 +840,11 @@ public class HistoricalCandlestickService {
                         ? "Unsuccessful"
                         : "Inconclusive",
                 outcome.name().toLowerCase(Locale.ROOT),
-                outcomeSummary(signal.tradeSignal(), directionalReturn, profile),
+                outcomeSummary(
+                        signal.tradeSignal(),
+                        directionalReturn,
+                        profile,
+                        measurementLabel),
                 evaluationCandle.getTimestamp(),
                 evaluationPeriod,
                 evaluationCandle.getClosePrice(),
@@ -628,15 +856,50 @@ public class HistoricalCandlestickService {
 
     private String outcomeSummary(TradeSignal direction,
                                   double directionalReturn,
-                                  ScanProfile profile) {
+                                  ScanProfile profile,
+                                  String measurementLabel) {
         String result = String.format(Locale.ROOT, "%+.2f%%", directionalReturn);
         String interpretation = direction == TradeSignal.BUY
                 ? "directional return"
                 : "decline avoided";
-        return result + " " + interpretation + " at the " + profile.horizonLabel()
+        return result + " " + interpretation + " measured from "
+                + measurementLabel + " to the " + profile.horizonLabel()
                 + " close. Success requires at least "
                 + String.format(Locale.ROOT, "%.1f%%", profile.minimumMovePercent())
                 + " in the expected direction.";
+    }
+
+    private OutcomeEvaluation pendingOutcome(String reason) {
+        return new OutcomeEvaluation(
+                HistoricalOutcome.PENDING,
+                "Awaiting outcome",
+                "pending",
+                reason,
+                null, null, null, null, null, null);
+    }
+
+    private OutcomeEvaluation terminalWithoutOutcome(HistoricalLifecycleView lifecycle, String reason) {
+        return new OutcomeEvaluation(
+                HistoricalOutcome.PENDING,
+                lifecycle.label(),
+                lifecycle.cssClass(),
+                reason + " " + lifecycle.summary(),
+                null, null, null, null, null, null);
+    }
+
+    private String signalTypeLabel(DetectedSignal signal, HistoricalLifecycleView lifecycle) {
+        String direction = signal.tradeSignal() == TradeSignal.BUY ? "buy" : "sell";
+        if (CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern())) {
+            return switch (lifecycle.status()) {
+                case POTENTIAL -> "Potential " + direction + " candidate";
+                case REJECTED -> "Rejected " + direction + " candidate";
+                case DETECTED -> "Detected " + direction + " signal";
+                case CONFIRMED -> "Confirmed " + direction + " signal";
+                case INVALIDATED -> "Invalidated " + direction + " signal";
+                case EXPIRED -> "Expired " + direction + " signal";
+            };
+        }
+        return Character.toUpperCase(direction.charAt(0)) + direction.substring(1) + " signal";
     }
 
     private String impactLabel(TradeSignal direction, Double directionalReturn) {
@@ -879,6 +1142,15 @@ public class HistoricalCandlestickService {
         public boolean outcomeAvailable() {
             return status != HistoricalOutcome.PENDING;
         }
+
+        public String measurementStartLabel() {
+            if (CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(pattern)
+                    && lifecycle.status() != SignalLifecycleStatus.POTENTIAL
+                    && lifecycle.status() != SignalLifecycleStatus.REJECTED) {
+                return "From detection candle close \u00b7 " + lifecycle.detectionPeriodLabel();
+            }
+            return "From signal candle close \u00b7 " + signalPeriodLabel;
+        }
     }
 
     public record HistoricalLifecycleView(
@@ -886,12 +1158,17 @@ public class HistoricalCandlestickService {
             String label,
             String cssClass,
             boolean terminal,
+            boolean immediateConfirmationRequired,
             String summary,
             double patternHigh,
             double patternLow,
             double confirmationTriggerPrice,
             double invalidationPrice,
             int confirmationWindowCandles,
+            Long detectionCandleTimestamp,
+            String detectionPeriodLabel,
+            Double detectionClosePrice,
+            Long resolutionCandleTimestamp,
             Integer resolutionCandleOffset,
             String resolutionPeriodLabel,
             Double resolutionClosePrice
@@ -937,7 +1214,8 @@ public class HistoricalCandlestickService {
             TradeSignal tradeSignal,
             String outcomeLabel,
             String bestActionLabel,
-            List<HistoricalResultPoint> points
+            List<HistoricalResultPoint> points,
+            String measurementStartLabel
     ) {
         private static HistoricalSignalResults unavailable(String reason, int availableForwardCandles) {
             return new HistoricalSignalResults(
@@ -950,7 +1228,8 @@ public class HistoricalCandlestickService {
                     null,
                     "Outcome unavailable",
                     "Best reversal unavailable",
-                    List.of()
+                    List.of(),
+                    null
             );
         }
 

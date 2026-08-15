@@ -7,6 +7,8 @@ import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -21,6 +23,8 @@ import java.util.Objects;
 
 @Service
 public class MarketDataService {
+
+    private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
 
     private final CandleRepository candleRepository;
     private final StockAssetRepository stockAssetRepository;
@@ -96,9 +100,9 @@ public class MarketDataService {
                     }
                     source = CandleSource.TWELVE_DATA;
                 } catch (Exception e) {
-                    twelveDataFailure = e.getMessage();
-                    System.err.println("Twelve Data candle sync unavailable for " + symbol + ": " + twelveDataFailure
-                            + ". Trying Yahoo Finance.");
+                    twelveDataFailure = failureMessage(e);
+                    log.warn("Twelve Data candle sync unavailable for {} {}: {}. Trying Yahoo Finance.",
+                            symbol, interval, twelveDataFailure);
                     try {
                         bars = yahooFinanceService.getTimeSeries(symbol, interval, 1000);
                         if (bars.isEmpty()) {
@@ -108,7 +112,7 @@ public class MarketDataService {
                     } catch (Exception yahooFailure) {
                         String failure = "Twelve Data: " + twelveDataFailure
                                 + "; Yahoo Finance: " + yahooFailure.getMessage();
-                        System.err.println("Failed syncing candles for " + symbol + " from all providers: " + failure);
+                        log.error("Failed syncing candles for {} {} from all providers: {}", symbol, interval, failure);
                         return new CandleSyncResult(CandleSource.NONE, 0, failure);
                     }
                 }
@@ -161,10 +165,13 @@ public class MarketDataService {
 
     private List<Candle> queryDescending(String symbol, String interval, Long before, int limit) {
         PageRequest page = PageRequest.of(0, limit);
-        return before == null
+        List<Candle> candles = before == null
                 ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(symbol, interval, page)
                 : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
                         symbol, interval, before, page);
+        return candles.stream()
+                .filter(this::hasValidTimestamp)
+                .toList();
     }
 
     private CandleSyncResult syncHistoricalCandles(String symbol,
@@ -241,6 +248,7 @@ public class MarketDataService {
         Map<Long, MarketDataBar> uniqueByTimestamp = new LinkedHashMap<>();
         if (bars != null) {
             bars.stream()
+                    .filter(this::hasValidTimestamp)
                     .filter(bar -> bar.timestamp() < beforeExclusive)
                     .forEach(bar -> uniqueByTimestamp.put(bar.timestamp(), bar));
         }
@@ -268,6 +276,13 @@ public class MarketDataService {
         };
     }
 
+    private String failureMessage(Exception failure) {
+        String message = failure.getMessage();
+        return message == null || message.isBlank()
+                ? failure.getClass().getSimpleName()
+                : message.replaceAll("\\s+", " ").trim();
+    }
+
     private void ensureAsset(String symbol) {
         if (stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).isPresent()) {
             return;
@@ -290,10 +305,13 @@ public class MarketDataService {
     }
 
     private int persistChangedCandles(String symbol, String interval, List<MarketDataBar> bars) {
-        if (bars.isEmpty()) {
+        List<MarketDataBar> validBars = bars.stream()
+                .filter(this::hasValidTimestamp)
+                .toList();
+        if (validBars.isEmpty()) {
             return 0;
         }
-        List<Long> timestamps = bars.stream()
+        List<Long> timestamps = validBars.stream()
                 .map(MarketDataBar::timestamp)
                 .distinct()
                 .toList();
@@ -302,7 +320,7 @@ public class MarketDataService {
                 .forEach(candle -> existingByTimestamp.put(candle.getTimestamp(), candle));
 
         Map<Long, Candle> changedByTimestamp = new LinkedHashMap<>();
-        for (MarketDataBar bar : bars) {
+        for (MarketDataBar bar : validBars) {
             Candle candle = existingByTimestamp.get(bar.timestamp());
             if (candle != null && hasSameValues(candle, bar)) {
                 continue;
@@ -319,6 +337,14 @@ public class MarketDataService {
             candleRepository.saveAll(changedByTimestamp.values());
         }
         return changedByTimestamp.size();
+    }
+
+    private boolean hasValidTimestamp(MarketDataBar bar) {
+        return bar != null && bar.timestamp() > 0L;
+    }
+
+    private boolean hasValidTimestamp(Candle candle) {
+        return candle != null && candle.getTimestamp() != null && candle.getTimestamp() > 0L;
     }
 
     private void applyBar(Candle candle, String symbol, String interval, MarketDataBar bar) {

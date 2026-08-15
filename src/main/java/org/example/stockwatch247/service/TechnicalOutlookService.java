@@ -15,6 +15,7 @@ import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.CongressionalTradeDeliveryRepository;
 import org.example.stockwatch247.repository.InsiderTradeDeliveryRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -34,9 +35,6 @@ import java.util.function.ToDoubleFunction;
 public class TechnicalOutlookService {
     private static final int CHART_CANDLES = 260;
     private static final int ANALYSIS_CANDLES = 320;
-    private static final double NEUTRAL_LIMIT = 0.10;
-    private static final double MODERATE_LIMIT = 0.30;
-    private static final double STRONG_LIMIT = 0.60;
 
     private final MarketDataService marketDataService;
     private final CandleRepository candleRepository;
@@ -45,14 +43,17 @@ public class TechnicalOutlookService {
     private final AlertEventRepository alertEventRepository;
     private final CongressionalTradeDeliveryRepository congressionalDeliveryRepository;
     private final InsiderTradeDeliveryRepository insiderDeliveryRepository;
+    private final AnalysisPreferencesService preferencesService;
 
+    @Autowired
     public TechnicalOutlookService(MarketDataService marketDataService,
                                    CandleRepository candleRepository,
                                    StockAssetRepository stockAssetRepository,
                                    TechnicalIndicatorEnrichmentService enrichmentService,
                                    AlertEventRepository alertEventRepository,
                                    CongressionalTradeDeliveryRepository congressionalDeliveryRepository,
-                                   InsiderTradeDeliveryRepository insiderDeliveryRepository) {
+                                   InsiderTradeDeliveryRepository insiderDeliveryRepository,
+                                   AnalysisPreferencesService preferencesService) {
         this.marketDataService = marketDataService;
         this.candleRepository = candleRepository;
         this.stockAssetRepository = stockAssetRepository;
@@ -60,10 +61,29 @@ public class TechnicalOutlookService {
         this.alertEventRepository = alertEventRepository;
         this.congressionalDeliveryRepository = congressionalDeliveryRepository;
         this.insiderDeliveryRepository = insiderDeliveryRepository;
+        this.preferencesService = preferencesService;
+    }
+
+    TechnicalOutlookService(MarketDataService marketDataService,
+                            CandleRepository candleRepository,
+                            StockAssetRepository stockAssetRepository,
+                            TechnicalIndicatorEnrichmentService enrichmentService,
+                            AlertEventRepository alertEventRepository,
+                            CongressionalTradeDeliveryRepository congressionalDeliveryRepository,
+                            InsiderTradeDeliveryRepository insiderDeliveryRepository) {
+        this(marketDataService, candleRepository, stockAssetRepository, enrichmentService,
+                alertEventRepository, congressionalDeliveryRepository, insiderDeliveryRepository, null);
     }
 
     public OutlookView getOutlook(User user, String symbol, String rawInterval) {
         IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
+        AnalysisPreferencesService.PreferencesView preferences = preferencesService == null
+                ? AnalysisPreferencesService.factoryPreferences()
+                : preferencesService.get(user);
+        AnalysisPreferencesService.IntervalProfile rules = preferences.profile(interval.timeInterval());
+        TechnicalIndicatorProfile technicalProfile = preferencesService == null
+                ? TechnicalIndicatorProfile.forInterval(interval.timeInterval())
+                : preferencesService.technicalProfile(rules);
         String normalizedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
         refresh(normalizedSymbol, interval.apiValue());
 
@@ -76,32 +96,37 @@ public class TechnicalOutlookService {
         List<EnrichedCandle> candles = enrichmentService.enrich(
                 rawCandles,
                 Math.min(ANALYSIS_CANDLES, rawCandles.size()),
-                interval.timeInterval());
+                technicalProfile);
         if (candles.isEmpty()) {
             return OutlookView.unavailable(normalizedSymbol, interval);
         }
 
         StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(normalizedSymbol).orElse(null);
-        MarketComparisonView market = marketComparison(normalizedSymbol, asset);
+        MarketComparisonView market = marketComparison(normalizedSymbol, asset, rules.marketRelativeThresholdPercent());
         List<RecentSignalView> recentSignals = recentSignals(user, normalizedSymbol);
-        List<IndicatorView> indicators = indicatorViews(candles);
+        List<IndicatorView> indicators = indicatorViews(candles, rules);
 
         List<VoteInput> rawVotes = new ArrayList<>();
         indicators.stream()
                 .filter(IndicatorView::scored)
                 .forEach(indicator -> rawVotes.add(new VoteInput(
                         indicator.label(), indicator.category(), indicator.vote())));
-        if (market.available()) {
+        if (market.available() && rules.scoreMarketRelative()) {
             rawVotes.add(new VoteInput("Market-relative strength", "MARKET_RELATIVE", market.vote()));
         }
-        signalVote(recentSignals, AlertPatternFamily.CANDLESTICK)
-                .ifPresent(vote -> rawVotes.add(new VoteInput("Recent candlestick signals", "CANDLESTICK", vote)));
-        signalVote(recentSignals, AlertPatternFamily.ELLIOTT_WAVE)
-                .ifPresent(vote -> rawVotes.add(new VoteInput("Recent Elliott signals", "ELLIOTT", vote)));
+        if (rules.scoreCandlestickSignals()) {
+            signalVote(recentSignals, AlertPatternFamily.CANDLESTICK)
+                    .ifPresent(vote -> rawVotes.add(new VoteInput("Recent candlestick signals", "CANDLESTICK", vote)));
+        }
+        if (rules.scoreElliottSignals()) {
+            signalVote(recentSignals, AlertPatternFamily.ELLIOTT_WAVE)
+                    .ifPresent(vote -> rawVotes.add(new VoteInput("Recent Elliott signals", "ELLIOTT", vote)));
+        }
 
-        ScoreView rawScore = score(rawVotes.stream().map(VoteInput::vote).toList());
-        List<CategoryView> categories = categoryViews(rawVotes);
-        ScoreView categoryScore = score(categories.stream().map(CategoryView::vote).toList());
+        ScoreView rawScore = score(rawVotes.stream().map(VoteInput::vote).toList(), rules);
+        List<CategoryView> categories = categoryViews(rawVotes, rules);
+        ScoreView categoryScore = score(categories.stream().map(CategoryView::vote).toList(), rules);
+        ScoreView headlineScore = rules.categoryBalancedHeadline() ? categoryScore : rawScore;
         List<ChartCandleView> chart = candles.stream()
                 .skip(Math.max(0, candles.size() - CHART_CANDLES))
                 .map(TechnicalOutlookService::chartCandle)
@@ -114,10 +139,11 @@ public class TechnicalOutlookService {
                 asset == null ? normalizedSymbol : asset.getCompanyName(),
                 interval.apiValue(),
                 interval.label(),
+                preferences.profileLabel(),
                 true,
                 latest.timestamp(),
                 freshness(latest.timestamp(), interval),
-                categoryScore,
+                headlineScore,
                 rawScore,
                 categories,
                 indicators,
@@ -125,10 +151,12 @@ public class TechnicalOutlookService {
                 recentSignals,
                 activity,
                 market,
+                IndicatorSettingsView.from(rules),
                 new MethodologyView(
                         "+1 buy, 0 neutral, -1 sell; unavailable inputs are excluded.",
                         "Each category receives one equal vote after its available inputs are averaged.",
-                        "Neutral: |score| < 10%; slight: 10-30%; moderate: 30-60%; strong: at least 60%.",
+                        "Neutral: |score| < %.0f%%; slight until %.0f%%; moderate until %.0f%%; strong thereafter."
+                                .formatted(rules.neutralScorePercent(), rules.moderateScorePercent(), rules.strongScorePercent()),
                         "These are symmetric descriptive rules, not probabilities or investment advice."));
     }
 
@@ -141,117 +169,178 @@ public class TechnicalOutlookService {
         }
     }
 
-    private List<IndicatorView> indicatorViews(List<EnrichedCandle> candles) {
+    private List<IndicatorView> indicatorViews(List<EnrichedCandle> candles,
+                                               AnalysisPreferencesService.IntervalProfile rules) {
         List<IndicatorView> views = new ArrayList<>();
-        views.add(indicator(candles, "rsi", "RSI", "MOMENTUM", "index points", false,
+        String rsiLabel = "RSI " + rules.rsiPeriod();
+        String fastEmaLabel = "EMA " + rules.fastEmaPeriod();
+        String slowEmaLabel = "EMA " + rules.slowEmaPeriod();
+        String emaPairLabel = fastEmaLabel + " / " + slowEmaLabel;
+        String longSmaLabel = "SMA " + rules.longSmaPeriod();
+        String macdLabel = "MACD %d/%d/%d".formatted(
+                rules.macdFastPeriod(), rules.macdSlowPeriod(), rules.macdSignalPeriod());
+        String cciLabel = "CCI " + rules.cciPeriod();
+        String bollingerLabel = "Bollinger Bands %d, %.1fσ".formatted(
+                rules.bollingerPeriod(), rules.bollingerDeviation());
+        String atrLabel = "ATR " + rules.atrPeriod();
+        String vwapLabel = "Rolling VWAP " + rules.vwapPeriod();
+        String relativeVolumeLabel = "Relative volume " + rules.volumePeriod();
+        String volumeProfileLabel = "Volume profile " + rules.volumeProfilePeriod();
+
+        views.add(indicator(candles, "rsi", rsiLabel, "MOMENTUM", "index points", false,
                 EnrichedCandle::rsi,
-                (candle, value) -> value <= 30 ? 1 : value >= 70 ? -1 : 0,
-                value -> value <= 30
-                        ? "RSI is in the traditionally oversold region."
-                        : value >= 70 ? "RSI is in the traditionally overbought region."
-                        : "RSI is between the oversold and overbought thresholds.",
-                "Buy at RSI ≤ 30; sell at RSI ≥ 70; otherwise neutral.",
-                List.of(30.0, 50.0, 70.0)));
-        views.add(indicator(candles, "ema", "Fast / slow EMA", "TREND", "price", true,
+                (candle, value) -> value <= rules.rsiBuyThreshold() ? 1
+                        : value >= rules.rsiSellThreshold() ? -1 : 0,
+                value -> value <= rules.rsiBuyThreshold()
+                        ? rsiLabel + " is inside your configured buy region."
+                        : value >= rules.rsiSellThreshold() ? rsiLabel + " is inside your configured sell region."
+                        : rsiLabel + " is between the oversold and overbought thresholds.",
+                "Buy when %s <= %.1f; sell when %s >= %.1f; otherwise neutral."
+                        .formatted(rsiLabel, rules.rsiBuyThreshold(), rsiLabel, rules.rsiSellThreshold()),
+                List.of(rules.rsiBuyThreshold(), 50.0, rules.rsiSellThreshold())));
+        views.add(indicator(candles, "ema", emaPairLabel, "TREND", "% difference", true,
                 candle -> percentDifference(candle.fastEma(), candle.slowEma()),
-                (candle, value) -> value > 0.25 ? 1 : value < -0.25 ? -1 : 0,
-                value -> value > 0.25 ? "The fast EMA is clearly above the slow EMA."
-                        : value < -0.25 ? "The fast EMA is clearly below the slow EMA."
-                        : "The two EMAs are within the neutral tolerance band.",
-                "Buy when fast EMA is >0.25% above slow EMA; sell below -0.25%; otherwise neutral.",
+                (candle, value) -> value > rules.emaThresholdPercent() ? 1
+                        : value < -rules.emaThresholdPercent() ? -1 : 0,
+                value -> value > rules.emaThresholdPercent() ? fastEmaLabel + " is clearly above " + slowEmaLabel + "."
+                        : value < -rules.emaThresholdPercent() ? fastEmaLabel + " is clearly below " + slowEmaLabel + "."
+                        : emaPairLabel + " are within the neutral tolerance band.",
+                "Buy when %s is >+%.2f%% above %s; sell below -%.2f%%; otherwise neutral."
+                        .formatted(fastEmaLabel, rules.emaThresholdPercent(), slowEmaLabel, rules.emaThresholdPercent()),
                 List.of(0.0)));
-        views.add(indicator(candles, "sma", "Price vs long SMA", "TREND", "%", true,
+        views.add(indicator(candles, "sma", "Price vs " + longSmaLabel, "TREND", "%", true,
                 candle -> percentDifference(candle.close(), candle.longSma()),
-                (candle, value) -> value > 0.5 ? 1 : value < -0.5 ? -1 : 0,
-                value -> value > 0.5 ? "Price is trading above its long-term average."
-                        : value < -0.5 ? "Price is trading below its long-term average."
+                (candle, value) -> value > rules.longSmaThresholdPercent() ? 1
+                        : value < -rules.longSmaThresholdPercent() ? -1 : 0,
+                value -> value > rules.longSmaThresholdPercent() ? "Price is trading above its long-term average."
+                        : value < -rules.longSmaThresholdPercent() ? "Price is trading below its long-term average."
                         : "Price is close to its long-term average.",
-                "Buy above +0.5% from the long SMA; sell below -0.5%; otherwise neutral.",
+                "Buy above +%.2f%% from %s; sell below -%.2f%%; otherwise neutral."
+                        .formatted(rules.longSmaThresholdPercent(), longSmaLabel, rules.longSmaThresholdPercent()),
                 List.of(0.0)));
-        views.add(indicator(candles, "macd", "MACD histogram", "TREND", "% of price", false,
+        views.add(indicator(candles, "macd", macdLabel + " histogram", "TREND", "% of price", false,
                 candle -> candle.close() == 0 ? Double.NaN : candle.macdHistogram() / candle.close() * 100.0,
-                (candle, value) -> value > 0.05 ? 1 : value < -0.05 ? -1 : 0,
-                value -> value > 0.05 ? "MACD momentum is positive."
-                        : value < -0.05 ? "MACD momentum is negative."
-                        : "MACD is close to its signal line.",
-                "Buy above +0.05% of price; sell below -0.05%; otherwise neutral.",
+                (candle, value) -> value > rules.macdThresholdPercent() ? 1
+                        : value < -rules.macdThresholdPercent() ? -1 : 0,
+                value -> value > rules.macdThresholdPercent() ? macdLabel + " momentum is positive."
+                        : value < -rules.macdThresholdPercent() ? macdLabel + " momentum is negative."
+                        : macdLabel + " is close to its signal line.",
+                "%s buys above +%.3f%% of price and sells below -%.3f%%; otherwise neutral."
+                        .formatted(macdLabel, rules.macdThresholdPercent(), rules.macdThresholdPercent()),
                 List.of(0.0)));
-        views.add(indicator(candles, "cci", "CCI", "MOMENTUM", "index points", false,
+        views.add(indicator(candles, "cci", cciLabel, "MOMENTUM", "index points", false,
                 EnrichedCandle::cci,
-                (candle, value) -> value <= -100 ? 1 : value >= 100 ? -1 : 0,
-                value -> value <= -100 ? "CCI indicates an unusually low price location."
-                        : value >= 100 ? "CCI indicates an unusually high price location."
-                        : "CCI remains inside its central range.",
-                "Buy at CCI ≤ -100; sell at CCI ≥ 100; otherwise neutral.",
-                List.of(-100.0, 0.0, 100.0)));
-        views.add(indicator(candles, "bollinger", "Bollinger Bands", "VOLATILITY", "% band position", true,
+                (candle, value) -> value <= rules.cciBuyThreshold() ? 1
+                        : value >= rules.cciSellThreshold() ? -1 : 0,
+                value -> value <= rules.cciBuyThreshold() ? cciLabel + " indicates an unusually low price location."
+                        : value >= rules.cciSellThreshold() ? cciLabel + " indicates an unusually high price location."
+                        : cciLabel + " remains inside its central range.",
+                "Buy when %s <= %.1f; sell when %s >= %.1f; otherwise neutral."
+                        .formatted(cciLabel, rules.cciBuyThreshold(), cciLabel, rules.cciSellThreshold()),
+                List.of(rules.cciBuyThreshold(), 0.0, rules.cciSellThreshold())));
+        views.add(indicator(candles, "bollinger", bollingerLabel, "VOLATILITY", "% band position", true,
                 candle -> bandPosition(candle.close(), candle.lowerBollinger(), candle.upperBollinger()),
                 (candle, value) -> value <= 0 ? 1 : value >= 100 ? -1 : 0,
-                value -> value <= 0 ? "Price closed at or below the lower band."
-                        : value >= 100 ? "Price closed at or above the upper band."
-                        : "Price remains inside the Bollinger envelope.",
-                "Buy at or below the lower band; sell at or above the upper band; otherwise neutral.",
+                value -> value <= 0 ? "Price closed at or below the lower " + bollingerLabel + " band."
+                        : value >= 100 ? "Price closed at or above the upper " + bollingerLabel + " band."
+                        : "Price remains inside the " + bollingerLabel + " envelope.",
+                bollingerLabel + " buys at or below the lower band and sells at or above the upper band; otherwise neutral.",
                 List.of(0.0, 50.0, 100.0)));
-        views.add(indicator(candles, "atr", "ATR", "VOLATILITY", "% of price", false,
+        views.add(indicator(candles, "atr", atrLabel, "VOLATILITY", "% of price", false,
                 candle -> candle.close() == 0 ? Double.NaN : candle.atr() / candle.close() * 100.0,
                 (candle, value) -> 0,
-                value -> "ATR measures movement size, not direction, so it is shown as neutral context.",
-                "ATR is always neutral in the directional vote; it describes volatility only.",
+                value -> atrLabel + " measures movement size, not direction, so it is shown as neutral context.",
+                atrLabel + " is always neutral in the directional vote; it describes volatility only.",
                 List.of()));
-        views.add(indicator(candles, "vwap", "Rolling VWAP", "VOLUME", "%", true,
+        views.add(indicator(candles, "vwap", vwapLabel, "VOLUME", "%", true,
                 candle -> percentDifference(candle.close(), candle.rollingVwap()),
-                (candle, value) -> value > 0.5 ? 1 : value < -0.5 ? -1 : 0,
-                value -> value > 0.5 ? "Price is holding above volume-weighted value."
-                        : value < -0.5 ? "Price is below volume-weighted value."
-                        : "Price is close to rolling VWAP.",
-                "Buy above +0.5% from VWAP; sell below -0.5%; otherwise neutral.",
+                (candle, value) -> value > rules.vwapThresholdPercent() ? 1
+                        : value < -rules.vwapThresholdPercent() ? -1 : 0,
+                value -> value > rules.vwapThresholdPercent() ? "Price is holding above " + vwapLabel + "."
+                        : value < -rules.vwapThresholdPercent() ? "Price is below " + vwapLabel + "."
+                        : "Price is close to " + vwapLabel + ".",
+                "Buy above +%.2f%% from %s; sell below -%.2f%%; otherwise neutral."
+                        .formatted(rules.vwapThresholdPercent(), vwapLabel, rules.vwapThresholdPercent()),
                 List.of(0.0)));
-        views.add(indicator(candles, "relativeVolume", "Relative volume", "VOLUME", "× average", false,
+        views.add(indicator(candles, "relativeVolume", relativeVolumeLabel, "VOLUME", "× average", false,
                 candle -> candle.averageVolume() == 0 ? Double.NaN
                         : candle.volume() / candle.averageVolume()
                         * (candle.close() > candle.open() ? 1 : candle.close() < candle.open() ? -1 : 0),
-                (candle, value) -> value >= 1.5 ? 1 : value <= -1.5 ? -1 : 0,
-                value -> Math.abs(value) >= 1.5 ? "Volume is elevated and confirms the latest candle direction."
+                (candle, value) -> value >= rules.relativeVolumeThreshold() ? 1
+                        : value <= -rules.relativeVolumeThreshold() ? -1 : 0,
+                value -> Math.abs(value) >= rules.relativeVolumeThreshold() ? "Volume is elevated and confirms the latest candle direction."
                         : "Volume is not elevated enough to cast a directional vote.",
-                "At ≥1.5× average volume, a green candle buys and a red candle sells; otherwise neutral. Negative values represent red candles.",
-                List.of(-1.5, 0.0, 1.5)));
-        views.add(indicator(candles, "volumeProfile", "Volume-profile location", "PRICE_LOCATION", "% value-area position", true,
+                "%s buys or sells with the candle direction at >=%.2fx its average; otherwise neutral. Negative values represent red candles."
+                        .formatted(relativeVolumeLabel, rules.relativeVolumeThreshold()),
+                List.of(-rules.relativeVolumeThreshold(), 0.0, rules.relativeVolumeThreshold())));
+        views.add(indicator(candles, "volumeProfile", volumeProfileLabel, "PRICE_LOCATION", "% value-area position", true,
                 candle -> bandPosition(candle.close(), candle.volumeProfileValueAreaLow(), candle.volumeProfileValueAreaHigh()),
                 (candle, value) -> value < 0 ? 1 : value > 100 ? -1 : 0,
                 value -> value < 0 ? "Price is below the estimated value area."
                         : value > 100 ? "Price is above the estimated value area."
                         : "Price is inside the estimated value area.",
-                "Buy below estimated VAL; sell above estimated VAH; otherwise neutral.",
+                volumeProfileLabel + " buys below estimated VAL and sells above estimated VAH; otherwise neutral.",
                 List.of(0.0, 50.0, 100.0)));
-        views.add(supportResistance(candles));
-        return List.copyOf(views);
+        views.add(supportResistance(candles, rules));
+        return views.stream().map(view -> withScoringState(view, scoringEnabled(view.key(), rules))).toList();
     }
 
-    private IndicatorView supportResistance(List<EnrichedCandle> candles) {
+    private IndicatorView supportResistance(List<EnrichedCandle> candles,
+                                            AnalysisPreferencesService.IntervalProfile rules) {
+        String levelLabel = "Support / resistance " + rules.supportResistancePeriod();
+        String atrLabel = "ATR " + rules.atrPeriod();
         List<ValueAtCandle> values = new ArrayList<>();
         for (int index = 0; index < candles.size(); index++) {
             EnrichedCandle candle = candles.get(index);
-            if (index < 19 || !Double.isFinite(candle.atr())) {
+            int lookback = rules.supportResistancePeriod();
+            if (index + 1 < lookback || !Double.isFinite(candle.atr())) {
                 values.add(new ValueAtCandle(candle, Double.NaN));
                 continue;
             }
-            double support = candles.subList(index - 19, index + 1).stream()
+            double support = candles.subList(index - lookback + 1, index + 1).stream()
                     .mapToDouble(EnrichedCandle::low).min().orElse(Double.NaN);
-            double resistance = candles.subList(index - 19, index + 1).stream()
+            double resistance = candles.subList(index - lookback + 1, index + 1).stream()
                     .mapToDouble(EnrichedCandle::high).max().orElse(Double.NaN);
             double supportDistance = (candle.close() - support) / candle.atr();
             double resistanceDistance = (resistance - candle.close()) / candle.atr();
             double value = supportDistance <= resistanceDistance ? supportDistance : -resistanceDistance;
             values.add(new ValueAtCandle(candle, value));
         }
-        return indicatorFromValues("supportResistance", "Support / resistance", "PRICE_LOCATION",
-                "ATR distance", true, values,
-                value -> value >= 0 && value <= 1 ? 1 : value < 0 && value >= -1 ? -1 : 0,
-                value -> value >= 0 && value <= 1 ? "Price is within one ATR of 20-bar support."
-                        : value < 0 && value >= -1 ? "Price is within one ATR of 20-bar resistance."
-                        : "Price is not close enough to either 20-bar boundary.",
-                "Buy within 1 ATR of support; sell within 1 ATR of resistance; otherwise neutral.",
-                List.of(-1.0, 0.0, 1.0));
+        return indicatorFromValues("supportResistance", levelLabel, "PRICE_LOCATION",
+                atrLabel + " distance", true, values,
+                value -> value >= 0 && value <= rules.supportResistanceAtrDistance() ? 1
+                        : value < 0 && value >= -rules.supportResistanceAtrDistance() ? -1 : 0,
+                value -> value >= 0 && value <= rules.supportResistanceAtrDistance() ? "Price is near configured support."
+                        : value < 0 && value >= -rules.supportResistanceAtrDistance() ? "Price is near configured resistance."
+                        : "Price is not close enough to either configured boundary.",
+                "%s buys within %.2f %s of support and sells within %.2f %s of resistance; otherwise neutral."
+                        .formatted(levelLabel, rules.supportResistanceAtrDistance(), atrLabel,
+                                rules.supportResistanceAtrDistance(), atrLabel),
+                List.of(-rules.supportResistanceAtrDistance(), 0.0, rules.supportResistanceAtrDistance()));
+    }
+
+    private boolean scoringEnabled(String key, AnalysisPreferencesService.IntervalProfile rules) {
+        return switch (key) {
+            case "rsi" -> rules.scoreRsi();
+            case "ema" -> rules.scoreEma();
+            case "sma" -> rules.scoreLongSma();
+            case "macd" -> rules.scoreMacd();
+            case "cci" -> rules.scoreCci();
+            case "bollinger" -> rules.scoreBollinger();
+            case "vwap" -> rules.scoreVwap();
+            case "relativeVolume" -> rules.scoreRelativeVolume();
+            case "volumeProfile" -> rules.scoreVolumeProfile();
+            case "supportResistance" -> rules.scoreSupportResistance();
+            case "atr" -> true;
+            default -> false;
+        };
+    }
+
+    private IndicatorView withScoringState(IndicatorView view, boolean enabled) {
+        return new IndicatorView(view.key(), view.label(), view.category(), view.unit(), view.currentValue(),
+                view.vote(), view.classification(), view.scored() && enabled, view.explanation(), view.rule(),
+                view.stateChangedAt(), view.candlesSinceStateChange(), view.overlay(), view.series(),
+                view.referenceLines());
     }
 
     private IndicatorView indicator(List<EnrichedCandle> candles,
@@ -328,7 +417,8 @@ public class TechnicalOutlookService {
                 overlay, series, references);
     }
 
-    private List<CategoryView> categoryViews(List<VoteInput> votes) {
+    private List<CategoryView> categoryViews(List<VoteInput> votes,
+                                             AnalysisPreferencesService.IntervalProfile rules) {
         Map<String, List<VoteInput>> grouped = new LinkedHashMap<>();
         for (String category : List.of("TREND", "MOMENTUM", "VOLATILITY", "VOLUME",
                 "PRICE_LOCATION", "MARKET_RELATIVE", "CANDLESTICK", "ELLIOTT")) {
@@ -339,7 +429,8 @@ public class TechnicalOutlookService {
                 .filter(entry -> !entry.getValue().isEmpty())
                 .map(entry -> {
                     double average = entry.getValue().stream().mapToInt(VoteInput::vote).average().orElse(0);
-                    int vote = average > NEUTRAL_LIMIT ? 1 : average < -NEUTRAL_LIMIT ? -1 : 0;
+                    double neutralLimit = rules.neutralScorePercent() / 100.0;
+                    int vote = average > neutralLimit ? 1 : average < -neutralLimit ? -1 : 0;
                     return new CategoryView(entry.getKey(), categoryLabel(entry.getKey()), vote,
                             voteLabel(vote), average,
                             entry.getValue().stream().map(VoteInput::label).toList());
@@ -435,7 +526,8 @@ public class TechnicalOutlookService {
                 "/activity-signals/insider/" + delivery.getId());
     }
 
-    private MarketComparisonView marketComparison(String symbol, StockAsset asset) {
+    private MarketComparisonView marketComparison(String symbol, StockAsset asset,
+                                                  double voteThresholdPercent) {
         Benchmark benchmark = benchmarkFor(asset);
         if (!benchmark.symbol().equalsIgnoreCase(symbol)) {
             refresh(benchmark.symbol(), "1d");
@@ -473,10 +565,13 @@ public class TechnicalOutlookService {
         int trendLookback = Math.min(20, normalized.size() - 1);
         double ratioChange = percentDifference(normalized.getLast().value(),
                 normalized.get(normalized.size() - 1 - trendLookback).value());
-        String trend = ratioChange > 2 ? "IMPROVING" : ratioChange < -2 ? "DETERIORATING" : "STABLE";
+        String trend = ratioChange > voteThresholdPercent ? "IMPROVING"
+                : ratioChange < -voteThresholdPercent ? "DETERIORATING" : "STABLE";
         HorizonView threeMonth = horizons.get(1);
-        int vote = threeMonth.available() && threeMonth.excessReturn() > 2 && trend.equals("IMPROVING") ? 1
-                : threeMonth.available() && threeMonth.excessReturn() < -2 && trend.equals("DETERIORATING") ? -1 : 0;
+        int vote = threeMonth.available() && threeMonth.excessReturn() > voteThresholdPercent
+                && trend.equals("IMPROVING") ? 1
+                : threeMonth.available() && threeMonth.excessReturn() < -voteThresholdPercent
+                && trend.equals("DETERIORATING") ? -1 : 0;
         return new MarketComparisonView(true, benchmark.symbol(), benchmark.name(), trend, ratioChange,
                 vote, voteLabel(vote), horizons, normalized);
     }
@@ -514,7 +609,8 @@ public class TechnicalOutlookService {
         return new Benchmark("^GSPC", "S&P 500");
     }
 
-    private static ScoreView score(List<Integer> votes) {
+    private static ScoreView score(List<Integer> votes,
+                                   AnalysisPreferencesService.IntervalProfile rules) {
         int buy = (int) votes.stream().filter(vote -> vote > 0).count();
         int neutral = (int) votes.stream().filter(vote -> vote == 0).count();
         int sell = (int) votes.stream().filter(vote -> vote < 0).count();
@@ -522,15 +618,16 @@ public class TechnicalOutlookService {
         int denominator = votes.size();
         double normalized = denominator == 0 ? 0 : (double) net / denominator;
         return new ScoreView(buy, neutral, sell, net, denominator, normalized,
-                classification(normalized));
+                classification(normalized, rules));
     }
 
-    private static String classification(double score) {
+    private static String classification(double score,
+                                         AnalysisPreferencesService.IntervalProfile rules) {
         double magnitude = Math.abs(score);
-        if (magnitude < NEUTRAL_LIMIT) return "Neutral outlook";
+        if (magnitude < rules.neutralScorePercent() / 100.0) return "Neutral outlook";
         String direction = score > 0 ? "buy" : "sell";
-        if (magnitude >= STRONG_LIMIT) return "Strong " + direction + " outlook";
-        if (magnitude >= MODERATE_LIMIT) return "Moderate " + direction + " outlook";
+        if (magnitude >= rules.strongScorePercent() / 100.0) return "Strong " + direction + " outlook";
+        if (magnitude >= rules.moderateScorePercent() / 100.0) return "Moderate " + direction + " outlook";
         return "Slight " + direction + " outlook";
     }
 
@@ -626,16 +723,31 @@ public class TechnicalOutlookService {
     }
 
     public record OutlookView(String symbol, String companyName, String interval, String intervalLabel,
+                              String profileLabel,
                               boolean available, Long candleTimestamp, String freshness,
                               ScoreView headlineScore, ScoreView rawScore, List<CategoryView> categories,
                               List<IndicatorView> indicators, List<ChartCandleView> candles,
                               List<RecentSignalView> recentSignals, List<ActivityMarkerView> activityMarkers,
-                              MarketComparisonView marketComparison, MethodologyView methodology) {
+                              MarketComparisonView marketComparison, IndicatorSettingsView indicatorSettings,
+                              MethodologyView methodology) {
+        public OutlookView(String symbol, String companyName, String interval, String intervalLabel,
+                           boolean available, Long candleTimestamp, String freshness,
+                           ScoreView headlineScore, ScoreView rawScore, List<CategoryView> categories,
+                           List<IndicatorView> indicators, List<ChartCandleView> candles,
+                           List<RecentSignalView> recentSignals, List<ActivityMarkerView> activityMarkers,
+                           MarketComparisonView marketComparison, MethodologyView methodology) {
+            this(symbol, companyName, interval, intervalLabel, "Factory profile", available, candleTimestamp,
+                    freshness, headlineScore, rawScore, categories, indicators, candles, recentSignals,
+                    activityMarkers, marketComparison, IndicatorSettingsView.factory(interval), methodology);
+        }
+
         private static OutlookView unavailable(String symbol, IntervalDefinition interval) {
-            ScoreView score = TechnicalOutlookService.score(List.of());
-            return new OutlookView(symbol, symbol, interval.apiValue(), interval.label(), false, null,
+            AnalysisPreferencesService.IntervalProfile rules = AnalysisPreferencesService.factoryProfile(interval.timeInterval());
+            ScoreView score = TechnicalOutlookService.score(List.of(), rules);
+            return new OutlookView(symbol, symbol, interval.apiValue(), interval.label(), "Factory profile", false, null,
                     "No completed candles are available", score, score, List.of(), List.of(), List.of(),
                     List.of(), List.of(), MarketComparisonView.unavailable(new Benchmark("^GSPC", "S&P 500")),
+                    IndicatorSettingsView.from(rules),
                     new MethodologyView("Unavailable inputs are excluded.", "Categories are equally weighted.",
                             "Thresholds are symmetric.", "Descriptive rules only."));
         }
@@ -669,6 +781,42 @@ public class TechnicalOutlookService {
         private static MarketComparisonView unavailable(Benchmark benchmark) {
             return new MarketComparisonView(false, benchmark.symbol(), benchmark.name(), "UNAVAILABLE",
                     0, 0, "UNAVAILABLE", List.of(), List.of());
+        }
+    }
+    public record IndicatorSettingsView(
+            int rsiPeriod,
+            int atrPeriod,
+            int fastEmaPeriod,
+            int slowEmaPeriod,
+            int longSmaPeriod,
+            int macdFastPeriod,
+            int macdSlowPeriod,
+            int macdSignalPeriod,
+            int cciPeriod,
+            int bollingerPeriod,
+            double bollingerDeviation,
+            int volumePeriod,
+            int vwapPeriod,
+            int volumeProfilePeriod,
+            int supportResistancePeriod) {
+
+        private static IndicatorSettingsView from(AnalysisPreferencesService.IntervalProfile profile) {
+            return new IndicatorSettingsView(
+                    profile.rsiPeriod(), profile.atrPeriod(),
+                    profile.fastEmaPeriod(), profile.slowEmaPeriod(), profile.longSmaPeriod(),
+                    profile.macdFastPeriod(), profile.macdSlowPeriod(), profile.macdSignalPeriod(),
+                    profile.cciPeriod(), profile.bollingerPeriod(), profile.bollingerDeviation(),
+                    profile.volumePeriod(), profile.vwapPeriod(), profile.volumeProfilePeriod(),
+                    profile.supportResistancePeriod());
+        }
+
+        private static IndicatorSettingsView factory(String interval) {
+            TimeInterval timeInterval = switch (interval == null ? "" : interval.toLowerCase(Locale.ROOT)) {
+                case "1wk", "weekly" -> TimeInterval.WEEKLY;
+                case "1mo", "monthly" -> TimeInterval.MONTHLY;
+                default -> TimeInterval.DAILY;
+            };
+            return from(AnalysisPreferencesService.factoryProfile(timeInterval));
         }
     }
     public record MethodologyView(String rawVoteRule, String categoryRule, String thresholds,

@@ -85,6 +85,8 @@ class HistoricalElliottWaveServiceTest {
         );
 
         assertThat(detail.status()).isEqualTo("CONFIRMED");
+        assertThat(detail.interval()).isEqualTo("1wk");
+        assertThat(detail.intervalLabel()).isEqualTo("Weekly");
         assertThat(detail.tradeSignal()).isEqualTo(TradeSignal.SELL);
         assertThat(detail.confirmationTimestamp()).isEqualTo(7 * week);
         assertThat(detail.result().available()).isTrue();

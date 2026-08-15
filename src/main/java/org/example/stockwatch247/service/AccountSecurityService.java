@@ -157,17 +157,24 @@ public class AccountSecurityService {
     }
 
     @Transactional
-    public void updateAppearance(Long userId, String theme, String motiveColor, String correctiveColor) {
+    public void updateAppearance(Long userId,
+                                 String theme,
+                                 String motiveColor,
+                                 String correctiveColor,
+                                 String subwaveColor) {
         String normalizedTheme = "LIGHT".equalsIgnoreCase(theme) ? "LIGHT" : "DARK";
         String normalizedMotive = SecurityInputValidator.requireHexColor(motiveColor);
         String normalizedCorrective = SecurityInputValidator.requireHexColor(correctiveColor);
-        if (normalizedMotive.equals(normalizedCorrective)) {
-            throw new IllegalArgumentException("Choose two different Elliott Wave colors.");
+        String normalizedSubwave = SecurityInputValidator.requireHexColor(subwaveColor);
+        if (java.util.stream.Stream.of(normalizedMotive, normalizedCorrective, normalizedSubwave)
+                .distinct().count() != 3) {
+            throw new IllegalArgumentException("Choose three different Elliott Wave colors.");
         }
         User user = locked(userId);
         user.setThemePreference(normalizedTheme);
         user.setElliottMotiveColor(normalizedMotive);
         user.setElliottCorrectiveColor(normalizedCorrective);
+        user.setElliottSubwaveColor(normalizedSubwave);
         users.save(user);
     }
 

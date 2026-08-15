@@ -4,14 +4,60 @@
 <body class="settings-page">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 <main class="settings-shell">
-  <aside class="settings-sidebar"><p class="settings-sidebar-label">Settings</p><nav aria-label="Settings sections"><a class="settings-sidebar-link" th:classappend="${settingsTab == 'general'} ? ' active' : ''" th:href="@{/settings}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.7a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path></svg>General</a><a class="settings-sidebar-link" th:classappend="${settingsTab == 'appearance'} ? ' active' : ''" th:href="@{/settings/appearance}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a1.5 1.5 0 0 0 0-3H12a1.6 1.6 0 0 1 0-3.2h2.2A6.8 6.8 0 0 0 21 8c0-2.8-4-5-9-5Z"></path><circle cx="7.5" cy="9" r="1"></circle><circle cx="10.5" cy="6.5" r="1"></circle><circle cx="15" cy="7" r="1"></circle></svg>Appearance</a></nav><p class="settings-sidebar-note">Choose how StockWatch and its chart overlays look for your account.</p></aside>
+  <aside class="settings-sidebar"><p class="settings-sidebar-label">Settings</p><nav aria-label="Settings sections">
+    <a class="settings-sidebar-link" th:classappend="${settingsTab == 'general'} ? ' active' : ''" th:href="@{/settings}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.7a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path></svg>General</a>
+    <a class="settings-sidebar-link" th:classappend="${settingsTab == 'appearance'} ? ' active' : ''" th:href="@{/settings/appearance}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.5a1.5 1.5 0 0 0 0-3H12a1.6 1.6 0 0 1 0-3.2h2.2A6.8 6.8 0 0 0 21 8c0-2.8-4-5-9-5Z"></path><circle cx="7.5" cy="9" r="1"></circle><circle cx="10.5" cy="6.5" r="1"></circle><circle cx="15" cy="7" r="1"></circle></svg>Appearance</a>
+    <a class="settings-sidebar-link" th:classappend="${settingsTab == 'analysis'} ? ' active' : ''" th:href="@{/settings/analysis-alerts}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V9m5 9V5m5 13v-7m5 7V3"></path><path d="M2 21h20"></path></svg>Analysis &amp; Alerts</a>
+    <a class="settings-sidebar-link" th:classappend="${settingsTab == 'scoring'} ? ' active' : ''" th:href="@{/settings/scoring}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"></path><path d="M8 8h8M8 12h3m3 0h2M8 16h2m3 0h3"></path></svg>Scoring</a>
+    <a class="settings-sidebar-link" th:classappend="${settingsTab == 'candlestick-patterns'} ? ' active' : ''" th:href="@{/settings/candlestick-patterns}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18m-2-5h4V8H4zm8-13v18m-2-5h4V7h-4zm8-8v18m-2-6h4V9h-4z"></path></svg>Candlestick Patterns</a>
+    <a class="settings-sidebar-link" th:classappend="${settingsTab == 'detection'} ? ' active' : ''" th:href="@{/settings/detection}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5m0 14h16"></path><path d="m7 15 4-5 3 2 4-6"></path></svg>Detection</a>
+  </nav><p class="settings-sidebar-note" th:switch="${settingsTab}"><span th:case="'analysis'">Tune personal outlook calculations, signal resolution, and market email delivery.</span><span th:case="'scoring'">Choose the evidence and point weights shown on signal detail reports.</span><span th:case="'candlestick-patterns'">Define the exact candle geometry and prior price action required for every candlestick pattern.</span><span th:case="'detection'">Define how completed candles establish an uptrend or downtrend before a pattern is accepted.</span><span th:case="*">Choose how StockWatch and its chart overlays look for your account.</span></p></aside>
   <div class="settings-content" th:id="${settingsTab}">
-    <header class="settings-header"><div><p class="eyebrow">Your account</p><h1 th:text="${settingsTab == 'appearance'} ? 'Appearance' : 'General settings'">General settings</h1><p th:text="${settingsTab == 'appearance'} ? 'Set your default color mode and make Elliott Wave overlays unmistakable.' : 'Manage password protection, sign-in verification, sessions, and account data.'">Manage password protection, sign-in verification, sessions, and account data.</p></div><span class="settings-email" th:text="${user.email}">user@example.com</span></header>
+    <header class="settings-header"><div><p class="eyebrow">Your account</p>
+      <h1 id="settingsPageTitle" th:switch="${settingsTab}"><span th:case="'appearance'">Appearance</span><span th:case="'analysis'">Analysis &amp; Alerts</span><span th:case="'scoring'">Scoring settings</span><span th:case="'candlestick-patterns'">Candlestick Patterns</span><span th:case="'detection'">Detection settings</span><span th:case="*">General settings</span></h1>
+      <p id="settingsPageDescription" th:switch="${settingsTab}"><span th:case="'appearance'">Set your default color mode and make Elliott Wave overlays unmistakable.</span><span th:case="'analysis'">Control how future signals are evaluated, scored, and delivered.</span><span th:case="'scoring'">Customize the 100-point score shown for each signal type and interval.</span><span th:case="'candlestick-patterns'">Customize the exact candle measurements and prior price action that qualify every candlestick pattern.</span><span th:case="'detection'">Customize how prior price action qualifies as an uptrend or downtrend for candlestick detection.</span><span th:case="*">Manage password protection, sign-in verification, sessions, and account data.</span></p>
+    </div><span class="settings-email" th:text="${user.email}">user@example.com</span></header>
     <div th:if="${success}" class="settings-message success-msg" th:text="${success}"></div><div th:if="${error}" class="settings-message error-msg" th:text="${error}"></div><div th:if="${param.appearanceSaved}" class="settings-message success-msg">Appearance preferences applied.</div>
 
     <section th:if="${settingsTab == 'appearance'}" class="settings-card appearance-settings-card" id="appearance"><div class="settings-card-heading"><div><span class="settings-number">01</span><h2>Workspace appearance</h2></div><p>These account defaults follow you to every device.</p></div>
-      <form th:action="@{/settings/appearance}" method="post" class="appearance-settings-form"><fieldset class="appearance-fieldset"><legend>Color mode</legend><p>Choose the mode used when you sign in on a new device.</p><div class="theme-choice-grid"><label class="theme-choice"><input type="radio" name="theme" value="DARK" th:checked="${user.themePreference == 'DARK'}"><span class="theme-preview dark-preview"><i></i><i></i><i></i></span><strong>Dark</strong><small>Low-glare market workspace</small></label><label class="theme-choice"><input type="radio" name="theme" value="LIGHT" th:checked="${user.themePreference == 'LIGHT'}"><span class="theme-preview light-preview"><i></i><i></i><i></i></span><strong>Light</strong><small>Bright, high-contrast workspace</small></label></div></fieldset><fieldset class="appearance-fieldset"><legend>Elliott Wave overlays</legend><p>Motive I–V and corrective A–B–C paths use their own colors instead of candle-like red and green.</p><div class="elliott-color-grid"><label class="elliott-color-choice" for="elliottMotiveColor"><span><strong>Motive I–V</strong><small>Origin through the end of wave V</small></span><input id="elliottMotiveColor" type="color" name="elliottMotiveColor" th:value="${user.elliottMotiveColor}" value="#3B82F6" required></label><label class="elliott-color-choice" for="elliottCorrectiveColor"><span><strong>Corrective A–B–C</strong><small>Wave V through the corrective sequence</small></span><input id="elliottCorrectiveColor" type="color" name="elliottCorrectiveColor" th:value="${user.elliottCorrectiveColor}" value="#A855F7" required></label></div><p class="appearance-default-note">Defaults: electric blue <code>#3B82F6</code> for I–V and vivid violet <code>#A855F7</code> for A–B–C.</p></fieldset><button class="btn-accent appearance-apply-button" type="submit">Apply changes</button></form>
+      <form th:action="@{/settings/appearance}" method="post" class="appearance-settings-form">
+        <fieldset class="appearance-fieldset">
+          <legend>Color mode</legend>
+          <p>Choose the mode used when you sign in on a new device.</p>
+          <div class="theme-choice-grid">
+            <label class="theme-choice"><input type="radio" name="theme" value="DARK" th:checked="${user.themePreference == 'DARK'}"><span class="theme-preview dark-preview"><i></i><i></i><i></i></span><strong>Dark</strong><small>Low-glare market workspace</small></label>
+            <label class="theme-choice"><input type="radio" name="theme" value="LIGHT" th:checked="${user.themePreference == 'LIGHT'}"><span class="theme-preview light-preview"><i></i><i></i><i></i></span><strong>Light</strong><small>Bright, high-contrast workspace</small></label>
+          </div>
+        </fieldset>
+        <fieldset class="appearance-fieldset">
+          <legend>Elliott Wave overlays</legend>
+          <p>Choose separate colors for the main count and the smaller waves shown while you hover over a parent wave.</p>
+          <div class="elliott-color-grid">
+            <label class="elliott-color-choice" for="elliottMotiveColor"><span><strong>Motive I–V</strong><small>Origin through the end of wave V</small></span><input id="elliottMotiveColor" type="color" name="elliottMotiveColor" th:value="${user.elliottMotiveColor}" value="#3B82F6" required></label>
+            <label class="elliott-color-choice" for="elliottCorrectiveColor"><span><strong>Corrective A–B–C</strong><small>Wave V through the corrective sequence</small></span><input id="elliottCorrectiveColor" type="color" name="elliottCorrectiveColor" th:value="${user.elliottCorrectiveColor}" value="#A855F7" required></label>
+            <label class="elliott-color-choice" for="elliottSubwaveColor"><span><strong>Hovered subwaves</strong><small>Temporary i–v, a–c, or a–e count inside the wave under your pointer</small></span><input id="elliottSubwaveColor" type="color" name="elliottSubwaveColor" th:value="${user.elliottSubwaveColor}" value="#F59E0B" required></label>
+          </div>
+          <p class="appearance-default-note">Defaults: electric blue <code>#3B82F6</code> for I–V, vivid violet <code>#A855F7</code> for A–B–C, and amber <code>#F59E0B</code> for subwaves.</p>
+        </fieldset>
+        <button class="btn-accent appearance-apply-button" type="submit">Apply changes</button>
+      </form>
     </section>
+
+    <th:block th:if="${settingsTab == 'analysis'}">
+      <div th:replace="~{fragments/analysis-settings :: analysisSettings(${analysisPreferences})}"></div>
+    </th:block>
+
+    <th:block th:if="${settingsTab == 'detection'}">
+      <div th:replace="~{fragments/detection-settings :: detectionSettings(${analysisPreferences})}"></div>
+    </th:block>
+
+    <th:block th:if="${settingsTab == 'scoring'}">
+      <div th:replace="~{fragments/scoring-settings :: scoringSettings(${scoringPreferences})}"></div>
+    </th:block>
+
+    <th:block th:if="${settingsTab == 'candlestick-patterns'}">
+      <div th:replace="~{fragments/candlestick-pattern-settings :: candlestickPatternSettings(${candlestickPatternPreferences})}"></div>
+    </th:block>
 
     <section th:if="${settingsTab == 'general'}" class="settings-card" id="password"><div class="settings-card-heading"><div><span class="settings-number">01</span><h2>Password</h2></div><p>A verified email code expires after five minutes and can only be used once.</p></div>
       <div class="settings-two-column"><form th:action="@{/settings/password/code}" method="post" class="settings-form"><h3>1. Request a code</h3><div class="form-group"><label for="codeCurrentPassword">Current password</label><input id="codeCurrentPassword" type="password" name="currentPassword" required maxlength="72" autocomplete="current-password"></div><button class="btn-primary" type="submit">Send email code</button></form>
@@ -32,5 +78,45 @@
   </div>
 </main>
 <dialog id="deleteAccountDialog" class="settings-dialog"><form method="dialog" class="dialog-close-form"><button aria-label="Close deletion confirmation">×</button></form><div class="dialog-danger-mark" aria-hidden="true">!</div><h2>Schedule account deletion?</h2><p>You will be signed out immediately. Use the email link within seven days if you change your mind.</p><form th:action="@{/settings/delete}" method="post" class="settings-form"><div class="form-group"><label for="deleteConfirmation">Type DELETE to confirm</label><input id="deleteConfirmation" name="confirmation" required pattern="DELETE" autocomplete="off"></div><div class="form-group"><label for="deletePassword">Current password</label><input id="deletePassword" type="password" name="currentPassword" required maxlength="72" autocomplete="current-password"></div><div th:if="${user.mfaEnabled}" class="form-group"><label for="deleteCode">Authenticator or recovery code</label><input id="deleteCode" name="code" required maxlength="24" autocomplete="one-time-code"></div><button class="danger-button danger-button-full" type="submit">Schedule permanent deletion</button></form></dialog>
-<script th:attr="nonce=${cspNonce}">document.addEventListener('DOMContentLoaded',function(){const dialog=document.getElementById('deleteAccountDialog');const button=document.getElementById('openDeleteAccountDialog');if(dialog&&button){button.addEventListener('click',function(){dialog.showModal();});}});</script>
+<script th:attr="nonce=${cspNonce}">
+document.addEventListener('DOMContentLoaded', function () {
+  const deletionDialog = document.getElementById('deleteAccountDialog');
+  const deletionButton = document.getElementById('openDeleteAccountDialog');
+  if (deletionDialog && deletionButton) {
+    deletionButton.addEventListener('click', function () { deletionDialog.showModal(); });
+  }
+  const resetDialog = document.getElementById('analysisFactoryResetDialog');
+  const resetScope = document.getElementById('analysisFactoryResetScope');
+  const resetCopy = document.getElementById('analysisFactoryResetCopy');
+  if (resetDialog && resetScope && resetCopy) {
+    document.querySelectorAll('.analysis-reset-trigger').forEach(function (button) {
+      button.addEventListener('click', function () {
+        const scope = button.dataset.resetScope || 'all';
+        const label = button.dataset.resetLabel || 'selected';
+        resetScope.value = scope;
+        resetCopy.textContent = 'The ' + label.toLowerCase()
+                + ' preferences will be replaced with StockWatch factory defaults. Existing signals will not change.';
+        resetDialog.showModal();
+      });
+    });
+  }
+  const detectionResetDialog = document.getElementById('detectionFactoryResetDialog');
+  const detectionResetScope = document.getElementById('detectionFactoryResetScope');
+  const detectionResetCopy = document.getElementById('detectionFactoryResetCopy');
+  if (detectionResetDialog && detectionResetScope && detectionResetCopy) {
+    document.querySelectorAll('.detection-reset-trigger').forEach(function (button) {
+      button.addEventListener('click', function () {
+        const scope = button.dataset.resetScope || 'all';
+        const label = button.dataset.resetLabel || 'selected intervals';
+        detectionResetScope.value = scope;
+        detectionResetCopy.textContent = 'The ' + label.toLowerCase()
+                + ' candlestick detection rules will be replaced with StockWatch factory defaults. Other preferences will not change.';
+        detectionResetDialog.showModal();
+      });
+    });
+  }
+});
+</script>
+<script defer th:if="${settingsTab == 'scoring'}" th:src="@{/js/scoring-settings.js}"></script>
+<script defer th:if="${settingsTab == 'candlestick-patterns'}" th:src="@{/js/candlestick-pattern-settings.js}"></script>
 </body></html>

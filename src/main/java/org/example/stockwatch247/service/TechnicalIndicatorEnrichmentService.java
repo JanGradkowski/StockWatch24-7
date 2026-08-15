@@ -35,7 +35,6 @@ import java.util.Objects;
 public class TechnicalIndicatorEnrichmentService {
     private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int VOLUME_PROFILE_BIN_COUNT = 24;
-    private static final double VOLUME_PROFILE_VALUE_AREA_FRACTION = 0.70;
 
     public List<EnrichedCandle> enrichForSignalDetection(List<Candle> rawCandles) {
         return enrich(rawCandles, DEFAULT_SIGNAL_CANDLES);
@@ -62,7 +61,7 @@ public class TechnicalIndicatorEnrichmentService {
         return requiredInputCandles(latestCount, TechnicalIndicatorProfile.forElliott(interval));
     }
 
-    private int requiredInputCandles(int latestCount, TechnicalIndicatorProfile profile) {
+    public int requiredInputCandles(int latestCount, TechnicalIndicatorProfile profile) {
         if (latestCount <= 0) {
             return 0;
         }
@@ -86,6 +85,15 @@ public class TechnicalIndicatorEnrichmentService {
                 interval,
                 TechnicalIndicatorProfile.forInterval(interval)
         );
+    }
+
+    public List<EnrichedCandle> enrich(List<Candle> rawCandles,
+                                       int latestCount,
+                                       TechnicalIndicatorProfile profile) {
+        if (profile == null) {
+            throw new IllegalArgumentException("A technical indicator profile is required.");
+        }
+        return enrich(rawCandles, latestCount, profile.interval(), profile);
     }
 
     public List<EnrichedCandle> enrichForElliott(List<Candle> rawCandles, int latestCount) {
@@ -171,7 +179,8 @@ public class TechnicalIndicatorEnrichmentService {
             VolumeProfileSnapshot volumeProfile = volumeProfile(
                     candles,
                     index,
-                    profile.volumeProfilePeriod()
+                    profile.volumeProfilePeriod(),
+                    profile.volumeProfileValueAreaFraction()
             );
             enrichedCandles.add(new EnrichedCandle(
                     candle.getTimestamp(),
@@ -219,7 +228,8 @@ public class TechnicalIndicatorEnrichmentService {
      */
     private VolumeProfileSnapshot volumeProfile(List<Candle> candles,
                                                 int endIndex,
-                                                int period) {
+                                                int period,
+                                                double valueAreaFraction) {
         if (period <= 0 || endIndex + 1 < period) {
             return VolumeProfileSnapshot.unavailable();
         }
@@ -274,7 +284,7 @@ public class TechnicalIndicatorEnrichmentService {
         int valueAreaLowBin = pointOfControlBin;
         int valueAreaHighBin = pointOfControlBin;
         double includedVolume = volumeByPrice[pointOfControlBin];
-        double targetVolume = totalVolume * VOLUME_PROFILE_VALUE_AREA_FRACTION;
+        double targetVolume = totalVolume * valueAreaFraction;
         while (includedVolume < targetVolume
                 && (valueAreaLowBin > 0 || valueAreaHighBin < volumeByPrice.length - 1)) {
             double nextLowerVolume = valueAreaLowBin > 0

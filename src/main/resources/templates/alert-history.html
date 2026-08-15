@@ -54,7 +54,7 @@
             <span class="column-tag signal"
                   th:classappend="${column.alert().tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
                   th:text="${column.alert().tradeSignal()}">BUY</span>
-            <span class="column-tag interval" th:text="${column.alert().intervalLabel()}">1wk</span>
+            <span class="column-tag interval" th:text="${column.alert().intervalLabel()}">Weekly</span>
             <span th:if="${column.alert().researchHorizonLabel() != null}"
                   class="column-tag horizon"
                   th:title="${column.alert().researchHorizonSummary() + ' ' + column.alert().researchHorizonDisclaimer()}"
@@ -122,7 +122,6 @@
     </div>
   </section>
 
-  <a th:href="@{/home}" class="back-link history-back-link">← Back to dashboard</a>
 </main>
 </body>
 </html>

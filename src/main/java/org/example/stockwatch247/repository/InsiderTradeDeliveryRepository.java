@@ -28,6 +28,7 @@ public interface InsiderTradeDeliveryRepository extends JpaRepository<InsiderTra
             where subscription.user = :user
               and trade.transactionDate >= :earliestTransactionDate
               and delivery.readAt is null
+              and delivery.deletedAt is null
             order by delivery.createdAt desc, delivery.id desc
             """)
     List<InsiderTradeDelivery> findLatestUnreadForUser(
@@ -42,6 +43,7 @@ public interface InsiderTradeDeliveryRepository extends JpaRepository<InsiderTra
             join fetch delivery.trade trade
             join fetch trade.stockAsset
             where subscription.user = :user
+              and delivery.deletedAt is null
             order by delivery.createdAt desc, delivery.id desc
             """)
     List<InsiderTradeDelivery> findAllForUser(@Param("user") User user);
@@ -52,6 +54,7 @@ public interface InsiderTradeDeliveryRepository extends JpaRepository<InsiderTra
             join fetch delivery.subscription subscription
             where delivery.id = :deliveryId
               and subscription.user = :user
+              and delivery.deletedAt is null
             """)
     Optional<InsiderTradeDelivery> findOwnedByIdAndUser(
             @Param("deliveryId") Long deliveryId,
@@ -60,9 +63,22 @@ public interface InsiderTradeDeliveryRepository extends JpaRepository<InsiderTra
     @Query("""
             select delivery
             from InsiderTradeDelivery delivery
+            join delivery.subscription subscription
+            where delivery.id in :deliveryIds
+              and subscription.user = :user
+              and delivery.deletedAt is null
+            """)
+    List<InsiderTradeDelivery> findOwnedByIdsAndUser(
+            @Param("deliveryIds") List<Long> deliveryIds,
+            @Param("user") User user);
+
+    @Query("""
+            select delivery
+            from InsiderTradeDelivery delivery
             join fetch delivery.trade trade
             where delivery.subscription.user = :user
               and trade.id in :tradeIds
+              and delivery.deletedAt is null
             """)
     List<InsiderTradeDelivery> findOwnedByTradeIds(
             @Param("user") User user,
@@ -76,6 +92,7 @@ public interface InsiderTradeDeliveryRepository extends JpaRepository<InsiderTra
             where subscription.user = :user
               and trade.transactionDate >= :earliestTransactionDate
               and delivery.readAt is null
+              and delivery.deletedAt is null
             """)
     long countUnreadForUser(
             @Param("user") User user,
@@ -91,6 +108,7 @@ public interface InsiderTradeDeliveryRepository extends JpaRepository<InsiderTra
                 where subscription.user = :user
             )
               and delivery.readAt is null
+              and delivery.deletedAt is null
             """)
     int markAllUnreadForUser(
             @Param("user") User user,

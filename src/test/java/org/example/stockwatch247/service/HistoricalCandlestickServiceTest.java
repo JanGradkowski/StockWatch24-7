@@ -21,6 +21,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -39,6 +40,13 @@ class HistoricalCandlestickServiceTest {
         CandlePatternDetectionService detectionService = mock(CandlePatternDetectionService.class);
         CandleCompletionService completionService = mock(CandleCompletionService.class);
         List<Candle> candles = candles(symbol, "1d", 80);
+        candles.get(30).setHighPrice(105.0);
+        candles.get(30).setLowPrice(95.0);
+        candles.get(30).setClosePrice(100.0);
+        candles.get(31).setHighPrice(103.0);
+        candles.get(31).setLowPrice(99.0);
+        candles.get(31).setOpenPrice(102.0);
+        candles.get(31).setClosePrice(101.0);
         candles.get(40).setClosePrice(100.0);
         candles.get(50).setClosePrice(95.0);
         candles.get(60).setClosePrice(100.0);
@@ -47,20 +55,29 @@ class HistoricalCandlestickServiceTest {
         long successfulSellTimestamp = candles.get(40).getTimestamp();
         long successfulTimestamp = candles.get(60).getTimestamp();
         long pendingTimestamp = candles.get(77).getTimestamp();
+        long rejectedTimestamp = candles.get(30).getTimestamp();
 
         when(marketDataService.syncCandles(symbol, "1d", null))
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
-        when(enrichmentService.requiredInputCandles(68, TimeInterval.DAILY)).thenReturn(267);
+        when(enrichmentService.requiredInputCandles(95, TimeInterval.DAILY)).thenReturn(294);
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1d", PageRequest.of(0, 268))).thenReturn(candles.reversed());
+                symbol, "1d", PageRequest.of(0, 295))).thenReturn(candles.reversed());
         when(completionService.isComplete(
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.eq(TimeInterval.DAILY))).thenReturn(true);
         when(enrichmentService.enrich(candles, candles.size(), TimeInterval.DAILY)).thenReturn(enriched);
-        when(detectionService.detectAlertSignals(anyList())).thenAnswer(invocation -> {
+        when(detectionService.detectAlertSignals(anyList(), any())).thenAnswer(invocation -> {
             List<EnrichedCandle> context = invocation.getArgument(0);
             long timestamp = context.getLast().timestamp();
+            if (timestamp == rejectedTimestamp) {
+                return List.of(signal(
+                        CandlePattern.HANGING_MAN,
+                        TradeSignal.SELL,
+                        timestamp,
+                        100.0
+                ));
+            }
             if (timestamp == successfulSellTimestamp) {
                 return List.of(signal(
                         CandlePattern.BEARISH_HARAMI,
@@ -109,6 +126,8 @@ class HistoricalCandlestickServiceTest {
         assertThat(first.evaluationHorizonCandles()).isEqualTo(10);
         assertThat(first.successThresholdPercent()).isEqualTo(3.0);
         assertThat(first.signals()).hasSize(3);
+        assertThat(first.signals())
+                .noneMatch(signal -> signal.signalTimestamp() == rejectedTimestamp);
         assertThat(first.signals()).filteredOn(signal -> signal.signalTimestamp() == successfulSellTimestamp)
                 .singleElement()
                 .satisfies(signal -> {
@@ -140,7 +159,7 @@ class HistoricalCandlestickServiceTest {
         assertThat(second.signals()).hasSize(3);
         verify(marketDataService, times(2)).syncCandles(symbol, "1d", null);
         verify(candleRepository, times(2)).findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1d", PageRequest.of(0, 268));
+                symbol, "1d", PageRequest.of(0, 295));
     }
 
     @Test
@@ -248,6 +267,7 @@ class HistoricalCandlestickServiceTest {
         when(signal.entryClose()).thenReturn(candles.get(10).getClosePrice());
         when(signal.formationCandles()).thenReturn(2);
         when(signal.tradeSignal()).thenReturn(TradeSignal.SELL);
+        when(signal.trendStartTimestamp()).thenReturn(candles.get(4).getTimestamp());
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc("AAPL", "1d"))
                 .thenReturn(candles);
         when(completionService.isComplete(

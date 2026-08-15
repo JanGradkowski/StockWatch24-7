@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -347,10 +348,14 @@ public class TwelveDataService {
             return root;
         } catch (RestClientResponseException e) {
             throw new IllegalStateException("Twelve Data request failed: " + describeHttpError(e), e);
+        } catch (RestClientException e) {
+            throw new IllegalStateException(
+                    "Twelve Data response could not be read: " + describeClientFailure(e), e);
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
-            throw new IllegalStateException("Twelve Data request failed.", e);
+            throw new IllegalStateException(
+                    "Twelve Data response could not be parsed: " + describeClientFailure(e), e);
         }
     }
 
@@ -649,6 +654,29 @@ public class TwelveDataService {
             return e.getStatusCode().value() + " " + e.getStatusText();
         }
         return e.getStatusCode().value() + " " + response.replaceAll("\\s+", " ").trim();
+    }
+
+    private String describeClientFailure(Throwable failure) {
+        Throwable rootCause = failure;
+        while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+            rootCause = rootCause.getCause();
+        }
+
+        String type = rootCause.getClass().getSimpleName();
+        String message = sanitizeDiagnostic(rootCause.getMessage());
+        return message.isBlank() ? type : type + ": " + message;
+    }
+
+    private String sanitizeDiagnostic(String message) {
+        if (message == null || message.isBlank()) {
+            return "";
+        }
+        String sanitized = message.replaceAll("(?i)(apikey=)[^&\\s\\\"]+", "$1[redacted]");
+        if (apiKey != null && !apiKey.isBlank()) {
+            sanitized = sanitized.replace(apiKey, "[redacted]");
+        }
+        sanitized = sanitized.replaceAll("\\s+", " ").trim();
+        return sanitized.length() <= 300 ? sanitized : sanitized.substring(0, 297) + "...";
     }
 
     private String stripTrailingSlash(String value) {

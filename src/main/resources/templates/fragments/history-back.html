@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<th:block th:fragment="historyBack(fallbackUrl)">
+  <a class="history-back-button"
+     th:href="${fallbackUrl}"
+     data-history-back
+     aria-label="Go back to the previous page"
+     title="Go back">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M14.5 5 7.5 12l7 7"></path>
+      <path d="M8 12h10"></path>
+    </svg>
+  </a>
+  <script defer th:src="@{/js/history-back.js}"></script>
+</th:block>
+</body>
+</html>

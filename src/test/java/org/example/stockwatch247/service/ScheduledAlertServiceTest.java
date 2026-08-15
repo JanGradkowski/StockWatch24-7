@@ -55,7 +55,16 @@ class ScheduledAlertServiceTest {
         AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
         AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        CandlePatternDetectionService detectionService = mock(CandlePatternDetectionService.class);
         AlertRule rule = rule(symbol, TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        DetectedSignal lowScoreSignal = new DetectedSignal(
+                CandlePattern.BULLISH_ENGULFING,
+                TradeSignal.BUY,
+                SignalStength.LOW_CONFIDENCE,
+                70,
+                List.of("Pattern quality +20: validated low-score fixture"),
+                5 * 86_400L,
+                104.0);
 
         when(marketDataService.syncCandles(symbol, "1d", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(
@@ -73,9 +82,12 @@ class ScheduledAlertServiceTest {
                 symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
         when(alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(any(), any(), any()))
                 .thenReturn(false);
+        when(detectionService.detectAlertSignalsFactory(any(), eq(TimeInterval.DAILY)))
+                .thenReturn(List.of(lowScoreSignal));
 
         ScheduledAlertService service = service(
-                alertRuleRepository, alertEventRepository, candleRepository, marketDataService, notificationService);
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, detectionService, new ElliottWaveDetectionService());
 
         service.processSymbolInterval(symbol, TimeInterval.DAILY);
 
@@ -125,7 +137,8 @@ class ScheduledAlertServiceTest {
                 symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
         when(alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(any(), any(), any()))
                 .thenReturn(false);
-        when(detectionService.detectAlertSignals(any())).thenReturn(List.of(qualifiedSignal));
+        when(detectionService.detectAlertSignalsFactory(any(), eq(TimeInterval.DAILY)))
+                .thenReturn(List.of(qualifiedSignal));
 
         ScheduledAlertService service = service(
                 alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
@@ -137,7 +150,7 @@ class ScheduledAlertServiceTest {
                 symbol, "1d", scheduledFor.getEpochSecond(), PageRequest.of(0, 299));
         verify(candleRepository, never()).findBySymbolAndTimeIntervalOrderByTimestampDesc(
                 symbol, "1d", PageRequest.of(0, 299));
-        verify(detectionService).detectAlertSignals(any());
+        verify(detectionService).detectAlertSignalsFactory(any(), eq(TimeInterval.DAILY));
         verify(notificationService).sendSignalEmail(eq(rule), eq(qualifiedSignal), any(AlertEvent.class));
         verify(alertEventRepository).save(any());
     }
@@ -164,7 +177,8 @@ class ScheduledAlertServiceTest {
                 ));
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
-        when(detectionService.detectAlertSignals(any())).thenReturn(List.of());
+        when(detectionService.detectAlertSignalsFactory(any(), eq(TimeInterval.DAILY)))
+                .thenReturn(List.of());
 
         ScheduledAlertService service = new ScheduledAlertService(
                 alertRuleRepository,
@@ -189,7 +203,8 @@ class ScheduledAlertServiceTest {
         service.processSymbolInterval(symbol, TimeInterval.DAILY);
 
         ArgumentCaptor<List<EnrichedCandle>> assetCandles = ArgumentCaptor.captor();
-        verify(detectionService).detectAlertSignals(assetCandles.capture());
+        verify(detectionService).detectAlertSignalsFactory(
+                assetCandles.capture(), eq(TimeInterval.DAILY));
         assertThat(assetCandles.getValue())
                 .extracting(EnrichedCandle::close)
                 .containsExactly(100.0, 102.0);

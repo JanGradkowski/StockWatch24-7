@@ -8,16 +8,38 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.URLDecoder;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class TwelveDataTimeSeriesPaginationTest {
+
+    @Test
+    void reportsTheTransportRootCauseWithoutExposingTheApiKey() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        server.expect(request -> assertThat(request.getURI().getPath()).isEqualTo("/time_series"))
+                .andRespond(request -> {
+                    throw new SocketTimeoutException("Read timed out");
+                });
+        TwelveDataService service = new TwelveDataService(
+                restTemplate, new ObjectMapper(), mock(StockAssetRepository.class),
+                "highly-secret-test-key", "https://api.twelvedata.com");
+
+        assertThatThrownBy(() -> service.getTimeSeries("AAPL", "1week", 1000))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Twelve Data response could not be read: SocketTimeoutException: Read timed out")
+                .hasMessageNotContaining("highly-secret-test-key")
+                .hasMessageNotContaining("apikey=");
+        server.verify();
+    }
 
     @Test
     void sendsAnExclusiveHistoricalCursorAndFiltersAnyBoundaryCandle() {

@@ -29,22 +29,38 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             String elliottCycleKey,
             ElliottSignalStage elliottSignalStage);
 
-    long countByAlertRule(AlertRule alertRule);
+    @Query("select count(event) from AlertEvent event where event.alertRule = :alertRule and event.deletedAt is null")
+    long countByAlertRule(@Param("alertRule") AlertRule alertRule);
 
-    long countByAlertRuleAndReadAtIsNull(AlertRule alertRule);
+    @Query("select count(event) from AlertEvent event where event.alertRule = :alertRule and event.readAt is null and event.deletedAt is null")
+    long countByAlertRuleAndReadAtIsNull(@Param("alertRule") AlertRule alertRule);
 
-    List<AlertEvent> findByAlertRuleOrderBySignalCandleTimestampDesc(AlertRule alertRule);
+    @Query("select event from AlertEvent event where event.alertRule = :alertRule and event.deletedAt is null order by event.signalCandleTimestamp desc")
+    List<AlertEvent> findByAlertRuleOrderBySignalCandleTimestampDesc(
+            @Param("alertRule") AlertRule alertRule);
 
     @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
+    @Query("""
+            select event
+            from AlertEvent event
+            join event.alertRule rule
+            where rule.user = :user
+              and rule.isActive = true
+              and event.readAt is null
+              and event.deletedAt is null
+            order by event.sentAt desc, event.id desc
+            """)
     List<AlertEvent> findByAlertRule_UserAndAlertRule_IsActiveTrueAndReadAtIsNullOrderBySentAtDescIdDesc(
-            User user,
+            @Param("user") User user,
             Pageable pageable);
 
     @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
-    Page<AlertEvent> findByAlertRule_User(User user, Pageable pageable);
+    @Query("select event from AlertEvent event where event.alertRule.user = :user and event.deletedAt is null")
+    Page<AlertEvent> findByAlertRule_User(@Param("user") User user, Pageable pageable);
 
     @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
-    List<AlertEvent> findAllByAlertRule_User(User user);
+    @Query("select event from AlertEvent event where event.alertRule.user = :user and event.deletedAt is null")
+    List<AlertEvent> findAllByAlertRule_User(@Param("user") User user);
 
     @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
     @Query("""
@@ -56,6 +72,7 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
               and lower(asset.tickerSymbol) = lower(:symbol)
               and rule.interval = :interval
               and rule.patternFamily = :family
+              and event.deletedAt is null
               and event.elliottCycleKey is not null
               and event.elliottSignalStage is not null
             order by event.signalCandleTimestamp, event.id
@@ -73,8 +90,21 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             join fetch rule.stockAsset
             where event.id = :eventId
               and rule.user = :user
+              and event.deletedAt is null
             """)
     Optional<AlertEvent> findOwnedByIdAndUser(@Param("eventId") Long eventId, @Param("user") User user);
+
+    @Query("""
+            select event
+            from AlertEvent event
+            join event.alertRule rule
+            where event.id in :eventIds
+              and rule.user = :user
+              and event.deletedAt is null
+            """)
+    List<AlertEvent> findOwnedByIdsAndUser(
+            @Param("eventIds") List<Long> eventIds,
+            @Param("user") User user);
 
     @EntityGraph(attributePaths = {"alertRule", "alertRule.user", "alertRule.stockAsset"})
     @Query("""
@@ -85,6 +115,7 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             where lower(asset.tickerSymbol) = lower(:symbol)
               and rule.interval = :interval
               and event.lifecycleStatus = :status
+              and event.deletedAt is null
               and event.confirmationWindowCandles is not null
               and event.patternHigh is not null
               and event.patternLow is not null
@@ -105,6 +136,7 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
               and rule.interval = :interval
               and rule.patternFamily = :family
               and event.lifecycleStatus = :status
+              and event.deletedAt is null
               and (event.confirmationWindowCandles is null or event.elliottCycleKey is null)
             order by event.signalCandleTimestamp, event.id
             """)

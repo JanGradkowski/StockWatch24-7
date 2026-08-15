@@ -263,6 +263,14 @@ public class YahooFinanceService {
 
         List<MarketDataBar> bars = new ArrayList<>();
         for (int index = 0; index < timestamps.size(); index++) {
+            JsonNode timestampNode = timestamps.get(index);
+            if (timestampNode == null || !timestampNode.isNumber()) {
+                continue;
+            }
+            long providerTimestamp = timestampNode.asLong();
+            if (providerTimestamp <= 0L) {
+                continue;
+            }
             Optional<Double> open = numberAt(opens, index);
             Optional<Double> high = numberAt(highs, index);
             Optional<Double> low = numberAt(lows, index);
@@ -274,7 +282,6 @@ public class YahooFinanceService {
                 continue;
             }
 
-            long providerTimestamp = timestamps.get(index).asLong();
             if (!isCanonicalHigherIntervalTimestamp(providerTimestamp, yahooInterval)) {
                 continue;
             }

@@ -16,6 +16,28 @@ class CandlePatternDetectionServiceTest {
     private final CandlePatternDetectionService detectionService = new CandlePatternDetectionService();
 
     @Test
+    void customDefinitionCanDisableThePriorTrendGateForOnePattern() {
+        List<EnrichedCandle> candles = List.of(
+                plain(1, 100, 101, 98, 99),
+                plain(2, 98.5, 101, 98, 100.5)
+        );
+        var factory = CandlestickPatternPreferencesService.factoryPreferences();
+        var profiles = factory.profiles().stream().map(profile -> profile.pattern() == CandlePattern.BULLISH_ENGULFING
+                ? new CandlestickPatternPreferencesService.PatternProfile(
+                profile.pattern(), profile.key(), profile.label(), profile.formation(), profile.description(),
+                profile.fixedRules(), CandlestickPatternPreferencesService.TrendRequirement.NONE,
+                profile.factoryTrendRequirement(), profile.settings(), false)
+                : profile).toList();
+        var custom = new CandlestickPatternPreferencesService.PreferencesView(
+                factory.version(), true, profiles, null);
+
+        assertThat(detectionService.detectAlertSignals(candles)).isEmpty();
+        assertThat(detectionService.detectAlertSignals(candles,
+                CandlePatternDetectionService.TrendDetectionRules.factory(), custom))
+                .anyMatch(signal -> signal.pattern() == CandlePattern.BULLISH_ENGULFING);
+    }
+
+    @Test
     void detectsBullishEngulfingAfterDeclineAndStoresSevenV4ScoreFamilies() {
         List<EnrichedCandle> candles = List.of(
                 candle(1, 110, 111, 107, 108, 1_000, 1_000, 48, 109, 98, 120, 5),
@@ -50,6 +72,76 @@ class CandlePatternDetectionServiceTest {
                 .sum()).isCloseTo(100.0, within(0.001));
         assertThat(detectionService.detectAlertSignals(candles))
                 .anyMatch(detected -> detected.pattern() == CandlePattern.BULLISH_ENGULFING);
+    }
+
+    @Test
+    void appliesTheRequestedTrendWindowAndMoveRulesWithoutChangingFactoryDetection() {
+        List<EnrichedCandle> candles = List.of(
+                plain(1, 110, 111, 107, 108),
+                plain(2, 108, 109, 104, 105),
+                plain(3, 105, 106, 101, 102),
+                plain(4, 103, 104, 98, 99),
+                plain(5, 98, 105, 97, 104)
+        );
+
+        assertThat(detectionService.detectAlertSignals(candles))
+                .anyMatch(signal -> signal.pattern() == CandlePattern.BULLISH_ENGULFING);
+        assertThat(detectionService.detectAlertSignals(candles,
+                new CandlePatternDetectionService.TrendDetectionRules(4, 6, 1.5)))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.BULLISH_ENGULFING);
+        assertThat(detectionService.detectAlertSignals(candles,
+                new CandlePatternDetectionService.TrendDetectionRules(3, 5, 20.0)))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.BULLISH_ENGULFING);
+    }
+
+    @Test
+    void minimumAndMaximumTrendWindowsBothAffectDetectionWithFullHistoryAvailable() {
+        List<EnrichedCandle> candles = List.of(
+                plain(1, 104, 106, 103, 105),
+                plain(2, 109, 111, 108, 110),
+                plain(3, 114, 116, 113, 115),
+                plain(4, 111, 112, 109, 110),
+                plain(5, 106, 107, 104, 105),
+                plain(6, 101, 102, 99, 100),
+                plain(7, 101, 102, 98, 99),
+                plain(8, 98, 103, 97, 102)
+        );
+
+        assertThat(detectionService.detectAlertSignals(candles,
+                new CandlePatternDetectionService.TrendDetectionRules(3, 5, 1.5)))
+                .anyMatch(signal -> signal.pattern() == CandlePattern.BULLISH_ENGULFING);
+        assertThat(detectionService.detectAlertSignals(candles,
+                new CandlePatternDetectionService.TrendDetectionRules(4, 6, 1.5)))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.BULLISH_ENGULFING);
+    }
+
+    @Test
+    void geometryResearchCandidatesReproduceFactoryPatternAcceptance() {
+        List<EnrichedCandle> candles = List.of(
+                plain(1, 110, 111, 107, 108),
+                plain(2, 108, 109, 104, 105),
+                plain(3, 105, 106, 101, 102),
+                plain(4, 103, 104, 98, 99),
+                plain(5, 98, 105, 97, 104)
+        );
+        CandlePatternDetectionService.TrendDetectionRules rules =
+                CandlePatternDetectionService.TrendDetectionRules.factory();
+
+        List<String> acceptedGeometry = detectionService
+                .geometricCandidatesAt(candles, candles.size() - 1).stream()
+                .filter(candidate -> candidate.accepts(detectionService.assessPreparedPriorTrend(
+                        candles,
+                        candles.size() - candidate.patternCandleCount(),
+                        rules)))
+                .map(candidate -> candidate.pattern() + ":" + candidate.tradeSignal())
+                .sorted()
+                .toList();
+        List<String> production = detectionService.detectAlertSignals(candles, rules).stream()
+                .map(signal -> signal.pattern() + ":" + signal.tradeSignal())
+                .sorted()
+                .toList();
+
+        assertThat(acceptedGeometry).containsExactlyElementsOf(production);
     }
 
     @Test

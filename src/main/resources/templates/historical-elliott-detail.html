@@ -6,6 +6,8 @@
   <title th:text="${wave.symbol() + ' Elliott Wave — Historical signal'}">Historical Elliott Wave</title>
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
+  <script th:src="@{/js/elliott-subwave-overlay.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -31,16 +33,16 @@
         <span class="signal-report-tag direction"
               th:classappend="${wave.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
               th:text="${wave.tradeSignal()}">SELL</span>
-        <span class="signal-report-tag interval" th:text="${wave.interval()}">1wk</span>
+        <span class="signal-report-tag interval" th:text="${wave.intervalLabel()}">Weekly</span>
         <span class="signal-report-tag historical-outcome-pill"
               th:classappend="${wave.status() == 'CONFIRMED'} ? ' confirmed' : ' pending'"
               th:text="${wave.statusLabel()}">Confirmed</span>
         <span class="signal-report-tag" th:text="${wave.signalPeriodLabel()}">Week of 1 Jan 2018</span>
-        <span class="signal-report-tag" th:text="${wave.scoreVersion() + ' ' + wave.qualityScore() + '/100'}">ELLIOTT_V1 90/100</span>
+        <span class="signal-report-tag" th:text="${wave.scoreVersion() + ' ' + displayScore.score() + '/100'}">ELLIOTT_V1 90/100</span>
+        <span th:if="${displayScore.customApplied()}" class="signal-report-tag">Custom scoring weights</span>
       </div>
     </div>
     <div class="signal-report-actions">
-      <a th:href="${returnUrl}" class="btn-secondary">&larr; Back to workspace</a>
       <a th:href="@{/stock/{symbol}(symbol=${wave.symbol()})}" class="btn-primary">
         Open workspace <span class="button-arrow" aria-hidden="true">&rarr;</span>
       </a>
@@ -86,34 +88,38 @@
        role="tabpanel"
        aria-labelledby="graphicalOutlookTab">
     <section class="signal-score-layout" aria-labelledby="elliott-setup-heading">
-      <article class="signal-score-card good">
+      <article class="signal-score-card" th:classappend="${' ' + displayScore.band()}">
         <div class="signal-score-card-topline">
           <div>
             <span class="signal-section-kicker">Elliott confluence at detection</span>
             <h2 id="elliott-setup-heading">Setup score</h2>
           </div>
           <span class="signal-confidence-pill"
-                th:text="${wave.qualityScore() >= 85 ? 'Strong confluence' : (wave.qualityScore() >= 70 ? 'Moderate confluence' : 'Reduced confluence')}">
+                th:text="${displayScore.strengthLabel()}">
             Strong confluence
           </span>
         </div>
         <div class="signal-score-visual">
           <div class="signal-score-orbit" aria-hidden="true">
             <div class="signal-score-orbit-core">
-              <strong th:text="${wave.qualityScore()}">82</strong><span>/100</span>
+              <strong th:text="${displayScore.score()}">82</strong><span>/100</span>
             </div>
           </div>
           <div class="signal-score-summary">
-            <p>The score combines structural Elliott rules, wave proportions, pivot quality, and confirmation evidence.</p>
+            <p th:text="${displayScore.explanation()}">The score combines structural Elliott rules, wave proportions, pivot quality, and confirmation evidence.</p>
+            <p th:if="${displayScore.customApplied() and displayScore.score() != wave.qualityScore()}"
+               class="signal-factory-score-note">Original reconstructed score:
+              <strong th:text="${wave.qualityScore() + '/100'}">82/100</strong>. Your current weights only change this displayed report.
+            </p>
             <p>It measures technical confluence, not probability of profit.</p>
             <div class="signal-score-rail"
                  role="meter"
                  aria-valuemin="0"
                  aria-valuemax="100"
-                 th:attr="aria-valuenow=${wave.qualityScore()},aria-label=${'Setup score ' + wave.qualityScore() + ' out of 100'}">
+                 th:attr="aria-valuenow=${displayScore.score()},aria-label=${'Setup score ' + displayScore.score() + ' out of 100'}">
               <span th:each="segment : ${#numbers.sequence(1, 20)}"
                     class="signal-score-segment"
-                    th:classappend="${wave.qualityScore() >= segment * 5} ? ' active' : ''"></span>
+                    th:classappend="${displayScore.score() >= segment * 5} ? ' active' : ''"></span>
             </div>
           </div>
         </div>
@@ -147,16 +153,17 @@
           <h2 id="elliott-chart-heading">Price action and Elliott pivots</h2>
           <p>Blue marks the motive I&ndash;V structure; purple marks A&ndash;B&ndash;C when present.</p>
         </div>
-        <span class="signal-chart-cache-badge">Cached candles only &middot; no additional API request</span>
+        <span class="signal-chart-cache-badge">Hover a parent wave to reveal its lower-degree count</span>
       </div>
       <div class="signal-chart-legend" aria-label="Elliott chart legend">
         <span><i class="signal-chart-key motive" aria-hidden="true"></i>Motive I&ndash;V</span>
         <span><i class="signal-chart-key corrective" aria-hidden="true"></i>Corrective A&ndash;B&ndash;C</span>
+        <span><i class="signal-chart-key subwave" aria-hidden="true"></i>Subwaves on hover</span>
         <span><i class="signal-chart-key detection" aria-hidden="true"></i>Confirmation candle</span>
       </div>
       <div id="historicalElliottDetailChart"
            class="historical-elliott-detail-chart"
-           role="img"
+           role="group"
            th:attr="aria-label=${wave.stageLabel() + ' historical Elliott chart for ' + wave.symbol()}"></div>
     </section>
   </div>
@@ -219,21 +226,21 @@
           <h2 id="elliott-evidence-heading">Why this score</h2>
           <p>The original V1 evidence is reconstructed from completed cached candles.</p>
         </div>
-        <span class="evidence-count"><span th:text="${wave.scoreSections().size()}">7</span>&nbsp;categories</span>
+        <span class="evidence-count"><span th:text="${displayScore.sections().size()}">7</span>&nbsp;categories</span>
       </div>
       <div class="signal-evidence-grid">
-        <article class="signal-evidence-card" th:each="section, sectionStat : ${wave.scoreSections()}">
+        <article class="signal-evidence-card" th:each="section, sectionStat : ${displayScore.sections()}">
           <div class="evidence-card-topline">
             <span class="evidence-number" th:text="${#numbers.formatInteger(sectionStat.count, 2)}">01</span>
             <span class="evidence-category" th:text="${section.category()}">Structural / pivot quality</span>
             <span class="evidence-score-badge" th:text="${section.scoreLabel()}">24/30</span>
-            <span class="evidence-impact" th:text="${section.status()}">Partial support</span>
+            <span class="evidence-impact" th:text="${section.statusLabel()}">Partial support</span>
           </div>
           <ul class="evidence-detail-list">
             <li th:each="detail : ${section.details()}">
               <div class="evidence-detail-heading">
                 <strong th:text="${detail.label()}">Observation</strong>
-                <span th:if="${detail.score() != null}" th:text="${detail.score() + ' pts'}">3/5 pts</span>
+                <span th:if="${detail.scoreLabel() != null}" th:text="${detail.scoreLabel() + ' pts'}">3/5 pts</span>
               </div>
               <p th:text="${detail.text()}">Evidence detail.</p>
             </li>
@@ -367,6 +374,11 @@
     const points = /*[[${wave.points()}]]*/ [];
     const confirmationTimestamp = /*[[${wave.confirmationTimestamp()}]]*/ null;
     const tradeSignal = /*[[${wave.tradeSignal().name()}]]*/ 'BUY';
+    const rootInterval = /*[[${wave.interval()}]]*/ '1wk';
+    const symbol = /*[[${wave.symbol()}]]*/ '';
+    const motiveColor = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
+    const correctiveColor = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
+    const subwaveColor = /*[[${elliottSubwaveColor}]]*/ '#F59E0B';
     const container = document.getElementById('historicalElliottDetailChart');
     if (!container || !Array.isArray(candles) || candles.length === 0) return;
     const light = document.documentElement.dataset.theme === 'light';
@@ -387,23 +399,52 @@
     });
     const chartDate = timestamp => new Date(Number(timestamp) * 1000).toISOString().slice(0, 10);
     candleSeries.setData(candles.map(candle => ({ time: chartDate(candle.timestamp), open: candle.open, high: candle.high, low: candle.low, close: candle.close })));
+    const rootSeries = [];
     const renderWave = (wavePoints, color) => {
-      if (wavePoints.length < 2) return;
+      if (wavePoints.length < 2) return null;
       const series = chart.addLineSeries({ color, lineWidth: 3, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
       series.setData(wavePoints.map(point => ({ time: chartDate(point.timestamp), value: point.price })));
       series.setMarkers(wavePoints.filter(point => point.label).map(point => ({
         time: chartDate(point.timestamp), position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar', color, shape: 'circle', text: point.label
       })));
+      rootSeries.push(series);
+      return series;
     };
-    renderWave(points.slice(0, 6), light ? '#2476df' : '#55a0ff');
-    if (points.length > 6) renderWave(points.slice(5), light ? '#8650d2' : '#b987ff');
+    renderWave(points.slice(0, 6), motiveColor);
+    if (points.length > 6) renderWave(points.slice(5), correctiveColor);
+    document.querySelectorAll('.signal-chart-key.motive').forEach(key => { key.style.backgroundColor = motiveColor; });
+    document.querySelectorAll('.signal-chart-key.corrective').forEach(key => { key.style.backgroundColor = correctiveColor; });
+    document.querySelectorAll('.signal-chart-key.subwave').forEach(key => { key.style.backgroundColor = subwaveColor; });
     const confirmation = candles.find(candle => Number(candle.timestamp) === Number(confirmationTimestamp));
     if (confirmation) {
       const series = chart.addLineSeries({ color: 'rgba(0,0,0,0)', crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
       series.setData([{ time: chartDate(confirmation.timestamp), value: confirmation.close }]);
       series.setMarkers([{ time: chartDate(confirmation.timestamp), position: tradeSignal === 'BUY' ? 'belowBar' : 'aboveBar', color: light ? '#a86700' : '#ffbd59', shape: tradeSignal === 'BUY' ? 'arrowUp' : 'arrowDown', text: `${tradeSignal} confirmed` }]);
+      rootSeries.push(series);
     }
     chart.timeScale().fitContent();
+    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
+      new StockWatchFibonacciDrawingTool({
+        chart,
+        series: candleSeries,
+        container,
+        storageKey: `${window.location.pathname}:elliott`
+      });
+    }
+    if (typeof StockWatchElliottSubwaveOverlay !== 'undefined') {
+      new StockWatchElliottSubwaveOverlay({
+        chart,
+        candleSeries,
+        container,
+        symbol,
+        interval: rootInterval,
+        points,
+        asOfTimestamp: confirmationTimestamp || points[points.length - 1]?.timestamp,
+        renderTime: chartDate,
+        color: subwaveColor,
+        autoSubscribe: true
+      });
+    }
     if (typeof ResizeObserver !== 'undefined') {
       new ResizeObserver(entries => {
         const bounds = entries[0]?.contentRect;

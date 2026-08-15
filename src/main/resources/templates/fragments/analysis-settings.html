@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="analysisSettings(preferences)" class="analysis-settings-stack">
+  <section class="settings-card analysis-profile-overview">
+    <div class="settings-card-heading">
+      <div><span class="settings-number">01</span><h2>Personal analysis profile</h2></div>
+      <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
+            th:text="${preferences.profileLabel()}">Factory profile</span>
+    </div>
+    <p class="analysis-settings-intro">Changes apply to future technical outlook calculations and newly detected signals. Existing signals keep the score, lifecycle rules, and profile snapshot recorded when they were created.</p>
+    <div class="analysis-safety-strip">
+      <strong>Completed candles only</strong>
+      <span>Percentage boundaries supplement structural rules. Elliott structure breaks always invalidate first.</span>
+      <span>Unavailable indicators are excluded from the score denominator.</span>
+    </div>
+  </section>
+
+  <form th:action="@{/settings/analysis-alerts}" method="post" class="analysis-preferences-form">
+    <section class="settings-card" id="delivery-preferences">
+      <div class="settings-card-heading">
+        <div><span class="settings-number">02</span><h2>Market email delivery</h2></div>
+        <p>Every event remains available on the website. These switches control additional market emails.</p>
+      </div>
+      <div class="delivery-preference-grid">
+        <fieldset><legend>New activity</legend>
+          <label><input type="checkbox" name="email.newCandlestick" th:checked="${preferences.email().newCandlestick()}"><span><strong>Candlestick signals</strong><small>New detected patterns</small></span></label>
+          <label><input type="checkbox" name="email.newElliott" th:checked="${preferences.email().newElliott()}"><span><strong>Elliott Wave signals</strong><small>Actionable Wave V and correction signals</small></span></label>
+          <label><input type="checkbox" name="email.insider" th:checked="${preferences.email().insider()}"><span><strong>Corporate insider activity</strong><small>Filed insider purchases and sales</small></span></label>
+          <label><input type="checkbox" name="email.congressional" th:checked="${preferences.email().congressional()}"><span><strong>Congressional activity</strong><small>New public transaction disclosures</small></span></label>
+        </fieldset>
+        <fieldset><legend>Signal resolution</legend>
+          <label><input type="checkbox" name="email.confirmed" th:checked="${preferences.email().confirmed()}"><span><strong>Confirmed</strong><small>Expected follow-through occurred</small></span></label>
+          <label><input type="checkbox" name="email.invalidated" th:checked="${preferences.email().invalidated()}"><span><strong>Invalidated</strong><small>The opposite boundary or structure broke</small></span></label>
+          <label><input type="checkbox" name="email.expired" th:checked="${preferences.email().expired()}"><span><strong>Rejected / expired</strong><small>The next-candle gate failed or the resolution window ended</small></span></label>
+        </fieldset>
+        <fieldset><legend>Intervals</legend>
+          <label><input type="checkbox" name="email.daily" th:checked="${preferences.email().daily()}"><span><strong>Daily</strong><small>Daily signal emails</small></span></label>
+          <label><input type="checkbox" name="email.weekly" th:checked="${preferences.email().weekly()}"><span><strong>Weekly</strong><small>Weekly signal emails</small></span></label>
+          <label><input type="checkbox" name="email.monthly" th:checked="${preferences.email().monthly()}"><span><strong>Monthly</strong><small>Monthly signal emails</small></span></label>
+        </fieldset>
+        <fieldset><legend>Directions</legend>
+          <label><input type="checkbox" name="email.buy" th:checked="${preferences.email().buy()}"><span><strong>Buy</strong><small>Bullish signal emails</small></span></label>
+          <label><input type="checkbox" name="email.sell" th:checked="${preferences.email().sell()}"><span><strong>Sell</strong><small>Bearish signal emails</small></span></label>
+        </fieldset>
+      </div>
+      <p class="analysis-security-note">Account security, verification, password, and deletion emails are essential and are not affected.</p>
+    </section>
+
+    <section class="settings-card interval-profile-section"
+             th:each="profile, stat : ${preferences.profiles()}"
+             th:id="${'analysis-' + profile.key()}">
+      <div class="settings-card-heading interval-profile-heading">
+        <div><span class="settings-number" th:text="${'0' + (stat.index + 3)}">03</span><div><h2 th:text="${profile.label() + ' analysis'}">Daily analysis</h2><p>All periods are completed native candles.</p></div></div>
+        <button type="button" class="danger-outline-button analysis-reset-trigger"
+                th:attr="data-reset-scope=${profile.interval().name()},data-reset-label=${profile.label()}">Reset this interval</button>
+      </div>
+
+      <div class="analysis-setting-groups">
+        <fieldset class="analysis-setting-group"><legend>Signal resolution</legend><p>Zero percent keeps the factory structural boundary only.</p>
+          <div class="analysis-input-grid">
+            <label><span>Candlestick resolution window<small>Completed candles before expiry</small></span><input type="number" min="1" max="20" required th:name="${profile.key() + '.candlestickResolutionCandles'}" th:value="${profile.candlestickResolutionCandles()}"></label>
+            <label><span>Elliott resolution window<small>After the latest endpoint</small></span><input type="number" min="1" max="20" required th:name="${profile.key() + '.elliottResolutionCandles'}" th:value="${profile.elliottResolutionCandles()}"></label>
+            <label><span>Confirmation move (%)<small>Additional favorable close</small></span><input type="number" min="0" max="50" step="0.1" required th:name="${profile.key() + '.confirmationMovePercent'}" th:value="${profile.confirmationMovePercent()}"></label>
+            <label><span>Invalidation move (%)<small>Additional adverse close</small></span><input type="number" min="0" max="50" step="0.1" required th:name="${profile.key() + '.invalidationMovePercent'}" th:value="${profile.invalidationMovePercent()}"></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="analysis-setting-group"><legend>Momentum and volatility</legend>
+          <div class="analysis-input-grid">
+            <label><span>RSI period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.rsiPeriod'}" th:value="${profile.rsiPeriod()}"></label>
+            <label><span>RSI buy boundary</span><input type="number" min="1" max="49" step="0.1" required th:name="${profile.key() + '.rsiBuyThreshold'}" th:value="${profile.rsiBuyThreshold()}"></label>
+            <label><span>RSI sell boundary</span><input type="number" min="51" max="99" step="0.1" required th:name="${profile.key() + '.rsiSellThreshold'}" th:value="${profile.rsiSellThreshold()}"></label>
+            <label><span>CCI period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.cciPeriod'}" th:value="${profile.cciPeriod()}"></label>
+            <label><span>CCI buy boundary</span><input type="number" min="-500" max="-1" required th:name="${profile.key() + '.cciBuyThreshold'}" th:value="${profile.cciBuyThreshold()}"></label>
+            <label><span>CCI sell boundary</span><input type="number" min="1" max="500" required th:name="${profile.key() + '.cciSellThreshold'}" th:value="${profile.cciSellThreshold()}"></label>
+            <label><span>ATR period<small>Neutral volatility context</small></span><input type="number" min="2" max="500" required th:name="${profile.key() + '.atrPeriod'}" th:value="${profile.atrPeriod()}"></label>
+            <label><span>Bollinger period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.bollingerPeriod'}" th:value="${profile.bollingerPeriod()}"></label>
+            <label><span>Bollinger deviations</span><input type="number" min="0.5" max="5" step="0.1" required th:name="${profile.key() + '.bollingerDeviation'}" th:value="${profile.bollingerDeviation()}"></label>
+          </div>
+          <div class="analysis-score-switches">
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreRsi'}" th:checked="${profile.scoreRsi()}">Include RSI</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreCci'}" th:checked="${profile.scoreCci()}">Include CCI</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreBollinger'}" th:checked="${profile.scoreBollinger()}">Include Bollinger</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="analysis-setting-group"><legend>Trend</legend>
+          <div class="analysis-input-grid">
+            <label><span>Fast EMA period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.fastEmaPeriod'}" th:value="${profile.fastEmaPeriod()}"></label>
+            <label><span>Slow EMA period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.slowEmaPeriod'}" th:value="${profile.slowEmaPeriod()}"></label>
+            <label><span>EMA neutral tolerance (%)</span><input type="number" min="0" max="20" step="0.01" required th:name="${profile.key() + '.emaThresholdPercent'}" th:value="${profile.emaThresholdPercent()}"></label>
+            <label><span>Long SMA period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.longSmaPeriod'}" th:value="${profile.longSmaPeriod()}"></label>
+            <label><span>Long SMA tolerance (%)</span><input type="number" min="0" max="20" step="0.01" required th:name="${profile.key() + '.longSmaThresholdPercent'}" th:value="${profile.longSmaThresholdPercent()}"></label>
+            <label><span>MACD fast period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.macdFastPeriod'}" th:value="${profile.macdFastPeriod()}"></label>
+            <label><span>MACD slow period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.macdSlowPeriod'}" th:value="${profile.macdSlowPeriod()}"></label>
+            <label><span>MACD signal period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.macdSignalPeriod'}" th:value="${profile.macdSignalPeriod()}"></label>
+            <label><span>MACD neutral tolerance (%)</span><input type="number" min="0" max="20" step="0.01" required th:name="${profile.key() + '.macdThresholdPercent'}" th:value="${profile.macdThresholdPercent()}"></label>
+          </div>
+          <div class="analysis-score-switches">
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreEma'}" th:checked="${profile.scoreEma()}">Include EMA relationship</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreLongSma'}" th:checked="${profile.scoreLongSma()}">Include long SMA</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreMacd'}" th:checked="${profile.scoreMacd()}">Include MACD</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="analysis-setting-group"><legend>Volume and price location</legend>
+          <div class="analysis-input-grid">
+            <label><span>Average-volume period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.volumePeriod'}" th:value="${profile.volumePeriod()}"></label>
+            <label><span>Relative-volume threshold (×)</span><input type="number" min="0.1" max="10" step="0.1" required th:name="${profile.key() + '.relativeVolumeThreshold'}" th:value="${profile.relativeVolumeThreshold()}"></label>
+            <label><span>Rolling VWAP period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.vwapPeriod'}" th:value="${profile.vwapPeriod()}"></label>
+            <label><span>VWAP neutral tolerance (%)</span><input type="number" min="0" max="20" step="0.01" required th:name="${profile.key() + '.vwapThresholdPercent'}" th:value="${profile.vwapThresholdPercent()}"></label>
+            <label><span>Volume-profile period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.volumeProfilePeriod'}" th:value="${profile.volumeProfilePeriod()}"></label>
+            <label><span>Value-area fraction<small>0.70 means 70%</small></span><input type="number" min="0.5" max="0.95" step="0.01" required th:name="${profile.key() + '.volumeProfileValueAreaFraction'}" th:value="${profile.volumeProfileValueAreaFraction()}"></label>
+            <label><span>Support/resistance period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.supportResistancePeriod'}" th:value="${profile.supportResistancePeriod()}"></label>
+            <label><span>Boundary distance (ATR)</span><input type="number" min="0.1" max="10" step="0.1" required th:name="${profile.key() + '.supportResistanceAtrDistance'}" th:value="${profile.supportResistanceAtrDistance()}"></label>
+            <label><span>Market-relative threshold (%)</span><input type="number" min="0" max="25" step="0.1" required th:name="${profile.key() + '.marketRelativeThresholdPercent'}" th:value="${profile.marketRelativeThresholdPercent()}"></label>
+          </div>
+          <div class="analysis-score-switches">
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreRelativeVolume'}" th:checked="${profile.scoreRelativeVolume()}">Include relative volume</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreVwap'}" th:checked="${profile.scoreVwap()}">Include VWAP</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreVolumeProfile'}" th:checked="${profile.scoreVolumeProfile()}">Include volume profile</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreSupportResistance'}" th:checked="${profile.scoreSupportResistance()}">Include support/resistance</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreMarketRelative'}" th:checked="${profile.scoreMarketRelative()}">Include market-relative strength</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="analysis-setting-group"><legend>Outlook scoring</legend>
+          <div class="analysis-input-grid">
+            <label><span>Neutral boundary (%)</span><input type="number" min="0" max="50" required th:name="${profile.key() + '.neutralScorePercent'}" th:value="${profile.neutralScorePercent()}"></label>
+            <label><span>Moderate boundary (%)</span><input type="number" min="1" max="75" required th:name="${profile.key() + '.moderateScorePercent'}" th:value="${profile.moderateScorePercent()}"></label>
+            <label><span>Strong boundary (%)</span><input type="number" min="2" max="100" required th:name="${profile.key() + '.strongScorePercent'}" th:value="${profile.strongScorePercent()}"></label>
+          </div>
+          <div class="analysis-score-switches">
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreCandlestickSignals'}" th:checked="${profile.scoreCandlestickSignals()}">Include recent candlestick signals</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.scoreElliottSignals'}" th:checked="${profile.scoreElliottSignals()}">Include recent Elliott signals</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.categoryBalancedHeadline'}" th:checked="${profile.categoryBalancedHeadline()}">Use category-balanced headline</label>
+          </div>
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="settings-card analysis-save-card">
+      <div><strong>Save a versioned profile</strong><p>New signals store the interval profile used for scoring and lifecycle evaluation.</p></div>
+      <button type="submit" class="btn-accent">Apply analysis preferences</button>
+    </section>
+  </form>
+
+  <section class="settings-card analysis-factory-zone">
+    <div class="settings-card-heading"><div><span class="settings-number">06</span><h2>Factory restoration</h2></div><p>Saved signals and account security settings are never rewritten.</p></div>
+    <div class="settings-action-row"><div><h3>Restore every analysis and alert preference</h3><p>All interval profiles, lifecycle rules, scoring rules, and market email choices return to StockWatch defaults.</p></div><button type="button" class="danger-button analysis-reset-trigger" data-reset-scope="all" data-reset-label="all analysis and alert">Restore all factory settings</button></div>
+  </section>
+
+  <dialog id="analysisFactoryResetDialog" class="settings-dialog analysis-reset-dialog">
+    <form method="dialog" class="dialog-close-form"><button aria-label="Close factory reset confirmation">×</button></form>
+    <div class="dialog-danger-mark" aria-hidden="true">!</div>
+    <h2>Restore factory settings?</h2>
+    <p id="analysisFactoryResetCopy">The selected preferences will be replaced with StockWatch defaults.</p>
+    <form th:action="@{/settings/analysis-alerts/reset}" method="post" class="settings-form">
+      <input id="analysisFactoryResetScope" type="hidden" name="scope" value="all">
+      <button type="submit" class="danger-button danger-button-full">Confirm factory reset</button>
+    </form>
+  </dialog>
+</div>
+</body>
+</html>

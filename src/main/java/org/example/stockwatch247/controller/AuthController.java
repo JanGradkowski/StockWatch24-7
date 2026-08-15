@@ -4,10 +4,12 @@ import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AlertRuleService;
 import org.example.stockwatch247.service.EmailVerificationService;
+import org.example.stockwatch247.service.SignalScoringPreferencesService;
 import org.example.stockwatch247.service.congress.CongressionalActivityService;
 import org.example.stockwatch247.service.insider.InsiderActivityService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,20 +38,34 @@ public class AuthController {
     private final InsiderActivityService insiderActivityService;
     private final PasswordEncoder passwordEncoder;
     private final EmailVerificationService emailVerificationService;
+    private final SignalScoringPreferencesService scoringPreferencesService;
     private final String dummyPasswordHash;
+    @Autowired
     public AuthController(UserRepository userRepository,
                           AlertRuleService alertRuleService,
                           CongressionalActivityService congressionalActivityService,
                           InsiderActivityService insiderActivityService,
                           PasswordEncoder passwordEncoder,
-                          EmailVerificationService emailVerificationService) {
+                          EmailVerificationService emailVerificationService,
+                          SignalScoringPreferencesService scoringPreferencesService) {
         this.userRepository = userRepository;
         this.alertRuleService = alertRuleService;
         this.congressionalActivityService = congressionalActivityService;
         this.insiderActivityService = insiderActivityService;
         this.passwordEncoder = passwordEncoder;
         this.emailVerificationService = emailVerificationService;
+        this.scoringPreferencesService = scoringPreferencesService;
         this.dummyPasswordHash = passwordEncoder.encode("nonexistent-account-timing-equalizer");
+    }
+
+    public AuthController(UserRepository userRepository,
+                          AlertRuleService alertRuleService,
+                          CongressionalActivityService congressionalActivityService,
+                          InsiderActivityService insiderActivityService,
+                          PasswordEncoder passwordEncoder,
+                          EmailVerificationService emailVerificationService) {
+        this(userRepository, alertRuleService, congressionalActivityService, insiderActivityService,
+                passwordEncoder, emailVerificationService, null);
     }
     @GetMapping("/login")
     public String loginPage() {return "login";}
@@ -250,8 +266,32 @@ public class AuthController {
             return "redirect:/login";
         }
         model.addAttribute("firstName", currentUser.getFirstName());
-        model.addAttribute("signal", alertRuleService.getSignalDetail(currentUser, alertEventId));
+        AlertRuleService.SignalDetailView signal = alertRuleService.getSignalDetail(currentUser, alertEventId);
+        model.addAttribute("signal", signal);
+        model.addAttribute("displayScore", displayScore(currentUser, signal));
         return "signal-detail";
+    }
+
+    private SignalScoringPreferencesService.DisplayScore displayScore(
+            User user,
+            AlertRuleService.SignalDetailView signal) {
+        List<SignalScoringPreferencesService.EvidenceSection> evidence = signal.reasons().stream()
+                .map(reason -> new SignalScoringPreferencesService.EvidenceSection(
+                        reason.category(), reason.scoreLabel(), reason.statusLabel(), reason.caution(),
+                        reason.scored(), reason.details().stream()
+                        .map(detail -> new SignalScoringPreferencesService.EvidenceDetail(
+                                detail.label(), detail.text(), detail.scoreLabel()))
+                        .toList()))
+                .toList();
+        if (scoringPreferencesService == null || signal.setupScore() == null) {
+            int fallback = signal.setupScore() == null ? 0 : signal.setupScore();
+            return new SignalScoringPreferencesService.DisplayScore(
+                    fallback, signal.setupBand(), signal.setupStrengthLabel(), signal.setupExplanation(),
+                    false, evidence, !evidence.isEmpty(), "Factory scoring profile.");
+        }
+        return scoringPreferencesService.score(
+                scoringPreferencesService.profile(user, signal.patternFamily(), signal.interval()),
+                signal.setupScore(), evidence);
     }
 
     @GetMapping("/signals")

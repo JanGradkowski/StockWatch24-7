@@ -25,6 +25,7 @@ public interface CongressionalTradeDeliveryRepository
             where subscription.user = :user
               and trade.transactionDate >= :earliestTransactionDate
               and delivery.readAt is null
+              and delivery.deletedAt is null
             order by delivery.createdAt desc, delivery.id desc
             """)
     List<CongressionalTradeDelivery> findLatestUnreadForUser(
@@ -39,6 +40,7 @@ public interface CongressionalTradeDeliveryRepository
             join fetch delivery.trade trade
             join fetch trade.stockAsset
             where subscription.user = :user
+              and delivery.deletedAt is null
             order by delivery.createdAt desc, delivery.id desc
             """)
     List<CongressionalTradeDelivery> findAllForUser(@Param("user") User user);
@@ -49,6 +51,7 @@ public interface CongressionalTradeDeliveryRepository
             join fetch delivery.subscription subscription
             where delivery.id = :deliveryId
               and subscription.user = :user
+              and delivery.deletedAt is null
             """)
     Optional<CongressionalTradeDelivery> findOwnedByIdAndUser(
             @Param("deliveryId") Long deliveryId,
@@ -57,9 +60,22 @@ public interface CongressionalTradeDeliveryRepository
     @Query("""
             select delivery
             from CongressionalTradeDelivery delivery
+            join delivery.subscription subscription
+            where delivery.id in :deliveryIds
+              and subscription.user = :user
+              and delivery.deletedAt is null
+            """)
+    List<CongressionalTradeDelivery> findOwnedByIdsAndUser(
+            @Param("deliveryIds") List<Long> deliveryIds,
+            @Param("user") User user);
+
+    @Query("""
+            select delivery
+            from CongressionalTradeDelivery delivery
             join fetch delivery.trade trade
             where delivery.subscription.user = :user
               and trade.id in :tradeIds
+              and delivery.deletedAt is null
             """)
     List<CongressionalTradeDelivery> findOwnedByTradeIds(
             @Param("user") User user,
@@ -73,6 +89,7 @@ public interface CongressionalTradeDeliveryRepository
             where subscription.user = :user
               and trade.transactionDate >= :earliestTransactionDate
               and delivery.readAt is null
+              and delivery.deletedAt is null
             """)
     long countUnreadForUser(
             @Param("user") User user,
@@ -88,6 +105,7 @@ public interface CongressionalTradeDeliveryRepository
                 where subscription.user = :user
             )
               and delivery.readAt is null
+              and delivery.deletedAt is null
             """)
     int markAllUnreadForUser(
             @Param("user") User user,

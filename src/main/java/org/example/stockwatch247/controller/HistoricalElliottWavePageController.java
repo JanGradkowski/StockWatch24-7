@@ -3,9 +3,12 @@ package org.example.stockwatch247.controller;
 import jakarta.servlet.http.HttpServletResponse;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.ElliottSignalStage;
+import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.HistoricalElliottWaveService;
+import org.example.stockwatch247.service.SignalScoringPreferencesService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,12 +21,22 @@ import java.security.Principal;
 public class HistoricalElliottWavePageController {
     private final UserRepository userRepository;
     private final HistoricalElliottWaveService historicalElliottWaveService;
+    private final SignalScoringPreferencesService scoringPreferences;
 
+    @Autowired
     public HistoricalElliottWavePageController(
             UserRepository userRepository,
-            HistoricalElliottWaveService historicalElliottWaveService) {
+            HistoricalElliottWaveService historicalElliottWaveService,
+            SignalScoringPreferencesService scoringPreferences) {
         this.userRepository = userRepository;
         this.historicalElliottWaveService = historicalElliottWaveService;
+        this.scoringPreferences = scoringPreferences;
+    }
+
+    HistoricalElliottWavePageController(
+            UserRepository userRepository,
+            HistoricalElliottWaveService historicalElliottWaveService) {
+        this(userRepository, historicalElliottWaveService, null);
     }
 
     @GetMapping("/stock/{symbol}/elliott-waves/{interval}/{stage}/{endpointTimestamp}")
@@ -39,16 +52,42 @@ public class HistoricalElliottWavePageController {
         String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
         model.addAttribute("firstName", currentUser == null ? "Trader" : currentUser.getFirstName());
-        model.addAttribute("wave", historicalElliottWaveService.findDetail(
+        HistoricalElliottWaveService.HistoricalElliottWaveDetail wave = historicalElliottWaveService.findDetail(
                 validatedSymbol,
                 interval,
                 stage,
                 endpointTimestamp,
                 cycleKey
-        ));
+        );
+        model.addAttribute("wave", wave);
+        model.addAttribute("displayScore", displayScore(currentUser, wave));
         model.addAttribute("returnUrl", "/stock/" + validatedSymbol + "#general");
         response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
         response.setHeader("Pragma", "no-cache");
         return "historical-elliott-detail";
+    }
+
+    private SignalScoringPreferencesService.DisplayScore displayScore(
+            User user,
+            HistoricalElliottWaveService.HistoricalElliottWaveDetail wave) {
+        var evidence = wave.scoreSections().stream()
+                .map(section -> new SignalScoringPreferencesService.EvidenceSection(
+                        section.category(), section.scoreLabel(), section.status(), false, true,
+                        section.details().stream()
+                        .map(detail -> new SignalScoringPreferencesService.EvidenceDetail(
+                                detail.label(), detail.text(), detail.score()))
+                        .toList()))
+                .toList();
+        if (scoringPreferences == null || user == null) {
+            int score = wave.qualityScore();
+            String band = score >= 85 ? "high" : score >= 75 ? "medium" : "low";
+            String strength = score >= 85 ? "High confluence" : score >= 75
+                    ? "Moderate confluence" : "Low confluence";
+            return new SignalScoringPreferencesService.DisplayScore(score, band, strength,
+                    "The score combines structural Elliott rules, proportions, momentum, and confirmation evidence.",
+                    false, evidence, !evidence.isEmpty(), "Factory scoring profile.");
+        }
+        return scoringPreferences.score(scoringPreferences.profile(
+                user, AlertPatternFamily.ELLIOTT_WAVE, wave.timeInterval()), wave.qualityScore(), evidence);
     }
 }

@@ -22,7 +22,8 @@ record TechnicalIndicatorProfile(
         double bollingerDeviation,
         int volumePeriod,
         int vwapPeriod,
-        int volumeProfilePeriod
+        int volumeProfilePeriod,
+        double volumeProfileValueAreaFraction
 ) {
     private static final TechnicalIndicatorProfile DAILY = new TechnicalIndicatorProfile(
             TimeInterval.DAILY,
@@ -39,7 +40,8 @@ record TechnicalIndicatorProfile(
             2.0,
             20,
             20,
-            60
+            60,
+            0.70
     );
     private static final TechnicalIndicatorProfile WEEKLY = new TechnicalIndicatorProfile(
             TimeInterval.WEEKLY,
@@ -56,7 +58,8 @@ record TechnicalIndicatorProfile(
             2.0,
             13,
             13,
-            26
+            26,
+            0.70
     );
     private static final TechnicalIndicatorProfile MONTHLY = new TechnicalIndicatorProfile(
             TimeInterval.MONTHLY,
@@ -73,7 +76,8 @@ record TechnicalIndicatorProfile(
             2.0,
             12,
             12,
-            24
+            24,
+            0.70
     );
 
     TechnicalIndicatorProfile {
@@ -93,7 +97,9 @@ record TechnicalIndicatorProfile(
                 || bollingerDeviation <= 0.0
                 || volumePeriod < 2
                 || vwapPeriod < 2
-                || volumeProfilePeriod < 2) {
+                || volumeProfilePeriod < 2
+                || volumeProfileValueAreaFraction < 0.5
+                || volumeProfileValueAreaFraction > 0.95) {
             throw new IllegalArgumentException("Indicator profile periods are invalid.");
         }
     }
@@ -132,7 +138,8 @@ record TechnicalIndicatorProfile(
                 2.0,
                 20,
                 20,
-                60
+                60,
+                0.70
         );
     }
 

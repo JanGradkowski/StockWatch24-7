@@ -9,6 +9,8 @@
 
   <!-- TradingView Lightweight Charts (Industry Standard) -->
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
+  <script th:src="@{/js/elliott-subwave-overlay.js}"></script>
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
   <style th:attr="nonce=${cspNonce}">
@@ -849,6 +851,7 @@
   const selectedMic = /*[[${selectedMic}]]*/ null;
   const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
   const ELLIOTT_CORRECTIVE_COLOR = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
+  const ELLIOTT_SUBWAVE_COLOR = /*[[${elliottSubwaveColor}]]*/ '#F59E0B';
   const encodedTicker = encodeURIComponent(ticker);
   const csrfToken = document.querySelector('meta[name="_csrf"]').content;
   const csrfHeader = document.querySelector('meta[name="_csrf_header"]').content;
@@ -888,6 +891,7 @@
   }
 
   let priceChart, volumeChart, rsiChart;
+  let fibonacciDrawingTool = null;
   const INITIAL_CANDLE_LIMIT = 1000;
   const INITIAL_VISIBLE_CANDLES = 150;
   const HISTORY_PAGE_LIMIT = 500;
@@ -897,6 +901,7 @@
   let rsiGuideLines = [];
   let historicalElliottSeries = [];
   let historicalElliottGroups = new Map();
+  let elliottSubwaveOverlay = null;
   let elliottSignalCards = new Map();
   let activeElliottSegment = null;
   let elliottCardPinned = false;
@@ -953,6 +958,7 @@
   let trackedAlertSummary = '';
   let pendingNavigationAction = null;
   let pageExitAllowed = false;
+  let alertBeforeUnloadRegistered = false;
   let congressionalActivityEligible = false;
   let congressionalFollowing = false;
   let congressionalActivityBusy = false;
@@ -1097,6 +1103,17 @@
       const seriesTheme = chartSeriesThemeOptions();
       candleSeries = priceChart.addCandlestickSeries(seriesTheme.candles);
       lineSeries = priceChart.addLineSeries(seriesTheme.line);
+      if (typeof StockWatchElliottSubwaveOverlay !== 'undefined') {
+        elliottSubwaveOverlay = new StockWatchElliottSubwaveOverlay({
+          chart: priceChart,
+          candleSeries,
+          container: document.getElementById('priceChartStage'),
+          symbol: ticker,
+          interval: currentInterval,
+          color: ELLIOTT_SUBWAVE_COLOR,
+          renderTime: timestampToChartDate
+        });
+      }
       elliottConfirmationSeries = priceChart.addLineSeries({
         // This series exists only to anchor confirmation markers. Lightweight
         // Charts 4 ignores lineVisible on a line series, so use a fully
@@ -1107,6 +1124,14 @@
         priceLineVisible: false
       });
       volumeSeries = volumeChart.addHistogramSeries({ priceFormat: { type: 'volume' } });
+      if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
+        fibonacciDrawingTool = new StockWatchFibonacciDrawingTool({
+          chart: priceChart,
+          series: candleSeries,
+          container: document.getElementById('priceChartStage'),
+          storageKey: `stock:${ticker}:${currentInterval}`
+        });
+      }
 
       // Load currency metadata first
       updateStockLoadingStatus('Resolving instrument and market details...');
@@ -1179,7 +1204,8 @@
     updateAnchoredVolumeProfileToggle();
 
     try {
-      document.querySelector('.ticker-name').nextElementSibling.innerText = `Loading ${interval} data...`;
+      document.querySelector('.ticker-name').nextElementSibling.innerText =
+              `Loading ${historicalCandlestickIntervalLabel(interval).toLowerCase()} data...`;
 
       const response = await fetch(`/api/stocks/${encodedTicker}/candles?interval=${encodeURIComponent(interval)}&limit=${INITIAL_CANDLE_LIMIT}`, {
         signal: chartLoadController.signal
@@ -1360,6 +1386,7 @@
       lineSeries.setData(globalLineData.map(item => ({ ...item })));
       volumeSeries.setData(themedVolumeData());
       updateRsiOverlay();
+      fibonacciDrawingTool?.scheduleRender();
     } catch (err) {
       console.error("TradingView setData Crash:", err);
     }
@@ -1664,7 +1691,9 @@
 
     status.textContent = 'Analysing Elliott Wave structures in the loaded range...';
     try {
-      const fromQuery = oldestTimestamp === null ? '' : `&from=${encodeURIComponent(oldestTimestamp)}`;
+      const fromQuery = Number.isSafeInteger(oldestTimestamp) && oldestTimestamp > 0
+              ? `&from=${encodeURIComponent(oldestTimestamp)}`
+              : '';
       const cardInterval = interval === '1wk' ? 'WEEKLY' : 'MONTHLY';
       const [response, cardResponse] = await Promise.all([
         fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(interval)}${fromQuery}`),
@@ -1747,6 +1776,7 @@
   }
 
   function clearElliottOverlays() {
+    elliottSubwaveOverlay?.hide(true);
     hideElliottWaveCard();
     elliottSignalCards = new Map();
     clearHistoricalElliottSeries();
@@ -2329,27 +2359,34 @@
         button.type = 'button';
         button.className = 'elliott-wave-hit-target';
         button.setAttribute('aria-label', `${pointLabel} point, ${segment.structure.direction || ''} Elliott Wave, ${elliottStageLabel(segment.stage)}, ${card?.status || 'historical signal'}`);
-        button.title = `Open ${elliottStageLabel(segment.stage)} details from point ${pointLabel}`;
+        button.title = point.label
+                ? `Inspect the subwaves ending at Wave ${pointLabel}`
+                : `Open ${elliottStageLabel(segment.stage)} details`;
         button._elliottSegment = segment;
         button._elliottPoint = point;
-        button.addEventListener('mouseenter', () => showElliottWaveCard(
-                segment,
-                elliottPointCoordinate(segment, point),
-                false
-        ));
-        button.addEventListener('mouseleave', () => {
-          if (!elliottCardPinned) scheduleElliottCardHide();
-        });
-        button.addEventListener('focus', () => showElliottWaveCard(
-                segment,
-                elliottPointCoordinate(segment, point),
-                false
-        ));
-        button.addEventListener('blur', () => {
-          if (!elliottCardPinned) scheduleElliottCardHide();
-        });
+        const showPointSubwaves = () => {
+          const pointIndex = segment.points.findIndex(candidate =>
+                  candidate === point
+                  || Number(candidate.timestamp) === Number(point.timestamp)
+                  && String(candidate.label || '') === String(point.label || ''));
+          if (pointIndex <= 0 || !point.label) {
+            elliottSubwaveOverlay?.hide();
+            return;
+          }
+          showElliottSubwaves({
+            segment,
+            start: segment.points[pointIndex - 1],
+            end: point,
+            label: point.label
+          });
+        };
+        button.addEventListener('mouseenter', showPointSubwaves);
+        button.addEventListener('mouseleave', () => elliottSubwaveOverlay?.hide());
+        button.addEventListener('focus', showPointSubwaves);
+        button.addEventListener('blur', () => elliottSubwaveOverlay?.hide());
         button.addEventListener('click', event => {
           event.stopPropagation();
+          elliottSubwaveOverlay?.hide(true);
           showElliottWaveCard(segment, elliottPointCoordinate(segment, point), true);
         });
         targetLayer.appendChild(button);
@@ -2392,24 +2429,56 @@
   }
 
   function handleElliottWaveCrosshairMove(param) {
-    if (elliottCardPinned || elliottCardHovered || anchoredVolumeProfileEnabled
-            || !param?.point || !elliottOverlaysEnabled) return;
-    const segment = nearestElliottSegment(param.point);
-    if (segment) {
-      showElliottWaveCard(segment, param.point, false);
-    } else {
-      scheduleElliottCardHide();
+    if (anchoredVolumeProfileEnabled || !param?.point || !elliottOverlaysEnabled) {
+      elliottSubwaveOverlay?.hide();
+      return;
     }
+    const leg = nearestElliottLeg(param.point);
+    if (leg) showElliottSubwaves(leg);
+    else elliottSubwaveOverlay?.hide();
   }
 
   function handleElliottWaveChartClick(param) {
     if (anchoredVolumeProfileEnabled || !param?.point || !elliottOverlaysEnabled) return;
-    const segment = nearestElliottSegment(param.point);
-    if (segment) {
-      showElliottWaveCard(segment, param.point, true);
+    const leg = nearestElliottLeg(param.point);
+    if (leg) {
+      elliottSubwaveOverlay?.hide(true);
+      showElliottWaveCard(leg.segment, param.point, true);
     } else {
       hideElliottWaveCard();
     }
+  }
+
+  function nearestElliottLeg(point) {
+    let nearest = null;
+    let nearestDistance = 18;
+    historicalElliottGroups.forEach(group => group.segments.forEach(segment => {
+      for (let index = 1; index < segment.points.length; index++) {
+        const startPoint = segment.points[index - 1];
+        const endPoint = segment.points[index];
+        const start = elliottPointCoordinate(segment, startPoint);
+        const end = elliottPointCoordinate(segment, endPoint);
+        if (!start || !end || !endPoint.label) continue;
+        const distance = pointToLineSegmentDistance(point, start, end);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearest = { segment, start: startPoint, end: endPoint, label: endPoint.label };
+        }
+      }
+    }));
+    return nearest;
+  }
+
+  function showElliottSubwaves(leg) {
+    if (!elliottSubwaveOverlay || !leg?.segment) return;
+    const structure = leg.segment.structure;
+    elliottSubwaveOverlay.show({
+      interval: currentInterval,
+      start: leg.start,
+      end: leg.end,
+      label: leg.label,
+      asOfTimestamp: structure.confirmationTimestamp || leg.end.timestamp,
+    });
   }
 
   function nearestElliottSegment(point) {
@@ -2476,8 +2545,8 @@
     const link = document.getElementById('elliottWaveCardLink');
     link.hidden = !cardData.detailUrl;
     if (cardData.detailUrl) link.href = cardData.detailUrl;
-    note.textContent = cardData.outcomeNote
-            || 'Hypothetical hindsight using completed cached candle closes.';
+    note.textContent = `${cardData.outcomeNote
+            || 'Hypothetical hindsight using completed cached candle closes.'} Measured from the confirmation candle close on ${cardData.signalPeriodLabel}.`;
     if (cardData.outcomeAvailable) {
       outcome.hidden = false;
       message.hidden = true;
@@ -2696,6 +2765,7 @@
   async function changeInterval(newInterval) {
     if (currentInterval === newInterval) return;
     currentInterval = newInterval;
+    fibonacciDrawingTool?.setContext(`stock:${ticker}:${newInterval}`);
 
     document.getElementById('int-1d').classList.remove('active');
     document.getElementById('int-1wk').classList.remove('active');
@@ -3137,7 +3207,7 @@
     document.getElementById('historicalCandlestickCardOutcomeLabel').textContent =
             signal.impactLabel || 'Observed outcome';
     document.getElementById('historicalCandlestickCardOutcomeWindow').textContent =
-            `${signal.evaluationHorizonLabel || 'Fixed result window'} - ${Number(signal.setupScore || 0)}/100 setup score`;
+            `From signal candle close on ${signal.signalPeriodLabel} - ${signal.evaluationHorizonLabel || 'Fixed result window'} - ${Number(signal.setupScore || 0)}/100 setup score`;
     document.getElementById('historicalCandlestickCardTrend').textContent =
             `${signal.trendLabel || (String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'Required downtrend' : 'Required uptrend')} before the ${signal.formationLabel || 'pattern formation'}.`;
     document.getElementById('historicalCandlestickCardNote').textContent =
@@ -3495,7 +3565,9 @@
     strong.className = Number.isFinite(value) ? (value >= 0 ? 'positive' : 'negative') : '';
     const detail = document.createElement('span');
     detail.textContent = signal.impactLabel || 'Outcome pending';
-    cell.append(strong, detail);
+    const basis = document.createElement('small');
+    basis.textContent = `From signal candle close on ${signal.signalPeriodLabel || 'an unavailable date'}`;
+    cell.append(strong, detail, basis);
     return cell;
   }
 
@@ -3716,7 +3788,7 @@
     cell.append(label);
     if (trade.returnAsOf) {
       const asOf = document.createElement('span');
-      asOf.textContent = `through ${formatCongressionalDate(trade.returnAsOf)}`;
+      asOf.textContent = `from filed price on ${formatCongressionalDate(trade.transactionDate)} · through ${formatCongressionalDate(trade.returnAsOf)}`;
       cell.append(asOf);
     }
     return cell;
@@ -3952,6 +4024,7 @@
 
     applyButton.disabled = !alertStateLoaded || alertSaveInProgress || changedCount === 0;
     alertPanel.classList.toggle('has-unapplied-changes', changedCount > 0);
+    setAlertBeforeUnloadGuard(!pageExitAllowed && changedCount > 0);
     if (alertSaveInProgress) {
       applyButton.textContent = 'Applying...';
       draftStatus.textContent = 'Saving your changes';
@@ -4032,6 +4105,7 @@
   function requestGuardedNavigation(action) {
     if (!hasUnappliedAlertChanges()) {
       pageExitAllowed = true;
+      setAlertBeforeUnloadGuard(false);
       action();
       return;
     }
@@ -4047,6 +4121,7 @@
     closeUnsavedAlertDialog();
     if (!action) return;
     pageExitAllowed = true;
+    setAlertBeforeUnloadGuard(false);
     action();
   }
 
@@ -4075,6 +4150,22 @@
     requestGuardedNavigation(() => window.location.assign(destination));
   };
 
+  function handleUnsavedAlertBeforeUnload(event) {
+    if (pageExitAllowed || !hasUnappliedAlertChanges()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }
+
+  function setAlertBeforeUnloadGuard(enabled) {
+    if (enabled === alertBeforeUnloadRegistered) return;
+    if (enabled) {
+      window.addEventListener('beforeunload', handleUnsavedAlertBeforeUnload);
+    } else {
+      window.removeEventListener('beforeunload', handleUnsavedAlertBeforeUnload);
+    }
+    alertBeforeUnloadRegistered = enabled;
+  }
+
   function bindUnsavedAlertGuards() {
     document.getElementById('applyAlertChangesBtn').addEventListener('click', persistAlertDraft);
     document.getElementById('keepEditingAlertsBtn').addEventListener('click', keepEditingAlertDraft);
@@ -4096,7 +4187,14 @@
       if (!rawHref || rawHref.startsWith('#')) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      requestGuardedNavigation(() => window.location.assign(anchor.href));
+      requestGuardedNavigation(() => {
+        if (anchor.hasAttribute('data-history-back')
+                && typeof window.requestStockWatchHistoryBack === 'function') {
+          window.requestStockWatchHistoryBack(anchor.href);
+          return;
+        }
+        window.location.assign(anchor.href);
+      });
     }, true);
 
     document.addEventListener('submit', event => {
@@ -4114,11 +4212,6 @@
       });
     }, true);
 
-    window.addEventListener('beforeunload', event => {
-      if (pageExitAllowed || !hasUnappliedAlertChanges()) return;
-      event.preventDefault();
-      event.returnValue = '';
-    });
   }
 
   async function checkLatestSignal(button) {

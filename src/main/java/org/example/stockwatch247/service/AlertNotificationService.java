@@ -10,9 +10,11 @@ import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.CongressionalTradeType;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
+import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.example.stockwatch247.service.congress.CongressionalTradeStore.ClaimedDelivery;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
@@ -27,15 +29,26 @@ public class AlertNotificationService {
     private final boolean emailEnabled;
     private final String fromAddress;
     private final ZoneId signalTimeZone;
+    private final AnalysisPreferencesService preferencesService;
 
+    @Autowired
     public AlertNotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
                                     @Value("${alerts.email.enabled:false}") boolean emailEnabled,
                                     @Value("${alerts.email.from:no-reply@stockwatch.local}") String fromAddress,
-                                    @Value("${alerts.email.time-zone:${alerts.schedule.zone:Europe/Brussels}}") String signalTimeZone) {
+                                    @Value("${alerts.email.time-zone:${alerts.schedule.zone:Europe/Brussels}}") String signalTimeZone,
+                                    AnalysisPreferencesService preferencesService) {
         this.mailSenderProvider = mailSenderProvider;
         this.emailEnabled = emailEnabled;
         this.fromAddress = fromAddress;
         this.signalTimeZone = ZoneId.of(signalTimeZone);
+        this.preferencesService = preferencesService;
+    }
+
+    AlertNotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
+                             boolean emailEnabled,
+                             String fromAddress,
+                             String signalTimeZone) {
+        this(mailSenderProvider, emailEnabled, fromAddress, signalTimeZone, null);
     }
 
     public void sendVerificationEmail(User user, String verificationUrl) {
@@ -98,11 +111,13 @@ public class AlertNotificationService {
         }
     }
 
-    public void sendSignalEmail(AlertRule rule, DetectedSignal signal) {
-        sendSignalEmail(rule, signal, null);
+    public boolean sendSignalEmail(AlertRule rule, DetectedSignal signal) {
+        return sendSignalEmail(rule, signal, null);
     }
 
-    public void sendSignalEmail(AlertRule rule, DetectedSignal signal, AlertEvent lifecycleEvent) {
+    public boolean sendSignalEmail(AlertRule rule, DetectedSignal signal, AlertEvent lifecycleEvent) {
+        boolean requiresNextCandleConfirmation = rule.getPatternFamily() == AlertPatternFamily.CANDLESTICK
+                && CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern());
         boolean endOfWaveC = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
                 && isElliottCorrection(signal.pattern());
         boolean endOfWaveV = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
@@ -113,12 +128,18 @@ public class AlertNotificationService {
                 : endOfWaveV
                 ? "StockWatch Elliott wave V completed: " + signal.tradeSignal()
                     + " on " + rule.getStockAsset().getTickerSymbol()
+                : requiresNextCandleConfirmation
+                ? "StockWatch potential " + signal.tradeSignal().name().toLowerCase()
+                    + " pattern awaiting confirmation: " + signal.pattern()
+                    + " on " + rule.getStockAsset().getTickerSymbol()
                 : "StockWatch pattern detected: " + signal.pattern()
                     + " on " + rule.getStockAsset().getTickerSymbol();
         String eventDescription = endOfWaveC
                 ? "End of Elliott correction (wave C)"
                 : endOfWaveV
                 ? "End of Elliott impulse (wave V)"
+                : requiresNextCandleConfirmation
+                ? "Potential one-candle reversal; awaiting the immediately following completed candle"
                 : lifecycleEvent != null && lifecycleEvent.isLifecycleTracked()
                 ? "Validated candlestick pattern; close-based lifecycle tracking started"
                 : "Validated candlestick pattern";
@@ -162,12 +183,14 @@ public class AlertNotificationService {
                 Signal candle period: %s
                 Close price: %.2f
                 """.formatted(
-                "A",
+                requiresNextCandleConfirmation ? "A potential" : "A",
                 rule.getStockAsset().getTickerSymbol(),
                 rule.getPatternFamily(),
                 signal.pattern(),
                 eventDescription,
-                signal.tradeSignal(),
+                requiresNextCandleConfirmation
+                        ? "POTENTIAL " + signal.tradeSignal() + " — AWAITING CONFIRMATION"
+                        : signal.tradeSignal(),
                 setupStrengthLabel(signal.strength()),
                 signal.setupScore(),
                 scoreVersion,
@@ -180,10 +203,10 @@ public class AlertNotificationService {
                 signal.closePrice()
         );
 
-        if (!emailEnabled) {
+        if (!isSignalEmailEnabled(rule, signal)) {
             System.out.println("[EMAIL DISABLED] Signal email suppressed for "
                     + rule.getStockAsset().getTickerSymbol() + ".");
-            return;
+            return false;
         }
 
         SimpleMailMessage message = new SimpleMailMessage();
@@ -192,6 +215,7 @@ public class AlertNotificationService {
         message.setSubject(subject);
         message.setText(body);
         send(message);
+        return true;
     }
 
     private String detectedLifecycleSection(
@@ -208,12 +232,14 @@ public class AlertNotificationService {
                     ? "the hard Elliott structure rules; ordinary Wave V/C extensions revise the endpoint"
                     : "the hard Elliott structure boundary at %.4f".formatted(
                             lifecycleEvent.getInvalidationPrice());
+            String percentageRules = percentageLifecycleRules(lifecycleEvent);
             return """
 
                     Lifecycle status: DETECTED
                     Confirmation rule: a subsequent completed candle must close %s %.4f
                     Latest Wave V/C endpoint: %.4f
                     Invalidation rule: %s
+                    %s
                     Observation window: %d completed %s candles after the latest endpoint revision
                     Lifecycle note: endpoint revisions redraw the same cycle without another detection email. One CONFIRMED, INVALIDATED, or EXPIRED follow-up will be sent.
                     """.formatted(
@@ -221,9 +247,30 @@ public class AlertNotificationService {
                     lifecycleEvent.getConfirmationTriggerPrice(),
                     lifecycleEvent.getElliottEndpointPrice(),
                     structuralRule,
+                    percentageRules,
                     lifecycleEvent.getConfirmationWindowCandles(),
                     rule.getInterval().name().toLowerCase()
             );
+        }
+        if (CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern())) {
+            String failureStatus = "If that next candle does not close " + confirmationDirection
+                    + " the candidate candle close with a confirming "
+                    + (signal.tradeSignal() == TradeSignal.BUY ? "green" : "red")
+                    + " body, this candidate is REJECTED and never becomes a signal.";
+            return """
+
+                    Lifecycle status: POTENTIAL %s
+                    This is not a signal yet.
+                    Mandatory detection gate: the immediately following completed candle must have a %s body and close %s the candidate candle close at %.4f
+                    %s
+                    If accepted, the setup becomes DETECTED and its %d-candle outcome window starts from that next candle's close.
+                    """.formatted(
+                    signal.tradeSignal(),
+                    signal.tradeSignal() == TradeSignal.BUY ? "green" : "red",
+                    confirmationDirection,
+                    lifecycleEvent.getConfirmationTriggerPrice(),
+                    failureStatus,
+                    lifecycleEvent.getConfirmationWindowCandles());
         }
         String invalidationDirection = signal.tradeSignal()
                 == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "below" : "above";
@@ -232,6 +279,7 @@ public class AlertNotificationService {
                 Lifecycle status: DETECTED
                 Confirmation rule: a subsequent completed candle must close %s %.4f
                 Invalidation rule: a subsequent completed candle must close %s %.4f first
+                %s
                 Observation window: %d completed %s candles
                 Lifecycle note: DETECTED remains the original alert. One CONFIRMED, INVALIDATED, or EXPIRED follow-up will be sent.
                 """.formatted(
@@ -239,17 +287,35 @@ public class AlertNotificationService {
                 lifecycleEvent.getConfirmationTriggerPrice(),
                 invalidationDirection,
                 lifecycleEvent.getInvalidationPrice(),
+                percentageLifecycleRules(lifecycleEvent),
                 lifecycleEvent.getConfirmationWindowCandles(),
                 rule.getInterval().name().toLowerCase()
         );
     }
 
-    public void sendSignalLifecycleEmail(AlertEvent event) {
+    private String percentageLifecycleRules(AlertEvent event) {
+        String measurementAnchor = CandlestickSignalLifecyclePolicy
+                .requiresNextCandleConfirmation(event.getPattern())
+                && event.getDetectionCandleTimestamp() != null
+                ? "detection close"
+                : "signal close";
+        String confirmation = event.getLifecycleConfirmationPercent() == null
+                ? "No additional percentage confirmation move."
+                : "Confirmation also requires a %.2f%% favorable move from the %s."
+                        .formatted(event.getLifecycleConfirmationPercent(), measurementAnchor);
+        String invalidation = event.getLifecycleInvalidationPercent() == null
+                ? "No additional percentage invalidation move."
+                : "A %.2f%% adverse move from the %s also invalidates."
+                        .formatted(event.getLifecycleInvalidationPercent(), measurementAnchor);
+        return confirmation + "\n" + invalidation;
+    }
+
+    public boolean sendSignalLifecycleEmail(AlertEvent event) {
         if (event == null || !event.isLifecycleTracked()) {
             throw new IllegalArgumentException("A tracked signal event is required.");
         }
         SignalLifecycleStatus status = event.getLifecycleStatus();
-        if (status == SignalLifecycleStatus.DETECTED) {
+        if (status == SignalLifecycleStatus.POTENTIAL) {
             throw new IllegalArgumentException("A terminal signal lifecycle status is required.");
         }
 
@@ -257,13 +323,24 @@ public class AlertNotificationService {
         String symbol = rule.getStockAsset().getTickerSymbol();
         String statusLabel = status.name();
         boolean elliottSignal = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE;
+        boolean immediateConfirmationRequired =
+                CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(event.getPattern());
+        if (immediateConfirmationRequired
+                && (status == SignalLifecycleStatus.DETECTED
+                || status == SignalLifecycleStatus.REJECTED)) {
+            return sendCandidateGateLifecycleEmail(event, status, rule, symbol);
+        }
+        if (status == SignalLifecycleStatus.DETECTED) {
+            throw new IllegalArgumentException("A terminal signal lifecycle status is required.");
+        }
         String outcome = switch (status) {
             case CONFIRMED -> "The expected close-based follow-through occurred.";
+            case REJECTED -> "The candidate failed its mandatory next-candle gate and never became a signal.";
             case INVALIDATED -> elliottSignal
                     ? "The stored Elliott structure stopped satisfying its hard wave rules before confirmation."
                     : "Price closed beyond the opposite lifecycle boundary before confirmation.";
             case EXPIRED -> "The observation window ended without confirmation or invalidation.";
-            case DETECTED -> throw new IllegalStateException("DETECTED is not a terminal outcome.");
+            case POTENTIAL, DETECTED -> throw new IllegalStateException("A terminal outcome is required.");
         };
         String lifecycleType = elliottSignal ? "Elliott Wave" : "Candlestick";
         String rangeLabel = elliottSignal ? "Wave structure range" : "Pattern range";
@@ -277,6 +354,26 @@ public class AlertNotificationService {
                 : "Structural invalidation boundary: %.4f".formatted(event.getInvalidationPrice())
                 : "Invalidation boundary: close %s %.4f".formatted(
                         invalidationDirection, event.getInvalidationPrice());
+        String directionClassification = immediateConfirmationRequired
+                ? switch (status) {
+                    case CONFIRMED -> "CONFIRMED " + event.getTradeSignal();
+                    case INVALIDATED -> "INVALIDATED " + event.getTradeSignal();
+                    case EXPIRED -> "EXPIRED " + event.getTradeSignal();
+                    case POTENTIAL, DETECTED, REJECTED ->
+                            throw new IllegalStateException("A terminal detected-signal outcome is required.");
+                }
+                : event.getTradeSignal().name();
+        String confirmationLine = immediateConfirmationRequired
+                ? "Outcome confirmation trigger: close %s %.4f".formatted(
+                        expectedDirection, event.getConfirmationTriggerPrice())
+                : "Confirmation trigger: close %s %.4f".formatted(
+                        expectedDirection, event.getConfirmationTriggerPrice());
+        String measurementLine = immediateConfirmationRequired
+                ? "Result measurement start: detection candle close on %s at %.4f".formatted(
+                        SignalPeriodFormatter.format(
+                                event.getDetectionCandleTimestamp(), rule.getInterval(), signalTimeZone),
+                        event.getDetectionClosePrice())
+                : "Result measurement start: original signal candle close";
         String resolutionReason = event.getLifecycleResolutionReason() == null
                 ? ""
                 : "\nResolution reason: " + event.getLifecycleResolutionReason();
@@ -290,12 +387,14 @@ public class AlertNotificationService {
                 Interval: %s
                 Original signal period: %s
                 %s: %.4f to %.4f
-                Confirmation trigger: close %s %.4f
+                %s
+                %s
                 %s
                 Observation window: %d completed %s candles
                 Resolution candle: %s
                 Resolution candle number: %d
-                Resolution close: %.4f%s
+                Resolution close: %.4f
+                %s%s
 
                 This lifecycle update describes the observed price action after a detected setup.
                 It is informational and is not a recommendation, price target, or guarantee.
@@ -305,29 +404,30 @@ public class AlertNotificationService {
                 statusLabel,
                 outcome,
                 event.getPattern(),
-                event.getTradeSignal(),
+                directionClassification,
                 rule.getInterval(),
                 SignalPeriodFormatter.format(
                         event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                 rangeLabel,
                 event.getPatternLow(),
                 event.getPatternHigh(),
-                expectedDirection,
-                event.getConfirmationTriggerPrice(),
+                confirmationLine,
                 invalidationLine,
+                percentageLifecycleRules(event),
                 event.getConfirmationWindowCandles(),
                 rule.getInterval().name().toLowerCase(),
                 SignalPeriodFormatter.format(
                         event.getResolutionCandleTimestamp(), rule.getInterval(), signalTimeZone),
                 event.getResolutionCandleOffset(),
                 event.getResolutionClosePrice(),
+                measurementLine,
                 resolutionReason
         );
 
-        if (!emailEnabled) {
+        if (!isSignalLifecycleEmailEnabled(event)) {
             System.out.println("[EMAIL DISABLED] " + statusLabel
                     + " lifecycle email suppressed for " + symbol + ".");
-            return;
+            return false;
         }
 
         SimpleMailMessage message = new SimpleMailMessage();
@@ -337,6 +437,91 @@ public class AlertNotificationService {
                 + ": " + event.getPattern() + " on " + symbol);
         message.setText(body);
         send(message);
+        return true;
+    }
+
+    private boolean sendCandidateGateLifecycleEmail(AlertEvent event,
+                                                    SignalLifecycleStatus status,
+                                                    AlertRule rule,
+                                                    String symbol) {
+        boolean detected = status == SignalLifecycleStatus.DETECTED;
+        long gateTimestamp = detected
+                ? event.getDetectionCandleTimestamp()
+                : event.getResolutionCandleTimestamp();
+        double gateClose = detected
+                ? event.getDetectionClosePrice()
+                : event.getResolutionClosePrice();
+        String gatePeriod = SignalPeriodFormatter.format(
+                gateTimestamp, rule.getInterval(), signalTimeZone);
+        String body = detected
+                ? """
+                    One-candle candidate accepted for %s.
+
+                    Status: DETECTED
+                    Pattern: %s
+                    Direction: %s
+                    Candidate period: %s
+                    Detection candle: %s
+                    Detection close: %.4f
+
+                    The mandatory next-candle gate passed. This is now a real signal.
+                    Result measurement starts from this detection close.
+                    Outcome window: %d completed %s candles
+                    Confirmation trigger: %.4f
+                    Invalidation boundary: %.4f
+                    %s
+
+                    The signal can now become CONFIRMED, INVALIDATED, or EXPIRED.
+                    """.formatted(
+                        symbol,
+                        event.getPattern(),
+                        event.getTradeSignal(),
+                        SignalPeriodFormatter.format(
+                                event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
+                        gatePeriod,
+                        gateClose,
+                        event.getConfirmationWindowCandles(),
+                        rule.getInterval().name().toLowerCase(),
+                        event.getConfirmationTriggerPrice(),
+                        event.getInvalidationPrice(),
+                        percentageLifecycleRules(event))
+                : """
+                    One-candle candidate rejected for %s.
+
+                    Status: REJECTED
+                    Pattern candidate: %s
+                    Potential direction: %s
+                    Candidate period: %s
+                    Gate candle: %s
+                    Gate close: %.4f
+
+                    The immediately following candle did not provide the required %s-body close %s the candidate close at %.4f.
+                    The candidate never became a signal, so no outcome window or result is calculated.
+                    """.formatted(
+                        symbol,
+                        event.getPattern(),
+                        event.getTradeSignal(),
+                        SignalPeriodFormatter.format(
+                                event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
+                        gatePeriod,
+                        gateClose,
+                        event.getTradeSignal() == TradeSignal.BUY ? "green" : "red",
+                        event.getTradeSignal() == TradeSignal.BUY ? "above" : "below",
+                        event.getClosePrice());
+
+        if (!isSignalLifecycleEmailEnabled(event)) {
+            System.out.println("[EMAIL DISABLED] " + status
+                    + " candidate-gate email suppressed for " + symbol + ".");
+            return false;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(rule.getUser().getEmail());
+        message.setSubject("StockWatch " + (detected ? "signal detected" : "candidate rejected")
+                + ": " + event.getPattern() + " on " + symbol);
+        message.setText(body);
+        send(message);
+        return true;
     }
 
     public void sendCongressionalTradeEmail(ClaimedDelivery delivery) {
@@ -381,7 +566,8 @@ public class AlertNotificationService {
                 assetLine,
                 sourceLine);
 
-        if (!emailEnabled) {
+        if (!emailEnabled || preferencesService != null
+                && !preferencesService.allowsCongressionalEmail(delivery.userId())) {
             System.out.println("[EMAIL DISABLED] Congressional activity email suppressed for "
                     + delivery.ticker() + ".");
             return;
@@ -444,7 +630,8 @@ public class AlertNotificationService {
                 trade.getFilingDate(),
                 source);
 
-        if (!emailEnabled) {
+        if (!emailEnabled || preferencesService != null
+                && !preferencesService.allowsInsiderEmail(delivery.getSubscription().getUser())) {
             System.out.println("[EMAIL DISABLED] Insider activity email suppressed for "
                     + symbol + ".");
             return;
@@ -461,6 +648,18 @@ public class AlertNotificationService {
 
     public boolean isEmailDeliveryEnabled() {
         return emailEnabled;
+    }
+
+    public boolean isSignalEmailEnabled(AlertRule rule, DetectedSignal signal) {
+        return emailEnabled && (preferencesService == null || preferencesService.allowsNewSignalEmail(
+                rule.getUser(), rule.getPatternFamily(), rule.getInterval(), signal.tradeSignal()));
+    }
+
+    public boolean isSignalLifecycleEmailEnabled(AlertEvent event) {
+        if (!emailEnabled || event == null || event.getAlertRule() == null) return false;
+        AlertRule rule = event.getAlertRule();
+        return preferencesService == null || preferencesService.allowsLifecycleEmail(
+                rule.getUser(), event.getLifecycleStatus(), rule.getInterval(), event.getTradeSignal());
     }
 
     private String setupStrengthLabel(SignalStength strength) {

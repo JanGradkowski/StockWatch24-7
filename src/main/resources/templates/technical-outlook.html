@@ -26,9 +26,6 @@
       <h1><span th:text="${symbol}">AAPL</span> Full Technical Outlook</h1>
       <p>Completed-candle evidence, transparent rules, recent signals, and market-relative strength in one synchronized report.</p>
     </div>
-    <div class="signal-report-actions">
-      <a class="btn-secondary" th:href="@{/stock/{symbol}(symbol=${symbol})}">Back to stock</a>
-    </div>
   </header>
 
   <section class="technical-outlook-controlbar" aria-label="Technical outlook controls">
@@ -40,7 +37,10 @@
         <button type="button" class="signal-view-tab" data-outlook-interval="1mo">Monthly</button>
       </div>
     </div>
-    <div id="outlookFreshness" class="technical-outlook-freshness" aria-live="polite">Loading completed candles…</div>
+    <div class="technical-outlook-control-actions">
+      <div id="outlookFreshness" class="technical-outlook-freshness" aria-live="polite">Loading completed candles…</div>
+      <button id="editIndicatorPeriods" type="button" class="btn-secondary" disabled>Edit indicator periods</button>
+    </div>
   </section>
 
   <nav class="signal-view-tabs signal-four-view-tabs technical-outlook-tabs"
@@ -96,20 +96,20 @@
           <h2 id="outlookChartTitle">Price action and technical overlays</h2>
         </div>
         <div class="technical-overlay-controls" aria-label="Price overlays">
-          <label><input type="checkbox" data-price-overlay="ema" checked> Moving averages</label>
-          <label><input type="checkbox" data-price-overlay="bollinger" checked> Bollinger Bands</label>
-          <label><input type="checkbox" data-price-overlay="vwap" checked> VWAP</label>
-          <label><input type="checkbox" data-price-overlay="levels" checked> Support / resistance</label>
+          <label><input type="checkbox" data-price-overlay="ema" checked> <span id="emaOverlayLabel">EMA 20 / 50</span></label>
+          <label><input type="checkbox" data-price-overlay="bollinger" checked> <span id="bollingerOverlayLabel">Bollinger Bands 20, 2σ</span></label>
+          <label><input type="checkbox" data-price-overlay="vwap" checked> <span id="vwapOverlayLabel">VWAP 20</span></label>
+          <label><input type="checkbox" data-price-overlay="levels" checked> <span id="levelsOverlayLabel">Support / resistance 20</span></label>
           <label><input type="checkbox" data-price-overlay="elliott" checked> Elliott structures</label>
         </div>
       </div>
       <div class="technical-chart-legend">
-        <span class="legend-fast">Fast EMA</span><span class="legend-slow">Slow EMA</span>
-        <span class="legend-long">Long SMA</span><span class="legend-band">Bollinger</span>
-        <span class="legend-vwap">VWAP</span><span class="legend-level">Support / resistance</span>
+        <span id="fastEmaLegend" class="legend-fast">EMA 20</span><span id="slowEmaLegend" class="legend-slow">EMA 50</span>
+        <span id="longSmaLegend" class="legend-long">SMA 200</span><span id="bollingerLegend" class="legend-band">Bollinger 20, 2σ</span>
+        <span id="vwapLegend" class="legend-vwap">VWAP 20</span><span id="levelLegend" class="legend-level">Support / resistance 20</span>
       </div>
       <div id="technicalOutlookPriceChart" class="technical-outlook-price-chart" aria-label="Candlestick technical outlook chart"></div>
-      <p class="technical-chart-note">Markers identify virtual trades, recent technical signals, RSI state changes, and followed congressional or insider activity. Elliott structures are available on weekly and monthly intervals.</p>
+      <p class="technical-chart-note">Markers identify virtual trades, recent technical signals, <span id="rsiMarkerLabel">RSI 14</span> state changes, and followed congressional or insider activity. Elliott structures are available on weekly and monthly intervals.</p>
     </section>
   </section>
 
@@ -178,6 +178,51 @@
   </section>
 </main>
 
+<dialog id="indicatorPeriodDialog" class="unsaved-alert-dialog indicator-period-dialog" aria-labelledby="indicatorPeriodDialogTitle">
+  <form id="indicatorPeriodForm" class="unsaved-alert-dialog-content">
+    <span class="unsaved-alert-kicker">Saved analysis profile</span>
+    <h2 id="indicatorPeriodDialogTitle">Indicator periods</h2>
+    <p>Change the periods used by the <strong id="indicatorPeriodIntervalLabel">Daily</strong> analysis. These values are shared with Settings and will also affect future signal scoring for this interval.</p>
+    <div class="indicator-period-groups">
+      <fieldset>
+        <legend>Momentum and volatility</legend>
+        <div class="indicator-period-grid">
+          <label><span>RSI period</span><input type="number" min="2" max="500" step="1" required data-period-field="rsiPeriod"></label>
+          <label><span>ATR period</span><input type="number" min="2" max="500" step="1" required data-period-field="atrPeriod"></label>
+          <label><span>CCI period</span><input type="number" min="2" max="500" step="1" required data-period-field="cciPeriod"></label>
+          <label><span>Bollinger period</span><input type="number" min="2" max="500" step="1" required data-period-field="bollingerPeriod"></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Trend</legend>
+        <div class="indicator-period-grid">
+          <label><span>Fast EMA</span><input type="number" min="2" max="500" step="1" required data-period-field="fastEmaPeriod"></label>
+          <label><span>Slow EMA</span><input type="number" min="2" max="500" step="1" required data-period-field="slowEmaPeriod"></label>
+          <label><span>Long SMA</span><input type="number" min="2" max="500" step="1" required data-period-field="longSmaPeriod"></label>
+          <label><span>MACD fast</span><input type="number" min="2" max="500" step="1" required data-period-field="macdFastPeriod"></label>
+          <label><span>MACD slow</span><input type="number" min="2" max="500" step="1" required data-period-field="macdSlowPeriod"></label>
+          <label><span>MACD signal</span><input type="number" min="2" max="500" step="1" required data-period-field="macdSignalPeriod"></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Volume and price location</legend>
+        <div class="indicator-period-grid">
+          <label><span>Volume average</span><input type="number" min="2" max="500" step="1" required data-period-field="volumePeriod"></label>
+          <label><span>Rolling VWAP</span><input type="number" min="2" max="500" step="1" required data-period-field="vwapPeriod"></label>
+          <label><span>Volume profile</span><input type="number" min="2" max="500" step="1" required data-period-field="volumeProfilePeriod"></label>
+          <label><span>Support / resistance</span><input type="number" min="2" max="500" step="1" required data-period-field="supportResistancePeriod"></label>
+        </div>
+      </fieldset>
+    </div>
+    <p id="indicatorPeriodStatus" class="indicator-period-status" role="status"></p>
+    <div class="unsaved-alert-dialog-actions indicator-period-dialog-actions">
+      <a th:href="@{/settings/analysis-alerts}" class="btn-secondary">Open all analysis settings</a>
+      <button id="cancelIndicatorPeriods" type="button" class="btn-secondary">Cancel</button>
+      <button id="saveIndicatorPeriods" type="submit" class="btn-accent">Save and recalculate</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="createVirtualTradeDialog" class="unsaved-alert-dialog virtual-trade-create-dialog" aria-labelledby="createVirtualTradeTitle">
   <div class="unsaved-alert-dialog-content">
     <span class="unsaved-alert-kicker">Paper trading &middot; no real order</span>
@@ -201,6 +246,19 @@
   </div>
 </dialog>
 
+<dialog id="deleteVirtualTradeDialog" class="unsaved-alert-dialog signal-delete-dialog" aria-labelledby="deleteVirtualTradeTitle">
+  <div class="unsaved-alert-dialog-content">
+    <span class="unsaved-alert-kicker">Permanent archive action</span>
+    <h2 id="deleteVirtualTradeTitle">Delete virtual trade?</h2>
+    <p id="deleteVirtualTradeExplanation">This removes the virtual trade from your account and cannot be undone.</p>
+    <p id="deleteVirtualTradeStatus" class="technical-outlook-freshness" role="status"></p>
+    <div class="unsaved-alert-dialog-actions">
+      <button id="cancelDeleteVirtualTrade" type="button" class="btn-secondary">Cancel</button>
+      <button id="confirmDeleteVirtualTrade" type="button" class="signal-delete-confirm-button">Delete</button>
+    </div>
+  </div>
+</dialog>
+
 <script th:attr="nonce=${cspNonce}">
 (() => {
   const page = document.getElementById('technicalOutlookPage');
@@ -217,6 +275,7 @@
   let pendingTradeSide = 'BUY';
   let virtualSizeMode = 'none';
   let pendingTradeRequestId = null;
+  let pendingTradeToDelete = null;
 
   const colors = () => document.documentElement.dataset.theme === 'light'
           ? { text: '#26322b', grid: 'rgba(38,50,43,.09)', border: 'rgba(38,50,43,.18)',
@@ -307,12 +366,36 @@
 
   function render(outlook) {
     clearCharts();
-    document.getElementById('outlookFreshness').textContent = `${outlook.intervalLabel} · ${outlook.freshness}`;
+    document.getElementById('outlookFreshness').textContent =
+            `${outlook.intervalLabel} · ${outlook.profileLabel || 'Factory profile'} · ${outlook.freshness}`;
+    renderIndicatorPeriodLabels(outlook);
     renderSummary(outlook);
     renderPriceChart(outlook);
     renderScoreReport(outlook);
     renderMarketComparison(outlook.marketComparison);
     renderCompanyTrades();
+  }
+
+  function renderIndicatorPeriodLabels(outlook) {
+    const settings = outlook.indicatorSettings;
+    if (!settings) return;
+    const text = (id, value) => { document.getElementById(id).textContent = value; };
+    text('emaOverlayLabel', `EMA ${settings.fastEmaPeriod} / ${settings.slowEmaPeriod}`);
+    text('bollingerOverlayLabel', `Bollinger Bands ${settings.bollingerPeriod}, ${settings.bollingerDeviation}σ`);
+    text('vwapOverlayLabel', `VWAP ${settings.vwapPeriod}`);
+    text('levelsOverlayLabel', `Support / resistance ${settings.supportResistancePeriod}`);
+    text('fastEmaLegend', `EMA ${settings.fastEmaPeriod}`);
+    text('slowEmaLegend', `EMA ${settings.slowEmaPeriod}`);
+    text('longSmaLegend', `SMA ${settings.longSmaPeriod}`);
+    text('bollingerLegend', `Bollinger ${settings.bollingerPeriod}, ${settings.bollingerDeviation}σ`);
+    text('vwapLegend', `VWAP ${settings.vwapPeriod}`);
+    text('levelLegend', `Support / resistance ${settings.supportResistancePeriod}`);
+    text('rsiMarkerLabel', `RSI ${settings.rsiPeriod}`);
+    document.querySelectorAll('[data-period-field]').forEach(input => {
+      input.value = settings[input.dataset.periodField];
+    });
+    document.getElementById('indicatorPeriodIntervalLabel').textContent = outlook.intervalLabel;
+    document.getElementById('editIndicatorPeriods').disabled = false;
   }
 
   function renderSummary(outlook) {
@@ -349,10 +432,10 @@
     return series;
   }
 
-  function rollingLevels(candles, mode) {
+  function rollingLevels(candles, mode, period) {
     return candles.map((candle, index) => {
-      if (index < 19) return null;
-      const windowValues = candles.slice(index - 19, index + 1);
+      if (index + 1 < period) return null;
+      const windowValues = candles.slice(index - period + 1, index + 1);
       const value = mode === 'support'
               ? Math.min(...windowValues.map(item => Number(item.low)))
               : Math.max(...windowValues.map(item => Number(item.high)));
@@ -372,15 +455,16 @@
     candleSeries.setData(candles.map(candle => ({
       time: chartDate(candle.timestamp), open: candle.open, high: candle.high, low: candle.low, close: candle.close
     })));
-    addOverlay('ema', { color: palette.fast, lineWidth: 2, title: 'Fast EMA' }, lineData(candles, 'fastEma'));
-    addOverlay('ema', { color: palette.slow, lineWidth: 2, title: 'Slow EMA' }, lineData(candles, 'slowEma'));
-    addOverlay('ema', { color: palette.long, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: 'Long SMA' }, lineData(candles, 'longSma'));
-    addOverlay('bollinger', { color: palette.band, lineWidth: 1 }, lineData(candles, 'bollingerLower'));
-    addOverlay('bollinger', { color: palette.band, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted }, lineData(candles, 'bollingerMiddle'));
-    addOverlay('bollinger', { color: palette.band, lineWidth: 1 }, lineData(candles, 'bollingerUpper'));
-    addOverlay('vwap', { color: palette.vwap, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed }, lineData(candles, 'vwap'));
-    addOverlay('levels', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'support'));
-    addOverlay('levels', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'resistance'));
+    const settings = outlook.indicatorSettings;
+    addOverlay('ema', { color: palette.fast, lineWidth: 2, title: `EMA ${settings.fastEmaPeriod}` }, lineData(candles, 'fastEma'));
+    addOverlay('ema', { color: palette.slow, lineWidth: 2, title: `EMA ${settings.slowEmaPeriod}` }, lineData(candles, 'slowEma'));
+    addOverlay('ema', { color: palette.long, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: `SMA ${settings.longSmaPeriod}` }, lineData(candles, 'longSma'));
+    addOverlay('bollinger', { color: palette.band, lineWidth: 1, title: `Bollinger ${settings.bollingerPeriod} lower` }, lineData(candles, 'bollingerLower'));
+    addOverlay('bollinger', { color: palette.band, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, title: `Bollinger ${settings.bollingerPeriod} middle` }, lineData(candles, 'bollingerMiddle'));
+    addOverlay('bollinger', { color: palette.band, lineWidth: 1, title: `Bollinger ${settings.bollingerPeriod} upper` }, lineData(candles, 'bollingerUpper'));
+    addOverlay('vwap', { color: palette.vwap, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: `VWAP ${settings.vwapPeriod}` }, lineData(candles, 'vwap'));
+    addOverlay('levels', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'support', settings.supportResistancePeriod));
+    addOverlay('levels', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'resistance', settings.supportResistancePeriod));
 
     const markers = signalMarkers(outlook).concat(activityMarkers(outlook), indicatorEventMarkers(outlook), virtualTradeMarkers(outlook));
     markers.sort((left, right) => String(left.time).localeCompare(String(right.time)));
@@ -424,7 +508,7 @@
       return [{
         time: chartDate(point.timestamp), position: point.vote > 0 ? 'belowBar' : 'aboveBar',
         color: point.vote > 0 ? colors().up : colors().down, shape: 'square',
-        text: point.vote > 0 ? 'RSI oversold' : 'RSI overbought'
+        text: point.vote > 0 ? `${rsi.label} oversold` : `${rsi.label} overbought`
       }];
     });
   }
@@ -624,6 +708,7 @@
       return;
     }
     companyTrades.forEach(trade => {
+      const record = element('div', 'company-virtual-trade-record');
       const card = element('a', `company-virtual-trade-card ${trade.side.toLowerCase()}`);
       card.href = trade.detailUrl;
       const heading = element('div', 'company-virtual-trade-heading');
@@ -631,9 +716,23 @@
       const price = element('p', '', `Entry ${formatNumber(trade.entryPrice, 4)} ${trade.currency} · ${trade.intervalLabel}`);
       const outcome = element('div', `company-virtual-trade-outcome ${trade.resultPercent >= 0 ? 'positive' : 'negative'}`);
       outcome.append(element('strong', '', `${trade.resultPercent >= 0 ? '+' : ''}${Number(trade.resultPercent).toFixed(2)}%`), element('span', '', trade.outcomeLabel));
+      const entryDate = new Date(trade.entryAt);
+      outcome.append(element('small', '', Number.isNaN(entryDate.getTime())
+              ? 'Measured from the captured virtual entry'
+              : `From captured entry · ${entryDate.toLocaleString()}`));
       if (trade.monetaryResult !== null) outcome.append(element('small', '', `${Number(trade.monetaryResult) >= 0 ? '+' : ''}${formatNumber(trade.monetaryResult, 2)} ${trade.currency}`));
       card.append(heading, price, outcome, element('span', 'technical-recent-signal-open', 'Open virtual trade →'));
-      grid.append(card);
+      const deleteButton = element('button', 'signal-archive-delete-button company-virtual-trade-delete', 'Delete');
+      deleteButton.type = 'button';
+      deleteButton.setAttribute('aria-label', `Delete ${trade.sideLabel} for ${trade.symbol}`);
+      deleteButton.addEventListener('click', () => {
+        pendingTradeToDelete = trade;
+        document.getElementById('deleteVirtualTradeExplanation').textContent = `${trade.sideLabel} for ${trade.symbol} will be permanently removed from your account. This cannot be undone.`;
+        document.getElementById('deleteVirtualTradeStatus').textContent = '';
+        document.getElementById('deleteVirtualTradeDialog').showModal();
+      });
+      record.append(card, deleteButton);
+      grid.append(record);
     });
   }
 
@@ -663,6 +762,62 @@
       }
     }, 0);
   }
+
+  const indicatorPeriodDialog = document.getElementById('indicatorPeriodDialog');
+  const indicatorPeriodForm = document.getElementById('indicatorPeriodForm');
+  const indicatorPeriodStatus = document.getElementById('indicatorPeriodStatus');
+  const saveIndicatorPeriods = document.getElementById('saveIndicatorPeriods');
+
+  document.getElementById('editIndicatorPeriods').addEventListener('click', () => {
+    if (!lastOutlook?.indicatorSettings) return;
+    renderIndicatorPeriodLabels(lastOutlook);
+    indicatorPeriodStatus.textContent = '';
+    indicatorPeriodDialog.showModal();
+  });
+  document.getElementById('cancelIndicatorPeriods').addEventListener('click', () => indicatorPeriodDialog.close());
+  indicatorPeriodForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!indicatorPeriodForm.reportValidity()) return;
+    const payload = { interval: currentInterval };
+    document.querySelectorAll('[data-period-field]').forEach(input => {
+      payload[input.dataset.periodField] = Number(input.value);
+    });
+    if (payload.fastEmaPeriod >= payload.slowEmaPeriod || payload.slowEmaPeriod > payload.longSmaPeriod) {
+      indicatorPeriodStatus.textContent = 'Use fast EMA < slow EMA ≤ long SMA.';
+      return;
+    }
+    if (payload.macdFastPeriod >= payload.macdSlowPeriod) {
+      indicatorPeriodStatus.textContent = 'The MACD fast period must be below the MACD slow period.';
+      return;
+    }
+
+    saveIndicatorPeriods.disabled = true;
+    saveIndicatorPeriods.textContent = 'Saving and recalculating…';
+    indicatorPeriodStatus.textContent = `Updating the ${lastOutlook.intervalLabel.toLowerCase()} profile…`;
+    try {
+      const response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook/indicator-periods`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          [document.querySelector('meta[name="_csrf_header"]').content]: document.querySelector('meta[name="_csrf"]').content
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'The indicator periods could not be saved.');
+      }
+      const outlook = await response.json();
+      lastOutlook = outlook;
+      render(outlook);
+      indicatorPeriodDialog.close();
+    } catch (error) {
+      indicatorPeriodStatus.textContent = error.message || 'The indicator periods could not be saved.';
+    } finally {
+      saveIndicatorPeriods.disabled = false;
+      saveIndicatorPeriods.textContent = 'Save and recalculate';
+    }
+  });
 
   const createDialog = document.getElementById('createVirtualTradeDialog');
   document.querySelectorAll('[data-create-virtual-trade]').forEach(button => button.addEventListener('click', () => {
@@ -715,6 +870,40 @@
       document.getElementById('createVirtualTradeStatus').textContent = error.message;
       event.currentTarget.disabled = false;
       event.currentTarget.textContent = 'Create virtual trade';
+    }
+  });
+
+  const deleteDialog = document.getElementById('deleteVirtualTradeDialog');
+  document.getElementById('cancelDeleteVirtualTrade').addEventListener('click', () => {
+    pendingTradeToDelete = null;
+    deleteDialog.close();
+  });
+  document.getElementById('confirmDeleteVirtualTrade').addEventListener('click', async event => {
+    if (!pendingTradeToDelete) {
+      deleteDialog.close();
+      return;
+    }
+    const tradeId = pendingTradeToDelete.id;
+    event.currentTarget.disabled = true;
+    event.currentTarget.textContent = 'Deleting…';
+    try {
+      const response = await fetch(`/api/virtual-trades/${encodeURIComponent(tradeId)}/delete`, {
+        method: 'POST',
+        headers: { [document.querySelector('meta[name="_csrf_header"]').content]: document.querySelector('meta[name="_csrf"]').content }
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || error.error || 'The virtual trade could not be deleted.');
+      }
+      companyTrades = companyTrades.filter(trade => trade.id !== tradeId);
+      pendingTradeToDelete = null;
+      deleteDialog.close();
+      if (lastOutlook) render(lastOutlook);
+    } catch (error) {
+      document.getElementById('deleteVirtualTradeStatus').textContent = error.message || 'The virtual trade could not be deleted.';
+    } finally {
+      event.currentTarget.disabled = false;
+      event.currentTarget.textContent = 'Delete';
     }
   });
 

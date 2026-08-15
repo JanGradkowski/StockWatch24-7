@@ -20,5 +20,7 @@ public class UserViewModelAdvice {
                 ? User.DEFAULT_ELLIOTT_MOTIVE_COLOR : user.getElliottMotiveColor());
         model.addAttribute("elliottCorrectiveColor", user == null
                 ? User.DEFAULT_ELLIOTT_CORRECTIVE_COLOR : user.getElliottCorrectiveColor());
+        model.addAttribute("elliottSubwaveColor", user == null
+                ? User.DEFAULT_ELLIOTT_SUBWAVE_COLOR : user.getElliottSubwaveColor());
     }
 }

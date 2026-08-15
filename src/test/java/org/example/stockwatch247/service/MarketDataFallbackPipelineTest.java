@@ -120,6 +120,22 @@ class MarketDataFallbackPipelineTest {
         verify(context.candleRepository(), never()).saveAll(any());
     }
 
+    @Test
+    void neverPersistsNonPositiveProviderTimestamps() {
+        List<MarketDataBar> yahooBars = List.of(
+                new MarketDataBar("SAP.DE", 0L, 122.85, 122.93, 122.84, 122.87, 597_475L),
+                bar(1, 100, 105, 99, 104));
+        TestContext context = context(yahooBars, true);
+
+        MarketDataService.CandleSyncResult result = context.marketDataService()
+                .syncCandles("SAP.DE", "1d", null, true);
+
+        assertThat(result.candlesSynced()).isEqualTo(1);
+        assertThat(context.savedCandles())
+                .singleElement()
+                .satisfies(candle -> assertThat(candle.getTimestamp()).isPositive());
+    }
+
     private TestContext context(List<MarketDataBar> yahooBars, boolean failTwelveData) {
         CandleRepository candleRepository = mock(CandleRepository.class);
         StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);

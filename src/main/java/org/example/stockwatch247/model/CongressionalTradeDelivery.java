@@ -58,6 +58,9 @@ public class CongressionalTradeDelivery {
     @Column(name = "read_at")
     private Instant readAt;
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 
@@ -109,6 +112,10 @@ public class CongressionalTradeDelivery {
 
     public boolean isRead() {
         return readAt != null;
+    }
+
+    public Instant getDeletedAt() {
+        return deletedAt;
     }
 
     public String getLastError() {
@@ -166,6 +173,12 @@ public class CongressionalTradeDelivery {
     public void markRead(Instant readAt) {
         if (this.readAt == null) {
             this.readAt = readAt;
+        }
+    }
+
+    public void markDeleted(Instant deletedAt) {
+        if (this.deletedAt == null) {
+            this.deletedAt = deletedAt;
         }
     }
 
