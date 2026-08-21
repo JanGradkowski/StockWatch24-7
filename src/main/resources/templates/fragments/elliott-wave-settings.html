@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="elliottWaveSettings(preferences)" class="elliott-settings-stack">
+  <section class="settings-card analysis-profile-overview elliott-settings-overview">
+    <div class="settings-card-heading">
+      <div><span class="settings-number">01</span><h2>Elliott Wave detection definitions</h2></div>
+      <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
+            th:text="${preferences.custom()} ? 'Custom definitions' : 'Factory definitions'">Factory definitions</span>
+    </div>
+    <p class="analysis-settings-intro">Control how completed candles become swing pivots, how I–II–III–IV–V is validated, and which A–B–C corrections are accepted. Daily, weekly, and monthly definitions are stored separately.</p>
+    <div class="analysis-safety-strip elliott-definition-guide">
+      <strong>How the values are measured</strong>
+      <span><b>Retracement (%)</b> divides a corrective price distance by the actionary wave or complete impulse named in that option.</span>
+      <span><b>Ratio (%)</b> compares two wave lengths: 100% means equal length, 50% means half, and 200% means twice as long.</span>
+      <span><b>ATR multiple (×)</b> controls how far price must reverse before a new swing pivot exists.</span>
+    </div>
+    <div class="elliott-theory-note">
+      <strong>About the “longest wave” rules</strong>
+      <p>Standard Elliott theory allows Wave I or Wave V to be longest. Its conventional hard rule is that Wave III cannot be the shortest of I, III, and V. For a deliberately stricter count, enable “Require Wave I to be the shortest actionary wave.” It accepts equal-length ties, overrides the permissive Wave-I switch, and is disabled in the factory profile.</p>
+    </div>
+    <p class="candlestick-pattern-note">Changes affect future alerts, newly calculated chart overlays, lower-degree hover counts, and newly reconstructed historical results. Already stored signals are not rewritten.</p>
+  </section>
+
+  <form id="elliottWaveDefinitionsForm" th:action="@{/settings/elliott-waves}" method="post" class="elliott-preferences-form">
+    <section class="settings-card elliott-interval-card" th:each="profile, stat : ${preferences.profiles}"
+             th:id="${'elliott-profile-' + profile.key}">
+      <div class="settings-card-heading candlestick-pattern-heading">
+        <div>
+          <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 2, 2)}">02</span>
+          <div><p class="scoring-family-label">Detection interval</p><h2 th:text="${profile.label + ' Elliott Waves'}">Weekly Elliott Waves</h2></div>
+        </div>
+        <div class="candlestick-pattern-heading-actions">
+          <span class="analysis-profile-state" th:classappend="${profile.factoryProfile} ? '' : ' custom'"
+                th:text="${profile.factoryProfile} ? 'Factory' : 'Custom'">Factory</span>
+          <button class="danger-outline-button" type="submit" th:form="${profile.key + '-elliott-reset-form'}">Reset this interval</button>
+        </div>
+      </div>
+      <p class="candlestick-pattern-description" th:text="${profile.description}">Completed weekly candles.</p>
+
+      <section class="elliott-rule-section elliott-pivot-section">
+        <div class="elliott-rule-section-heading">
+          <div><span class="elliott-rule-kicker">Step 1</span><h3>Pivot construction and confirmation</h3></div>
+          <p>These values decide which price reversals become candidate wave endpoints before any Elliott labels are assigned.</p>
+        </div>
+        <div class="elliott-setting-list">
+          <div class="candlestick-threshold-row elliott-number-row" th:each="setting : ${profile.numbers}"
+               th:if="${setting.section.name() == 'PIVOTS'}">
+            <label class="candlestick-threshold-copy" th:for="${profile.key + '-' + setting.key}">
+              <strong th:text="${setting.label}">Minimum completed candles</strong>
+              <small th:text="${setting.description}">What the value measures.</small>
+              <em th:text="${setting.effect}">How changing it affects detection.</em>
+            </label>
+            <label class="candlestick-value-control" th:for="${profile.key + '-' + setting.key}">
+              <span>Value <small>Factory: <b th:text="${setting.factoryValue + setting.unit}">34</b></small></span>
+              <span><input type="number" required inputmode="decimal" th:id="${profile.key + '-' + setting.key}"
+                           th:name="${profile.key + '.' + setting.key}" th:min="${setting.min}" th:max="${setting.max}"
+                           th:step="${setting.step}" th:value="${setting.value}"><b th:text="${setting.unit}"></b></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="elliott-rule-section elliott-motive-section">
+        <div class="elliott-rule-section-heading">
+          <div><span class="elliott-rule-kicker">Step 2</span><h3>Motive I–II–III–IV–V definition</h3></div>
+          <p>Retracement fields define price proportions. Structural switches decide which wave relationships are hard requirements.</p>
+        </div>
+        <div class="elliott-structural-switches">
+          <label class="elliott-switch-row" th:each="setting : ${profile.switches}"
+                 th:if="${setting.section.name() == 'MOTIVE'}">
+            <input type="checkbox" th:name="${profile.key + '.' + setting.key}" value="true" th:checked="${setting.value}">
+            <span class="elliott-switch-control" aria-hidden="true"></span>
+            <span><strong th:text="${setting.label}">Require Wave III not to be shortest</strong><small th:text="${setting.description}">Exact structural meaning.</small><em th:text="${setting.enabledEffect}">What enabled means.</em><b th:text="${'Factory: ' + (setting.factoryValue ? 'enabled' : 'disabled')}">Factory: enabled</b></span>
+          </label>
+        </div>
+        <div class="elliott-setting-list">
+          <div class="candlestick-threshold-row elliott-number-row" th:each="setting : ${profile.numbers}"
+               th:if="${setting.section.name() == 'MOTIVE'}">
+            <label class="candlestick-threshold-copy" th:for="${profile.key + '-' + setting.key}">
+              <strong th:text="${setting.label}">Wave II preferred minimum</strong>
+              <small th:text="${setting.description}">Exact ratio definition.</small>
+              <em th:text="${setting.effect}">How changing it affects detection.</em>
+            </label>
+            <label class="candlestick-value-control" th:for="${profile.key + '-' + setting.key}">
+              <span>Value <small>Factory: <b th:text="${setting.factoryValue + setting.unit}">23.6%</b></small></span>
+              <span><input type="number" required inputmode="decimal" th:id="${profile.key + '-' + setting.key}"
+                           th:name="${profile.key + '.' + setting.key}" th:min="${setting.min}" th:max="${setting.max}"
+                           th:step="${setting.step}" th:value="${setting.value}"><b th:text="${setting.unit}">%</b></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="elliott-rule-section elliott-corrective-section">
+        <div class="elliott-rule-section-heading">
+          <div><span class="elliott-rule-kicker">Step 3</span><h3>Corrective A–B–C definition</h3></div>
+          <p>Choose permitted correction shapes, then define the maximum retracement and the allowed relationship between Waves A, B, and C.</p>
+        </div>
+        <div class="elliott-structural-switches">
+          <label class="elliott-switch-row" th:each="setting : ${profile.switches}"
+                 th:if="${setting.section.name() == 'CORRECTIVE'}">
+            <input type="checkbox" th:name="${profile.key + '.' + setting.key}" value="true" th:checked="${setting.value}">
+            <span class="elliott-switch-control" aria-hidden="true"></span>
+            <span><strong th:text="${setting.label}">Allow expanded flats</strong><small th:text="${setting.description}">Exact structural meaning.</small><em th:text="${setting.enabledEffect}">What enabled means.</em><b th:text="${'Factory: ' + (setting.factoryValue ? 'enabled' : 'disabled')}">Factory: enabled</b></span>
+          </label>
+        </div>
+        <div class="elliott-setting-list">
+          <div class="candlestick-threshold-row elliott-number-row" th:each="setting : ${profile.numbers}"
+               th:if="${setting.section.name() == 'CORRECTIVE'}">
+            <label class="candlestick-threshold-copy" th:for="${profile.key + '-' + setting.key}">
+              <strong th:text="${setting.label}">Maximum Wave B recovery</strong>
+              <small th:text="${setting.description}">Exact ratio definition.</small>
+              <em th:text="${setting.effect}">How changing it affects detection.</em>
+            </label>
+            <label class="candlestick-value-control" th:for="${profile.key + '-' + setting.key}">
+              <span>Value <small>Factory: <b th:text="${setting.factoryValue + setting.unit}">200%</b></small></span>
+              <span><input type="number" required inputmode="decimal" th:id="${profile.key + '-' + setting.key}"
+                           th:name="${profile.key + '.' + setting.key}" th:min="${setting.min}" th:max="${setting.max}"
+                           th:step="${setting.step}" th:value="${setting.value}"><b th:text="${setting.unit}">%</b></span>
+            </label>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="settings-card analysis-save-card candlestick-pattern-save-card">
+      <div><strong>Apply Elliott Wave definitions</strong><p>Every submitted range is checked for contradictory minimums, maximums, and impossible timing combinations.</p></div>
+      <button class="btn-accent" type="submit">Apply changes</button>
+    </section>
+  </form>
+
+  <form th:each="profile : ${preferences.profiles}" th:id="${profile.key + '-elliott-reset-form'}"
+        th:action="@{/settings/elliott-waves/reset}" method="post" class="hidden-reset-form">
+    <input type="hidden" name="interval" th:value="${profile.interval.name()}">
+  </form>
+
+  <section class="settings-card analysis-factory-zone candlestick-pattern-factory-zone">
+    <div class="settings-card-heading"><div><span class="settings-number">04</span><h2>Factory restoration</h2></div><p>Candlestick, scoring, alert, and appearance settings remain unchanged.</p></div>
+    <form th:action="@{/settings/elliott-waves/reset}" method="post" class="settings-action-row">
+      <input type="hidden" name="interval" value="all">
+      <div><h3>Restore every Elliott Wave definition</h3><p>Returns daily, weekly, and monthly pivot, motive, and corrective rules to the documented StockWatch factory values.</p></div>
+      <button class="danger-button" type="submit">Restore factory definitions</button>
+    </form>
+  </section>
+</div>
+</body>
+</html>

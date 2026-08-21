@@ -17,7 +17,7 @@ public final class CandlestickHorizonGuidance {
     }
 
     public static Optional<Guidance> forSignal(AlertPatternFamily family, TimeInterval interval) {
-        if (family == AlertPatternFamily.ELLIOTT_WAVE || interval == null) {
+        if (family != AlertPatternFamily.CANDLESTICK || interval == null) {
             return Optional.empty();
         }
 

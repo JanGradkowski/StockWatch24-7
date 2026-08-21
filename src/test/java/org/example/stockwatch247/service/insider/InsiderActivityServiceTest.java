@@ -7,6 +7,7 @@ import org.example.stockwatch247.model.InsiderTradeDelivery;
 import org.example.stockwatch247.model.InsiderTradeSubscription;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.enums.InsiderDeliveryStatus;
 import org.example.stockwatch247.model.enums.InsiderTradeType;
 import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.TimeInterval;
@@ -128,6 +129,36 @@ class InsiderActivityServiceTest {
                 .isEqualByComparingTo("20.00");
         assertThat(response.trades().getFirst().returnAsOf())
                 .isEqualTo(LocalDate.now(ZoneOffset.UTC).minusDays(1));
+    }
+
+    @Test
+    void activityArchiveKeepsDirectionalReturnsAndReusesTheLatestCandlePerTicker() {
+        StockAsset asset = stock();
+        User user = new User();
+        user.setId(9L);
+        Fixture fixture = fixture(asset);
+        InsiderTrade purchase = trade(asset, 1L, InsiderTradeType.PURCHASE, "100");
+        InsiderTrade sale = trade(asset, 2L, InsiderTradeType.SALE, "100");
+        InsiderTradeDelivery purchaseDelivery = delivery(11L, purchase);
+        InsiderTradeDelivery saleDelivery = delivery(12L, sale);
+        when(fixture.deliveries().findAllForUser(user))
+                .thenReturn(List.of(purchaseDelivery, saleDelivery));
+        long completedTimestamp = LocalDate.now(ZoneOffset.UTC).minusDays(1)
+                .atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        Candle latest = new Candle("AAPL", "1d", completedTimestamp, 80, 82, 78, 80.0, 1000L);
+        when(fixture.candles().findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                eq("AAPL"), eq("1d"), any(Pageable.class))).thenReturn(List.of(latest));
+        when(fixture.completion().isComplete(completedTimestamp, TimeInterval.DAILY)).thenReturn(true);
+
+        var activity = fixture.service().getAllActivity(user);
+
+        assertThat(activity).extracting(InsiderActivityService.DashboardActivityView::returnPercent)
+                .containsExactly(new BigDecimal("-20.00"), new BigDecimal("20.00"));
+        assertThat(activity).extracting(InsiderActivityService.DashboardActivityView::returnAsOf)
+                .containsOnly(LocalDate.now(ZoneOffset.UTC).minusDays(1));
+        verify(fixture.candles(), times(1))
+                .findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                        eq("AAPL"), eq("1d"), any(Pageable.class));
     }
 
     @Test
@@ -326,6 +357,15 @@ class InsiderActivityServiceTest {
         trade.setFirstSeenAt(Instant.now());
         trade.setLastSeenAt(Instant.now());
         return trade;
+    }
+
+    private InsiderTradeDelivery delivery(long id, InsiderTrade trade) {
+        InsiderTradeDelivery delivery = new InsiderTradeDelivery();
+        delivery.setId(id);
+        delivery.setTrade(trade);
+        delivery.setStatus(InsiderDeliveryStatus.SENT);
+        delivery.setCreatedAt(Instant.now());
+        return delivery;
     }
 
     private record Fixture(

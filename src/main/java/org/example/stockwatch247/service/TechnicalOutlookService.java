@@ -10,6 +10,7 @@ import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.service.technical.TechnicalResearchSnapshot;
 import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.CongressionalTradeDeliveryRepository;
@@ -103,8 +104,10 @@ public class TechnicalOutlookService {
 
         StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(normalizedSymbol).orElse(null);
         MarketComparisonView market = marketComparison(normalizedSymbol, asset, rules.marketRelativeThresholdPercent());
-        List<RecentSignalView> recentSignals = recentSignals(user, normalizedSymbol);
-        List<IndicatorView> indicators = indicatorViews(candles, rules);
+        List<RecentSignalView> recentSignals = recentSignals(user, normalizedSymbol, interval.timeInterval());
+        List<TechnicalResearchSnapshot> research = enrichmentService.research(
+                rawCandles, Math.min(ANALYSIS_CANDLES, rawCandles.size()), technicalProfile);
+        List<IndicatorView> indicators = indicatorViews(candles, research, rules);
 
         List<VoteInput> rawVotes = new ArrayList<>();
         indicators.stream()
@@ -170,6 +173,7 @@ public class TechnicalOutlookService {
     }
 
     private List<IndicatorView> indicatorViews(List<EnrichedCandle> candles,
+                                               List<TechnicalResearchSnapshot> research,
                                                AnalysisPreferencesService.IntervalProfile rules) {
         List<IndicatorView> views = new ArrayList<>();
         String rsiLabel = "RSI " + rules.rsiPeriod();
@@ -282,7 +286,115 @@ public class TechnicalOutlookService {
                 volumeProfileLabel + " buys below estimated VAL and sells above estimated VAH; otherwise neutral.",
                 List.of(0.0, 50.0, 100.0)));
         views.add(supportResistance(candles, rules));
+        addResearchIndicators(views, candles, research, rules);
         return views.stream().map(view -> withScoringState(view, scoringEnabled(view.key(), rules))).toList();
+    }
+
+    private void addResearchIndicators(List<IndicatorView> views,
+                                       List<EnrichedCandle> candles,
+                                       List<TechnicalResearchSnapshot> research,
+                                       AnalysisPreferencesService.IntervalProfile rules) {
+        if (research == null || research.isEmpty()) return;
+        Map<Long, EnrichedCandle> candleByTimestamp = candles.stream().collect(
+                java.util.stream.Collectors.toMap(
+                        EnrichedCandle::timestamp, candle -> candle, (left, right) -> right));
+        views.add(researchIndicator("adx", "ADX / directional movement " + rules.atrPeriod(),
+                "TREND", "index points", false,
+                research.stream().map(item -> new ResearchValue(item.timestamp(), item.adx())).toList(),
+                value -> 0,
+                value -> value >= 25 ? "TA4J ADX identifies a comparatively strong directional move."
+                        : value >= 20 ? "TA4J ADX identifies a developing directional move."
+                        : "TA4J ADX identifies weak or non-directional movement.",
+                "Research context only: ADX measures trend strength and never contributes a production vote.",
+                List.of(20.0, 25.0)));
+        views.add(researchIndicator("dmi", "+DI minus -DI " + rules.atrPeriod(),
+                "TREND", "index points", false,
+                research.stream().map(item -> new ResearchValue(
+                        item.timestamp(), item.plusDi() - item.minusDi())).toList(),
+                value -> value > 0 ? 1 : value < 0 ? -1 : 0,
+                value -> value > 0 ? "+DI is above -DI in the TA4J research calculation."
+                        : value < 0 ? "-DI is above +DI in the TA4J research calculation."
+                        : "+DI and -DI are balanced.",
+                "Research-only direction: positive when +DI exceeds -DI; this is excluded from scoring.",
+                List.of(0.0)));
+        views.add(researchIndicator("stochastic", "Stochastic %K " + rules.rsiPeriod(),
+                "MOMENTUM", "index points", false,
+                research.stream().map(item -> new ResearchValue(item.timestamp(), item.stochasticK())).toList(),
+                TechnicalOutlookService::boundedOscillatorVote,
+                TechnicalOutlookService::boundedOscillatorExplanation,
+                "Research-only context: <=20 is oversold and >=80 is overbought; excluded from scoring.",
+                List.of(20.0, 50.0, 80.0)));
+        views.add(researchIndicator("stochasticRsi", "Stochastic RSI " + rules.rsiPeriod(),
+                "MOMENTUM", "index points", false,
+                research.stream().map(item -> new ResearchValue(item.timestamp(), item.stochasticRsi())).toList(),
+                TechnicalOutlookService::boundedOscillatorVote,
+                TechnicalOutlookService::boundedOscillatorExplanation,
+                "Research-only context: <=20 is oversold and >=80 is overbought; excluded from scoring.",
+                List.of(20.0, 50.0, 80.0)));
+        views.add(researchIndicator("obv", "On-balance volume", "VOLUME", "volume units", false,
+                research.stream().map(item -> new ResearchValue(item.timestamp(), item.obv())).toList(),
+                value -> 0,
+                value -> "TA4J OBV is displayed as cumulative participation context.",
+                "Research context only: raw OBV is not assigned a directional production vote.", List.of()));
+        views.add(researchIndicator("mfi", "Money Flow Index " + rules.rsiPeriod(),
+                "VOLUME", "index points", false,
+                research.stream().map(item -> new ResearchValue(item.timestamp(), item.moneyFlowIndex())).toList(),
+                TechnicalOutlookService::boundedOscillatorVote,
+                value -> value <= 20 ? "TA4J MFI is in its lower research region."
+                        : value >= 80 ? "TA4J MFI is in its upper research region."
+                        : "TA4J MFI is inside its central region.",
+                "Research-only context: <=20 and >=80 are descriptive boundaries; excluded from scoring.",
+                List.of(20.0, 50.0, 80.0)));
+        views.add(researchIndicator("donchian", "Donchian Channel " + rules.bollingerPeriod(),
+                "PRICE_LOCATION", "% band position", true,
+                research.stream().map(item -> new ResearchValue(item.timestamp(), bandPosition(
+                        closeAt(candleByTimestamp, item.timestamp()), item.donchianLower(), item.donchianUpper()))).toList(),
+                value -> value <= 0 ? 1 : value >= 100 ? -1 : 0,
+                value -> "TA4J Donchian location is shown for breakout research only.",
+                "Research-only channel location; excluded from production scoring.",
+                List.of(0.0, 50.0, 100.0)));
+        views.add(researchIndicator("keltner", "Keltner Channel " + rules.bollingerPeriod(),
+                "VOLATILITY", "% band position", true,
+                research.stream().map(item -> new ResearchValue(item.timestamp(), bandPosition(
+                        closeAt(candleByTimestamp, item.timestamp()), item.keltnerLower(), item.keltnerUpper()))).toList(),
+                value -> value <= 0 ? 1 : value >= 100 ? -1 : 0,
+                value -> "TA4J Keltner location is shown for volatility research only.",
+                "Research-only channel location; excluded from production scoring.",
+                List.of(0.0, 50.0, 100.0)));
+        views.add(researchIndicator("ta4jTrend", "TA4J uptrend / downtrend",
+                "TREND", "state", false,
+                research.stream().map(item -> new ResearchValue(item.timestamp(),
+                        item.upTrend() == item.downTrend() ? 0.0 : item.upTrend() ? 1.0 : -1.0)).toList(),
+                value -> value > 0 ? 1 : value < 0 ? -1 : 0,
+                value -> value > 0 ? "TA4J independently classifies the current window as an uptrend."
+                        : value < 0 ? "TA4J independently classifies the current window as a downtrend."
+                        : "TA4J does not classify the current window as directionally clear.",
+                "Independent research label only; it does not replace candlestick or Elliott trend logic.",
+                List.of(-1.0, 0.0, 1.0)));
+        views.add(researchIndicator("volumeProfileKde", "TA4J KDE volume-profile mode",
+                "PRICE_LOCATION", "% from mode", true,
+                research.stream().map(item -> new ResearchValue(item.timestamp(), percentDifference(
+                        closeAt(candleByTimestamp, item.timestamp()), item.volumeProfileKdeMode()))).toList(),
+                value -> value > 0 ? 1 : value < 0 ? -1 : 0,
+                value -> "Price is %.2f%% from TA4J's causal KDE mode estimate."
+                        .formatted(value),
+                "Side-by-side research value only; the established volume profile remains the production input.",
+                List.of(0.0)));
+    }
+
+    private static int boundedOscillatorVote(double value) {
+        return value <= 20 ? 1 : value >= 80 ? -1 : 0;
+    }
+
+    private static String boundedOscillatorExplanation(double value) {
+        return value <= 20 ? "The TA4J oscillator is in its lower research region."
+                : value >= 80 ? "The TA4J oscillator is in its upper research region."
+                : "The TA4J oscillator is inside its central region.";
+    }
+
+    private static double closeAt(Map<Long, EnrichedCandle> candles, long timestamp) {
+        EnrichedCandle candle = candles.get(timestamp);
+        return candle == null ? Double.NaN : candle.close();
     }
 
     private IndicatorView supportResistance(List<EnrichedCandle> candles,
@@ -417,6 +529,40 @@ public class TechnicalOutlookService {
                 overlay, series, references);
     }
 
+    private IndicatorView researchIndicator(String key,
+                                            String label,
+                                            String category,
+                                            String unit,
+                                            boolean overlay,
+                                            List<ResearchValue> values,
+                                            ValueVoteRule rule,
+                                            Explanation explanation,
+                                            String ruleText,
+                                            List<Double> references) {
+        List<ResearchValue> available = values.stream()
+                .filter(item -> Double.isFinite(item.value()))
+                .toList();
+        if (available.isEmpty()) {
+            return new IndicatorView(key, label, category, unit, null, 0, "UNAVAILABLE", false,
+                    "Not enough completed candles are available for this TA4J research indicator.",
+                    ruleText, null, null, overlay, List.of(), references);
+        }
+        ResearchValue latest = available.getLast();
+        int latestVote = rule.vote(latest.value());
+        int changedIndex = available.size() - 1;
+        while (changedIndex > 0 && rule.vote(available.get(changedIndex - 1).value()) == latestVote) {
+            changedIndex--;
+        }
+        ResearchValue changed = available.get(changedIndex);
+        List<IndicatorPointView> series = available.stream()
+                .map(item -> new IndicatorPointView(item.timestamp(), finite(item.value()), rule.vote(item.value())))
+                .toList();
+        return new IndicatorView(key, label, category, unit, finite(latest.value()), latestVote,
+                voteLabel(latestVote), false, explanation.text(latest.value()), ruleText,
+                changed.timestamp(), available.size() - changedIndex - 1,
+                overlay, series, references);
+    }
+
     private List<CategoryView> categoryViews(List<VoteInput> votes,
                                              AnalysisPreferencesService.IntervalProfile rules) {
         Map<String, List<VoteInput>> grouped = new LinkedHashMap<>();
@@ -446,15 +592,14 @@ public class TechnicalOutlookService {
                         : signal.direction().equals("SELL") ? -1 : 0);
     }
 
-    private List<RecentSignalView> recentSignals(User user, String symbol) {
-        Map<TimeInterval, Long> cutoffs = new LinkedHashMap<>();
-        cutoffs.put(TimeInterval.DAILY, cutoff(symbol, "1d", 10));
-        cutoffs.put(TimeInterval.WEEKLY, cutoff(symbol, "1wk", 10));
-        cutoffs.put(TimeInterval.MONTHLY, cutoff(symbol, "1mo", 10));
+    private List<RecentSignalView> recentSignals(User user,
+                                                 String symbol,
+                                                 TimeInterval outlookInterval) {
+        long cutoff = cutoff(symbol, apiInterval(outlookInterval), 10);
         return alertEventRepository.findAllByAlertRule_User(user).stream()
                 .filter(event -> event.getAlertRule().getStockAsset().getTickerSymbol().equalsIgnoreCase(symbol))
-                .filter(event -> event.getSignalCandleTimestamp() >= cutoffs.getOrDefault(
-                        event.getAlertRule().getInterval(), Long.MAX_VALUE))
+                .filter(event -> event.getAlertRule().getInterval() == outlookInterval)
+                .filter(event -> event.getSignalCandleTimestamp() >= cutoff)
                 .sorted(Comparator.comparingLong(AlertEvent::getSignalCandleTimestamp).reversed())
                 .map(event -> new RecentSignalView(
                         event.getId(),
@@ -470,6 +615,15 @@ public class TechnicalOutlookService {
                         observedResult(event),
                         "/alerts/signals/" + event.getId()))
                 .toList();
+    }
+
+    private String apiInterval(TimeInterval interval) {
+        return switch (interval) {
+            case DAILY -> "1d";
+            case WEEKLY -> "1wk";
+            case MONTHLY -> "1mo";
+            default -> throw new IllegalArgumentException("Technical outlook supports daily, weekly, and monthly intervals.");
+        };
     }
 
     private long cutoff(String symbol, String interval, int candles) {
@@ -708,6 +862,7 @@ public class TechnicalOutlookService {
     private record ValueAtCandle(EnrichedCandle candle, double value) { }
     private record VoteInput(String label, String category, int vote) { }
     private record RawRatio(long timestamp, double ratio) { }
+    private record ResearchValue(long timestamp, double value) { }
     private record Benchmark(String symbol, String name) { }
 
     private record IntervalDefinition(String apiValue, String label, TimeInterval timeInterval) {

@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -143,7 +142,7 @@ class ChartControllerElliottWaveTest {
     }
 
     @Test
-    void returnsDeepCandlesAndHistoricStructuresForSelectedIntervalButRejectsDaily() {
+    void returnsHistoricalStructuresForMonthlyAndDailyIntervals() {
         String symbol = "SAP.DE";
         CandleRepository candleRepository = mock(CandleRepository.class);
         MarketDataService marketDataService = mock(MarketDataService.class);
@@ -156,6 +155,8 @@ class ChartControllerElliottWaveTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1mo"))
                 .thenReturn(monthlyCandles);
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1d"))
+                .thenReturn(candles(symbol, "1d"));
 
         ChartController.ElliottWaveHistoryOverlay history =
                 controller.getHistoricalElliottWaves(symbol, "1mo", null);
@@ -171,8 +172,14 @@ class ChartControllerElliottWaveTest {
             assertThat(structure.confirmationTimestamp()).isNotNull();
             assertThat(structure.qualityScore()).isGreaterThanOrEqualTo(68);
         });
-        assertThatThrownBy(() -> controller.getHistoricalElliottWaves(symbol, "1d", null))
-                .isInstanceOf(IllegalArgumentException.class);
+        ChartController.ElliottWaveHistoryOverlay daily =
+                controller.getHistoricalElliottWaves(symbol, "1d", null);
+        assertThat(daily.interval()).isEqualTo("1d");
+        assertThat(daily.labelStyle()).isEqualTo("NUMERIC");
+        assertThat(daily.structures()).isNotEmpty();
+        assertThat(daily.structures().getFirst().points())
+                .extracting(ChartController.ElliottWavePointView::label)
+                .contains("1", "2", "3", "4", "5");
     }
 
     @Test

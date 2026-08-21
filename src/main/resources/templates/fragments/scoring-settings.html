@@ -8,7 +8,7 @@
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.custom()} ? 'Custom weights' : 'Factory weights'">Factory weights</span>
     </div>
-    <p class="analysis-settings-intro">Choose the evidence shown in setup scores and how much each included category is worth. Candlestick and Elliott Wave profiles are independent for daily, weekly, and monthly signals.</p>
+    <p class="analysis-settings-intro">Choose the evidence shown in setup scores and how much each included category is worth. Candlestick, Elliott Wave, and Harmonic Formation profiles are independent for daily, weekly, and monthly signals.</p>
     <div class="analysis-safety-strip scoring-safety-strip">
       <strong>Exactly 100 points</strong>
       <span>Every profile must total 100 before changes can be applied.</span>
@@ -55,7 +55,7 @@
     </section>
 
     <section class="settings-card analysis-save-card scoring-save-card">
-      <div><strong>Apply scoring changes</strong><p>All six included totals are checked in the browser and again on the server.</p></div>
+      <div><strong>Apply scoring changes</strong><p>All nine included totals are checked in the browser and again on the server.</p></div>
       <button id="applyScoringChanges" type="submit" class="btn-accent">Apply changes</button>
     </section>
   </form>
@@ -68,10 +68,10 @@
   </form>
 
   <section class="settings-card analysis-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">08</span><h2>Factory restoration</h2></div><p>Restore all six scoring profiles without changing analysis, detection, email, or account settings.</p></div>
+    <div class="settings-card-heading"><div><span class="settings-number">11</span><h2>Factory restoration</h2></div><p>Restore all nine scoring profiles without changing analysis, detection, email, or account settings.</p></div>
     <form th:action="@{/settings/scoring/reset}" method="post" class="settings-action-row">
       <input type="hidden" name="family" value="all">
-      <div><h3>Restore every scoring profile</h3><p>Candlestick and Elliott Wave weights return to the detector defaults for daily, weekly, and monthly intervals.</p></div>
+      <div><h3>Restore every scoring profile</h3><p>Candlestick, Elliott Wave, and Harmonic Formation weights return to detector defaults for daily, weekly, and monthly intervals.</p></div>
       <button type="submit" class="danger-button">Restore factory scoring</button>
     </form>
   </section>

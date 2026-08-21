@@ -34,6 +34,7 @@ public class CandlestickSignalLifecycleService {
     private final int confirmationWindowCandles;
     private final int elliottConfirmationWindowCandles;
     private final int oneCandleOutcomeWindowCandles;
+    private ElliottWavePreferencesService elliottWavePreferencesService;
 
     @Autowired
     public CandlestickSignalLifecycleService(
@@ -56,6 +57,11 @@ public class CandlestickSignalLifecycleService {
         );
         this.oneCandleOutcomeWindowCandles = Math.clamp(
                 oneCandleOutcomeWindowCandles, 1, MAXIMUM_CONFIRMATION_WINDOW);
+    }
+
+    @Autowired(required = false)
+    void configureElliottWavePreferences(ElliottWavePreferencesService elliottWavePreferencesService) {
+        this.elliottWavePreferencesService = elliottWavePreferencesService;
     }
 
     CandlestickSignalLifecycleService(
@@ -220,7 +226,8 @@ public class CandlestickSignalLifecycleService {
         );
         int initialized = 0;
         for (AlertEvent event : events) {
-            ElliottWaveDetectionService.ElliottWaveStructure structure = elliottWaveDetectionService
+            ElliottWaveDetectionService detector = elliottDetector(event, elliottWaveDetectionService);
+            ElliottWaveDetectionService.ElliottWaveStructure structure = detector
                     .findStructureForSignal(
                             enrichedCandles,
                             event.getPattern(),
@@ -317,7 +324,7 @@ public class CandlestickSignalLifecycleService {
             return false;
         }
         ElliottWaveDetectionService.ElliottWaveStructure revisedStructure =
-                elliottWaveDetectionService.findLatestStructureForCycle(
+                elliottDetector(event, elliottWaveDetectionService).findLatestStructureForCycle(
                                 enrichedCandles,
                                 event.getElliottCycleKey(),
                                 event.getElliottSignalStage())
@@ -349,6 +356,21 @@ public class CandlestickSignalLifecycleService {
         event.setLifecycleResolutionReason(null);
         event.setLifecycleUpdatedAt(LocalDateTime.now());
         return true;
+    }
+
+    private ElliottWaveDetectionService elliottDetector(
+            AlertEvent event,
+            ElliottWaveDetectionService fallback) {
+        if (event == null || event.getAlertRule() == null || event.getAlertRule().getUser() == null
+                || elliottWavePreferencesService == null) {
+            return fallback;
+        }
+        TimeInterval interval = event.getAlertRule().getInterval();
+        if (interval != TimeInterval.WEEKLY && interval != TimeInterval.MONTHLY) {
+            return fallback;
+        }
+        return fallback.configured(elliottWavePreferencesService.get(event.getAlertRule().getUser())
+                .profile(interval).rules());
     }
 
     private SignalLifecycleStatus evaluate(

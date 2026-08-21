@@ -32,6 +32,52 @@ import static org.mockito.Mockito.when;
 class AlertNotificationServiceTest {
 
     @Test
+    void harmonicEmailContainsCompletionConfirmationGeometryRatiosAndScoreMeaning() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.BUY);
+        rule.setPatternFamily(AlertPatternFamily.HARMONIC_FORMATION);
+        long endpoint = Instant.parse("2026-07-20T00:00:00Z").getEpochSecond();
+        long confirmation = Instant.parse("2026-07-21T00:00:00Z").getEpochSecond();
+        DetectedSignal signal = new DetectedSignal(
+                CandlePattern.HARMONIC_GARTLEY, TradeSignal.BUY,
+                SignalStength.HIGH_CONFIDENCE, 94,
+                List.of("Soft ratio compliance +94/100: all hard rules passed"),
+                confirmation, 121.75);
+        AlertEvent event = new AlertEvent();
+        event.setAlertRule(rule);
+        event.setPattern(signal.pattern());
+        event.setTradeSignal(signal.tradeSignal());
+        event.setSignalCandleTimestamp(confirmation);
+        event.setHarmonicEndpointTimestamp(endpoint);
+        event.setHarmonicEndpointPrice(120.5);
+        event.setHarmonicPointsSnapshot("X|1752796800|100.0000000000|LOW\nD|1753056000|120.5000000000|LOW");
+        event.setHarmonicMeasurementsSnapshot("AD_XA|0.7860000000\nB_XA|0.6180000000");
+
+        service.sendSignalEmail(rule, signal, event);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getSubject()).contains("harmonic gartley", "BUY", "AAPL");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Ticker: AAPL",
+                "Formation: GARTLEY",
+                "Interval: DAILY",
+                "Completion point: D",
+                "Completion price: 120.5000",
+                "Confirmation candle close: 121.7500",
+                "Geometry score: 94/100",
+                "hard structural rules passed",
+                "- B/XA: 0.6180",
+                "Score model: HARMONIC_V1");
+    }
+
+    @Test
     void congressionalDisclosureEmailExplainsTradeAndDisclosureDates() {
         @SuppressWarnings("unchecked")
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);

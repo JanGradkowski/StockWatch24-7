@@ -2,6 +2,7 @@ package org.example.stockwatch247.repository;
 
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
+import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
@@ -61,6 +62,19 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
     @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
     @Query("select event from AlertEvent event where event.alertRule.user = :user and event.deletedAt is null")
     List<AlertEvent> findAllByAlertRule_User(@Param("user") User user);
+
+    @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
+    @Query("select event from AlertEvent event where event.alertRule.user = :user and event.alertRule.stockAsset = :stockAsset and event.deletedAt is null")
+    Page<AlertEvent> findByAlertRule_UserAndStockAsset(
+            @Param("user") User user,
+            @Param("stockAsset") StockAsset stockAsset,
+            Pageable pageable);
+
+    @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
+    @Query("select event from AlertEvent event where event.alertRule.user = :user and event.alertRule.stockAsset = :stockAsset and event.deletedAt is null")
+    List<AlertEvent> findAllByAlertRule_UserAndStockAsset(
+            @Param("user") User user,
+            @Param("stockAsset") StockAsset stockAsset);
 
     @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
     @Query("""

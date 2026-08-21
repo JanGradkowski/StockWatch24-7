@@ -43,6 +43,28 @@ class ElliottWaveDetectionServiceTest {
     }
 
     @Test
+    void optionalShortestWaveOneRuleRejectsAnOtherwiseValidLongerWaveOne() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0),
+                anchor(6, 100.0),
+                anchor(14, 128.0),
+                anchor(24, 112.0),
+                anchor(38, 150.0),
+                anchor(54, 130.0),
+                anchor(68, 155.0),
+                anchor(69, 151.0)
+        ));
+        ElliottWaveDetectionService strict = detectionService.configured(
+                ElliottWaveDetectionService.DetectionRules.factory()
+                        .withRequireWaveOneShortest(true));
+
+        assertThat(detectionService.detect(candles))
+                .anyMatch(signal -> signal.pattern() == CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        assertThat(strict.detect(candles))
+                .noneMatch(signal -> signal.pattern() == CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+    }
+
+    @Test
     void detectsOnlyRecentBullishImpulseFollowThroughOnTheLatestCandle() {
         List<EnrichedCandle> candles = syntheticSeries(List.of(
                 anchor(1, 112.0),
@@ -495,6 +517,28 @@ class ElliottWaveDetectionServiceTest {
         assertThat(subdivision.points())
                 .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
                 .containsExactly("", "i", "ii", "iii", "iv", "v");
+    }
+
+    @Test
+    void strictSubdivisionAnchorsAtTheActualLowerTimeframePivots() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0),
+                anchor(6, 100.0),
+                anchor(14, 121.0),
+                anchor(24, 110.0),
+                anchor(38, 145.0),
+                anchor(46, 128.0),
+                anchor(58, 152.0)
+        ));
+
+        ElliottWaveDetectionService.ElliottSubdivision subdivision = detectionService
+                .findStrictSubdivisions(candles, "III", 100.0, 152.0)
+                .getFirst();
+
+        assertThat(subdivision.points().getFirst().timestamp()).isEqualTo(6L);
+        assertThat(subdivision.points().getLast().timestamp()).isEqualTo(58L);
+        assertThat(subdivision.points().getFirst().price()).isEqualTo(candles.get(5).low());
+        assertThat(subdivision.points().getLast().price()).isEqualTo(candles.getLast().high());
     }
 
     @Test

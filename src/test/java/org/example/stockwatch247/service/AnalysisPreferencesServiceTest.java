@@ -79,6 +79,7 @@ class AnalysisPreferencesServiceTest {
         form.set("daily.rsiBuyThreshold", "28");
         form.set("daily.rsiSellThreshold", "74");
         form.remove("email.newElliott");
+        form.remove("email.newHarmonic");
         form.remove("email.sell");
 
         AnalysisPreferencesService.PreferencesView saved = service.save(user, form);
@@ -88,6 +89,7 @@ class AnalysisPreferencesServiceTest {
         assertThat(saved.profile(TimeInterval.DAILY).rsiBuyThreshold()).isEqualTo(28.0);
         assertThat(saved.profile(TimeInterval.WEEKLY).rsiPeriod()).isEqualTo(10);
         assertThat(saved.email().newElliott()).isFalse();
+        assertThat(saved.email().harmonicEnabled()).isFalse();
         assertThat(saved.email().sell()).isFalse();
 
         ArgumentCaptor<UserAnalysisPreferences> captor = ArgumentCaptor.forClass(UserAnalysisPreferences.class);
@@ -102,6 +104,8 @@ class AnalysisPreferencesServiceTest {
         assertThat(service.allowsNewSignalEmail(user, AlertPatternFamily.CANDLESTICK,
                 TimeInterval.DAILY, TradeSignal.BUY)).isTrue();
         assertThat(service.allowsNewSignalEmail(user, AlertPatternFamily.ELLIOTT_WAVE,
+                TimeInterval.DAILY, TradeSignal.BUY)).isFalse();
+        assertThat(service.allowsNewSignalEmail(user, AlertPatternFamily.HARMONIC_FORMATION,
                 TimeInterval.DAILY, TradeSignal.BUY)).isFalse();
         assertThat(service.allowsNewSignalEmail(user, AlertPatternFamily.CANDLESTICK,
                 TimeInterval.DAILY, TradeSignal.SELL)).isFalse();
@@ -206,7 +210,7 @@ class AnalysisPreferencesServiceTest {
         addProfile(form, AnalysisPreferencesService.factoryProfile(TimeInterval.DAILY));
         addProfile(form, AnalysisPreferencesService.factoryProfile(TimeInterval.WEEKLY));
         addProfile(form, AnalysisPreferencesService.factoryProfile(TimeInterval.MONTHLY));
-        for (String name : new String[]{"newCandlestick", "newElliott", "confirmed", "invalidated",
+        for (String name : new String[]{"newCandlestick", "newElliott", "newHarmonic", "confirmed", "invalidated",
                 "expired", "insider", "congressional", "daily", "weekly", "monthly", "buy", "sell"}) {
             form.add("email." + name, "on");
         }

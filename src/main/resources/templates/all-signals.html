@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>All signals &mdash; StockWatch 24/7</title>
+  <title th:text="${companyArchive != null ? companyArchive.symbol() + ' signals — StockWatch 24/7' : 'All signals — StockWatch 24/7'}">All signals &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <script defer th:src="@{/js/signal-archive-selection.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
@@ -20,14 +20,17 @@
   <nav class="signal-breadcrumb" aria-label="Breadcrumb">
     <a th:href="@{/home}">Dashboard</a>
     <span aria-hidden="true">/</span>
-    <span>All signals</span>
+    <a th:if="${companyArchive != null}" th:href="@{/signals}">All signals</a>
+    <span th:if="${companyArchive != null}" aria-hidden="true">/</span>
+    <span th:text="${companyArchive != null ? companyArchive.symbol() : 'All signals'}">All signals</span>
   </nav>
 
   <header class="signal-archive-header technical-signal-archive-header">
     <div>
-      <div class="eyebrow">Account signal archive</div>
-      <h1 class="title">All signals</h1>
-      <p class="subtitle">Every technical signal received by this account remains available here, including signals from rules you no longer follow.</p>
+      <div class="eyebrow" th:text="${companyArchive != null ? 'Company signal archive' : 'Account signal archive'}">Account signal archive</div>
+      <h1 class="title" th:text="${companyArchive != null ? companyArchive.symbol() + ' signals' : 'All signals'}">All signals</h1>
+      <p class="subtitle" th:text="${companyArchive != null ? 'Every technical signal recorded for ' + companyArchive.companyName() + ', including signals from rules you no longer follow.' : 'Every technical signal received by this account remains available here, including signals from rules you no longer follow.'}">Every technical signal received by this account remains available here.</p>
+      <a th:if="${companyArchive != null}" class="btn-secondary company-signal-market-link" th:href="@{/stock/{symbol}(symbol=${companyArchive.symbol()})}">Open market workspace &rarr;</a>
     </div>
     <div class="signal-archive-total" aria-label="Total recorded signals">
       <strong th:text="${archive.totalSignals()}">0</strong>
@@ -42,7 +45,10 @@
         <p class="panel-meta">Unread signals are highlighted. Opening one marks it as read.</p>
         <p class="panel-meta">Best and worst results are direction-aware moves from the applicable measurement start.</p>
       </div>
-      <form method="get" th:action="@{/signals}" class="signal-archive-sort-form" aria-label="Sort all signals">
+      <form method="get"
+            th:action="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()})} : @{/signals}"
+            class="signal-archive-sort-form"
+            th:attr="aria-label=${companyArchive != null ? 'Sort ' + companyArchive.symbol() + ' signals' : 'Sort all signals'}">
         <label>
           <span>Group and sort by</span>
           <select name="sort">
@@ -74,14 +80,14 @@
     <div th:if="${#lists.isEmpty(archive.signals())}" class="latest-signals-empty signal-archive-empty">
       <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
       <div>
-        <h3>No signals have been received yet</h3>
-        <p>Validated technical signals will appear here after one of your alert rules produces a match.</p>
+        <h3 th:text="${companyArchive != null ? 'No signals have been recorded for ' + companyArchive.symbol() : 'No signals have been received yet'}">No signals have been received yet</h3>
+        <p th:text="${companyArchive != null ? 'Validated technical signals for this ticker will appear here after one of its followed rules produces a match.' : 'Validated technical signals will appear here after one of your alert rules produces a match.'}">Validated technical signals will appear here after one of your alert rules produces a match.</p>
       </div>
     </div>
 
     <form th:if="${!#lists.isEmpty(archive.signals())}"
           method="post"
-          th:action="@{/signals/delete}"
+          th:action="${companyArchive != null} ? @{/alerts/{id}/signals/delete(id=${companyArchive.representativeAlertId()})} : @{/signals/delete}"
           class="signal-delete-form"
           data-signal-delete-form
           data-archive-kind="signal">
@@ -184,11 +190,11 @@
 
     <nav th:if="${archive.totalPages() > 1}" class="signal-archive-pagination" aria-label="Signal archive pages">
       <a th:if="${archive.hasPrevious()}"
-         th:href="@{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1})}"
+         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1})}"
          class="btn-secondary">&larr; Previous</a>
       <span th:text="${'Page ' + archive.displayPage() + ' of ' + archive.totalPages()}">Page 1 of 3</span>
       <a th:if="${archive.hasNext()}"
-         th:href="@{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1})}"
+         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1})}"
          class="btn-secondary">Next &rarr;</a>
     </nav>
   </section>

@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title th:text="${virtualTrade.trade().symbol() + ' ' + virtualTrade.trade().sideLabel() + ' — Virtual trade'}">Virtual trade</title>
+  <title th:text="${virtualTrade.trade().symbol() + ' ' + virtualTrade.trade().sideLabel() + ' — Demo trade'}">Demo trade</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
 </head>
@@ -23,7 +24,7 @@
                data-side=${virtualTrade.trade().side()}">
   <nav class="signal-breadcrumb" aria-label="Breadcrumb">
     <a th:href="@{/home}">Dashboard</a><span aria-hidden="true">/</span>
-    <a th:href="@{/virtual-trades}">Virtual trades</a><span aria-hidden="true">/</span>
+    <a th:href="@{/virtual-trades}">Demo Trading</a><span aria-hidden="true">/</span>
     <span th:text="${virtualTrade.trade().symbol()}">AAPL</span>
   </nav>
 
@@ -37,30 +38,30 @@
     </div>
     <div class="signal-report-actions virtual-trade-report-actions">
       <span class="virtual-trade-status-pill" th:classappend="${' ' + #strings.toLowerCase(virtualTrade.trade().status())}" th:text="${virtualTrade.trade().statusLabel()}">Tracking</span>
-      <button th:if="${virtualTrade.trade().status() == 'TRACKING'}" id="closeVirtualTradeButton" type="button" class="btn-accent">Close virtual trade</button>
+      <button th:if="${virtualTrade.trade().status() == 'TRACKING'}" id="closeVirtualTradeButton" type="button" class="btn-accent">Close demo trade</button>
       <a class="btn-secondary" th:href="@{/stock/{symbol}/technical-outlook(symbol=${virtualTrade.trade().symbol()})}">Open Technical Outlook</a>
     </div>
   </header>
 
-  <nav class="signal-view-tabs signal-three-view-tabs" role="tablist" aria-label="Virtual trade report sections">
+  <nav class="signal-view-tabs signal-three-view-tabs" role="tablist" aria-label="Demo trade report sections">
     <button id="virtualTradeGeneralTab" type="button" class="signal-view-tab active" role="tab" aria-selected="true" aria-controls="virtualTradeGeneralPanel" data-virtual-trade-tab="general">General</button>
     <button id="virtualTradeTechnicalTab" type="button" class="signal-view-tab" role="tab" aria-selected="false" aria-controls="virtualTradeTechnicalPanel" data-virtual-trade-tab="technical">Technical comparison</button>
     <button id="virtualTradeResultsTab" type="button" class="signal-view-tab" role="tab" aria-selected="false" aria-controls="virtualTradeResultsPanel" data-virtual-trade-tab="results">Results</button>
   </nav>
 
   <div id="virtualTradeGeneralPanel" class="signal-view-panel active" role="tabpanel" aria-labelledby="virtualTradeGeneralTab" data-virtual-trade-panel="general">
-    <section class="virtual-trade-summary-grid" aria-label="Virtual trade summary">
+    <section class="virtual-trade-summary-grid" aria-label="Demo trade summary">
       <article><span>Entry</span><strong th:text="${#numbers.formatDecimal(virtualTrade.trade().entryPrice(), 1, 4) + ' ' + virtualTrade.trade().currency()}">100 USD</strong><small th:text="${#temporals.format(virtualTrade.trade().entryAt(), 'dd MMM yyyy, HH:mm') + ' · ' + virtualTrade.trade().entryQuoteSource()}">Date</small></article>
       <article><span th:text="${virtualTrade.trade().status() == 'CLOSED' ? 'Closing price' : 'Current evaluation'}">Current evaluation</span><strong th:text="${#numbers.formatDecimal(virtualTrade.trade().evaluationPrice(), 1, 4) + ' ' + virtualTrade.trade().currency()}">105 USD</strong><small th:text="${virtualTrade.trade().evaluationSource()}">Current quote</small></article>
       <article class="virtual-trade-summary-outcome" th:classappend="${virtualTrade.trade().resultPercent() >= 0 ? ' positive' : ' negative'}"><span th:text="${virtualTrade.trade().outcomeLabel()}">Gain</span><strong th:text="${(virtualTrade.trade().resultPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(virtualTrade.trade().resultPercent(), 1, 2) + '%'}">+5%</strong><small th:text="${'Measured from captured entry on ' + #temporals.format(virtualTrade.trade().entryAt(), 'dd MMM yyyy, HH:mm')}">Measured from captured entry date</small><small th:if="${virtualTrade.trade().monetaryResult() != null}" th:text="${(virtualTrade.trade().monetaryResult().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(virtualTrade.trade().monetaryResult(), 1, 2) + ' ' + virtualTrade.trade().currency()}">+50 USD</small></article>
-      <article><span>Virtual size</span><strong th:text="${virtualTrade.trade().quantity() != null ? #numbers.formatDecimal(virtualTrade.trade().quantity(), 1, 4) + ' shares' : 'Percentage only'}">10 shares</strong><small th:text="${virtualTrade.trade().notionalValue() != null ? #numbers.formatDecimal(virtualTrade.trade().notionalValue(), 1, 2) + ' ' + virtualTrade.trade().currency() : 'No monetary size supplied'}">1000 USD</small></article>
+      <article><span>Virtual size</span><strong th:text="${virtualTrade.trade().quantity() != null ? #numbers.formatDecimal(virtualTrade.trade().quantity(), 1, 4) + ' shares' : 'Percentage only'}">10 shares</strong><small th:text="${virtualTrade.trade().notionalValue() != null ? (virtualTrade.trade().side() == 'BUY' ? 'Invested ' : 'Value at decision ') + #numbers.formatDecimal(virtualTrade.trade().notionalValue(), 1, 2) + ' ' + virtualTrade.trade().currency() : 'No monetary size supplied'}">Invested 1,000.00 USD</small><small th:if="${virtualTrade.trade().evaluatedPositionValue() != null}" th:text="${(virtualTrade.trade().status() == 'CLOSED' ? 'Final' : 'Current') + (virtualTrade.trade().side() == 'BUY' ? ' position value ' : ' reference value ') + #numbers.formatDecimal(virtualTrade.trade().evaluatedPositionValue(), 1, 2) + ' ' + virtualTrade.trade().currency()}">Current position value 1,050.00 USD</small></article>
       <article><span>Entry analysis</span><strong th:text="${virtualTrade.trade().intervalLabel()}">Daily</strong><small th:text="${virtualTrade.entrySnapshot().headlineScore().classification()}">Moderate buy outlook</small></article>
       <article><span>Tracked duration</span><strong th:text="${virtualTrade.trade().trackingDays() + (virtualTrade.trade().trackingDays() == 1 ? ' day' : ' days')}">4 days</strong><small th:text="${virtualTrade.trade().statusLabel()}">Tracking</small></article>
     </section>
 
     <section class="signal-chart-card virtual-trade-chart-card" aria-labelledby="virtualTradeChartTitle">
       <div class="signal-chart-card-heading">
-        <div><span class="signal-report-eyebrow">Entry and closing markers</span><h2 id="virtualTradeChartTitle">Price action around the virtual trade</h2></div>
+        <div><span class="signal-report-eyebrow">Entry and closing markers</span><h2 id="virtualTradeChartTitle">Price action around the demo trade</h2></div>
         <div class="signal-view-tabs virtual-trade-interval-tabs" role="group" aria-label="Chart interval">
           <button type="button" class="signal-view-tab active" data-virtual-chart-interval="1d">Daily</button>
           <button type="button" class="signal-view-tab" data-virtual-chart-interval="1wk">Weekly</button>
@@ -68,7 +69,7 @@
         </div>
       </div>
       <div id="virtualTradeChartStatus" class="technical-outlook-freshness" aria-live="polite"></div>
-      <div id="virtualTradePriceChart" class="virtual-trade-price-chart" aria-label="Candlestick chart with virtual trade marker"></div>
+      <div id="virtualTradePriceChart" class="virtual-trade-price-chart" aria-label="Candlestick chart with demo trade marker"></div>
       <p class="technical-chart-note">The entry marker uses the exact captured quote time and is aligned to the containing completed candle when another interval is selected.</p>
     </section>
   </div>
@@ -102,13 +103,15 @@
     <section id="signalResultsWorkspace" class="signal-results-section"
              th:attr="data-trade-signal=${virtualTrade.trade().side()},data-signal-close=${virtualTrade.trade().entryPrice()},data-outcome-label=${virtualTrade.results().outcomeLabel()},data-best-action-label=${virtualTrade.results().bestActionLabel()}">
       <div class="signal-results-heading"><div><div class="signal-section-kicker">Tracked price path</div><h2>Direction-aware virtual-trade result</h2><p th:text="${virtualTrade.trade().side() == 'BUY' ? 'Each point measures the move from the captured buy price.' : 'Each point measures avoided loss when price is below the sell price and missed upside when it is above.'}">Result explanation.</p></div><span class="signal-chart-cache-badge" th:text="${virtualTrade.trade().statusLabel()}">Tracking</span></div>
-      <div class="signal-results-metrics" aria-live="polite">
+      <div class="signal-results-metrics virtual-trade-results-metrics" th:classappend="${virtualTrade.trade().evaluatedPositionValue() != null ? ' has-position-values' : ''}" aria-live="polite">
+        <article th:if="${virtualTrade.trade().evaluatedPositionValue() != null}"><span th:text="${virtualTrade.trade().side() == 'BUY' ? 'Amount invested' : 'Value at sell decision'}">Amount invested</span><strong th:text="${#numbers.formatDecimal(virtualTrade.trade().notionalValue(), 1, 2) + ' ' + virtualTrade.trade().currency()}">1,000.00 USD</strong><small th:text="${#numbers.formatDecimal(virtualTrade.trade().quantity(), 1, 4) + ' shares at ' + #numbers.formatDecimal(virtualTrade.trade().entryPrice(), 1, 4) + ' ' + virtualTrade.trade().currency()}">10 shares at 100 USD</small></article>
+        <article th:if="${virtualTrade.trade().evaluatedPositionValue() != null}" class="virtual-trade-current-value"><span th:text="${(virtualTrade.trade().status() == 'CLOSED' ? 'Final' : 'Current') + (virtualTrade.trade().side() == 'BUY' ? ' position value' : ' reference value')}">Current position value</span><strong th:text="${#numbers.formatDecimal(virtualTrade.trade().evaluatedPositionValue(), 1, 2) + ' ' + virtualTrade.trade().currency()}">1,050.00 USD</strong><small th:text="${'Based on ' + (virtualTrade.trade().status() == 'CLOSED' ? 'closing' : 'current') + ' price of ' + #numbers.formatDecimal(virtualTrade.trade().evaluationPrice(), 1, 4) + ' ' + virtualTrade.trade().currency()}">Based on current price</small></article>
         <article><span id="resultHorizonLabel" th:text="${virtualTrade.results().outcomeLabel()}">Gain / loss</span><strong id="resultHorizonReturn">+0.00%</strong><small id="resultHorizonDifference">+0.0000 per share</small></article>
         <article><span>Selected-window price</span><strong id="resultHorizonClose">0.0000</strong><small id="resultHorizonPeriod">Period unavailable</small></article>
         <article class="best-result"><span id="resultBestActionLabel" th:text="${virtualTrade.results().bestActionLabel()}">Best exit</span><strong id="resultBestClose">0.0000</strong><small id="resultBestPeriod">Period unavailable</small></article>
         <article class="best-result"><span>Best direction-aware outcome</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference">+0.0000 per share</small></article>
       </div>
-      <div id="signalResultsChart" class="signal-results-chart" role="img" aria-label="Virtual trade result chart"></div>
+      <div id="signalResultsChart" class="signal-results-chart" role="img" aria-label="Demo trade result chart"></div>
       <div class="signal-results-legend"><span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable decision impact</span><span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse decision impact</span><span><i class="signal-results-key start" aria-hidden="true"></i>Captured entry price</span><span><i class="signal-results-key best" aria-hidden="true"></i>Best selected-window outcome</span></div>
       <ol id="signalResultsData" hidden aria-hidden="true">
         <li th:each="point : ${virtualTrade.results().points()}" th:attr="data-candle-number=${point.candleNumber()},data-time=${point.timestamp()},data-period-label=${point.periodLabel()},data-close=${point.close()},data-directional-return=${point.directionalReturnPercent()},data-directional-difference=${point.directionalPriceDifference()}"></li>
@@ -125,7 +128,7 @@
 </main>
 
 <dialog id="closeVirtualTradeDialog" class="unsaved-alert-dialog" aria-labelledby="closeVirtualTradeTitle">
-  <div class="unsaved-alert-dialog-content"><span class="unsaved-alert-kicker">Freeze the final result</span><h2 id="closeVirtualTradeTitle">Close this virtual trade?</h2><p>The current quote and technical state will be stored permanently as the closing snapshot.</p><div class="unsaved-alert-dialog-actions"><button id="cancelCloseVirtualTrade" type="button" class="btn-secondary">Keep tracking</button><button id="confirmCloseVirtualTrade" type="button" class="btn-accent">Close virtual trade</button></div></div>
+  <div class="unsaved-alert-dialog-content"><span class="unsaved-alert-kicker">Freeze the final result</span><h2 id="closeVirtualTradeTitle">Close this demo trade?</h2><p>The current quote and technical state will be stored permanently as the closing snapshot.</p><div class="unsaved-alert-dialog-actions"><button id="cancelCloseVirtualTrade" type="button" class="btn-secondary">Keep tracking</button><button id="confirmCloseVirtualTrade" type="button" class="btn-accent">Close demo trade</button></div></div>
 </dialog>
 
 <script th:attr="nonce=${cspNonce}">
@@ -134,6 +137,7 @@
   const symbol = page.dataset.symbol;
   const encodedSymbol = encodeURIComponent(symbol);
   let priceChart = null;
+  let priceFibonacciTool = null;
   let resultsChart = null;
   let resultsSeries = null;
 
@@ -151,6 +155,8 @@
     if (!response.ok) { status.textContent = 'Chart data unavailable'; return; }
     const payload = await response.json();
     const candles = (payload.candles || []).sort((a, b) => a.timestamp - b.timestamp);
+    priceFibonacciTool?.destroy();
+    priceFibonacciTool = null;
     if (priceChart) priceChart.remove();
     const container = document.getElementById('virtualTradePriceChart');
     priceChart = LightweightCharts.createChart(container, chartOptions(560));
@@ -163,6 +169,14 @@
     markers.sort((a, b) => String(a.time).localeCompare(String(b.time)));
     series.setMarkers(markers.filter(marker => marker.time));
     priceChart.timeScale().fitContent();
+    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
+      priceFibonacciTool = new StockWatchFibonacciDrawingTool({
+        chart: priceChart,
+        series,
+        container,
+        storageKey: `${window.location.pathname}:price:${interval}`
+      });
+    }
     status.textContent = `${candles.length} completed ${interval === '1d' ? 'daily' : interval === '1wk' ? 'weekly' : 'monthly'} candles`;
   }
 
@@ -218,7 +232,7 @@
     event.currentTarget.textContent = 'Closing…';
     const response = await fetch(`/api/virtual-trades/${encodeURIComponent(page.dataset.tradeId)}/close`, { method: 'POST', headers: { [document.querySelector('meta[name="_csrf_header"]').content]: document.querySelector('meta[name="_csrf"]').content } });
     if (response.ok) window.location.reload();
-    else { event.currentTarget.disabled = false; event.currentTarget.textContent = 'Close virtual trade'; window.alert('The virtual trade could not be closed. Please try again.'); }
+    else { event.currentTarget.disabled = false; event.currentTarget.textContent = 'Close demo trade'; window.alert('The demo trade could not be closed. Please try again.'); }
   });
   window.addEventListener('resize', () => { if (priceChart) priceChart.applyOptions({ width: document.getElementById('virtualTradePriceChart').clientWidth }); if (resultsChart) resultsChart.applyOptions({ width: document.getElementById('signalResultsChart').clientWidth }); });
   document.addEventListener('stockwatch:themechange', () => window.location.reload());

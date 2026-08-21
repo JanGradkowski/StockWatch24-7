@@ -3,14 +3,19 @@ package org.example.stockwatch247.service.congress;
 import org.example.stockwatch247.model.CongressionalTrade;
 import org.example.stockwatch247.model.CongressionalTradeDelivery;
 import org.example.stockwatch247.model.CongressionalTradeSubscription;
+import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.CongressionalDeliveryStatus;
+import org.example.stockwatch247.model.enums.CongressionalTradeType;
 import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.CongressionalTradeDeliveryRepository;
 import org.example.stockwatch247.repository.CongressionalTradeRepository;
 import org.example.stockwatch247.repository.CongressionalTradeSubscriptionRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
+import org.example.stockwatch247.service.CandleCompletionService;
 import org.example.stockwatch247.service.congress.CongressionalSubscriptionManager.SubscriptionChange;
 import org.example.stockwatch247.service.congress.CongressionalTradeProvider.ProviderBatch;
 import org.example.stockwatch247.service.congress.CongressionalTradeProvider.ProviderTrade;
@@ -23,11 +28,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.Locale;
@@ -41,6 +49,8 @@ public class CongressionalActivityService {
     private final CongressionalTradeRepository tradeRepository;
     private final CongressionalTradeSubscriptionRepository subscriptionRepository;
     private final CongressionalTradeDeliveryRepository deliveryRepository;
+    private final CandleRepository candleRepository;
+    private final CandleCompletionService candleCompletionService;
     private final CongressionalTradeProvider provider;
     private final CongressionalTradeStore tradeStore;
     private final CongressionalSubscriptionManager subscriptionManager;
@@ -57,6 +67,8 @@ public class CongressionalActivityService {
             CongressionalTradeRepository tradeRepository,
             CongressionalTradeSubscriptionRepository subscriptionRepository,
             CongressionalTradeDeliveryRepository deliveryRepository,
+            CandleRepository candleRepository,
+            CandleCompletionService candleCompletionService,
             CongressionalTradeProvider provider,
             CongressionalTradeStore tradeStore,
             CongressionalSubscriptionManager subscriptionManager,
@@ -70,6 +82,8 @@ public class CongressionalActivityService {
         this.tradeRepository = tradeRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.deliveryRepository = deliveryRepository;
+        this.candleRepository = candleRepository;
+        this.candleCompletionService = candleCompletionService;
         this.provider = provider;
         this.tradeStore = tradeStore;
         this.subscriptionManager = subscriptionManager;
@@ -217,21 +231,15 @@ public class CongressionalActivityService {
     @Transactional(readOnly = true)
     public List<DashboardActivityView> getLatestDashboardActivity(User user, int limit) {
         LocalDate earliest = LocalDate.now(ZoneOffset.UTC).minusDays(historyDays - 1L);
-        return deliveryRepository.findLatestUnreadForUser(
-                        user,
-                        earliest,
-                        PageRequest.of(0, Math.max(1, Math.min(limit, 50))))
-                .stream()
-                .map(this::toDashboardView)
-                .toList();
+        return toDashboardViews(deliveryRepository.findLatestUnreadForUser(
+                user,
+                earliest,
+                PageRequest.of(0, Math.max(1, Math.min(limit, 50)))));
     }
 
     @Transactional(readOnly = true)
     public List<DashboardActivityView> getAllActivity(User user) {
-        return deliveryRepository.findAllForUser(user)
-                .stream()
-                .map(this::toDashboardView)
-                .toList();
+        return toDashboardViews(deliveryRepository.findAllForUser(user));
     }
 
     @Transactional
@@ -318,8 +326,23 @@ public class CongressionalActivityService {
                 trade.getSourceUrl());
     }
 
-    private DashboardActivityView toDashboardView(CongressionalTradeDelivery delivery) {
+    private List<DashboardActivityView> toDashboardViews(
+            List<CongressionalTradeDelivery> deliveries) {
+        Map<String, List<Candle>> candlesBySymbol = new LinkedHashMap<>();
+        return deliveries.stream()
+                .map(delivery -> toDashboardView(delivery, candlesBySymbol))
+                .toList();
+    }
+
+    private DashboardActivityView toDashboardView(
+            CongressionalTradeDelivery delivery,
+            Map<String, List<Candle>> candlesBySymbol) {
         CongressionalTrade trade = delivery.getTrade();
+        ActivityReturn activityReturn = calculateReturn(
+                trade,
+                candlesBySymbol.computeIfAbsent(
+                        trade.getTickerSymbol(),
+                        this::completedDailyCandles));
         return new DashboardActivityView(
                 delivery.getId(),
                 trade.getTickerSymbol(),
@@ -331,10 +354,52 @@ public class CongressionalActivityService {
                 trade.getAmountRange(),
                 trade.getTransactionDate(),
                 trade.getDisclosureDate(),
+                activityReturn.returnPercent(),
+                activityReturn.asOf(),
                 delivery.getCreatedAt(),
                 deliveryStatusLabel(delivery.getStatus()),
                 trade.getSourceUrl(),
                 delivery.getReadAt());
+    }
+
+    private List<Candle> completedDailyCandles(String symbol) {
+        return candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1d")
+                .stream()
+                .filter(candle -> candle.getClosePrice() != null && candle.getClosePrice() > 0)
+                .filter(candle -> candleCompletionService.isComplete(
+                        candle.getTimestamp(), TimeInterval.DAILY))
+                .toList();
+    }
+
+    private ActivityReturn calculateReturn(CongressionalTrade trade, List<Candle> candles) {
+        if (candles.isEmpty()) {
+            return ActivityReturn.unavailable();
+        }
+        Candle entry = candles.stream()
+                .filter(candle -> !candleDate(candle).isBefore(trade.getTransactionDate()))
+                .findFirst()
+                .orElse(null);
+        Candle latest = candles.getLast();
+        if (entry == null || latest.getTimestamp() < entry.getTimestamp()) {
+            return ActivityReturn.unavailable();
+        }
+        BigDecimal entryClose = BigDecimal.valueOf(entry.getClosePrice());
+        BigDecimal latestClose = BigDecimal.valueOf(latest.getClosePrice());
+        BigDecimal rawReturn = latestClose.subtract(entryClose)
+                .divide(entryClose, 8, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100));
+        if (trade.getTransactionType() == CongressionalTradeType.SALE) {
+            rawReturn = rawReturn.negate();
+        }
+        return new ActivityReturn(
+                rawReturn.setScale(2, RoundingMode.HALF_UP),
+                candleDate(latest));
+    }
+
+    private LocalDate candleDate(Candle candle) {
+        return Instant.ofEpochSecond(candle.getTimestamp())
+                .atZone(ZoneOffset.UTC)
+                .toLocalDate();
     }
 
     private String deliveryStatusLabel(CongressionalDeliveryStatus status) {
@@ -447,12 +512,20 @@ public class CongressionalActivityService {
             String amountRange,
             LocalDate transactionDate,
             LocalDate disclosureDate,
+            BigDecimal returnPercent,
+            LocalDate returnAsOf,
             Instant detectedAt,
             String deliveryStatus,
             String sourceUrl,
             Instant readAt) {
         public boolean hasBeenRead() {
             return readAt != null;
+        }
+    }
+
+    private record ActivityReturn(BigDecimal returnPercent, LocalDate asOf) {
+        private static ActivityReturn unavailable() {
+            return new ActivityReturn(null, null);
         }
     }
 

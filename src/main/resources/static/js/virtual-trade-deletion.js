@@ -24,7 +24,7 @@
         }
         event.preventDefault();
         pendingForm = form;
-        const label = form.dataset.tradeLabel || "this virtual trade";
+        const label = form.dataset.tradeLabel || "this demo trade";
         message.textContent = `“${label}” will be permanently removed from your account. This cannot be undone.`;
         dialog.showModal();
         confirmButton.focus();

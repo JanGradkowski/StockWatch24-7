@@ -69,12 +69,12 @@ public class VirtualTradeService {
         Interval interval = Interval.parse(command.interval());
         StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "Open the stock workspace once so its market metadata can be resolved before creating a virtual trade."));
+                        "Open the stock workspace once so its market metadata can be resolved before creating a demo trade."));
         Quote quote = liveQuote(asset.getTickerSymbol());
         TechnicalOutlookService.OutlookView outlook = outlookService.getOutlook(
                 user, asset.getTickerSymbol(), interval.apiValue());
         if (!outlook.available() || outlook.candleTimestamp() == null) {
-            throw new IllegalStateException("Completed technical data is not available for this virtual trade.");
+            throw new IllegalStateException("Completed technical data is not available for this demo trade.");
         }
         BigDecimal quantity = optionalPositive(command.quantity(), "Quantity");
         BigDecimal notional = optionalPositive(command.notionalValue(), "Virtual investment");
@@ -261,13 +261,17 @@ public class VirtualTradeService {
         double percent = entry == 0 ? 0 : directionalDifference / entry * 100.0;
         BigDecimal monetary = trade.getNotionalValue() == null ? null
                 : trade.getNotionalValue().multiply(BigDecimal.valueOf(percent / 100.0), MONEY_CONTEXT);
+        BigDecimal evaluatedPositionValue = trade.getQuantity() == null ? null
+                : trade.getQuantity().multiply(evaluationPrice, MONEY_CONTEXT)
+                        .setScale(8, RoundingMode.HALF_UP);
         String outcome = outcomeLabel(trade.getSide(), percent);
         return new TradeView(trade.getId(), trade.getStockAsset().getTickerSymbol(),
                 trade.getStockAsset().getCompanyName(), trade.getSide().name(), sideLabel(trade.getSide()),
                 trade.getStatus().name(), statusLabel(trade.getStatus()), trade.getAnalysisInterval().name(),
                 intervalLabel(trade.getAnalysisInterval()), trade.getEntryPrice(), trade.getEntryAt(),
                 trade.getEntryQuoteTimestamp(), trade.getEntryCandleTimestamp(), trade.getEntryQuoteSource(),
-                trade.getCurrency(), trade.getQuantity(), trade.getNotionalValue(), evaluationPrice,
+                trade.getCurrency(), trade.getQuantity(), trade.getNotionalValue(), evaluatedPositionValue,
+                evaluationPrice,
                 trade.getStatus() == VirtualTradeStatus.CLOSED ? trade.getExitAt() : Instant.now(),
                 trade.getStatus() == VirtualTradeStatus.CLOSED ? trade.getExitQuoteSource() : quote.source(),
                 percent, directionalDifference, monetary, outcome,
@@ -277,16 +281,16 @@ public class VirtualTradeService {
     }
 
     private VirtualTrade owned(User user, Long id) {
-        if (id == null || id <= 0) throw new IllegalArgumentException("A valid virtual trade is required.");
+        if (id == null || id <= 0) throw new IllegalArgumentException("A valid demo trade is required.");
         return tradeRepository.findOwnedById(id, user)
-                .orElseThrow(() -> new IllegalArgumentException("Virtual trade was not found."));
+                .orElseThrow(() -> new IllegalArgumentException("Demo trade was not found."));
     }
 
     private Quote liveQuote(String symbol) {
         Map<String, Object> values = livePricingService.getLatestPrice(symbol);
         Object rawPrice = values.get("price");
         if (!(rawPrice instanceof Number price) || !Double.isFinite(price.doubleValue()) || price.doubleValue() <= 0) {
-            throw new IllegalStateException("A reliable current price is not available for this virtual trade.");
+            throw new IllegalStateException("A reliable current price is not available for this demo trade.");
         }
         long timestamp = values.get("timestamp") instanceof Number value
                 ? value.longValue() : Instant.now().getEpochSecond();
@@ -402,7 +406,7 @@ public class VirtualTradeService {
                 case "1d", "daily" -> new Interval("1d", TimeInterval.DAILY);
                 case "1wk", "weekly" -> new Interval("1wk", TimeInterval.WEEKLY);
                 case "1mo", "monthly" -> new Interval("1mo", TimeInterval.MONTHLY);
-                default -> throw new IllegalArgumentException("Virtual trades support daily, weekly, and monthly analysis.");
+                default -> throw new IllegalArgumentException("Demo Trading supports daily, weekly, and monthly analysis.");
             };
         }
     }
@@ -414,7 +418,8 @@ public class VirtualTradeService {
                             String status, String statusLabel, String analysisInterval, String intervalLabel,
                             BigDecimal entryPrice, Instant entryAt, long entryQuoteTimestamp,
                             long entryCandleTimestamp, String entryQuoteSource, String currency,
-                            BigDecimal quantity, BigDecimal notionalValue, BigDecimal evaluationPrice,
+                            BigDecimal quantity, BigDecimal notionalValue, BigDecimal evaluatedPositionValue,
+                            BigDecimal evaluationPrice,
                             Instant evaluationAt, String evaluationSource, double resultPercent,
                             double directionalPriceDifference, BigDecimal monetaryResult, String outcomeLabel,
                             long trackingDays, String detailUrl) { }

@@ -40,7 +40,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @Service
 public class AlertRuleService {
@@ -48,7 +50,7 @@ public class AlertRuleService {
     private static final int HIGHER_INTERVAL_SIGNAL_CANDLES = 100;
     private static final int DASHBOARD_LATEST_SIGNAL_LIMIT = 8;
     private static final int SIGNAL_ARCHIVE_PAGE_SIZE = 50;
-    private static final int MAX_ALERT_CHANGES_PER_REQUEST = 16;
+    private static final int MAX_ALERT_CHANGES_PER_REQUEST = 24;
     private static final int MINIMUM_RESULT_CANDLES = 10;
 
     private final AlertRuleRepository alertRuleRepository;
@@ -62,12 +64,16 @@ public class AlertRuleService {
     private final TechnicalIndicatorEnrichmentService enrichmentService;
     private final CandlePatternDetectionService detectionService;
     private final ElliottWaveDetectionService elliottWaveDetectionService;
+    private final boolean dailyElliottEnabled;
     private final boolean weeklyElliottEnabled;
     private final boolean monthlyElliottEnabled;
     private final int maxTrackedStocksPerUser;
     private final int maxGlobalTrackedStocks;
     private final AnalysisPreferencesService preferencesService;
     private final CandlestickPatternPreferencesService patternPreferencesService;
+    private ElliottWavePreferencesService elliottWavePreferencesService;
+    private HarmonicPatternDetectionService harmonicPatternDetectionService;
+    private HarmonicPatternPreferencesService harmonicPatternPreferencesService;
 
     @Autowired
     public AlertRuleService(AlertRuleRepository alertRuleRepository,
@@ -81,6 +87,7 @@ public class AlertRuleService {
                             TechnicalIndicatorEnrichmentService enrichmentService,
                             CandlePatternDetectionService detectionService,
                             ElliottWaveDetectionService elliottWaveDetectionService,
+                             @Value("${alerts.elliott.daily-enabled:true}") boolean dailyElliottEnabled,
                              @Value("${alerts.elliott.weekly-enabled:true}") boolean weeklyElliottEnabled,
                              @Value("${alerts.elliott.monthly-enabled:true}") boolean monthlyElliottEnabled,
                              @Value("${alerts.max-tracked-stocks-per-user:50}") int maxTrackedStocksPerUser,
@@ -98,12 +105,26 @@ public class AlertRuleService {
         this.enrichmentService = enrichmentService;
         this.detectionService = detectionService;
         this.elliottWaveDetectionService = elliottWaveDetectionService;
+        this.dailyElliottEnabled = dailyElliottEnabled;
         this.weeklyElliottEnabled = weeklyElliottEnabled;
         this.monthlyElliottEnabled = monthlyElliottEnabled;
         this.maxTrackedStocksPerUser = Math.max(1, maxTrackedStocksPerUser);
         this.maxGlobalTrackedStocks = Math.max(this.maxTrackedStocksPerUser, maxGlobalTrackedStocks);
         this.preferencesService = preferencesService;
         this.patternPreferencesService = patternPreferencesService;
+    }
+
+    @Autowired(required = false)
+    void configureElliottWavePreferences(ElliottWavePreferencesService elliottWavePreferencesService) {
+        this.elliottWavePreferencesService = elliottWavePreferencesService;
+    }
+
+    @Autowired(required = false)
+    void configureHarmonicPatternPreferences(
+            HarmonicPatternDetectionService harmonicPatternDetectionService,
+            HarmonicPatternPreferencesService harmonicPatternPreferencesService) {
+        this.harmonicPatternDetectionService = harmonicPatternDetectionService;
+        this.harmonicPatternPreferencesService = harmonicPatternPreferencesService;
     }
 
     AlertRuleService(AlertRuleRepository alertRuleRepository,
@@ -123,7 +144,7 @@ public class AlertRuleService {
                      int maxGlobalTrackedStocks) {
         this(alertRuleRepository, alertEventRepository, stockAssetRepository, candleRepository,
                 twelveDataService, jdbcTemplate, marketDataService, candleCompletionService,
-                enrichmentService, detectionService, elliottWaveDetectionService, weeklyElliottEnabled,
+                enrichmentService, detectionService, elliottWaveDetectionService, true, weeklyElliottEnabled,
                 monthlyElliottEnabled, maxTrackedStocksPerUser, maxGlobalTrackedStocks, null, null);
     }
 
@@ -147,6 +168,57 @@ public class AlertRuleService {
         return rulesBySymbol.values().stream()
                 .map(this::toTrackedCompanyView)
                 .toList();
+    }
+
+    @Transactional
+    public int unfollowAllTechnicalRules(User user, String rawSymbol) {
+        if (user == null) {
+            throw new IllegalArgumentException("User is required.");
+        }
+        String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        StockAsset stockAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
+        if (stockAsset == null) {
+            return 0;
+        }
+        List<AlertRule> activeRules = alertRuleRepository
+                .findByUserAndStockAssetAndIsActiveTrue(user, stockAsset);
+        activeRules.forEach(rule -> rule.setActive(false));
+        if (!activeRules.isEmpty()) {
+            alertRuleRepository.saveAll(activeRules);
+        }
+        return activeRules.size();
+    }
+
+    @Transactional
+    public int unfollowSelectedTechnicalRules(User user, String rawSymbol, List<Long> rawRuleIds) {
+        if (user == null) {
+            throw new IllegalArgumentException("User is required.");
+        }
+        if (rawRuleIds == null || rawRuleIds.isEmpty() || rawRuleIds.size() > MAX_ALERT_CHANGES_PER_REQUEST) {
+            throw new IllegalArgumentException("Select between 1 and " + MAX_ALERT_CHANGES_PER_REQUEST + " rules.");
+        }
+        Set<Long> ruleIds = rawRuleIds.stream()
+                .peek(id -> {
+                    if (id == null || id <= 0) {
+                        throw new IllegalArgumentException("Every selected rule must have a valid identifier.");
+                    }
+                })
+                .collect(Collectors.toSet());
+        String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        StockAsset stockAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
+        if (stockAsset == null) {
+            return 0;
+        }
+        List<AlertRule> selectedRules = alertRuleRepository
+                .findByUserAndStockAssetAndIsActiveTrue(user, stockAsset)
+                .stream()
+                .filter(rule -> ruleIds.contains(rule.getId()))
+                .toList();
+        selectedRules.forEach(rule -> rule.setActive(false));
+        if (!selectedRules.isEmpty()) {
+            alertRuleRepository.saveAll(selectedRules);
+        }
+        return selectedRules.size();
     }
 
     public List<LatestSignalView> getLatestSignalViews(User user) {
@@ -270,23 +342,43 @@ public class AlertRuleService {
                                                String requestedSort,
                                                String requestedDirection,
                                                int requestedPage) {
+        return getSignalArchive(user, null, requestedSort, requestedDirection, requestedPage);
+    }
+
+    public CompanySignalArchive getCompanySignalArchive(User user,
+                                                         Long alertRuleId,
+                                                         String requestedSort,
+                                                         String requestedDirection,
+                                                         int requestedPage) {
+        AlertRule selectedRule = alertRuleRepository.findByIdAndUserAndIsActiveTrue(alertRuleId, user)
+                .orElseThrow(() -> new IllegalArgumentException("Active alert rule not found."));
+        StockAsset stockAsset = selectedRule.getStockAsset();
+        return new CompanySignalArchive(
+                selectedRule.getId(),
+                stockAsset.getTickerSymbol(),
+                stockAsset.getCompanyName(),
+                getSignalArchive(user, stockAsset, requestedSort, requestedDirection, requestedPage)
+        );
+    }
+
+    private SignalArchivePage getSignalArchive(User user,
+                                                StockAsset stockAsset,
+                                                String requestedSort,
+                                                String requestedDirection,
+                                                int requestedPage) {
         String sortKey = normalizeArchiveSort(requestedSort);
         String directionKey = "asc".equalsIgnoreCase(requestedDirection) ? "asc" : "desc";
         Sort.Direction direction = "asc".equals(directionKey) ? Sort.Direction.ASC : Sort.Direction.DESC;
         if (isReturnSort(sortKey)) {
-            return getReturnSortedSignalArchive(user, sortKey, directionKey, direction, requestedPage);
+            return getReturnSortedSignalArchive(
+                    user, stockAsset, sortKey, directionKey, direction, requestedPage);
         }
         Sort archiveSort = archiveSort(sortKey, direction);
         int page = Math.max(0, requestedPage);
-        Page<AlertEvent> archive = alertEventRepository.findByAlertRule_User(
-                user,
-                PageRequest.of(page, SIGNAL_ARCHIVE_PAGE_SIZE, archiveSort)
-        );
+        Page<AlertEvent> archive = signalArchivePage(user, stockAsset, page, archiveSort);
         if (archive.getTotalPages() > 0 && page >= archive.getTotalPages()) {
             page = archive.getTotalPages() - 1;
-            archive = alertEventRepository.findByAlertRule_User(
-                    user,
-                    PageRequest.of(page, SIGNAL_ARCHIVE_PAGE_SIZE, archiveSort));
+            archive = signalArchivePage(user, stockAsset, page, archiveSort);
         }
         return new SignalArchivePage(
                 archive.getContent().stream().map(this::toSignalArchiveEntry).toList(),
@@ -298,6 +390,16 @@ public class AlertRuleService {
                 archive.hasPrevious(),
                 archive.hasNext()
         );
+    }
+
+    private Page<AlertEvent> signalArchivePage(User user,
+                                               StockAsset stockAsset,
+                                               int page,
+                                               Sort archiveSort) {
+        PageRequest pageRequest = PageRequest.of(page, SIGNAL_ARCHIVE_PAGE_SIZE, archiveSort);
+        return stockAsset == null
+                ? alertEventRepository.findByAlertRule_User(user, pageRequest)
+                : alertEventRepository.findByAlertRule_UserAndStockAsset(user, stockAsset, pageRequest);
     }
 
     private String normalizeArchiveSort(String requestedSort) {
@@ -332,11 +434,15 @@ public class AlertRuleService {
     }
 
     private SignalArchivePage getReturnSortedSignalArchive(User user,
+                                                            StockAsset stockAsset,
                                                             String sortKey,
                                                             String directionKey,
                                                             Sort.Direction direction,
                                                             int requestedPage) {
-        List<SignalArchiveEntry> sortedSignals = alertEventRepository.findAllByAlertRule_User(user)
+        List<AlertEvent> events = stockAsset == null
+                ? alertEventRepository.findAllByAlertRule_User(user)
+                : alertEventRepository.findAllByAlertRule_UserAndStockAsset(user, stockAsset);
+        List<SignalArchiveEntry> sortedSignals = events
                 .stream()
                 .map(this::toSignalArchiveEntry)
                 .sorted(returnComparator(sortKey, direction))
@@ -858,8 +964,12 @@ public class AlertRuleService {
             return SignalChartView.unavailable("The cached signal candle could not be located.");
         }
 
+        HarmonicChartView harmonic = toSignalHarmonicView(event, rule);
         int patternCandleCount = patternCandleCount(event.getPattern());
-        int patternStartIndex = Math.max(0, signalIndex - patternCandleCount + 1);
+        int patternStartIndex = harmonic == null
+                ? Math.max(0, signalIndex - patternCandleCount + 1)
+                : candleIndex(candles, harmonic.points().getFirst().timestamp());
+        if (patternStartIndex < 0) patternStartIndex = Math.max(0, signalIndex - 4);
         int trendContextCandles = signalTrendContextCandles(event, rule);
         int trendContextStartIndex = Math.max(0, patternStartIndex - trendContextCandles);
         int trendStartIndex = trendContextStartIndex;
@@ -887,14 +997,17 @@ public class AlertRuleService {
                     candles, trendContextStartIndex, patternStartIndex, event.getTradeSignal());
         }
         long patternStartTimestamp = candles.get(patternStartIndex).getTimestamp();
-        Long trendStartTimestamp = patternStartIndex > 0
+        Long trendStartTimestamp = harmonic == null && patternStartIndex > 0
                 ? candles.get(trendStartIndex).getTimestamp()
                 : null;
         String trendLabel = normalizeFamily(rule.getPatternFamily()) == AlertPatternFamily.ELLIOTT_WAVE
                 ? "Wave structure context"
+                : harmonic != null ? "Harmonic pivot structure"
                 : event.getTradeSignal() == TradeSignal.SELL ? "Required uptrend" : "Required downtrend";
         String summary = normalizeFamily(rule.getPatternFamily()) == AlertPatternFamily.ELLIOTT_WAVE
                 ? "The marker locates the recorded Elliott detection inside the complete cached interval history."
+                : harmonic != null
+                ? "The saved harmonic geometry is drawn from its first pivot through D/C, with the separate confirmation candle marking when the signal became knowable."
                 : "The highlighted region and amber guide trace the identified trend leg inside the detector's broader completed context; labeled arrows identify every candle that formed the pattern.";
 
         ElliottWaveChartView elliottWave = toSignalElliottWaveView(event, rule, candles, signalIndex);
@@ -923,8 +1036,55 @@ public class AlertRuleService {
                 Math.min(patternCandleCount, signalIndex + 1),
                 trendLabel,
                 summary,
-                elliottWave
+                elliottWave,
+                harmonic
         );
+    }
+
+    private HarmonicChartView toSignalHarmonicView(AlertEvent event, AlertRule rule) {
+        if (normalizeFamily(rule.getPatternFamily()) != AlertPatternFamily.HARMONIC_FORMATION
+                || event.getHarmonicPointsSnapshot() == null) return null;
+        List<HarmonicChartPointView> points = event.getHarmonicPointsSnapshot().lines()
+                .map(line -> line.split("\\|", -1))
+                .filter(fields -> fields.length == 4)
+                .map(fields -> {
+                    try {
+                        return new HarmonicChartPointView(
+                                fields[0], Long.parseLong(fields[1]),
+                                Double.parseDouble(fields[2]), fields[3]);
+                    } catch (NumberFormatException exception) {
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (points.size() != 5) return null;
+        Map<String, Double> measurements = new LinkedHashMap<>();
+        if (event.getHarmonicMeasurementsSnapshot() != null) {
+            event.getHarmonicMeasurementsSnapshot().lines().forEach(line -> {
+                String[] fields = line.split("\\|", -1);
+                if (fields.length != 2) return;
+                try {
+                    measurements.put(fields[0], Double.parseDouble(fields[1]));
+                } catch (NumberFormatException ignored) {
+                    // Preserve the geometry when one optional measurement is malformed.
+                }
+            });
+        }
+        return new HarmonicChartView(
+                event.getTradeSignal() == TradeSignal.BUY ? "BULLISH" : "BEARISH",
+                points,
+                Map.copyOf(measurements),
+                event.getHarmonicEndpointTimestamp(),
+                event.getHarmonicEndpointPrice(),
+                event.getSignalCandleTimestamp());
+    }
+
+    private int candleIndex(List<Candle> candles, long timestamp) {
+        for (int index = 0; index < candles.size(); index++) {
+            if (candles.get(index).getTimestamp() == timestamp) return index;
+        }
+        return -1;
     }
 
     private int signalTrendContextCandles(AlertEvent event, AlertRule rule) {
@@ -955,7 +1115,8 @@ public class AlertRuleService {
                 detectionHistory.size(),
                 rule.getInterval()
         );
-        ElliottWaveDetectionService.ElliottWaveStructure structure = elliottWaveDetectionService
+        ElliottWaveDetectionService detector = elliottDetector(rule.getUser(), rule.getInterval());
+        ElliottWaveDetectionService.ElliottWaveStructure structure = detector
                 .findHistoricalWaveStructures(enriched)
                 .stream()
                 .filter(candidate -> matchesRecordedElliottPattern(event.getPattern(), candidate))
@@ -1280,6 +1441,7 @@ public class AlertRuleService {
                 ? enrichedCandles
                 : List.of();
         List<DetectedSignal> detectedSignals = detectSignals(
+                latest,
                 enrichedCandles,
                 elliottCandles,
                 interval,
@@ -1361,9 +1523,10 @@ public class AlertRuleService {
             families.put(family.name(), familyIntervals);
         }
 
-        if (stockAsset != null) {
-            alertRuleRepository.findByUserAndStockAssetAndIsActiveTrue(user, stockAsset)
-                    .forEach(rule -> {
+        List<AlertRule> activeRules = stockAsset == null
+                ? List.of()
+                : alertRuleRepository.findByUserAndStockAssetAndIsActiveTrue(user, stockAsset);
+        activeRules.forEach(rule -> {
                         if (intervals.containsKey(rule.getInterval().name())
                                 && rule.getTradeSignal() != null
                                 && rule.getTradeSignal() != TradeSignal.HOLD) {
@@ -1379,10 +1542,21 @@ public class AlertRuleService {
                                     .put(rule.getTradeSignal().name(), true);
                         }
                     });
-        }
 
         response.put("intervals", intervals);
         response.put("families", families);
+        response.put("activeRules", activeRules.stream()
+                .sorted(Comparator.comparing(AlertRule::getInterval)
+                        .thenComparing(AlertRule::getPatternFamily)
+                        .thenComparing(AlertRule::getTradeSignal))
+                .map(rule -> new ActiveRuleSummary(
+                        rule.getId(),
+                        rule.getPatternFamily().name(),
+                        familyLabel(rule.getPatternFamily()),
+                        rule.getInterval().name(),
+                        intervalLabel(rule.getInterval()),
+                        rule.getTradeSignal().name()))
+                .toList());
         response.put("trackedStocks", alertRuleRepository.countDistinctActiveStocksByUser(user));
         return response;
     }
@@ -1427,10 +1601,12 @@ public class AlertRuleService {
         return switch (normalizeFamily(family)) {
             case ELLIOTT_WAVE -> "Elliott Wave";
             case CANDLESTICK -> "Candlestick";
+            case HARMONIC_FORMATION -> "Harmonic Formation";
         };
     }
 
-    private List<DetectedSignal> detectSignals(List<EnrichedCandle> enrichedCandles,
+    private List<DetectedSignal> detectSignals(List<Candle> candles,
+                                               List<EnrichedCandle> enrichedCandles,
                                                List<EnrichedCandle> elliottCandles,
                                                TimeInterval interval,
                                                AlertPatternFamily family,
@@ -1446,12 +1622,56 @@ public class AlertRuleService {
                             ? CandlestickPatternPreferencesService.factoryPreferences()
                             : patternPreferencesService.get(user));
         }
+        if (family == AlertPatternFamily.HARMONIC_FORMATION) {
+            HarmonicPatternDetectionService detector = harmonicDetector(user);
+            return detector.detectHistorical(candles).stream()
+                    .map(formation -> {
+                        Double closePrice = candles.stream()
+                                .filter(candle -> candle.getTimestamp() != null
+                                        && candle.getTimestamp() == formation.confirmationTimestamp())
+                                .map(Candle::getClosePrice)
+                                .findFirst()
+                                .orElse(null);
+                        return new DetectedSignal(
+                                HarmonicPatternDetectionService.signalPattern(formation.pattern()),
+                                formation.tradeSignal(),
+                                harmonicStrength(formation.qualityScore()),
+                                formation.qualityScore(),
+                                formation.reasons(),
+                                formation.confirmationTimestamp(),
+                                closePrice);
+                    })
+                    .toList();
+        }
         if (!isElliottEnabled(interval)) {
             return List.of();
         }
-        return elliottWaveDetectionService.detectAlertSignals(elliottCandles).stream()
+        return elliottDetector(user, interval).detectAlertSignals(elliottCandles).stream()
                 .filter(this::isActionableElliottTurningPoint)
                 .toList();
+    }
+
+    private ElliottWaveDetectionService elliottDetector(User user, TimeInterval interval) {
+        if (user == null || elliottWavePreferencesService == null) {
+            return elliottWaveDetectionService;
+        }
+        return elliottWaveDetectionService.configured(
+                elliottWavePreferencesService.get(user).profile(interval).rules());
+    }
+
+    private HarmonicPatternDetectionService harmonicDetector(User user) {
+        HarmonicPatternDetectionService fallback = harmonicPatternDetectionService == null
+                ? new HarmonicPatternDetectionService() : harmonicPatternDetectionService;
+        return user == null || harmonicPatternPreferencesService == null
+                ? fallback
+                : harmonicPatternPreferencesService.detector(user, fallback);
+    }
+
+    private SignalStength harmonicStrength(int score) {
+        if (score >= 85) return SignalStength.HIGH_CONFIDENCE;
+        if (score >= 75) return SignalStength.MEDIUM_CONFIDENCE;
+        if (score > 0) return SignalStength.LOW_CONFIDENCE;
+        return SignalStength.WEAK_IGNORE;
     }
 
     private int signalCandleCount(TimeInterval interval) {
@@ -1463,7 +1683,8 @@ public class AlertRuleService {
     }
 
     private boolean isElliottEnabled(TimeInterval interval) {
-        return interval == TimeInterval.WEEKLY && weeklyElliottEnabled
+        return interval == TimeInterval.DAILY && dailyElliottEnabled
+                || interval == TimeInterval.WEEKLY && weeklyElliottEnabled
                 || interval == TimeInterval.MONTHLY && monthlyElliottEnabled;
     }
 
@@ -1473,13 +1694,17 @@ public class AlertRuleService {
 
     private void validateFamilyInterval(AlertPatternFamily family, TimeInterval interval) {
         if (normalizeFamily(family) == AlertPatternFamily.ELLIOTT_WAVE
+                && interval != TimeInterval.DAILY
                 && interval != TimeInterval.WEEKLY
                 && interval != TimeInterval.MONTHLY) {
-            throw new IllegalArgumentException("Elliott Wave alerts are available only for weekly and monthly intervals.");
+            throw new IllegalArgumentException("Elliott Wave alerts are available only for daily, weekly, and monthly intervals.");
         }
     }
 
     private CandlePattern defaultTargetPattern(TradeSignal signal, AlertPatternFamily family) {
+        if (normalizeFamily(family) == AlertPatternFamily.HARMONIC_FORMATION) {
+            return CandlePattern.ANY;
+        }
         if (normalizeFamily(family) == AlertPatternFamily.ELLIOTT_WAVE) {
             return signal == TradeSignal.BUY
                     ? CandlePattern.ELLIOTT_BULLISH_CORRECTION
@@ -1489,17 +1714,23 @@ public class AlertRuleService {
     }
 
     private AlertPatternFamily signalFamily(DetectedSignal signal) {
-        return isElliottPattern(signal.pattern()) ? AlertPatternFamily.ELLIOTT_WAVE : AlertPatternFamily.CANDLESTICK;
+        if (isElliottPattern(signal.pattern())) return AlertPatternFamily.ELLIOTT_WAVE;
+        if (isHarmonicPattern(signal.pattern())) return AlertPatternFamily.HARMONIC_FORMATION;
+        return AlertPatternFamily.CANDLESTICK;
     }
 
     private boolean isElliottPattern(CandlePattern pattern) {
         return pattern != null && pattern.name().startsWith("ELLIOTT_");
     }
 
+    private boolean isHarmonicPattern(CandlePattern pattern) {
+        return pattern != null && pattern.name().startsWith("HARMONIC_");
+    }
+
     private String scoreVersion(DetectedSignal signal) {
-        return isElliottPattern(signal.pattern())
-                ? ElliottWaveDetectionService.SETUP_SCORE_VERSION
-                : CandlePatternDetectionService.SETUP_SCORE_VERSION;
+        if (isElliottPattern(signal.pattern())) return ElliottWaveDetectionService.SETUP_SCORE_VERSION;
+        if (isHarmonicPattern(signal.pattern())) return HarmonicPatternDetectionService.RULE_VERSION;
+        return CandlePatternDetectionService.SETUP_SCORE_VERSION;
     }
 
     private boolean isActionableElliottTurningPoint(DetectedSignal signal) {
@@ -1692,6 +1923,9 @@ public class AlertRuleService {
         if (setupScore == null) {
             return "This signal does not have a recorded setup score.";
         }
+        if (HarmonicPatternDetectionService.RULE_VERSION.equals(scoreVersion)) {
+            return "Harmonic geometry score: every hard structural rule passed. Points are deducted only for accepted deviations from non-hard Fibonacci and proportion targets.";
+        }
         String validationNote = CandlePatternDetectionService.SETUP_SCORE_VERSION.equals(scoreVersion)
                 ? " This V4 score is experimental and has not demonstrated stable out-of-sample predictive ordering."
                 : "";
@@ -1711,6 +1945,18 @@ public class AlertRuleService {
         String normalized = reason.toLowerCase(Locale.ROOT);
         if (normalized.startsWith("pattern quality")) {
             return "Pattern quality";
+        }
+        if (normalized.startsWith("soft ratio compliance")) {
+            return "Harmonic ratio compliance";
+        }
+        if (normalized.startsWith("primary b ratio")) {
+            return "Primary B ratio";
+        }
+        if (normalized.startsWith("completion ratio")) {
+            return "Completion ratio";
+        }
+        if (normalized.startsWith("secondary ratios")) {
+            return "Secondary ratios";
         }
         if (normalized.startsWith("trend indicators")
                 || normalized.startsWith("higher-timeframe trend")) {
@@ -1797,7 +2043,10 @@ public class AlertRuleService {
             return "Unknown pattern";
         }
         StringBuilder label = new StringBuilder();
-        for (String word : pattern.name().toLowerCase(Locale.ROOT).split("_")) {
+        String rawName = pattern.name().startsWith("HARMONIC_")
+                ? pattern.name().substring("HARMONIC_".length())
+                : pattern.name();
+        for (String word : rawName.toLowerCase(Locale.ROOT).split("_")) {
             if (!label.isEmpty()) {
                 label.append(' ');
             }
@@ -1950,6 +2199,14 @@ public class AlertRuleService {
             return directionDisplayLabel(pattern, tradeSignal, lifecycle);
         }
 
+    }
+
+    public record CompanySignalArchive(
+            Long representativeAlertId,
+            String symbol,
+            String companyName,
+            SignalArchivePage archive
+    ) {
     }
 
     public record SignalArchivePage(
@@ -2156,10 +2413,11 @@ public class AlertRuleService {
             int patternCandleCount,
             String trendLabel,
             String summary,
-            ElliottWaveChartView elliottWave
+            ElliottWaveChartView elliottWave,
+            HarmonicChartView harmonic
     ) {
         private static SignalChartView unavailable(String reason) {
-            return new SignalChartView(false, reason, List.of(), null, null, null, 0, null, null, null);
+            return new SignalChartView(false, reason, List.of(), null, null, null, 0, null, null, null, null);
         }
 
         public SignalChartView {
@@ -2265,6 +2523,23 @@ public class AlertRuleService {
     ) {
     }
 
+    public record HarmonicChartView(
+            String direction,
+            List<HarmonicChartPointView> points,
+            Map<String, Double> measurements,
+            Long endpointTimestamp,
+            Double endpointPrice,
+            Long confirmationTimestamp
+    ) {
+        public HarmonicChartView {
+            points = List.copyOf(points);
+            measurements = Map.copyOf(measurements);
+        }
+    }
+
+    public record HarmonicChartPointView(String label, long timestamp, double price, String pivotType) {
+    }
+
     public record ObservedPriceOutcomeView(
             boolean tracked,
             boolean outcomeAvailable,
@@ -2361,6 +2636,16 @@ public class AlertRuleService {
             TradeSignal signal,
             AlertPatternFamily patternFamily,
             boolean active
+    ) {
+    }
+
+    public record ActiveRuleSummary(
+            Long id,
+            String patternFamily,
+            String familyLabel,
+            String interval,
+            String intervalLabel,
+            String tradeSignal
     ) {
     }
 

@@ -5,6 +5,7 @@ import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.service.SignalArchiveDeletionService;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
@@ -46,6 +47,31 @@ public class SignalArchiveDeletionController {
         }
         addArchiveLocation(redirectAttributes, sort, direction, page);
         return "redirect:/signals";
+    }
+
+    @PostMapping("/alerts/{alertRuleId}/signals/delete")
+    public String deleteCompanyTechnicalSignals(
+            @PathVariable Long alertRuleId,
+            @RequestParam(required = false) List<Long> signalIds,
+            @RequestParam(required = false) Long singleSignalId,
+            @RequestParam(defaultValue = "date") String sort,
+            @RequestParam(defaultValue = "desc") String direction,
+            @RequestParam(defaultValue = "0") int page,
+            Principal principal,
+            RedirectAttributes redirectAttributes) {
+        User user = currentUser(principal);
+        if (user == null) {
+            return "redirect:/login";
+        }
+        Collection<Long> selectedIds = singleSignalId == null ? signalIds : List.of(singleSignalId);
+        try {
+            int deleted = deletionService.deleteTechnicalSignals(user, selectedIds);
+            redirectAttributes.addFlashAttribute("signalDeleteMessage", deletionMessage(deleted, false));
+        } catch (IllegalArgumentException exception) {
+            redirectAttributes.addFlashAttribute("signalDeleteError", exception.getMessage());
+        }
+        addArchiveLocation(redirectAttributes, sort, direction, page);
+        return "redirect:/alerts/" + alertRuleId;
     }
 
     @PostMapping("/activity-signals/delete")

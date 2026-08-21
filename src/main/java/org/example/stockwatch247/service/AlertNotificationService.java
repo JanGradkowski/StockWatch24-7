@@ -116,6 +116,9 @@ public class AlertNotificationService {
     }
 
     public boolean sendSignalEmail(AlertRule rule, DetectedSignal signal, AlertEvent lifecycleEvent) {
+        if (rule.getPatternFamily() == AlertPatternFamily.HARMONIC_FORMATION) {
+            return sendHarmonicSignalEmail(rule, signal, lifecycleEvent);
+        }
         boolean requiresNextCandleConfirmation = rule.getPatternFamily() == AlertPatternFamily.CANDLESTICK
                 && CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern());
         boolean endOfWaveC = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
@@ -216,6 +219,122 @@ public class AlertNotificationService {
         message.setText(body);
         send(message);
         return true;
+    }
+
+    private boolean sendHarmonicSignalEmail(
+            AlertRule rule,
+            DetectedSignal signal,
+            AlertEvent event) {
+        if (event == null || event.getHarmonicEndpointTimestamp() == null
+                || event.getHarmonicPointsSnapshot() == null) {
+            throw new IllegalArgumentException("A harmonic geometry snapshot is required for email delivery.");
+        }
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        String patternLabel = signal.pattern().name()
+                .replace("HARMONIC_", "")
+                .replace('_', ' ');
+        String endpointLabel = signal.pattern() == CandlePattern.HARMONIC_SHARK ? "C" : "D";
+        String body = """
+                A confirmed harmonic formation was detected for %s.
+
+                Ticker: %s
+                Pattern family: Harmonic Formation
+                Formation: %s
+                Direction: %s
+                Interval: %s
+                Completion point: %s
+                Completion period: %s
+                Completion price: %.4f
+                Confirmation / signal period: %s
+                Confirmation candle close: %.4f
+                Geometry score: %d/100
+                Score model: %s
+                Score meaning: hard structural rules passed; deductions come only from tolerated soft Fibonacci/proportion deviations.
+
+                Formation points
+                %s
+
+                Measured ratios
+                %s
+
+                Score evidence
+                %s
+
+                This alert describes a completed geometric setup. The score is not a probability of profit,
+                price target, or recommendation.
+                """.formatted(
+                symbol,
+                symbol,
+                patternLabel,
+                signal.tradeSignal(),
+                rule.getInterval(),
+                endpointLabel,
+                SignalPeriodFormatter.format(
+                        event.getHarmonicEndpointTimestamp(), rule.getInterval(), signalTimeZone),
+                event.getHarmonicEndpointPrice(),
+                SignalPeriodFormatter.format(signal.candleTimestamp(), rule.getInterval(), signalTimeZone),
+                signal.closePrice(),
+                signal.setupScore(),
+                HarmonicPatternDetectionService.RULE_VERSION,
+                formatHarmonicPoints(event.getHarmonicPointsSnapshot(), rule),
+                formatHarmonicMeasurements(event.getHarmonicMeasurementsSnapshot()),
+                SignalScoreBreakdown.formatEmail(signal.reasons(), signal.tradeSignal())
+        );
+
+        if (!isSignalEmailEnabled(rule, signal)) {
+            System.out.println("[EMAIL DISABLED] Harmonic signal email suppressed for " + symbol + ".");
+            return false;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(rule.getUser().getEmail());
+        message.setSubject("StockWatch harmonic " + patternLabel.toLowerCase()
+                + ": " + signal.tradeSignal() + " on " + symbol);
+        message.setText(body);
+        send(message);
+        return true;
+    }
+
+    private String formatHarmonicPoints(String snapshot, AlertRule rule) {
+        if (snapshot == null || snapshot.isBlank()) return "- Unavailable";
+        StringBuilder formatted = new StringBuilder();
+        for (String line : snapshot.lines().toList()) {
+            String[] fields = line.split("\\|", -1);
+            if (fields.length != 4) continue;
+            try {
+                long timestamp = Long.parseLong(fields[1]);
+                double price = Double.parseDouble(fields[2]);
+                if (!formatted.isEmpty()) formatted.append('\n');
+                formatted.append("- ").append(fields[0]).append(": ")
+                        .append(String.format(java.util.Locale.ROOT, "%.4f", price))
+                        .append(" on ")
+                        .append(SignalPeriodFormatter.format(
+                                timestamp, rule.getInterval(), signalTimeZone))
+                        .append(" (").append(fields[3]).append(')');
+            } catch (NumberFormatException ignored) {
+                // A malformed optional snapshot line must not suppress the alert.
+            }
+        }
+        return formatted.isEmpty() ? "- Unavailable" : formatted.toString();
+    }
+
+    private String formatHarmonicMeasurements(String snapshot) {
+        if (snapshot == null || snapshot.isBlank()) return "- Unavailable";
+        StringBuilder formatted = new StringBuilder();
+        for (String line : snapshot.lines().toList()) {
+            String[] fields = line.split("\\|", -1);
+            if (fields.length != 2) continue;
+            try {
+                double ratio = Double.parseDouble(fields[1]);
+                if (!formatted.isEmpty()) formatted.append('\n');
+                formatted.append("- ").append(fields[0].replace('_', '/'))
+                        .append(": ")
+                        .append(String.format(java.util.Locale.ROOT, "%.4f", ratio));
+            } catch (NumberFormatException ignored) {
+                // Keep the rest of the persisted measurement snapshot readable.
+            }
+        }
+        return formatted.isEmpty() ? "- Unavailable" : formatted.toString();
     }
 
     private String detectedLifecycleSection(

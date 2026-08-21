@@ -41,7 +41,7 @@
       <a id="virtualTradesDashboardButton"
          th:href="@{/virtual-trades}"
          class="dashboard-view-tab dashboard-view-link virtual-trades-dashboard-link">
-        <span>Virtual trades</span>
+        <span>Demo Trading</span>
         <small>Review every tracked paper decision</small>
       </a>
       <button id="technicalAnalysisViewButton"
@@ -59,146 +59,14 @@
               data-dashboard-view-button="alerts"
               aria-pressed="false"
               aria-controls="tickerAlertsIntroduction latestTickerNotifications congressionalActivityDashboard insiderActivityDashboard">
-        <span>Ticker alerts</span>
+        <span>Insider &amp; Congress Alerts</span>
         <small>Filings and company activity</small>
       </button>
     </div>
   </nav>
 
-  <section id="technicalDashboardMetrics"
-           class="metrics-grid"
-           data-dashboard-view="technical"
-           aria-label="Technical monitoring overview">
-    <article class="metric-card">
-      <span class="metric-label">Technical instruments</span>
-      <strong class="metric-value" th:text="${#lists.size(trackedCompanies)}">0</strong>
-      <span class="metric-note">Unique instruments with active signal rules</span>
-    </article>
-    <article class="metric-card">
-      <span class="metric-label">Active rules</span>
-      <strong class="metric-value" th:text="${activeRuleCount}">0</strong>
-      <span class="metric-note">Technical combinations currently followed</span>
-    </article>
-    <article class="metric-card">
-      <span class="metric-label">Latest signals</span>
-      <strong class="metric-value" th:text="${#lists.size(latestSignals)}">0</strong>
-      <span class="metric-note">Unread validated technical matches</span>
-    </article>
-    <article class="metric-card">
-      <span class="metric-label">Recovery mode</span>
-      <strong class="metric-value market-up">Armed</strong>
-      <span class="metric-note">Missed scheduled checks resume after restart</span>
-    </article>
-  </section>
-
   <div class="grid-layout" data-dashboard-view-layout>
     <div class="dashboard-main-stack">
-      <section id="technicalWatchDesk"
-               class="glass-panel dashboard-panel"
-               data-dashboard-view="technical"
-               aria-labelledby="watch-desk-heading">
-      <div class="panel-heading watch-panel-heading">
-        <div>
-          <h2 id="watch-desk-heading" class="panel-title">Market watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
-          <span class="panel-meta">Open an instrument to see every followed rule</span>
-        </div>
-        <div class="watch-filter-tabs" role="group" aria-label="Filter followed instruments">
-          <button id="watchFilterStocks"
-                  type="button"
-                  class="watch-filter-tab active"
-                  data-watch-filter="stocks"
-                  aria-controls="followedInstrumentList"
-                  aria-pressed="true">
-            <span>Stocks</span>
-            <strong th:text="${stockCompanyCount}">0</strong>
-          </button>
-          <button id="watchFilterFunds"
-                  type="button"
-                  class="watch-filter-tab"
-                  data-watch-filter="funds"
-                  aria-controls="followedInstrumentList"
-                  aria-pressed="false">
-            <span>Indexes / ETFs</span>
-            <strong th:text="${indexEtfCompanyCount}">0</strong>
-          </button>
-        </div>
-      </div>
-
-      <div id="followedInstrumentList" th:if="${#lists.isEmpty(trackedCompanies)}" class="empty-state-card">
-        <div class="empty-state-inner">
-          <div class="empty-icon" aria-hidden="true">⌁</div>
-          <h3>Your alert desk is quiet</h3>
-          <p>Use the market search in the navigation bar, open an instrument, and switch on the technical signals you want monitored.</p>
-        </div>
-      </div>
-
-      <div id="followedInstrumentList" th:if="${!#lists.isEmpty(trackedCompanies)}">
-        <div class="alert-list-head company-alert-grid" data-watch-list-head aria-hidden="true" th:hidden="${stockCompanyCount == 0}">
-          <span>Instrument</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>Unread</span>
-        </div>
-        <div class="alert-list">
-          <a th:each="company : ${trackedCompanies}"
-             class="alert-row company-alert-grid"
-             th:href="@{/alerts/{id}(id=${company.representativeAlertId()})}"
-             th:attr="data-instrument-group=${company.instrumentGroup()}"
-             th:data-unread-signal-count="${company.unreadSignalCount()}"
-             th:hidden="${company.instrumentGroup() != 'stocks'}">
-            <div>
-              <div class="alert-symbol-line">
-                <div class="alert-symbol" th:text="${company.symbol()}">MARA</div>
-                <span th:if="${company.instrumentType().name() != 'EQUITY'}"
-                      class="instrument-kind-badge"
-                      th:classappend="${company.instrumentGroup() == 'funds'} ? ' fund' : ' other'"
-                      th:text="${company.instrumentTypeLabel()}">Index</span>
-              </div>
-              <div class="alert-company" th:text="${company.companyName()}">MARA Holdings, Inc.</div>
-            </div>
-            <div>
-              <strong class="company-rule-count" th:text="${company.ruleCount()}">6</strong>
-              <span class="company-rule-label" th:text="${company.ruleCount() == 1 ? 'rule' : 'rules'}">rules</span>
-            </div>
-            <div class="dashboard-chip-list">
-              <span th:each="interval : ${company.intervalLabels()}" class="dashboard-chip" th:text="${interval}">Weekly</span>
-            </div>
-            <div class="company-coverage">
-              <div class="dashboard-chip-list">
-                <span th:each="family : ${company.familyLabels()}" class="dashboard-chip method" th:text="${family}">Candlestick</span>
-              </div>
-              <div class="dashboard-chip-list">
-                <span th:each="signal : ${company.tradeSignals()}"
-                      class="dashboard-chip signal"
-                      th:classappend="${signal.name() == 'BUY'} ? ' buy' : ' sell'"
-                      th:text="${signal}">BUY</span>
-              </div>
-            </div>
-            <div class="event-count">
-              <strong th:text="${company.unreadSignalCount()}">0</strong>
-              <span th:text="${company.unreadSignalCount() == 1 ? 'new signal' : 'new signals'}">new signals</span>
-            </div>
-          </a>
-        </div>
-
-        <div class="empty-state-card watch-filter-empty" data-watch-empty="stocks" th:hidden="${stockCompanyCount > 0}">
-          <div class="empty-state-inner">
-            <div class="empty-icon" aria-hidden="true">S</div>
-            <h3>No followed stocks yet</h3>
-            <p>Search for a company in the navigation bar and activate a signal rule to add its stock here.</p>
-          </div>
-        </div>
-
-        <div class="empty-state-card watch-filter-empty" data-watch-empty="funds" hidden>
-          <div class="empty-state-inner">
-            <div class="empty-icon instrument-empty-icon" aria-hidden="true">I</div>
-            <h3>No followed indexes or ETFs yet</h3>
-            <p>Search for an index or exchange-traded fund and activate a signal rule to add it to this view.</p>
-          </div>
-        </div>
-
-        <p id="watchFilterAnnouncement" class="watch-filter-announcement" aria-live="polite"
-           th:text="${'Showing ' + stockCompanyCount + (stockCompanyCount == 1 ? ' followed stock' : ' followed stocks')}">Showing 0 followed stocks</p>
-      </div>
-      </section>
-
       <section id="latestTechnicalSignals"
                class="glass-panel dashboard-panel latest-signals-panel"
                data-dashboard-view="technical"
@@ -276,6 +144,121 @@
         </div>
       </section>
 
+      <section id="technicalWatchDesk"
+               class="glass-panel dashboard-panel"
+               data-dashboard-view="technical"
+               aria-labelledby="watch-desk-heading">
+      <div class="panel-heading watch-panel-heading">
+        <div>
+          <h2 id="watch-desk-heading" class="panel-title">Market watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
+          <span class="panel-meta">Open an instrument to see every followed rule</span>
+        </div>
+        <div class="watch-filter-tabs" role="group" aria-label="Filter followed instruments">
+          <button id="watchFilterStocks"
+                  type="button"
+                  class="watch-filter-tab active"
+                  data-watch-filter="stocks"
+                  aria-controls="followedInstrumentList"
+                  aria-pressed="true">
+            <span>Stocks</span>
+            <strong th:text="${stockCompanyCount}">0</strong>
+          </button>
+          <button id="watchFilterFunds"
+                  type="button"
+                  class="watch-filter-tab"
+                  data-watch-filter="funds"
+                  aria-controls="followedInstrumentList"
+                  aria-pressed="false">
+            <span>Indexes / ETFs</span>
+            <strong th:text="${indexEtfCompanyCount}">0</strong>
+          </button>
+        </div>
+      </div>
+
+      <div id="followedInstrumentList" th:if="${#lists.isEmpty(trackedCompanies)}" class="empty-state-card">
+        <div class="empty-state-inner">
+          <div class="empty-icon" aria-hidden="true">⌁</div>
+          <h3>Your alert desk is quiet</h3>
+          <p>Use the market search in the navigation bar, open an instrument, and switch on the technical signals you want monitored.</p>
+        </div>
+      </div>
+
+      <div id="followedInstrumentList" th:if="${!#lists.isEmpty(trackedCompanies)}">
+        <div class="alert-list-head company-alert-grid" data-watch-list-head aria-hidden="true" th:hidden="${stockCompanyCount == 0}">
+          <span>Instrument</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>Unread</span><span>Actions</span>
+        </div>
+        <div class="alert-list">
+          <div th:each="company : ${trackedCompanies}"
+             class="alert-row company-alert-grid"
+             th:attr="data-instrument-group=${company.instrumentGroup()}"
+             th:data-unread-signal-count="${company.unreadSignalCount()}"
+             th:hidden="${company.instrumentGroup() != 'stocks'}">
+            <a class="dashboard-company-link"
+               th:href="@{/alerts/{id}(id=${company.representativeAlertId()})}"
+               th:attr="aria-label=${'Open followed rules for ' + company.companyName()}">
+              <div class="alert-symbol-line">
+                <div class="alert-symbol" th:text="${company.symbol()}">MARA</div>
+                <span th:if="${company.instrumentType().name() != 'EQUITY'}"
+                      class="instrument-kind-badge"
+                      th:classappend="${company.instrumentGroup() == 'funds'} ? ' fund' : ' other'"
+                      th:text="${company.instrumentTypeLabel()}">Index</span>
+              </div>
+              <div class="alert-company" th:text="${company.companyName()}">MARA Holdings, Inc.</div>
+            </a>
+            <div>
+              <strong class="company-rule-count" th:text="${company.ruleCount()}">6</strong>
+              <span class="company-rule-label" th:text="${company.ruleCount() == 1 ? 'rule' : 'rules'}">rules</span>
+            </div>
+            <div class="dashboard-chip-list">
+              <span th:each="interval : ${company.intervalLabels()}" class="dashboard-chip" th:text="${interval}">Weekly</span>
+            </div>
+            <div class="company-coverage">
+              <div class="dashboard-chip-list">
+                <span th:each="family : ${company.familyLabels()}" class="dashboard-chip method" th:text="${family}">Candlestick</span>
+              </div>
+              <div class="dashboard-chip-list">
+                <span th:each="signal : ${company.tradeSignals()}"
+                      class="dashboard-chip signal"
+                      th:classappend="${signal.name() == 'BUY'} ? ' buy' : ' sell'"
+                      th:text="${signal}">BUY</span>
+              </div>
+            </div>
+            <div class="event-count">
+              <strong th:text="${company.unreadSignalCount()}">0</strong>
+              <span th:text="${company.unreadSignalCount() == 1 ? 'new signal' : 'new signals'}">new signals</span>
+            </div>
+            <div class="company-unfollow-actions">
+              <button type="button"
+                      class="company-unfollow-button"
+                      data-unfollow-company
+                      th:attr="data-symbol=${company.symbol()},data-company-name=${company.companyName()}">
+                Unfollow
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty-state-card watch-filter-empty" data-watch-empty="stocks" th:hidden="${stockCompanyCount > 0}">
+          <div class="empty-state-inner">
+            <div class="empty-icon" aria-hidden="true">S</div>
+            <h3>No followed stocks yet</h3>
+            <p>Search for a company in the navigation bar and activate a signal rule to add its stock here.</p>
+          </div>
+        </div>
+
+        <div class="empty-state-card watch-filter-empty" data-watch-empty="funds" hidden>
+          <div class="empty-state-inner">
+            <div class="empty-icon instrument-empty-icon" aria-hidden="true">I</div>
+            <h3>No followed indexes or ETFs yet</h3>
+            <p>Search for an index or exchange-traded fund and activate a signal rule to add it to this view.</p>
+          </div>
+        </div>
+
+        <p id="watchFilterAnnouncement" class="watch-filter-announcement" aria-live="polite"
+           th:text="${'Showing ' + stockCompanyCount + (stockCompanyCount == 1 ? ' followed stock' : ' followed stocks')}">Showing 0 followed stocks</p>
+      </div>
+      </section>
+
       <section id="tickerAlertsIntroduction"
                class="ticker-alerts-introduction"
                data-dashboard-view="alerts"
@@ -283,7 +266,7 @@
                hidden>
         <div>
           <div class="panel-kicker">Company-event monitoring</div>
-          <h2 id="ticker-alerts-view-heading">Ticker alerts</h2>
+          <h2 id="ticker-alerts-view-heading">Insider &amp; Congress Alerts</h2>
           <p>Follow material company activity without mixing it into technical chart signals. Congressional disclosures and corporate insider filings are monitored as distinct, explainable sources.</p>
         </div>
         <div class="ticker-alerts-summary-grid">
@@ -344,7 +327,7 @@
              data-notification-list
              th:hidden="${#lists.isEmpty(latestTickerNotifications)}">
           <article th:each="notification : ${latestTickerNotifications}"
-                   class="ticker-notification-row"
+                   class="ticker-notification-row latest-signal-row is-unread"
                    data-notification-row
                    th:attr="data-notification-key=${notification.notificationKey()}">
             <div class="ticker-notification-source"
@@ -367,9 +350,9 @@
               <strong th:if="${notification.returnPercent() != null}"
                       th:classappend="${notification.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
                       th:text="${(notification.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(notification.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
-              <strong th:unless="${notification.returnPercent() != null}" class="unavailable">Not applicable</strong>
+              <strong th:unless="${notification.returnPercent() != null}" class="unavailable">Awaiting price data</strong>
               <small th:if="${notification.returnAsOf() != null}"
-                     th:text="${'from filed price on ' + #temporals.format(notification.transactionDate(), 'dd MMM yyyy') + ' · through ' + #temporals.format(notification.returnAsOf(), 'dd MMM yyyy')}">from filed price on 01 Jan 2026 · through 08 Jan 2026</small>
+                     th:text="${(notification.source() == 'CONGRESSIONAL' ? 'from transaction-date close proxy' : 'from filed price on ' + #temporals.format(notification.transactionDate(), 'dd MMM yyyy')) + ' · through ' + #temporals.format(notification.returnAsOf(), 'dd MMM yyyy')}">from filed price on 01 Jan 2026 · through 08 Jan 2026</small>
             </div>
             <div class="ticker-notification-dates">
               <span>Traded <time th:text="${#temporals.format(notification.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time></span>
@@ -454,7 +437,7 @@
              data-notification-list
              th:hidden="${#lists.isEmpty(congressionalActivities)}">
           <article th:each="activity : ${congressionalActivities}"
-                   class="congressional-dashboard-row"
+                   class="congressional-dashboard-row latest-signal-row is-unread"
                    data-notification-row
                    th:attr="data-notification-key=${'CONGRESSIONAL-' + activity.id()}">
             <div class="congressional-activity-direction"
@@ -469,6 +452,15 @@
             <div class="congressional-value">
               <span>Reported value</span>
               <strong th:text="${activity.amountRange()}">$1,001 - $15,000</strong>
+            </div>
+            <div class="ticker-notification-return">
+              <span>Directional return</span>
+              <strong th:if="${activity.returnPercent() != null}"
+                      th:classappend="${activity.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
+                      th:text="${(activity.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(activity.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
+              <strong th:unless="${activity.returnPercent() != null}" class="unavailable">Awaiting price data</strong>
+              <small th:if="${activity.returnAsOf() != null}"
+                     th:text="${'from transaction-date close proxy · through ' + #temporals.format(activity.returnAsOf(), 'dd MMM yyyy')}">from transaction-date close proxy · through 08 Jan 2026</small>
             </div>
             <div class="congressional-dates">
               <span>
@@ -504,6 +496,7 @@
           Purchases and sales are sourced through
           <a href="https://congressinvests.com/" target="_blank" rel="noopener noreferrer">CongressInvests</a>
           from public House and Senate filings. Disclosures can arrive up to 45 days after a transaction.
+          Directional return uses the completed daily close on the transaction date as a proxy because disclosures provide value ranges rather than execution prices.
           Informational only, not financial advice.
         </p>
       </section>
@@ -566,7 +559,7 @@
              data-notification-list
              th:hidden="${#lists.isEmpty(insiderActivities)}">
           <article th:each="activity : ${insiderActivities}"
-                   class="congressional-dashboard-row insider-dashboard-row"
+                   class="congressional-dashboard-row insider-dashboard-row latest-signal-row is-unread"
                    data-notification-row
                    th:attr="data-notification-key=${'INSIDER-' + activity.id()}">
             <div class="congressional-activity-direction"
@@ -630,31 +623,78 @@
       </section>
     </div>
 
-    <aside id="systemPulsePanel"
-           class="glass-panel dashboard-panel system-pulse-panel"
-           data-dashboard-view="technical">
-      <div class="panel-heading">
-        <h2 class="panel-title">System pulse</h2>
-        <span class="panel-meta">Live</span>
-      </div>
-      <div class="system-stack">
-        <div class="system-item">
-          <div class="status-label">Scheduler</div>
-          <div class="status-value">Online &amp; polling</div>
-          <p class="system-copy">Scheduled candle checks continue in the background while the application is running.</p>
+    <aside class="dashboard-technical-sidebar"
+           data-dashboard-view="technical"
+           aria-label="Technical monitoring summary">
+      <section id="technicalDashboardMetrics"
+               class="metrics-grid dashboard-sidebar-metrics"
+               aria-label="Technical monitoring overview">
+        <article class="metric-card">
+          <span class="metric-label">Technical instruments</span>
+          <strong class="metric-value" th:text="${#lists.size(trackedCompanies)}">0</strong>
+          <span class="metric-note">Unique instruments with active signal rules</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Active rules</span>
+          <strong class="metric-value" th:text="${activeRuleCount}">0</strong>
+          <span class="metric-note">Technical combinations currently followed</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Latest signals</span>
+          <strong class="metric-value" th:text="${#lists.size(latestSignals)}">0</strong>
+          <span class="metric-note">Unread validated technical matches</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Recovery mode</span>
+          <strong class="metric-value market-up">Armed</strong>
+          <span class="metric-note">Missed scheduled checks resume after restart</span>
+        </article>
+      </section>
+
+      <section id="systemPulsePanel"
+               class="glass-panel dashboard-panel system-pulse-panel">
+        <div class="panel-heading">
+          <h2 class="panel-title">System pulse</h2>
+          <span class="panel-meta">Live</span>
         </div>
-        <div class="system-item">
-          <div class="status-label">Delivery recovery</div>
-          <div class="status-value">Protected</div>
-          <p class="system-copy">Eligible work missed during downtime is picked back up after the next start.</p>
+        <div class="system-stack">
+          <div class="system-item">
+            <div class="status-label">Scheduler</div>
+            <div class="status-value">Online &amp; polling</div>
+            <p class="system-copy">Scheduled candle checks continue in the background while the application is running.</p>
+          </div>
+          <div class="system-item">
+            <div class="status-label">Delivery recovery</div>
+            <div class="status-value">Protected</div>
+            <p class="system-copy">Eligible work missed during downtime is picked back up after the next start.</p>
+          </div>
         </div>
-      </div>
-      <div class="quick-search-card">
-        <strong>Explore another market</strong>
-        <p>Search a company name, ticker, or index in the navigation bar to open its analysis workspace.</p>
-      </div>
+        <div class="quick-search-card">
+          <strong>Explore another market</strong>
+          <p>Search a company name, ticker, or index in the navigation bar to open its analysis workspace.</p>
+        </div>
+      </section>
     </aside>
   </div>
 </main>
+
+<dialog id="unfollowCompanyDialog"
+        class="unsaved-alert-dialog company-unfollow-dialog"
+        aria-labelledby="unfollowCompanyTitle">
+  <div class="unsaved-alert-dialog-content">
+    <span class="unsaved-alert-kicker">Manage technical monitoring</span>
+    <h2 id="unfollowCompanyTitle">Manage followed rules</h2>
+    <p>Choose which technical rules to stop following for <strong id="unfollowCompanyName">this company</strong>.</p>
+    <p>Select individual rules below, or delete every listed rule at once:</p>
+    <ul id="unfollowCompanyRuleList" class="company-unfollow-rule-list"></ul>
+    <p class="company-unfollow-history-note">Existing signal history will remain available. Insider &amp; Congress Alerts are not affected.</p>
+    <p id="unfollowCompanyStatus" class="unsaved-alert-dialog-status" role="status"></p>
+    <div class="unsaved-alert-dialog-actions">
+      <button id="cancelUnfollowCompany" type="button" class="btn-secondary">Keep following</button>
+      <button id="deleteSelectedCompanyRules" type="button" class="company-unfollow-delete-selected" disabled>Delete selected</button>
+      <button id="deleteAllCompanyRules" type="button" class="signal-delete-confirm-button">Delete all</button>
+    </div>
+  </div>
+</dialog>
 </body>
 </html>

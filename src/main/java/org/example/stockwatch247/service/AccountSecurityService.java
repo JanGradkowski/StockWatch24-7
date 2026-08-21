@@ -161,11 +161,13 @@ public class AccountSecurityService {
                                  String theme,
                                  String motiveColor,
                                  String correctiveColor,
-                                 String subwaveColor) {
+                                 String subwaveColor,
+                                 String harmonicFormationColor) {
         String normalizedTheme = "LIGHT".equalsIgnoreCase(theme) ? "LIGHT" : "DARK";
         String normalizedMotive = SecurityInputValidator.requireHexColor(motiveColor);
         String normalizedCorrective = SecurityInputValidator.requireHexColor(correctiveColor);
         String normalizedSubwave = SecurityInputValidator.requireHexColor(subwaveColor);
+        String normalizedHarmonic = SecurityInputValidator.requireHexColor(harmonicFormationColor);
         if (java.util.stream.Stream.of(normalizedMotive, normalizedCorrective, normalizedSubwave)
                 .distinct().count() != 3) {
             throw new IllegalArgumentException("Choose three different Elliott Wave colors.");
@@ -175,6 +177,7 @@ public class AccountSecurityService {
         user.setElliottMotiveColor(normalizedMotive);
         user.setElliottCorrectiveColor(normalizedCorrective);
         user.setElliottSubwaveColor(normalizedSubwave);
+        user.setHarmonicFormationColor(normalizedHarmonic);
         users.save(user);
     }
 

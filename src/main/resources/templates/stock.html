@@ -10,7 +10,7 @@
   <!-- TradingView Lightweight Charts (Industry Standard) -->
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
-  <script th:src="@{/js/elliott-subwave-overlay.js}"></script>
+  <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
   <style th:attr="nonce=${cspNonce}">
@@ -88,6 +88,17 @@
       <div class="ticker-name"><span th:text="${symbol}">AAPL</span><span id="instrumentTypeDisplay" class="instrument-type-badge" data-instrument-type="EQUITY">Stock</span></div>
       <div class="interval-label">Daily Interval</div>
     </div>
+    <section class="price-header-demo-trading" aria-labelledby="stockDemoTradeTitle">
+      <div>
+        <span class="stock-workspace-action-kicker">Demo trading &middot; no real order</span>
+        <h2 id="stockDemoTradeTitle">Record a demo trade at the current quote</h2>
+        <p>Capture the selected interval's technical state and follow a hypothetical decision.</p>
+      </div>
+      <div class="virtual-trade-launch-actions">
+        <button type="button" class="btn-accent virtual-buy-button" data-stock-demo-trade="BUY">Virtual Buy</button>
+        <button type="button" class="btn-secondary virtual-sell-button" data-stock-demo-trade="SELL">Virtual Sell</button>
+      </div>
+    </section>
     <div class="quote-block">
       <div class="quote-label">Latest market quote</div>
       <div>
@@ -129,7 +140,7 @@
               aria-controls="tickerAlertsWorkspacePanel"
               tabindex="-1"
               data-stock-workspace-tab="ticker-alerts">
-        <span>Ticker alerts</span>
+        <span>Insider &amp; Congress Alerts</span>
         <small>Congressional and insider activity</small>
       </button>
     </div>
@@ -150,8 +161,15 @@
         <button id="candlestickOverlayToggle"
                 type="button"
                 class="view-toggle"
+                aria-haspopup="dialog"
+                aria-controls="historicalCandlestickViewDialog"
                 aria-pressed="false">Candlestick signals</button>
-        <button id="elliottOverlayToggle" type="button" class="view-toggle" aria-pressed="false" disabled>Elliott overlays</button>
+        <button id="elliottOverlayToggle" type="button" class="view-toggle" aria-pressed="false" disabled>Independent Elliott structures</button>
+        <button id="elliottSubwaveToggle" type="button" class="view-toggle" aria-pressed="false" disabled>Fractal subwaves</button>
+        <button id="harmonicOverlayToggle"
+                type="button"
+                class="view-toggle"
+                aria-pressed="false">Harmonic formations overlay</button>
         <button id="anchoredVolumeProfileToggle"
                 type="button"
                 class="view-toggle"
@@ -163,6 +181,13 @@
                 class="view-toggle"
                 aria-pressed="false">
           RSI overlay
+        </button>
+        <button id="volumeChartToggle"
+                type="button"
+                class="view-toggle active"
+                aria-controls="volumeChartPanel"
+                aria-pressed="true">
+          Volume: on
         </button>
       </div>
     </div>
@@ -176,27 +201,15 @@
     </div>
   </section>
 
-  <section class="stock-workspace-action-card" aria-labelledby="historicalCandlestickActionTitle">
-    <div>
-      <span class="stock-workspace-action-kicker">Pattern research</span>
-      <h2 id="historicalCandlestickActionTitle">Historical candle patterns</h2>
-      <p>Review completed historical candlestick signals for this ticker and compare how they developed.</p>
-    </div>
-    <button id="showHistoricalCandlestickPatternsBtn"
-            type="button"
-            class="btn-secondary historical-candlestick-open-button">
-      Show historical candle patterns
-    </button>
-  </section>
-
   <!-- Price Chart Canvas -->
-  <section class="chart-wrapper">
+  <section id="priceChartPanel" class="chart-wrapper resizable-chart-panel">
     <div class="chart-panel-head">
       <h2 class="chart-panel-title">Price action</h2>
       <span class="chart-panel-meta">Scroll horizontally to explore history</span>
     </div>
     <div id="candlestickOverlayStatus" class="elliott-overlay-status candlestick-overlay-status" aria-live="polite"></div>
     <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite"></div>
+    <div id="harmonicOverlayStatus" class="elliott-overlay-status harmonic-overlay-status" aria-live="polite"></div>
     <div id="anchoredVolumeProfileSummary" class="anchored-volume-profile-summary">
       <div class="anchored-volume-profile-range">
         <span class="anchored-volume-profile-kicker">Anchored range</span>
@@ -231,6 +244,9 @@
       <div id="historicalCandlestickHitTargets"
            class="elliott-wave-hit-targets historical-candlestick-hit-targets"
            aria-label="Interactive historical candlestick signals"></div>
+      <div id="harmonicFormationHitTargets"
+           class="elliott-wave-hit-targets harmonic-formation-hit-targets"
+           aria-label="Interactive harmonic formation signals"></div>
       <aside id="elliottWaveHoverCard"
              class="elliott-wave-hover-card"
              role="dialog"
@@ -284,25 +300,81 @@
            class="elliott-wave-card-link historical-candlestick-card-link"
            href="#">Open historical signal details</a>
       </aside>
+      <aside id="harmonicFormationHoverCard"
+             class="elliott-wave-hover-card harmonic-formation-hover-card"
+             role="dialog"
+             aria-labelledby="harmonicFormationCardTitle"
+             hidden>
+        <button id="harmonicFormationCardClose" class="elliott-wave-card-close" type="button"
+                aria-label="Close harmonic formation details">&times;</button>
+        <p class="elliott-wave-card-eyebrow">HISTORICAL HARMONIC SIGNAL</p>
+        <h3 id="harmonicFormationCardTitle"></h3>
+        <p id="harmonicFormationCardStage" class="elliott-wave-card-stage"></p>
+        <span id="harmonicFormationCardStatus" class="elliott-wave-card-status confirmed">Confirmed</span>
+        <div id="harmonicFormationCardOutcome" class="elliott-wave-card-outcome">
+          <span id="harmonicFormationCardOutcomeLabel"></span>
+          <strong id="harmonicFormationCardOutcomeValue"></strong>
+          <small id="harmonicFormationCardWindowEnd"></small>
+        </div>
+        <p id="harmonicFormationCardMessage" class="elliott-wave-card-message"></p>
+        <p id="harmonicFormationCardNote" class="elliott-wave-card-note"></p>
+        <a id="harmonicFormationCardLink" class="elliott-wave-card-link" href="#">Open historical signal details</a>
+      </aside>
     </div>
+    <div class="chart-resize-handle"
+         data-chart-resize-target="priceChartStage"
+         data-chart-resize-min="260"
+         data-chart-resize-max="1200"
+         data-chart-resize-default="490"
+         role="separator"
+         aria-label="Resize the Price action chart"
+         aria-orientation="horizontal"
+         aria-valuemin="260"
+         aria-valuemax="1200"
+         aria-valuenow="490"
+         tabindex="0"><span aria-hidden="true"></span><small>Drag to resize</small></div>
   </section>
 
-  <section id="rsiChartPanel" class="chart-wrapper rsi-chart-wrapper" hidden>
+  <section id="rsiChartPanel" class="chart-wrapper rsi-chart-wrapper resizable-chart-panel" hidden>
     <div class="chart-panel-head">
       <h2 id="rsiChartTitle" class="chart-panel-title">RSI (14)</h2>
       <span id="rsiChartMeta" class="chart-panel-meta">Wilder RSI · 70 / 30 reference levels</span>
     </div>
     <div id="rsiChartStatus" class="rsi-chart-status" aria-live="polite"></div>
     <div id="rsiChartContainer" class="rsi-chart-container"></div>
+    <div class="chart-resize-handle"
+         data-chart-resize-target="rsiChartContainer"
+         data-chart-resize-min="120"
+         data-chart-resize-max="800"
+         data-chart-resize-default="210"
+         role="separator"
+         aria-label="Resize the RSI chart"
+         aria-orientation="horizontal"
+         aria-valuemin="120"
+         aria-valuemax="800"
+         aria-valuenow="210"
+         tabindex="0"><span aria-hidden="true"></span><small>Drag to resize</small></div>
   </section>
 
   <!-- Volume Chart Canvas -->
-  <section class="chart-wrapper">
+  <section id="volumeChartPanel" class="chart-wrapper resizable-chart-panel">
     <div class="chart-panel-head">
       <h2 class="volume-title">Trading volume</h2>
       <span class="chart-panel-meta">Synchronized with price history</span>
     </div>
     <div id="volumeChartContainer" class="volume-chart-container"></div>
+    <div class="chart-resize-handle"
+         data-chart-resize-target="volumeChartContainer"
+         data-chart-resize-min="100"
+         data-chart-resize-max="800"
+         data-chart-resize-default="180"
+         role="separator"
+         aria-label="Resize the Trading volume chart"
+         aria-orientation="horizontal"
+         aria-valuemin="100"
+         aria-valuemax="800"
+         aria-valuenow="180"
+         tabindex="0"><span aria-hidden="true"></span><small>Drag to resize</small></div>
   </section>
 
   </div>
@@ -327,11 +399,11 @@
     </a>
   </section>
 
-  <section class="alert-panel">
+  <section class="alert-panel alert-star-panel">
     <div class="alert-header">
       <div>
-        <h2 class="alert-title">Automated email signals</h2>
-        <p class="alert-description">Choose the setups StockWatch should monitor, then apply the draft when you are ready. Use Check for an immediate scan of the selected interval.</p>
+        <h2 class="alert-title">Automated technical monitoring</h2>
+        <p class="alert-description">An outlined star is not followed; a filled star is followed. Select a star to change the draft, then apply it when you are ready. Confirmed harmonic formations now create signal records and follow the same email-delivery controls as technical alerts.</p>
       </div>
       <div class="alert-header-actions">
         <div id="alertStatus" class="alert-status" aria-live="polite"></div>
@@ -352,34 +424,60 @@
           <div class="alert-grid-label">Sell</div>
 
           <div class="alert-row-label">Daily</div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="DAILY" data-check-signal="BUY">Check</button></div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="DAILY" data-check-signal="SELL">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily candlestick buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily candlestick sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
 
           <div class="alert-row-label">Weekly</div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="WEEKLY" data-check-signal="BUY">Check</button></div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="WEEKLY" data-check-signal="SELL">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly candlestick buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly candlestick sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
 
           <div class="alert-row-label">Monthly</div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="MONTHLY" data-check-signal="BUY">Check</button></div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="CANDLESTICK" data-check-interval="MONTHLY" data-check-signal="SELL">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly candlestick buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly candlestick sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
         </div>
       </div>
 
       <div class="alert-section">
         <div class="alert-section-title">Elliott Wave Patterns</div>
-        <p class="alert-section-copy">Higher-timeframe structures for weekly and monthly analysis.</p>
+        <p class="alert-section-copy">Independent Elliott structures detected natively on daily, weekly, and monthly candles. These alerts never use hierarchy subwaves.</p>
         <div class="alert-grid">
           <div class="alert-grid-label">Interval</div>
           <div class="alert-grid-label">Buy</div>
           <div class="alert-grid-label">Sell</div>
 
+          <div class="alert-row-label">Daily</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily Elliott Wave buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily Elliott Wave sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
+
           <div class="alert-row-label">Weekly</div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="WEEKLY" data-check-signal="BUY">Check</button></div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="WEEKLY" data-check-signal="SELL">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly Elliott Wave buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly Elliott Wave sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
 
           <div class="alert-row-label">Monthly</div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="BUY"> BUY</label><button type="button" class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="MONTHLY" data-check-signal="BUY">Check</button></div>
-          <div class="alert-signal-cell"><label class="alert-toggle"><input type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="SELL"> SELL</label><button type="button" class="check-alert-btn" data-check-family="ELLIOTT_WAVE" data-check-interval="MONTHLY" data-check-signal="SELL">Check</button></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly Elliott Wave buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly Elliott Wave sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
+        </div>
+      </div>
+
+      <div class="alert-section harmonic-alert-section">
+        <div class="alert-section-title">Harmonic Formations</div>
+        <p class="alert-section-copy">Track bullish and bearish Gartley, Bat, Butterfly, Crab, Shark, and Cypher completions. A signal is recorded only after the terminal D/C pivot has enough right-side candles to be confirmed.</p>
+        <div class="alert-grid">
+          <div class="alert-grid-label">Interval</div>
+          <div class="alert-grid-label">Bullish</div>
+          <div class="alert-grid-label">Bearish</div>
+
+          <div class="alert-row-label">Daily</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily bullish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bullish</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily bearish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bearish</span></label></div>
+
+          <div class="alert-row-label">Weekly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly bullish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bullish</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly bearish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bearish</span></label></div>
+
+          <div class="alert-row-label">Monthly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly bullish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0-55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bullish</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly bearish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bearish</span></label></div>
         </div>
       </div>
     </div>
@@ -399,7 +497,7 @@
            aria-labelledby="tickerAlertsEligibilityTitle"
            hidden>
     <span class="stock-workspace-action-kicker">Stock-specific data</span>
-    <h2 id="tickerAlertsEligibilityTitle">Ticker alerts are not available for this instrument</h2>
+    <h2 id="tickerAlertsEligibilityTitle">Insider &amp; Congress Alerts are not available for this instrument</h2>
     <p>Congressional and corporate-insider disclosures are filed against individual companies. They are therefore available for stocks, but not for indexes or ETFs.</p>
   </section>
 
@@ -844,6 +942,31 @@
       </div>
     </div>
   </dialog>
+
+  <dialog id="stockDemoTradeDialog"
+          class="unsaved-alert-dialog virtual-trade-create-dialog"
+          aria-labelledby="stockDemoTradeDialogTitle">
+    <div class="unsaved-alert-dialog-content">
+      <span class="unsaved-alert-kicker">Paper trading &middot; no real order</span>
+      <h2 id="stockDemoTradeDialogTitle">Create demo trade</h2>
+      <p id="stockDemoTradeExplanation">The current quote and selected interval's technical state will be captured when you confirm.</p>
+      <div class="virtual-trade-size-mode" role="group" aria-label="Demo trade sizing">
+        <button type="button" class="active" data-stock-demo-size-mode="none">Percentage only</button>
+        <button type="button" data-stock-demo-size-mode="quantity">Quantity</button>
+        <button type="button" data-stock-demo-size-mode="notional">Virtual amount</button>
+      </div>
+      <label id="stockDemoTradeSizeField" class="virtual-trade-size-field" hidden>
+        <span id="stockDemoTradeSizeLabel">Quantity</span>
+        <input id="stockDemoTradeSizeInput" type="number" min="0.00000001" max="1000000000000" step="any" inputmode="decimal">
+        <small id="stockDemoTradeSizeHelp">Enter a positive virtual size.</small>
+      </label>
+      <div id="stockDemoTradeStatus" class="technical-outlook-freshness" role="status"></div>
+      <div class="unsaved-alert-dialog-actions">
+        <button id="cancelStockDemoTrade" type="button" class="btn-secondary">Cancel</button>
+        <button id="confirmStockDemoTrade" type="button" class="btn-accent">Create demo trade</button>
+      </div>
+    </div>
+  </dialog>
 </main>
 
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
@@ -852,6 +975,7 @@
   const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
   const ELLIOTT_CORRECTIVE_COLOR = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
   const ELLIOTT_SUBWAVE_COLOR = /*[[${elliottSubwaveColor}]]*/ '#F59E0B';
+  const HARMONIC_FORMATION_COLOR = /*[[${harmonicFormationColor}]]*/ '#22C55E';
   const encodedTicker = encodeURIComponent(ticker);
   const csrfToken = document.querySelector('meta[name="_csrf"]').content;
   const csrfHeader = document.querySelector('meta[name="_csrf_header"]').content;
@@ -901,7 +1025,13 @@
   let rsiGuideLines = [];
   let historicalElliottSeries = [];
   let historicalElliottGroups = new Map();
-  let elliottSubwaveOverlay = null;
+  let harmonicFormationSeries = [];
+  let harmonicFormationOverlays = [];
+  let harmonicHitTargetFrame = null;
+  let harmonicCardHovered = false;
+  let harmonicCardPinned = false;
+  let harmonicCardHideTimer = null;
+  let elliottHierarchyOverlay = null;
   let elliottSignalCards = new Map();
   let activeElliottSegment = null;
   let elliottCardPinned = false;
@@ -922,10 +1052,17 @@
   let historicalCandlestickCardHideTimer = null;
   let currentMode = 'candle';
   let currentInterval = '1d';
+  let pendingStockDemoTradeSide = 'BUY';
+  let stockDemoTradeSizeMode = 'none';
+  let pendingStockDemoTradeRequestId = null;
+  let pendingStockDemoTradeInterval = '1d';
   let elliottOverlaysEnabled = true;
+  let elliottSubwavesEnabled = false;
+  let harmonicOverlaysEnabled = false;
   let chartLoadController = null;
   let chartRequestSequence = 0;
   let elliottRequestSequence = 0;
+  let harmonicRequestSequence = 0;
   let historyRetryTimer = null;
   let historyRetryAttempts = 0;
   let anchoredVolumeProfileEnabled = false;
@@ -938,6 +1075,9 @@
   let rsiPeriod = 14;
   let rsiOverboughtBoundary = 70;
   let rsiOversoldBoundary = 30;
+  let volumeChartEnabled = true;
+  let chartResizeObserver = null;
+  let generalChartResizeFrame = null;
 
   let isFetching = false;
   let isLoadingOlder = false;
@@ -1081,10 +1221,10 @@
         scheduleAnchoredVolumeProfileRender();
         scheduleElliottHitTargetPositioning();
         scheduleHistoricalCandlestickHitTargetPositioning();
+        scheduleHarmonicHitTargetPositioning();
       });
       priceChart.subscribeClick(handleAnchoredVolumeProfileChartClick);
       priceChart.subscribeClick(handleElliottWaveChartClick);
-      priceChart.subscribeCrosshairMove(handleElliottWaveCrosshairMove);
 
       const elliottCard = document.getElementById('elliottWaveHoverCard');
       elliottCard.addEventListener('mouseenter', () => {
@@ -1096,22 +1236,35 @@
         if (!elliottCardPinned) scheduleElliottCardHide();
       });
       document.getElementById('elliottWaveCardClose').addEventListener('click', hideElliottWaveCard);
+      const harmonicCard = document.getElementById('harmonicFormationHoverCard');
+      harmonicCard.addEventListener('mouseenter', () => {
+        harmonicCardHovered = true;
+        clearTimeout(harmonicCardHideTimer);
+      });
+      harmonicCard.addEventListener('mouseleave', () => {
+        harmonicCardHovered = false;
+        if (!harmonicCardPinned) scheduleHarmonicFormationCardHide();
+      });
+      document.getElementById('harmonicFormationCardClose')
+              .addEventListener('click', hideHarmonicFormationCard);
       document.addEventListener('keydown', event => {
         if (event.key === 'Escape' && activeElliottSegment) hideElliottWaveCard();
+        if (event.key === 'Escape' && !harmonicCard.hidden) hideHarmonicFormationCard();
       });
 
       const seriesTheme = chartSeriesThemeOptions();
       candleSeries = priceChart.addCandlestickSeries(seriesTheme.candles);
       lineSeries = priceChart.addLineSeries(seriesTheme.line);
-      if (typeof StockWatchElliottSubwaveOverlay !== 'undefined') {
-        elliottSubwaveOverlay = new StockWatchElliottSubwaveOverlay({
+      if (typeof StockWatchElliottHierarchyOverlay !== 'undefined') {
+        elliottHierarchyOverlay = new StockWatchElliottHierarchyOverlay({
           chart: priceChart,
-          candleSeries,
           container: document.getElementById('priceChartStage'),
           symbol: ticker,
           interval: currentInterval,
           color: ELLIOTT_SUBWAVE_COLOR,
-          renderTime: timestampToChartDate
+          renderTime: timestampToChartDate,
+          statusElement: document.getElementById('elliottOverlayStatus'),
+          onWaveClick: showElliottHierarchyWaveCard
         });
       }
       elliottConfirmationSeries = priceChart.addLineSeries({
@@ -1195,6 +1348,9 @@
     elliottRequestSequence++;
     clearElliottOverlays();
     updateElliottOverlayToggle();
+    harmonicRequestSequence++;
+    clearHarmonicOverlays();
+    updateHarmonicOverlayToggle();
     historicalCandlestickOverlayRequestSequence++;
     clearHistoricalCandlestickOverlayVisuals();
     anchoredVolumeProfileRequestSequence++;
@@ -1239,7 +1395,8 @@
 
       await Promise.all([
         refreshHistoricalElliottOverlays(interval),
-        refreshHistoricalCandlestickOverlay(interval)
+        refreshHistoricalCandlestickOverlay(interval),
+        refreshHarmonicOverlays(interval)
       ]);
       if (anchoredVolumeProfileEnabled && globalCandleData.length > 0) {
         await requestAnchoredVolumeProfile(
@@ -1286,7 +1443,8 @@
         processAndSetData(data, true);
         await Promise.all([
           refreshHistoricalElliottOverlays(requestedInterval),
-          refreshHistoricalCandlestickOverlay(requestedInterval)
+          refreshHistoricalCandlestickOverlay(requestedInterval),
+          refreshHarmonicOverlays(requestedInterval)
         ]);
       } else {
         hasMoreHistory = Boolean(page.hasMore);
@@ -1599,6 +1757,26 @@
     openRsiPeriodDialog();
   }
 
+  function updateVolumeChartToggle() {
+    const button = document.getElementById('volumeChartToggle');
+    button.classList.toggle('active', volumeChartEnabled);
+    button.setAttribute('aria-pressed', String(volumeChartEnabled));
+    button.textContent = volumeChartEnabled ? 'Volume: on' : 'Volume';
+  }
+
+  function toggleVolumeChart() {
+    volumeChartEnabled = !volumeChartEnabled;
+    const panel = document.getElementById('volumeChartPanel');
+    panel.hidden = !volumeChartEnabled;
+    updateVolumeChartToggle();
+    if (!volumeChartEnabled) return;
+    window.requestAnimationFrame(() => {
+      scheduleGeneralWorkspaceChartResize();
+      const range = priceChart?.timeScale().getVisibleLogicalRange();
+      if (range && volumeChart) volumeChart.timeScale().setVisibleLogicalRange(range);
+    });
+  }
+
   function submitRsiPeriod(event) {
     event.preventDefault();
     const input = document.getElementById('rsiPeriodInput');
@@ -1684,26 +1862,40 @@
     const status = document.getElementById('elliottOverlayStatus');
     status.classList.remove('error', 'warning');
     clearElliottOverlays();
-    if (!elliottOverlaysEnabled || (interval !== '1wk' && interval !== '1mo')) {
+    const nativeEnabled = elliottOverlaysEnabled && ['1d', '1wk', '1mo'].includes(interval);
+    const subwavesEnabled = elliottSubwavesEnabled && ['1d', '1wk'].includes(interval);
+    if (!nativeEnabled && !subwavesEnabled) {
       status.textContent = '';
       return;
     }
 
-    status.textContent = 'Analysing Elliott Wave structures in the loaded range...';
+    status.textContent = nativeEnabled && subwavesEnabled
+            ? 'Analysing independent Elliott structures and Monthly-derived fractal subwaves...'
+            : (nativeEnabled
+                    ? 'Analysing independent Elliott structures detected on this interval...'
+                    : 'Building Monthly-derived fractal subwaves...');
     try {
       const fromQuery = Number.isSafeInteger(oldestTimestamp) && oldestTimestamp > 0
               ? `&from=${encodeURIComponent(oldestTimestamp)}`
               : '';
-      const cardInterval = interval === '1wk' ? 'WEEKLY' : 'MONTHLY';
-      const [response, cardResponse] = await Promise.all([
-        fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(interval)}${fromQuery}`),
-        fetch(`/api/alerts/${encodedTicker}/elliott-cards?interval=${encodeURIComponent(cardInterval)}`)
-                .catch(() => null)
+      const cardInterval = interval === '1d' ? 'DAILY' : (interval === '1wk' ? 'WEEKLY' : 'MONTHLY');
+      const hierarchyPromise = subwavesEnabled
+              ? elliottHierarchyOverlay?.showInterval(interval) || Promise.resolve(0)
+              : Promise.resolve(0);
+      const [response, cardResponse, subwaveCount] = await Promise.all([
+        nativeEnabled
+                ? fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(interval)}${fromQuery}`)
+                : Promise.resolve(null),
+        nativeEnabled
+                ? fetch(`/api/alerts/${encodedTicker}/elliott-cards?interval=${encodeURIComponent(cardInterval)}`)
+                        .catch(() => null)
+                : Promise.resolve(null),
+        hierarchyPromise
       ]);
-      if (!response.ok) throw new Error('Elliott Wave request failed');
-      const history = await response.json();
+      if (response && !response.ok) throw new Error('Independent Elliott structure request failed');
+      const history = response ? await response.json() : { structures: [] };
       const cards = cardResponse?.ok ? await cardResponse.json() : [];
-      if (requestId !== elliottRequestSequence || currentInterval !== interval || !elliottOverlaysEnabled) return;
+      if (requestId !== elliottRequestSequence || currentInterval !== interval) return;
 
       elliottSignalCards = new Map((Array.isArray(cards) ? cards : []).map(card => [
         elliottSignalCardKey(card.cycleKey, card.stage),
@@ -1719,6 +1911,14 @@
       rebuildElliottHitTargets();
 
       if (uniqueStructures.length === 0) {
+        if (Number(subwaveCount) > 0) {
+          status.textContent = `Showing ${subwaveCount} validated ${interval === '1d' ? 'Daily' : 'Weekly'} fractal subwaves derived from the Monthly hierarchy${nativeEnabled ? '; no independent structure was detected on this interval' : ''}.`;
+          return;
+        }
+        if (!nativeEnabled) {
+          status.textContent = 'No validated fractal subwaves are available from the Monthly hierarchy.';
+          return;
+        }
         status.textContent = 'No complete I–V or I–V, A–B–C Elliott structure detected in the loaded range.';
         return;
       }
@@ -1739,7 +1939,10 @@
               ? ` ${warnedStructureCount} ${warnedStructureCount === 1 ? 'has' : 'have'} reduced-confidence guideline warnings.`
               : '';
       if (warnedStructureCount > 0) status.classList.add('warning');
-      status.textContent = `Showing ${uniqueStructures.length} Elliott Wave structure${uniqueStructures.length === 1 ? '' : 's'} in ${globalCandleData.length} loaded candles.${qualityNotice}${warningNotice}`;
+      const subwaveNotice = subwavesEnabled && Number(subwaveCount) > 0
+              ? ` Plus ${subwaveCount} validated ${interval === '1d' ? 'Daily' : 'Weekly'} fractal subwaves from the Monthly hierarchy.`
+              : '';
+      status.textContent = `Showing ${uniqueStructures.length} independent Elliott Wave structure${uniqueStructures.length === 1 ? '' : 's'} in ${globalCandleData.length} loaded candles.${subwaveNotice}${qualityNotice}${warningNotice}`;
     } catch (error) {
       if (requestId === elliottRequestSequence && currentInterval === interval) {
         status.classList.add('error');
@@ -1776,7 +1979,15 @@
   }
 
   function clearElliottOverlays() {
-    elliottSubwaveOverlay?.hide(true);
+    clearElliottSubwaveOverlays();
+    clearIndependentElliottOverlays();
+  }
+
+  function clearElliottSubwaveOverlays() {
+    elliottHierarchyOverlay?.clear();
+  }
+
+  function clearIndependentElliottOverlays() {
     hideElliottWaveCard();
     elliottSignalCards = new Map();
     clearHistoricalElliottSeries();
@@ -1788,26 +1999,285 @@
 
   function updateElliottOverlayToggle() {
     const button = document.getElementById('elliottOverlayToggle');
-    const supported = currentInterval === '1wk' || currentInterval === '1mo';
+    const supported = ['1d', '1wk', '1mo'].includes(currentInterval);
     button.disabled = !supported;
     button.classList.toggle('active', supported && elliottOverlaysEnabled);
     button.setAttribute('aria-pressed', String(supported && elliottOverlaysEnabled));
     button.textContent = supported
-            ? `Elliott overlays: ${elliottOverlaysEnabled ? 'on' : 'off'}`
-            : 'Elliott overlays';
+            ? `Independent Elliott structures: ${elliottOverlaysEnabled ? 'on' : 'off'}`
+            : 'Independent Elliott structures';
+    updateElliottSubwaveToggle();
+  }
+
+  function updateElliottSubwaveToggle() {
+    const button = document.getElementById('elliottSubwaveToggle');
+    const supported = ['1d', '1wk'].includes(currentInterval);
+    button.disabled = !supported;
+    button.classList.toggle('active', supported && elliottSubwavesEnabled);
+    button.setAttribute('aria-pressed', String(supported && elliottSubwavesEnabled));
+    button.textContent = supported
+            ? `Fractal subwaves: ${elliottSubwavesEnabled ? 'on' : 'off'}`
+            : 'Fractal subwaves';
   }
 
   async function toggleElliottOverlays() {
-    if (currentInterval !== '1wk' && currentInterval !== '1mo') return;
+    if (!['1d', '1wk', '1mo'].includes(currentInterval)) return;
     elliottOverlaysEnabled = !elliottOverlaysEnabled;
     updateElliottOverlayToggle();
-    if (!elliottOverlaysEnabled) {
-      elliottRequestSequence++;
-      clearElliottOverlays();
-      document.getElementById('elliottOverlayStatus').textContent = '';
+    await refreshHistoricalElliottOverlays(currentInterval);
+  }
+
+  async function toggleElliottSubwaves() {
+    if (!['1d', '1wk'].includes(currentInterval)) return;
+    elliottSubwavesEnabled = !elliottSubwavesEnabled;
+    updateElliottSubwaveToggle();
+    await refreshHistoricalElliottOverlays(currentInterval);
+  }
+
+  function harmonicOverlayColors(direction) {
+    return {
+      line: HARMONIC_FORMATION_COLOR,
+      marker: HARMONIC_FORMATION_COLOR
+    };
+  }
+
+  function updateHarmonicOverlayToggle() {
+    const button = document.getElementById('harmonicOverlayToggle');
+    const supported = ['1d', '1wk', '1mo'].includes(currentInterval);
+    button.disabled = !supported;
+    button.classList.toggle('active', supported && harmonicOverlaysEnabled);
+    button.setAttribute('aria-pressed', String(supported && harmonicOverlaysEnabled));
+    button.textContent = supported && harmonicOverlaysEnabled
+            ? 'Harmonic formations overlay: on'
+            : 'Harmonic formations overlay';
+  }
+
+  async function toggleHarmonicOverlays() {
+    if (!['1d', '1wk', '1mo'].includes(currentInterval)) return;
+    harmonicOverlaysEnabled = !harmonicOverlaysEnabled;
+    updateHarmonicOverlayToggle();
+    await refreshHarmonicOverlays(currentInterval);
+  }
+
+  async function refreshHarmonicOverlays(interval) {
+    const requestId = ++harmonicRequestSequence;
+    const status = document.getElementById('harmonicOverlayStatus');
+    status.classList.remove('error', 'warning');
+    clearHarmonicOverlays();
+    if (!harmonicOverlaysEnabled || !['1d', '1wk', '1mo'].includes(interval)) {
+      status.textContent = '';
       return;
     }
-    await refreshHistoricalElliottOverlays(currentInterval);
+    status.textContent = 'Scanning confirmed pivots for harmonic formations...';
+    try {
+      const fromQuery = Number.isSafeInteger(oldestTimestamp) && oldestTimestamp > 0
+              ? `&from=${encodeURIComponent(oldestTimestamp)}`
+              : '';
+      const response = await fetch(
+              `/api/stocks/${encodedTicker}/harmonic-formations/history?interval=${encodeURIComponent(interval)}${fromQuery}`
+      );
+      if (!response.ok) throw new Error('Harmonic formation request failed');
+      const history = await response.json();
+      if (requestId !== harmonicRequestSequence || currentInterval !== interval || !harmonicOverlaysEnabled) return;
+      const formations = Array.isArray(history.formations) ? history.formations : [];
+      formations.forEach(renderHarmonicFormation);
+      rebuildHarmonicHitTargets();
+      if (formations.length === 0) {
+        status.textContent = 'No confirmed Gartley, Bat, Butterfly, Crab, Shark, or Cypher formation was found in the loaded range.';
+        return;
+      }
+      const bullish = formations.filter(formation => formation.direction === 'BULLISH').length;
+      const bearish = formations.length - bullish;
+      const minimumQuality = Math.min(...formations.map(formation => Number(formation.qualityScore) || 0));
+      const maximumQuality = Math.max(...formations.map(formation => Number(formation.qualityScore) || 0));
+      status.textContent = `Showing ${formations.length} confirmed harmonic formation${formations.length === 1 ? '' : 's'} `
+              + `(${bullish} bullish, ${bearish} bearish). Quality ${minimumQuality}-${maximumQuality}/100.`;
+    } catch (error) {
+      if (requestId === harmonicRequestSequence && currentInterval === interval) {
+        status.classList.add('error');
+        status.textContent = 'Harmonic formations overlay unavailable.';
+      }
+      console.warn('Harmonic formations overlay failed', error);
+    }
+  }
+
+  function renderHarmonicFormation(formation) {
+    const points = Array.isArray(formation.points) ? formation.points : [];
+    if (points.length !== 5) return;
+    const colors = harmonicOverlayColors(formation.direction);
+    const series = priceChart.addLineSeries({
+      color: colors.line,
+      lineWidth: 2,
+      lineStyle: 2,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    series.setData(points.map(point => ({
+      time: timestampToChartDate(Number(point.timestamp)),
+      value: Number(point.price)
+    })));
+    const directionLabel = formation.direction === 'BEARISH' ? 'Bearish' : 'Bullish';
+    const patternLabel = String(formation.pattern || '')
+            .toLowerCase()
+            .replaceAll('_', ' ')
+            .replace(/\b\w/g, letter => letter.toUpperCase());
+    series.setMarkers(points.map((point, index) => ({
+      time: timestampToChartDate(Number(point.timestamp)),
+      position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
+      color: colors.marker,
+      shape: index === points.length - 1 ? (formation.direction === 'BEARISH' ? 'arrowDown' : 'arrowUp') : 'circle',
+      text: index === points.length - 1
+              ? `${point.label} · ${directionLabel} ${patternLabel} · Q${formation.qualityScore}`
+              : point.label
+    })));
+    harmonicFormationSeries.push(series);
+    harmonicFormationOverlays.push({ series, formation });
+  }
+
+  function clearHarmonicOverlays() {
+    if (!priceChart) return;
+    hideHarmonicFormationCard();
+    harmonicFormationSeries.forEach(series => priceChart.removeSeries(series));
+    harmonicFormationSeries = [];
+    harmonicFormationOverlays = [];
+    document.getElementById('harmonicFormationHitTargets')?.replaceChildren();
+  }
+
+  function rebuildHarmonicHitTargets() {
+    const layer = document.getElementById('harmonicFormationHitTargets');
+    if (!layer) return;
+    layer.replaceChildren();
+    harmonicFormationOverlays.forEach(overlay => {
+      const endpoint = overlay.formation.points?.at(-1);
+      if (!endpoint) return;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `elliott-wave-hit-target harmonic-formation-hit-target ${overlay.formation.direction === 'BEARISH' ? 'sell' : 'buy'}`;
+      button.style.borderColor = HARMONIC_FORMATION_COLOR;
+      button.style.color = HARMONIC_FORMATION_COLOR;
+      button.setAttribute('aria-label', `${endpoint.label} point, ${overlay.formation.direction} ${overlay.formation.pattern} harmonic formation`);
+      button.title = 'Open harmonic signal summary';
+      button._harmonicOverlay = overlay;
+      button.addEventListener('mouseenter', () => showHarmonicFormationCard(overlay, false));
+      button.addEventListener('mouseleave', scheduleHarmonicFormationCardHide);
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        showHarmonicFormationCard(overlay, true);
+      });
+      layer.appendChild(button);
+    });
+    scheduleHarmonicHitTargetPositioning();
+  }
+
+  function scheduleHarmonicHitTargetPositioning() {
+    if (harmonicHitTargetFrame !== null) return;
+    harmonicHitTargetFrame = requestAnimationFrame(() => {
+      harmonicHitTargetFrame = null;
+      const stage = document.getElementById('priceChartStage');
+      document.querySelectorAll('.harmonic-formation-hit-target').forEach(button => {
+        const overlay = button._harmonicOverlay;
+        const endpoint = overlay?.formation?.points?.at(-1);
+        const x = endpoint ? priceChart.timeScale().timeToCoordinate(timestampToChartDate(endpoint.timestamp)) : null;
+        const y = endpoint ? overlay.series.priceToCoordinate(Number(endpoint.price)) : null;
+        const visible = Number.isFinite(x) && Number.isFinite(y)
+                && x >= 0 && x <= stage.clientWidth && y >= 0 && y <= stage.clientHeight;
+        button.hidden = !visible;
+        if (visible) {
+          button.style.left = `${x}px`;
+          button.style.top = `${y}px`;
+        }
+      });
+    });
+  }
+
+  function showHarmonicFormationCard(overlay, pinned) {
+    if (!overlay) return;
+    hideElliottWaveCard();
+    hideHistoricalCandlestickCard();
+    clearTimeout(harmonicCardHideTimer);
+    harmonicCardPinned = pinned;
+    harmonicFormationOverlays.forEach(item => item.series.applyOptions({
+      lineWidth: item === overlay ? 4 : 2
+    }));
+    const formation = overlay.formation;
+    const endpoint = formation.points.at(-1);
+    const title = String(formation.pattern || '').toLowerCase()
+            .replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+    document.getElementById('harmonicFormationCardTitle').textContent = `${formation.direction === 'BEARISH' ? 'Bearish' : 'Bullish'} ${title}`;
+    document.getElementById('harmonicFormationCardStage').textContent =
+            `${formation.tradeSignal} signal Â· ${formatHistoricalElliottPeriod(formation.confirmationTimestamp)} Â· score ${formation.qualityScore}/100`;
+    const confirmationIndex = globalCandleData.findIndex(
+            candle => Number(candle.timestamp) === Number(formation.confirmationTimestamp));
+    const signalClose = confirmationIndex < 0 ? NaN : Number(globalCandleData[confirmationIndex].close);
+    const forward = confirmationIndex < 0 ? [] : globalCandleData.slice(confirmationIndex + 1, confirmationIndex + 11);
+    const available = Number.isFinite(signalClose) && signalClose > 0 && forward.length >= 10;
+    const outcome = document.getElementById('harmonicFormationCardOutcome');
+    const message = document.getElementById('harmonicFormationCardMessage');
+    if (available) {
+      const returns = forward.map(candle => {
+        const raw = (Number(candle.close) - signalClose) / signalClose * 100;
+        return formation.tradeSignal === 'SELL' ? -raw : raw;
+      });
+      outcome.hidden = false;
+      message.hidden = true;
+      document.getElementById('harmonicFormationCardOutcomeLabel').textContent =
+              formation.tradeSignal === 'SELL' ? 'Largest close-based loss avoided' : 'Best close-based return';
+      const best = Math.max(...returns);
+      const value = document.getElementById('harmonicFormationCardOutcomeValue');
+      value.textContent = formatSignedPercent(best);
+      value.classList.toggle('positive', best >= 0);
+      value.classList.toggle('negative', best < 0);
+      document.getElementById('harmonicFormationCardWindowEnd').textContent =
+              `At candle 10: ${formatSignedPercent(returns[9])}`;
+    } else {
+      outcome.hidden = true;
+      message.hidden = false;
+      const count = confirmationIndex < 0 ? 0 : globalCandleData.length - confirmationIndex - 1;
+      message.textContent = confirmationIndex < 0
+              ? 'The confirmation candle is outside the currently loaded chart range.'
+              : `Waiting for ${Math.max(0, 10 - count)} more completed candle${10 - count === 1 ? '' : 's'}.`;
+    }
+    document.getElementById('harmonicFormationCardNote').textContent =
+            `${endpoint.label} completed at ${Number(endpoint.price).toFixed(4)}. Hard rules passed; only tolerated soft-ratio deviations reduce the score.`;
+    document.getElementById('harmonicFormationCardLink').href =
+            `/stock/${encodedTicker}/harmonic-formations/${encodeURIComponent(currentInterval)}/${encodeURIComponent(formation.pattern)}/${encodeURIComponent(endpoint.timestamp)}`;
+    const card = document.getElementById('harmonicFormationHoverCard');
+    card.hidden = false;
+    positionHarmonicFormationCard(overlay);
+  }
+
+  function positionHarmonicFormationCard(overlay) {
+    const stage = document.getElementById('priceChartStage');
+    const card = document.getElementById('harmonicFormationHoverCard');
+    const endpoint = overlay.formation.points.at(-1);
+    const anchor = {
+      x: priceChart.timeScale().timeToCoordinate(timestampToChartDate(endpoint.timestamp)),
+      y: overlay.series.priceToCoordinate(Number(endpoint.price))
+    };
+    const gap = 14;
+    const x = Number.isFinite(anchor.x) ? anchor.x : stage.clientWidth / 2;
+    const y = Number.isFinite(anchor.y) ? anchor.y : stage.clientHeight / 2;
+    const left = x + gap + card.offsetWidth > stage.clientWidth ? x - card.offsetWidth - gap : x + gap;
+    const top = y + gap + card.offsetHeight > stage.clientHeight ? y - card.offsetHeight - gap : y + gap;
+    card.style.left = `${Math.max(8, Math.min(stage.clientWidth - card.offsetWidth - 8, left))}px`;
+    card.style.top = `${Math.max(8, Math.min(stage.clientHeight - card.offsetHeight - 8, top))}px`;
+  }
+
+  function scheduleHarmonicFormationCardHide() {
+    clearTimeout(harmonicCardHideTimer);
+    harmonicCardHideTimer = setTimeout(() => {
+      if (!harmonicCardPinned && !harmonicCardHovered) hideHarmonicFormationCard();
+    }, 120);
+  }
+
+  function hideHarmonicFormationCard() {
+    clearTimeout(harmonicCardHideTimer);
+    harmonicCardPinned = false;
+    harmonicCardHovered = false;
+    harmonicFormationOverlays.forEach(item => item.series.applyOptions({ lineWidth: 2 }));
+    const card = document.getElementById('harmonicFormationHoverCard');
+    if (card) card.hidden = true;
   }
 
   async function toggleAnchoredVolumeProfile() {
@@ -2359,34 +2829,11 @@
         button.type = 'button';
         button.className = 'elliott-wave-hit-target';
         button.setAttribute('aria-label', `${pointLabel} point, ${segment.structure.direction || ''} Elliott Wave, ${elliottStageLabel(segment.stage)}, ${card?.status || 'historical signal'}`);
-        button.title = point.label
-                ? `Inspect the subwaves ending at Wave ${pointLabel}`
-                : `Open ${elliottStageLabel(segment.stage)} details`;
+        button.title = `Open ${elliottStageLabel(segment.stage)} details`;
         button._elliottSegment = segment;
         button._elliottPoint = point;
-        const showPointSubwaves = () => {
-          const pointIndex = segment.points.findIndex(candidate =>
-                  candidate === point
-                  || Number(candidate.timestamp) === Number(point.timestamp)
-                  && String(candidate.label || '') === String(point.label || ''));
-          if (pointIndex <= 0 || !point.label) {
-            elliottSubwaveOverlay?.hide();
-            return;
-          }
-          showElliottSubwaves({
-            segment,
-            start: segment.points[pointIndex - 1],
-            end: point,
-            label: point.label
-          });
-        };
-        button.addEventListener('mouseenter', showPointSubwaves);
-        button.addEventListener('mouseleave', () => elliottSubwaveOverlay?.hide());
-        button.addEventListener('focus', showPointSubwaves);
-        button.addEventListener('blur', () => elliottSubwaveOverlay?.hide());
         button.addEventListener('click', event => {
           event.stopPropagation();
-          elliottSubwaveOverlay?.hide(true);
           showElliottWaveCard(segment, elliottPointCoordinate(segment, point), true);
         });
         targetLayer.appendChild(button);
@@ -2428,21 +2875,10 @@
     });
   }
 
-  function handleElliottWaveCrosshairMove(param) {
-    if (anchoredVolumeProfileEnabled || !param?.point || !elliottOverlaysEnabled) {
-      elliottSubwaveOverlay?.hide();
-      return;
-    }
-    const leg = nearestElliottLeg(param.point);
-    if (leg) showElliottSubwaves(leg);
-    else elliottSubwaveOverlay?.hide();
-  }
-
   function handleElliottWaveChartClick(param) {
     if (anchoredVolumeProfileEnabled || !param?.point || !elliottOverlaysEnabled) return;
     const leg = nearestElliottLeg(param.point);
     if (leg) {
-      elliottSubwaveOverlay?.hide(true);
       showElliottWaveCard(leg.segment, param.point, true);
     } else {
       hideElliottWaveCard();
@@ -2467,18 +2903,6 @@
       }
     }));
     return nearest;
-  }
-
-  function showElliottSubwaves(leg) {
-    if (!elliottSubwaveOverlay || !leg?.segment) return;
-    const structure = leg.segment.structure;
-    elliottSubwaveOverlay.show({
-      interval: currentInterval,
-      start: leg.start,
-      end: leg.end,
-      label: leg.label,
-      asOfTimestamp: structure.confirmationTimestamp || leg.end.timestamp,
-    });
   }
 
   function nearestElliottSegment(point) {
@@ -2515,6 +2939,7 @@
   }
 
   function showElliottWaveCard(segment, point, pinned) {
+    hideHarmonicFormationCard();
     hideHistoricalCandlestickCard();
     clearTimeout(elliottCardHideTimer);
     elliottCardPinned = pinned;
@@ -2523,6 +2948,46 @@
     const card = document.getElementById('elliottWaveHoverCard');
     card.hidden = false;
     positionElliottWaveCard(segment, point);
+  }
+
+  function showElliottHierarchyWaveCard(wave, point) {
+    hideHarmonicFormationCard();
+    hideHistoricalCandlestickCard();
+    clearTimeout(elliottCardHideTimer);
+    elliottCardPinned = true;
+    setActiveElliottSegment(null);
+    activeElliottSegment = { hierarchyWave: wave };
+
+    const direction = Number(wave.endPrice) >= Number(wave.startPrice) ? 'Bullish' : 'Bearish';
+    const childCount = Array.isArray(wave.subwaves) ? wave.subwaves.length : 0;
+    document.getElementById('elliottWaveCardEyebrow').textContent =
+            `${String(wave.timeframe || '').toUpperCase()} · ${String(wave.nature || '').toUpperCase()}`;
+    document.getElementById('elliottWaveCardTitle').textContent = `Wave ${wave.degreeLabel}`;
+    document.getElementById('elliottWaveCardStage').textContent =
+            `${direction} · ${formatHierarchyWavePeriod(wave.startTime)} → ${formatHierarchyWavePeriod(wave.endTime)}`;
+
+    const status = document.getElementById('elliottWaveCardStatus');
+    status.className = 'elliott-wave-card-status confirmed';
+    status.textContent = 'Validated';
+    document.getElementById('elliottWaveCardOutcome').hidden = true;
+    const message = document.getElementById('elliottWaveCardMessage');
+    message.hidden = false;
+    message.textContent = `${Number(wave.startPrice).toFixed(2)} → ${Number(wave.endPrice).toFixed(2)}`
+            + (childCount > 0 ? ` · ${childCount} validated lower-timeframe subwaves` : '');
+    document.getElementById('elliottWaveCardNote').textContent =
+            'Top-down hierarchy validated inside the parent time boundary using the Elliott retracement, wave 3, and overlap rules.';
+    document.getElementById('elliottWaveCardLink').hidden = true;
+
+    const card = document.getElementById('elliottWaveHoverCard');
+    card.hidden = false;
+    positionElliottWaveCardAt(point);
+  }
+
+  function formatHierarchyWavePeriod(timestamp) {
+    if (!timestamp) return 'unavailable';
+    return new Date(Number(timestamp) * 1000).toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
+    });
   }
 
   function renderElliottWaveCard(segment) {
@@ -2544,7 +3009,10 @@
     const note = document.getElementById('elliottWaveCardNote');
     const link = document.getElementById('elliottWaveCardLink');
     link.hidden = !cardData.detailUrl;
-    if (cardData.detailUrl) link.href = cardData.detailUrl;
+    if (cardData.detailUrl) {
+      link.href = cardData.detailUrl;
+      link.textContent = tracked ? 'Open signal details' : 'Open historical signal details';
+    }
     note.textContent = `${cardData.outcomeNote
             || 'Hypothetical hindsight using completed cached candle closes.'} Measured from the confirmation candle close on ${cardData.signalPeriodLabel}.`;
     if (cardData.outcomeAvailable) {
@@ -2659,6 +3127,11 @@
     if (currentInterval === '1mo') {
       return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
     }
+    if (currentInterval === '1d') {
+      return date.toLocaleDateString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
+      });
+    }
     return `week of ${date.toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
@@ -2684,21 +3157,27 @@
 
   function positionElliottWaveCard(segment, point) {
     const stage = document.getElementById('priceChartStage');
-    const card = document.getElementById('elliottWaveHoverCard');
     const endpoint = segment.points[segment.points.length - 1];
     const anchor = point || elliottPointCoordinate(segment, endpoint) || {
       x: stage.clientWidth / 2,
       y: stage.clientHeight / 2
     };
+    positionElliottWaveCardAt(anchor);
+  }
+
+  function positionElliottWaveCardAt(anchor) {
+    const stage = document.getElementById('priceChartStage');
+    const card = document.getElementById('elliottWaveHoverCard');
+    const resolvedAnchor = anchor || { x: stage.clientWidth / 2, y: stage.clientHeight / 2 };
     const gap = 14;
     const maxLeft = Math.max(8, stage.clientWidth - card.offsetWidth - 8);
     const maxTop = Math.max(8, stage.clientHeight - card.offsetHeight - 8);
-    const preferredLeft = anchor.x + gap + card.offsetWidth > stage.clientWidth
-            ? anchor.x - card.offsetWidth - gap
-            : anchor.x + gap;
-    const preferredTop = anchor.y + gap + card.offsetHeight > stage.clientHeight
-            ? anchor.y - card.offsetHeight - gap
-            : anchor.y + gap;
+    const preferredLeft = resolvedAnchor.x + gap + card.offsetWidth > stage.clientWidth
+            ? resolvedAnchor.x - card.offsetWidth - gap
+            : resolvedAnchor.x + gap;
+    const preferredTop = resolvedAnchor.y + gap + card.offsetHeight > stage.clientHeight
+            ? resolvedAnchor.y - card.offsetHeight - gap
+            : resolvedAnchor.y + gap;
     card.style.left = `${Math.max(8, Math.min(maxLeft, preferredLeft))}px`;
     card.style.top = `${Math.max(8, Math.min(maxTop, preferredTop))}px`;
   }
@@ -2844,12 +3323,6 @@
       const state = await response.json();
       hydrateAlertDraft(state);
 
-      document.querySelectorAll('[data-check-interval][data-check-signal]').forEach(button => {
-        if (!button.dataset.listenerBound) {
-          button.addEventListener('click', () => checkLatestSignal(button));
-          button.dataset.listenerBound = 'true';
-        }
-      });
     } catch (err) {
       alertStateLoaded = false;
       updateAlertDraftUi();
@@ -2967,6 +3440,7 @@
     const viewDialog = document.getElementById('historicalCandlestickViewDialog');
     if (viewDialog.open) viewDialog.close();
     if (view === 'list') {
+      disableHistoricalCandlestickOverlay();
       showHistoricalCandlestickIntervalPicker();
       return;
     }
@@ -2991,14 +3465,6 @@
     clearHistoricalCandlestickOverlayVisuals();
     document.getElementById('candlestickOverlayStatus').textContent = '';
     updateHistoricalCandlestickOverlayToggle();
-  }
-
-  function toggleHistoricalCandlestickOverlay() {
-    if (historicalCandlestickOverlayEnabled) {
-      disableHistoricalCandlestickOverlay();
-      return;
-    }
-    void enableHistoricalCandlestickOverlay();
   }
 
   function updateHistoricalCandlestickOverlayToggle() {
@@ -3179,6 +3645,7 @@
 
   function showHistoricalCandlestickCard(signals, index, point, pinned) {
     if (!signals?.length) return;
+    hideHarmonicFormationCard();
     hideElliottWaveCard();
     clearTimeout(historicalCandlestickCardHideTimer);
     historicalCandlestickCardPinned = pinned;
@@ -4214,83 +4681,6 @@
 
   }
 
-  async function checkLatestSignal(button) {
-    const status = document.getElementById('alertStatus');
-    button.disabled = true;
-    status.innerText = 'Checking the latest completed candle...';
-
-    try {
-      const response = await fetch(`/api/alerts/${encodedTicker}/check`, {
-        method: 'POST',
-        headers: secureJsonHeaders(),
-        body: JSON.stringify({
-          interval: button.dataset.checkInterval,
-          signal: button.dataset.checkSignal,
-          patternFamily: button.dataset.checkFamily || 'CANDLESTICK'
-        })
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        status.innerText = payload.error || 'Check failed';
-        return;
-      }
-
-      if (payload.candlesChecked < 2) {
-        status.innerText = `Need at least 2 completed candles; found ${payload.candlesChecked}`;
-        return;
-      }
-
-      if (payload.matched) {
-        const matches = payload.detectedSignals.filter(signal => signal.signal === payload.signal);
-        const latestMatch = matches[matches.length - 1];
-        const detectedDate = latestMatch ? formatSignalDate(latestMatch.timestamp) : 'latest candle';
-        if (payload.patternFamily === 'ELLIOTT_WAVE') {
-          await showCheckedElliottWave(payload.interval);
-        }
-        const horizonContext = payload.researchHorizonLabel
-                ? ` Research horizon: ${payload.researchHorizonLabel}. ${payload.researchHorizonDisclaimer}`
-                : '';
-        status.innerText = `${formatFamily(payload.patternFamily)} ${payload.signal} detected on ${detectedDate}: ${payload.matchingPatterns.join(', ')}.${horizonContext}`;
-        return;
-      }
-
-      const detected = payload.detectedSignals.length
-              ? payload.detectedSignals.map(signal => signal.pattern).join(', ')
-              : 'none';
-      const completedDate = payload.latestCompletedTimestamp
-              ? formatSignalDate(payload.latestCompletedTimestamp)
-              : 'the latest completed candle';
-      status.innerText = `No ${formatFamily(payload.patternFamily)} ${payload.signal} signal on ${completedDate}. Detected: ${detected}`;
-    } catch (err) {
-      status.innerText = 'Check failed';
-      console.warn("Signal check failed", err);
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  async function showCheckedElliottWave(alertInterval) {
-    const chartInterval = alertInterval === 'WEEKLY' ? '1wk' : '1mo';
-    elliottOverlaysEnabled = true;
-    updateElliottOverlayToggle();
-    if (currentInterval !== chartInterval) {
-      await changeInterval(chartInterval);
-    } else {
-      await refreshHistoricalElliottOverlays(chartInterval);
-    }
-    activateStockWorkspace('general');
-  }
-
-  function formatSignalDate(timestamp) {
-    if (!timestamp) return 'latest candle';
-    return new Date(timestamp * 1000).toISOString().slice(0, 10);
-  }
-
-  function formatFamily(family) {
-    return family === 'ELLIOTT_WAVE' ? 'Elliott Wave' : 'Candlestick';
-  }
-
   const STOCK_WORKSPACE_SECTIONS = ['general', 'technical-analysis', 'ticker-alerts'];
 
   function stockWorkspaceSectionFromHash() {
@@ -4298,14 +4688,25 @@
     return STOCK_WORKSPACE_SECTIONS.includes(requestedSection) ? requestedSection : 'general';
   }
 
+  function scheduleGeneralWorkspaceChartResize() {
+    if (generalChartResizeFrame !== null) return;
+    generalChartResizeFrame = window.requestAnimationFrame(() => {
+      generalChartResizeFrame = null;
+      resizeGeneralWorkspaceCharts();
+    });
+  }
+
   function resizeGeneralWorkspaceCharts() {
-    if (!priceChart || !volumeChart) return;
+    if (!priceChart) return;
     const priceContainer = document.getElementById('priceChartContainer');
     const volumeContainer = document.getElementById('volumeChartContainer');
-    if (!priceContainer.clientWidth || !priceContainer.clientHeight
-            || !volumeContainer.clientWidth || !volumeContainer.clientHeight) return;
-    priceChart.resize(priceContainer.clientWidth, priceContainer.clientHeight);
-    volumeChart.resize(volumeContainer.clientWidth, volumeContainer.clientHeight);
+    if (priceContainer.clientWidth && priceContainer.clientHeight) {
+      priceChart.resize(priceContainer.clientWidth, priceContainer.clientHeight);
+    }
+    if (volumeChart && volumeChartEnabled
+            && volumeContainer.clientWidth && volumeContainer.clientHeight) {
+      volumeChart.resize(volumeContainer.clientWidth, volumeContainer.clientHeight);
+    }
     if (rsiChart && rsiOverlayEnabled) {
       const rsiContainer = document.getElementById('rsiChartContainer');
       if (rsiContainer.clientWidth && rsiContainer.clientHeight) {
@@ -4315,6 +4716,91 @@
     scheduleAnchoredVolumeProfileRender();
     scheduleElliottHitTargetPositioning();
     scheduleHistoricalCandlestickHitTargetPositioning();
+  }
+
+  function setResizableChartHeight(handle, requestedHeight) {
+    const target = document.getElementById(handle.dataset.chartResizeTarget);
+    if (!target) return;
+    const minimum = Number(handle.dataset.chartResizeMin);
+    const maximum = Number(handle.dataset.chartResizeMax);
+    const nextHeight = Math.round(Math.min(maximum, Math.max(minimum, requestedHeight)));
+    target.style.height = `${nextHeight}px`;
+    handle.setAttribute('aria-valuenow', String(nextHeight));
+    scheduleGeneralWorkspaceChartResize();
+  }
+
+  function initializeResizableCharts() {
+    const handles = [...document.querySelectorAll('[data-chart-resize-target]')];
+    if (!handles.length) return;
+
+    if (typeof ResizeObserver !== 'undefined') {
+      chartResizeObserver?.disconnect();
+      chartResizeObserver = new ResizeObserver(entries => {
+        entries.forEach(entry => {
+          if (!entry.contentRect.height) return;
+          const handle = handles.find(candidate =>
+                  candidate.dataset.chartResizeTarget === entry.target.id);
+          handle?.setAttribute('aria-valuenow', String(Math.round(entry.contentRect.height)));
+        });
+        scheduleGeneralWorkspaceChartResize();
+      });
+    }
+
+    handles.forEach(handle => {
+      const target = document.getElementById(handle.dataset.chartResizeTarget);
+      if (!target) return;
+      chartResizeObserver?.observe(target);
+      const initialHeight = target.getBoundingClientRect().height
+              || Number(handle.dataset.chartResizeDefault);
+      handle.setAttribute('aria-valuenow', String(Math.round(initialHeight)));
+
+      let activePointerId = null;
+      let startY = 0;
+      let startHeight = 0;
+
+      const finishResize = () => {
+        if (activePointerId === null) return;
+        activePointerId = null;
+        handle.classList.remove('is-resizing');
+        document.body.classList.remove('chart-panel-resizing');
+      };
+
+      handle.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        activePointerId = event.pointerId;
+        startY = event.clientY;
+        startHeight = target.getBoundingClientRect().height;
+        handle.setPointerCapture(event.pointerId);
+        handle.classList.add('is-resizing');
+        document.body.classList.add('chart-panel-resizing');
+        event.preventDefault();
+      });
+
+      handle.addEventListener('pointermove', event => {
+        if (event.pointerId !== activePointerId) return;
+        setResizableChartHeight(handle, startHeight + event.clientY - startY);
+      });
+      handle.addEventListener('pointerup', finishResize);
+      handle.addEventListener('pointercancel', finishResize);
+      handle.addEventListener('lostpointercapture', finishResize);
+
+      handle.addEventListener('keydown', event => {
+        const currentHeight = target.getBoundingClientRect().height;
+        const step = event.shiftKey ? 50 : 10;
+        let nextHeight = null;
+        if (event.key === 'ArrowUp') nextHeight = currentHeight - step;
+        if (event.key === 'ArrowDown') nextHeight = currentHeight + step;
+        if (event.key === 'Home') nextHeight = Number(handle.dataset.chartResizeMin);
+        if (event.key === 'End') nextHeight = Number(handle.dataset.chartResizeMax);
+        if (nextHeight === null) return;
+        event.preventDefault();
+        setResizableChartHeight(handle, nextHeight);
+      });
+
+      handle.addEventListener('dblclick', () => {
+        setResizableChartHeight(handle, Number(handle.dataset.chartResizeDefault));
+      });
+    });
   }
 
   function activateStockWorkspace(section, updateHash = true, moveFocus = false) {
@@ -4366,8 +4852,89 @@
     activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
   }
 
+  function initializeStockDemoTrading() {
+    const dialog = document.getElementById('stockDemoTradeDialog');
+    const status = document.getElementById('stockDemoTradeStatus');
+    const sizeInput = document.getElementById('stockDemoTradeSizeInput');
+    const sizeField = document.getElementById('stockDemoTradeSizeField');
+    const confirmButton = document.getElementById('confirmStockDemoTrade');
+    const intervalLabel = interval => ({ '1d': 'Daily', '1wk': 'Weekly', '1mo': 'Monthly' })[interval] || interval;
+
+    document.querySelectorAll('[data-stock-demo-trade]').forEach(button => {
+      button.addEventListener('click', () => {
+        pendingStockDemoTradeSide = button.dataset.stockDemoTrade;
+        pendingStockDemoTradeInterval = currentInterval;
+        pendingStockDemoTradeRequestId = crypto.randomUUID();
+        stockDemoTradeSizeMode = 'none';
+        document.querySelectorAll('[data-stock-demo-size-mode]').forEach(option => {
+          option.classList.toggle('active', option.dataset.stockDemoSizeMode === 'none');
+        });
+        sizeField.hidden = true;
+        sizeInput.value = '';
+        document.getElementById('stockDemoTradeDialogTitle').textContent =
+                pendingStockDemoTradeSide === 'BUY' ? `Virtual Buy ${ticker}` : `Virtual Sell ${ticker}`;
+        document.getElementById('stockDemoTradeExplanation').textContent = pendingStockDemoTradeSide === 'BUY'
+                ? 'This tracks the return from hypothetically buying at the captured current quote.'
+                : 'This tracks avoided loss if price falls and missed upside if it rises. It is not a short sale.';
+        status.textContent = `${intervalLabel(pendingStockDemoTradeInterval)} technical state will be frozen at entry.`;
+        confirmButton.disabled = false;
+        confirmButton.textContent = 'Create demo trade';
+        dialog.showModal();
+      });
+    });
+
+    document.getElementById('cancelStockDemoTrade').addEventListener('click', () => dialog.close());
+    document.querySelectorAll('[data-stock-demo-size-mode]').forEach(button => {
+      button.addEventListener('click', () => {
+        stockDemoTradeSizeMode = button.dataset.stockDemoSizeMode;
+        document.querySelectorAll('[data-stock-demo-size-mode]').forEach(option => {
+          option.classList.toggle('active', option === button);
+        });
+        sizeField.hidden = stockDemoTradeSizeMode === 'none';
+        document.getElementById('stockDemoTradeSizeLabel').textContent =
+                stockDemoTradeSizeMode === 'quantity' ? 'Number of shares' : 'Virtual investment amount';
+        document.getElementById('stockDemoTradeSizeHelp').textContent = stockDemoTradeSizeMode === 'quantity'
+                ? 'The virtual amount will be calculated from the captured price.'
+                : 'The virtual share quantity will be calculated from the captured price.';
+      });
+    });
+
+    confirmButton.addEventListener('click', async () => {
+      const size = sizeInput.value;
+      if (stockDemoTradeSizeMode !== 'none' && (!size || Number(size) <= 0)) {
+        status.textContent = 'Enter a positive virtual size.';
+        return;
+      }
+      confirmButton.disabled = true;
+      confirmButton.textContent = 'Capturing quote...';
+      try {
+        const response = await fetch(`/api/virtual-trades/${encodedTicker}`, {
+          method: 'POST',
+          headers: secureJsonHeaders(),
+          body: JSON.stringify({
+            side: pendingStockDemoTradeSide,
+            interval: pendingStockDemoTradeInterval,
+            quantity: stockDemoTradeSizeMode === 'quantity' ? size : null,
+            notionalValue: stockDemoTradeSizeMode === 'notional' ? size : null,
+            clientRequestId: pendingStockDemoTradeRequestId
+          })
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.message || error.detail || error.error || 'The demo trade could not be created.');
+        }
+        const trade = await response.json();
+        window.location.assign(trade.detailUrl);
+      } catch (error) {
+        status.textContent = error.message || 'The demo trade could not be created.';
+        confirmButton.disabled = false;
+        confirmButton.textContent = 'Create demo trade';
+      }
+    });
+  }
+
   window.addEventListener('resize', () => {
-    resizeGeneralWorkspaceCharts();
+    scheduleGeneralWorkspaceChartResize();
   });
 
   window.addEventListener('stockwatch:themechange', event => {
@@ -4404,12 +4971,16 @@
     button.addEventListener('click', () => changeInterval(button.dataset.chartInterval));
   });
   document.getElementById('elliottOverlayToggle').addEventListener('click', toggleElliottOverlays);
+  document.getElementById('elliottSubwaveToggle').addEventListener('click', toggleElliottSubwaves);
+  document.getElementById('harmonicOverlayToggle').addEventListener('click', toggleHarmonicOverlays);
   document.getElementById('candlestickOverlayToggle')
-          .addEventListener('click', toggleHistoricalCandlestickOverlay);
+          .addEventListener('click', showHistoricalCandlestickViewPicker);
   document.getElementById('anchoredVolumeProfileToggle')
           .addEventListener('click', toggleAnchoredVolumeProfile);
   document.getElementById('rsiOverlayToggle')
           .addEventListener('click', toggleRsiOverlay);
+  document.getElementById('volumeChartToggle')
+          .addEventListener('click', toggleVolumeChart);
   document.getElementById('rsiPeriodForm')
           .addEventListener('submit', submitRsiPeriod);
   document.getElementById('closeRsiPeriodDialogBtn')
@@ -4428,8 +4999,6 @@
           .addEventListener('click', showInsiderHistory);
   document.getElementById('closeInsiderHistoryBtn')
           .addEventListener('click', () => document.getElementById('insiderHistoryDialog').close());
-  document.getElementById('showHistoricalCandlestickPatternsBtn')
-          .addEventListener('click', showHistoricalCandlestickViewPicker);
   document.getElementById('closeHistoricalCandlestickViewBtn')
           .addEventListener('click', () => document.getElementById('historicalCandlestickViewDialog').close());
   document.querySelectorAll('[data-historical-candlestick-view]').forEach(button => {
@@ -4480,7 +5049,9 @@
 
   window.onload = async () => {
     await initCharts();
+    initializeResizableCharts();
     initializeStockWorkspaceTabs();
+    initializeStockDemoTrading();
   };
 </script>
 </body>

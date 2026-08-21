@@ -43,7 +43,7 @@ class SignalScoringPreferencesServiceTest {
         SignalScoringPreferencesService.PreferencesView preferences = service.get(user);
 
         assertThat(preferences.custom()).isFalse();
-        assertThat(preferences.profiles()).hasSize(6)
+        assertThat(preferences.profiles()).hasSize(9)
                 .allSatisfy(profile -> assertThat(profile.totalPoints()).isEqualTo(100));
         assertThat(preferences.profile(AlertPatternFamily.CANDLESTICK, TimeInterval.DAILY).components())
                 .extracting(SignalScoringPreferencesService.ScoringComponent::points)
@@ -51,6 +51,9 @@ class SignalScoringPreferencesServiceTest {
         assertThat(preferences.profile(AlertPatternFamily.ELLIOTT_WAVE, TimeInterval.MONTHLY).components())
                 .extracting(SignalScoringPreferencesService.ScoringComponent::points)
                 .containsExactly(30, 20, 15, 15, 10, 5, 5);
+        assertThat(preferences.profile(AlertPatternFamily.HARMONIC_FORMATION, TimeInterval.DAILY).components())
+                .extracting(SignalScoringPreferencesService.ScoringComponent::points)
+                .containsExactly(35, 45, 20);
     }
 
     @Test
@@ -105,6 +108,29 @@ class SignalScoringPreferencesServiceTest {
         assertThat(display.score()).isEqualTo(77);
         assertThat(display.customApplied()).isFalse();
         assertThat(display.profileNote()).contains("original score");
+    }
+
+    @Test
+    void harmonicProfileReweightsOnlySoftGeometryCategories() {
+        LinkedMultiValueMap<String, String> form = factoryForm();
+        form.set("harmonic.daily.primaryB.points", "20");
+        form.set("harmonic.daily.completion.points", "60");
+        form.set("harmonic.daily.secondary.points", "20");
+        SignalScoringPreferencesService.Profile profile = service.save(user, form)
+                .profile(AlertPatternFamily.HARMONIC_FORMATION, TimeInterval.DAILY);
+
+        var display = service.score(profile, 90, List.of(
+                evidence("Primary B ratio", "35/35"),
+                evidence("Completion ratio", "22.5/45"),
+                evidence("Secondary ratios", "20/20"),
+                new SignalScoringPreferencesService.EvidenceSection(
+                        "Harmonic geometry", null, "Evidence", false, false, List.of())
+        ));
+
+        assertThat(display.customApplied()).isTrue();
+        assertThat(display.score()).isEqualTo(70);
+        assertThat(display.sections()).extracting(SignalScoringPreferencesService.EvidenceSection::category)
+                .containsExactly("Primary B ratio", "Completion ratio", "Secondary ratios");
     }
 
     private LinkedMultiValueMap<String, String> factoryForm() {

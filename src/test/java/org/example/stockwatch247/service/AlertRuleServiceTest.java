@@ -56,6 +56,174 @@ class AlertRuleServiceTest {
             Instant.parse("2026-07-13T00:00:00Z").getEpochSecond();
 
     @Test
+    void harmonicSignalDetailUsesSavedGeometryAndSoftRuleScoreWithoutCandlestickHorizon() {
+        AlertRuleRepository alertRules = mock(AlertRuleRepository.class);
+        AlertEventRepository events = mock(AlertEventRepository.class);
+        CandleRepository candles = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRules, events, candles);
+        User user = new User();
+        StockAsset stock = stock(88L, "MSFT", "Microsoft");
+        AlertRule rule = rule(77L, user, stock, TimeInterval.DAILY,
+                AlertPatternFamily.HARMONIC_FORMATION, TradeSignal.BUY);
+        AlertEvent event = new AlertEvent();
+        event.setId(707L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.HARMONIC_GARTLEY);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalStrength(SignalStength.HIGH_CONFIDENCE);
+        event.setConfidenceScore(94);
+        event.setFactoryConfidenceScore(94);
+        event.setScoreVersion(HarmonicPatternDetectionService.RULE_VERSION);
+        event.setSignalCandleTimestamp(7 * 86_400L);
+        event.setClosePrice(130.0);
+        event.setConfidenceReasons(List.of(
+                "Primary B ratio +33/35: measured 0.6200 versus preferred 0.618",
+                "Completion ratio +43/45: measured 0.7900 versus preferred 0.786",
+                "Secondary ratios +18/20: secondary Fibonacci ranges and leg relationship",
+                "Hard-rule gate: all enabled hard Fibonacci groups and locked structure rules passed"));
+        event.setHarmonicEndpointTimestamp(6 * 86_400L);
+        event.setHarmonicEndpointPrice(121.4);
+        event.setHarmonicPointsSnapshot("X|172800|100.0000000000|LOW\nA|259200|200.0000000000|HIGH\nB|345600|138.2000000000|LOW\nC|432000|183.2000000000|HIGH\nD|518400|121.4000000000|LOW");
+        event.setHarmonicMeasurementsSnapshot("AD_XA|0.7860000000\nB_XA|0.6180000000");
+        when(events.findOwnedByIdAndUser(707L, user)).thenReturn(Optional.of(event));
+        List<Candle> history = new ArrayList<>();
+        for (int day = 1; day <= 17; day++) {
+            double close = day == 7 ? 130.0 : 100.0 + day;
+            history.add(new Candle("MSFT", "1d", day * 86_400L,
+                    close, close + 1, close - 1, close, 1_000L));
+        }
+        when(candles.findBySymbolAndTimeIntervalOrderByTimestampAsc("MSFT", "1d"))
+                .thenReturn(history);
+
+        AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 707L);
+
+        assertThat(detail.patternLabel()).isEqualTo("Gartley");
+        assertThat(detail.patternFamily()).isEqualTo(AlertPatternFamily.HARMONIC_FORMATION);
+        assertThat(detail.reasons()).extracting(AlertRuleService.SignalReasonView::category)
+                .contains("Primary B ratio", "Completion ratio", "Secondary ratios");
+        assertThat(detail.reasons()).extracting(AlertRuleService.SignalReasonView::scoreLabel)
+                .contains("33/35", "43/45", "18/20");
+        assertThat(detail.researchHorizonLabel()).isNull();
+        assertThat(detail.setupExplanation()).contains("hard structural rule", "non-hard Fibonacci");
+        assertThat(detail.chart().harmonic()).isNotNull();
+        assertThat(detail.chart().harmonic().points()).extracting(AlertRuleService.HarmonicChartPointView::label)
+                .containsExactly("X", "A", "B", "C", "D");
+        assertThat(detail.chart().harmonic().measurements()).containsEntry("B_XA", .618);
+        assertThat(detail.results().available()).isTrue();
+    }
+
+    @Test
+    void persistsHarmonicTrackingAsDirectionSpecificWatchOnlyRules() {
+        AlertRuleRepository alertRules = mock(AlertRuleRepository.class);
+        StockAssetRepository stocks = mock(StockAssetRepository.class);
+        AlertRuleService service = service(
+                alertRules, mock(AlertEventRepository.class), mock(CandleRepository.class), stocks);
+        User user = new User();
+        StockAsset stock = stock(99L, "MSFT", "Microsoft");
+        when(stocks.findByTickerSymbolIgnoreCase("MSFT")).thenReturn(Optional.of(stock));
+        when(alertRules.findByUserAndStockAssetAndIntervalAndTradeSignalAndPatternFamily(
+                user, stock, TimeInterval.WEEKLY, TradeSignal.BUY,
+                AlertPatternFamily.HARMONIC_FORMATION)).thenReturn(Optional.empty());
+        when(alertRules.save(org.mockito.ArgumentMatchers.any(AlertRule.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AlertRule saved = service.setAlert(
+                user, "msft", TimeInterval.WEEKLY, TradeSignal.BUY,
+                AlertPatternFamily.HARMONIC_FORMATION, true);
+
+        assertThat(saved.getPatternFamily()).isEqualTo(AlertPatternFamily.HARMONIC_FORMATION);
+        assertThat(saved.getTradeSignal()).isEqualTo(TradeSignal.BUY);
+        assertThat(saved.getTargetPattern()).isEqualTo(CandlePattern.ANY);
+        assertThat(saved.isActive()).isTrue();
+    }
+
+    @Test
+    void unfollowAllTechnicalRulesDeactivatesEveryActiveRuleForOnlyTheRequestedCompany() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        AlertRuleService service = service(
+                alertRuleRepository,
+                mock(AlertEventRepository.class),
+                mock(CandleRepository.class),
+                stockAssetRepository);
+        User user = new User();
+        user.setEmail("unfollow@example.com");
+        StockAsset stockAsset = stock(90L, "AAPL", "Apple Inc.");
+        AlertRule dailyElliott = rule(1L, user, stockAsset, TimeInterval.DAILY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        AlertRule weeklyCandle = rule(2L, user, stockAsset, TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        List<AlertRule> activeRules = List.of(dailyElliott, weeklyCandle);
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("AAPL")).thenReturn(Optional.of(stockAsset));
+        when(alertRuleRepository.findByUserAndStockAssetAndIsActiveTrue(user, stockAsset))
+                .thenReturn(activeRules);
+
+        int unfollowed = service.unfollowAllTechnicalRules(user, "AAPL");
+
+        assertThat(unfollowed).isEqualTo(2);
+        assertThat(activeRules).allMatch(rule -> !rule.isActive());
+        verify(alertRuleRepository).saveAll(activeRules);
+    }
+
+    @Test
+    void unfollowSelectedTechnicalRulesDeactivatesOnlySelectedOwnedRulesForTheCompany() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        AlertRuleService service = service(
+                alertRuleRepository,
+                mock(AlertEventRepository.class),
+                mock(CandleRepository.class),
+                stockAssetRepository);
+        User user = new User();
+        user.setEmail("selective-unfollow@example.com");
+        StockAsset stockAsset = stock(92L, "AAPL", "Apple Inc.");
+        AlertRule dailyElliott = rule(11L, user, stockAsset, TimeInterval.DAILY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        AlertRule weeklyCandle = rule(12L, user, stockAsset, TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.SELL);
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("AAPL")).thenReturn(Optional.of(stockAsset));
+        when(alertRuleRepository.findByUserAndStockAssetAndIsActiveTrue(user, stockAsset))
+                .thenReturn(List.of(dailyElliott, weeklyCandle));
+
+        int unfollowed = service.unfollowSelectedTechnicalRules(user, "AAPL", List.of(12L, 999L));
+
+        assertThat(unfollowed).isEqualTo(1);
+        assertThat(dailyElliott.isActive()).isTrue();
+        assertThat(weeklyCandle.isActive()).isFalse();
+        verify(alertRuleRepository).saveAll(List.of(weeklyCandle));
+    }
+
+    @Test
+    void alertStateDescribesEachActiveRuleForTheUnfollowConfirmation() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        AlertRuleService service = service(
+                alertRuleRepository,
+                mock(AlertEventRepository.class),
+                mock(CandleRepository.class),
+                stockAssetRepository);
+        User user = new User();
+        user.setEmail("state@example.com");
+        StockAsset stockAsset = stock(91L, "NFLX", "Netflix, Inc.");
+        AlertRule weeklyCandle = rule(3L, user, stockAsset, TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        AlertRule dailyElliott = rule(4L, user, stockAsset, TimeInterval.DAILY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase("NFLX")).thenReturn(Optional.of(stockAsset));
+        when(alertRuleRepository.findByUserAndStockAssetAndIsActiveTrue(user, stockAsset))
+                .thenReturn(List.of(weeklyCandle, dailyElliott));
+
+        Map<String, Object> state = service.getAlertState(user, "NFLX");
+
+        assertThat(state.get("activeRules")).isEqualTo(List.of(
+                new AlertRuleService.ActiveRuleSummary(
+                        4L, "ELLIOTT_WAVE", "Elliott Wave", "DAILY", "Daily", "SELL"),
+                new AlertRuleService.ActiveRuleSummary(
+                        3L, "CANDLESTICK", "Candlestick", "WEEKLY", "Weekly", "BUY")
+        ));
+    }
+
+    @Test
     void elliottHoverCardsMatchCycleStageAndUseTenCompletedClosesForSellOutcome() {
         AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
@@ -194,6 +362,27 @@ class AlertRuleServiceTest {
                 new User(), symbol, TimeInterval.WEEKLY, TradeSignal.BUY, AlertPatternFamily.ELLIOTT_WAVE);
 
         assertThat(response).containsEntry("matched", true).containsEntry("interval", "WEEKLY");
+        assertThat(response.get("matchingPatterns")).asList().contains("ELLIOTT_BULLISH_CORRECTION");
+    }
+
+    @Test
+    void checkLatestSignalSupportsCurrentDailyEndOfWaveC() {
+        String symbol = "SAP.DE";
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(candleRepository, marketDataService);
+
+        when(marketDataService.syncCandles(symbol, "1d", null, true))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.CACHE, 0, null));
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                symbol, "1d", DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 299)))
+                .thenReturn(syntheticElliottCandles(symbol, "1d").reversed());
+
+        Map<String, Object> response = service.checkLatestSignal(
+                new User(), symbol, TimeInterval.DAILY, TradeSignal.BUY, AlertPatternFamily.ELLIOTT_WAVE);
+
+        assertThat(response).containsEntry("matched", true).containsEntry("interval", "DAILY");
         assertThat(response.get("matchingPatterns")).asList().contains("ELLIOTT_BULLISH_CORRECTION");
     }
 
@@ -405,6 +594,47 @@ class AlertRuleServiceTest {
         assertThat(requestedSort.getOrderFor("alertRule.stockAsset.tickerSymbol").getDirection())
                 .isEqualTo(Sort.Direction.ASC);
         assertThat(requestedSort.getOrderFor("sentAt").getDirection()).isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
+    void companySignalArchiveReusesTheArchiveModelAndFiltersEveryEventToTheSelectedTicker() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(
+                alertRuleRepository, alertEventRepository, mock(CandleRepository.class));
+        User user = new User();
+        user.setEmail("company-archive@example.com");
+        StockAsset stockAsset = stock(8L, "NFLX", "Netflix, Inc.");
+        AlertRule rule = rule(31L, user, stockAsset, TimeInterval.WEEKLY,
+                AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        AlertEvent event = new AlertEvent();
+        event.setId(401L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.HAMMER);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(Instant.parse("2026-07-20T00:00:00Z").getEpochSecond());
+        event.setClosePrice(100.0);
+        event.setSentAt(LocalDateTime.of(2026, 7, 24, 12, 0));
+        when(alertRuleRepository.findByIdAndUserAndIsActiveTrue(31L, user)).thenReturn(Optional.of(rule));
+        when(alertEventRepository.findByAlertRule_UserAndStockAsset(
+                org.mockito.ArgumentMatchers.eq(user),
+                org.mockito.ArgumentMatchers.eq(stockAsset),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
+
+        AlertRuleService.CompanySignalArchive companyArchive = service.getCompanySignalArchive(
+                user, 31L, "date", "desc", 0);
+
+        assertThat(companyArchive.symbol()).isEqualTo("NFLX");
+        assertThat(companyArchive.companyName()).isEqualTo("Netflix, Inc.");
+        assertThat(companyArchive.archive().totalSignals()).isEqualTo(1);
+        assertThat(companyArchive.archive().signals().getFirst().signal().symbol()).isEqualTo("NFLX");
+        verify(alertEventRepository).findByAlertRule_UserAndStockAsset(
+                org.mockito.ArgumentMatchers.eq(user),
+                org.mockito.ArgumentMatchers.eq(stockAsset),
+                org.mockito.ArgumentMatchers.any(Pageable.class));
+        verify(alertEventRepository, never()).findByAlertRule_User(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(Pageable.class));
     }
 
     @Test
@@ -1009,10 +1239,18 @@ class AlertRuleServiceTest {
     private AlertRuleService service(AlertRuleRepository alertRuleRepository,
                                      AlertEventRepository alertEventRepository,
                                      CandleRepository candleRepository) {
+        return service(alertRuleRepository, alertEventRepository, candleRepository,
+                mock(StockAssetRepository.class));
+    }
+
+    private AlertRuleService service(AlertRuleRepository alertRuleRepository,
+                                     AlertEventRepository alertEventRepository,
+                                     CandleRepository candleRepository,
+                                     StockAssetRepository stockAssetRepository) {
         return new AlertRuleService(
                 alertRuleRepository,
                 alertEventRepository,
-                mock(StockAssetRepository.class),
+                stockAssetRepository,
                 candleRepository,
                 mock(TwelveDataService.class),
                 mock(org.springframework.jdbc.core.JdbcTemplate.class),

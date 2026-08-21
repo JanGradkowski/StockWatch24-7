@@ -6,6 +6,7 @@
   <title th:text="${signal.symbol() + ' activity signal analysis — StockWatch 24/7'}">Activity signal analysis &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
@@ -440,6 +441,14 @@
     const signalIndex = candleData.findIndex(candle => candle.time === signalTime);
     if (signalIndex >= 0) priceChart.timeScale().setVisibleLogicalRange({from: Math.max(-.5, signalIndex - 18), to: signalIndex + 8});
     else priceChart.timeScale().fitContent();
+    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
+      new StockWatchFibonacciDrawingTool({
+        chart: priceChart,
+        series: candleSeries,
+        container: chartContainer,
+        storageKey: `${window.location.pathname}:native:activity`
+      });
+    }
   }
 
   const resultsWorkspace = document.getElementById('signalResultsWorkspace');

@@ -7,6 +7,7 @@
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
 </head>
@@ -52,7 +53,7 @@
     <button id="marketComparisonTab" type="button" class="signal-view-tab" role="tab"
             aria-selected="false" aria-controls="marketComparisonPanel" data-outlook-tab="market">Market comparison</button>
     <button id="virtualTradesTab" type="button" class="signal-view-tab" role="tab"
-            aria-selected="false" aria-controls="virtualTradesPanel" data-outlook-tab="trades">Virtual trades</button>
+            aria-selected="false" aria-controls="virtualTradesPanel" data-outlook-tab="trades">Demo Trading</button>
   </nav>
 
   <div id="outlookError" class="technical-outlook-error" role="alert" hidden></div>
@@ -80,7 +81,7 @@
     <section class="virtual-trade-launch-card" aria-labelledby="virtualTradeLaunchTitle">
       <div>
         <span class="signal-report-eyebrow">Paper decision &middot; no real order</span>
-        <h2 id="virtualTradeLaunchTitle">Record a virtual trade at the current quote</h2>
+        <h2 id="virtualTradeLaunchTitle">Record a demo trade at the current quote</h2>
         <p>A buy tracks hypothetical return. A sell tracks avoided loss or missed upside and is never treated as a short position. The current technical state will be frozen as an immutable entry snapshot.</p>
       </div>
       <div class="virtual-trade-launch-actions">
@@ -100,7 +101,7 @@
           <label><input type="checkbox" data-price-overlay="bollinger" checked> <span id="bollingerOverlayLabel">Bollinger Bands 20, 2σ</span></label>
           <label><input type="checkbox" data-price-overlay="vwap" checked> <span id="vwapOverlayLabel">VWAP 20</span></label>
           <label><input type="checkbox" data-price-overlay="levels" checked> <span id="levelsOverlayLabel">Support / resistance 20</span></label>
-          <label><input type="checkbox" data-price-overlay="elliott" checked> Elliott structures</label>
+          <label><input type="checkbox" data-price-overlay="elliott" checked> Independent Elliott structures</label>
         </div>
       </div>
       <div class="technical-chart-legend">
@@ -109,7 +110,7 @@
         <span id="vwapLegend" class="legend-vwap">VWAP 20</span><span id="levelLegend" class="legend-level">Support / resistance 20</span>
       </div>
       <div id="technicalOutlookPriceChart" class="technical-outlook-price-chart" aria-label="Candlestick technical outlook chart"></div>
-      <p class="technical-chart-note">Markers identify virtual trades, recent technical signals, <span id="rsiMarkerLabel">RSI 14</span> state changes, and followed congressional or insider activity. Elliott structures are available on weekly and monthly intervals.</p>
+      <p class="technical-chart-note">Markers identify demo trades, recent technical signals, <span id="rsiMarkerLabel">RSI 14</span> state changes, and followed congressional or insider activity. Each outlook uses only independent Elliott structures detected natively on its daily, weekly, or monthly interval; fractal subwaves are visualization-only.</p>
     </section>
   </section>
 
@@ -169,8 +170,8 @@
            aria-labelledby="virtualTradesTab" data-outlook-panel="trades" hidden>
     <section class="signal-lifecycle-section technical-outlook-trades-section">
       <div class="signal-section-heading">
-        <div><span class="signal-report-eyebrow">Paper decisions for this company</span><h2>Virtual trades</h2></div>
-        <a th:href="@{/virtual-trades}" class="btn-secondary">All virtual trades</a>
+        <div><span class="signal-report-eyebrow">Paper decisions for this company</span><h2>Demo Trading</h2></div>
+        <a th:href="@{/virtual-trades}" class="btn-secondary">All demo trades</a>
       </div>
       <p>Open decisions update as prices change. Closing one freezes the final quote and technical state.</p>
       <div id="companyVirtualTrades" class="company-virtual-trades-grid"></div>
@@ -226,9 +227,9 @@
 <dialog id="createVirtualTradeDialog" class="unsaved-alert-dialog virtual-trade-create-dialog" aria-labelledby="createVirtualTradeTitle">
   <div class="unsaved-alert-dialog-content">
     <span class="unsaved-alert-kicker">Paper trading &middot; no real order</span>
-    <h2 id="createVirtualTradeTitle">Create virtual trade</h2>
+    <h2 id="createVirtualTradeTitle">Create demo trade</h2>
     <p id="createVirtualTradeExplanation">The current quote and technical state will be captured when you confirm.</p>
-    <div class="virtual-trade-size-mode" role="group" aria-label="Virtual trade sizing">
+    <div class="virtual-trade-size-mode" role="group" aria-label="Demo trade sizing">
       <button type="button" class="active" data-virtual-size-mode="none">Percentage only</button>
       <button type="button" data-virtual-size-mode="quantity">Quantity</button>
       <button type="button" data-virtual-size-mode="notional">Virtual amount</button>
@@ -241,7 +242,7 @@
     <div id="createVirtualTradeStatus" class="technical-outlook-freshness" role="status"></div>
     <div class="unsaved-alert-dialog-actions">
       <button id="cancelCreateVirtualTrade" type="button" class="btn-secondary">Cancel</button>
-      <button id="confirmCreateVirtualTrade" type="button" class="btn-accent">Create virtual trade</button>
+      <button id="confirmCreateVirtualTrade" type="button" class="btn-accent">Create demo trade</button>
     </div>
   </div>
 </dialog>
@@ -249,8 +250,8 @@
 <dialog id="deleteVirtualTradeDialog" class="unsaved-alert-dialog signal-delete-dialog" aria-labelledby="deleteVirtualTradeTitle">
   <div class="unsaved-alert-dialog-content">
     <span class="unsaved-alert-kicker">Permanent archive action</span>
-    <h2 id="deleteVirtualTradeTitle">Delete virtual trade?</h2>
-    <p id="deleteVirtualTradeExplanation">This removes the virtual trade from your account and cannot be undone.</p>
+    <h2 id="deleteVirtualTradeTitle">Delete demo trade?</h2>
+    <p id="deleteVirtualTradeExplanation">This removes the demo trade from your account and cannot be undone.</p>
     <p id="deleteVirtualTradeStatus" class="technical-outlook-freshness" role="status"></p>
     <div class="unsaved-alert-dialog-actions">
       <button id="cancelDeleteVirtualTrade" type="button" class="btn-secondary">Cancel</button>
@@ -267,6 +268,7 @@
   let currentInterval = '1d';
   let requestController = null;
   let priceChart = null;
+  let priceFibonacciTool = null;
   let ratioChart = null;
   let miniCharts = [];
   let priceSeriesByOverlay = new Map();
@@ -321,6 +323,8 @@
   }
 
   function clearCharts() {
+    priceFibonacciTool?.destroy();
+    priceFibonacciTool = null;
     if (priceChart) priceChart.remove();
     if (ratioChart) ratioChart.remove();
     miniCharts.forEach(chart => chart.remove());
@@ -470,6 +474,14 @@
     markers.sort((left, right) => String(left.time).localeCompare(String(right.time)));
     candleSeries.setMarkers(markers);
     priceChart.timeScale().fitContent();
+    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
+      priceFibonacciTool = new StockWatchFibonacciDrawingTool({
+        chart: priceChart,
+        series: candleSeries,
+        container,
+        storageKey: `${window.location.pathname}:price:${currentInterval}`
+      });
+    }
     renderElliottStructures(outlook, priceChart);
     applyOverlayVisibility();
   }
@@ -533,7 +545,7 @@
   }
 
   async function renderElliottStructures(outlook, chart) {
-    if (currentInterval === '1d' || !outlook.candles.length) return;
+    if (!outlook.candles.length) return;
     try {
       const from = outlook.candles[0].timestamp;
       const response = await fetch(`/api/stocks/${encodedSymbol}/elliott-waves/history?interval=${encodeURIComponent(currentInterval)}&from=${encodeURIComponent(from)}`);
@@ -583,13 +595,17 @@
   function renderIndicators(indicators) {
     const grid = document.getElementById('indicatorCardGrid');
     grid.replaceChildren();
+    const researchKeys = new Set(['adx', 'dmi', 'stochastic', 'stochasticRsi', 'obv', 'mfi',
+      'donchian', 'keltner', 'ta4jTrend', 'volumeProfileKde']);
     indicators.forEach((indicator, index) => {
-      const card = element('article', `technical-indicator-card ${indicator.classification.toLowerCase()}`);
+      const researchOnly = researchKeys.has(indicator.key);
+      const classification = researchOnly ? 'RESEARCH' : indicator.classification;
+      const card = element('article', `technical-indicator-card ${researchOnly ? 'neutral research-only' : indicator.classification.toLowerCase()}`);
       const header = element('div', 'technical-indicator-card-head');
       const titleWrap = element('div');
       titleWrap.append(element('span', '', indicator.category.replaceAll('_', ' ')));
       titleWrap.append(element('h3', '', indicator.label));
-      header.append(titleWrap, element('strong', `indicator-vote ${indicator.classification.toLowerCase()}`, indicator.classification));
+      header.append(titleWrap, element('strong', `indicator-vote ${researchOnly ? 'neutral' : indicator.classification.toLowerCase()}`, classification));
       const value = element('div', 'technical-indicator-value', indicator.currentValue === null
               ? 'Unavailable' : `${formatNumber(indicator.currentValue)} ${indicator.unit}`);
       const explanation = element('p', 'technical-indicator-explanation', indicator.explanation);
@@ -704,7 +720,7 @@
     const grid = document.getElementById('companyVirtualTrades');
     grid.replaceChildren();
     if (!companyTrades.length) {
-      grid.append(element('p', 'technical-empty-state', `No virtual trades have been recorded for ${symbol} yet.`));
+      grid.append(element('p', 'technical-empty-state', `No demo trades have been recorded for ${symbol} yet.`));
       return;
     }
     companyTrades.forEach(trade => {
@@ -721,7 +737,7 @@
               ? 'Measured from the captured virtual entry'
               : `From captured entry · ${entryDate.toLocaleString()}`));
       if (trade.monetaryResult !== null) outcome.append(element('small', '', `${Number(trade.monetaryResult) >= 0 ? '+' : ''}${formatNumber(trade.monetaryResult, 2)} ${trade.currency}`));
-      card.append(heading, price, outcome, element('span', 'technical-recent-signal-open', 'Open virtual trade →'));
+      card.append(heading, price, outcome, element('span', 'technical-recent-signal-open', 'Open demo trade →'));
       const deleteButton = element('button', 'signal-archive-delete-button company-virtual-trade-delete', 'Delete');
       deleteButton.type = 'button';
       deleteButton.setAttribute('aria-label', `Delete ${trade.sideLabel} for ${trade.symbol}`);
@@ -862,14 +878,14 @@
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || 'The virtual trade could not be created.');
+        throw new Error(error.message || 'The demo trade could not be created.');
       }
       const trade = await response.json();
       window.location.assign(trade.detailUrl);
     } catch (error) {
       document.getElementById('createVirtualTradeStatus').textContent = error.message;
       event.currentTarget.disabled = false;
-      event.currentTarget.textContent = 'Create virtual trade';
+      event.currentTarget.textContent = 'Create demo trade';
     }
   });
 
@@ -893,14 +909,14 @@
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || error.error || 'The virtual trade could not be deleted.');
+        throw new Error(error.message || error.error || 'The demo trade could not be deleted.');
       }
       companyTrades = companyTrades.filter(trade => trade.id !== tradeId);
       pendingTradeToDelete = null;
       deleteDialog.close();
       if (lastOutlook) render(lastOutlook);
     } catch (error) {
-      document.getElementById('deleteVirtualTradeStatus').textContent = error.message || 'The virtual trade could not be deleted.';
+      document.getElementById('deleteVirtualTradeStatus').textContent = error.message || 'The demo trade could not be deleted.';
     } finally {
       event.currentTarget.disabled = false;
       event.currentTarget.textContent = 'Delete';

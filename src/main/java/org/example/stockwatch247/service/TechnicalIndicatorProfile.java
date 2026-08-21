@@ -116,12 +116,15 @@ record TechnicalIndicatorProfile(
 
     /**
      * Elliott Wave has an independently benchmarked indicator layer. Keep its
-     * original periods frozen while candlestick V4 uses interval profiles.
+     * original periods frozen while candlestick V4 uses interval profiles. The
+     * same native-bar periods are used for Daily fractal child-wave validation.
      */
     static TechnicalIndicatorProfile forElliott(TimeInterval interval) {
-        if (interval != TimeInterval.WEEKLY && interval != TimeInterval.MONTHLY) {
+        if (interval != TimeInterval.DAILY
+                && interval != TimeInterval.WEEKLY
+                && interval != TimeInterval.MONTHLY) {
             throw new IllegalArgumentException(
-                    "Elliott indicator enrichment supports WEEKLY and MONTHLY intervals only.");
+                    "Elliott indicator enrichment supports DAILY, WEEKLY, and MONTHLY intervals only.");
         }
         return new TechnicalIndicatorProfile(
                 interval,

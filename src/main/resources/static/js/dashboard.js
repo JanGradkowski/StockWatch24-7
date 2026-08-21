@@ -269,10 +269,168 @@
         });
     }
 
+    function initializeCompanyUnfollow() {
+        const buttons = Array.from(document.querySelectorAll("[data-unfollow-company]"));
+        const dialog = document.getElementById("unfollowCompanyDialog");
+        if (buttons.length === 0 || !dialog) {
+            return;
+        }
+
+        const csrfToken = document.getElementById("accountThemeSync")?.dataset.csrfToken;
+        const companyName = document.getElementById("unfollowCompanyName");
+        const ruleList = document.getElementById("unfollowCompanyRuleList");
+        const status = document.getElementById("unfollowCompanyStatus");
+        const deleteSelectedButton = document.getElementById("deleteSelectedCompanyRules");
+        const deleteAllButton = document.getElementById("deleteAllCompanyRules");
+        let pendingSymbol = null;
+        let activeRuleCount = 0;
+
+        function selectedRuleIds() {
+            return Array.from(ruleList.querySelectorAll("input[data-rule-id]:checked"))
+                .map(input => Number(input.dataset.ruleId))
+                .filter(Number.isSafeInteger);
+        }
+
+        function updateSelectionAction() {
+            const selectedCount = selectedRuleIds().length;
+            deleteSelectedButton.disabled = selectedCount === 0;
+            deleteSelectedButton.textContent = selectedCount === 0
+                ? "Delete selected"
+                : `Delete selected (${selectedCount})`;
+        }
+
+        function resetDialog() {
+            pendingSymbol = null;
+            activeRuleCount = 0;
+            ruleList.replaceChildren();
+            status.textContent = "";
+            deleteSelectedButton.disabled = true;
+            deleteSelectedButton.textContent = "Delete selected";
+            deleteAllButton.disabled = false;
+            deleteAllButton.textContent = "Delete all";
+        }
+
+        function appendRuleOption(rule) {
+            const item = document.createElement("li");
+            const label = document.createElement("label");
+            label.className = "company-unfollow-rule-option";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.dataset.ruleId = String(rule.id);
+            input.setAttribute("aria-label", `Select ${rule.familyLabel} ${rule.intervalLabel} ${rule.tradeSignal}`);
+            const copy = document.createElement("span");
+            copy.className = "company-unfollow-rule-copy";
+            const title = document.createElement("strong");
+            title.textContent = `${rule.familyLabel} · ${rule.tradeSignal}`;
+            const interval = document.createElement("small");
+            interval.textContent = `${rule.intervalLabel} interval`;
+            copy.append(title, interval);
+            label.append(input, copy);
+            item.append(label);
+            ruleList.append(item);
+        }
+
+        buttons.forEach(button => {
+            button.addEventListener("click", async () => {
+                button.disabled = true;
+                button.setAttribute("aria-busy", "true");
+                const symbol = button.dataset.symbol;
+                try {
+                    const response = await fetch(`/api/alerts/${encodeURIComponent(symbol)}`, {
+                        credentials: "same-origin"
+                    });
+                    if (!response.ok) {
+                        throw new Error("The followed rules could not be loaded.");
+                    }
+                    const payload = await response.json();
+                    const activeRules = Array.isArray(payload.activeRules) ? payload.activeRules : [];
+                    resetDialog();
+                    pendingSymbol = symbol;
+                    companyName.textContent = button.dataset.companyName || symbol;
+                    activeRuleCount = activeRules.length;
+                    activeRules.forEach(appendRuleOption);
+                    if (activeRules.length === 0) {
+                        const item = document.createElement("li");
+                        item.className = "company-unfollow-empty-rule";
+                        item.textContent = "No active technical rules remain for this company.";
+                        ruleList.append(item);
+                        deleteAllButton.disabled = true;
+                    }
+                    dialog.showModal();
+                } catch (error) {
+                    resetDialog();
+                    companyName.textContent = button.dataset.companyName || symbol;
+                    status.textContent = error.message || "The followed rules could not be loaded.";
+                    deleteAllButton.disabled = true;
+                    dialog.showModal();
+                } finally {
+                    button.disabled = false;
+                    button.removeAttribute("aria-busy");
+                }
+            });
+        });
+
+        document.getElementById("cancelUnfollowCompany").addEventListener("click", () => {
+            dialog.close();
+            resetDialog();
+        });
+
+        ruleList.addEventListener("change", event => {
+            if (event.target.matches("input[data-rule-id]")) {
+                updateSelectionAction();
+            }
+        });
+
+        async function deleteRules(deleteAll) {
+            const ruleIds = deleteAll ? [] : selectedRuleIds();
+            if (!pendingSymbol || !csrfToken || (!deleteAll && ruleIds.length === 0)) {
+                return;
+            }
+            deleteSelectedButton.disabled = true;
+            deleteAllButton.disabled = true;
+            if (deleteAll) {
+                deleteAllButton.textContent = "Deleting all...";
+                status.textContent = "Switching off every listed technical rule...";
+            } else {
+                deleteSelectedButton.textContent = "Deleting selected...";
+                status.textContent = `Switching off ${ruleIds.length} selected rule${ruleIds.length === 1 ? "" : "s"}...`;
+            }
+            try {
+                const endpoint = deleteAll
+                    ? `/api/alerts/${encodeURIComponent(pendingSymbol)}`
+                    : `/api/alerts/${encodeURIComponent(pendingSymbol)}/rules`;
+                const request = {
+                    method: "DELETE",
+                    headers: {"X-CSRF-TOKEN": csrfToken},
+                    credentials: "same-origin"
+                };
+                if (!deleteAll) {
+                    request.headers["Content-Type"] = "application/json";
+                    request.body = JSON.stringify({ruleIds});
+                }
+                const response = await fetch(endpoint, request);
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.error || "The selected rules could not be deleted.");
+                }
+                window.location.reload();
+            } catch (error) {
+                status.textContent = error.message || "The selected rules could not be deleted.";
+                deleteAllButton.disabled = activeRuleCount === 0;
+                deleteAllButton.textContent = "Delete all";
+                updateSelectionAction();
+            }
+        }
+
+        deleteSelectedButton.addEventListener("click", () => deleteRules(false));
+        deleteAllButton.addEventListener("click", () => deleteRules(true));
+    }
+
     function initializeDashboard() {
         initializeDashboardViews();
         initializeWatchFilters();
         initializeNotificationReadButtons();
+        initializeCompanyUnfollow();
     }
 
     if (document.readyState === "loading") {

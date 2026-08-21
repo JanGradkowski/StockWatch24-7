@@ -78,9 +78,19 @@ class VirtualTradeServiceTest {
         assertThat(view.sideLabel()).isEqualTo("Virtual Buy");
         assertThat(view.entryPrice()).isEqualByComparingTo("100.00000000");
         assertThat(view.quantity()).isEqualByComparingTo("25.00000000");
+        assertThat(view.notionalValue()).isEqualByComparingTo("2500.00000000");
+        assertThat(view.evaluatedPositionValue()).isEqualByComparingTo("2500.00000000");
         assertThat(stored.getEntryQuoteSource()).isEqualTo("Test quote");
         assertThat(stored.getEntrySnapshot()).contains("TECHNICAL_OUTLOOK_V1", "Moderate buy outlook", "RSI");
         assertThat(stored.getStatus().name()).isEqualTo("TRACKING");
+
+        when(tradeRepository.findAllForUserAndStockAsset(user, asset)).thenReturn(List.of(stored));
+        when(candleRepository.findTop1BySymbolAndTimeIntervalOrderByTimestampDesc("AAPL", "1d"))
+                .thenReturn(List.of(new Candle("AAPL", "1d", 1_771_000_000L,
+                        81, 82, 79, 80.0, 1_000_000L)));
+        VirtualTradeService.TradeView repriced = service.companyTrades(user, "AAPL").getFirst();
+        assertThat(repriced.notionalValue()).isEqualByComparingTo("2500.00000000");
+        assertThat(repriced.evaluatedPositionValue()).isEqualByComparingTo("2000.00000000");
     }
 
     @Test
@@ -101,6 +111,8 @@ class VirtualTradeServiceTest {
         assertThat(view.resultPercent()).isEqualTo(20.0);
         assertThat(view.outcomeLabel()).isEqualTo("Avoided loss");
         assertThat(view.monetaryResult()).isPositive();
+        assertThat(view.notionalValue()).isEqualByComparingTo("100.00000000");
+        assertThat(view.evaluatedPositionValue()).isEqualByComparingTo("80.00000000");
     }
 
     @Test

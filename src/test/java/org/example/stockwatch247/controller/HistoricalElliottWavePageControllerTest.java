@@ -30,7 +30,7 @@ class HistoricalElliottWavePageControllerTest {
         when(userRepository.findByEmailIgnoreCase("jan@example.com")).thenReturn(Optional.of(user));
         when(service.findDetail(
                 "MARA",
-                "1wk",
+                "1d",
                 ElliottSignalStage.WAVE_V_END,
                 1_515_974_400L,
                 "BULLISH:1:2:3:4:5"
@@ -43,7 +43,7 @@ class HistoricalElliottWavePageControllerTest {
 
         String view = controller.historicalElliottWaveDetail(
                 "mara",
-                "1wk",
+                "1d",
                 ElliottSignalStage.WAVE_V_END,
                 1_515_974_400L,
                 "BULLISH:1:2:3:4:5",
@@ -59,7 +59,7 @@ class HistoricalElliottWavePageControllerTest {
         assertThat(response.getHeader("Cache-Control")).contains("no-store");
         verify(service).findDetail(
                 "MARA",
-                "1wk",
+                "1d",
                 ElliottSignalStage.WAVE_V_END,
                 1_515_974_400L,
                 "BULLISH:1:2:3:4:5"

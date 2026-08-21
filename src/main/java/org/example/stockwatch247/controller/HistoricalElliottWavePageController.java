@@ -4,9 +4,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
+import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.HistoricalElliottWaveService;
+import org.example.stockwatch247.service.ElliottWavePreferencesService;
 import org.example.stockwatch247.service.SignalScoringPreferencesService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
@@ -22,6 +24,7 @@ public class HistoricalElliottWavePageController {
     private final UserRepository userRepository;
     private final HistoricalElliottWaveService historicalElliottWaveService;
     private final SignalScoringPreferencesService scoringPreferences;
+    private ElliottWavePreferencesService elliottWavePreferences;
 
     @Autowired
     public HistoricalElliottWavePageController(
@@ -39,6 +42,11 @@ public class HistoricalElliottWavePageController {
         this(userRepository, historicalElliottWaveService, null);
     }
 
+    @Autowired(required = false)
+    void configureElliottWavePreferences(ElliottWavePreferencesService elliottWavePreferences) {
+        this.elliottWavePreferences = elliottWavePreferences;
+    }
+
     @GetMapping("/stock/{symbol}/elliott-waves/{interval}/{stage}/{endpointTimestamp}")
     public String historicalElliottWaveDetail(
             @PathVariable String symbol,
@@ -50,15 +58,23 @@ public class HistoricalElliottWavePageController {
             Model model,
             HttpServletResponse response) {
         String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String validatedInterval = SecurityInputValidator.requireInterval(interval);
+        TimeInterval timeInterval = switch (validatedInterval) {
+            case "1d" -> TimeInterval.DAILY;
+            case "1wk" -> TimeInterval.WEEKLY;
+            case "1mo" -> TimeInterval.MONTHLY;
+            default -> throw new IllegalArgumentException(
+                    "Historical Elliott details require a daily, weekly, or monthly interval.");
+        };
         User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
         model.addAttribute("firstName", currentUser == null ? "Trader" : currentUser.getFirstName());
-        HistoricalElliottWaveService.HistoricalElliottWaveDetail wave = historicalElliottWaveService.findDetail(
-                validatedSymbol,
-                interval,
-                stage,
-                endpointTimestamp,
-                cycleKey
-        );
+        HistoricalElliottWaveService.HistoricalElliottWaveDetail wave =
+                currentUser == null || elliottWavePreferences == null
+                        ? historicalElliottWaveService.findDetail(
+                                validatedSymbol, validatedInterval, stage, endpointTimestamp, cycleKey)
+                        : historicalElliottWaveService.findDetail(
+                                validatedSymbol, validatedInterval, stage, endpointTimestamp, cycleKey,
+                                elliottWavePreferences.get(currentUser).profile(timeInterval).rules());
         model.addAttribute("wave", wave);
         model.addAttribute("displayScore", displayScore(currentUser, wave));
         model.addAttribute("returnUrl", "/stock/" + validatedSymbol + "#general");

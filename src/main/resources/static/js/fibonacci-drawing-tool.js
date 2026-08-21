@@ -2,13 +2,19 @@
     'use strict';
 
     const LEVELS = [
+        {value: -0.618, color: '#9c27b0'},
+        {value: -0.272, color: '#ab47bc'},
         {value: 0, color: '#787b86'},
         {value: 0.236, color: '#f23645'},
         {value: 0.382, color: '#ff9800'},
         {value: 0.5, color: '#f6c344'},
         {value: 0.618, color: '#089981'},
         {value: 0.786, color: '#2962ff'},
-        {value: 1, color: '#7b61ff'}
+        {value: 1, color: '#7b61ff'},
+        {value: 1.272, color: '#536dfe'},
+        {value: 1.618, color: '#00acc1'},
+        {value: 2, color: '#26a69a'},
+        {value: 2.618, color: '#43a047'}
     ];
     const MAX_DRAWINGS = 25;
     const HIT_DISTANCE = 9;
@@ -73,11 +79,15 @@
 
             this.navigateButton = createButton('Navigate', 'Move and zoom the chart');
             this.navigateButton.dataset.fibonacciAction = 'navigate';
-            this.fibonacciButton = createButton('Fib', 'Draw or edit Fibonacci retracements');
+            this.fibonacciButton = createButton('Fib', 'Draw or edit Fibonacci retracements and extensions');
             this.fibonacciButton.dataset.fibonacciAction = 'draw';
-            this.deleteButton = createButton('Delete', 'Delete the selected Fibonacci drawing');
+            this.longButton = createButton('Long', 'Draw a long position with target, stop, and risk/reward');
+            this.longButton.dataset.fibonacciAction = 'long';
+            this.shortButton = createButton('Short', 'Draw a short position with target, stop, and risk/reward');
+            this.shortButton.dataset.fibonacciAction = 'short';
+            this.deleteButton = createButton('Delete', 'Delete the selected drawing');
             this.deleteButton.dataset.fibonacciAction = 'delete';
-            this.clearButton = createButton('Clear all', 'Remove every Fibonacci drawing from this chart');
+            this.clearButton = createButton('Clear all', 'Remove every drawing from this chart');
             this.clearButton.dataset.fibonacciAction = 'clear';
             this.status = document.createElement('span');
             this.status.className = 'fibonacci-drawing-status';
@@ -86,22 +96,33 @@
 
             this.navigateButton.addEventListener('click', () => this.setMode('navigate'));
             this.fibonacciButton.addEventListener('click', () => this.setMode('fibonacci'));
+            this.longButton.addEventListener('click', () => this.setMode('long'));
+            this.shortButton.addEventListener('click', () => this.setMode('short'));
             this.deleteButton.addEventListener('click', () => this.deleteSelected());
             this.clearButton.addEventListener('click', () => this.clearAll());
-            toolbar.append(this.navigateButton, this.fibonacciButton, this.deleteButton, this.clearButton, this.status);
+            toolbar.append(
+                this.navigateButton,
+                this.fibonacciButton,
+                this.longButton,
+                this.shortButton,
+                this.deleteButton,
+                this.clearButton,
+                this.status);
             return toolbar;
         }
 
         setMode(mode) {
-            this.mode = mode === 'fibonacci' ? 'fibonacci' : 'navigate';
+            this.mode = ['fibonacci', 'long', 'short'].includes(mode) ? mode : 'navigate';
+            this.draft = null;
+            this.drag = null;
             if (this.mode === 'navigate') {
-                this.draft = null;
-                this.drag = null;
                 this.status.textContent = this.drawings.length ? 'Drawings saved' : 'Drawing tools';
-            } else {
+            } else if (this.mode === 'fibonacci') {
                 this.status.textContent = this.selectedId
-                    ? 'Drag an anchor or level; click empty space to draw another'
-                    : 'Click the first anchor';
+                    ? 'Drag a drawing or click empty space for a new Fibonacci'
+                    : 'Fibonacci: click the first anchor';
+            } else {
+                this.status.textContent = `${capitalize(this.mode)} position: click entry`;
             }
             this.updateToolbar();
             this.scheduleRender();
@@ -120,22 +141,18 @@
         }
 
         handlePointerDown(event) {
-            if (this.mode !== 'fibonacci' || event.button !== 0) return;
+            if (!isDrawingMode(this.mode) || event.button !== 0) return;
             const point = this.pointFromEvent(event);
             if (!point) return;
             event.preventDefault();
 
             if (this.draft) {
-                this.draft.end = point;
-                const drawing = {...this.draft, id: createId()};
-                this.drawings.push(drawing);
-                if (this.drawings.length > MAX_DRAWINGS) this.drawings.shift();
-                this.selectedId = drawing.id;
-                this.draft = null;
-                this.status.textContent = 'Drag an anchor or level; click empty space to draw another';
-                this.save();
-                this.updateToolbar();
-                this.scheduleRender();
+                if (drawingType(this.draft) === 'fibonacci') {
+                    this.draft.end = stripCoordinates(point);
+                    this.completeDraft();
+                } else {
+                    this.advancePositionDraft(point);
+                }
                 return;
             }
 
@@ -147,25 +164,95 @@
                     type: hit.type,
                     drawing: hit.drawing,
                     pointer: {x: point.x, y: point.y},
-                    start
+                    start,
+                    prices: isPositionDrawing(hit.drawing) ? {
+                        entry: Number(hit.drawing.entryPrice),
+                        target: Number(hit.drawing.targetPrice),
+                        stop: Number(hit.drawing.stopPrice)
+                    } : null
                 };
                 this.canvas.setPointerCapture(event.pointerId);
-                this.status.textContent = hit.type === 'move' ? 'Move the retracement' : 'Move the anchor';
+                this.status.textContent = hit.type === 'move' ? 'Move the drawing' : 'Adjust the selected level';
             } else {
                 this.selectedId = null;
-                this.draft = {start: point, end: point};
-                this.status.textContent = 'Click the second anchor';
+                if (this.mode === 'fibonacci') {
+                    this.draft = {
+                        type: 'fibonacci',
+                        start: stripCoordinates(point),
+                        end: stripCoordinates(point)
+                    };
+                    this.status.textContent = 'Fibonacci: click the second anchor';
+                } else {
+                    this.draft = {
+                        type: this.mode,
+                        start: positionAnchor(point, point.price),
+                        end: positionAnchor(point, point.price),
+                        entryPrice: point.price,
+                        targetPrice: point.price,
+                        stopPrice: point.price,
+                        stage: 'target'
+                    };
+                    this.status.textContent = `${capitalize(this.mode)} position: click the profit target`;
+                }
             }
             this.updateToolbar();
             this.scheduleRender();
         }
 
+        advancePositionDraft(point) {
+            const type = drawingType(this.draft);
+            if (this.draft.stage === 'target') {
+                if (!validTarget(type, this.draft.entryPrice, point.price)) {
+                    this.status.textContent = type === 'long'
+                        ? 'Long target must be above entry'
+                        : 'Short target must be below entry';
+                    return;
+                }
+                this.draft.targetPrice = point.price;
+                this.draft.end = positionAnchor(point, this.draft.entryPrice);
+                this.draft.stage = 'stop';
+                this.status.textContent = `${capitalize(type)} position: click the stop loss`;
+                this.scheduleRender();
+                return;
+            }
+            if (!validStop(type, this.draft.entryPrice, point.price)) {
+                this.status.textContent = type === 'long'
+                    ? 'Long stop must be below entry'
+                    : 'Short stop must be above entry';
+                return;
+            }
+            this.draft.stopPrice = point.price;
+            this.completeDraft();
+        }
+
+        completeDraft() {
+            const {stage, ...draft} = this.draft;
+            const drawing = {...draft, id: createId()};
+            this.drawings.push(drawing);
+            if (this.drawings.length > MAX_DRAWINGS) this.drawings.shift();
+            this.selectedId = drawing.id;
+            this.draft = null;
+            this.status.textContent = isPositionDrawing(drawing)
+                ? `${capitalize(drawing.type)} saved · R:R ${riskRewardLabel(drawing)}`
+                : 'Fibonacci saved · drag a drawing or click empty space for another';
+            this.save();
+            this.updateToolbar();
+            this.scheduleRender();
+        }
+
         handlePointerMove(event) {
-            if (this.mode !== 'fibonacci') return;
+            if (!isDrawingMode(this.mode)) return;
             const point = this.pointFromEvent(event);
             if (!point) return;
             if (this.draft) {
-                this.draft.end = point;
+                if (drawingType(this.draft) === 'fibonacci') {
+                    this.draft.end = stripCoordinates(point);
+                } else if (this.draft.stage === 'target') {
+                    this.draft.targetPrice = point.price;
+                    this.draft.end = positionAnchor(point, this.draft.entryPrice);
+                } else {
+                    this.draft.stopPrice = point.price;
+                }
                 this.scheduleRender();
                 return;
             }
@@ -174,26 +261,62 @@
                 return;
             }
             event.preventDefault();
-            if (this.drag.type === 'start' || this.drag.type === 'end') {
+            if (isPositionDrawing(this.drag.drawing)) {
+                this.dragPosition(point);
+            } else if (this.drag.type === 'start' || this.drag.type === 'end') {
                 this.drag.drawing[this.drag.type] = stripCoordinates(point);
             } else {
-                const dx = point.x - this.drag.pointer.x;
-                const dy = point.y - this.drag.pointer.y;
-                const start = this.pointFromCoordinates(this.drag.start.start.x + dx, this.drag.start.start.y + dy);
-                const end = this.pointFromCoordinates(this.drag.start.end.x + dx, this.drag.start.end.y + dy);
-                if (start && end) {
-                    this.drag.drawing.start = stripCoordinates(start);
-                    this.drag.drawing.end = stripCoordinates(end);
-                }
+                this.moveDrawing(point);
             }
             this.scheduleRender();
+        }
+
+        dragPosition(point) {
+            const drawing = this.drag.drawing;
+            if (this.drag.type === 'position-entry') {
+                const entry = constrainedPositionPrice(drawing, 'entry', point.price);
+                drawing.entryPrice = entry;
+                drawing.start = positionAnchor(point, entry);
+                drawing.end = {...drawing.end, price: entry};
+            } else if (this.drag.type === 'position-target') {
+                drawing.targetPrice = constrainedPositionPrice(drawing, 'target', point.price);
+                drawing.end = positionAnchor(point, drawing.entryPrice);
+            } else if (this.drag.type === 'position-stop') {
+                drawing.stopPrice = constrainedPositionPrice(drawing, 'stop', point.price);
+                drawing.end = positionAnchor(point, drawing.entryPrice);
+            } else {
+                this.moveDrawing(point);
+            }
+        }
+
+        moveDrawing(point) {
+            const dx = point.x - this.drag.pointer.x;
+            const dy = point.y - this.drag.pointer.y;
+            const start = this.pointFromCoordinates(this.drag.start.start.x + dx, this.drag.start.start.y + dy);
+            const end = this.pointFromCoordinates(this.drag.start.end.x + dx, this.drag.start.end.y + dy);
+            if (!start || !end) return;
+            if (isPositionDrawing(this.drag.drawing)) {
+                const priceDelta = start.price - this.drag.prices.entry;
+                const entry = this.drag.prices.entry + priceDelta;
+                this.drag.drawing.entryPrice = entry;
+                this.drag.drawing.targetPrice = this.drag.prices.target + priceDelta;
+                this.drag.drawing.stopPrice = this.drag.prices.stop + priceDelta;
+                this.drag.drawing.start = positionAnchor(start, entry);
+                this.drag.drawing.end = positionAnchor(end, entry);
+            } else {
+                this.drag.drawing.start = stripCoordinates(start);
+                this.drag.drawing.end = stripCoordinates(end);
+            }
         }
 
         handlePointerUp(event) {
             if (!this.drag) return;
             if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+            const drawing = this.drag.drawing;
             this.drag = null;
-            this.status.textContent = 'Drag an anchor or level; click empty space to draw another';
+            this.status.textContent = isPositionDrawing(drawing)
+                ? `${capitalize(drawing.type)} position · R:R ${riskRewardLabel(drawing)}`
+                : 'Fibonacci drawing selected';
             this.save();
             this.scheduleRender();
         }
@@ -203,9 +326,11 @@
             if (event.key === 'Escape') {
                 if (this.draft) {
                     this.draft = null;
-                    this.status.textContent = 'Click the first anchor';
+                    this.status.textContent = this.mode === 'fibonacci'
+                        ? 'Fibonacci: click the first anchor'
+                        : `${capitalize(this.mode)} position: click entry`;
                     this.scheduleRender();
-                } else if (this.mode === 'fibonacci') {
+                } else if (isDrawingMode(this.mode)) {
                     this.setMode('navigate');
                 }
             }
@@ -219,7 +344,7 @@
             if (!this.selectedId) return;
             this.drawings = this.drawings.filter(drawing => drawing.id !== this.selectedId);
             this.selectedId = null;
-            this.status.textContent = this.drawings.length ? 'Drawing deleted' : 'No Fibonacci drawings';
+            this.status.textContent = this.drawings.length ? 'Drawing deleted' : 'No drawings';
             this.save();
             this.updateToolbar();
             this.scheduleRender();
@@ -244,19 +369,23 @@
             this.clearButton.textContent = 'Clear all';
             this.drawings = [];
             this.selectedId = null;
-            this.status.textContent = 'All Fibonacci drawings cleared';
+            this.status.textContent = 'All drawings cleared';
             this.save();
             this.updateToolbar();
             this.scheduleRender();
         }
 
         updateToolbar() {
-            const drawing = this.mode === 'fibonacci';
+            const drawing = isDrawingMode(this.mode);
             this.container.classList.toggle('fibonacci-drawing-active', drawing);
             this.navigateButton.classList.toggle('active', !drawing);
-            this.fibonacciButton.classList.toggle('active', drawing);
+            this.fibonacciButton.classList.toggle('active', this.mode === 'fibonacci');
+            this.longButton.classList.toggle('active', this.mode === 'long');
+            this.shortButton.classList.toggle('active', this.mode === 'short');
             this.navigateButton.setAttribute('aria-pressed', String(!drawing));
-            this.fibonacciButton.setAttribute('aria-pressed', String(drawing));
+            this.fibonacciButton.setAttribute('aria-pressed', String(this.mode === 'fibonacci'));
+            this.longButton.setAttribute('aria-pressed', String(this.mode === 'long'));
+            this.shortButton.setAttribute('aria-pressed', String(this.mode === 'short'));
             this.deleteButton.disabled = !this.selectedId;
             this.clearButton.disabled = this.drawings.length === 0;
         }
@@ -267,10 +396,12 @@
         }
 
         pointFromCoordinates(x, y) {
-            const time = normalizeTime(this.chart.timeScale().coordinateToTime(x));
+            const timeScale = this.chart.timeScale();
+            const time = normalizeTime(timeScale.coordinateToTime(x));
+            const logical = normalizeLogical(timeScale.coordinateToLogical(x));
             const price = Number(this.series.coordinateToPrice(y));
-            if (time === null || !Number.isFinite(price)) return null;
-            return {time, price, x, y};
+            if ((time === null && logical === null) || !Number.isFinite(price)) return null;
+            return {time, logical, price, x, y};
         }
 
         screenPoints(drawing) {
@@ -281,8 +412,15 @@
         }
 
         screenPoint(point) {
+            const timeScale = this.chart.timeScale();
+            const time = normalizeTime(point.time);
+            let x = time === null ? null : timeScale.timeToCoordinate(time);
+            const logical = normalizeLogical(point.logical);
+            if (!Number.isFinite(x) && logical !== null) {
+                x = timeScale.logicalToCoordinate(logical);
+            }
             return {
-                x: this.chart.timeScale().timeToCoordinate(point.time),
+                x,
                 y: this.series.priceToCoordinate(point.price)
             };
         }
@@ -292,6 +430,31 @@
                 const drawing = this.drawings[index];
                 const points = this.screenPoints(drawing);
                 if (!validScreenPoint(points.start) || !validScreenPoint(points.end)) continue;
+                if (isPositionDrawing(drawing)) {
+                    const entry = {x: points.start.x, y: this.series.priceToCoordinate(drawing.entryPrice)};
+                    const target = {x: points.end.x, y: this.series.priceToCoordinate(drawing.targetPrice)};
+                    const stop = {x: points.end.x, y: this.series.priceToCoordinate(drawing.stopPrice)};
+                    if (![entry, target, stop].every(validScreenPoint)) continue;
+                    if (distance(x, y, entry.x, entry.y) <= HIT_DISTANCE + 3) {
+                        return {drawing, type: 'position-entry'};
+                    }
+                    if (distance(x, y, target.x, target.y) <= HIT_DISTANCE + 3) {
+                        return {drawing, type: 'position-target'};
+                    }
+                    if (distance(x, y, stop.x, stop.y) <= HIT_DISTANCE + 3) {
+                        return {drawing, type: 'position-stop'};
+                    }
+                    const left = Math.min(points.start.x, points.end.x) - HIT_DISTANCE;
+                    const right = Math.max(points.start.x, points.end.x) + HIT_DISTANCE;
+                    if (x < left || x > right) continue;
+                    if (Math.abs(y - entry.y) <= HIT_DISTANCE) return {drawing, type: 'position-entry'};
+                    if (Math.abs(y - target.y) <= HIT_DISTANCE) return {drawing, type: 'position-target'};
+                    if (Math.abs(y - stop.y) <= HIT_DISTANCE) return {drawing, type: 'position-stop'};
+                    const top = Math.min(entry.y, target.y, stop.y);
+                    const bottom = Math.max(entry.y, target.y, stop.y);
+                    if (y >= top && y <= bottom) return {drawing, type: 'move'};
+                    continue;
+                }
                 if (distance(x, y, points.start.x, points.start.y) <= HIT_DISTANCE + 3) {
                     return {drawing, type: 'start'};
                 }
@@ -338,6 +501,10 @@
         }
 
         renderDrawing(context, drawing, selected, draft = false) {
+            if (isPositionDrawing(drawing)) {
+                this.renderPositionDrawing(context, drawing, selected, draft);
+                return;
+            }
             const points = this.screenPoints(drawing);
             if (!validScreenPoint(points.start) || !validScreenPoint(points.end)) return;
             const left = Math.min(points.start.x, points.end.x);
@@ -378,6 +545,76 @@
                 this.renderHandle(context, points.end, selected);
             }
             context.restore();
+        }
+
+        renderPositionDrawing(context, drawing, selected, draft = false) {
+            const points = this.screenPoints(drawing);
+            if (!validScreenPoint(points.start) || !validScreenPoint(points.end)) return;
+            const entryY = this.series.priceToCoordinate(drawing.entryPrice);
+            const targetY = this.series.priceToCoordinate(drawing.targetPrice);
+            const stopY = this.series.priceToCoordinate(drawing.stopPrice);
+            if (![entryY, targetY, stopY].every(Number.isFinite)) return;
+
+            const left = Math.min(points.start.x, points.end.x);
+            const right = Math.max(points.start.x, points.end.x);
+            const width = Math.max(1, right - left);
+            const profitColor = '#26a69a';
+            const riskColor = '#ef5350';
+            const entryColor = themeColor('--fib-label-text', '#edf3ee');
+            const rewardPercent = positionPercent(drawing.entryPrice, drawing.targetPrice);
+            const riskPercent = positionPercent(drawing.entryPrice, drawing.stopPrice);
+
+            context.save();
+            context.fillStyle = withAlpha(profitColor, selected ? 0.24 : 0.18);
+            context.fillRect(left, Math.min(entryY, targetY), width, Math.abs(targetY - entryY));
+            context.fillStyle = withAlpha(riskColor, selected ? 0.24 : 0.18);
+            context.fillRect(left, Math.min(entryY, stopY), width, Math.abs(stopY - entryY));
+
+            this.renderPositionLine(context, left, right, targetY, profitColor, selected, false);
+            this.renderPositionLine(context, left, right, entryY, entryColor, selected, true);
+            this.renderPositionLine(context, left, right, stopY, riskColor, selected, false);
+            this.renderLabel(context, right, targetY,
+                `Target ${this.priceFormatter(drawing.targetPrice)} (+${formatPercent(rewardPercent)})`, profitColor);
+            this.renderLabel(context, right, entryY,
+                `Entry ${this.priceFormatter(drawing.entryPrice)}`, entryColor);
+            this.renderLabel(context, right, stopY,
+                `Stop ${this.priceFormatter(drawing.stopPrice)} (-${formatPercent(riskPercent)})`, riskColor);
+            this.renderPositionBadge(context, left, right, entryY,
+                `${drawingType(drawing).toUpperCase()} · R:R ${riskRewardLabel(drawing)}`,
+                drawingType(drawing) === 'long' ? profitColor : riskColor);
+
+            if (selected || draft) {
+                this.renderHandle(context, {x: points.start.x, y: entryY}, selected);
+                this.renderHandle(context, {x: points.end.x, y: targetY}, selected);
+                this.renderHandle(context, {x: points.end.x, y: stopY}, selected);
+            }
+            context.restore();
+        }
+
+        renderPositionLine(context, left, right, y, color, selected, dashed) {
+            context.strokeStyle = withAlpha(color, 0.96);
+            context.lineWidth = selected ? 1.7 : 1.2;
+            context.setLineDash(dashed ? [5, 4] : []);
+            context.beginPath();
+            context.moveTo(left, y + 0.5);
+            context.lineTo(right, y + 0.5);
+            context.stroke();
+            context.setLineDash([]);
+        }
+
+        renderPositionBadge(context, left, right, entryY, text, color) {
+            context.font = '700 11px Inter, ui-sans-serif, sans-serif';
+            const padding = 7;
+            const width = context.measureText(text).width + padding * 2;
+            const center = left + (right - left) / 2;
+            const badgeLeft = Math.max(2, Math.min(this.container.clientWidth - width - 2, center - width / 2));
+            const badgeTop = Math.max(2, Math.min(this.container.clientHeight - 21, entryY - 27));
+            context.fillStyle = themeColor('--fib-label-bg', 'rgba(20, 25, 22, .9)');
+            context.fillRect(badgeLeft, badgeTop, width, 20);
+            context.fillStyle = color;
+            context.fillRect(badgeLeft, badgeTop, 3, 20);
+            context.fillStyle = themeColor('--fib-label-text', '#edf3ee');
+            context.fillText(text, badgeLeft + padding, badgeTop + 14);
         }
 
         renderLabel(context, right, y, text, color) {
@@ -478,17 +715,110 @@
         return null;
     }
 
+    function normalizeLogical(logical) {
+        return typeof logical === 'number' && Number.isFinite(logical) ? logical : null;
+    }
+
     function stripCoordinates(point) {
-        return {time: point.time, price: point.price};
+        const anchor = {price: point.price};
+        const time = normalizeTime(point.time);
+        const logical = normalizeLogical(point.logical);
+        if (time !== null) anchor.time = time;
+        if (logical !== null) anchor.logical = logical;
+        return anchor;
+    }
+
+    function positionAnchor(point, price) {
+        const anchor = stripCoordinates(point);
+        anchor.price = Number(price);
+        return anchor;
+    }
+
+    function drawingType(drawing) {
+        return drawing?.type === 'long' || drawing?.type === 'short'
+            ? drawing.type
+            : 'fibonacci';
+    }
+
+    function isPositionDrawing(drawing) {
+        const type = drawingType(drawing);
+        return type === 'long' || type === 'short';
+    }
+
+    function isDrawingMode(mode) {
+        return mode === 'fibonacci' || mode === 'long' || mode === 'short';
+    }
+
+    function capitalize(value) {
+        const text = String(value || '');
+        return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+    }
+
+    function validTarget(type, entry, target) {
+        const entryPrice = Number(entry);
+        const targetPrice = Number(target);
+        return Number.isFinite(entryPrice) && Number.isFinite(targetPrice)
+            && (type === 'long' ? targetPrice > entryPrice : targetPrice < entryPrice);
+    }
+
+    function validStop(type, entry, stop) {
+        const entryPrice = Number(entry);
+        const stopPrice = Number(stop);
+        return Number.isFinite(entryPrice) && Number.isFinite(stopPrice)
+            && (type === 'long' ? stopPrice < entryPrice : stopPrice > entryPrice);
+    }
+
+    function constrainedPositionPrice(drawing, role, price) {
+        const type = drawingType(drawing);
+        const entry = Number(drawing.entryPrice);
+        const target = Number(drawing.targetPrice);
+        const stop = Number(drawing.stopPrice);
+        const candidate = Number(price);
+        const epsilon = Math.max(Math.abs(entry) * 0.000001, 0.00000001);
+        if (!Number.isFinite(candidate)) return role === 'target' ? target : (role === 'stop' ? stop : entry);
+        if (role === 'target') {
+            return type === 'long' ? Math.max(candidate, entry + epsilon) : Math.min(candidate, entry - epsilon);
+        }
+        if (role === 'stop') {
+            return type === 'long' ? Math.min(candidate, entry - epsilon) : Math.max(candidate, entry + epsilon);
+        }
+        return type === 'long'
+            ? Math.max(stop + epsilon, Math.min(candidate, target - epsilon))
+            : Math.max(target + epsilon, Math.min(candidate, stop - epsilon));
+    }
+
+    function riskRewardLabel(drawing) {
+        const reward = Math.abs(Number(drawing.targetPrice) - Number(drawing.entryPrice));
+        const risk = Math.abs(Number(drawing.entryPrice) - Number(drawing.stopPrice));
+        const ratio = reward / risk;
+        return Number.isFinite(ratio) && risk > 0 ? `1:${ratio.toFixed(2)}` : '--';
+    }
+
+    function positionPercent(entry, other) {
+        const entryPrice = Math.abs(Number(entry));
+        if (!Number.isFinite(entryPrice) || entryPrice === 0) return 0;
+        return Math.abs(Number(other) - Number(entry)) / entryPrice * 100;
+    }
+
+    function formatPercent(value) {
+        const percent = Number(value);
+        if (!Number.isFinite(percent)) return '0.00%';
+        return `${percent.toFixed(percent >= 100 ? 1 : 2)}%`;
     }
 
     function validDrawing(drawing) {
-        return drawing && typeof drawing.id === 'string'
-            && validAnchor(drawing.start) && validAnchor(drawing.end);
+        if (!drawing || typeof drawing.id !== 'string'
+            || !validAnchor(drawing.start) || !validAnchor(drawing.end)) return false;
+        if (!isPositionDrawing(drawing)) return true;
+        const type = drawingType(drawing);
+        return validTarget(type, drawing.entryPrice, drawing.targetPrice)
+            && validStop(type, drawing.entryPrice, drawing.stopPrice);
     }
 
     function validAnchor(anchor) {
-        return anchor && normalizeTime(anchor.time) !== null && Number.isFinite(Number(anchor.price));
+        return anchor
+            && (normalizeTime(anchor.time) !== null || normalizeLogical(anchor.logical) !== null)
+            && Number.isFinite(Number(anchor.price));
     }
 
     function validScreenPoint(point) {

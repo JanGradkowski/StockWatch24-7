@@ -44,6 +44,11 @@ public class SignalScoringPreferencesService {
             new ComponentDefinition("volume", "Volume confirmation", "Terminal-leg and confirmation-volume evidence.", 5),
             new ComponentDefinition("timing", "Timing / count stability", "Wave duration and minimum leg spacing.", 5)
     );
+    private static final List<ComponentDefinition> HARMONIC_COMPONENTS = List.of(
+            new ComponentDefinition("primaryB", "Primary B ratio", "Fit of the B point to the selected formation's preferred retracement or extension.", 35),
+            new ComponentDefinition("completion", "Completion ratio", "Fit of terminal D/C to the selected formation's preferred completion target.", 45),
+            new ComponentDefinition("secondary", "Secondary ratios", "Supporting retracements, extensions, and AB/CD relationship quality.", 20)
+    );
 
     private final UserSignalScoringPreferencesRepository repository;
     private final ObjectMapper objectMapper;
@@ -192,7 +197,9 @@ public class SignalScoringPreferencesService {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
             stored.validate();
-            List<Profile> normalizedProfiles = stored.profiles().stream()
+            List<Profile> completeProfiles = completeProfiles(stored.profiles());
+            validateProfiles(completeProfiles);
+            List<Profile> normalizedProfiles = completeProfiles.stream()
                     .map(profile -> profile.withFactoryProfile(matchesFactory(profile)))
                     .toList();
             return new PreferencesView(PROFILE_VERSION,
@@ -219,8 +226,9 @@ public class SignalScoringPreferencesService {
     }
 
     private static void validateProfiles(List<Profile> profiles) {
-        if (profiles == null || profiles.size() != 6) {
-            throw new IllegalArgumentException("All six scoring profiles are required.");
+        int required = supportedFamilies().size() * supportedIntervals().size();
+        if (profiles == null || profiles.size() != required) {
+            throw new IllegalArgumentException("All " + required + " scoring profiles are required.");
         }
         for (AlertPatternFamily family : supportedFamilies()) {
             for (TimeInterval interval : supportedIntervals()) {
@@ -265,7 +273,11 @@ public class SignalScoringPreferencesService {
     }
 
     private static List<ComponentDefinition> definitions(AlertPatternFamily family) {
-        return family == AlertPatternFamily.ELLIOTT_WAVE ? ELLIOTT_COMPONENTS : CANDLESTICK_COMPONENTS;
+        return switch (family) {
+            case ELLIOTT_WAVE -> ELLIOTT_COMPONENTS;
+            case HARMONIC_FORMATION -> HARMONIC_COMPONENTS;
+            default -> CANDLESTICK_COMPONENTS;
+        };
     }
 
     private static String componentKey(AlertPatternFamily family, String category) {
@@ -340,16 +352,25 @@ public class SignalScoringPreferencesService {
     }
 
     private static List<AlertPatternFamily> supportedFamilies() {
-        return List.of(AlertPatternFamily.CANDLESTICK, AlertPatternFamily.ELLIOTT_WAVE);
+        return List.of(AlertPatternFamily.CANDLESTICK, AlertPatternFamily.ELLIOTT_WAVE,
+                AlertPatternFamily.HARMONIC_FORMATION);
     }
     private static List<TimeInterval> supportedIntervals() {
         return List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY);
     }
     private static String familyKey(AlertPatternFamily family) {
-        return family == AlertPatternFamily.ELLIOTT_WAVE ? "elliott" : "candlestick";
+        return switch (family) {
+            case ELLIOTT_WAVE -> "elliott";
+            case HARMONIC_FORMATION -> "harmonic";
+            default -> "candlestick";
+        };
     }
     private static String familyLabel(AlertPatternFamily family) {
-        return family == AlertPatternFamily.ELLIOTT_WAVE ? "Elliott Wave" : "Candlestick";
+        return switch (family) {
+            case ELLIOTT_WAVE -> "Elliott Wave";
+            case HARMONIC_FORMATION -> "Harmonic Formation";
+            default -> "Candlestick";
+        };
     }
     private static String intervalKey(TimeInterval interval) { return interval.name().toLowerCase(Locale.ROOT); }
     private static String intervalLabel(TimeInterval interval) {
@@ -359,9 +380,23 @@ public class SignalScoringPreferencesService {
 
     private record StoredPreferences(String version, List<Profile> profiles) {
         private void validate() {
-            if (!PROFILE_VERSION.equals(version)) throw new IllegalArgumentException("Unsupported scoring profile version.");
-            validateProfiles(profiles);
+            if (!PROFILE_VERSION.equals(version) || profiles == null) {
+                throw new IllegalArgumentException("Unsupported scoring profile version.");
+            }
         }
+    }
+
+    private static List<Profile> completeProfiles(List<Profile> stored) {
+        List<Profile> complete = new ArrayList<>();
+        for (AlertPatternFamily family : supportedFamilies()) {
+            for (TimeInterval interval : supportedIntervals()) {
+                complete.add(stored.stream()
+                        .filter(profile -> profile.family() == family && profile.interval() == interval)
+                        .findFirst()
+                        .orElseGet(() -> factoryProfile(family, interval)));
+            }
+        }
+        return List.copyOf(complete);
     }
 
     private record ComponentDefinition(String key, String label, String description, int defaultPoints) { }

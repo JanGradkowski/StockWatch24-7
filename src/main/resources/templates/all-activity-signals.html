@@ -97,7 +97,7 @@
 
       <div class="signal-archive-results">
         <div class="activity-signal-archive-head" aria-hidden="true">
-          <span>Signal</span><span>Buyer / seller</span><span>Transaction</span><span>Dates</span><span>Read</span><span>Links</span>
+          <span>Signal</span><span>Company</span><span>Buyer / seller</span><span>Transaction</span><span>Directional return</span><span>Dates</span><span>Read</span><span></span>
         </div>
         <div class="signal-archive-list">
           <div th:each="signal, row : ${archive.signals()}" class="signal-archive-entry">
@@ -116,48 +116,59 @@
                        data-signal-checkbox
                        th:aria-label="${'Select ' + signal.sourceLabel() + ' ' + signal.transactionTypeLabel() + ' for ' + signal.symbol()}">
               </label>
-              <article class="activity-signal-archive-row"
+              <article class="activity-signal-archive-row latest-signal-row"
                        th:classappend="${signal.hasBeenRead()} ? ' is-read' : ' is-unread'"
                        th:aria-label="${signal.sourceLabel() + ' ' + signal.transactionTypeLabel() + ' for ' + signal.symbol() + (signal.hasBeenRead() ? ' (read)' : ' (unread)')}">
-                <div class="ticker-notification-source"
-                     th:classappend="${signal.source() == 'INSIDER'} ? ' insider' : ' congressional'">
-                  <span th:text="${signal.sourceLabel()}">Corporate insider</span>
+                <div class="latest-signal-type activity-archive-signal">
+                  <strong th:text="${signal.sourceLabel()}">Corporate insider</strong>
+                  <div class="latest-signal-tags">
+                    <span class="latest-family-tag"
+                          th:text="${signal.source() == 'INSIDER' ? 'SEC filing' : 'Congressional disclosure'}">SEC filing</span>
+                    <span class="latest-direction-tag"
+                          th:classappend="${signal.transactionType() == 'PURCHASE'} ? ' buy' : ' sell'"
+                          th:text="${signal.transactionTypeLabel()}">Sale</span>
+                  </div>
+                </div>
+                <div class="latest-company">
                   <strong th:text="${signal.symbol()}">AAPL</strong>
-                  <small th:text="${signal.companyName()}">Apple Inc.</small>
+                  <span th:text="${signal.companyName()}">Apple Inc.</span>
                 </div>
                 <div class="ticker-notification-actor">
                   <strong th:text="${signal.actorName()}">Reporting person</strong>
                   <span th:text="${signal.actorRole() != null ? signal.actorRole() : signal.companyName()}">Officer</span>
                 </div>
-                <div class="ticker-notification-activity">
-                  <span class="congressional-history-type"
-                        th:classappend="${signal.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'"
-                        th:text="${signal.transactionTypeLabel()}">Purchase</span>
+                <div class="activity-archive-transaction">
+                  <span th:text="${signal.source() == 'INSIDER' ? 'Filed trade' : 'Reported range'}">Filed trade</span>
                   <strong th:text="${signal.amountLabel()}">$25,000</strong>
-                  <small th:if="${signal.returnPercent() != null}"
-                         th:classappend="${signal.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
-                         th:text="${'Directional return ' + (signal.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.returnPercent(), 1, 2) + '%'}">Directional return +4.20%</small>
-                  <small th:if="${signal.returnPercent() != null}"
-                         th:text="${'From filed price on ' + #temporals.format(signal.transactionDate(), 'dd MMM yyyy') + (signal.returnAsOf() != null ? ' · through ' + #temporals.format(signal.returnAsOf(), 'dd MMM yyyy') : '')}">From filed price on 01 Jan 2026</small>
                 </div>
-                <div class="ticker-notification-dates">
+                <div class="signal-archive-result activity-archive-return">
+                  <strong th:if="${signal.returnPercent() != null}"
+                          th:classappend="${signal.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
+                          th:text="${(signal.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
+                  <strong th:unless="${signal.returnPercent() != null}" class="unavailable">N/A</strong>
+                  <span th:if="${signal.returnAsOf() != null}"
+                        th:text="${(signal.source() == 'CONGRESSIONAL' ? 'From transaction-date close proxy through ' : 'From filed price through ') + #temporals.format(signal.returnAsOf(), 'dd MMM yyyy')}">From filed price through 08 Jan 2026</span>
+                  <span th:unless="${signal.returnAsOf() != null}"
+                        th:text="${signal.source() == 'CONGRESSIONAL' ? 'Value range disclosed; proxy return is in signal detail' : 'Filed price or completed close unavailable'}">Return unavailable</span>
+                </div>
+                <div class="latest-signal-date activity-archive-dates">
                   <span>Traded <time th:text="${#temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time></span>
                   <span>Filed <time th:text="${#temporals.format(signal.filingDate(), 'dd MMM yyyy')}">02 Jan 2026</time></span>
                 </div>
                 <span class="signal-read-pill"
                       th:classappend="${signal.hasBeenRead()} ? ' read' : ' unread'"
                       th:text="${signal.hasBeenRead()} ? 'Read' : 'Unread'">Unread</span>
-                <div class="congressional-row-actions">
+                <div class="activity-archive-links">
                   <span class="congressional-delivery-status" th:text="${signal.deliveryStatus()}">Email sent</span>
-                  <a class="notification-action-button notification-detail-button"
-                     th:href="${signal.detailUrl()}">View signal</a>
-                  <a class="notification-action-button notification-stock-button"
-                     th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}">Open stock</a>
+                  <a class="activity-archive-open"
+                     th:href="${signal.detailUrl()}">Open <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span></a>
+                  <a class="activity-archive-secondary"
+                     th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}">Stock</a>
                   <a th:if="${signal.sourceUrl() != null}"
-                     class="notification-action-button notification-filing-button"
+                     class="activity-archive-secondary"
                      th:href="${signal.sourceUrl()}"
                      target="_blank"
-                     rel="noopener noreferrer">Official filing</a>
+                     rel="noopener noreferrer">Filing <span aria-hidden="true">&nearr;</span></a>
                 </div>
               </article>
               <button type="submit"

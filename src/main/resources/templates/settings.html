@@ -10,12 +10,14 @@
     <a class="settings-sidebar-link" th:classappend="${settingsTab == 'analysis'} ? ' active' : ''" th:href="@{/settings/analysis-alerts}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V9m5 9V5m5 13v-7m5 7V3"></path><path d="M2 21h20"></path></svg>Analysis &amp; Alerts</a>
     <a class="settings-sidebar-link" th:classappend="${settingsTab == 'scoring'} ? ' active' : ''" th:href="@{/settings/scoring}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"></path><path d="M8 8h8M8 12h3m3 0h2M8 16h2m3 0h3"></path></svg>Scoring</a>
     <a class="settings-sidebar-link" th:classappend="${settingsTab == 'candlestick-patterns'} ? ' active' : ''" th:href="@{/settings/candlestick-patterns}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v18m-2-5h4V8H4zm8-13v18m-2-5h4V7h-4zm8-8v18m-2-6h4V9h-4z"></path></svg>Candlestick Patterns</a>
+    <a class="settings-sidebar-link" th:classappend="${settingsTab == 'elliott-waves'} ? ' active' : ''" th:href="@{/settings/elliott-waves}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18 7 9l4 6 4-11 6 14"></path><path d="M3 21h18"></path></svg>Elliott Waves</a>
+    <a class="settings-sidebar-link" th:classappend="${settingsTab == 'harmonic-formations'} ? ' active' : ''" th:href="@{/settings/harmonic-formations}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 4-10 4 7 4-9 6 12"></path><circle cx="3" cy="17" r="1"></circle><circle cx="7" cy="7" r="1"></circle><circle cx="11" cy="14" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="21" cy="17" r="1"></circle></svg>Harmonic Formations</a>
     <a class="settings-sidebar-link" th:classappend="${settingsTab == 'detection'} ? ' active' : ''" th:href="@{/settings/detection}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5m0 14h16"></path><path d="m7 15 4-5 3 2 4-6"></path></svg>Detection</a>
-  </nav><p class="settings-sidebar-note" th:switch="${settingsTab}"><span th:case="'analysis'">Tune personal outlook calculations, signal resolution, and market email delivery.</span><span th:case="'scoring'">Choose the evidence and point weights shown on signal detail reports.</span><span th:case="'candlestick-patterns'">Define the exact candle geometry and prior price action required for every candlestick pattern.</span><span th:case="'detection'">Define how completed candles establish an uptrend or downtrend before a pattern is accepted.</span><span th:case="*">Choose how StockWatch and its chart overlays look for your account.</span></p></aside>
+  </nav><p class="settings-sidebar-note" th:switch="${settingsTab}"><span th:case="'analysis'">Tune personal outlook calculations, signal resolution, and market email delivery.</span><span th:case="'scoring'">Choose the evidence and point weights shown on signal detail reports.</span><span th:case="'candlestick-patterns'">Define the exact candle geometry and prior price action required for every candlestick pattern.</span><span th:case="'elliott-waves'">Define pivot construction and every adjustable I–V and A–B–C structural rule.</span><span th:case="'harmonic-formations'">Define Fibonacci ratios and decide which geometric groups reject or softly penalize a formation.</span><span th:case="'detection'">Define how completed candles establish an uptrend or downtrend before a pattern is accepted.</span><span th:case="*">Choose how StockWatch and its chart overlays look for your account.</span></p></aside>
   <div class="settings-content" th:id="${settingsTab}">
     <header class="settings-header"><div><p class="eyebrow">Your account</p>
-      <h1 id="settingsPageTitle" th:switch="${settingsTab}"><span th:case="'appearance'">Appearance</span><span th:case="'analysis'">Analysis &amp; Alerts</span><span th:case="'scoring'">Scoring settings</span><span th:case="'candlestick-patterns'">Candlestick Patterns</span><span th:case="'detection'">Detection settings</span><span th:case="*">General settings</span></h1>
-      <p id="settingsPageDescription" th:switch="${settingsTab}"><span th:case="'appearance'">Set your default color mode and make Elliott Wave overlays unmistakable.</span><span th:case="'analysis'">Control how future signals are evaluated, scored, and delivered.</span><span th:case="'scoring'">Customize the 100-point score shown for each signal type and interval.</span><span th:case="'candlestick-patterns'">Customize the exact candle measurements and prior price action that qualify every candlestick pattern.</span><span th:case="'detection'">Customize how prior price action qualifies as an uptrend or downtrend for candlestick detection.</span><span th:case="*">Manage password protection, sign-in verification, sessions, and account data.</span></p>
+      <h1 id="settingsPageTitle" th:switch="${settingsTab}"><span th:case="'appearance'">Appearance</span><span th:case="'analysis'">Analysis &amp; Alerts</span><span th:case="'scoring'">Scoring settings</span><span th:case="'candlestick-patterns'">Candlestick Patterns</span><span th:case="'elliott-waves'">Elliott Waves</span><span th:case="'harmonic-formations'">Harmonic Formations</span><span th:case="'detection'">Detection settings</span><span th:case="*">General settings</span></h1>
+      <p id="settingsPageDescription" th:switch="${settingsTab}"><span th:case="'appearance'">Set your default color mode and make chart overlays unmistakable.</span><span th:case="'analysis'">Control how future signals are evaluated, scored, and delivered.</span><span th:case="'scoring'">Customize the 100-point score shown for each signal type and interval.</span><span th:case="'candlestick-patterns'">Customize the exact candle measurements and prior price action that qualify every candlestick pattern.</span><span th:case="'elliott-waves'">Customize exactly how daily, weekly, and monthly motive and corrective structures are detected.</span><span th:case="'harmonic-formations'">Customize harmonic ratios, tolerances, and hard-versus-soft classification rules.</span><span th:case="'detection'">Customize how prior price action qualifies as an uptrend or downtrend for candlestick detection.</span><span th:case="*">Manage password protection, sign-in verification, sessions, and account data.</span></p>
     </div><span class="settings-email" th:text="${user.email}">user@example.com</span></header>
     <div th:if="${success}" class="settings-message success-msg" th:text="${success}"></div><div th:if="${error}" class="settings-message error-msg" th:text="${error}"></div><div th:if="${param.appearanceSaved}" class="settings-message success-msg">Appearance preferences applied.</div>
 
@@ -28,6 +30,14 @@
             <label class="theme-choice"><input type="radio" name="theme" value="DARK" th:checked="${user.themePreference == 'DARK'}"><span class="theme-preview dark-preview"><i></i><i></i><i></i></span><strong>Dark</strong><small>Low-glare market workspace</small></label>
             <label class="theme-choice"><input type="radio" name="theme" value="LIGHT" th:checked="${user.themePreference == 'LIGHT'}"><span class="theme-preview light-preview"><i></i><i></i><i></i></span><strong>Light</strong><small>Bright, high-contrast workspace</small></label>
           </div>
+        </fieldset>
+        <fieldset class="appearance-fieldset">
+          <legend>Harmonic Formation overlays</legend>
+          <p>Choose the line and pivot-marker color used for Gartley, Bat, Butterfly, Crab, Shark, and Cypher formations.</p>
+          <div class="elliott-color-grid">
+            <label class="elliott-color-choice" for="harmonicFormationColor"><span><strong>Formation geometry</strong><small>Harmonic pivot lines, labels, and confirmation markers</small></span><input id="harmonicFormationColor" type="color" name="harmonicFormationColor" th:value="${user.harmonicFormationColor}" value="#22C55E" required></label>
+          </div>
+          <p class="appearance-default-note">Default: market green <code>#22C55E</code>.</p>
         </fieldset>
         <fieldset class="appearance-fieldset">
           <legend>Elliott Wave overlays</legend>
@@ -57,6 +67,14 @@
 
     <th:block th:if="${settingsTab == 'candlestick-patterns'}">
       <div th:replace="~{fragments/candlestick-pattern-settings :: candlestickPatternSettings(${candlestickPatternPreferences})}"></div>
+    </th:block>
+
+    <th:block th:if="${settingsTab == 'elliott-waves'}">
+      <div th:replace="~{fragments/elliott-wave-settings :: elliottWaveSettings(${elliottWavePreferences})}"></div>
+    </th:block>
+
+    <th:block th:if="${settingsTab == 'harmonic-formations'}">
+      <div th:replace="~{fragments/harmonic-pattern-settings :: harmonicPatternSettings(${harmonicPatternPreferences})}"></div>
     </th:block>
 
     <section th:if="${settingsTab == 'general'}" class="settings-card" id="password"><div class="settings-card-heading"><div><span class="settings-number">01</span><h2>Password</h2></div><p>A verified email code expires after five minutes and can only be used once.</p></div>

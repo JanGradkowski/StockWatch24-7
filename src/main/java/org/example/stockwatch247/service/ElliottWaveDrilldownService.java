@@ -44,6 +44,19 @@ public class ElliottWaveDrilldownService {
                                    double parentStartPrice,
                                    double parentEndPrice,
                                    Long requestedAsOfExclusive) {
+        return drillDown(rawSymbol, rawParentInterval, rawParentLabel, parentStart, parentEnd,
+                parentStartPrice, parentEndPrice, requestedAsOfExclusive, null);
+    }
+
+    public DrilldownView drillDown(String rawSymbol,
+                                   String rawParentInterval,
+                                   String rawParentLabel,
+                                   long parentStart,
+                                   long parentEnd,
+                                   double parentStartPrice,
+                                   double parentEndPrice,
+                                   Long requestedAsOfExclusive,
+                                   ElliottWaveDetectionService.DetectionRules rules) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         String parentInterval = SecurityInputValidator.requireInterval(rawParentInterval);
         String lowerInterval = lowerInterval(parentInterval);
@@ -82,7 +95,10 @@ public class ElliottWaveDrilldownService {
         }
         List<EnrichedCandle> enriched = enrichmentService.enrich(
                 candles, candles.size(), lowerTimeInterval);
-        return detectionService.findSubdivision(
+        ElliottWaveDetectionService detector = rules == null
+                ? detectionService
+                : detectionService.configured(rules);
+        return detector.findSubdivision(
                         enriched, parentLabel, parentStartPrice, parentEndPrice)
                 .map(subdivision -> new DrilldownView(
                         true,

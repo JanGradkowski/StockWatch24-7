@@ -425,6 +425,28 @@ public class CandlePatternDetectionService {
         return context.asAssessment();
     }
 
+    /**
+     * Applies the exact direction-aware factory trend policy to an already
+     * enriched chronological series. This avoids repeatedly copying and
+     * sorting prefixes in full-universe research harnesses.
+     */
+    PriorTrendAssessment assessPreparedFactoryPriorTrend(
+            List<EnrichedCandle> chronologicalCandles,
+            int patternStartIndex,
+            TimeInterval interval,
+            TradeSignal direction) {
+        if (chronologicalCandles == null || chronologicalCandles.isEmpty()
+                || patternStartIndex < 0 || patternStartIndex >= chronologicalCandles.size()
+                || interval == null || direction == null) {
+            return PriorTrendAssessment.none();
+        }
+        return trendBefore(
+                chronologicalCandles,
+                patternStartIndex,
+                TrendDetectionRules.adaptiveFactory(interval),
+                direction).asAssessment();
+    }
+
     private GeometricPatternCandidate candidate(CandlePattern pattern,
                                                 TradeSignal tradeSignal,
                                                 TrendDirection trendDirection,

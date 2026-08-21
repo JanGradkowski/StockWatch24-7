@@ -58,7 +58,7 @@ public class VirtualTradeController {
         User user = requireUser(principal);
         try {
             virtualTradeService.delete(user, tradeId);
-            redirectAttributes.addFlashAttribute("virtualTradeDeleteMessage", "Virtual trade deleted.");
+            redirectAttributes.addFlashAttribute("virtualTradeDeleteMessage", "Demo trade deleted.");
         } catch (IllegalArgumentException exception) {
             redirectAttributes.addFlashAttribute("virtualTradeDeleteError", exception.getMessage());
         }

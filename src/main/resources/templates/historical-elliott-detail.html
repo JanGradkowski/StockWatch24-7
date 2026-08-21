@@ -7,7 +7,7 @@
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
-  <script th:src="@{/js/elliott-subwave-overlay.js}"></script>
+  <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
 <body>
@@ -431,19 +431,17 @@
         storageKey: `${window.location.pathname}:elliott`
       });
     }
-    if (typeof StockWatchElliottSubwaveOverlay !== 'undefined') {
-      new StockWatchElliottSubwaveOverlay({
+    if (typeof StockWatchElliottHierarchyOverlay !== 'undefined') {
+      const hierarchyOverlay = new StockWatchElliottHierarchyOverlay({
         chart,
-        candleSeries,
         container,
         symbol,
         interval: rootInterval,
-        points,
         asOfTimestamp: confirmationTimestamp || points[points.length - 1]?.timestamp,
-        renderTime: chartDate,
         color: subwaveColor,
-        autoSubscribe: true
+        renderTime: chartDate
       });
+      hierarchyOverlay.showInterval(rootInterval);
     }
     if (typeof ResizeObserver !== 'undefined') {
       new ResizeObserver(entries => {

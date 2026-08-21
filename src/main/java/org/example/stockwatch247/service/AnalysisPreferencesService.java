@@ -58,6 +58,7 @@ public class AnalysisPreferencesService {
         EmailPreferences email = new EmailPreferences(
                 checked(form, "email.newCandlestick"),
                 checked(form, "email.newElliott"),
+                checked(form, "email.newHarmonic"),
                 checked(form, "email.confirmed"),
                 checked(form, "email.invalidated"),
                 checked(form, "email.expired"),
@@ -181,9 +182,12 @@ public class AnalysisPreferencesService {
     public boolean allowsNewSignalEmail(User user, AlertPatternFamily family,
                                         TimeInterval interval, TradeSignal direction) {
         EmailPreferences email = get(user).email();
-        return email.intervalEnabled(interval) && email.directionEnabled(direction)
-                && (family == AlertPatternFamily.ELLIOTT_WAVE
-                ? email.newElliott() : email.newCandlestick());
+        boolean familyEnabled = switch (family) {
+            case ELLIOTT_WAVE -> email.newElliott();
+            case HARMONIC_FORMATION -> email.harmonicEnabled();
+            default -> email.newCandlestick();
+        };
+        return email.intervalEnabled(interval) && email.directionEnabled(direction) && familyEnabled;
     }
 
     public boolean allowsLifecycleEmail(User user, SignalLifecycleStatus status,
@@ -473,15 +477,30 @@ public class AnalysisPreferencesService {
         public String profileLabel() { return custom ? "Custom profile" : "Factory profile"; }
     }
 
-    public record EmailPreferences(boolean newCandlestick, boolean newElliott,
+    public record EmailPreferences(boolean newCandlestick, boolean newElliott, Boolean newHarmonic,
                                    boolean confirmed, boolean invalidated, boolean expired,
                                    boolean insider, boolean congressional,
                                    boolean daily, boolean weekly, boolean monthly,
                                    boolean buy, boolean sell) {
+        public EmailPreferences {
+            newHarmonic = newHarmonic == null ? Boolean.TRUE : newHarmonic;
+        }
+
+        public EmailPreferences(boolean newCandlestick, boolean newElliott,
+                                boolean confirmed, boolean invalidated, boolean expired,
+                                boolean insider, boolean congressional,
+                                boolean daily, boolean weekly, boolean monthly,
+                                boolean buy, boolean sell) {
+            this(newCandlestick, newElliott, true, confirmed, invalidated, expired,
+                    insider, congressional, daily, weekly, monthly, buy, sell);
+        }
+
         public static EmailPreferences factory() {
-            return new EmailPreferences(true, true, true, true, true, true, true,
+            return new EmailPreferences(true, true, true, true, true, true, true, true,
                     true, true, true, true, true);
         }
+
+        public boolean harmonicEnabled() { return Boolean.TRUE.equals(newHarmonic); }
 
         public boolean intervalEnabled(TimeInterval interval) {
             return switch (interval) {

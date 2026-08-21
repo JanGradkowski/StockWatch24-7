@@ -3,6 +3,7 @@ package org.example.stockwatch247.service;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.service.technical.TechnicalResearchSnapshot;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -69,6 +70,23 @@ class TechnicalIndicatorEnrichmentServiceTest {
     }
 
     @Test
+    void elliottDailyFractalUsesTheFrozenNativeBarProfile() {
+        int signalCandles = 100;
+        int required = service.requiredElliottInputCandles(signalCandles, TimeInterval.DAILY);
+        List<Candle> history = IntStream.rangeClosed(1, required)
+                .mapToObj(index -> candle(index, "1d", 86_400L))
+                .toList();
+
+        List<EnrichedCandle> enriched =
+                service.enrichForElliott(history, signalCandles, TimeInterval.DAILY);
+
+        assertThat(required).isEqualTo(299);
+        assertThat(enriched).hasSize(signalCandles);
+        assertThat(enriched.getFirst().longSma()).isCloseTo(100.5, within(0.000_000_1));
+        assertThat(enriched.getLast().longSma()).isCloseTo(199.5, within(0.000_000_1));
+    }
+
+    @Test
     void rejectsCandlesWhoseDeclaredIntervalDoesNotMatchTheRequestedProfile() {
         List<Candle> daily = IntStream.rangeClosed(1, 30)
                 .mapToObj(day -> candle(day, "1d", 86_400L))
@@ -79,6 +97,32 @@ class TechnicalIndicatorEnrichmentServiceTest {
                 )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("does not match requested WEEKLY");
+    }
+
+    @Test
+    void calculatesNewTa4jIndicatorsInAResearchOnlySnapshot() {
+        List<Candle> history = IntStream.rangeClosed(1, 320)
+                .mapToObj(this::oscillatingCandle)
+                .toList();
+
+        List<TechnicalResearchSnapshot> research = service.research(
+                history, 100, TechnicalIndicatorProfile.forInterval(TimeInterval.DAILY));
+
+        assertThat(research).hasSize(100);
+        TechnicalResearchSnapshot latest = research.getLast();
+        assertThat(latest.adx()).isFinite();
+        assertThat(latest.plusDi()).isFinite();
+        assertThat(latest.minusDi()).isFinite();
+        assertThat(latest.stochasticK()).isFinite();
+        assertThat(latest.stochasticD()).isFinite();
+        assertThat(latest.stochasticRsi()).isFinite();
+        assertThat(latest.obv()).isFinite();
+        assertThat(latest.moneyFlowIndex()).isFinite();
+        assertThat(latest.donchianLower()).isLessThanOrEqualTo(latest.donchianUpper());
+        assertThat(latest.keltnerLower()).isLessThan(latest.keltnerUpper());
+        assertThat(latest.volumeProfileKdeMode()).isFinite();
+        assertThat(research).allSatisfy(snapshot ->
+                assertThat(snapshot.upTrend() && snapshot.downTrend()).isFalse());
     }
 
     private ProfileResult enrichProfile(TimeInterval interval, String providerInterval, long secondsPerBar) {
@@ -130,6 +174,20 @@ class TechnicalIndicatorEnrichmentServiceTest {
                 close - 1.0,
                 close,
                 1_000L
+        );
+    }
+
+    private Candle oscillatingCandle(int index) {
+        double close = 100.0 + index * 0.08 + Math.sin(index * 0.31) * 3.0;
+        return new Candle(
+                "VST",
+                "1d",
+                index * 86_400L,
+                close - Math.sin(index * 0.17) * 0.4,
+                close + 1.0,
+                close - 1.0,
+                close,
+                1_000L + (index % 11) * 100L
         );
     }
 

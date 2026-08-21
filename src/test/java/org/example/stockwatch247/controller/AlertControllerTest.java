@@ -23,6 +23,43 @@ import static org.mockito.Mockito.when;
 class AlertControllerTest {
 
     @Test
+    void unfollowsEveryTechnicalRuleForTheCompany() {
+        AlertRuleService service = mock(AlertRuleService.class);
+        UserRepository users = mock(UserRepository.class);
+        AlertController controller = new AlertController(service, users);
+        User user = new User();
+        user.setEmail("unfollow@example.com");
+        Principal principal = user::getEmail;
+        when(users.findByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
+        when(service.unfollowAllTechnicalRules(user, "AAPL")).thenReturn(3);
+
+        var response = controller.unfollowAllTechnicalRules("AAPL", principal);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isEqualTo(Map.of("symbol", "AAPL", "unfollowedRules", 3));
+        verify(service).unfollowAllTechnicalRules(user, "AAPL");
+    }
+
+    @Test
+    void unfollowsOnlySelectedTechnicalRulesForTheCompany() {
+        AlertRuleService service = mock(AlertRuleService.class);
+        UserRepository users = mock(UserRepository.class);
+        AlertController controller = new AlertController(service, users);
+        User user = new User();
+        user.setEmail("selected-unfollow@example.com");
+        Principal principal = user::getEmail;
+        when(users.findByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
+        when(service.unfollowSelectedTechnicalRules(user, "NFLX", List.of(4L, 7L))).thenReturn(2);
+
+        var response = controller.unfollowSelectedTechnicalRules(
+                "NFLX", new AlertController.RuleSelectionRequest(List.of(4L, 7L)), principal);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isEqualTo(Map.of("symbol", "NFLX", "unfollowedRules", 2));
+        verify(service).unfollowSelectedTechnicalRules(user, "NFLX", List.of(4L, 7L));
+    }
+
+    @Test
     void appliesTheDraftWithOneBatchRequestAndReturnsThePersistedState() {
         AlertRuleService service = mock(AlertRuleService.class);
         UserRepository users = mock(UserRepository.class);
@@ -40,7 +77,9 @@ class AlertControllerTest {
                         new AlertController.AlertToggleRequest(
                                 "DAILY", "BUY", "CANDLESTICK", true),
                         new AlertController.AlertToggleRequest(
-                                "MONTHLY", "SELL", "ELLIOTT_WAVE", false)
+                                "MONTHLY", "SELL", "ELLIOTT_WAVE", false),
+                        new AlertController.AlertToggleRequest(
+                                "WEEKLY", "BUY", "HARMONIC_FORMATION", true)
                 )),
                 principal
         );
@@ -54,7 +93,10 @@ class AlertControllerTest {
                                 AlertPatternFamily.CANDLESTICK, true),
                         new AlertRuleService.AlertRuleChange(
                                 TimeInterval.MONTHLY, TradeSignal.SELL,
-                                AlertPatternFamily.ELLIOTT_WAVE, false)
+                                AlertPatternFamily.ELLIOTT_WAVE, false),
+                        new AlertRuleService.AlertRuleChange(
+                                TimeInterval.WEEKLY, TradeSignal.BUY,
+                                AlertPatternFamily.HARMONIC_FORMATION, true)
                 ))));
     }
 }

@@ -2,14 +2,19 @@ package org.example.stockwatch247.service.congress;
 
 import org.example.stockwatch247.model.CongressionalTradeDelivery;
 import org.example.stockwatch247.model.CongressionalTrade;
+import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.enums.CongressionalDeliveryStatus;
 import org.example.stockwatch247.model.enums.CongressionalTradeType;
 import org.example.stockwatch247.model.enums.InstrumentType;
+import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.CongressionalTradeDeliveryRepository;
 import org.example.stockwatch247.repository.CongressionalTradeRepository;
 import org.example.stockwatch247.repository.CongressionalTradeSubscriptionRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
+import org.example.stockwatch247.service.CandleCompletionService;
 import org.example.stockwatch247.service.congress.CongressionalTradeProvider.ProviderBatch;
 import org.example.stockwatch247.service.congress.CongressionalTradeProvider.ProviderTrade;
 import org.example.stockwatch247.service.congress.CongressionalTradeStore.CacheClaimStatus;
@@ -188,6 +193,44 @@ class CongressionalActivityServiceTest {
                 .isEqualTo(41L);
     }
 
+    @Test
+    void dashboardAndArchiveCalculateDirectionalReturnFromTransactionDateCloseProxy() {
+        Fixture fixture = new Fixture();
+        LocalDate transactionDate = LocalDate.now(java.time.ZoneOffset.UTC).minusDays(4);
+        CongressionalTrade trade = new CongressionalTrade();
+        trade.setId(31L);
+        trade.setStockAsset(fixture.asset);
+        trade.setMemberName("Example Member");
+        trade.setChamber("House");
+        trade.setTickerSymbol("AAPL");
+        trade.setTransactionType(CongressionalTradeType.PURCHASE);
+        trade.setAmountRange("$1,001 - $15,000");
+        trade.setTransactionDate(transactionDate);
+        trade.setDisclosureDate(transactionDate.plusDays(2));
+        CongressionalTradeDelivery delivery = new CongressionalTradeDelivery();
+        delivery.setId(41L);
+        delivery.setTrade(trade);
+        delivery.setStatus(CongressionalDeliveryStatus.SENT);
+        delivery.setCreatedAt(Instant.now());
+        long entryTimestamp = transactionDate.atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond();
+        long latestTimestamp = transactionDate.plusDays(3)
+                .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond();
+        Candle entry = new Candle("AAPL", "1d", entryTimestamp, 100, 102, 98, 100.0, 1000L);
+        Candle latest = new Candle("AAPL", "1d", latestTimestamp, 120, 122, 118, 120.0, 1000L);
+        when(fixture.deliveryRepository.findAllForUser(fixture.user)).thenReturn(List.of(delivery));
+        when(fixture.candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc("AAPL", "1d"))
+                .thenReturn(List.of(entry, latest));
+        when(fixture.candleCompletionService.isComplete(entryTimestamp, TimeInterval.DAILY)).thenReturn(true);
+        when(fixture.candleCompletionService.isComplete(latestTimestamp, TimeInterval.DAILY)).thenReturn(true);
+
+        var activity = fixture.service.getAllActivity(fixture.user);
+
+        assertThat(activity).singleElement().satisfies(view -> {
+            assertThat(view.returnPercent()).isEqualByComparingTo("20.00");
+            assertThat(view.returnAsOf()).isEqualTo(transactionDate.plusDays(3));
+        });
+    }
+
     private static final class Fixture {
         private final StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
         private final CongressionalTradeRepository tradeRepository = mock(CongressionalTradeRepository.class);
@@ -195,6 +238,9 @@ class CongressionalActivityServiceTest {
                 mock(CongressionalTradeSubscriptionRepository.class);
         private final CongressionalTradeDeliveryRepository deliveryRepository =
                 mock(CongressionalTradeDeliveryRepository.class);
+        private final CandleRepository candleRepository = mock(CandleRepository.class);
+        private final CandleCompletionService candleCompletionService =
+                mock(CandleCompletionService.class);
         private final CongressionalTradeProvider provider = mock(CongressionalTradeProvider.class);
         private final CongressionalTradeStore store = mock(CongressionalTradeStore.class);
         private final CongressionalSubscriptionManager subscriptionManager =
@@ -221,6 +267,8 @@ class CongressionalActivityServiceTest {
                     tradeRepository,
                     subscriptionRepository,
                     deliveryRepository,
+                    candleRepository,
+                    candleCompletionService,
                     provider,
                     store,
                     subscriptionManager,

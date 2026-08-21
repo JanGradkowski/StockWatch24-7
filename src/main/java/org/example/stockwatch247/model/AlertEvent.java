@@ -144,6 +144,18 @@ public class AlertEvent {
     @Column(name = "lifecycle_resolution_reason", length = 255)
     private String lifecycleResolutionReason;
 
+    @Column(name = "harmonic_endpoint_timestamp")
+    private Long harmonicEndpointTimestamp;
+
+    @Column(name = "harmonic_endpoint_price")
+    private Double harmonicEndpointPrice;
+
+    @Column(name = "harmonic_points_snapshot", columnDefinition = "text")
+    private String harmonicPointsSnapshot;
+
+    @Column(name = "harmonic_measurements_snapshot", columnDefinition = "text")
+    private String harmonicMeasurementsSnapshot;
+
     public Long getId() {
         return id;
     }
@@ -301,6 +313,11 @@ public class AlertEvent {
     public String getLifecycleResolutionReason() {
         return lifecycleResolutionReason;
     }
+
+    public Long getHarmonicEndpointTimestamp() { return harmonicEndpointTimestamp; }
+    public Double getHarmonicEndpointPrice() { return harmonicEndpointPrice; }
+    public String getHarmonicPointsSnapshot() { return harmonicPointsSnapshot; }
+    public String getHarmonicMeasurementsSnapshot() { return harmonicMeasurementsSnapshot; }
 
     public boolean isLifecycleTracked() {
         return confirmationWindowCandles != null
@@ -487,5 +504,19 @@ public class AlertEvent {
         this.lifecycleResolutionReason = normalized.length() <= 255
                 ? normalized
                 : normalized.substring(0, 255);
+    }
+
+    public void setHarmonicEndpointTimestamp(Long value) { this.harmonicEndpointTimestamp = value; }
+    public void setHarmonicEndpointPrice(Double value) { this.harmonicEndpointPrice = value; }
+    public void setHarmonicPointsSnapshot(String value) { this.harmonicPointsSnapshot = normalizedSnapshot(value); }
+    public void setHarmonicMeasurementsSnapshot(String value) { this.harmonicMeasurementsSnapshot = normalizedSnapshot(value); }
+
+    private String normalizedSnapshot(String value) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.trim();
+        if (normalized.length() > 16_000) {
+            throw new IllegalArgumentException("Harmonic snapshots must not exceed 16000 characters.");
+        }
+        return normalized;
     }
 }

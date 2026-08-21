@@ -65,6 +65,13 @@ class ExpandedElliottScoringValidationTest {
     private static final ElliottWaveDetectionService.ScoringModel BENCHMARK_SCORE_MODEL =
             ElliottWaveDetectionService.ScoringModel.valueOf(System.getProperty(
                     "backtest.elliott.score-model", "V2").trim().toUpperCase(Locale.ROOT));
+    private static final boolean ALLOW_WAVE_ONE_LONGEST = Boolean.parseBoolean(System.getProperty(
+            "backtest.elliott.allow-wave-one-longest", "true"));
+    private static final boolean REQUIRE_WAVE_ONE_SHORTEST = Boolean.parseBoolean(System.getProperty(
+            "backtest.elliott.require-wave-one-shortest", "false"));
+    private static final String DETECTION_VARIANT = REQUIRE_WAVE_ONE_SHORTEST
+            ? "wave-one-shortest"
+            : (ALLOW_WAVE_ONE_LONGEST ? "factory" : "wave-one-not-longest");
     private static final List<IntervalRun> RUNS = List.of(
             new IntervalRun("1wk", "Weekly", TimeInterval.WEEKLY, Aggregation.WEEKLY,
                     List.of(new OutcomeWindow(4, 4.0), new OutcomeWindow(8, 8.0),
@@ -78,7 +85,10 @@ class ExpandedElliottScoringValidationTest {
     private final TechnicalIndicatorEnrichmentService enrichmentService =
             new TechnicalIndicatorEnrichmentService();
     private final ElliottWaveDetectionService detectionService =
-            new ElliottWaveDetectionService(1, BENCHMARK_SCORE_MODEL);
+            new ElliottWaveDetectionService(1, BENCHMARK_SCORE_MODEL).configured(
+                    ElliottWaveDetectionService.DetectionRules.factory()
+                            .withAllowWaveOneLongest(ALLOW_WAVE_ONE_LONGEST)
+                            .withRequireWaveOneShortest(REQUIRE_WAVE_ONE_SHORTEST));
 
     @Test
     void runsFrozenExpandedElliottValidation() throws Exception {
@@ -90,13 +100,14 @@ class ExpandedElliottScoringValidationTest {
         Map<String, List<Candle>> dailyBySymbol = loadDailyCandles(dataPath, universe);
 
         String scoreVersion = "ELLIOTT_" + BENCHMARK_SCORE_MODEL.name();
-        String fileLabel = scoreVersion.toLowerCase(Locale.ROOT).replace('_', '-');
+        String fileLabel = scoreVersion.toLowerCase(Locale.ROOT).replace('_', '-')
+                + ("factory".equals(DETECTION_VARIANT) ? "" : "-" + DETECTION_VARIANT);
         ConcurrentLinkedQueue<LabeledSignal> allSignals = new ConcurrentLinkedQueue<>();
         List<Coverage> coverage = new ArrayList<>();
 
         System.out.printf(Locale.ROOT,
-                "Expanded Elliott %s: symbols=%,d adjustedDailyCandles=%,d%n",
-                scoreVersion, universe.size(), EXPECTED_DAILY_CANDLES);
+                "Expanded Elliott %s [%s]: symbols=%,d adjustedDailyCandles=%,d%n",
+                scoreVersion, DETECTION_VARIANT, universe.size(), EXPECTED_DAILY_CANDLES);
         for (IntervalRun run : RUNS) {
             AtomicInteger completed = new AtomicInteger();
             List<SymbolResult> symbolResults = universe.parallelStream()
@@ -126,7 +137,7 @@ class ExpandedElliottScoringValidationTest {
                         .thenComparing(signal -> signal.pattern().name()))
                 .toList();
         assertFalse(orderedSignals.isEmpty(), "The expanded Elliott run produced no signals.");
-        if ("ELLIOTT_V2".equals(scoreVersion)) {
+        if ("ELLIOTT_V2".equals(scoreVersion) && "factory".equals(DETECTION_VARIANT)) {
             assertV1DetectionParity(orderedSignals);
         }
 
@@ -248,9 +259,9 @@ class ExpandedElliottScoringValidationTest {
         StringBuilder report = new StringBuilder();
         report.append("# Expanded Elliott scoring validation\n\n");
         report.append(String.format(Locale.ROOT,
-                "Score model: `%s`; frozen symbols: %,d; adjusted daily source candles: %,d. "
+                "Score model: `%s`; detection variant: `%s`; frozen symbols: %,d; adjusted daily source candles: %,d. "
                         + "Detection uses completed candles and rolling 100-candle windows.\n\n",
-                scoreVersion, universe.size(), EXPECTED_DAILY_CANDLES));
+                scoreVersion, DETECTION_VARIANT, universe.size(), EXPECTED_DAILY_CANDLES));
         report.append("Precision is success / (success + failure), excluding inconclusive outcomes. ");
         report.append("Return, best move, and worst move are direction-adjusted: positive is favorable for both buys and sells.\n\n");
         report.append("| Interval | Aggregated candles | Evaluated windows | Alert-qualified signals |\n");

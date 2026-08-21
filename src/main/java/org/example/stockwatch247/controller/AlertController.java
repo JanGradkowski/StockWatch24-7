@@ -99,6 +99,49 @@ public class AlertController {
         }
     }
 
+    @DeleteMapping("/{symbol}")
+    public ResponseEntity<?> unfollowAllTechnicalRules(@PathVariable String symbol,
+                                                       Principal principal) {
+        try {
+            User user = currentUser(principal);
+            String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+            int unfollowedRules = alertRuleService.unfollowAllTechnicalRules(user, validatedSymbol);
+            return ResponseEntity.ok(Map.of(
+                    "symbol", validatedSymbol,
+                    "unfollowedRules", unfollowedRules
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid unfollow request."));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "The company could not be unfollowed."));
+        }
+    }
+
+    @DeleteMapping("/{symbol}/rules")
+    public ResponseEntity<?> unfollowSelectedTechnicalRules(@PathVariable String symbol,
+                                                            @RequestBody RuleSelectionRequest request,
+                                                            Principal principal) {
+        try {
+            if (request == null || request.ruleIds() == null) {
+                throw new IllegalArgumentException("Selected rules are required.");
+            }
+            User user = currentUser(principal);
+            String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+            int unfollowedRules = alertRuleService.unfollowSelectedTechnicalRules(
+                    user, validatedSymbol, request.ruleIds());
+            return ResponseEntity.ok(Map.of(
+                    "symbol", validatedSymbol,
+                    "unfollowedRules", unfollowedRules
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid rule selection."));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "The selected rules could not be deleted."));
+        }
+    }
+
     @PostMapping("/{symbol}/check")
     public ResponseEntity<?> checkLatestSignal(@PathVariable String symbol,
                                                @RequestBody AlertCheckRequest request,
@@ -147,6 +190,9 @@ public class AlertController {
     }
 
     public record AlertBatchRequest(List<AlertToggleRequest> changes) {
+    }
+
+    public record RuleSelectionRequest(List<Long> ruleIds) {
     }
 
     public record AlertCheckRequest(String interval, String signal, String patternFamily) {

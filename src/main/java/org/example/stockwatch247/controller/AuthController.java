@@ -1,5 +1,6 @@
 package org.example.stockwatch247.controller;
 import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AlertRuleService;
@@ -249,14 +250,22 @@ public class AuthController {
     }
 
     @GetMapping("/alerts/{alertRuleId}")
-    public String alertHistoryPage(@PathVariable Long alertRuleId, Model model, Principal principal) {
+    public String alertHistoryPage(@PathVariable Long alertRuleId,
+                                   @RequestParam(defaultValue = "date") String sort,
+                                   @RequestParam(defaultValue = "desc") String direction,
+                                   @RequestParam(defaultValue = "0") int page,
+                                   Model model,
+                                   Principal principal) {
         User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
         if (currentUser == null) {
             return "redirect:/login";
         }
         model.addAttribute("firstName", currentUser.getFirstName());
-        model.addAttribute("history", alertRuleService.getCompanySignalHistory(currentUser, alertRuleId));
-        return "alert-history";
+        AlertRuleService.CompanySignalArchive companyArchive = alertRuleService.getCompanySignalArchive(
+                currentUser, alertRuleId, sort, direction, page);
+        model.addAttribute("companyArchive", companyArchive);
+        model.addAttribute("archive", companyArchive.archive());
+        return "all-signals";
     }
 
     @GetMapping("/alerts/signals/{alertEventId}")
@@ -362,8 +371,8 @@ public class AuthController {
                 activity.transactionType(),
                 activity.transactionTypeLabel(),
                 activity.amountRange(),
-                null,
-                null,
+                activity.returnPercent(),
+                activity.returnAsOf(),
                 activity.transactionDate(),
                 activity.disclosureDate(),
                 activity.detectedAt(),

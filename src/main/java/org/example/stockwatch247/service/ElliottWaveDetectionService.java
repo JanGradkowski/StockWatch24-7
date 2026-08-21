@@ -53,22 +53,34 @@ public class ElliottWaveDetectionService {
     private static final double[] PIVOT_SENSITIVITIES = {0.75, 1.25, 2.0, 3.0};
     private final int presentSignalLookbackCandles;
     private final ScoringModel scoringModel;
+    private final DetectionRules detectionRules;
 
     public ElliottWaveDetectionService() {
-        this(DEFAULT_PRESENT_SIGNAL_LOOKBACK_CANDLES, ScoringModel.V1);
+        this(DEFAULT_PRESENT_SIGNAL_LOOKBACK_CANDLES, ScoringModel.V1, DetectionRules.factory());
     }
 
     ElliottWaveDetectionService(int presentSignalLookbackCandles) {
-        this(presentSignalLookbackCandles, ScoringModel.V1);
+        this(presentSignalLookbackCandles, ScoringModel.V1, DetectionRules.factory());
     }
 
     ElliottWaveDetectionService(int presentSignalLookbackCandles, ScoringModel scoringModel) {
+        this(presentSignalLookbackCandles, scoringModel, DetectionRules.factory());
+    }
+
+    private ElliottWaveDetectionService(int presentSignalLookbackCandles,
+                                        ScoringModel scoringModel,
+                                        DetectionRules detectionRules) {
         this.presentSignalLookbackCandles = Math.max(0, presentSignalLookbackCandles);
         this.scoringModel = scoringModel == null ? ScoringModel.V1 : scoringModel;
+        this.detectionRules = detectionRules == null ? DetectionRules.factory() : detectionRules;
+    }
+
+    public ElliottWaveDetectionService configured(DetectionRules rules) {
+        return new ElliottWaveDetectionService(presentSignalLookbackCandles, scoringModel, rules);
     }
 
     public List<DetectedSignal> detect(List<EnrichedCandle> recentCandles) {
-        if (recentCandles == null || recentCandles.size() < MIN_CANDLES) {
+        if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
 
@@ -76,7 +88,7 @@ public class ElliottWaveDetectionService {
                 .filter(this::hasCompleteData)
                 .sorted(Comparator.comparing(EnrichedCandle::timestamp))
                 .toList();
-        if (candles.size() < MIN_CANDLES) {
+        if (candles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
 
@@ -98,7 +110,7 @@ public class ElliottWaveDetectionService {
 
     public List<DetectedSignal> detectAlertSignals(List<EnrichedCandle> recentCandles) {
         return detect(recentCandles).stream()
-                .filter(signal -> signal.eligibilityScore() >= MIN_CONFIDENCE)
+                .filter(signal -> signal.eligibilityScore() >= detectionRules.minimumSignalConfidence())
                 .toList();
     }
 
@@ -115,14 +127,14 @@ public class ElliottWaveDetectionService {
     }
 
     public java.util.Optional<ElliottWaveStructure> findLatestWaveStructure(List<EnrichedCandle> recentCandles) {
-        if (recentCandles == null || recentCandles.size() < MIN_CANDLES) {
+        if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return java.util.Optional.empty();
         }
         List<EnrichedCandle> candles = recentCandles.stream()
                 .filter(this::hasCompleteData)
                 .sorted(Comparator.comparing(EnrichedCandle::timestamp))
                 .toList();
-        if (candles.size() < MIN_CANDLES) {
+        if (candles.size() < detectionRules.minimumCandles()) {
             return java.util.Optional.empty();
         }
         List<StructureCandidate> structures = new ArrayList<>();
@@ -134,7 +146,7 @@ public class ElliottWaveDetectionService {
             addProvisionalBearishStructure(candles, pivots, structures);
         }
         return structures.stream()
-                .filter(candidate -> candidate.structure().qualityScore() >= MIN_STRUCTURE_QUALITY)
+                .filter(candidate -> candidate.structure().qualityScore() >= detectionRules.minimumStructureQuality())
                 .max(Comparator.comparingInt(StructureCandidate::completionIndex)
                         .thenComparingInt(candidate -> candidate.structure().qualityScore())
                         .thenComparingLong(candidate -> structureSpan(candidate.structure())))
@@ -256,14 +268,14 @@ public class ElliottWaveDetectionService {
 
     private List<ElliottWaveStructure> collectHistoricalWaveStructures(
             List<EnrichedCandle> historicalCandles) {
-        if (historicalCandles == null || historicalCandles.size() < MIN_CANDLES) {
+        if (historicalCandles == null || historicalCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
         List<EnrichedCandle> candles = historicalCandles.stream()
                 .filter(this::hasCompleteData)
                 .sorted(Comparator.comparing(EnrichedCandle::timestamp))
                 .toList();
-        if (candles.size() < MIN_CANDLES) {
+        if (candles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
         Map<String, ElliottWaveStructure> structuresByCycle = new LinkedHashMap<>();
@@ -276,7 +288,7 @@ public class ElliottWaveDetectionService {
             addProvisionalBearishStructure(candles, pivots, candidates);
             candidates.stream()
                     .map(StructureCandidate::structure)
-                    .filter(structure -> structure.qualityScore() >= MIN_STRUCTURE_QUALITY)
+                    .filter(structure -> structure.qualityScore() >= detectionRules.minimumStructureQuality())
                     .forEach(structure -> mergeHistoricalStructure(structuresByCycle, structure));
         }
         return new ArrayList<>(structuresByCycle.values());
@@ -419,7 +431,7 @@ public class ElliottWaveDetectionService {
             return java.util.Optional.empty();
         }
         EnrichedCandle previous = candles.get(candles.size() - 2);
-        double breakoutLevel = wave3.price() * BREAKOUT_BUFFER;
+        double breakoutLevel = wave3.price() * (1.0 + detectionRules.breakoutBufferFraction());
         if (!isCurrentBullishBreakout(candles, wave4, breakoutLevel)) {
             return java.util.Optional.empty();
         }
@@ -459,7 +471,7 @@ public class ElliottWaveDetectionService {
             return java.util.Optional.empty();
         }
         EnrichedCandle previous = candles.get(candles.size() - 2);
-        double breakdownLevel = wave3.price() / BREAKOUT_BUFFER;
+        double breakdownLevel = wave3.price() / (1.0 + detectionRules.breakoutBufferFraction());
         if (!isCurrentBearishBreakdown(candles, wave4, breakdownLevel)) {
             return java.util.Optional.empty();
         }
@@ -706,7 +718,7 @@ public class ElliottWaveDetectionService {
 
     private boolean isTimelyConfirmation(Pivot endpoint, int confirmationIndex) {
         return confirmationIndex > endpoint.index()
-                && confirmationIndex - endpoint.index() <= MAX_CONFIRMATION_LAG_CANDLES;
+                && confirmationIndex - endpoint.index() <= detectionRules.maximumConfirmationLagCandles();
     }
 
     private boolean hasTimelyBullishRebound(List<EnrichedCandle> candles, Pivot endpoint) {
@@ -785,8 +797,8 @@ public class ElliottWaveDetectionService {
                                    double wave3Length,
                                    double wave2Retracement,
                                    double wave4Retracement) {
-        if (between(wave2Retracement, NORMAL_WAVE_TWO_MIN_RETRACEMENT,
-                NORMAL_WAVE_TWO_MAX_RETRACEMENT)) {
+        if (between(wave2Retracement, detectionRules.waveTwoPreferredMinRetracement(),
+                detectionRules.waveTwoPreferredMaxRetracement())) {
             evidence.add(5, "wave 2 retracement is within normal Elliott bounds");
         } else {
             int penalty = unusualWaveTwoPenalty(wave2Retracement);
@@ -799,31 +811,31 @@ public class ElliottWaveDetectionService {
                         + "; confidence reduced by " + penalty + " points");
             }
         }
-        if (between(wave2Retracement, COMMON_WAVE_TWO_MIN_RETRACEMENT,
-                COMMON_WAVE_TWO_MAX_RETRACEMENT)) {
+        if (between(wave2Retracement, detectionRules.waveTwoCommonMinRetracement(),
+                detectionRules.waveTwoCommonMaxRetracement())) {
             evidence.add(5, "wave 2 retracement is near the common Fibonacci zone");
         }
         if (wave3Length >= wave1Length) {
             evidence.add(10, "wave 3 is at least as large as wave 1");
         } else {
             double waveThreeRatio = safeRatio(wave3Length, wave1Length);
-            if (waveThreeRatio < PRELIMINARY_WAVE_THREE_MIN_RATIO) {
+            if (waveThreeRatio < detectionRules.preliminaryWaveThreeMinRatio()) {
                 int penalty = shortPreliminaryWaveThreePenalty(waveThreeRatio);
                 evidence.add(-penalty, "wave 3 is only " + formatPercentage(waveThreeRatio)
                         + " of wave 1; confidence reduced by " + penalty + " points");
             }
         }
-        if (between(wave4Retracement, NORMAL_WAVE_FOUR_MIN_RETRACEMENT,
-                NORMAL_WAVE_FOUR_MAX_RETRACEMENT)) {
+        if (between(wave4Retracement, detectionRules.waveFourPreferredMinRetracement(),
+                detectionRules.waveFourPreferredMaxRetracement())) {
             evidence.add(5, "wave 4 retracement is within normal Elliott bounds");
         } else {
             int penalty = unusualWaveFourPenalty(wave4Retracement);
-            String shape = wave4Retracement > NORMAL_WAVE_FOUR_MAX_RETRACEMENT ? "deep" : "shallow";
+            String shape = wave4Retracement > detectionRules.waveFourPreferredMaxRetracement() ? "deep" : "shallow";
             evidence.add(-penalty, "wave 4 retracement is unusually " + shape + " at "
                     + formatPercentage(wave4Retracement) + "; confidence reduced by " + penalty + " points");
         }
-        if (between(wave4Retracement, COMMON_WAVE_FOUR_MIN_RETRACEMENT,
-                COMMON_WAVE_FOUR_MAX_RETRACEMENT)) {
+        if (between(wave4Retracement, detectionRules.waveFourCommonMinRetracement(),
+                detectionRules.waveFourCommonMaxRetracement())) {
             evidence.add(5, "wave 4 retracement is near the common Fibonacci zone");
         }
     }
@@ -833,17 +845,17 @@ public class ElliottWaveDetectionService {
                                             CorrectionMetrics correction) {
         WaveEvidence evidence = new WaveEvidence(62, new ArrayList<>());
         double retracement = correction.retracement();
-        if (between(retracement, NORMAL_CORRECTION_MIN_RETRACEMENT,
-                NORMAL_CORRECTION_MAX_RETRACEMENT)) {
+        if (between(retracement, detectionRules.correctionPreferredMinRetracement(),
+                detectionRules.correctionPreferredMaxRetracement())) {
             evidence.add(8, "correction retracement is within normal Elliott bounds");
         } else {
             int penalty = unusualCorrectionRetracementPenalty(retracement);
-            String shape = retracement > NORMAL_CORRECTION_MAX_RETRACEMENT ? "deep" : "shallow";
+            String shape = retracement > detectionRules.correctionPreferredMaxRetracement() ? "deep" : "shallow";
             evidence.add(-penalty, "A-B-C correction is unusually " + shape + " at "
                     + formatPercentage(retracement) + "; confidence reduced by " + penalty + " points");
         }
-        if (between(retracement, COMMON_CORRECTION_MIN_RETRACEMENT,
-                COMMON_CORRECTION_MAX_RETRACEMENT)) {
+        if (between(retracement, detectionRules.correctionCommonMinRetracement(),
+                detectionRules.correctionCommonMaxRetracement())) {
             evidence.add(8, "correction retracement is near the common Fibonacci zone");
         }
         addWaveCToAWaveQuality(evidence, correction.waveCToARatio());
@@ -877,23 +889,24 @@ public class ElliottWaveDetectionService {
     }
 
     private void addWaveCToAWaveQuality(WaveEvidence evidence, double ratio) {
-        if (between(ratio, NORMAL_WAVE_C_TO_A_MIN_RATIO, NORMAL_WAVE_C_TO_A_MAX_RATIO)) {
+        if (between(ratio, detectionRules.waveCPreferredMinRatio(), detectionRules.waveCPreferredMaxRatio())) {
             evidence.add(5, "wave C length is proportionate to wave A");
         } else {
             int penalty = unusualWaveCToAPenalty(ratio);
             evidence.add(-penalty, "wave C is an atypical " + roundRatio(ratio) + " times wave A; "
                     + "confidence reduced by " + penalty + " points");
         }
-        if (between(ratio, COMMON_WAVE_C_TO_A_MIN_RATIO, COMMON_WAVE_C_TO_A_MAX_RATIO)) {
+        if (between(ratio, detectionRules.waveCCommonMinRatio(), detectionRules.waveCCommonMaxRatio())) {
             evidence.add(5, "wave C is near equality with wave A");
         }
     }
 
     private void addPreliminaryImpulseTimingQuality(WaveEvidence evidence, Pivot wave0, Pivot wave4) {
-        int expectedSpanBeforeWaveFive = MIN_IMPULSE_SPAN_CANDLES - MIN_LEG_SPAN_CANDLES;
+        int expectedSpanBeforeWaveFive = detectionRules.minimumImpulseSpanCandles()
+                - detectionRules.minimumLegSpanCandles();
         int observedSpan = wave4.index() - wave0.index();
         if (observedSpan < expectedSpanBeforeWaveFive) {
-            int penalty = shortImpulseSpanPenalty(observedSpan + MIN_LEG_SPAN_CANDLES);
+            int penalty = shortImpulseSpanPenalty(observedSpan + detectionRules.minimumLegSpanCandles());
             evidence.add(-penalty, "the developing impulse is compressed in time; confidence reduced by "
                     + penalty + " points");
         }
@@ -905,7 +918,8 @@ public class ElliottWaveDetectionService {
                                             Pivot wave5) {
         int penalty = shortImpulseSpanPenalty(wave5.index() - wave0.index());
         if (penalty > 0) {
-            evidence.add(-penalty, "the five-wave impulse spans fewer than " + MIN_IMPULSE_SPAN_CANDLES
+            evidence.add(-penalty, "the five-wave impulse spans fewer than "
+                    + detectionRules.minimumImpulseSpanCandles()
                     + " candles; confidence reduced by " + penalty + " points");
         }
         if (isTruncatedWaveFive(wave3, wave5)) {
@@ -934,14 +948,14 @@ public class ElliottWaveDetectionService {
                     + waveTwoPenalty + " points");
         }
         double waveThreeRatio = safeRatio(wave3Length, wave1Length);
-        if (waveThreeRatio < PRELIMINARY_WAVE_THREE_MIN_RATIO) {
+        if (waveThreeRatio < detectionRules.preliminaryWaveThreeMinRatio()) {
             int penalty = shortPreliminaryWaveThreePenalty(waveThreeRatio);
             evidence.add(-penalty, "wave 3 is only " + formatPercentage(waveThreeRatio)
                     + " of wave 1; confidence reduced by " + penalty + " points");
         }
         int waveFourPenalty = unusualWaveFourPenalty(wave4Retracement);
         if (waveFourPenalty > 0) {
-            String shape = wave4Retracement > NORMAL_WAVE_FOUR_MAX_RETRACEMENT ? "deep" : "shallow";
+            String shape = wave4Retracement > detectionRules.waveFourPreferredMaxRetracement() ? "deep" : "shallow";
             evidence.add(-waveFourPenalty, "wave 4 is unusually " + shape + " at "
                     + formatPercentage(wave4Retracement) + "; confidence reduced by "
                     + waveFourPenalty + " points");
@@ -989,7 +1003,7 @@ public class ElliottWaveDetectionService {
                 && wave2.price() > wave0.price()
                 && wave3.price() > wave1.price()
                 && wave4.price() > wave2.price()
-                && wave4.price() > wave1.price()
+                && (!detectionRules.requireWaveFourNoOverlap() || wave4.price() > wave1.price())
                 && wave1Length > 0.0
                 && isValidWaveTwoRetracement(wave2Retracement)
                 && isValidWaveFourRetracement(wave4Retracement)
@@ -1006,7 +1020,7 @@ public class ElliottWaveDetectionService {
                 && wave2.price() < wave0.price()
                 && wave3.price() < wave1.price()
                 && wave4.price() < wave2.price()
-                && wave4.price() < wave1.price()
+                && (!detectionRules.requireWaveFourNoOverlap() || wave4.price() < wave1.price())
                 && wave1Length > 0.0
                 && isValidWaveTwoRetracement(wave2Retracement)
                 && isValidWaveFourRetracement(wave4Retracement)
@@ -1014,11 +1028,11 @@ public class ElliottWaveDetectionService {
     }
 
     private boolean isValidWaveTwoRetracement(double retracement) {
-        return retracement > 0.0 && retracement < MAX_WAVE_TWO_RETRACEMENT;
+        return retracement > 0.0 && retracement < detectionRules.waveTwoMaximumRetracement();
     }
 
     private boolean isValidWaveFourRetracement(double retracement) {
-        return retracement > 0.0 && retracement < MAX_WAVE_FOUR_RETRACEMENT;
+        return retracement > 0.0 && retracement < detectionRules.waveFourMaximumRetracement();
     }
 
     private boolean isBullishImpulseComplete(Pivot wave0,
@@ -1032,8 +1046,9 @@ public class ElliottWaveDetectionService {
         double wave5Length = wave5.price() - wave4.price();
         return isBullishImpulseBase(wave0, wave1, wave2, wave3, wave4)
                 && wave5.price() > wave4.price()
-                && wave3Length >= Math.min(wave1Length, wave5Length)
-                && wave5.index() - wave4.index() >= MIN_LEG_SPAN_CANDLES;
+                && actionaryWaveLengthsAllowed(wave1Length, wave3Length, wave5Length)
+                && (detectionRules.allowTruncatedFifth() || wave5.price() > wave3.price())
+                && wave5.index() - wave4.index() >= detectionRules.minimumLegSpanCandles();
     }
 
     private boolean isBearishImpulseComplete(Pivot wave0,
@@ -1047,15 +1062,29 @@ public class ElliottWaveDetectionService {
         double wave5Length = wave4.price() - wave5.price();
         return isBearishImpulseBase(wave0, wave1, wave2, wave3, wave4)
                 && wave5.price() < wave4.price()
-                && wave3Length >= Math.min(wave1Length, wave5Length)
-                && wave5.index() - wave4.index() >= MIN_LEG_SPAN_CANDLES;
+                && actionaryWaveLengthsAllowed(wave1Length, wave3Length, wave5Length)
+                && (detectionRules.allowTruncatedFifth() || wave5.price() < wave3.price())
+                && wave5.index() - wave4.index() >= detectionRules.minimumLegSpanCandles();
     }
 
     private boolean hasValidImpulseTiming(Pivot wave0, Pivot wave1, Pivot wave2, Pivot wave3, Pivot wave4) {
-        return wave1.index() - wave0.index() >= MIN_LEG_SPAN_CANDLES
-                && wave2.index() - wave1.index() >= MIN_LEG_SPAN_CANDLES
-                && wave3.index() - wave2.index() >= MIN_LEG_SPAN_CANDLES
-                && wave4.index() - wave3.index() >= MIN_LEG_SPAN_CANDLES;
+        return wave1.index() - wave0.index() >= detectionRules.minimumLegSpanCandles()
+                && wave2.index() - wave1.index() >= detectionRules.minimumLegSpanCandles()
+                && wave3.index() - wave2.index() >= detectionRules.minimumLegSpanCandles()
+                && wave4.index() - wave3.index() >= detectionRules.minimumLegSpanCandles();
+    }
+
+    private boolean actionaryWaveLengthsAllowed(double wave1Length,
+                                                 double wave3Length,
+                                                 double wave5Length) {
+        if (detectionRules.requireWaveThreeNotShortest()
+                && wave3Length < Math.min(wave1Length, wave5Length)) return false;
+        if (!detectionRules.allowWaveOneLongest()
+                && wave1Length > Math.max(wave3Length, wave5Length)) return false;
+        if (detectionRules.requireWaveOneShortest()
+                && wave1Length > Math.min(wave3Length, wave5Length)) return false;
+        return detectionRules.allowWaveFiveLongest()
+                || wave5Length <= Math.max(wave1Length, wave3Length);
     }
 
     private boolean isBullishCorrectionComplete(List<Pivot> sequence) {
@@ -1076,16 +1105,18 @@ public class ElliottWaveDetectionService {
         CorrectionMetrics correction = correctionMetrics(sequence, "BULLISH");
         return isBullishImpulseComplete(wave0, wave1, wave2, wave3, wave4, wave5)
                 && waveA.price() < wave5.price()
-                && waveA.price() > wave0.price()
+                && (!detectionRules.requireWaveAWithinOrigin() || waveA.price() > wave0.price())
                 && waveB.price() > waveA.price()
                 && waveC.price() < waveB.price()
-                && waveBRecovery <= MAX_WAVE_B_RELATIVE_RECOVERY
+                && waveBRecovery <= detectionRules.waveBMaximumRecovery()
                 && correction.retracement() > 0.0
-                && correction.retracement() < MAX_CONTINUATION_CORRECTION_RETRACEMENT
+                && correction.retracement() < detectionRules.correctionMaximumRetracement()
                 && correction.waveCToARatio() > 0.0
-                && waveA.index() - wave5.index() >= MIN_LEG_SPAN_CANDLES
-                && waveB.index() - waveA.index() >= MIN_LEG_SPAN_CANDLES
-                && waveC.index() - waveB.index() >= MIN_LEG_SPAN_CANDLES;
+                && waveCToARatioAllowed(correction.waveCToARatio())
+                && correctionVariantAllowed(correction.variant())
+                && waveA.index() - wave5.index() >= detectionRules.minimumLegSpanCandles()
+                && waveB.index() - waveA.index() >= detectionRules.minimumLegSpanCandles()
+                && waveC.index() - waveB.index() >= detectionRules.minimumLegSpanCandles();
     }
 
     private boolean isBearishCorrectionComplete(List<Pivot> sequence) {
@@ -1106,16 +1137,32 @@ public class ElliottWaveDetectionService {
         CorrectionMetrics correction = correctionMetrics(sequence, "BEARISH");
         return isBearishImpulseComplete(wave0, wave1, wave2, wave3, wave4, wave5)
                 && waveA.price() > wave5.price()
-                && waveA.price() < wave0.price()
+                && (!detectionRules.requireWaveAWithinOrigin() || waveA.price() < wave0.price())
                 && waveB.price() < waveA.price()
                 && waveC.price() > waveB.price()
-                && waveBRecovery <= MAX_WAVE_B_RELATIVE_RECOVERY
+                && waveBRecovery <= detectionRules.waveBMaximumRecovery()
                 && correction.retracement() > 0.0
-                && correction.retracement() < MAX_CONTINUATION_CORRECTION_RETRACEMENT
+                && correction.retracement() < detectionRules.correctionMaximumRetracement()
                 && correction.waveCToARatio() > 0.0
-                && waveA.index() - wave5.index() >= MIN_LEG_SPAN_CANDLES
-                && waveB.index() - waveA.index() >= MIN_LEG_SPAN_CANDLES
-                && waveC.index() - waveB.index() >= MIN_LEG_SPAN_CANDLES;
+                && waveCToARatioAllowed(correction.waveCToARatio())
+                && correctionVariantAllowed(correction.variant())
+                && waveA.index() - wave5.index() >= detectionRules.minimumLegSpanCandles()
+                && waveB.index() - waveA.index() >= detectionRules.minimumLegSpanCandles()
+                && waveC.index() - waveB.index() >= detectionRules.minimumLegSpanCandles();
+    }
+
+    private boolean waveCToARatioAllowed(double ratio) {
+        return !detectionRules.limitWaveCToARatio()
+                || between(ratio, detectionRules.waveCAllowedMinRatio(), detectionRules.waveCAllowedMaxRatio());
+    }
+
+    private boolean correctionVariantAllowed(CorrectionVariant variant) {
+        return switch (variant) {
+            case STANDARD -> detectionRules.allowStandardCorrection();
+            case EXPANDED_FLAT -> detectionRules.allowExpandedFlat();
+            case RUNNING_FLAT -> detectionRules.allowRunningFlat();
+            case NONE -> true;
+        };
     }
 
     private CorrectionMetrics correctionMetrics(List<Pivot> sequence, String direction) {
@@ -1297,7 +1344,8 @@ public class ElliottWaveDetectionService {
         List<ElliottWaveStructure> selected = new ArrayList<>();
         for (ElliottWaveStructure candidate : ranked) {
             boolean materiallyOverlaps = selected.stream()
-                    .anyMatch(existing -> overlapRatio(candidate, existing) > 0.40);
+                    .anyMatch(existing -> overlapRatio(candidate, existing)
+                            > detectionRules.maximumStructureOverlapFraction());
             if (!materiallyOverlaps) {
                 selected.add(candidate);
             }
@@ -1343,8 +1391,8 @@ public class ElliottWaveDetectionService {
 
         int score = 55;
         score += (int) Math.round(Math.min(12.0, safeRatio(totalMove, Math.max(atr, 0.000001))));
-        if (impulseSpan >= MIN_IMPULSE_SPAN_CANDLES) {
-            score += Math.min(8, (impulseSpan - MIN_IMPULSE_SPAN_CANDLES) / 5);
+        if (impulseSpan >= detectionRules.minimumImpulseSpanCandles()) {
+            score += Math.min(8, (impulseSpan - detectionRules.minimumImpulseSpanCandles()) / 5);
         } else {
             score -= shortImpulseSpanPenalty(impulseSpan);
         }
@@ -1352,13 +1400,13 @@ public class ElliottWaveDetectionService {
             score += 7;
         }
         score -= shortPreliminaryWaveThreePenalty(safeRatio(wave3Length, wave1Length));
-        if (between(wave2Retracement, COMMON_WAVE_TWO_MIN_RETRACEMENT,
-                COMMON_WAVE_TWO_MAX_RETRACEMENT)) {
+        if (between(wave2Retracement, detectionRules.waveTwoCommonMinRetracement(),
+                detectionRules.waveTwoCommonMaxRetracement())) {
             score += 5;
         }
         score -= unusualWaveTwoPenalty(wave2Retracement);
-        if (between(wave4Retracement, COMMON_WAVE_FOUR_MIN_RETRACEMENT,
-                COMMON_WAVE_FOUR_MAX_RETRACEMENT)) {
+        if (between(wave4Retracement, detectionRules.waveFourCommonMinRetracement(),
+                detectionRules.waveFourCommonMaxRetracement())) {
             score += 5;
         }
         score -= unusualWaveFourPenalty(wave4Retracement);
@@ -1398,17 +1446,17 @@ public class ElliottWaveDetectionService {
         if (correctionComplete) {
             CorrectionMetrics correction = correctionMetrics(sequence, direction);
             score += 4;
-            if (between(correction.retracement(), NORMAL_CORRECTION_MIN_RETRACEMENT,
-                    NORMAL_CORRECTION_MAX_RETRACEMENT)) {
+            if (between(correction.retracement(), detectionRules.correctionPreferredMinRetracement(),
+                    detectionRules.correctionPreferredMaxRetracement())) {
                 score += 4;
             } else {
                 score -= unusualCorrectionRetracementPenalty(correction.retracement());
             }
-            if (between(correction.waveCToARatio(), COMMON_WAVE_C_TO_A_MIN_RATIO,
-                    COMMON_WAVE_C_TO_A_MAX_RATIO)) {
+            if (between(correction.waveCToARatio(), detectionRules.waveCCommonMinRatio(),
+                    detectionRules.waveCCommonMaxRatio())) {
                 score += 5;
-            } else if (!between(correction.waveCToARatio(), NORMAL_WAVE_C_TO_A_MIN_RATIO,
-                    NORMAL_WAVE_C_TO_A_MAX_RATIO)) {
+            } else if (!between(correction.waveCToARatio(), detectionRules.waveCPreferredMinRatio(),
+                    detectionRules.waveCPreferredMaxRatio())) {
                 score -= unusualWaveCToAPenalty(correction.waveCToARatio());
             }
             if (correction.variant() == CorrectionVariant.EXPANDED_FLAT) {
@@ -1472,16 +1520,16 @@ public class ElliottWaveDetectionService {
             warnings.add((isDeepWaveTwo(waveTwoRetracement) ? "Deep" : "Shallow")
                     + " Wave II " + formatPercentage(waveTwoRetracement) + " — reduced confidence");
         }
-        if (waveThreeToOneRatio < PRELIMINARY_WAVE_THREE_MIN_RATIO) {
+        if (waveThreeToOneRatio < detectionRules.preliminaryWaveThreeMinRatio()) {
             warnings.add("Wave III is " + formatPercentage(waveThreeToOneRatio)
                     + " of Wave I — reduced confidence");
         }
         if (unusualWaveFourPenalty(waveFourRetracement) > 0) {
-            warnings.add((waveFourRetracement > NORMAL_WAVE_FOUR_MAX_RETRACEMENT ? "Deep" : "Shallow")
+            warnings.add((waveFourRetracement > detectionRules.waveFourPreferredMaxRetracement() ? "Deep" : "Shallow")
                     + " Wave IV " + formatPercentage(waveFourRetracement) + " — reduced confidence");
         }
         int impulseSpan = pivots.get(5).index() - pivots.get(0).index();
-        if (impulseSpan < MIN_IMPULSE_SPAN_CANDLES) {
+        if (impulseSpan < detectionRules.minimumImpulseSpanCandles()) {
             warnings.add("Compressed " + impulseSpan + "-candle impulse — reduced confidence");
         }
         if (isTruncatedWaveFive(pivots.get(3), pivots.get(5))) {
@@ -1508,70 +1556,77 @@ public class ElliottWaveDetectionService {
     private int unusualWaveTwoPenalty(double retracement) {
         if (isDeepWaveTwo(retracement)) {
             double depthWithinDeepZone = safeRatio(
-                    retracement - NORMAL_WAVE_TWO_MAX_RETRACEMENT,
-                    MAX_WAVE_TWO_RETRACEMENT - NORMAL_WAVE_TWO_MAX_RETRACEMENT);
+                    retracement - detectionRules.waveTwoPreferredMaxRetracement(),
+                    detectionRules.waveTwoMaximumRetracement()
+                            - detectionRules.waveTwoPreferredMaxRetracement());
             return 8 + (int) Math.round(Math.min(1.0, depthWithinDeepZone) * 12.0);
         }
-        return retracement < NORMAL_WAVE_TWO_MIN_RETRACEMENT ? 6 : 0;
+        return retracement < detectionRules.waveTwoPreferredMinRetracement() ? 6 : 0;
     }
 
     private boolean isDeepWaveTwo(double retracement) {
-        return retracement > NORMAL_WAVE_TWO_MAX_RETRACEMENT
-                && retracement < MAX_WAVE_TWO_RETRACEMENT;
+        return retracement > detectionRules.waveTwoPreferredMaxRetracement()
+                && retracement < detectionRules.waveTwoMaximumRetracement();
     }
 
     private int shortPreliminaryWaveThreePenalty(double waveThreeToOneRatio) {
-        if (waveThreeToOneRatio >= PRELIMINARY_WAVE_THREE_MIN_RATIO) {
+        if (waveThreeToOneRatio >= detectionRules.preliminaryWaveThreeMinRatio()) {
             return 0;
         }
         double shortfall = safeRatio(
-                PRELIMINARY_WAVE_THREE_MIN_RATIO - Math.max(0.0, waveThreeToOneRatio),
-                PRELIMINARY_WAVE_THREE_MIN_RATIO);
+                detectionRules.preliminaryWaveThreeMinRatio() - Math.max(0.0, waveThreeToOneRatio),
+                detectionRules.preliminaryWaveThreeMinRatio());
         return 6 + (int) Math.round(Math.min(1.0, shortfall) * 8.0);
     }
 
     private int unusualWaveFourPenalty(double retracement) {
-        if (retracement < NORMAL_WAVE_FOUR_MIN_RETRACEMENT) {
-            double shortfall = safeRatio(NORMAL_WAVE_FOUR_MIN_RETRACEMENT - Math.max(0.0, retracement),
-                    NORMAL_WAVE_FOUR_MIN_RETRACEMENT);
+        if (retracement < detectionRules.waveFourPreferredMinRetracement()) {
+            double shortfall = safeRatio(detectionRules.waveFourPreferredMinRetracement()
+                            - Math.max(0.0, retracement),
+                    detectionRules.waveFourPreferredMinRetracement());
             return 6 + (int) Math.round(Math.min(1.0, shortfall) * 4.0);
         }
-        if (retracement > NORMAL_WAVE_FOUR_MAX_RETRACEMENT) {
-            double depth = safeRatio(retracement - NORMAL_WAVE_FOUR_MAX_RETRACEMENT,
-                    MAX_WAVE_FOUR_RETRACEMENT - NORMAL_WAVE_FOUR_MAX_RETRACEMENT);
+        if (retracement > detectionRules.waveFourPreferredMaxRetracement()) {
+            double depth = safeRatio(retracement - detectionRules.waveFourPreferredMaxRetracement(),
+                    detectionRules.waveFourMaximumRetracement()
+                            - detectionRules.waveFourPreferredMaxRetracement());
             return 8 + (int) Math.round(Math.min(1.0, depth) * 8.0);
         }
         return 0;
     }
 
     private int shortImpulseSpanPenalty(int impulseSpan) {
-        return impulseSpan >= MIN_IMPULSE_SPAN_CANDLES
+        return impulseSpan >= detectionRules.minimumImpulseSpanCandles()
                 ? 0
-                : Math.min(10, Math.max(1, (MIN_IMPULSE_SPAN_CANDLES - impulseSpan) * 2));
+                : Math.min(10, Math.max(1,
+                (detectionRules.minimumImpulseSpanCandles() - impulseSpan) * 2));
     }
 
     private int unusualCorrectionRetracementPenalty(double retracement) {
-        if (retracement < NORMAL_CORRECTION_MIN_RETRACEMENT) {
-            double shortfall = safeRatio(NORMAL_CORRECTION_MIN_RETRACEMENT - Math.max(0.0, retracement),
-                    NORMAL_CORRECTION_MIN_RETRACEMENT);
+        if (retracement < detectionRules.correctionPreferredMinRetracement()) {
+            double shortfall = safeRatio(detectionRules.correctionPreferredMinRetracement()
+                            - Math.max(0.0, retracement),
+                    detectionRules.correctionPreferredMinRetracement());
             return 6 + (int) Math.round(Math.min(1.0, shortfall) * 4.0);
         }
-        if (retracement > NORMAL_CORRECTION_MAX_RETRACEMENT) {
-            double depth = safeRatio(retracement - NORMAL_CORRECTION_MAX_RETRACEMENT,
-                    MAX_CONTINUATION_CORRECTION_RETRACEMENT - NORMAL_CORRECTION_MAX_RETRACEMENT);
+        if (retracement > detectionRules.correctionPreferredMaxRetracement()) {
+            double depth = safeRatio(retracement - detectionRules.correctionPreferredMaxRetracement(),
+                    detectionRules.correctionMaximumRetracement()
+                            - detectionRules.correctionPreferredMaxRetracement());
             return 8 + (int) Math.round(Math.min(1.0, depth) * 10.0);
         }
         return 0;
     }
 
     private int unusualWaveCToAPenalty(double ratio) {
-        if (ratio < NORMAL_WAVE_C_TO_A_MIN_RATIO) {
-            double shortfall = safeRatio(NORMAL_WAVE_C_TO_A_MIN_RATIO - Math.max(0.0, ratio),
-                    NORMAL_WAVE_C_TO_A_MIN_RATIO);
+        if (ratio < detectionRules.waveCPreferredMinRatio()) {
+            double shortfall = safeRatio(detectionRules.waveCPreferredMinRatio() - Math.max(0.0, ratio),
+                    detectionRules.waveCPreferredMinRatio());
             return 6 + (int) Math.round(Math.min(1.0, shortfall) * 4.0);
         }
-        if (ratio > NORMAL_WAVE_C_TO_A_MAX_RATIO) {
-            return 8 + Math.min(8, (int) Math.round((ratio - NORMAL_WAVE_C_TO_A_MAX_RATIO) * 4.0));
+        if (ratio > detectionRules.waveCPreferredMaxRatio()) {
+            return 8 + Math.min(8,
+                    (int) Math.round((ratio - detectionRules.waveCPreferredMaxRatio()) * 4.0));
         }
         return 0;
     }
@@ -1616,12 +1671,12 @@ public class ElliottWaveDetectionService {
         }
 
         String normalizedLabel = parentLabel.trim().toUpperCase(java.util.Locale.ROOT);
-        boolean motiveExpected = java.util.Set.of("I", "III", "V", "1", "3", "5")
+        boolean motiveExpected = java.util.Set.of("I", "III", "V", "1", "3", "5", "A", "C")
                 .contains(normalizedLabel);
         boolean correctionExpected = java.util.Set.of("II", "IV", "2", "4", "B", "D", "E")
                 .contains(normalizedLabel);
         List<SubdivisionCandidate> candidates = new ArrayList<>();
-        for (double sensitivity : PIVOT_SENSITIVITIES) {
+        for (double sensitivity : detectionRules.pivotSensitivities()) {
             List<Pivot> pivots = findPivots(candles, sensitivity);
             if (!correctionExpected) {
                 collectMotiveSubdivisionCandidates(
@@ -1630,7 +1685,8 @@ public class ElliottWaveDetectionService {
             if (!motiveExpected) {
                 collectCorrectionSubdivisionCandidates(
                         candles, pivots, parentStartPrice, parentEndPrice, candidates);
-                if (java.util.Set.of("IV", "4", "B").contains(normalizedLabel)) {
+                if (detectionRules.allowTriangles()
+                        && java.util.Set.of("IV", "4", "B").contains(normalizedLabel)) {
                     collectTriangleSubdivisionCandidates(
                             candles, pivots, parentStartPrice, parentEndPrice, candidates);
                 }
@@ -1670,6 +1726,62 @@ public class ElliottWaveDetectionService {
                 subdivisionPoints(candles, best),
                 best.evidence(),
                 alternatives));
+    }
+
+    /**
+     * Returns only structurally valid lower-timeframe counts for top-down fractal mapping.
+     * Unlike the interactive legacy drill-down, this method never manufactures a provisional
+     * best-fit count: callers can reject the parent and try another pivot candidate instead.
+     */
+    public List<ElliottSubdivision> findStrictSubdivisions(
+            List<EnrichedCandle> parentCandles,
+            String parentLabel,
+            double parentStartPrice,
+            double parentEndPrice) {
+        if (parentCandles == null || parentLabel == null
+                || !Double.isFinite(parentStartPrice) || !Double.isFinite(parentEndPrice)
+                || Double.compare(parentStartPrice, parentEndPrice) == 0) {
+            return List.of();
+        }
+        List<EnrichedCandle> candles = parentCandles.stream()
+                .filter(this::hasCompleteData)
+                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
+                .toList();
+        String label = parentLabel.trim().toUpperCase(java.util.Locale.ROOT);
+        boolean motive = java.util.Set.of("I", "III", "V", "1", "3", "5", "A", "C")
+                .contains(label);
+        boolean corrective = java.util.Set.of("II", "IV", "2", "4", "B").contains(label);
+        int minimumCandles = motive ? 6 : 4;
+        if ((!motive && !corrective) || candles.size() < minimumCandles) return List.of();
+
+        List<SubdivisionCandidate> candidates = new ArrayList<>();
+        for (double sensitivity : detectionRules.pivotSensitivities()) {
+            List<Pivot> pivots = findPivots(candles, sensitivity);
+            if (motive) {
+                collectStrictMotiveSubdivisionCandidates(
+                        candles, pivots, parentStartPrice, parentEndPrice, candidates);
+            } else {
+                collectCorrectionSubdivisionCandidates(
+                        candles, pivots, parentStartPrice, parentEndPrice, candidates);
+            }
+        }
+        Map<String, SubdivisionCandidate> distinct = new LinkedHashMap<>();
+        candidates.stream()
+                .filter(candidate -> candidate.confidence() >= 60)
+                .sorted(Comparator.comparingInt(SubdivisionCandidate::confidence).reversed()
+                        .thenComparing(Comparator.comparingInt(
+                                (SubdivisionCandidate candidate) -> candidate.pivots().getLast().index()
+                                        - candidate.pivots().getFirst().index()).reversed()))
+                .forEach(candidate -> distinct.putIfAbsent(subdivisionKey(candidate), candidate));
+        return distinct.values().stream().limit(24)
+                .map(candidate -> new ElliottSubdivision(
+                        candidate.kind().displayName,
+                        candidate.confidence(),
+                        true,
+                        subdivisionPoints(candles, candidate),
+                        candidate.evidence(),
+                        List.of()))
+                .toList();
     }
 
     private java.util.Optional<ElliottSubdivision> bestEffortSubdivision(
@@ -1820,8 +1932,9 @@ public class ElliottWaveDetectionService {
         PivotType[] interiorTypes = rising
                 ? new PivotType[]{PivotType.HIGH, PivotType.LOW, PivotType.HIGH, PivotType.LOW}
                 : new PivotType[]{PivotType.LOW, PivotType.HIGH, PivotType.LOW, PivotType.HIGH};
-        Pivot start = new Pivot(0, startType, startPrice);
-        Pivot end = new Pivot(candles.size() - 1, opposite(startType), endPrice);
+        Pivot start = closestBoundaryPivot(candles, startPrice, startType, true);
+        Pivot end = closestBoundaryPivot(candles, endPrice, opposite(startType), false);
+        if (start == null || end == null || start.index() >= end.index()) return;
         for (int index = 0; index + 3 < detected.size(); index++) {
             List<Pivot> interior = detected.subList(index, index + 4);
             if (!matchesTypes(interior, interiorTypes)
@@ -1855,6 +1968,67 @@ public class ElliottWaveDetectionService {
         }
     }
 
+    private void collectStrictMotiveSubdivisionCandidates(List<EnrichedCandle> candles,
+                                                            List<Pivot> detected,
+                                                            double startPrice,
+                                                            double endPrice,
+                                                            List<SubdivisionCandidate> candidates) {
+        boolean rising = endPrice > startPrice;
+        PivotType startType = rising ? PivotType.LOW : PivotType.HIGH;
+        PivotType[] interiorTypes = rising
+                ? new PivotType[]{PivotType.HIGH, PivotType.LOW, PivotType.HIGH, PivotType.LOW}
+                : new PivotType[]{PivotType.LOW, PivotType.HIGH, PivotType.LOW, PivotType.HIGH};
+        Pivot start = closestBoundaryPivot(candles, startPrice, startType, true);
+        Pivot end = closestBoundaryPivot(candles, endPrice, opposite(startType), false);
+        if (start == null || end == null || start.index() >= end.index()) return;
+        for (int index = 0; index + 3 < detected.size(); index++) {
+            List<Pivot> interior = detected.subList(index, index + 4);
+            if (!matchesTypes(interior, interiorTypes)
+                    || interior.getFirst().index() <= start.index()
+                    || interior.getLast().index() >= end.index()) continue;
+            List<Pivot> sequence = List.of(start, interior.get(0), interior.get(1),
+                    interior.get(2), interior.get(3), end);
+            if (!passesFractalMotiveHardRules(sequence, rising)) continue;
+            candidates.add(new SubdivisionCandidate(
+                    SubdivisionKind.MOTIVE,
+                    motiveSubdivisionConfidence(sequence, rising, false),
+                    sequence,
+                    List.of(
+                            "Exactly five chronological child waves fit inside the parent boundary.",
+                            "Wave 2 does not retrace beyond the origin of Wave 1.",
+                            "Wave 3 is not the shortest of Waves 1, 3, and 5.",
+                            "Wave 4 stays outside Wave 1 price territory.")));
+        }
+    }
+
+    private boolean passesFractalMotiveHardRules(List<Pivot> sequence, boolean rising) {
+        Pivot w0 = sequence.get(0);
+        Pivot w1 = sequence.get(1);
+        Pivot w2 = sequence.get(2);
+        Pivot w3 = sequence.get(3);
+        Pivot w4 = sequence.get(4);
+        Pivot w5 = sequence.get(5);
+        double one = Math.abs(w1.price() - w0.price());
+        double three = Math.abs(w3.price() - w2.price());
+        double five = Math.abs(w5.price() - w4.price());
+        boolean directional = rising
+                ? w1.price() > w0.price()
+                && w2.price() > w0.price()
+                && w3.price() > w1.price()
+                && w4.price() > w1.price()
+                && w5.price() > w4.price()
+                : w1.price() < w0.price()
+                && w2.price() < w0.price()
+                && w3.price() < w1.price()
+                && w4.price() < w1.price()
+                && w5.price() < w4.price();
+        return directional
+                && one > 0.0 && three > 0.0 && five > 0.0
+                && three >= Math.min(one, five)
+                && hasValidImpulseTiming(w0, w1, w2, w3, w4)
+                && w5.index() - w4.index() >= detectionRules.minimumLegSpanCandles();
+    }
+
     private void collectCorrectionSubdivisionCandidates(List<EnrichedCandle> candles,
                                                          List<Pivot> detected,
                                                          double startPrice,
@@ -1865,14 +2039,16 @@ public class ElliottWaveDetectionService {
         PivotType[] interiorTypes = rising
                 ? new PivotType[]{PivotType.HIGH, PivotType.LOW}
                 : new PivotType[]{PivotType.LOW, PivotType.HIGH};
-        Pivot start = new Pivot(0, startType, startPrice);
-        Pivot end = new Pivot(candles.size() - 1, opposite(startType), endPrice);
+        Pivot start = closestBoundaryPivot(candles, startPrice, startType, true);
+        Pivot end = closestBoundaryPivot(candles, endPrice, opposite(startType), false);
+        if (start == null || end == null || start.index() >= end.index()) return;
         for (int index = 0; index + 1 < detected.size(); index++) {
             List<Pivot> interior = detected.subList(index, index + 2);
             if (!matchesTypes(interior, interiorTypes)
                     || interior.getFirst().index() <= start.index()
                     || interior.getLast().index() >= end.index()
-                    || interior.getLast().index() - interior.getFirst().index() < MIN_LEG_SPAN_CANDLES) {
+                    || interior.getLast().index() - interior.getFirst().index()
+                    < detectionRules.minimumLegSpanCandles()) {
                 continue;
             }
             List<Pivot> sequence = List.of(start, interior.get(0), interior.get(1), end);
@@ -1885,17 +2061,18 @@ public class ElliottWaveDetectionService {
                     ? sequence.get(3).price() > sequence.get(0).price()
                     : sequence.get(3).price() < sequence.get(0).price();
             if (!progresses || waveA <= 0.0 || waveC <= 0.0
-                    || bRetracement < 0.10 || bRetracement > MAX_WAVE_B_RELATIVE_RECOVERY
+                    || bRetracement < 0.10 || bRetracement > detectionRules.waveBMaximumRecovery()
                     || cToA < 0.25 || cToA > 3.0) {
                 continue;
             }
             int confidence = 62;
             if (between(bRetracement, 0.382, 0.786)) confidence += 8;
             else if (between(bRetracement, 0.236, 1.0)) confidence += 4;
-            if (between(cToA, COMMON_WAVE_C_TO_A_MIN_RATIO, COMMON_WAVE_C_TO_A_MAX_RATIO)) confidence += 10;
-            else if (between(cToA, NORMAL_WAVE_C_TO_A_MIN_RATIO, NORMAL_WAVE_C_TO_A_MAX_RATIO)) confidence += 5;
-            if (sequence.get(1).index() - sequence.get(0).index() >= MIN_LEG_SPAN_CANDLES
-                    && sequence.get(3).index() - sequence.get(2).index() >= MIN_LEG_SPAN_CANDLES) {
+            if (!waveCToARatioAllowed(cToA)) continue;
+            if (between(cToA, detectionRules.waveCCommonMinRatio(), detectionRules.waveCCommonMaxRatio())) confidence += 10;
+            else if (between(cToA, detectionRules.waveCPreferredMinRatio(), detectionRules.waveCPreferredMaxRatio())) confidence += 5;
+            if (sequence.get(1).index() - sequence.get(0).index() >= detectionRules.minimumLegSpanCandles()
+                    && sequence.get(3).index() - sequence.get(2).index() >= detectionRules.minimumLegSpanCandles()) {
                 confidence += 5;
             }
             candidates.add(new SubdivisionCandidate(
@@ -1908,6 +2085,33 @@ public class ElliottWaveDetectionService {
                             "Wave C is " + roundRatio(cToA) + "x the length of Wave A.",
                             "Every child pivot occurs inside the selected parent-wave boundary.")));
         }
+    }
+
+    private Pivot closestBoundaryPivot(List<EnrichedCandle> candles,
+                                       double parentPrice,
+                                       PivotType type,
+                                       boolean preferEarlierOnTie) {
+        if (candles == null || candles.isEmpty() || !Double.isFinite(parentPrice)) return null;
+        int bestIndex = -1;
+        double bestPrice = Double.NaN;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int index = 0; index < candles.size(); index++) {
+            EnrichedCandle candle = candles.get(index);
+            double candidatePrice = type == PivotType.HIGH ? candle.high() : candle.low();
+            if (!Double.isFinite(candidatePrice)) continue;
+            double distance = Math.abs(candidatePrice - parentPrice);
+            double tolerance = Math.max(1.0, Math.max(Math.abs(parentPrice), Math.abs(candidatePrice))) * 1.0e-10;
+            boolean closer = distance + tolerance < bestDistance;
+            boolean tied = Math.abs(distance - bestDistance) <= tolerance;
+            if (closer || tied && (bestIndex < 0
+                    || preferEarlierOnTie && index < bestIndex
+                    || !preferEarlierOnTie && index > bestIndex)) {
+                bestIndex = index;
+                bestPrice = candidatePrice;
+                bestDistance = distance;
+            }
+        }
+        return bestIndex < 0 ? null : new Pivot(bestIndex, type, bestPrice);
     }
 
     private void collectTriangleSubdivisionCandidates(List<EnrichedCandle> candles,
@@ -1946,7 +2150,8 @@ public class ElliottWaveDetectionService {
             if (!contracting || !staysInsideOpeningSwing
                     || !hasValidImpulseTiming(sequence.get(0), sequence.get(1), sequence.get(2),
                     sequence.get(3), sequence.get(4))
-                    || sequence.get(5).index() - sequence.get(4).index() < MIN_LEG_SPAN_CANDLES) {
+                    || sequence.get(5).index() - sequence.get(4).index()
+                    < detectionRules.minimumLegSpanCandles()) {
                 continue;
             }
             candidates.add(new SubdivisionCandidate(
@@ -1975,9 +2180,10 @@ public class ElliottWaveDetectionService {
                 && w3.price() > w1.price() && w4.price() > w2.price() && w5.price() > w4.price()
                 : w1.price() < w0.price() && w2.price() < w0.price()
                 && w3.price() < w1.price() && w4.price() < w2.price() && w5.price() < w4.price();
-        return directional && three >= Math.min(one, five)
+        return directional
                 && hasValidImpulseTiming(w0, w1, w2, w3, w4)
-                && w5.index() - w4.index() >= MIN_LEG_SPAN_CANDLES;
+                && actionaryWaveLengthsAllowed(one, three, five)
+                && w5.index() - w4.index() >= detectionRules.minimumLegSpanCandles();
     }
 
     private int motiveSubdivisionConfidence(List<Pivot> sequence, boolean rising, boolean diagonal) {
@@ -1987,8 +2193,10 @@ public class ElliottWaveDetectionService {
         double four = safeRatio(Math.abs(sequence.get(4).price() - sequence.get(3).price()), three);
         double five = Math.abs(sequence.get(5).price() - sequence.get(4).price());
         int score = diagonal ? 61 : 72;
-        if (between(two, COMMON_WAVE_TWO_MIN_RETRACEMENT, COMMON_WAVE_TWO_MAX_RETRACEMENT)) score += 6;
-        if (between(four, COMMON_WAVE_FOUR_MIN_RETRACEMENT, COMMON_WAVE_FOUR_MAX_RETRACEMENT)) score += 6;
+        if (between(two, detectionRules.waveTwoCommonMinRetracement(),
+                detectionRules.waveTwoCommonMaxRetracement())) score += 6;
+        if (between(four, detectionRules.waveFourCommonMinRetracement(),
+                detectionRules.waveFourCommonMaxRetracement())) score += 6;
         if (safeRatio(three, one) >= 1.0) score += 5;
         if (three >= Math.min(one, five)) score += 4;
         boolean fifthExtends = rising
@@ -2029,7 +2237,7 @@ public class ElliottWaveDetectionService {
 
     private List<List<Pivot>> findPivotSets(List<EnrichedCandle> candles) {
         Map<String, List<Pivot>> uniqueSets = new LinkedHashMap<>();
-        for (double sensitivity : PIVOT_SENSITIVITIES) {
+        for (double sensitivity : detectionRules.pivotSensitivities()) {
             List<Pivot> pivots = findPivots(candles, sensitivity);
             if (pivots.size() < 5) {
                 continue;
@@ -2146,7 +2354,8 @@ public class ElliottWaveDetectionService {
         double volatility = isAvailable(candle.atr()) && candle.atr() > 0.0
                 ? candle.atr()
                 : averageTrueRange(candles, Math.max(0, index - 13), index);
-        double percentageFloor = Math.abs(candle.close()) * 0.0125 * sensitivity;
+        double percentageFloor = Math.abs(candle.close())
+                * detectionRules.reversalFloorFraction() * sensitivity;
         return Math.max(volatility * sensitivity, percentageFloor);
     }
 
@@ -2283,7 +2492,8 @@ public class ElliottWaveDetectionService {
         double wave3 = Math.abs(pivots.get(3).price() - pivots.get(2).price());
         if (correctionEnd) {
             int prior = Math.max(0, Math.min(16,
-                    (int) Math.round((eligibilityScore - MIN_CONFIDENCE) * 16.0 / 25.0)));
+                    (int) Math.round((eligibilityScore - detectionRules.minimumSignalConfidence())
+                            * 16.0 / 25.0)));
             points += prior;
             details.add("frozen V1 qualification retained as a structural prior (+" + prior + "/16)");
             if (wave3 >= wave1) {
@@ -2296,7 +2506,8 @@ public class ElliottWaveDetectionService {
                 points += 1;
                 details.add("standard correction geometry (+1)");
             }
-            if (pivots.get(5).index() - pivots.get(0).index() >= MIN_IMPULSE_SPAN_CANDLES) {
+            if (pivots.get(5).index() - pivots.get(0).index()
+                    >= detectionRules.minimumImpulseSpanCandles()) {
                 points += 2;
                 details.add("motive structure has sufficient span (+2)");
             }
@@ -2309,11 +2520,12 @@ public class ElliottWaveDetectionService {
                 points += 3;
                 details.add("wave V exceeded wave III (+3)");
             }
-            if (pivots.get(5).index() - pivots.get(0).index() >= MIN_IMPULSE_SPAN_CANDLES) {
+            if (pivots.get(5).index() - pivots.get(0).index()
+                    >= detectionRules.minimumImpulseSpanCandles()) {
                 points += 2;
                 details.add("five-wave structure has sufficient span (+2)");
             }
-            if (minimumLegSpan(pivots, 5) >= MIN_LEG_SPAN_CANDLES) {
+            if (minimumLegSpan(pivots, 5) >= detectionRules.minimumLegSpanCandles()) {
                 points += 2;
                 details.add("every motive leg has stable spacing (+2)");
             }
@@ -2331,28 +2543,37 @@ public class ElliottWaveDetectionService {
         int points = 0;
         List<String> details = new ArrayList<>();
         if (correctionEnd) {
-            points += zonePoints(correction.retracement(), COMMON_CORRECTION_MIN_RETRACEMENT,
-                    COMMON_CORRECTION_MAX_RETRACEMENT, NORMAL_CORRECTION_MIN_RETRACEMENT,
-                    NORMAL_CORRECTION_MAX_RETRACEMENT, 6, 4, "ABC retracement", details);
-            points += zonePoints(correction.waveCToARatio(), COMMON_WAVE_C_TO_A_MIN_RATIO,
-                    COMMON_WAVE_C_TO_A_MAX_RATIO, NORMAL_WAVE_C_TO_A_MIN_RATIO,
-                    NORMAL_WAVE_C_TO_A_MAX_RATIO, 6, 4, "wave C versus A", details);
-            points += zonePoints(wave2, COMMON_WAVE_TWO_MIN_RETRACEMENT, COMMON_WAVE_TWO_MAX_RETRACEMENT,
-                    NORMAL_WAVE_TWO_MIN_RETRACEMENT, NORMAL_WAVE_TWO_MAX_RETRACEMENT,
+            points += zonePoints(correction.retracement(), detectionRules.correctionCommonMinRetracement(),
+                    detectionRules.correctionCommonMaxRetracement(),
+                    detectionRules.correctionPreferredMinRetracement(),
+                    detectionRules.correctionPreferredMaxRetracement(), 6, 4, "ABC retracement", details);
+            points += zonePoints(correction.waveCToARatio(), detectionRules.waveCCommonMinRatio(),
+                    detectionRules.waveCCommonMaxRatio(), detectionRules.waveCPreferredMinRatio(),
+                    detectionRules.waveCPreferredMaxRatio(), 6, 4, "wave C versus A", details);
+            points += zonePoints(wave2, detectionRules.waveTwoCommonMinRetracement(),
+                    detectionRules.waveTwoCommonMaxRetracement(),
+                    detectionRules.waveTwoPreferredMinRetracement(),
+                    detectionRules.waveTwoPreferredMaxRetracement(),
                     3, 2, "wave II", details);
-            points += zonePoints(wave4, COMMON_WAVE_FOUR_MIN_RETRACEMENT, COMMON_WAVE_FOUR_MAX_RETRACEMENT,
-                    NORMAL_WAVE_FOUR_MIN_RETRACEMENT, NORMAL_WAVE_FOUR_MAX_RETRACEMENT,
+            points += zonePoints(wave4, detectionRules.waveFourCommonMinRetracement(),
+                    detectionRules.waveFourCommonMaxRetracement(),
+                    detectionRules.waveFourPreferredMinRetracement(),
+                    detectionRules.waveFourPreferredMaxRetracement(),
                     3, 2, "wave IV", details);
             if (Math.abs(wave2 - wave4) >= 0.12) {
                 points += 2;
                 details.add("waves II and IV show alternation (+2)");
             }
         } else {
-            points += zonePoints(wave2, COMMON_WAVE_TWO_MIN_RETRACEMENT, COMMON_WAVE_TWO_MAX_RETRACEMENT,
-                    NORMAL_WAVE_TWO_MIN_RETRACEMENT, NORMAL_WAVE_TWO_MAX_RETRACEMENT,
+            points += zonePoints(wave2, detectionRules.waveTwoCommonMinRetracement(),
+                    detectionRules.waveTwoCommonMaxRetracement(),
+                    detectionRules.waveTwoPreferredMinRetracement(),
+                    detectionRules.waveTwoPreferredMaxRetracement(),
                     5, 3, "wave II", details);
-            points += zonePoints(wave4, COMMON_WAVE_FOUR_MIN_RETRACEMENT, COMMON_WAVE_FOUR_MAX_RETRACEMENT,
-                    NORMAL_WAVE_FOUR_MIN_RETRACEMENT, NORMAL_WAVE_FOUR_MAX_RETRACEMENT,
+            points += zonePoints(wave4, detectionRules.waveFourCommonMinRetracement(),
+                    detectionRules.waveFourCommonMaxRetracement(),
+                    detectionRules.waveFourPreferredMinRetracement(),
+                    detectionRules.waveFourPreferredMaxRetracement(),
                     5, 3, "wave IV", details);
             if (Math.abs(wave2 - wave4) >= 0.12) {
                 points += 4;
@@ -2549,12 +2770,13 @@ public class ElliottWaveDetectionService {
     private CategoryScore timingV2(List<Pivot> pivots, boolean correctionEnd) {
         int points = 0;
         List<String> details = new ArrayList<>();
-        if (pivots.get(5).index() - pivots.get(0).index() >= MIN_IMPULSE_SPAN_CANDLES) {
+        if (pivots.get(5).index() - pivots.get(0).index()
+                >= detectionRules.minimumImpulseSpanCandles()) {
             points += 3;
             details.add("motive count spans enough candles (+3)");
         }
         int lastLeg = correctionEnd ? 8 : 5;
-        if (minimumLegSpan(pivots, lastLeg) >= MIN_LEG_SPAN_CANDLES) {
+        if (minimumLegSpan(pivots, lastLeg) >= detectionRules.minimumLegSpanCandles()) {
             points += 2;
             details.add("terminal count has no compressed one-candle leg (+2)");
         }
@@ -2571,7 +2793,7 @@ public class ElliottWaveDetectionService {
     }
 
     private SignalStength classifyStrength(int confidenceScore) {
-        if (confidenceScore < MIN_CONFIDENCE) {
+        if (confidenceScore < detectionRules.minimumSignalConfidence()) {
             return SignalStength.LOW_CONFIDENCE;
         }
         return confidenceScore >= HIGH_CONFIDENCE
@@ -2669,6 +2891,122 @@ public class ElliottWaveDetectionService {
                                         int confidence,
                                         List<Pivot> pivots,
                                         List<String> evidence) {
+    }
+
+    public record DetectionRules(
+            int minimumCandles,
+            int minimumSignalConfidence,
+            int minimumStructureQuality,
+            int maximumConfirmationLagCandles,
+            int minimumImpulseSpanCandles,
+            int minimumLegSpanCandles,
+            double breakoutBufferFraction,
+            double reversalFloorFraction,
+            List<Double> pivotSensitivities,
+            double maximumStructureOverlapFraction,
+            double waveTwoMaximumRetracement,
+            double waveTwoPreferredMinRetracement,
+            double waveTwoPreferredMaxRetracement,
+            double waveTwoCommonMinRetracement,
+            double waveTwoCommonMaxRetracement,
+            double preliminaryWaveThreeMinRatio,
+            double waveFourMaximumRetracement,
+            double waveFourPreferredMinRetracement,
+            double waveFourPreferredMaxRetracement,
+            double waveFourCommonMinRetracement,
+            double waveFourCommonMaxRetracement,
+            boolean requireWaveFourNoOverlap,
+            boolean requireWaveThreeNotShortest,
+            boolean allowWaveOneLongest,
+            boolean requireWaveOneShortest,
+            boolean allowWaveFiveLongest,
+            boolean allowTruncatedFifth,
+            double correctionMaximumRetracement,
+            double waveBMaximumRecovery,
+            double correctionPreferredMinRetracement,
+            double correctionPreferredMaxRetracement,
+            double correctionCommonMinRetracement,
+            double correctionCommonMaxRetracement,
+            double waveCPreferredMinRatio,
+            double waveCPreferredMaxRatio,
+            double waveCCommonMinRatio,
+            double waveCCommonMaxRatio,
+            boolean requireWaveAWithinOrigin,
+            boolean allowStandardCorrection,
+            boolean allowExpandedFlat,
+            boolean allowRunningFlat,
+            boolean allowTriangles,
+            boolean limitWaveCToARatio,
+            double waveCAllowedMinRatio,
+            double waveCAllowedMaxRatio) {
+        public DetectionRules {
+            pivotSensitivities = pivotSensitivities == null
+                    ? List.of(.75, 1.25, 2.0, 3.0) : List.copyOf(pivotSensitivities);
+        }
+
+        public static DetectionRules factory() {
+            return new DetectionRules(
+                    MIN_CANDLES, MIN_CONFIDENCE, MIN_STRUCTURE_QUALITY, MAX_CONFIRMATION_LAG_CANDLES,
+                    MIN_IMPULSE_SPAN_CANDLES, MIN_LEG_SPAN_CANDLES, BREAKOUT_BUFFER - 1.0,
+                    .0125, java.util.Arrays.stream(PIVOT_SENSITIVITIES).boxed().toList(), .40,
+                    MAX_WAVE_TWO_RETRACEMENT, NORMAL_WAVE_TWO_MIN_RETRACEMENT,
+                    NORMAL_WAVE_TWO_MAX_RETRACEMENT, COMMON_WAVE_TWO_MIN_RETRACEMENT,
+                    COMMON_WAVE_TWO_MAX_RETRACEMENT, PRELIMINARY_WAVE_THREE_MIN_RATIO,
+                    MAX_WAVE_FOUR_RETRACEMENT, NORMAL_WAVE_FOUR_MIN_RETRACEMENT,
+                    NORMAL_WAVE_FOUR_MAX_RETRACEMENT, COMMON_WAVE_FOUR_MIN_RETRACEMENT,
+                    COMMON_WAVE_FOUR_MAX_RETRACEMENT, true, true, true, false, true, true,
+                    MAX_CONTINUATION_CORRECTION_RETRACEMENT, MAX_WAVE_B_RELATIVE_RECOVERY,
+                    NORMAL_CORRECTION_MIN_RETRACEMENT, NORMAL_CORRECTION_MAX_RETRACEMENT,
+                    COMMON_CORRECTION_MIN_RETRACEMENT, COMMON_CORRECTION_MAX_RETRACEMENT,
+                    NORMAL_WAVE_C_TO_A_MIN_RATIO, NORMAL_WAVE_C_TO_A_MAX_RATIO,
+                    COMMON_WAVE_C_TO_A_MIN_RATIO, COMMON_WAVE_C_TO_A_MAX_RATIO,
+                    true, true, true, true, true, false, .10, 5.0);
+        }
+
+        public DetectionRules withAllowWaveOneLongest(boolean allow) {
+            return new DetectionRules(
+                    minimumCandles, minimumSignalConfidence, minimumStructureQuality,
+                    maximumConfirmationLagCandles, minimumImpulseSpanCandles, minimumLegSpanCandles,
+                    breakoutBufferFraction, reversalFloorFraction, pivotSensitivities,
+                    maximumStructureOverlapFraction, waveTwoMaximumRetracement,
+                    waveTwoPreferredMinRetracement, waveTwoPreferredMaxRetracement,
+                    waveTwoCommonMinRetracement, waveTwoCommonMaxRetracement,
+                    preliminaryWaveThreeMinRatio, waveFourMaximumRetracement,
+                    waveFourPreferredMinRetracement, waveFourPreferredMaxRetracement,
+                    waveFourCommonMinRetracement, waveFourCommonMaxRetracement,
+                    requireWaveFourNoOverlap, requireWaveThreeNotShortest, allow,
+                    requireWaveOneShortest,
+                    allowWaveFiveLongest, allowTruncatedFifth, correctionMaximumRetracement,
+                    waveBMaximumRecovery, correctionPreferredMinRetracement,
+                    correctionPreferredMaxRetracement, correctionCommonMinRetracement,
+                    correctionCommonMaxRetracement, waveCPreferredMinRatio,
+                    waveCPreferredMaxRatio, waveCCommonMinRatio, waveCCommonMaxRatio,
+                    requireWaveAWithinOrigin, allowStandardCorrection, allowExpandedFlat,
+                    allowRunningFlat, allowTriangles, limitWaveCToARatio,
+                    waveCAllowedMinRatio, waveCAllowedMaxRatio);
+        }
+
+        public DetectionRules withRequireWaveOneShortest(boolean required) {
+            return new DetectionRules(
+                    minimumCandles, minimumSignalConfidence, minimumStructureQuality,
+                    maximumConfirmationLagCandles, minimumImpulseSpanCandles, minimumLegSpanCandles,
+                    breakoutBufferFraction, reversalFloorFraction, pivotSensitivities,
+                    maximumStructureOverlapFraction, waveTwoMaximumRetracement,
+                    waveTwoPreferredMinRetracement, waveTwoPreferredMaxRetracement,
+                    waveTwoCommonMinRetracement, waveTwoCommonMaxRetracement,
+                    preliminaryWaveThreeMinRatio, waveFourMaximumRetracement,
+                    waveFourPreferredMinRetracement, waveFourPreferredMaxRetracement,
+                    waveFourCommonMinRetracement, waveFourCommonMaxRetracement,
+                    requireWaveFourNoOverlap, requireWaveThreeNotShortest, allowWaveOneLongest,
+                    required, allowWaveFiveLongest, allowTruncatedFifth, correctionMaximumRetracement,
+                    waveBMaximumRecovery, correctionPreferredMinRetracement,
+                    correctionPreferredMaxRetracement, correctionCommonMinRetracement,
+                    correctionCommonMaxRetracement, waveCPreferredMinRatio,
+                    waveCPreferredMaxRatio, waveCCommonMinRatio, waveCCommonMaxRatio,
+                    requireWaveAWithinOrigin, allowStandardCorrection, allowExpandedFlat,
+                    allowRunningFlat, allowTriangles, limitWaveCToARatio,
+                    waveCAllowedMinRatio, waveCAllowedMaxRatio);
+        }
     }
 
     public enum ImpulseVariant {

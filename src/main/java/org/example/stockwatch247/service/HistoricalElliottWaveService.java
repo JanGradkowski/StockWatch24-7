@@ -40,12 +40,24 @@ public class HistoricalElliottWaveService {
             ElliottSignalStage stage,
             long endpointTimestamp,
             String requestedCycleKey) {
+        return findDetail(rawSymbol, rawInterval, stage, endpointTimestamp, requestedCycleKey, null);
+    }
+
+    public HistoricalElliottWaveDetail findDetail(
+            String rawSymbol,
+            String rawInterval,
+            ElliottSignalStage stage,
+            long endpointTimestamp,
+            String requestedCycleKey,
+            ElliottWaveDetectionService.DetectionRules rules) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         String interval = SecurityInputValidator.requireInterval(rawInterval);
         TimeInterval timeInterval = switch (interval) {
+            case "1d" -> TimeInterval.DAILY;
             case "1wk" -> TimeInterval.WEEKLY;
             case "1mo" -> TimeInterval.MONTHLY;
-            default -> throw new IllegalArgumentException("Historical Elliott details require a weekly or monthly interval.");
+            default -> throw new IllegalArgumentException(
+                    "Historical Elliott details require a daily, weekly, or monthly interval.");
         };
         if (stage == null || endpointTimestamp <= 0L) {
             throw new IllegalArgumentException("A valid Elliott stage and endpoint are required.");
@@ -64,11 +76,14 @@ public class HistoricalElliottWaveService {
                 candles.size(),
                 timeInterval
         );
-        ElliottWaveDetectionService.ElliottWaveStructure structure = detectionService
+        ElliottWaveDetectionService detector = rules == null
+                ? detectionService
+                : detectionService.configured(rules);
+        ElliottWaveDetectionService.ElliottWaveStructure structure = detector
                 .findHistoricalWaveStructures(enriched)
                 .stream()
                 .filter(candidate -> requestedCycleKey == null || requestedCycleKey.isBlank()
-                        || detectionService.lifecycleCycleKey(candidate)
+                        || detector.lifecycleCycleKey(candidate)
                         .filter(requestedCycleKey::equals)
                         .isPresent())
                 .filter(candidate -> endpoint(candidate, stage) != null
@@ -80,7 +95,7 @@ public class HistoricalElliottWaveService {
         TradeSignal tradeSignal = tradeSignal(structure.direction(), stage);
         Long confirmationTimestamp = confirmationTimestamp(structure, stage, endpoint, tradeSignal, candles);
         ElliottWaveDetectionService.ElliottScoreAssessment score = java.util.Optional.ofNullable(
-                        detectionService.scoreHistoricalStructure(enriched, structure, stage, confirmationTimestamp))
+                        detector.scoreHistoricalStructure(enriched, structure, stage, confirmationTimestamp))
                 .orElseGet(() -> new ElliottWaveDetectionService.ElliottScoreAssessment(
                         structure.qualityScore(), List.of()));
         List<ScoreSectionView> scoreSections = score.reasons().stream()
@@ -106,7 +121,7 @@ public class HistoricalElliottWaveService {
                 ? candles.subList(chartStart, chartEnd).stream().map(this::toCandleView).toList()
                 : List.of();
 
-        String cycleKey = detectionService.lifecycleCycleKey(structure).orElse(null);
+        String cycleKey = detector.lifecycleCycleKey(structure).orElse(null);
         return new HistoricalElliottWaveDetail(
                 symbol,
                 interval,
@@ -257,7 +272,12 @@ public class HistoricalElliottWaveService {
     }
 
     private TimeInterval intervalFor(Candle candle) {
-        return "1mo".equals(candle.getTimeInterval()) ? TimeInterval.MONTHLY : TimeInterval.WEEKLY;
+        return switch (candle.getTimeInterval()) {
+            case "1d" -> TimeInterval.DAILY;
+            case "1wk" -> TimeInterval.WEEKLY;
+            case "1mo" -> TimeInterval.MONTHLY;
+            default -> throw new IllegalArgumentException("Unsupported Elliott candle interval.");
+        };
     }
 
     private int candleIndex(List<Candle> candles, Long timestamp) {
@@ -320,7 +340,12 @@ public class HistoricalElliottWaveService {
             ResultView result) {
 
         public String intervalLabel() {
-            return timeInterval == TimeInterval.MONTHLY ? "Monthly" : "Weekly";
+            return switch (timeInterval) {
+                case DAILY -> "Daily";
+                case WEEKLY -> "Weekly";
+                case MONTHLY -> "Monthly";
+                default -> timeInterval.name();
+            };
         }
     }
 

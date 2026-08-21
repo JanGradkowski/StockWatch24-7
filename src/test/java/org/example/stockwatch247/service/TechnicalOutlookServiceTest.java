@@ -1,7 +1,15 @@
 package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.Candle;
+import org.example.stockwatch247.model.AlertEvent;
+import org.example.stockwatch247.model.AlertRule;
+import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.enums.AlertPatternFamily;
+import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
+import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.CongressionalTradeDeliveryRepository;
@@ -25,6 +33,7 @@ import static org.mockito.Mockito.when;
 class TechnicalOutlookServiceTest {
     private CandleRepository candleRepository;
     private StockAssetRepository stockAssetRepository;
+    private AlertEventRepository alertEventRepository;
     private TechnicalOutlookService service;
     private User user;
 
@@ -33,7 +42,7 @@ class TechnicalOutlookServiceTest {
         MarketDataService marketDataService = mock(MarketDataService.class);
         candleRepository = mock(CandleRepository.class);
         stockAssetRepository = mock(StockAssetRepository.class);
-        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        alertEventRepository = mock(AlertEventRepository.class);
         CongressionalTradeDeliveryRepository congressionalRepository =
                 mock(CongressionalTradeDeliveryRepository.class);
         InsiderTradeDeliveryRepository insiderRepository = mock(InsiderTradeDeliveryRepository.class);
@@ -68,7 +77,9 @@ class TechnicalOutlookServiceTest {
         assertThat(outlook.candles()).hasSize(260);
         assertThat(outlook.indicators()).extracting(TechnicalOutlookService.IndicatorView::key)
                 .contains("rsi", "ema", "sma", "macd", "cci", "bollinger", "atr", "vwap",
-                        "relativeVolume", "volumeProfile", "supportResistance");
+                        "relativeVolume", "volumeProfile", "supportResistance", "adx", "dmi",
+                        "stochastic", "stochasticRsi", "obv", "mfi", "donchian", "keltner",
+                        "ta4jTrend", "volumeProfileKde");
         assertThat(outlook.indicators()).extracting(TechnicalOutlookService.IndicatorView::label)
                 .contains("RSI 14", "EMA 20 / EMA 50", "Price vs SMA 200",
                         "MACD 12/26/9 histogram", "CCI 20", "ATR 14", "Rolling VWAP 20",
@@ -78,6 +89,11 @@ class TechnicalOutlookServiceTest {
         assertThat(outlook.indicatorSettings().slowEmaPeriod()).isEqualTo(50);
         assertThat(outlook.indicatorSettings().longSmaPeriod()).isEqualTo(200);
         assertThat(outlook.rawScore().denominator()).isEqualTo(11);
+        assertThat(outlook.indicators())
+                .filteredOn(indicator -> List.of("adx", "dmi", "stochastic", "stochasticRsi",
+                        "obv", "mfi", "donchian", "keltner", "ta4jTrend", "volumeProfileKde")
+                        .contains(indicator.key()))
+                .allSatisfy(indicator -> assertThat(indicator.scored()).isFalse());
         assertThat(outlook.categories()).extracting(TechnicalOutlookService.CategoryView::key)
                 .containsExactly("TREND", "MOMENTUM", "VOLATILITY", "VOLUME", "PRICE_LOCATION");
         assertThat(outlook.headlineScore().denominator()).isEqualTo(5);
@@ -98,6 +114,47 @@ class TechnicalOutlookServiceTest {
         assertThat(outlook.rawScore().denominator()).isZero();
         assertThat(outlook.headlineScore().denominator()).isZero();
         assertThat(outlook.indicators()).isEmpty();
+    }
+
+    @Test
+    void dailyOutlookUsesOnlyDailyNativeElliottEvents() {
+        List<Candle> candles = risingDailyCandles(260);
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc("AAPL", "1d"))
+                .thenReturn(candles);
+        StockAsset asset = mock(StockAsset.class);
+        when(asset.getTickerSymbol()).thenReturn("AAPL");
+
+        AlertRule dailyRule = mock(AlertRule.class);
+        when(dailyRule.getStockAsset()).thenReturn(asset);
+        when(dailyRule.getInterval()).thenReturn(TimeInterval.DAILY);
+        when(dailyRule.getPatternFamily()).thenReturn(AlertPatternFamily.ELLIOTT_WAVE);
+        AlertEvent dailyEvent = mock(AlertEvent.class);
+        when(dailyEvent.getId()).thenReturn(71L);
+        when(dailyEvent.getAlertRule()).thenReturn(dailyRule);
+        when(dailyEvent.getPattern()).thenReturn(CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+        when(dailyEvent.getTradeSignal()).thenReturn(TradeSignal.BUY);
+        when(dailyEvent.getSignalCandleTimestamp()).thenReturn(candles.getLast().getTimestamp());
+        when(dailyEvent.getLifecycleStatus()).thenReturn(SignalLifecycleStatus.CONFIRMED);
+
+        AlertRule monthlyRule = mock(AlertRule.class);
+        when(monthlyRule.getStockAsset()).thenReturn(asset);
+        when(monthlyRule.getInterval()).thenReturn(TimeInterval.MONTHLY);
+        AlertEvent newerMonthlyEvent = mock(AlertEvent.class);
+        when(newerMonthlyEvent.getAlertRule()).thenReturn(monthlyRule);
+        when(newerMonthlyEvent.getSignalCandleTimestamp())
+                .thenReturn(candles.getLast().getTimestamp() + 86_400L);
+        when(alertEventRepository.findAllByAlertRule_User(user))
+                .thenReturn(List.of(newerMonthlyEvent, dailyEvent));
+
+        TechnicalOutlookService.OutlookView outlook = service.getOutlook(user, "AAPL", "1d");
+
+        assertThat(outlook.recentSignals()).hasSize(1);
+        assertThat(outlook.recentSignals().getFirst().id()).isEqualTo(71L);
+        assertThat(outlook.recentSignals().getFirst().interval()).isEqualTo("DAILY");
+        assertThat(outlook.categories())
+                .filteredOn(category -> category.key().equals("ELLIOTT"))
+                .singleElement()
+                .satisfies(category -> assertThat(category.vote()).isEqualTo(1));
     }
 
     private List<Candle> risingDailyCandles(int count) {

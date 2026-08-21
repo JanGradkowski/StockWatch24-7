@@ -3,28 +3,16 @@ package org.example.stockwatch247.service;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.service.technical.Ta4jBarSeriesFactory;
+import org.example.stockwatch247.service.technical.Ta4jIndicatorRegistry;
+import org.example.stockwatch247.service.technical.TechnicalIndicatorParameters;
+import org.example.stockwatch247.service.technical.TechnicalResearchSnapshot;
 import org.springframework.stereotype.Service;
 import org.ta4j.core.BarSeries;
-import org.ta4j.core.BaseBarSeriesBuilder;
 import org.ta4j.core.Indicator;
-import org.ta4j.core.indicators.ATRIndicator;
-import org.ta4j.core.indicators.CCIIndicator;
-import org.ta4j.core.indicators.MACDIndicator;
-import org.ta4j.core.indicators.RSIIndicator;
-import org.ta4j.core.indicators.averages.EMAIndicator;
-import org.ta4j.core.indicators.averages.SMAIndicator;
-import org.ta4j.core.indicators.bollinger.BollingerBandsLowerIndicator;
-import org.ta4j.core.indicators.bollinger.BollingerBandsMiddleIndicator;
-import org.ta4j.core.indicators.bollinger.BollingerBandsUpperIndicator;
-import org.ta4j.core.indicators.helpers.ClosePriceIndicator;
-import org.ta4j.core.indicators.helpers.TypicalPriceIndicator;
-import org.ta4j.core.indicators.helpers.VolumeIndicator;
-import org.ta4j.core.indicators.statistics.StandardDeviationIndicator;
-import org.ta4j.core.indicators.volume.VWAPIndicator;
 import org.ta4j.core.num.Num;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -35,6 +23,18 @@ import java.util.Objects;
 public class TechnicalIndicatorEnrichmentService {
     private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int VOLUME_PROFILE_BIN_COUNT = 24;
+    private final Ta4jBarSeriesFactory seriesFactory;
+    private final Ta4jIndicatorRegistry indicatorRegistry;
+
+    public TechnicalIndicatorEnrichmentService() {
+        this(new Ta4jBarSeriesFactory(), new Ta4jIndicatorRegistry());
+    }
+
+    TechnicalIndicatorEnrichmentService(Ta4jBarSeriesFactory seriesFactory,
+                                        Ta4jIndicatorRegistry indicatorRegistry) {
+        this.seriesFactory = Objects.requireNonNull(seriesFactory);
+        this.indicatorRegistry = Objects.requireNonNull(indicatorRegistry);
+    }
 
     public List<EnrichedCandle> enrichForSignalDetection(List<Candle> rawCandles) {
         return enrich(rawCandles, DEFAULT_SIGNAL_CANDLES);
@@ -132,45 +132,9 @@ public class TechnicalIndicatorEnrichmentService {
         }
         validateInterval(candles, interval);
 
-        BarSeries series = toSeries(candles);
-        ClosePriceIndicator close = new ClosePriceIndicator(series);
-        VolumeIndicator volume = new VolumeIndicator(series);
-        SMAIndicator averageVolume = new SMAIndicator(volume, profile.volumePeriod());
-        RSIIndicator rsi = new RSIIndicator(close, profile.rsiPeriod());
-        EMAIndicator fastEma = new EMAIndicator(close, profile.fastEmaPeriod());
-        EMAIndicator slowEma = new EMAIndicator(close, profile.slowEmaPeriod());
-        SMAIndicator longSma = new SMAIndicator(close, profile.longSmaPeriod());
-        MACDIndicator macd = new MACDIndicator(
-                close,
-                profile.macdFastPeriod(),
-                profile.macdSlowPeriod()
-        );
-        Indicator<Num> macdSignal = macd.getSignalLine(profile.macdSignalPeriod());
-        Indicator<Num> macdHistogram = macd.getHistogram(profile.macdSignalPeriod());
-        CCIIndicator cci = new CCIIndicator(series, profile.cciPeriod());
-        ATRIndicator atr = new ATRIndicator(series, profile.atrPeriod());
-        BollingerBandsMiddleIndicator bollingerMiddle = new BollingerBandsMiddleIndicator(
-                new SMAIndicator(close, profile.bollingerPeriod())
-        );
-        StandardDeviationIndicator standardDeviation = StandardDeviationIndicator.ofPopulation(
-                close,
-                profile.bollingerPeriod()
-        );
-        BollingerBandsLowerIndicator lowerBollinger = new BollingerBandsLowerIndicator(
-                bollingerMiddle,
-                standardDeviation,
-                series.numFactory().numOf(profile.bollingerDeviation())
-        );
-        BollingerBandsUpperIndicator upperBollinger = new BollingerBandsUpperIndicator(
-                bollingerMiddle,
-                standardDeviation,
-                series.numFactory().numOf(profile.bollingerDeviation())
-        );
-        VWAPIndicator rollingVwap = new VWAPIndicator(
-                new TypicalPriceIndicator(series),
-                volume,
-                profile.vwapPeriod()
-        );
+        BarSeries series = seriesFactory.create(candles);
+        TechnicalIndicatorParameters parameters = parameters(profile);
+        Ta4jIndicatorRegistry.CoreIndicators indicators = indicatorRegistry.core(series, parameters);
 
         int firstIndex = Math.max(0, candles.size() - latestCount);
         List<EnrichedCandle> enrichedCandles = new ArrayList<>();
@@ -189,34 +153,104 @@ public class TechnicalIndicatorEnrichmentService {
                     candle.getLowPrice(),
                     candle.getClosePrice(),
                     candle.getVolume() == null ? 0.0 : candle.getVolume(),
-                    indicatorValue(averageVolume, index, profile.volumePeriod()),
-                    indicatorValue(rsi, index, profile.rsiPeriod() + 1),
-                    indicatorValue(fastEma, index, profile.fastEmaPeriod()),
-                    indicatorValue(slowEma, index, profile.slowEmaPeriod()),
-                    indicatorValue(longSma, index, profile.longSmaPeriod()),
-                    indicatorValue(macd, index, profile.macdSlowPeriod()),
+                    indicatorValue(indicators.averageVolume(), index,
+                            indicators.stableBars(indicators.averageVolume(), profile.volumePeriod())),
+                    indicatorValue(indicators.rsi(), index,
+                            indicators.stableBars(indicators.rsi(), profile.rsiPeriod() + 1)),
+                    indicatorValue(indicators.fastEma(), index,
+                            indicators.stableBars(indicators.fastEma(), profile.fastEmaPeriod())),
+                    indicatorValue(indicators.slowEma(), index,
+                            indicators.stableBars(indicators.slowEma(), profile.slowEmaPeriod())),
+                    indicatorValue(indicators.longSma(), index,
+                            indicators.stableBars(indicators.longSma(), profile.longSmaPeriod())),
+                    indicatorValue(indicators.macd(), index,
+                            indicators.stableBars(indicators.macd(), profile.macdSlowPeriod())),
                     indicatorValue(
-                            macdSignal,
+                            indicators.macdSignal(),
                             index,
-                            profile.macdSlowPeriod() + profile.macdSignalPeriod() - 1
+                            indicators.stableBars(indicators.macdSignal(),
+                                    profile.macdSlowPeriod() + profile.macdSignalPeriod() - 1)
                     ),
                     indicatorValue(
-                            macdHistogram,
+                            indicators.macdHistogram(),
                             index,
-                            profile.macdSlowPeriod() + profile.macdSignalPeriod() - 1
+                            indicators.stableBars(indicators.macdHistogram(),
+                                    profile.macdSlowPeriod() + profile.macdSignalPeriod() - 1)
                     ),
-                    indicatorValue(cci, index, profile.cciPeriod()),
-                    indicatorValue(bollingerMiddle, index, profile.bollingerPeriod()),
-                    indicatorValue(lowerBollinger, index, profile.bollingerPeriod()),
-                    indicatorValue(upperBollinger, index, profile.bollingerPeriod()),
-                    indicatorValue(atr, index, profile.atrPeriod() + 1),
-                    indicatorValue(rollingVwap, index, profile.vwapPeriod()),
+                    indicatorValue(indicators.cci(), index,
+                            indicators.stableBars(indicators.cci(), profile.cciPeriod())),
+                    indicatorValue(indicators.bollingerMiddle(), index,
+                            indicators.stableBars(indicators.bollingerMiddle(), profile.bollingerPeriod())),
+                    indicatorValue(indicators.bollingerLower(), index,
+                            indicators.stableBars(indicators.bollingerLower(), profile.bollingerPeriod())),
+                    indicatorValue(indicators.bollingerUpper(), index,
+                            indicators.stableBars(indicators.bollingerUpper(), profile.bollingerPeriod())),
+                    indicatorValue(indicators.atr(), index,
+                            indicators.stableBars(indicators.atr(), profile.atrPeriod() + 1)),
+                    indicatorValue(indicators.rollingVwap(), index,
+                            indicators.stableBars(indicators.rollingVwap(), profile.vwapPeriod())),
                     volumeProfile.pointOfControl(),
                     volumeProfile.valueAreaLow(),
                     volumeProfile.valueAreaHigh()
             ));
         }
         return List.copyOf(enrichedCandles);
+    }
+
+    /**
+     * Calculates additional TA4J indicators for technical-analysis display and
+     * research. These snapshots are intentionally separate from EnrichedCandle
+     * so Elliott, candlestick, scoring, and alert code cannot consume them by
+     * accident.
+     */
+    public List<TechnicalResearchSnapshot> research(List<Candle> rawCandles,
+                                                    int latestCount,
+                                                    TechnicalIndicatorProfile profile) {
+        return research(rawCandles, latestCount, profile, false);
+    }
+
+    List<TechnicalResearchSnapshot> research(List<Candle> rawCandles,
+                                             int latestCount,
+                                             TechnicalIndicatorProfile profile,
+                                             boolean includeHistoricalKde) {
+        if (rawCandles == null || rawCandles.isEmpty() || latestCount <= 0) return List.of();
+        if (profile == null) throw new IllegalArgumentException("A technical indicator profile is required.");
+        List<Candle> candles = rawCandles.stream()
+                .filter(this::hasCompletePriceData)
+                .sorted(Comparator.comparing(Candle::getTimestamp))
+                .toList();
+        if (candles.isEmpty()) return List.of();
+        validateInterval(candles, profile.interval());
+        BarSeries series = seriesFactory.create(candles);
+        Ta4jIndicatorRegistry.ResearchIndicators indicators = indicatorRegistry.research(
+                series, parameters(profile));
+        int firstIndex = Math.max(0, candles.size() - latestCount);
+        List<TechnicalResearchSnapshot> snapshots = new ArrayList<>();
+        for (int index = firstIndex; index < candles.size(); index++) {
+            snapshots.add(new TechnicalResearchSnapshot(
+                    candles.get(index).getTimestamp(),
+                    researchValue(indicators.adx(), index),
+                    researchValue(indicators.plusDi(), index),
+                    researchValue(indicators.minusDi(), index),
+                    researchValue(indicators.stochasticK(), index),
+                    researchValue(indicators.stochasticD(), index),
+                    researchValue(indicators.stochasticRsi(), index),
+                    researchValue(indicators.obv(), index),
+                    researchValue(indicators.moneyFlow(), index),
+                    researchValue(indicators.donchianLower(), index),
+                    researchValue(indicators.donchianMiddle(), index),
+                    researchValue(indicators.donchianUpper(), index),
+                    researchValue(indicators.keltnerLower(), index),
+                    researchValue(indicators.keltnerMiddle(), index),
+                    researchValue(indicators.keltnerUpper(), index),
+                    researchBoolean(indicators.upTrend(), index),
+                    researchBoolean(indicators.downTrend(), index),
+                    includeHistoricalKde || index == candles.size() - 1
+                            ? researchKdeMode(indicators.volumeProfileKde(), index)
+                            : Double.NaN
+            ));
+        }
+        return List.copyOf(snapshots);
     }
 
     /**
@@ -386,33 +420,6 @@ public class TechnicalIndicatorEnrichmentService {
         }
     }
 
-    private BarSeries toSeries(List<Candle> candles) {
-        BarSeries series = new BaseBarSeriesBuilder()
-                .withName(candles.get(0).getSymbol() == null ? "signal-series" : candles.get(0).getSymbol())
-                .build();
-        Duration timePeriod = inferTimePeriod(candles);
-
-        candles.forEach(candle -> series.addBar(series.barBuilder()
-                .timePeriod(timePeriod)
-                .endTime(Instant.ofEpochSecond(candle.getTimestamp()))
-                .openPrice(candle.getOpenPrice())
-                .highPrice(candle.getHighPrice())
-                .lowPrice(candle.getLowPrice())
-                .closePrice(candle.getClosePrice())
-                .volume(candle.getVolume() == null ? 0.0 : candle.getVolume())
-                .build()));
-        return series;
-    }
-
-    private Duration inferTimePeriod(List<Candle> candles) {
-        if (candles.size() < 2) {
-            return Duration.ofDays(1);
-        }
-
-        long seconds = Math.max(1L, candles.get(1).getTimestamp() - candles.get(0).getTimestamp());
-        return Duration.ofSeconds(seconds);
-    }
-
     private double indicatorValue(Indicator<Num> indicator, int index, int minimumBars) {
         if (index + 1 < minimumBars) {
             return Double.NaN;
@@ -420,6 +427,32 @@ public class TechnicalIndicatorEnrichmentService {
 
         Num value = indicator.getValue(index);
         return value == null || value.isNaN() ? Double.NaN : value.doubleValue();
+    }
+
+    private double researchValue(Indicator<Num> indicator, int index) {
+        if (index < indicator.getCountOfUnstableBars()) return Double.NaN;
+        Num value = indicator.getValue(index);
+        return value == null || value.isNaN() ? Double.NaN : value.doubleValue();
+    }
+
+    private boolean researchBoolean(Indicator<Boolean> indicator, int index) {
+        return index >= indicator.getCountOfUnstableBars() && Boolean.TRUE.equals(indicator.getValue(index));
+    }
+
+    private double researchKdeMode(org.ta4j.core.indicators.supportresistance.VolumeProfileKDEIndicator indicator,
+                                   int index) {
+        if (index < indicator.getCountOfUnstableBars()) return Double.NaN;
+        Num value = indicator.getModePrice(index);
+        return value == null || value.isNaN() ? Double.NaN : value.doubleValue();
+    }
+
+    private TechnicalIndicatorParameters parameters(TechnicalIndicatorProfile profile) {
+        return new TechnicalIndicatorParameters(
+                profile.rsiPeriod(), profile.atrPeriod(), profile.fastEmaPeriod(),
+                profile.slowEmaPeriod(), profile.longSmaPeriod(), profile.macdFastPeriod(),
+                profile.macdSlowPeriod(), profile.macdSignalPeriod(), profile.cciPeriod(),
+                profile.bollingerPeriod(), profile.bollingerDeviation(), profile.volumePeriod(),
+                profile.vwapPeriod(), profile.volumeProfilePeriod());
     }
 
     private boolean hasCompletePriceData(Candle candle) {

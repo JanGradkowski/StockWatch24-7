@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Virtual trades &mdash; StockWatch 24/7</title>
+  <title>Demo Trading &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
@@ -13,17 +13,17 @@
 
 <main class="page-container signal-archive-page virtual-trades-archive-page">
   <nav class="signal-breadcrumb" aria-label="Breadcrumb">
-    <a th:href="@{/home}">Dashboard</a><span aria-hidden="true">/</span><span>Virtual trades</span>
+    <a th:href="@{/home}">Dashboard</a><span aria-hidden="true">/</span><span>Demo Trading</span>
   </nav>
   <header class="signal-archive-header">
     <div>
       <div class="eyebrow">Paper decisions &middot; no real orders</div>
-      <h1 class="title">Virtual trades</h1>
+      <h1 class="title">Demo Trading</h1>
       <p class="subtitle">Review every virtual buy and sell decision. Buys show return; sells show avoided loss or missed upside and never imply a short position.</p>
     </div>
-    <div class="signal-archive-total" aria-label="Total virtual trades">
+    <div class="signal-archive-total" aria-label="Total demo trades">
       <strong th:text="${archive.totalTrades()}">0</strong>
-      <span th:text="${archive.totalTrades() == 1 ? 'virtual trade' : 'virtual trades'}">virtual trades</span>
+      <span th:text="${archive.totalTrades() == 1 ? 'demo trade' : 'demo trades'}">demo trades</span>
     </div>
   </header>
 
@@ -33,7 +33,7 @@
         <h2 id="virtualTradesHeading" class="panel-title">Trade history</h2>
         <p class="panel-meta">Open trades update from the latest cached price. Closing one freezes its final price, outcome, and technical comparison.</p>
       </div>
-      <form method="get" th:action="@{/virtual-trades}" class="signal-archive-sort-form" aria-label="Sort virtual trades">
+      <form method="get" th:action="@{/virtual-trades}" class="signal-archive-sort-form" aria-label="Sort demo trades">
         <label><span>Group and sort by</span><select name="sort">
           <option value="date" th:selected="${archive.sort() == 'date'}">Date</option>
           <option value="ticker" th:selected="${archive.sort() == 'ticker'}">Ticker</option>
@@ -50,18 +50,18 @@
     </div>
 
     <p th:if="${virtualTradeDeleteMessage}" class="signal-delete-feedback success"
-       th:text="${virtualTradeDeleteMessage}">Virtual trade deleted.</p>
+       th:text="${virtualTradeDeleteMessage}">Demo trade deleted.</p>
     <p th:if="${virtualTradeDeleteError}" class="signal-delete-feedback error"
-       th:text="${virtualTradeDeleteError}">The virtual trade could not be deleted.</p>
+       th:text="${virtualTradeDeleteError}">The demo trade could not be deleted.</p>
 
     <div th:if="${#lists.isEmpty(archive.trades())}" class="latest-signals-empty signal-archive-empty">
       <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
-      <div><h3>No virtual trades yet</h3><p>Open a stock&rsquo;s Full Technical Outlook to record your first virtual buy or sell decision.</p></div>
+      <div><h3>No demo trades yet</h3><p>Open a stock&rsquo;s Full Technical Outlook to record your first demo buy or sell decision.</p></div>
     </div>
 
     <div th:if="${!#lists.isEmpty(archive.trades())}" class="signal-archive-results virtual-trade-archive-results">
       <div class="virtual-trade-archive-head" aria-hidden="true">
-        <span>Decision</span><span>Company</span><span>Entry</span><span>Evaluation</span><span>Outcome</span><span>Status</span><span></span><span>Action</span>
+        <span>Decision</span><span>Company</span><span>Entry</span><span>Evaluation</span><span>Amount &amp; value</span><span>Outcome</span><span>Status</span><span></span><span>Action</span>
       </div>
       <div class="signal-archive-list">
         <div th:each="trade, row : ${archive.trades()}" class="signal-archive-entry">
@@ -80,11 +80,17 @@
             <div><strong th:text="${trade.symbol()}">AAPL</strong><span th:text="${trade.companyName()}">Apple Inc.</span></div>
             <div><strong th:text="${#numbers.formatDecimal(trade.entryPrice(), 1, 4) + ' ' + trade.currency()}">100 USD</strong><time th:text="${#temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')}">08 Aug</time></div>
             <div><strong th:text="${#numbers.formatDecimal(trade.evaluationPrice(), 1, 4) + ' ' + trade.currency()}">105 USD</strong><span th:text="${trade.evaluationSource()}">Latest completed candle</span></div>
+            <div class="virtual-trade-position-value" th:if="${trade.evaluatedPositionValue() != null}">
+              <strong th:text="${#numbers.formatDecimal(trade.notionalValue(), 1, 2) + ' ' + trade.currency()}">1,000.00 USD</strong>
+              <span th:text="${trade.side() == 'BUY' ? 'Invested at entry' : 'Value at sell decision'}">Invested at entry</span>
+              <small class="virtual-trade-evaluated-value" th:text="${(trade.status() == 'CLOSED' ? 'Final' : 'Current') + (trade.side() == 'BUY' ? ' value ' : ' reference value ') + #numbers.formatDecimal(trade.evaluatedPositionValue(), 1, 2) + ' ' + trade.currency()}">Current value 1,050.00 USD</small>
+            </div>
+            <div class="virtual-trade-position-value" th:if="${trade.evaluatedPositionValue() == null}"><strong>Percentage only</strong><span>No monetary size</span></div>
             <div class="virtual-trade-outcome" th:classappend="${trade.resultPercent() >= 0 ? ' positive' : ' negative'}">
               <strong th:text="${(trade.resultPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.resultPercent(), 1, 2) + '%'}">+5.00%</strong>
               <span th:text="${trade.outcomeLabel()}">Gain</span>
               <small th:text="${'From captured entry · ' + #temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')}">From captured entry · 08 Aug 2026, 10:00</small>
-              <small th:if="${trade.monetaryResult() != null}" th:text="${(trade.monetaryResult().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.monetaryResult(), 1, 2) + ' ' + trade.currency()}">+50 USD</small>
+              <small th:if="${trade.monetaryResult() != null}" class="virtual-trade-monetary-result" th:text="${(trade.monetaryResult().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.monetaryResult(), 1, 2) + ' ' + trade.currency()}">+50 USD</small>
             </div>
             <span class="virtual-trade-status-pill" th:classappend="${' ' + #strings.toLowerCase(trade.status())}" th:text="${trade.statusLabel()}">Tracking</span>
             <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
@@ -108,8 +114,8 @@
 <dialog class="unsaved-alert-dialog signal-delete-dialog" data-virtual-trade-delete-dialog aria-labelledby="virtual-trade-delete-dialog-title">
   <div class="unsaved-alert-dialog-content">
     <span class="unsaved-alert-kicker">Permanent archive action</span>
-    <h2 id="virtual-trade-delete-dialog-title">Delete virtual trade?</h2>
-    <p data-virtual-trade-delete-message>This removes the virtual trade from your account and cannot be undone.</p>
+    <h2 id="virtual-trade-delete-dialog-title">Delete demo trade?</h2>
+    <p data-virtual-trade-delete-message>This removes the demo trade from your account and cannot be undone.</p>
     <div class="unsaved-alert-dialog-actions">
       <button type="button" class="btn-secondary" data-virtual-trade-delete-cancel>Cancel</button>
       <button type="button" class="signal-delete-confirm-button" data-virtual-trade-delete-confirm>Delete</button>

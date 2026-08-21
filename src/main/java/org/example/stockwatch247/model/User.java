@@ -12,6 +12,7 @@
         public static final String DEFAULT_ELLIOTT_MOTIVE_COLOR = "#3B82F6";
         public static final String DEFAULT_ELLIOTT_CORRECTIVE_COLOR = "#A855F7";
         public static final String DEFAULT_ELLIOTT_SUBWAVE_COLOR = "#F59E0B";
+        public static final String DEFAULT_HARMONIC_FORMATION_COLOR = "#22C55E";
 
         @Id
         @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -55,6 +56,9 @@
 
         @Column(name = "elliott_subwave_color", nullable = false, length = 7)
         private String elliottSubwaveColor = DEFAULT_ELLIOTT_SUBWAVE_COLOR;
+
+        @Column(name = "harmonic_formation_color", nullable = false, length = 7)
+        private String harmonicFormationColor = DEFAULT_HARMONIC_FORMATION_COLOR;
 
         @Column(name = "mfa_enabled", nullable = false)
         private boolean mfaEnabled;
@@ -190,6 +194,8 @@
         public void setElliottCorrectiveColor(String value) { this.elliottCorrectiveColor = value; }
         public String getElliottSubwaveColor() { return elliottSubwaveColor; }
         public void setElliottSubwaveColor(String value) { this.elliottSubwaveColor = value; }
+        public String getHarmonicFormationColor() { return harmonicFormationColor; }
+        public void setHarmonicFormationColor(String value) { this.harmonicFormationColor = value; }
         public boolean isMfaEnabled() { return mfaEnabled; }
         public void setMfaEnabled(boolean mfaEnabled) { this.mfaEnabled = mfaEnabled; }
         public String getMfaSecretCiphertext() { return mfaSecretCiphertext; }

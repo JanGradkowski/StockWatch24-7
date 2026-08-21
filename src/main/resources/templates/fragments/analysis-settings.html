@@ -24,8 +24,9 @@
       </div>
       <div class="delivery-preference-grid">
         <fieldset><legend>New activity</legend>
-          <label><input type="checkbox" name="email.newCandlestick" th:checked="${preferences.email().newCandlestick()}"><span><strong>Candlestick signals</strong><small>New detected patterns</small></span></label>
+          <label><input type="checkbox" name="email.newCandlestick" th:checked="${preferences.email().newCandlestick()}"><span><strong>Candlestick signals</strong><small>New confirmed candlestick detections</small></span></label>
           <label><input type="checkbox" name="email.newElliott" th:checked="${preferences.email().newElliott()}"><span><strong>Elliott Wave signals</strong><small>Actionable Wave V and correction signals</small></span></label>
+          <label><input type="checkbox" name="email.newHarmonic" th:checked="${preferences.email().harmonicEnabled()}"><span><strong>Harmonic Formation signals</strong><small>Confirmed Gartley, Bat, Butterfly, Crab, Shark, and Cypher formations</small></span></label>
           <label><input type="checkbox" name="email.insider" th:checked="${preferences.email().insider()}"><span><strong>Corporate insider activity</strong><small>Filed insider purchases and sales</small></span></label>
           <label><input type="checkbox" name="email.congressional" th:checked="${preferences.email().congressional()}"><span><strong>Congressional activity</strong><small>New public transaction disclosures</small></span></label>
         </fieldset>

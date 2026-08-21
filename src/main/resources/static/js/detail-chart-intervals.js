@@ -32,6 +32,7 @@
     let alternateSeries = null;
     let alternatePriceLine = null;
     let alternateFibonacciTool = null;
+    let alternateElliottOverlay = null;
 
     function intervalName(interval) {
         return { '1d': 'Daily', '1wk': 'Weekly', '1mo': 'Monthly' }[interval] || 'Selected';
@@ -75,7 +76,9 @@
                 summary.textContent = `The transaction remains marked on the completed ${label.toLowerCase()} candle that contains its reported date.`;
             }
         } else if (summary) {
-            summary.textContent = `${controls.dataset.signalLabel || 'This signal'} was detected on ${nativeLabel}. Price is shown on ${label.toLowerCase()} candles without signal annotations.`;
+            summary.textContent = controls.dataset.signalFamily === 'ELLIOTT_WAVE'
+                ? `${label} candles show the validated ${label.toLowerCase()} branch of the top-down Elliott hierarchy.`
+                : `${controls.dataset.signalLabel || 'This signal'} was detected on ${nativeLabel}. Price is shown on ${label.toLowerCase()} candles without signal annotations.`;
         }
         if (status) status.textContent = `Completed ${label.toLowerCase()} candles`;
     }
@@ -110,12 +113,12 @@
             const elliott = controls.dataset.signalFamily === 'ELLIOTT_WAVE';
             if (title) {
                 title.textContent = elliott
-                    ? 'Elliott Wave overlays are interval-specific'
+                    ? 'Top-down Elliott degree'
                     : 'Signal annotations are interval-specific';
             }
             if (message) {
                 message.textContent = elliott
-                    ? `This Elliott Wave was detected on ${nativeLabel}. Its wave anchors and confirmation are hidden on ${intervalName(interval).toLowerCase()} candles.`
+                    ? `${intervalName(interval)} displays its matching validated level: monthly parents, weekly children, or daily grandchildren.`
                     : `This signal was detected on ${nativeLabel}. Its pattern, required trend, and detection marker are hidden on ${intervalName(interval).toLowerCase()} candles.`;
             }
             if (returnNativeButton) {
@@ -173,6 +176,8 @@
     }
 
     function renderAlternateChart(candles, interval) {
+        alternateElliottOverlay?.destroy();
+        alternateElliottOverlay = null;
         alternateFibonacciTool?.destroy();
         alternateFibonacciTool = null;
         alternateChart?.remove();
@@ -242,13 +247,26 @@
         } else {
             alternateChart.timeScale().fitContent();
         }
-        if (typeof StockWatchFibonacciDrawingTool !== 'undefined' && chartKind === 'technical') {
+        if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
             alternateFibonacciTool = new StockWatchFibonacciDrawingTool({
                 chart: alternateChart,
                 series: alternateSeries,
                 container: alternateContainer,
                 storageKey: `${window.location.pathname}:alternate:${interval}`
             });
+        }
+        if (chartKind === 'technical'
+            && controls.dataset.signalFamily === 'ELLIOTT_WAVE'
+            && typeof StockWatchElliottHierarchyOverlay !== 'undefined') {
+            alternateElliottOverlay = new StockWatchElliottHierarchyOverlay({
+                chart: alternateChart,
+                container: alternateContainer,
+                symbol,
+                interval,
+                asOfTimestamp: Number(nativeChart?.dataset.signalTime),
+                color: controls.dataset.elliottSubwaveColor || '#F59E0B'
+            });
+            alternateElliottOverlay.showInterval(interval);
         }
     }
 

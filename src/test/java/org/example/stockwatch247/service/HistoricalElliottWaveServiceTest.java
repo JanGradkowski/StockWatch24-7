@@ -20,6 +20,18 @@ class HistoricalElliottWaveServiceTest {
 
     @Test
     void reconstructsConfirmedHistoricalWaveAndTenCloseSellResult() {
+        assertReconstructsConfirmedHistoricalWave("1wk", TimeInterval.WEEKLY, "Weekly", 7 * 86_400L);
+    }
+
+    @Test
+    void reconstructsDailyHistoricalWaveWithDailyLabels() {
+        assertReconstructsConfirmedHistoricalWave("1d", TimeInterval.DAILY, "Daily", 86_400L);
+    }
+
+    private void assertReconstructsConfirmedHistoricalWave(String interval,
+                                                            TimeInterval timeInterval,
+                                                            String intervalLabel,
+                                                            long candleDuration) {
         CandleRepository candleRepository = mock(CandleRepository.class);
         CandleCompletionService completionService = mock(CandleCompletionService.class);
         TechnicalIndicatorEnrichmentService enrichmentService = mock(TechnicalIndicatorEnrichmentService.class);
@@ -30,7 +42,7 @@ class HistoricalElliottWaveServiceTest {
                 enrichmentService,
                 detectionService
         );
-        long week = 7 * 86_400L;
+        long week = candleDuration;
         List<Double> closes = List.of(
                 80.0, 88.0, 84.0, 96.0, 90.0, 105.0, 100.0,
                 96.0, 98.0, 95.0, 90.0, 91.0, 92.0, 93.0, 94.0, 97.0, 99.0
@@ -38,7 +50,7 @@ class HistoricalElliottWaveServiceTest {
         List<Candle> candles = new ArrayList<>();
         for (int index = 0; index < closes.size(); index++) {
             double close = closes.get(index);
-            candles.add(new Candle("MARA", "1wk", (index + 1L) * week,
+            candles.add(new Candle("MARA", interval, (index + 1L) * week,
                     close, close + 1.0, close - 1.0, close, 1_000L));
         }
         List<EnrichedCandle> enriched = List.of(mock(EnrichedCandle.class));
@@ -67,26 +79,26 @@ class HistoricalElliottWaveServiceTest {
                         List.of()
                 );
         String cycleKey = "BULLISH:1:2:3:4:5";
-        when(completionService.firstIncompleteCandleTimestamp(TimeInterval.WEEKLY))
+        when(completionService.firstIncompleteCandleTimestamp(timeInterval))
                 .thenReturn(Long.MAX_VALUE);
-        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc("MARA", "1wk"))
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc("MARA", interval))
                 .thenReturn(candles);
-        when(enrichmentService.enrichForElliott(candles, candles.size(), TimeInterval.WEEKLY))
+        when(enrichmentService.enrichForElliott(candles, candles.size(), timeInterval))
                 .thenReturn(enriched);
         when(detectionService.findHistoricalWaveStructures(enriched)).thenReturn(List.of(structure));
         when(detectionService.lifecycleCycleKey(structure)).thenReturn(Optional.of(cycleKey));
 
         HistoricalElliottWaveService.HistoricalElliottWaveDetail detail = service.findDetail(
                 "MARA",
-                "1wk",
+                interval,
                 ElliottSignalStage.WAVE_V_END,
                 6 * week,
                 cycleKey
         );
 
         assertThat(detail.status()).isEqualTo("CONFIRMED");
-        assertThat(detail.interval()).isEqualTo("1wk");
-        assertThat(detail.intervalLabel()).isEqualTo("Weekly");
+        assertThat(detail.interval()).isEqualTo(interval);
+        assertThat(detail.intervalLabel()).isEqualTo(intervalLabel);
         assertThat(detail.tradeSignal()).isEqualTo(TradeSignal.SELL);
         assertThat(detail.confirmationTimestamp()).isEqualTo(7 * week);
         assertThat(detail.result().available()).isTrue();

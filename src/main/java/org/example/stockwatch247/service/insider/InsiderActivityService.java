@@ -43,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -275,9 +276,10 @@ public class InsiderActivityService {
 
     @Transactional(readOnly = true)
     public List<DashboardActivityView> getAllActivity(User user) {
+        Map<String, Optional<Candle>> latestCandles = new LinkedHashMap<>();
         return deliveryRepository.findAllForUser(user)
                 .stream()
-                .map(this::toArchiveDashboardView)
+                .map(delivery -> toArchiveDashboardView(delivery, latestCandles))
                 .toList();
     }
 
@@ -505,8 +507,18 @@ public class InsiderActivityService {
                 delivery.getReadAt());
     }
 
-    private DashboardActivityView toArchiveDashboardView(InsiderTradeDelivery delivery) {
+    private DashboardActivityView toArchiveDashboardView(
+            InsiderTradeDelivery delivery,
+            Map<String, Optional<Candle>> latestCandles) {
         InsiderTrade trade = delivery.getTrade();
+        BigDecimal transactionPrice = trade.getTransactionPrice();
+        ReturnSnapshot snapshot = transactionPrice == null || transactionPrice.signum() <= 0
+                ? ReturnSnapshot.unavailable()
+                : calculateReturn(
+                        trade,
+                        latestCandles.computeIfAbsent(
+                                trade.getTickerSymbol(),
+                                this::latestCompletedCandle).orElse(null));
         BigDecimal transactionValue = trade.getShares() != null && trade.getTransactionPrice() != null
                 ? trade.getShares().multiply(trade.getTransactionPrice())
                 : null;
@@ -523,8 +535,8 @@ public class InsiderActivityService {
                 trade.getShares(),
                 trade.getTransactionPrice(),
                 transactionValue,
-                null,
-                null,
+                snapshot.returnPercent(),
+                snapshot.asOf(),
                 delivery.getCreatedAt(),
                 deliveryStatusLabel(delivery.getStatus()),
                 trade.getSourceUrl(),
@@ -536,16 +548,23 @@ public class InsiderActivityService {
         if (price == null || price.signum() <= 0) {
             return ReturnSnapshot.unavailable();
         }
-        Candle latest = candleRepository
+        return calculateReturn(trade, latestCompletedCandle(trade.getTickerSymbol()).orElse(null));
+    }
+
+    private Optional<Candle> latestCompletedCandle(String symbol) {
+        return candleRepository
                 .findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                        trade.getTickerSymbol(), "1d", PageRequest.of(0, 10))
+                        symbol, "1d", PageRequest.of(0, 10))
                 .stream()
                 .filter(candle -> candle.getClosePrice() != null && candle.getClosePrice() > 0)
                 .filter(candle -> candleCompletionService.isComplete(
                         candle.getTimestamp(), TimeInterval.DAILY))
-                .findFirst()
-                .orElse(null);
-        if (latest == null) {
+                .findFirst();
+    }
+
+    private ReturnSnapshot calculateReturn(InsiderTrade trade, Candle latest) {
+        BigDecimal price = trade.getTransactionPrice();
+        if (price == null || price.signum() <= 0 || latest == null) {
             return ReturnSnapshot.unavailable();
         }
         LocalDate asOf = Instant.ofEpochSecond(latest.getTimestamp())

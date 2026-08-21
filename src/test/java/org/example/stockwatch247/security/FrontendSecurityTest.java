@@ -7,19 +7,97 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FrontendSecurityTest {
 
     @Test
-    void priceChartsExposePersistentInteractiveFibonacciDrawingTools() throws IOException {
+    void stockPageExposesDeliveredHarmonicRulesHistoricalHoverCardAndConfirmedOverlay() throws IOException {
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String historical = Files.readString(
+                Path.of("src/main/resources/templates/historical-harmonic-detail.html"));
+
+        assertTrue(stock.contains("id=\"harmonicOverlayToggle\""));
+        assertTrue(stock.contains("Harmonic formations overlay"));
+        assertTrue(stock.contains("data-alert-family=\"HARMONIC_FORMATION\""));
+        assertTrue(stock.contains("function refreshHarmonicOverlays"));
+        assertTrue(stock.contains("function renderHarmonicFormation"));
+        assertTrue(stock.contains("/harmonic-formations/history?interval="));
+        assertTrue(stock.contains("addEventListener('click', toggleHarmonicOverlays)"));
+        assertTrue(stock.contains("id=\"harmonicFormationHoverCard\""));
+        assertTrue(stock.contains("id=\"harmonicFormationHitTargets\""));
+        assertTrue(stock.contains("function showHarmonicFormationCard"));
+        assertTrue(stock.contains("/harmonic-formations/${encodeURIComponent(currentInterval)}"));
+        assertTrue(stock.contains("Confirmed harmonic formations now create signal records"));
+        assertTrue(historical.contains("Historical harmonic signal"));
+        assertTrue(historical.contains("Hard validity first, soft fit second"));
+        assertTrue(historical.contains("id=\"graphicalOutlookTab\""));
+        assertTrue(historical.contains("id=\"scoreReportTab\""));
+        assertTrue(historical.contains("id=\"resultsTab\""));
+        assertTrue(historical.contains("class=\"signal-view-tabs signal-three-view-tabs\""));
+        assertTrue(historical.contains("id=\"signalResultsWorkspace\""));
+        assertTrue(historical.contains("~{signal-detail :: signalDetailBehavior}"));
+        assertTrue(historical.contains("new StockWatchFibonacciDrawingTool"));
+    }
+
+    @Test
+    void stockPageCreatesDemoTradesAndDashboardConfirmsEveryRuleBeforeBulkUnfollow() throws IOException {
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
+        String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
+        String stylesheet = Files.readString(Path.of("src/main/resources/static/css/style.css"));
+
+        assertTrue(stock.contains("data-stock-demo-trade=\"BUY\""));
+        assertTrue(stock.contains("class=\"price-header-demo-trading\""));
+        assertTrue(stock.indexOf("class=\"market-identity\"")
+                < stock.indexOf("class=\"price-header-demo-trading\""));
+        assertTrue(stock.indexOf("class=\"price-header-demo-trading\"")
+                < stock.indexOf("class=\"quote-block\""));
+        assertFalse(stock.contains("stock-workspace-action-card virtual-trade-launch-card"));
+        assertTrue(stock.contains("id=\"stockDemoTradeDialog\""));
+        assertTrue(stock.contains("`/api/virtual-trades/${encodedTicker}`"));
+        assertTrue(stock.contains("method: 'POST'"));
+
+        assertTrue(dashboard.contains("<span>Actions</span>"));
+        assertTrue(dashboard.contains("data-unfollow-company"));
+        assertTrue(dashboard.contains("id=\"unfollowCompanyDialog\""));
+        assertTrue(dashboard.contains("id=\"unfollowCompanyRuleList\""));
+        assertTrue(dashboard.contains("id=\"deleteSelectedCompanyRules\""));
+        assertTrue(dashboard.contains("id=\"deleteAllCompanyRules\""));
+        assertTrue(dashboard.contains("Delete selected"));
+        assertTrue(dashboard.contains("Delete all"));
+        assertTrue(dashboard.contains("Insider &amp; Congress Alerts are not affected"));
+        assertTrue(dashboardScript.contains("payload.activeRules"));
+        assertTrue(dashboardScript.contains("rule.id"));
+        assertTrue(dashboardScript.contains("input[data-rule-id]:checked"));
+        assertTrue(dashboardScript.contains("JSON.stringify({ruleIds})"));
+        assertTrue(dashboardScript.contains("/rules`"));
+        assertTrue(dashboardScript.contains("rule.familyLabel"));
+        assertTrue(dashboardScript.contains("rule.intervalLabel"));
+        assertTrue(dashboardScript.contains("rule.tradeSignal"));
+        assertTrue(dashboardScript.contains("method: \"DELETE\""));
+        assertTrue(dashboardScript.contains("X-CSRF-TOKEN"));
+        assertFalse(dashboardScript.contains("innerHTML"));
+        assertTrue(stylesheet.contains("scrollbar-gutter: stable"));
+        assertTrue(stylesheet.contains("html[data-theme='light'] .alert-list::-webkit-scrollbar-thumb"));
+    }
+
+    @Test
+    void priceChartsExposePersistentFibonacciAndPositionDrawingTools() throws IOException {
         String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
         String signal = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
         String historicalCandle = Files.readString(
                 Path.of("src/main/resources/templates/historical-candlestick-detail.html"));
         String historicalElliott = Files.readString(
                 Path.of("src/main/resources/templates/historical-elliott-detail.html"));
+        String activity = Files.readString(
+                Path.of("src/main/resources/templates/activity-signal-detail.html"));
+        String technicalOutlook = Files.readString(
+                Path.of("src/main/resources/templates/technical-outlook.html"));
+        String virtualTrade = Files.readString(
+                Path.of("src/main/resources/templates/virtual-trade.html"));
         String intervals = Files.readString(
                 Path.of("src/main/resources/static/js/detail-chart-intervals.js"));
         String fibonacci = Files.readString(
@@ -33,16 +111,44 @@ class FrontendSecurityTest {
         assertTrue(signal.contains("role=\"group\""));
         assertTrue(historicalCandle.contains("@{/js/fibonacci-drawing-tool.js}"));
         assertTrue(historicalElliott.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(activity.contains("@{/js/fibonacci-drawing-tool.js}"));
+        assertTrue(activity.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(technicalOutlook.contains("@{/js/fibonacci-drawing-tool.js}"));
+        assertTrue(technicalOutlook.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(technicalOutlook.contains("priceFibonacciTool?.destroy()"));
+        assertTrue(technicalOutlook.contains("'ta4jTrend', 'volumeProfileKde'"));
+        assertTrue(technicalOutlook.contains("researchOnly ? 'RESEARCH'"));
+        assertTrue(virtualTrade.contains("@{/js/fibonacci-drawing-tool.js}"));
+        assertTrue(virtualTrade.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(virtualTrade.contains("priceFibonacciTool?.destroy()"));
         assertTrue(intervals.contains("alternateFibonacciTool"));
         assertTrue(intervals.contains("new StockWatchFibonacciDrawingTool"));
+        assertFalse(intervals.contains("typeof StockWatchFibonacciDrawingTool !== 'undefined' && chartKind === 'technical'"));
         assertTrue(fibonacci.contains("0.236"));
         assertTrue(fibonacci.contains("0.382"));
         assertTrue(fibonacci.contains("0.618"));
         assertTrue(fibonacci.contains("0.786"));
+        assertTrue(fibonacci.contains("-0.618"));
+        assertTrue(fibonacci.contains("1.272"));
+        assertTrue(fibonacci.contains("1.618"));
+        assertTrue(fibonacci.contains("2.618"));
+        assertTrue(fibonacci.contains("createButton('Long'"));
+        assertTrue(fibonacci.contains("createButton('Short'"));
+        assertTrue(fibonacci.contains("entryPrice"));
+        assertTrue(fibonacci.contains("targetPrice"));
+        assertTrue(fibonacci.contains("stopPrice"));
+        assertTrue(fibonacci.contains("riskRewardLabel"));
+        assertTrue(fibonacci.contains("R:R"));
+        assertTrue(fibonacci.contains("position-target"));
+        assertTrue(fibonacci.contains("position-stop"));
+        assertTrue(fibonacci.contains("#26a69a"));
+        assertTrue(fibonacci.contains("#ef5350"));
         assertTrue(fibonacci.contains("localStorage.setItem"));
         assertTrue(fibonacci.contains("setPointerCapture"));
         assertTrue(fibonacci.contains("event.key === 'Delete'"));
         assertTrue(fibonacci.contains("coordinateToTime"));
+        assertTrue(fibonacci.contains("coordinateToLogical"));
+        assertTrue(fibonacci.contains("logicalToCoordinate"));
         assertTrue(fibonacci.contains("coordinateToPrice"));
         assertFalse(fibonacci.contains("innerHTML"));
     }
@@ -75,11 +181,31 @@ class FrontendSecurityTest {
         assertTrue(settings.contains("@{/settings/scoring}"));
         assertTrue(settings.contains("settingsTab == 'scoring'"));
         assertTrue(scoring.contains("Included point total"));
+        assertTrue(scoring.contains("Harmonic Formation"));
+        assertTrue(scoring.contains("All nine included totals"));
         assertTrue(scoring.contains("@{/settings/scoring/reset}"));
         assertTrue(script.contains("total === 100"));
         assertTrue(script.contains("apply.disabled = !valid"));
         assertFalse(scoring.contains("innerHTML"));
         assertFalse(script.contains("innerHTML"));
+    }
+
+    @Test
+    void settingsExposeHarmonicAppearanceEmailScoringAndRuleDefinitions() throws IOException {
+        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
+        String analysis = Files.readString(Path.of("src/main/resources/templates/fragments/analysis-settings.html"));
+        String harmonic = Files.readString(Path.of("src/main/resources/templates/fragments/harmonic-pattern-settings.html"));
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+
+        assertTrue(settings.contains("name=\"harmonicFormationColor\""));
+        assertTrue(settings.contains("@{/settings/harmonic-formations}"));
+        assertTrue(settings.contains("settingsTab == 'harmonic-formations'"));
+        assertTrue(analysis.contains("name=\"email.newHarmonic\""));
+        assertTrue(harmonic.contains("Extra soft-rule allowance"));
+        assertTrue(harmonic.contains("hard-versus-soft"));
+        assertTrue(harmonic.contains("@{/settings/harmonic-formations/reset}"));
+        assertTrue(stock.contains("HARMONIC_FORMATION_COLOR"));
+        assertFalse(harmonic.contains("innerHTML"));
     }
 
     @Test
@@ -373,26 +499,45 @@ class FrontendSecurityTest {
     }
 
     @Test
-    void stockTemplateSupportsWeeklyAndMonthlyElliottControlsAndOverlay() throws IOException {
+    void stockTemplateSeparatesNativeElliottStructuresFromSubwavesAndSupportsDailyAlerts() throws IOException {
         String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String outlook = Files.readString(Path.of("src/main/resources/templates/technical-outlook.html"));
+        String styles = Files.readString(Path.of("src/main/resources/static/css/style.css"));
 
-        assertTrue(stock.contains("data-check-family=\"ELLIOTT_WAVE\" data-check-interval=\"MONTHLY\" data-check-signal=\"BUY\""));
-        assertTrue(stock.contains("data-check-family=\"ELLIOTT_WAVE\" data-check-interval=\"MONTHLY\" data-check-signal=\"SELL\""));
-        assertTrue(stock.contains("data-check-family=\"ELLIOTT_WAVE\" data-check-interval=\"WEEKLY\" data-check-signal=\"BUY\""));
-        assertTrue(stock.contains("data-check-family=\"ELLIOTT_WAVE\" data-check-interval=\"WEEKLY\" data-check-signal=\"SELL\""));
-        assertTrue(stock.contains("patternFamily: button.dataset.checkFamily || 'CANDLESTICK'"));
+        assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"DAILY\" data-alert-signal=\"BUY\""));
+        assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"DAILY\" data-alert-signal=\"SELL\""));
+        assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"MONTHLY\" data-alert-signal=\"BUY\""));
+        assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"MONTHLY\" data-alert-signal=\"SELL\""));
+        assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\" data-alert-signal=\"BUY\""));
+        assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\" data-alert-signal=\"SELL\""));
+        assertTrue(stock.contains("class=\"alert-eye-input\" type=\"checkbox\""));
+        assertTrue(stock.contains("class=\"alert-panel alert-star-panel\""));
+        assertTrue(stock.contains("An outlined star is not followed; a filled star is followed."));
+        assertTrue(styles.contains(".alert-star-panel .alert-eye-graphic::before"));
+        assertTrue(styles.contains(".alert-star-panel .alert-eye-input:checked + .alert-eye-graphic::before"));
+        assertTrue(styles.contains("content: \"★\""));
+        assertTrue(styles.contains(".alert-star-panel .alert-eye-input:checked + .alert-eye-graphic .alert-eye-filled"));
+        assertFalse(stock.contains("check-alert-btn"));
+        assertFalse(stock.contains("data-check-family"));
+        assertFalse(stock.contains("checkLatestSignal("));
         assertTrue(stock.contains("refreshHistoricalElliottOverlays"));
         assertTrue(stock.contains("series.setMarkers(points"));
         assertTrue(stock.contains("ELLIOTT_MOTIVE_COLOR"));
         assertTrue(stock.contains("ELLIOTT_CORRECTIVE_COLOR"));
         assertTrue(stock.contains("ELLIOTT_SUBWAVE_COLOR"));
-        assertTrue(stock.contains("StockWatchElliottSubwaveOverlay"));
+        assertTrue(stock.contains("StockWatchElliottHierarchyOverlay"));
+        assertTrue(stock.contains("@{/js/elliott-wave-hierarchy.js}"));
         assertTrue(stock.contains("structure.points.slice(0, 6)"));
         assertTrue(stock.contains("structure.points.slice(5)"));
         assertTrue(stock.contains("isCorrectiveElliottPoint"));
-        assertTrue(stock.contains("await showCheckedElliottWave(payload.interval)"));
-        assertTrue(stock.contains("alertInterval === 'WEEKLY' ? '1wk' : '1mo'"));
         assertTrue(stock.contains("id=\"elliottOverlayToggle\""));
+        assertTrue(stock.contains("id=\"elliottSubwaveToggle\""));
+        assertTrue(stock.contains("Independent Elliott structures"));
+        assertTrue(stock.contains("Fractal subwaves"));
+        assertTrue(stock.contains("let elliottSubwavesEnabled = false"));
+        assertTrue(stock.contains("const historicalDetailUrl = endpoint?.timestamp"));
+        assertFalse(stock.contains("currentInterval !== '1d' && endpoint?.timestamp"));
+        assertTrue(stock.contains("tracked ? 'Open signal details' : 'Open historical signal details'"));
         assertFalse(stock.contains("id=\"historicElliottBtn\""));
         assertTrue(stock.contains("/elliott-waves/history?interval="));
         assertTrue(stock.contains("&from=${encodeURIComponent(oldestTimestamp)}"));
@@ -425,13 +570,17 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("reduced confidence"));
         assertTrue(stock.contains("id=\"instrumentTypeDisplay\""));
         assertTrue(stock.contains("instrumentType === 'INDEX'"));
-        assertTrue(stock.contains("id=\"showHistoricalCandlestickPatternsBtn\""));
-        assertTrue(stock.indexOf("id=\"showHistoricalCandlestickPatternsBtn\"")
+        assertFalse(stock.contains("id=\"showHistoricalCandlestickPatternsBtn\""));
+        assertFalse(stock.contains("Pattern research"));
+        assertTrue(stock.contains("id=\"candlestickOverlayToggle\""));
+        assertTrue(stock.contains("aria-controls=\"historicalCandlestickViewDialog\""));
+        assertTrue(stock.indexOf("id=\"candlestickOverlayToggle\"")
                 < stock.indexOf("id=\"priceChartContainer\""));
         assertTrue(stock.indexOf("id=\"generalWorkspacePanel\"")
-                < stock.indexOf("id=\"showHistoricalCandlestickPatternsBtn\""));
-        assertTrue(stock.indexOf("id=\"showHistoricalCandlestickPatternsBtn\"")
+                < stock.indexOf("id=\"candlestickOverlayToggle\""));
+        assertTrue(stock.indexOf("id=\"candlestickOverlayToggle\"")
                 < stock.indexOf("id=\"technicalAnalysisWorkspacePanel\""));
+        assertTrue(stock.contains(".addEventListener('click', showHistoricalCandlestickViewPicker)"));
         assertTrue(stock.contains("id=\"historicalCandlestickViewDialog\""));
         assertTrue(stock.contains("data-historical-candlestick-view=\"graphical\""));
         assertTrue(stock.contains("data-historical-candlestick-view=\"list\""));
@@ -523,21 +672,27 @@ class FrontendSecurityTest {
         String candlestickSection = stock.substring(candlestickStart, elliottStart);
         String elliottSection = stock.substring(elliottStart, elliottEnd);
         assertFalse(candlestickSection.contains("data-alert-family=\"ELLIOTT_WAVE\""));
+        assertTrue(elliottSection.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"DAILY\""));
         assertTrue(elliottSection.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\""));
         assertTrue(elliottSection.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"MONTHLY\""));
+        assertTrue(outlook.contains("Independent Elliott structures"));
+        assertTrue(outlook.contains("elliott-waves/history?interval="));
+        assertFalse(outlook.contains("currentInterval === '1d' || !outlook.candles.length"));
+        assertFalse(outlook.contains("elliott-waves/hierarchy"));
     }
 
     @Test
-    void elliottSubwaveHoverOverlayCannotMutateTheChartTimeline() throws IOException {
+    void elliottHierarchyRendersByIntervalWithoutHoverDrivenRequests() throws IOException {
         String overlay = Files.readString(Path.of(
-                "src/main/resources/static/js/elliott-subwave-overlay.js"));
+                "src/main/resources/static/js/elliott-wave-hierarchy.js"));
 
-        assertTrue(overlay.contains("createElementNS"));
-        assertTrue(overlay.contains("elliott-subwave-svg"));
-        assertTrue(overlay.contains("mouseleave"));
-        assertFalse(overlay.contains("addLineSeries"));
-        assertFalse(overlay.contains("removeSeries"));
-        assertFalse(overlay.contains("setData"));
+        assertTrue(overlay.contains("/elliott-waves/hierarchy"));
+        assertTrue(overlay.contains("groupsAtTimeframe"));
+        assertTrue(overlay.contains("addLineSeries"));
+        assertTrue(overlay.contains("removeSeries"));
+        assertTrue(overlay.contains("setData"));
+        assertFalse(overlay.contains("subscribeCrosshairMove"));
+        assertFalse(overlay.contains("mouseenter"));
         assertFalse(overlay.contains("setVisibleLogicalRange"));
         assertFalse(overlay.contains("fitContent"));
     }
@@ -545,11 +700,12 @@ class FrontendSecurityTest {
     @Test
     void stockWorkspacePutsMarketAnalysisBeforeAlertControlsAndCongressionalActivity() throws IOException {
         String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String stylesheet = Files.readString(Path.of("src/main/resources/static/css/style.css"));
 
         int priceChart = stock.indexOf("id=\"priceChartContainer\"");
         int rsiChart = stock.indexOf("id=\"rsiChartContainer\"");
         int volumeChart = stock.indexOf("id=\"volumeChartContainer\"");
-        int automatedSignals = stock.indexOf("<section class=\"alert-panel\">");
+        int automatedSignals = stock.indexOf("<section class=\"alert-panel alert-star-panel\">");
         int congressionalActivity = stock.indexOf("id=\"congressionalActivityPanel\"");
 
         assertTrue(priceChart >= 0);
@@ -557,6 +713,26 @@ class FrontendSecurityTest {
         assertTrue(volumeChart > rsiChart);
         assertTrue(automatedSignals > volumeChart);
         assertTrue(congressionalActivity > automatedSignals);
+
+        assertTrue(stock.contains("id=\"volumeChartToggle\""));
+        assertTrue(stock.contains("id=\"volumeChartPanel\""));
+        assertTrue(stock.contains("aria-controls=\"volumeChartPanel\""));
+        assertTrue(stock.contains("aria-pressed=\"true\""));
+        assertTrue(stock.contains("let volumeChartEnabled = true"));
+        assertTrue(stock.contains("panel.hidden = !volumeChartEnabled"));
+        assertTrue(stock.contains(".addEventListener('click', toggleVolumeChart)"));
+        assertTrue(stock.contains("data-chart-resize-target=\"priceChartStage\""));
+        assertTrue(stock.contains("data-chart-resize-target=\"rsiChartContainer\""));
+        assertTrue(stock.contains("data-chart-resize-target=\"volumeChartContainer\""));
+        assertEquals(3, stock.split("data-chart-resize-target=", -1).length - 1);
+        assertTrue(stock.contains("role=\"separator\""));
+        assertTrue(stock.contains("new ResizeObserver(entries =>"));
+        assertTrue(stock.contains("handle.addEventListener('pointerdown'"));
+        assertTrue(stock.contains("handle.addEventListener('keydown'"));
+        assertTrue(stock.contains("initializeResizableCharts();"));
+        assertTrue(stylesheet.contains(".chart-resize-handle"));
+        assertTrue(stylesheet.contains("cursor: ns-resize"));
+        assertTrue(stylesheet.contains("touch-action: none"));
     }
 
     @Test
@@ -705,6 +881,7 @@ class FrontendSecurityTest {
     void dashboardSeparatesTechnicalAnalysisFromTickerAlerts() throws IOException {
         String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
         String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
+        String styles = Files.readString(Path.of("src/main/resources/static/css/style.css"));
 
         assertTrue(dashboard.contains("id=\"technicalAnalysisViewButton\""));
         assertTrue(dashboard.contains("id=\"tickerAlertsViewButton\""));
@@ -725,16 +902,26 @@ class FrontendSecurityTest {
 
         int watchDesk = dashboard.indexOf("id=\"technicalWatchDesk\"");
         int latestSignals = dashboard.indexOf("id=\"latestTechnicalSignals\"");
+        int technicalSidebar = dashboard.indexOf("class=\"dashboard-technical-sidebar\"");
+        int technicalMetrics = dashboard.indexOf("id=\"technicalDashboardMetrics\"");
+        int systemPulse = dashboard.indexOf("id=\"systemPulsePanel\"");
         int tickerIntroduction = dashboard.indexOf("id=\"tickerAlertsIntroduction\"");
         int latestNotifications = dashboard.indexOf("id=\"latestTickerNotifications\"");
         int congressionalActivity = dashboard.indexOf("id=\"congressionalActivityDashboard\"");
         int insiderActivity = dashboard.indexOf("id=\"insiderActivityDashboard\"");
         assertTrue(watchDesk >= 0);
-        assertTrue(latestSignals > watchDesk);
-        assertTrue(tickerIntroduction > latestSignals);
+        assertTrue(latestSignals >= 0);
+        assertTrue(latestSignals < watchDesk);
+        assertTrue(tickerIntroduction > watchDesk);
         assertTrue(latestNotifications > tickerIntroduction);
         assertTrue(congressionalActivity > latestNotifications);
         assertTrue(insiderActivity > congressionalActivity);
+        assertTrue(technicalSidebar > insiderActivity);
+        assertTrue(technicalMetrics > technicalSidebar);
+        assertTrue(systemPulse > technicalMetrics);
+        assertTrue(styles.contains(".dashboard-technical-sidebar"));
+        assertTrue(styles.contains(".dashboard-sidebar-metrics"));
+        assertTrue(styles.contains("grid-template-columns: repeat(2, minmax(0, 1fr));"));
 
         assertTrue(dashboardScript.contains("function initializeDashboardViews()"));
         assertTrue(dashboardScript.contains("window.location.hash === \"#ticker-alerts\""));
@@ -747,10 +934,10 @@ class FrontendSecurityTest {
     }
 
     @Test
-    void dashboardAndHistoryUseCompanyLevelDynamicRuleColumns() throws IOException {
+    void dashboardAndCompanyHistoryReuseTheSharedSignalArchive() throws IOException {
         String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
         String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
-        String history = Files.readString(Path.of("src/main/resources/templates/alert-history.html"));
+        String styles = Files.readString(Path.of("src/main/resources/static/css/style.css"));
         String archive = Files.readString(Path.of("src/main/resources/templates/all-signals.html"));
         String activityArchive = Files.readString(
                 Path.of("src/main/resources/templates/all-activity-signals.html"));
@@ -799,20 +986,10 @@ class FrontendSecurityTest {
         assertFalse(activityDetail.contains("signal-detail-tab"));
         assertFalse(activityDetail.contains("activity-detail-hero"));
 
-        assertTrue(history.contains("th:each=\"column, columnStatus : ${history.columns()}\""));
-        assertTrue(history.contains("column.alert().familyLabel()"));
-        assertTrue(history.contains("column.alert().tradeSignal()"));
-        assertTrue(history.contains("column.alert().intervalLabel()"));
-        assertTrue(history.contains("column.alert().researchHorizonLabel()"));
-        assertTrue(history.contains("/alerts/signals/{id}"));
-        assertTrue(history.contains("event.id()"));
-        assertTrue(history.contains("event.signalPeriodLabel()"));
-        assertTrue(history.contains("signal-event-lifecycle-label"));
-        assertTrue(history.contains("event.lifecycle().label()"));
-        assertTrue(history.contains("event.lifecycle().resolutionPeriodLabel()"));
-        assertFalse(history.contains("class=\"signal-table\""));
-        assertTrue(history.contains("event.hasBeenRead()"));
         assertTrue(archive.contains("archive.signals()"));
+        assertTrue(archive.contains("companyArchive != null"));
+        assertTrue(archive.contains("companyArchive.symbol() + ' signals'"));
+        assertTrue(archive.contains("@{/alerts/{id}/signals/delete"));
         assertTrue(archive.contains("name=\"sort\""));
         assertTrue(archive.contains("name=\"direction\""));
         assertTrue(archive.contains("value=\"confidence\""));
@@ -839,6 +1016,13 @@ class FrontendSecurityTest {
         assertTrue(archive.contains("data-delete-dialog"));
         assertTrue(dashboard.contains("data-notification-read"));
         assertTrue(dashboard.contains("@{/activity-signals}"));
+        assertTrue(dashboard.contains("ticker-notification-row latest-signal-row is-unread"));
+        assertTrue(dashboard.contains("congressional-dashboard-row latest-signal-row is-unread"));
+        assertTrue(dashboard.contains("insider-dashboard-row latest-signal-row is-unread"));
+        assertTrue(dashboard.contains("activity.returnPercent()"));
+        assertTrue(dashboard.contains("transaction-date close proxy"));
+        assertTrue(styles.contains(".activity-archive-links"));
+        assertTrue(styles.contains(".ticker-notification-row .congressional-row-actions"));
         assertTrue(dashboardScript.contains("initializeNotificationReadButtons"));
         assertTrue(dashboardScript.contains("X-CSRF-TOKEN"));
         assertFalse(dashboardScript.contains("innerHTML"));
@@ -848,6 +1032,11 @@ class FrontendSecurityTest {
         assertTrue(activityArchive.contains("value=\"type\""));
         assertTrue(activityArchive.contains("value=\"actor\""));
         assertTrue(activityArchive.contains("signal.hasBeenRead()"));
+        assertTrue(activityArchive.contains("Directional return"));
+        assertTrue(activityArchive.contains("activity-signal-archive-row latest-signal-row"));
+        assertTrue(activityArchive.contains("activity-archive-return"));
+        assertTrue(activityArchive.contains("signal.returnPercent()"));
+        assertTrue(activityArchive.contains("latest-direction-tag"));
         assertTrue(activityArchive.contains("@{/activity-signals/delete}"));
         assertTrue(activityArchive.contains("name=\"signalKeys\""));
         assertTrue(activityArchive.contains("name=\"singleSignalKey\""));
@@ -904,7 +1093,7 @@ class FrontendSecurityTest {
         assertTrue(detailChartIntervals.contains("interval === nativeInterval"));
         assertTrue(detailChartIntervals.contains("chartKind === 'activity'"));
         assertTrue(detailChartIntervals.contains("nativeLegend.hidden = chartKind === 'technical'"));
-        assertTrue(detailChartIntervals.contains("Elliott Wave overlays are interval-specific"));
+        assertTrue(detailChartIntervals.contains("Top-down Elliott degree"));
         assertTrue(detailChartIntervals.contains("/candles?interval="));
         assertFalse(detailChartIntervals.contains("innerHTML"));
         assertTrue(signalDetail.contains("signal.chart().candles()"));

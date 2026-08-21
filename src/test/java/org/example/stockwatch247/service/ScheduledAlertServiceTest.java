@@ -39,6 +39,62 @@ import static org.mockito.Mockito.when;
 class ScheduledAlertServiceTest {
 
     @Test
+    void confirmedHarmonicCreatesImmutableSignalSnapshotAndSendsEmail() {
+        String symbol = "MSFT";
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        CandlePatternDetectionService detectionService = mock(CandlePatternDetectionService.class);
+        AlertRule rule = rule(
+                symbol, TimeInterval.DAILY, AlertPatternFamily.HARMONIC_FORMATION, TradeSignal.BUY);
+        when(marketDataService.syncCandles(symbol, "1d", null, true))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.CACHE, 0, null));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1d", PageRequest.of(0, 299)))
+                .thenReturn(List.of(
+                        candle(symbol, "1d", 7, 130, 131, 129, 130),
+                        candle(symbol, "1d", 6, 122, 123, 121.4, 122),
+                        candle(symbol, "1d", 5, 182.7, 183.2, 182, 182.7),
+                        candle(symbol, "1d", 4, 138.7, 139, 138.2, 138.7),
+                        candle(symbol, "1d", 3, 199.5, 200, 199, 199.5),
+                        candle(symbol, "1d", 2, 100.5, 101, 100, 100.5),
+                        candle(symbol, "1d", 1, 110, 111, 109, 110)));
+        when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
+                symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
+        when(alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(
+                rule, CandlePattern.HARMONIC_GARTLEY, 7 * 86_400L)).thenReturn(false);
+        when(notificationService.sendSignalEmail(eq(rule), any(DetectedSignal.class), any(AlertEvent.class)))
+                .thenReturn(true);
+
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, detectionService, new ElliottWaveDetectionService());
+        service.configureHarmonicPatterns(new HarmonicPatternDetectionService(
+                new HarmonicPatternDetectionService.Rules(.04, .08, .10, 0.0, 1, 40)));
+
+        service.processSymbolInterval(symbol, TimeInterval.DAILY);
+
+        verify(marketDataService).syncCandles(symbol, "1d", null, true);
+        verify(detectionService, never()).detectAlertSignalsFactory(any(), any());
+        verify(notificationService).sendSignalEmail(eq(rule), any(DetectedSignal.class), any(AlertEvent.class));
+        ArgumentCaptor<AlertEvent> event = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventRepository).save(event.capture());
+        assertThat(event.getValue().getPattern()).isEqualTo(CandlePattern.HARMONIC_GARTLEY);
+        assertThat(event.getValue().getSignalCandleTimestamp()).isEqualTo(7 * 86_400L);
+        assertThat(event.getValue().getClosePrice()).isEqualTo(130.0);
+        assertThat(event.getValue().getHarmonicEndpointTimestamp()).isEqualTo(6 * 86_400L);
+        assertThat(event.getValue().getHarmonicEndpointPrice()).isEqualTo(121.4);
+        assertThat(event.getValue().getHarmonicPointsSnapshot()).contains("X|", "D|");
+        assertThat(event.getValue().getHarmonicMeasurementsSnapshot()).contains("B_XA|");
+        assertThat(event.getValue().getScoreVersion())
+                .isEqualTo(HarmonicPatternDetectionService.RULE_VERSION);
+        assertThat(event.getValue().getInitialEmailSentAt()).isNotNull();
+    }
+
+    @Test
     void dailyScheduleRunsTuesdayThroughSaturdayForMondayThroughFridayCandles() throws Exception {
         Scheduled scheduled = ScheduledAlertService.class.getDeclaredMethod("enqueueDailyChecks")
                 .getAnnotation(Scheduled.class);
@@ -276,6 +332,37 @@ class ScheduledAlertServiceTest {
         assertThat(eventCaptor.getValue().isLifecycleTracked()).isTrue();
         assertThat(eventCaptor.getValue().getConfirmationTriggerPrice())
                 .isGreaterThan(eventCaptor.getValue().getInvalidationPrice());
+        assertThat(eventCaptor.getValue().getElliottSignalStage())
+                .isEqualTo(ElliottSignalStage.CORRECTION_END);
+    }
+
+    @Test
+    void dailyEndOfWaveCTriggersAutomaticElliottEmailAndEventRecording() {
+        String symbol = "SAP.DE";
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        AlertRule rule = rule(symbol, TimeInterval.DAILY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+
+        when(marketDataService.syncCandles(symbol, "1d", null, true))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.CACHE, 0, null));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1d", PageRequest.of(0, 299)))
+                .thenReturn(syntheticElliottCandles(symbol, "1d").reversed());
+        when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
+                symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
+
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService, notificationService);
+        service.processSymbolInterval(symbol, TimeInterval.DAILY);
+
+        verify(notificationService).sendSignalEmail(any(), any(), any());
+        ArgumentCaptor<AlertEvent> eventCaptor = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getAlertRule().getInterval()).isEqualTo(TimeInterval.DAILY);
         assertThat(eventCaptor.getValue().getElliottSignalStage())
                 .isEqualTo(ElliottSignalStage.CORRECTION_END);
     }

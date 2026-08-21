@@ -38,6 +38,8 @@ public class SettingsController {
     private final AnalysisPreferencesService analysisPreferences;
     private final SignalScoringPreferencesService scoringPreferences;
     private final CandlestickPatternPreferencesService candlestickPatternPreferences;
+    private final ElliottWavePreferencesService elliottWavePreferences;
+    private final HarmonicPatternPreferencesService harmonicPatternPreferences;
 
     public SettingsController(UserRepository users, AlertRuleRepository alertRules,
                               AccountSecurityService security, PasswordSecurityCodeService passwordCodes,
@@ -45,23 +47,30 @@ public class SettingsController {
                               RequestRateLimiter rateLimiter,
                               AnalysisPreferencesService analysisPreferences,
                               SignalScoringPreferencesService scoringPreferences,
-                              CandlestickPatternPreferencesService candlestickPatternPreferences) {
+                              CandlestickPatternPreferencesService candlestickPatternPreferences,
+                              ElliottWavePreferencesService elliottWavePreferences,
+                              HarmonicPatternPreferencesService harmonicPatternPreferences) {
         this.users = users; this.alertRules = alertRules; this.security = security;
         this.passwordCodes = passwordCodes; this.deletion = deletion; this.totp = totp;
         this.rateLimiter = rateLimiter;
         this.analysisPreferences = analysisPreferences;
         this.scoringPreferences = scoringPreferences;
         this.candlestickPatternPreferences = candlestickPatternPreferences;
+        this.elliottWavePreferences = elliottWavePreferences;
+        this.harmonicPatternPreferences = harmonicPatternPreferences;
     }
 
     @GetMapping({"/settings", "/settings/appearance", "/settings/analysis-alerts", "/settings/detection",
-            "/settings/scoring", "/settings/candlestick-patterns"})
+            "/settings/scoring", "/settings/candlestick-patterns", "/settings/elliott-waves",
+            "/settings/harmonic-formations"})
     public String page(Model model, Principal principal, HttpSession session, HttpServletRequest request) {
         User user = current(principal);
         String settingsTab = request.getRequestURI().endsWith("/appearance") ? "appearance"
                 : request.getRequestURI().endsWith("/analysis-alerts") ? "analysis"
                 : request.getRequestURI().endsWith("/scoring") ? "scoring"
                 : request.getRequestURI().endsWith("/candlestick-patterns") ? "candlestick-patterns"
+                : request.getRequestURI().endsWith("/elliott-waves") ? "elliott-waves"
+                : request.getRequestURI().endsWith("/harmonic-formations") ? "harmonic-formations"
                 : request.getRequestURI().endsWith("/detection") ? "detection" : "general";
         model.addAttribute("settingsTab", settingsTab);
         model.addAttribute("firstName", user.getFirstName());
@@ -76,6 +85,12 @@ public class SettingsController {
         if ("candlestick-patterns".equals(settingsTab)) {
             model.addAttribute("candlestickPatternPreferences", candlestickPatternPreferences.get(user));
             model.addAttribute("trendRequirements", CandlestickPatternPreferencesService.TrendRequirement.values());
+        }
+        if ("elliott-waves".equals(settingsTab)) {
+            model.addAttribute("elliottWavePreferences", elliottWavePreferences.get(user));
+        }
+        if ("harmonic-formations".equals(settingsTab)) {
+            model.addAttribute("harmonicPatternPreferences", harmonicPatternPreferences.get(user));
         }
         Object setup = session.getAttribute(AccountSession.MFA_SETUP_SECRET);
         Object setupAt = session.getAttribute(AccountSession.MFA_SETUP_AT);
@@ -219,6 +234,71 @@ public class SettingsController {
         return "redirect:/settings/candlestick-patterns";
     }
 
+    @PostMapping("/settings/elliott-waves")
+    public String elliottWaves(@RequestParam MultiValueMap<String, String> form,
+                               Principal principal,
+                               RedirectAttributes redirect) {
+        try {
+            elliottWavePreferences.save(current(principal), form);
+            redirect.addFlashAttribute("success",
+                    "Weekly and monthly Elliott Wave definitions applied to future detections.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", exception.getMessage());
+        }
+        return "redirect:/settings/elliott-waves";
+    }
+
+    @PostMapping("/settings/elliott-waves/reset")
+    public String resetElliottWaves(@RequestParam(defaultValue = "all") String interval,
+                                    Principal principal,
+                                    RedirectAttributes redirect) {
+        try {
+            TimeInterval selected = "all".equalsIgnoreCase(interval) ? null
+                    : TimeInterval.valueOf(interval.trim().toUpperCase());
+            elliottWavePreferences.reset(current(principal), selected);
+            redirect.addFlashAttribute("success", selected == null
+                    ? "All Elliott Wave definitions were restored to factory settings."
+                    : selected.name().substring(0, 1)
+                    + selected.name().substring(1).toLowerCase()
+                    + " Elliott Wave definitions were restored to factory settings.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", "Choose a valid Elliott Wave interval to reset.");
+        }
+        return "redirect:/settings/elliott-waves";
+    }
+
+    @PostMapping("/settings/harmonic-formations")
+    public String harmonicFormations(@RequestParam MultiValueMap<String, String> form,
+                                     Principal principal,
+                                     RedirectAttributes redirect) {
+        try {
+            harmonicPatternPreferences.save(current(principal), form);
+            redirect.addFlashAttribute("success",
+                    "Harmonic Formation definitions applied to future detections and reconstructed overlays.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", exception.getMessage());
+        }
+        return "redirect:/settings/harmonic-formations";
+    }
+
+    @PostMapping("/settings/harmonic-formations/reset")
+    public String resetHarmonicFormations(@RequestParam(defaultValue = "all") String pattern,
+                                          Principal principal,
+                                          RedirectAttributes redirect) {
+        try {
+            org.example.stockwatch247.model.enums.HarmonicPatternType selected = "all".equalsIgnoreCase(pattern)
+                    ? null : org.example.stockwatch247.model.enums.HarmonicPatternType.valueOf(
+                    pattern.trim().toUpperCase());
+            harmonicPatternPreferences.reset(current(principal), selected);
+            redirect.addFlashAttribute("success", selected == null
+                    ? "All Harmonic Formation definitions were restored to factory settings."
+                    : selected.displayName() + " definitions were restored to factory settings.");
+        } catch (IllegalArgumentException exception) {
+            redirect.addFlashAttribute("error", "Choose a valid Harmonic Formation profile to reset.");
+        }
+        return "redirect:/settings/harmonic-formations";
+    }
+
     @PostMapping("/settings/theme")
     public String theme(@RequestParam String theme, Principal principal) {
         security.updateTheme(current(principal).getId(), theme);
@@ -230,11 +310,16 @@ public class SettingsController {
                              @RequestParam String elliottMotiveColor,
                              @RequestParam String elliottCorrectiveColor,
                              @RequestParam String elliottSubwaveColor,
+                             @RequestParam(required = false) String harmonicFormationColor,
                              Principal principal,
                              RedirectAttributes redirect) {
         try {
-            security.updateAppearance(current(principal).getId(), theme,
-                    elliottMotiveColor, elliottCorrectiveColor, elliottSubwaveColor);
+            User user = current(principal);
+            String harmonicColor = harmonicFormationColor == null || harmonicFormationColor.isBlank()
+                    ? user.getHarmonicFormationColor() : harmonicFormationColor;
+            security.updateAppearance(user.getId(), theme,
+                    elliottMotiveColor, elliottCorrectiveColor, elliottSubwaveColor,
+                    harmonicColor);
             redirect.addFlashAttribute("success", "Appearance preferences applied.");
         } catch (IllegalArgumentException exception) {
             redirect.addFlashAttribute("error", exception.getMessage());
@@ -406,9 +491,12 @@ public class SettingsController {
         data.put("elliottMotiveColor", user.getElliottMotiveColor());
         data.put("elliottCorrectiveColor", user.getElliottCorrectiveColor());
         data.put("elliottSubwaveColor", user.getElliottSubwaveColor());
+        data.put("harmonicFormationColor", user.getHarmonicFormationColor());
         data.put("analysisPreferences", analysisPreferences.get(user));
         data.put("signalScoringPreferences", scoringPreferences.get(user));
         data.put("candlestickPatternPreferences", candlestickPatternPreferences.get(user));
+        data.put("elliottWavePreferences", elliottWavePreferences.get(user));
+        data.put("harmonicPatternPreferences", harmonicPatternPreferences.get(user));
         data.put("mfaEnabled", user.isMfaEnabled()); data.put("activeAlertRules", rules);
         return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=stockwatch-account-data.json").body(data);

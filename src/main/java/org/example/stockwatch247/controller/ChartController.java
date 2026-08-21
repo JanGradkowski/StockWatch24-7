@@ -5,16 +5,22 @@ import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
+import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.LivePricingService;
 import org.example.stockwatch247.service.MarketDataService;
 import org.example.stockwatch247.service.ElliottWaveDetectionService;
+import org.example.stockwatch247.service.ElliottWavePreferencesService;
+import org.example.stockwatch247.service.HarmonicPatternDetectionService;
+import org.example.stockwatch247.service.HarmonicPatternPreferencesService;
 import org.example.stockwatch247.service.TechnicalIndicatorEnrichmentService;
 import org.example.stockwatch247.service.TwelveDataService;
 import org.example.stockwatch247.service.YahooFinanceService;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
@@ -33,6 +39,11 @@ public class ChartController {
     private final YahooFinanceService yahooFinanceService;
     private final TechnicalIndicatorEnrichmentService enrichmentService;
     private final ElliottWaveDetectionService elliottWaveDetectionService;
+    private UserRepository userRepository;
+    private ElliottWavePreferencesService elliottWavePreferencesService;
+    private HarmonicPatternDetectionService harmonicPatternDetectionService =
+            new HarmonicPatternDetectionService();
+    private HarmonicPatternPreferencesService harmonicPatternPreferencesService;
 
     public ChartController(CandleRepository candleRepository,
                            LivePricingService livePricingService, MarketDataService marketDataService,
@@ -49,6 +60,25 @@ public class ChartController {
         this.yahooFinanceService = yahooFinanceService;
         this.enrichmentService = enrichmentService;
         this.elliottWaveDetectionService = elliottWaveDetectionService;
+    }
+
+    @Autowired(required = false)
+    void configureElliottWavePreferences(UserRepository userRepository,
+                                         ElliottWavePreferencesService elliottWavePreferencesService) {
+        this.userRepository = userRepository;
+        this.elliottWavePreferencesService = elliottWavePreferencesService;
+    }
+
+    @Autowired(required = false)
+    void configureHarmonicPatterns(HarmonicPatternDetectionService harmonicPatternDetectionService) {
+        if (harmonicPatternDetectionService != null) {
+            this.harmonicPatternDetectionService = harmonicPatternDetectionService;
+        }
+    }
+
+    @Autowired(required = false)
+    void configureHarmonicPatternPreferences(HarmonicPatternPreferencesService preferencesService) {
+        this.harmonicPatternPreferencesService = preferencesService;
     }
 
     @GetMapping("/{symbol}/candles")
@@ -76,15 +106,11 @@ public class ChartController {
 
     @GetMapping("/{symbol}/elliott-waves")
     public ElliottWaveOverlay getElliottWaves(@PathVariable String symbol,
-                                              @RequestParam String interval) {
+                                              @RequestParam String interval,
+                                              Principal principal) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
-        if (!"1wk".equals(validatedInterval) && !"1mo".equals(validatedInterval)) {
-            throw new IllegalArgumentException("Elliott Wave overlays require a weekly or monthly interval.");
-        }
-        TimeInterval waveInterval = "1wk".equals(validatedInterval)
-                ? TimeInterval.WEEKLY
-                : TimeInterval.MONTHLY;
+        TimeInterval waveInterval = elliottInterval(validatedInterval);
 
         MarketDataService.CandleSyncResult syncResult = marketDataService.syncCandles(symbol, validatedInterval, null);
         if (!syncResult.successful()) {
@@ -102,7 +128,8 @@ public class ChartController {
                                 )
                         )
                 );
-        var structure = elliottWaveDetectionService
+        ElliottWaveDetectionService detector = detector(principal, waveInterval);
+        var structure = detector
                 .findLatestWaveStructure(
                         enrichmentService.enrichForElliott(
                                 candles,
@@ -129,7 +156,7 @@ public class ChartController {
                 validatedInterval,
                 labelStyle(validatedInterval),
                 structureId(detected),
-                elliottWaveDetectionService.lifecycleCycleKey(detected).orElse(null),
+                detector.lifecycleCycleKey(detected).orElse(null),
                 detected.direction(),
                 detected.correctionComplete(),
                 points,
@@ -146,24 +173,25 @@ public class ChartController {
                 detected.qualityWarnings());
     }
 
+    public ElliottWaveOverlay getElliottWaves(String symbol, String interval) {
+        return getElliottWaves(symbol, interval, null);
+    }
+
     @GetMapping("/{symbol}/elliott-waves/history")
     public ElliottWaveHistoryOverlay getHistoricalElliottWaves(@PathVariable String symbol,
                                                                @RequestParam String interval,
-                                                               @RequestParam(required = false) Long from) {
+                                                               @RequestParam(required = false) Long from,
+                                                               Principal principal) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
         from = SecurityInputValidator.requireBeforeTimestamp(from);
-        if (!"1wk".equals(validatedInterval) && !"1mo".equals(validatedInterval)) {
-            throw new IllegalArgumentException("Historical Elliott Waves require a weekly or monthly interval.");
-        }
-        TimeInterval waveInterval = "1wk".equals(validatedInterval)
-                ? TimeInterval.WEEKLY
-                : TimeInterval.MONTHLY;
+        TimeInterval waveInterval = elliottInterval(validatedInterval);
         List<Candle> candles = from == null
                 ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval)
                 : candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
                         symbol, validatedInterval, from);
-        List<ElliottWaveOverlay> structures = elliottWaveDetectionService
+        ElliottWaveDetectionService detector = detector(principal, waveInterval);
+        List<ElliottWaveOverlay> structures = detector
                 .findHistoricalWaveStructures(
                         enrichmentService.enrichForElliott(
                                 candles,
@@ -176,7 +204,7 @@ public class ChartController {
                         validatedInterval,
                         labelStyle(validatedInterval),
                         structureId(structure),
-                        elliottWaveDetectionService.lifecycleCycleKey(structure).orElse(null),
+                        detector.lifecycleCycleKey(structure).orElse(null),
                         structure.direction(),
                         structure.correctionComplete(),
                         structure.points().stream()
@@ -203,6 +231,59 @@ public class ChartController {
                 labelStyle(validatedInterval),
                 from,
                 structures);
+    }
+
+    public ElliottWaveHistoryOverlay getHistoricalElliottWaves(String symbol, String interval, Long from) {
+        return getHistoricalElliottWaves(symbol, interval, from, null);
+    }
+
+    @GetMapping("/{symbol}/harmonic-formations/history")
+    public HarmonicHistoryOverlay getHistoricalHarmonicFormations(
+            @PathVariable String symbol,
+            @RequestParam String interval,
+            @RequestParam(required = false) Long from,
+            Principal principal) {
+        symbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String validatedInterval = SecurityInputValidator.requireInterval(interval);
+        harmonicInterval(validatedInterval);
+        from = SecurityInputValidator.requireBeforeTimestamp(from);
+        List<Candle> candles = from == null
+                ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval)
+                : candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+                        symbol, validatedInterval, from);
+        List<HarmonicPatternDetectionService.HarmonicFormation> formations =
+                harmonicDetector(principal).detectHistorical(candles);
+        return new HarmonicHistoryOverlay(
+                validatedInterval,
+                from,
+                HarmonicPatternDetectionService.RULE_VERSION,
+                formations
+        );
+    }
+
+    public HarmonicHistoryOverlay getHistoricalHarmonicFormations(
+            String symbol, String interval, Long from) {
+        return getHistoricalHarmonicFormations(symbol, interval, from, null);
+    }
+
+    private HarmonicPatternDetectionService harmonicDetector(Principal principal) {
+        if (principal == null || userRepository == null || harmonicPatternPreferencesService == null) {
+            return harmonicPatternDetectionService;
+        }
+        return userRepository.findByEmailIgnoreCase(principal.getName())
+                .map(user -> harmonicPatternPreferencesService.detector(
+                        user, harmonicPatternDetectionService))
+                .orElse(harmonicPatternDetectionService);
+    }
+
+    private ElliottWaveDetectionService detector(Principal principal, TimeInterval interval) {
+        if (principal == null || userRepository == null || elliottWavePreferencesService == null) {
+            return elliottWaveDetectionService;
+        }
+        return userRepository.findByEmailIgnoreCase(principal.getName())
+                .map(user -> elliottWaveDetectionService.configured(
+                        elliottWavePreferencesService.get(user).profile(interval).rules()))
+                .orElse(elliottWaveDetectionService);
     }
 
     @GetMapping("/search")
@@ -272,11 +353,44 @@ public class ChartController {
     }
 
     private String formatWaveLabel(String label, String interval) {
-        return "1wk".equals(interval) ? label.toLowerCase(Locale.ROOT) : label;
+        if ("1wk".equals(interval)) return label.toLowerCase(Locale.ROOT);
+        if (!"1d".equals(interval)) return label;
+        return switch (label == null ? "" : label.toUpperCase(Locale.ROOT)) {
+            case "I" -> "1";
+            case "II" -> "2";
+            case "III" -> "3";
+            case "IV" -> "4";
+            case "V" -> "5";
+            default -> label;
+        };
     }
 
     private String labelStyle(String interval) {
-        return "1wk".equals(interval) ? "LOWERCASE" : "UPPERCASE";
+        return switch (interval) {
+            case "1d" -> "NUMERIC";
+            case "1wk" -> "LOWERCASE";
+            default -> "UPPERCASE";
+        };
+    }
+
+    private TimeInterval elliottInterval(String interval) {
+        return switch (interval) {
+            case "1d" -> TimeInterval.DAILY;
+            case "1wk" -> TimeInterval.WEEKLY;
+            case "1mo" -> TimeInterval.MONTHLY;
+            default -> throw new IllegalArgumentException(
+                    "Elliott Wave overlays require a daily, weekly, or monthly interval.");
+        };
+    }
+
+    private TimeInterval harmonicInterval(String interval) {
+        return switch (interval) {
+            case "1d" -> TimeInterval.DAILY;
+            case "1wk" -> TimeInterval.WEEKLY;
+            case "1mo" -> TimeInterval.MONTHLY;
+            default -> throw new IllegalArgumentException(
+                    "Harmonic overlays require a daily, weekly, or monthly interval.");
+        };
     }
 
     private String structureId(ElliottWaveDetectionService.ElliottWaveStructure structure) {
@@ -319,5 +433,12 @@ public class ChartController {
                                              String labelStyle,
                                              Long fromTimestamp,
                                              List<ElliottWaveOverlay> structures) {
+    }
+
+    public record HarmonicHistoryOverlay(
+            String interval,
+            Long fromTimestamp,
+            String ruleVersion,
+            List<HarmonicPatternDetectionService.HarmonicFormation> formations) {
     }
 }

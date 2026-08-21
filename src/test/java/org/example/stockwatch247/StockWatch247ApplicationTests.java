@@ -171,6 +171,8 @@ class StockWatch247ApplicationTests {
         trade.setEntryCandleTimestamp(entryAt.getEpochSecond());
         trade.setEntryQuoteSource("Integration quote");
         trade.setCurrency("USD");
+        trade.setQuantity(new BigDecimal("10.00000000"));
+        trade.setNotionalValue(new BigDecimal("1000.00000000"));
         trade.setEntrySnapshot(objectMapper.writeValueAsString(snapshot));
         trade.setExitPrice(new BigDecimal("90.00000000"));
         trade.setExitAt(Instant.now());
@@ -185,8 +187,10 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(get("/virtual-trades").with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("virtual-trades"))
-                .andExpect(content().string(containsString("Virtual trades")))
+                .andExpect(content().string(containsString("Demo Trading")))
                 .andExpect(content().string(containsString("Avoided loss")))
+                .andExpect(content().string(containsString("Final reference value 900.00 USD")))
+                .andExpect(content().string(containsString("class=\"virtual-trade-monetary-result\"")))
                 .andExpect(content().string(containsString("Delete")))
                 .andExpect(content().string(containsString("/virtual-trades/" + trade.getId() + "/delete")));
 
@@ -195,6 +199,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(view().name("virtual-trade"))
                 .andExpect(content().string(containsString("Technical comparison")))
                 .andExpect(content().string(containsString("Results")))
+                .andExpect(content().string(containsString("Value at sell decision")))
+                .andExpect(content().string(containsString("Final reference value")))
+                .andExpect(content().string(containsString("900.00 USD")))
                 .andExpect(content().string(containsString("not a short sale")));
 
         mockMvc.perform(post("/virtual-trades/{id}/delete", trade.getId())
@@ -204,7 +211,7 @@ class StockWatch247ApplicationTests {
                         .with(csrf()))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", "/virtual-trades?sort=ticker&direction=asc"))
-                .andExpect(flash().attribute("virtualTradeDeleteMessage", "Virtual trade deleted."));
+                .andExpect(flash().attribute("virtualTradeDeleteMessage", "Demo trade deleted."));
 
         assertThat(virtualTradeRepository.findById(trade.getId()).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(virtualTradeRepository.findAllForUser(account)).isEmpty();
@@ -796,7 +803,20 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("stock"))
                 .andExpect(model().attribute("symbol", "^GSPC"))
+                .andExpect(content().string(containsString("class=\"price-header-demo-trading\"")))
+                .andExpect(content().string(containsString("aria-controls=\"historicalCandlestickViewDialog\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString("Pattern research"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString("showHistoricalCandlestickPatternsBtn"))))
+                .andExpect(content().string(containsString("class=\"alert-eye-input\"")))
+                .andExpect(content().string(containsString("class=\"alert-panel alert-star-panel\"")))
+                .andExpect(content().string(containsString("An outlined star is not followed; a filled star is followed.")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString("check-alert-btn"))))
                 .andExpect(content().string(containsString("id=\"rsiOverlayToggle\"")))
+                .andExpect(content().string(containsString("id=\"volumeChartToggle\"")))
+                .andExpect(content().string(containsString("id=\"volumeChartPanel\"")))
+                .andExpect(content().string(containsString("data-chart-resize-target=\"priceChartStage\"")))
+                .andExpect(content().string(containsString("data-chart-resize-target=\"rsiChartContainer\"")))
+                .andExpect(content().string(containsString("data-chart-resize-target=\"volumeChartContainer\"")))
                 .andExpect(content().string(containsString("id=\"rsiPeriodDialog\"")))
                 .andExpect(content().string(containsString("id=\"rsiChartContainer\"")))
                 .andExpect(content().string(containsString("RSI 14 with 70/30 boundaries is the classic default")))
@@ -939,15 +959,19 @@ class StockWatch247ApplicationTests {
 
         mockMvc.perform(get("/alerts/{id}", candleBuy.getId()).with(user(email)))
                 .andExpect(status().isOk())
-                .andExpect(view().name("alert-history"))
-                .andExpect(content().string(containsString("Followed combinations")))
-                .andExpect(content().string(containsString("Candlestick")))
-                .andExpect(content().string(containsString("Elliott Wave")))
+                .andExpect(view().name("all-signals"))
+                .andExpect(model().attributeExists("archive", "companyArchive"))
+                .andExpect(content().string(containsString("Company signal archive")))
+                .andExpect(content().string(containsString(symbol + " signals")))
+                .andExpect(content().string(containsString("Group and sort by")))
+                .andExpect(content().string(containsString("Select this page")))
+                .andExpect(content().string(containsString("Best result")))
+                .andExpect(content().string(containsString("Worst result")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
-                .andExpect(content().string(containsString("Lifecycle status")))
-                .andExpect(content().string(containsString("Resolved 20\u201324 Jul 2026")))
+                .andExpect(content().string(containsString("Signal status")))
                 .andExpect(content().string(containsString("Confirmed")))
                 .andExpect(content().string(containsString("(unread)")))
+                .andExpect(content().string(containsString("/alerts/" + candleBuy.getId() + "/signals/delete")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 
         mockMvc.perform(get("/signals")

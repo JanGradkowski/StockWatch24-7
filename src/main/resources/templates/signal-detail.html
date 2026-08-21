@@ -7,7 +7,7 @@
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
-  <script th:src="@{/js/elliott-subwave-overlay.js}"></script>
+  <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
 </head>
@@ -215,7 +215,8 @@
                       data-native-interval=${signal.interval().name() == 'DAILY' ? '1d' : (signal.interval().name() == 'WEEKLY' ? '1wk' : '1mo')},
                       data-native-label=${signal.intervalLabel()},
                       data-signal-label=${signal.patternLabel()},
-                      data-signal-family=${signal.patternFamily().name()}">
+                      data-signal-family=${signal.patternFamily().name()},
+                      data-elliott-subwave-color=${elliottSubwaveColor}">
           <button type="button" class="signal-detail-interval-button"
                   th:classappend="${signal.interval().name() == 'DAILY'} ? ' active' : ''"
                   data-detail-interval="1d"
@@ -244,6 +245,10 @@
         <span><i class="signal-chart-key subwave" aria-hidden="true"></i>Subwaves on hover</span>
         <span><i class="signal-chart-key confirmation" aria-hidden="true"></i>Recorded confirmation</span>
       </th:block>
+      <th:block th:if="${signal.chart().harmonic() != null}">
+        <span><i class="signal-chart-key motive" aria-hidden="true"></i>Saved harmonic geometry</span>
+        <span><i class="signal-chart-key confirmation" aria-hidden="true"></i>Confirmation candle</span>
+      </th:block>
     </div>
 
     <div class="signal-native-interval-notice" data-native-interval-notice hidden>
@@ -268,6 +273,7 @@
                   data-pattern-label=${signal.patternLabel()},
                   data-direction=${signal.tradeSignal().name()},
                   data-family=${signal.patternFamily().name()},
+                  data-symbol=${signal.symbol()},
                   data-interval=${signal.interval().name()},
                   data-trend-label=${signal.chart().trendLabel()}"></div>
     <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
@@ -294,12 +300,60 @@
       <li th:each="point : ${signal.chart().elliottWave().points()}"
           th:attr="data-label=${point.label()},data-time=${point.timestamp()},data-price=${point.price()},data-pivot-type=${point.pivotType()}"></li>
     </ol>
+    <ol th:if="${signal.chart().harmonic() != null}"
+        id="signalHarmonicData"
+        hidden
+        aria-hidden="true"
+        th:attr="data-direction=${signal.chart().harmonic().direction()},
+                 data-confirmation-time=${signal.chart().harmonic().confirmationTimestamp()},
+                 data-endpoint-time=${signal.chart().harmonic().endpointTimestamp()},
+                 data-endpoint-price=${signal.chart().harmonic().endpointPrice()}">
+      <li th:each="point : ${signal.chart().harmonic().points()}"
+          th:attr="data-label=${point.label()},data-time=${point.timestamp()},data-price=${point.price()},data-pivot-type=${point.pivotType()}"></li>
+    </ol>
 
     <div th:unless="${signal.chart().available()}" class="signal-chart-unavailable" data-native-chart-unavailable>
       <span aria-hidden="true">i</span>
       <div>
         <h3>Chart context is unavailable for this signal</h3>
         <p th:text="${signal.chart().unavailableReason()}">The original candle is not in the local cache.</p>
+      </div>
+    </div>
+  </section>
+
+  <section th:if="${signal.chart().harmonic() != null}"
+           class="signal-method-note harmonic-geometry-note"
+           aria-labelledby="harmonic-geometry-heading">
+    <div class="method-note-index" aria-hidden="true">01</div>
+    <div class="harmonic-geometry-content">
+      <div class="signal-section-kicker">Saved at detection</div>
+      <h2 id="harmonic-geometry-heading">Harmonic formation geometry</h2>
+      <p>These points and ratios are the immutable snapshot used for this alert. The confirmation candle is later than D/C because a pivot needs right-side candles before it is knowable.</p>
+      <div class="harmonic-geometry-groups">
+        <section class="harmonic-geometry-group" aria-labelledby="harmonic-points-heading">
+          <div class="harmonic-geometry-group-heading">
+            <h3 id="harmonic-points-heading">Formation points</h3>
+            <span th:text="${signal.chart().harmonic().points().size() + ' pivots'}">5 pivots</span>
+          </div>
+          <div class="harmonic-geometry-grid points">
+            <div th:each="point : ${signal.chart().harmonic().points()}" class="signal-snapshot-item harmonic-geometry-item">
+              <span th:text="${'Point ' + point.label()}">Point X</span>
+              <strong th:text="${#numbers.formatDecimal(point.price(), 1, 4)}">100.0000</strong>
+            </div>
+          </div>
+        </section>
+        <section class="harmonic-geometry-group" aria-labelledby="harmonic-measurements-heading">
+          <div class="harmonic-geometry-group-heading">
+            <h3 id="harmonic-measurements-heading">Measured ratios</h3>
+            <span th:text="${signal.chart().harmonic().measurements().size() + ' checks'}">6 checks</span>
+          </div>
+          <div class="harmonic-geometry-grid ratios">
+            <div th:each="measurement : ${signal.chart().harmonic().measurements()}" class="signal-snapshot-item harmonic-geometry-item">
+              <span th:text="${#strings.replace(measurement.key, '_', '/')}">B/XA</span>
+              <strong th:text="${#numbers.formatDecimal(measurement.value, 1, 4)}">0.6180</strong>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </section>
@@ -574,6 +628,7 @@
       <h2 id="method-heading">How the setup score works</h2>
       <p th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">A named candlestick pattern is emitted only after its mandatory geometry and prior-trend rules pass. V4 then allocates 25 points to pattern quality, 20 to EMA/SMA/MACD trend evidence, 5 to completed higher-timeframe trend, 15 to RSI/CCI momentum, 10 to Bollinger location, 15 to support/resistance, and 10 to relative volume, rolling VWAP, and an OHLCV volume-at-price approximation. Daily uses RSI 14, EMA 20/50, and SMA 200; weekly uses RSI 10, EMA 8/21, and SMA 40; monthly uses RSI 9, EMA 6/12, and SMA 24. The volume-profile values are approximations because an OHLCV candle does not reveal where inside its range each trade occurred. The score ranks heuristic confluence and cannot create or suppress an alert.</p>
       <p th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE'}">The Elliott detector combines wave structure, proportional relationships, trend context, momentum, and available confirmation evidence. Its score measures technical confluence, not probability of profit or financial advice.</p>
+      <p th:if="${signal.patternFamily().name() == 'HARMONIC_FORMATION'}">The harmonic detector first enforces every hard direction, alternating-pivot, inside/outside completion, and point-boundary rule. The factory score awards 35 points for the primary B ratio, 45 for completion, and 20 for secondary ratios and leg relationships; your scoring settings can include or reweight those categories. Invalid hard geometry is rejected rather than given a lower score.</p>
     </div>
   </section>
   </div>
@@ -699,6 +754,7 @@
     const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
     const ELLIOTT_CORRECTIVE_COLOR = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
     const ELLIOTT_SUBWAVE_COLOR = /*[[${elliottSubwaveColor}]]*/ '#F59E0B';
+    const HARMONIC_FORMATION_COLOR = /*[[${harmonicFormationColor}]]*/ '#22C55E';
 
     const tabs = Array.from(document.querySelectorAll('[data-signal-tab]'));
     const panels = {
@@ -936,6 +992,7 @@
     const container = document.getElementById('signalChart');
     const dataList = document.getElementById('signalChartData');
     const elliottDataList = document.getElementById('signalElliottWaveData');
+    const harmonicDataList = document.getElementById('signalHarmonicData');
     if (!container || !dataList || typeof LightweightCharts === 'undefined') return;
 
     const candleData = Array.from(dataList.children).map(item => ({
@@ -989,7 +1046,8 @@
     candles.setData(candleData);
 
     document.querySelectorAll('.signal-chart-key.motive')
-      .forEach(key => { key.style.backgroundColor = ELLIOTT_MOTIVE_COLOR; });
+      .forEach(key => { key.style.backgroundColor = harmonicDataList
+        ? HARMONIC_FORMATION_COLOR : ELLIOTT_MOTIVE_COLOR; });
     document.querySelectorAll('.signal-chart-key.corrective')
       .forEach(key => { key.style.backgroundColor = ELLIOTT_CORRECTIVE_COLOR; });
     document.querySelectorAll('.signal-chart-key.subwave')
@@ -1004,6 +1062,17 @@
       impulseVariant: elliottDataList.dataset.impulseVariant,
       correctionVariant: elliottDataList.dataset.correctionVariant,
       points: Array.from(elliottDataList.children).map(item => ({
+        label: item.dataset.label || '',
+        timestamp: Number(item.dataset.time),
+        price: Number(item.dataset.price),
+        pivotType: item.dataset.pivotType
+      })).filter(point => Number.isFinite(point.timestamp) && Number.isFinite(point.price))
+    } : null;
+
+    const harmonicFormation = harmonicDataList ? {
+      direction: harmonicDataList.dataset.direction,
+      confirmationTimestamp: Number(harmonicDataList.dataset.confirmationTime),
+      points: Array.from(harmonicDataList.children).map(item => ({
         label: item.dataset.label || '',
         timestamp: Number(item.dataset.time),
         price: Number(item.dataset.price),
@@ -1099,12 +1168,56 @@
       }
     }
 
+    if (harmonicFormation && harmonicFormation.points.length === 5) {
+      const harmonicColor = HARMONIC_FORMATION_COLOR;
+      const harmonicSeries = chart.addLineSeries({
+        color: harmonicColor,
+        lineWidth: 3,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      harmonicSeries.setData(harmonicFormation.points.map(point => ({
+        time: point.timestamp,
+        value: point.price
+      })));
+      harmonicSeries.setMarkers(harmonicFormation.points.map((point, index) => ({
+        time: point.timestamp,
+        position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
+        color: harmonicColor,
+        shape: index === harmonicFormation.points.length - 1
+          ? (harmonicFormation.direction === 'BEARISH' ? 'arrowDown' : 'arrowUp')
+          : 'circle',
+        text: point.label
+      })));
+      const confirmationCandle = candleData.find(
+        candle => candle.time === harmonicFormation.confirmationTimestamp);
+      if (confirmationCandle) {
+        const confirmationSeries = chart.addLineSeries({
+          color: 'rgba(0, 0, 0, 0)',
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false
+        });
+        confirmationSeries.setData([{ time: confirmationCandle.time, value: confirmationCandle.close }]);
+        confirmationSeries.setMarkers([{
+          time: confirmationCandle.time,
+          position: harmonicFormation.direction === 'BEARISH' ? 'aboveBar' : 'belowBar',
+          color: harmonicColor,
+          shape: harmonicFormation.direction === 'BEARISH' ? 'arrowDown' : 'arrowUp',
+          text: 'Signal confirmed'
+        }]);
+      }
+    }
+
     const trendStart = Number(container.dataset.trendStart);
     const patternStart = Number(container.dataset.patternStart);
     const signalTime = Number(container.dataset.signalTime);
     const isElliottSignal = container.dataset.family === 'ELLIOTT_WAVE';
+    const isStructuredSignal = isElliottSignal || container.dataset.family === 'HARMONIC_FORMATION';
     const trendData = candleData
-      .filter(() => !isElliottSignal)
+      .filter(() => !isStructuredSignal)
       .filter(candle => Number.isFinite(trendStart) && candle.time >= trendStart && candle.time < patternStart)
       .map(candle => ({ time: candle.time, value: candle.close }));
     const trendSeries = chart.addLineSeries({
@@ -1117,7 +1230,7 @@
     });
     trendSeries.setData(trendData);
 
-    const patternCandles = isElliottSignal
+    const patternCandles = isStructuredSignal
       ? []
       : candleData.filter(candle => candle.time >= patternStart && candle.time <= signalTime);
     const annotationLayer = document.createElement('div');
@@ -1252,22 +1365,22 @@
         storageKey: `${window.location.pathname}:native:${container.dataset.interval || 'signal'}`
       });
     }
-    if (elliottWave && typeof StockWatchElliottSubwaveOverlay !== 'undefined') {
-      const rawInterval = container.dataset.interval === 'MONTHLY' ? '1mo' : '1wk';
-      new StockWatchElliottSubwaveOverlay({
+    if (elliottWave && typeof StockWatchElliottHierarchyOverlay !== 'undefined') {
+      const rawInterval = container.dataset.interval === 'MONTHLY'
+        ? '1mo'
+        : (container.dataset.interval === 'DAILY' ? '1d' : '1wk');
+      const hierarchyOverlay = new StockWatchElliottHierarchyOverlay({
         chart,
-        candleSeries: candles,
         container,
-        symbol: /*[[${signal.symbol()}]]*/ '',
+        symbol: container.dataset.symbol || '',
         interval: rawInterval,
-        points: elliottWave.points,
         asOfTimestamp: Number.isFinite(elliottWave.confirmationTimestamp)
           && elliottWave.confirmationTimestamp > 0
           ? elliottWave.confirmationTimestamp
           : signalTime,
-        color: ELLIOTT_SUBWAVE_COLOR,
-        autoSubscribe: true
+        color: ELLIOTT_SUBWAVE_COLOR
       });
+      hierarchyOverlay.showInterval(rawInterval);
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(() => requestAnimationFrame(renderAnnotations));
     if (typeof ResizeObserver !== 'undefined') {
