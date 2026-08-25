@@ -238,6 +238,10 @@
         <span><i class="signal-chart-key trend" aria-hidden="true"></i><span th:text="${signal.chart().trendLabel()}">Required downtrend</span></span>
         <span><i class="signal-chart-key pattern" aria-hidden="true"></i>Pattern candles</span>
         <span><i class="signal-chart-key detection" aria-hidden="true"></i>Detection candle</span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-entry" aria-hidden="true"></i>Trade entry</span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-target" aria-hidden="true"></i>Sell target / reward</span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-stop" aria-hidden="true"></i>Stop loss / risk</span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key time-stop" aria-hidden="true"></i>Candle 8 time stop</span>
       </th:block>
       <th:block th:if="${signal.chart().elliottWave() != null}">
         <span><i class="signal-chart-key motive" aria-hidden="true"></i>Motive I&ndash;V</span>
@@ -275,7 +279,16 @@
                   data-family=${signal.patternFamily().name()},
                   data-symbol=${signal.symbol()},
                   data-interval=${signal.interval().name()},
-                  data-trend-label=${signal.chart().trendLabel()}"></div>
+                  data-trend-label=${signal.chart().trendLabel()},
+                  data-trade-entry=${signal.lifecycle().entryPrice()},
+                  data-trade-stop=${signal.lifecycle().stopLossPrice()},
+                  data-trade-target=${signal.lifecycle().profitTargetPrice()},
+                  data-trade-rr=${signal.lifecycle().rewardRiskRatio()},
+                  data-trade-entry-time=${signal.lifecycle().detectionCandleTimestamp()},
+                  data-trade-time-stop-candles=${signal.lifecycle().confirmationWindowCandles()},
+                  data-trade-resolution-time=${signal.lifecycle().resolutionCandleTimestamp()},
+                  data-trade-resolution-status=${signal.lifecycle().status().name()},
+                  data-trade-resolution-close=${signal.lifecycle().resolutionClosePrice()}"></div>
     <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
          th:attr="aria-label=${'Alternate interval price chart for ' + signal.symbol()}" role="group"></div>
     <div class="signal-chart-unavailable signal-detail-interval-error" data-detail-interval-error hidden>
@@ -319,6 +332,29 @@
         <p th:text="${signal.chart().unavailableReason()}">The original candle is not in the local cache.</p>
       </div>
     </div>
+  </section>
+
+  <section th:if="${signal.patternFamily().name() == 'CANDLESTICK' and signal.lifecycle().entryPrice() != null}"
+           class="signal-trade-plan-card"
+           aria-labelledby="candlestick-trade-plan-heading">
+    <div class="signal-trade-plan-heading">
+      <div>
+        <div class="signal-section-kicker">Close-based trade plan</div>
+        <h2 id="candlestick-trade-plan-heading">Risk, reward, and exit plan</h2>
+        <p>Only completed closes count. Wick touches do not reach the target or stop.</p>
+      </div>
+      <span class="signal-lifecycle-pill" th:classappend="${' ' + signal.lifecycle().cssClass()}"
+            th:text="${signal.lifecycle().label()}">Detected</span>
+    </div>
+    <div class="signal-trade-plan-grid">
+      <article class="entry"><span>Entry · candle 0</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${signal.lifecycle().detectionPeriodLabel()}">Detection period</small></article>
+      <article class="risk"><span>Stop loss</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">95.0000</strong><small>Exact structural invalidation price</small></article>
+      <article class="reward"><span>Price to sell / target</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}">110.0000</strong><small th:text="${'Risk-to-reward 1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)}">Risk-to-reward 1:2</small></article>
+      <article class="time"><span>Time stop</span><strong th:text="${'Candle ' + signal.lifecycle().confirmationWindowCandles()}">Candle 8</strong><small>Exit at that completed close if target and stop remain untouched by closes</small></article>
+      <article class="favorable"><span th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Target return' : 'Most favorable completed-close move'}">Most favorable completed-close move</span><strong th:if="${signal.observedOutcome().bestDirectionalMovePercent() != null}" class="positive" th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">+4.00%</strong><strong th:unless="${signal.observedOutcome().bestDirectionalMovePercent() != null}">Awaiting first outcome close</strong><small th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Fixed at the entry-to-target percentage' : 'Best close from entry through exit or the latest available candle'}">Best close in trade window</small></article>
+      <article th:if="${signal.lifecycle().terminal()}" class="exit"><span>Actual trade exit</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().resolutionClosePrice(), 1, 4)}">103.0000</strong><small th:text="${signal.lifecycle().resolutionPeriodLabel()}">Resolution period</small></article>
+    </div>
+    <p class="signal-trade-plan-summary" th:text="${signal.observedOutcome().summary()}">The trade remains open.</p>
   </section>
 
   <section th:if="${signal.chart().harmonic() != null}"
@@ -370,7 +406,7 @@
            aria-labelledby="lifecycle-heading">
     <div class="signal-lifecycle-heading">
       <div>
-        <div class="signal-section-kicker">Candidate validation and follow-through</div>
+        <div class="signal-section-kicker" th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Detection and trade execution' : 'Candidate validation and follow-through'}">Detection and trade execution</div>
         <h2 id="lifecycle-heading">Signal lifecycle</h2>
       </div>
       <span class="signal-lifecycle-pill lifecycle-heading-pill"
@@ -400,7 +436,7 @@
           <span class="lifecycle-step-label">Detection gate passed</span>
           <strong>Detected signal</strong>
           <time th:text="${signal.lifecycle().detectionPeriodLabel()}">20 Jul 2026</time>
-          <small th:text="${'Outcome measurement starts from the ' + #numbers.formatDecimal(signal.lifecycle().detectionClosePrice(), 1, 4) + ' close'}">Outcome measurement starts here</small>
+          <small th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Trade opens at the ' + #numbers.formatDecimal(signal.lifecycle().detectionClosePrice(), 1, 4) + ' close (candle 0)' : 'Outcome measurement starts from the ' + #numbers.formatDecimal(signal.lifecycle().detectionClosePrice(), 1, 4) + ' close'}">Trade opens at this close</small>
         </div>
       </li>
       <li th:if="${signal.lifecycle().terminal()}"
@@ -424,7 +460,7 @@
               th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'DETECTED' ? '3' : '2'}">2</span>
         <div class="lifecycle-step-copy">
           <span class="lifecycle-step-label">Next update</span>
-          <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Awaiting mandatory detection gate' : 'Awaiting outcome resolution') : 'Awaiting follow-through'}">Awaiting follow-through</strong>
+          <strong th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Awaiting mandatory detection gate' : 'Awaiting target, stop, or candle 8') : (signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Awaiting mandatory detection gate' : 'Awaiting outcome resolution') : 'Awaiting follow-through')}">Awaiting target, stop, or candle 8</strong>
           <span th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Immediately following completed candle' : 'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles from detection') : 'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">Up to 3 completed candles</span>
           <small th:if="${signal.lifecycle().updatedAt() != null}">
             Tracking started
@@ -443,15 +479,23 @@
         </strong>
       </div>
       <div>
-        <span th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL' ? 'Mandatory detection gate' : 'Confirmation trigger'}">Confirmation trigger</span>
+        <span th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL' ? 'Mandatory detection gate' : (signal.patternFamily().name() == 'CANDLESTICK' ? 'Successful trade target' : 'Confirmation trigger')}">Successful trade target</span>
         <strong th:if="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL'}"
                 th:text="${(signal.tradeSignal().name() == 'BUY' ? 'Green close above ' : 'Red close below ') + #numbers.formatDecimal(signal.closePrice(), 1, 4)}">Green close above 102.0000</strong>
         <strong th:unless="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL'}"
-                th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationTriggerPrice(), 1, 4)}">102.0000</strong>
+                th:text="${#numbers.formatDecimal(signal.patternFamily().name() == 'CANDLESTICK' ? signal.lifecycle().profitTargetPrice() : signal.lifecycle().confirmationTriggerPrice(), 1, 4)}">102.0000</strong>
+      </div>
+      <div th:if="${signal.patternFamily().name() == 'CANDLESTICK' and signal.lifecycle().entryPrice() != null}">
+        <span>Trade entry</span>
+        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong>
       </div>
       <div th:if="${signal.lifecycle().invalidationPrice() != null and !(signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL')}">
-        <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? 'Structural invalidation boundary' : 'Invalidation boundary'}">Invalidation boundary</span>
-        <strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">96.0000</strong>
+        <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? 'Structural invalidation boundary' : 'Stop loss'}">Stop loss</span>
+        <strong th:text="${#numbers.formatDecimal(signal.patternFamily().name() == 'CANDLESTICK' ? signal.lifecycle().stopLossPrice() : signal.lifecycle().invalidationPrice(), 1, 4)}">96.0000</strong>
+      </div>
+      <div th:if="${signal.patternFamily().name() == 'CANDLESTICK' and signal.lifecycle().rewardRiskRatio() != null}">
+        <span>Risk-to-reward</span>
+        <strong th:text="${'1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)}">1:2</strong>
       </div>
       <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().invalidationPrice() == null}">
         <span>Invalidation rule</span>
@@ -462,14 +506,14 @@
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().elliottEndpointPrice(), 1, 4)}">108.0000</strong>
       </div>
       <div>
-        <span>Observation window</span>
+        <span th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Time stop' : 'Observation window'}">Time stop</span>
         <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? '1 mandatory gate candle' : signal.lifecycle().confirmationWindowCandles() + ' completed candles from detection') : signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">3 completed candles</strong>
       </div>
-      <div th:if="${signal.lifecycle().confirmationMovePercent() != null}">
+      <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().confirmationMovePercent() != null}">
         <span>Required favorable move</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationMovePercent(), 1, 2) + '%'}">2.00%</strong>
       </div>
-      <div th:if="${signal.lifecycle().invalidationMovePercent() != null}">
+      <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().invalidationMovePercent() != null}">
         <span>Maximum adverse move</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationMovePercent(), 1, 2) + '%'}">2.00%</strong>
       </div>
@@ -492,74 +536,39 @@
       Lifecycle resolved; no follow-up delivery timestamp was recorded.
     </p>
     <p class="signal-lifecycle-note"
-       th:text="${signal.lifecycle().immediateConfirmationRequired() ? 'The mandatory gate and later outcome rules use completed-candle closes, not intraday touches. A rejected candidate never becomes a signal; after detection, the first confirmed, invalidated, or expired outcome is terminal.' : 'Confirmation uses completed-candle closes, not intraday boundary touches. The first confirmed, invalidated, or expired outcome is terminal and does not replace the original detection.'}">
+       th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Candlestick trades use completed-candle closes only. CONFIRMED means the profit target closed successfully, INVALIDATED means the stop loss was hit, and EXPIRED means the trade closed at candle 8 close.' : (signal.lifecycle().immediateConfirmationRequired() ? 'The mandatory gate and later outcome rules use completed-candle closes, not intraday touches. A rejected candidate never becomes a signal; after detection, the first confirmed, invalidated, or expired outcome is terminal.' : 'Confirmation uses completed-candle closes, not intraday boundary touches. The first confirmed, invalidated, or expired outcome is terminal and does not replace the original detection.')}">
       Lifecycle decisions use completed-candle closes, not intraday boundary touches.
     </p>
   </section>
 
-  <section class="historical-outcome-section"
+  <section th:if="${signal.patternFamily().name() == 'CANDLESTICK'}"
+           class="historical-outcome-section"
            th:classappend="${' ' + signal.observedOutcome().statusClass()}"
            aria-labelledby="observed-outcome-heading">
     <div class="historical-outcome-heading">
       <div>
-        <div class="signal-section-kicker">Observed price outcome</div>
-        <h2 id="observed-outcome-heading" th:text="${signal.observedOutcome().statusLabel()}">Inconclusive</h2>
+        <div class="signal-section-kicker">Close-based trade outcome</div>
+        <h2 id="observed-outcome-heading" th:text="${signal.observedOutcome().statusLabel()}">Detected</h2>
       </div>
-      <span th:if="${signal.observedOutcome().evaluationHorizonLabel() != null}"
+      <span th:if="${signal.observedOutcome().timeStopLabel() != null}"
             class="historical-outcome-badge"
             th:classappend="${' ' + signal.observedOutcome().statusClass()}"
-            th:text="${signal.observedOutcome().evaluationHorizonLabel()}">4-week horizon</span>
+            th:text="${signal.observedOutcome().timeStopLabel()}">Candle 8 time stop</span>
     </div>
     <p class="historical-outcome-summary" th:text="${signal.observedOutcome().summary()}">
-      The observed directional result is shown at the research horizon.
+      The trade is evaluated from entry through its target, stop, or candle 8 close.
     </p>
     <div th:if="${signal.observedOutcome().tracked()}" class="historical-outcome-grid">
-      <div>
-        <span>Pattern range</span>
-        <strong>
-          <span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternLow(), 1, 4)}">96.0000</span>
-          <span aria-hidden="true">&ndash;</span>
-          <span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternHigh(), 1, 4)}">102.0000</span>
-        </strong>
-      </div>
-      <div>
-        <span>Success threshold</span>
-        <strong th:text="${#numbers.formatDecimal(signal.observedOutcome().successThresholdPercent(), 1, 1) + '% directional move'}">
-          4.0% directional move
-        </strong>
-      </div>
-      <div th:if="${signal.observedOutcome().outcomeAvailable()}">
-        <span th:text="${signal.observedOutcome().impactLabel()}">Potential gain</span>
-        <strong th:classappend="${signal.observedOutcome().directionalReturnPercent() >= 0} ? ' positive' : ' negative'"
-                th:text="${(signal.observedOutcome().directionalReturnPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.observedOutcome().directionalReturnPercent(), 1, 2) + '%'}">
-          +4.25%
-        </strong>
-      </div>
-      <div th:if="${signal.observedOutcome().outcomeAvailable()}">
-        <span>Evaluation close</span>
-        <strong th:text="${#numbers.formatDecimal(signal.observedOutcome().evaluationClose(), 1, 2)}">106.34</strong>
-        <small th:text="${signal.observedOutcome().evaluationPeriodLabel()}">28 Jul 2026</small>
-      </div>
-      <div th:if="${signal.observedOutcome().outcomeAvailable()}">
-        <span>Best favorable move</span>
-        <strong class="positive"
-                th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">
-          +6.20%
-        </strong>
-        <small th:text="${signal.observedOutcome().measurementStartLabel()}">From signal candle close · 03 Aug 2026</small>
-      </div>
-      <div th:if="${signal.observedOutcome().outcomeAvailable()}">
-        <span>Worst adverse move</span>
-        <strong class="negative"
-                th:text="${#numbers.formatDecimal(signal.observedOutcome().worstDirectionalMovePercent(), 1, 2) + '%'}">
-          -2.10%
-        </strong>
-        <small th:text="${signal.observedOutcome().measurementStartLabel()}">From signal candle close · 03 Aug 2026</small>
-      </div>
+      <div><span>Pattern range</span><strong><span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternLow(), 1, 4)}">96.0000</span><span aria-hidden="true">&ndash;</span><span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternHigh(), 1, 4)}">102.0000</span></strong></div>
+      <div><span>Price to sell / target</span><strong th:text="${signal.lifecycle().profitTargetPrice() != null ? #numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4) : 'Set after detection'}">110.0000</strong></div>
+      <div th:if="${signal.observedOutcome().directionalReturnPercent() != null}"><span th:text="${signal.observedOutcome().impactLabel()}">Entry-to-exit return</span><strong th:classappend="${signal.observedOutcome().directionalReturnPercent() >= 0} ? ' positive' : ' negative'" th:text="${(signal.observedOutcome().directionalReturnPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.observedOutcome().directionalReturnPercent(), 1, 2) + '%'}">+4.25%</strong></div>
+      <div th:if="${signal.observedOutcome().evaluationClose() != null}"><span th:text="${signal.lifecycle().terminal() ? 'Exit close' : 'Latest evaluated close'}">Exit close</span><strong th:text="${#numbers.formatDecimal(signal.observedOutcome().evaluationClose(), 1, 4)}">106.3400</strong><small th:text="${signal.observedOutcome().evaluationPeriodLabel()}">28 Jul 2026</small></div>
+      <div th:if="${signal.observedOutcome().bestDirectionalMovePercent() != null}"><span th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Target return' : 'Most favorable completed-close move'}">Most favorable completed-close move</span><strong class="positive" th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">+6.20%</strong><small th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Fixed at entry-to-target return' : 'Within the trade window, maximum 8 candles'}">Within the trade window</small></div>
+      <div th:if="${signal.observedOutcome().worstDirectionalMovePercent() != null}"><span>Largest adverse completed-close move</span><strong class="negative" th:text="${#numbers.formatDecimal(signal.observedOutcome().worstDirectionalMovePercent(), 1, 2) + '%'}">-2.10%</strong><small>Within the trade window, maximum 8 candles</small></div>
     </div>
     <p th:if="${signal.observedOutcome().tracked()}" class="signal-lifecycle-note">
-      This is a close-to-close historical measurement, not a simulated trade. It excludes execution timing,
-      transaction costs, taxes, slippage, position sizing, and overlapping signals.
+      This is the stored candlestick trade model: configured stop loss, configured interval R:R target,
+      completed-close decisions, and candle 8 time stop. It excludes fees, slippage, taxes, and position sizing.
     </p>
   </section>
 
@@ -647,8 +656,8 @@
                       data-best-action-label=${signal.results().bestActionLabel()}">
       <div class="signal-results-heading">
         <div>
-          <div class="signal-section-kicker">Completed-candle follow-through</div>
-          <h2>Direction-aware result from the measurement start</h2>
+          <div class="signal-section-kicker" th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Completed-close trade path' : 'Completed-candle follow-through'}">Completed-close trade path</div>
+          <h2 th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Close-by-close movement after trade entry' : 'Direction-aware result from the measurement start'}">Close-by-close movement after trade entry</h2>
           <p>
             <span th:text="${signal.results().measurementStartLabel()}">From signal candle close</span>.
             Each subsequent completed close is measured in the signal&rsquo;s expected direction.
@@ -683,7 +692,7 @@
       <div id="signalResultsChart"
            class="signal-results-chart"
            role="img"
-           th:attr="aria-label=${'Direction-aware result chart for the ' + signal.tradeSignal().name() + ' signal on ' + signal.symbol()}"></div>
+           th:attr="aria-label=${'Direction-aware result chart for the ' + (signal.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : signal.tradeSignal().name()) + ' signal on ' + signal.symbol()}"></div>
       <div class="signal-results-legend" aria-label="Results chart color legend">
         <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the signal direction</span>
         <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the signal</span>
@@ -735,7 +744,7 @@
           class="unsaved-alert-dialog signal-results-unavailable-dialog"
           aria-labelledby="signalResultsUnavailableTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">Outcome window still forming</span>
+      <span class="unsaved-alert-kicker">Close-path history still forming</span>
       <h2 id="signalResultsUnavailableTitle">Results need more completed candles</h2>
       <p th:text="${signal.results().unavailableReason()}">
         At least 10 completed candles after the signal are required before results can be displayed.
@@ -904,7 +913,7 @@
         position: tradeSignal === 'SELL' ? 'aboveBar' : 'belowBar',
         color: colors.signalStart,
         shape: tradeSignal === 'SELL' ? 'arrowDown' : 'arrowUp',
-        text: `${tradeSignal} measurement start`
+        text: `${tradeSignal === 'SELL' ? 'SELL/SHORT' : tradeSignal} measurement start`
       }, {
         time: bestPoint.time,
         position: bestPoint.directionalReturn >= 0 ? 'aboveBar' : 'belowBar',
@@ -1014,7 +1023,11 @@
         down: light ? '#d23f59' : '#ff647c',
         trend: light ? '#a86700' : '#ffbd59',
         pattern: light ? '#6557d6' : '#9a8cff',
-        signal: light ? '#477a12' : '#b7f34a'
+        signal: light ? '#477a12' : '#b7f34a',
+        tradeEntry: light ? '#526158' : '#d8dfd8',
+        tradeTarget: light ? '#078568' : '#64e8bd',
+        tradeStop: light ? '#d23f59' : '#ff647c',
+        timeStop: light ? '#a86700' : '#ffbd59'
       };
     }
 
@@ -1044,6 +1057,76 @@
       borderVisible: false
     });
     candles.setData(candleData);
+
+    const tradePlan = {
+      entry: Number(container.dataset.tradeEntry),
+      stop: Number(container.dataset.tradeStop),
+      target: Number(container.dataset.tradeTarget),
+      rewardRisk: Number(container.dataset.tradeRr),
+      entryTime: Number(container.dataset.tradeEntryTime),
+      timeStopCandles: Number(container.dataset.tradeTimeStopCandles),
+      resolutionTime: Number(container.dataset.tradeResolutionTime),
+      resolutionStatus: container.dataset.tradeResolutionStatus || '',
+      resolutionClose: Number(container.dataset.tradeResolutionClose)
+    };
+    const hasTradePlan = container.dataset.family === 'CANDLESTICK'
+      && Number.isFinite(tradePlan.entry) && tradePlan.entry > 0
+      && Number.isFinite(tradePlan.stop) && tradePlan.stop > 0
+      && Number.isFinite(tradePlan.target) && tradePlan.target > 0
+      && Number.isFinite(tradePlan.entryTime) && tradePlan.entryTime > 0
+      && Number.isFinite(tradePlan.timeStopCandles) && tradePlan.timeStopCandles > 0;
+    const tradePriceLines = [];
+    if (hasTradePlan) {
+      tradePriceLines.push(candles.createPriceLine({
+        price: tradePlan.entry,
+        color: initialColors.tradeEntry,
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'Entry'
+      }));
+      tradePriceLines.push(candles.createPriceLine({
+        price: tradePlan.target,
+        color: initialColors.tradeTarget,
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Solid,
+        axisLabelVisible: true,
+        title: `Sell target · 1:${Number.isFinite(tradePlan.rewardRisk) ? tradePlan.rewardRisk.toFixed(0) : '?'}`
+      }));
+      tradePriceLines.push(candles.createPriceLine({
+        price: tradePlan.stop,
+        color: initialColors.tradeStop,
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Solid,
+        axisLabelVisible: true,
+        title: 'Stop loss'
+      }));
+
+      const tradeMarkers = [{
+        time: tradePlan.entryTime,
+        position: container.dataset.direction === 'SELL' ? 'aboveBar' : 'belowBar',
+        color: initialColors.tradeEntry,
+        shape: container.dataset.direction === 'SELL' ? 'arrowDown' : 'arrowUp',
+        text: 'Entry · candle 0'
+      }];
+      if (Number.isFinite(tradePlan.resolutionTime) && tradePlan.resolutionTime > 0
+          && candleData.some(candle => candle.time === tradePlan.resolutionTime)) {
+        const exitText = tradePlan.resolutionStatus === 'CONFIRMED'
+          ? 'Target reached · sell'
+          : (tradePlan.resolutionStatus === 'INVALIDATED' ? 'Stop loss exit' : 'Candle 8 time-stop exit');
+        const exitColor = tradePlan.resolutionStatus === 'CONFIRMED'
+          ? initialColors.tradeTarget
+          : (tradePlan.resolutionStatus === 'INVALIDATED' ? initialColors.tradeStop : initialColors.timeStop);
+        tradeMarkers.push({
+          time: tradePlan.resolutionTime,
+          position: container.dataset.direction === 'SELL' ? 'belowBar' : 'aboveBar',
+          color: exitColor,
+          shape: 'circle',
+          text: exitText
+        });
+      }
+      candles.setMarkers(tradeMarkers);
+    }
 
     document.querySelectorAll('.signal-chart-key.motive')
       .forEach(key => { key.style.backgroundColor = harmonicDataList
@@ -1238,6 +1321,28 @@
     annotationLayer.setAttribute('aria-hidden', 'true');
     container.append(annotationLayer);
 
+    let rewardZone = null;
+    let riskZone = null;
+    let timeStopLine = null;
+    if (hasTradePlan) {
+      rewardZone = document.createElement('div');
+      rewardZone.className = 'signal-trade-chart-zone reward';
+      const rewardLabel = document.createElement('span');
+      rewardLabel.textContent = `Reward · sell at ${tradePlan.target.toFixed(4)}`;
+      rewardZone.append(rewardLabel);
+      riskZone = document.createElement('div');
+      riskZone.className = 'signal-trade-chart-zone risk';
+      const riskLabel = document.createElement('span');
+      riskLabel.textContent = `Risk · stop at ${tradePlan.stop.toFixed(4)}`;
+      riskZone.append(riskLabel);
+      timeStopLine = document.createElement('div');
+      timeStopLine.className = 'signal-trade-time-stop-line';
+      const timeStopLabel = document.createElement('span');
+      timeStopLabel.textContent = `Candle ${tradePlan.timeStopCandles} time stop`;
+      timeStopLine.append(timeStopLabel);
+      annotationLayer.append(rewardZone, riskZone, timeStopLine);
+    }
+
     let trendBand = null;
     if (trendData.length) {
       trendBand = document.createElement('div');
@@ -1272,6 +1377,39 @@
     }
 
     function renderAnnotations() {
+      if (hasTradePlan && rewardZone && riskZone && timeStopLine) {
+        const entryIndex = candleData.findIndex(candle => candle.time === tradePlan.entryTime);
+        const entryX = chart.timeScale().timeToCoordinate(tradePlan.entryTime);
+        const timeStopIndex = entryIndex < 0 ? -1 : entryIndex + tradePlan.timeStopCandles;
+        const timeStopX = timeStopIndex < 0
+          ? null
+          : (timeStopIndex < candleData.length
+              ? chart.timeScale().timeToCoordinate(candleData[timeStopIndex].time)
+              : chart.timeScale().logicalToCoordinate(timeStopIndex));
+        const entryY = candles.priceToCoordinate(tradePlan.entry);
+        const targetY = candles.priceToCoordinate(tradePlan.target);
+        const stopY = candles.priceToCoordinate(tradePlan.stop);
+        if ([entryX, timeStopX, entryY, targetY, stopY].some(value => value === null)) {
+          rewardZone.hidden = true;
+          riskZone.hidden = true;
+          timeStopLine.hidden = true;
+        } else {
+          const left = Math.min(entryX, timeStopX);
+          const width = Math.max(2, Math.abs(timeStopX - entryX));
+          rewardZone.hidden = false;
+          rewardZone.style.left = `${left}px`;
+          rewardZone.style.width = `${width}px`;
+          rewardZone.style.top = `${Math.min(entryY, targetY)}px`;
+          rewardZone.style.height = `${Math.max(2, Math.abs(targetY - entryY))}px`;
+          riskZone.hidden = false;
+          riskZone.style.left = `${left}px`;
+          riskZone.style.width = `${width}px`;
+          riskZone.style.top = `${Math.min(entryY, stopY)}px`;
+          riskZone.style.height = `${Math.max(2, Math.abs(stopY - entryY))}px`;
+          timeStopLine.hidden = false;
+          timeStopLine.style.left = `${timeStopX}px`;
+        }
+      }
       if (trendBand && trendData.length) {
         const startX = chart.timeScale().timeToCoordinate(trendData[0].time);
         const endX = chart.timeScale().timeToCoordinate(trendData[trendData.length - 1].time);
@@ -1349,10 +1487,15 @@
         return;
       }
       const candlesBeforeSignal = 18;
-      const candlesAfterSignal = 8;
+      const entryIndex = hasTradePlan
+        ? candleData.findIndex(candle => candle.time === tradePlan.entryTime)
+        : -1;
+      const rightEdge = entryIndex >= 0
+        ? entryIndex + tradePlan.timeStopCandles + 1
+        : signalIndex + 8;
       chart.timeScale().setVisibleLogicalRange({
         from: Math.max(-0.5, signalIndex - candlesBeforeSignal),
-        to: signalIndex + candlesAfterSignal
+        to: rightEdge
       });
     }
 
@@ -1402,6 +1545,11 @@
         wickUpColor: colors.up,
         wickDownColor: colors.down
       });
+      if (tradePriceLines.length === 3) {
+        tradePriceLines[0].applyOptions({ color: colors.tradeEntry });
+        tradePriceLines[1].applyOptions({ color: colors.tradeTarget });
+        tradePriceLines[2].applyOptions({ color: colors.tradeStop });
+      }
       trendSeries.applyOptions({ color: colors.trend });
       requestAnimationFrame(renderAnnotations);
     });

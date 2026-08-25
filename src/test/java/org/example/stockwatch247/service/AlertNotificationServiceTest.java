@@ -2,6 +2,7 @@ package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
+import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
@@ -12,8 +13,10 @@ import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.example.stockwatch247.service.congress.CongressionalTradeStore.ClaimedDelivery;
+import org.example.stockwatch247.repository.CandleRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
@@ -26,6 +29,7 @@ import java.time.ZonedDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -218,7 +222,7 @@ class AlertNotificationServiceTest {
     }
 
     @Test
-    void detectedCandlestickEmailExplainsAdditiveLifecycleBoundaries() {
+    void potentialCandlestickEmailExplainsThePlannedCloseBasedTrade() {
         @SuppressWarnings("unchecked")
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
         JavaMailSender mailSender = mock(JavaMailSender.class);
@@ -237,6 +241,7 @@ class AlertNotificationServiceTest {
         );
         AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.POTENTIAL);
         event.setConfirmationTriggerPrice(100.0);
+        applyCandidateTradePlan(event, 95.0, 2.0);
 
         service.sendSignalEmail(rule, signal, event);
 
@@ -245,11 +250,14 @@ class AlertNotificationServiceTest {
         verify(mailSender).send(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Potential one-candle reversal",
-                "POTENTIAL BUY — AWAITING CONFIRMATION",
-                "This is not a signal yet",
+                "POTENTIAL BUY — AWAITING DETECTION GATE",
+                "NO TRADE OPEN",
                 "must have a green body and close above the candidate candle close at 100.0000",
                 "candidate is REJECTED and never becomes a signal",
-                "becomes DETECTED and its 10-candle outcome window starts from that next candle's close");
+                "Planned stop loss: 95.0000",
+                "Planned risk-to-reward: 1:2",
+                "next candle's close becomes entry / candle 0",
+                "only completed-candle closes count");
     }
 
     @Test
@@ -264,10 +272,11 @@ class AlertNotificationServiceTest {
         AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.CONFIRMED);
         event.setPattern(CandlePattern.HAMMER);
         event.setDetectionCandleTimestamp(Instant.parse("2026-07-21T00:00:00Z").getEpochSecond());
-        event.setDetectionClosePrice(101.0);
+        event.setDetectionClosePrice(100.0);
+        applyOpenTradePlan(event, 100.0, 95.0, 110.0, 2.0);
         event.setResolutionCandleTimestamp(Instant.parse("2026-07-22T00:00:00Z").getEpochSecond());
         event.setResolutionCandleOffset(1);
-        event.setResolutionClosePrice(106.0);
+        event.setResolutionClosePrice(111.0);
 
         service.sendSignalLifecycleEmail(event);
 
@@ -277,14 +286,73 @@ class AlertNotificationServiceTest {
         assertThat(messageCaptor.getValue().getSubject()).contains("confirmed", "HAMMER", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Status: CONFIRMED",
-                "expected close-based follow-through occurred",
-                "Direction classification: CONFIRMED BUY",
-                "Outcome confirmation trigger: close above 105.0000",
-                "Observation window: 10 completed daily candles",
+                "CONFIRMED means the profit target closed successfully",
+                "Entry / candle 0: 100.0000",
+                "Stop loss: 95.0000",
+                "Price to sell / profit target: 110.0000",
+                "Risk-to-reward: 1:2",
+                "Time stop: candle 8 close",
                 "Resolution candle number: 1",
-                "Resolution close: 106.0000",
-                "Result measurement start: detection candle close on 21 Jul 2026 at 101.0000",
-                "not a recommendation");
+                "Resolution close: 111.0000",
+                "Trade result return: +10.00% (fixed at the exact entry-to-target return",
+                "Most favorable completed-close move: +10.00%",
+                "CONFIRMED = target reached successfully");
+    }
+
+    @Test
+    void includesThePersistedRiskRewardPlanInDetectionAndSuccessfulExitEmails() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.BUY);
+        DetectedSignal signal = new DetectedSignal(
+                CandlePattern.BULLISH_ENGULFING,
+                TradeSignal.BUY,
+                SignalStength.HIGH_CONFIDENCE,
+                88,
+                List.of("validated bullish engulfing"),
+                Instant.parse("2026-07-20T00:00:00Z").getEpochSecond(),
+                100.0);
+        AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.DETECTED);
+        event.setPattern(signal.pattern());
+        event.setTradeEntryPrice(100.0);
+        event.setStopLossPrice(95.0);
+        event.setProfitTargetPrice(110.0);
+        event.setRewardRiskRatio(2.0);
+        event.setTradePlanVersion("CANDLE_RR_V1");
+        event.setConfirmationTriggerPrice(110.0);
+        event.setInvalidationPrice(95.0);
+        event.setConfirmationWindowCandles(8);
+
+        service.sendSignalEmail(rule, signal, event);
+        event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+        event.setResolutionCandleTimestamp(Instant.parse("2026-07-24T00:00:00Z").getEpochSecond());
+        event.setResolutionCandleOffset(4);
+        event.setResolutionClosePrice(110.0);
+        service.sendSignalLifecycleEmail(event);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender, times(2)).send(messageCaptor.capture());
+        assertThat(messageCaptor.getAllValues().get(0).getText()).contains(
+                "Trade entry: 100.0000",
+                "Stop loss: 95.0000",
+                "Price to sell / profit target: 110.0000",
+                "Risk-to-reward: 1:2",
+                "Time stop: candle 8",
+                "completed-candle closes only");
+        assertThat(messageCaptor.getAllValues().get(1).getText()).contains(
+                "CONFIRMED means the profit target closed successfully",
+                "Entry / candle 0: 100.0000",
+                "Stop loss: 95.0000",
+                "Price to sell / profit target: 110.0000",
+                "Resolution candle number: 4",
+                "Resolution close: 110.0000",
+                "Trade result return: +10.00%",
+                "Most favorable completed-close move: +10.00%");
     }
 
     @Test
@@ -300,6 +368,7 @@ class AlertNotificationServiceTest {
         event.setPattern(CandlePattern.HANGING_MAN);
         event.setClosePrice(100.0);
         event.setConfirmationTriggerPrice(100.0);
+        applyCandidateTradePlan(event, 105.0, 2.0);
         event.setResolutionCandleTimestamp(Instant.parse("2026-07-21T00:00:00Z").getEpochSecond());
         event.setResolutionCandleOffset(1);
         event.setResolutionClosePrice(101.0);
@@ -311,11 +380,12 @@ class AlertNotificationServiceTest {
         verify(mailSender).send(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getSubject()).contains("candidate rejected", "HANGING_MAN", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
-                "Status: REJECTED",
+                "Status: REJECTED — NO TRADE OPENED",
                 "Potential direction: SELL",
                 "required red-body close below the candidate close at 100.0000",
-                "candidate never became a signal",
-                "no outcome window or result is calculated");
+                "candidate never became a detected trade",
+                "Planned stop: 105.0000",
+                "No entry, profit target, time-stop trade, or trade return exists");
     }
 
     @Test
@@ -331,6 +401,7 @@ class AlertNotificationServiceTest {
         event.setPattern(CandlePattern.HAMMER);
         event.setDetectionCandleTimestamp(Instant.parse("2026-07-21T00:00:00Z").getEpochSecond());
         event.setDetectionClosePrice(101.0);
+        applyOpenTradePlan(event, 101.0, 95.0, 113.0, 2.0);
 
         service.sendSignalLifecycleEmail(event);
 
@@ -339,12 +410,101 @@ class AlertNotificationServiceTest {
         verify(mailSender).send(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getSubject()).contains("signal detected", "HAMMER", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
-                "Status: DETECTED",
+                "Status: DETECTED — TRADE OPEN",
                 "mandatory next-candle gate passed",
                 "This is now a real signal",
                 "Detection close: 101.0000",
-                "Result measurement starts from this detection close",
-                "Outcome window: 10 completed daily candles");
+                "Trade entry: 101.0000",
+                "Stop loss: 95.0000",
+                "Price to sell / profit target: 113.0000",
+                "Time stop: candle 8",
+                "wick touches do not close the trade");
+    }
+
+    @Test
+    void invalidatedEmailIncludesStopExitReturnAndBestCompletedCloseMove() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels", candleRepository);
+        AlertRule rule = dailyRule(TradeSignal.BUY);
+        AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.INVALIDATED);
+        event.setPattern(CandlePattern.BULLISH_ENGULFING);
+        applyOpenTradePlan(event, 100.0, 95.0, 110.0, 2.0);
+        long entry = Instant.parse("2026-07-20T00:00:00Z").getEpochSecond();
+        long favorable = Instant.parse("2026-07-21T00:00:00Z").getEpochSecond();
+        long exit = Instant.parse("2026-07-22T00:00:00Z").getEpochSecond();
+        event.setDetectionCandleTimestamp(entry);
+        event.setDetectionClosePrice(100.0);
+        event.setResolutionCandleTimestamp(exit);
+        event.setResolutionCandleOffset(2);
+        event.setResolutionClosePrice(94.0);
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                "AAPL", "1d", entry, exit + 1,
+                PageRequest.of(0, CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES)))
+                .thenReturn(List.of(
+                        candle(favorable, 104.0),
+                        candle(exit, 94.0)));
+
+        service.sendSignalLifecycleEmail(event);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getSubject()).contains("invalidated", "BULLISH_ENGULFING", "AAPL");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Status: INVALIDATED",
+                "configured stop loss and ended the trade",
+                "Stop loss: 95.0000",
+                "Entry-to-exit return: -6.00%",
+                "Most favorable completed-close move: +4.00%",
+                "INVALIDATED = stop loss hit");
+    }
+
+    @Test
+    void expiredEmailIncludesCandleEightExitAndBestCompletedCloseMove() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels", candleRepository);
+        AlertRule rule = dailyRule(TradeSignal.SELL);
+        AlertEvent event = trackedEvent(rule, SignalLifecycleStatus.EXPIRED);
+        event.setPattern(CandlePattern.BEARISH_ENGULFING);
+        applyOpenTradePlan(event, 100.0, 105.0, 90.0, 2.0);
+        long entry = Instant.parse("2026-07-20T00:00:00Z").getEpochSecond();
+        long favorable = Instant.parse("2026-07-23T00:00:00Z").getEpochSecond();
+        long exit = Instant.parse("2026-07-28T00:00:00Z").getEpochSecond();
+        event.setDetectionCandleTimestamp(entry);
+        event.setDetectionClosePrice(100.0);
+        event.setResolutionCandleTimestamp(exit);
+        event.setResolutionCandleOffset(8);
+        event.setResolutionClosePrice(102.0);
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                "AAPL", "1d", entry, exit + 1,
+                PageRequest.of(0, CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES)))
+                .thenReturn(List.of(
+                        candle(favorable, 94.0),
+                        candle(exit, 102.0)));
+
+        service.sendSignalLifecycleEmail(event);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getSubject()).contains("expired", "BEARISH_ENGULFING", "AAPL");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Status: EXPIRED",
+                "candle 8's completed close ended the trade",
+                "Time stop: candle 8 close",
+                "Entry-to-exit return: -2.00%",
+                "Most favorable completed-close move: +6.00%",
+                "EXPIRED = candle 8 time stop");
     }
 
     @Test
@@ -499,5 +659,28 @@ class AlertNotificationServiceTest {
                 rule.getTradeSignal() == TradeSignal.BUY ? 95.0 : 105.0);
         event.setConfirmationWindowCandles(10);
         return event;
+    }
+
+    private void applyCandidateTradePlan(AlertEvent event, double stop, double rewardRisk) {
+        event.setStopLossPrice(stop);
+        event.setRewardRiskRatio(rewardRisk);
+        event.setTradePlanVersion(CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION);
+        event.setConfirmationWindowCandles(CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES);
+    }
+
+    private void applyOpenTradePlan(AlertEvent event,
+                                    double entry,
+                                    double stop,
+                                    double target,
+                                    double rewardRisk) {
+        applyCandidateTradePlan(event, stop, rewardRisk);
+        event.setTradeEntryPrice(entry);
+        event.setProfitTargetPrice(target);
+        event.setConfirmationTriggerPrice(target);
+        event.setInvalidationPrice(stop);
+    }
+
+    private Candle candle(long timestamp, double close) {
+        return new Candle("AAPL", "1d", timestamp, close, close, close, close, 1_000L);
     }
 }

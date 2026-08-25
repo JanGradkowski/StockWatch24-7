@@ -8,13 +8,13 @@
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.custom()} ? 'Custom definitions' : 'Factory definitions'">Factory definitions</span>
     </div>
-    <p class="analysis-settings-intro">Control the completed-candle measurements that make each formation count as a named pattern. These definitions apply to daily, weekly, and monthly alerts and historical scans.</p>
+    <p class="analysis-settings-intro">Control the completed-candle measurements that define each formation and the close-based trade plan opened after detection. These settings apply to future alerts and newly generated historical scans.</p>
     <div class="analysis-safety-strip candlestick-definition-guide">
       <strong>How values are measured</strong>
       <span><b>Percent (%)</b> compares a real body with the candle's complete high-to-low range.</span>
       <span><b>Multiple (×)</b> compares a shadow or body with another body or the recent median body.</span>
     </div>
-    <p class="candlestick-pattern-note">The separate <a th:href="@{/settings/detection}">Detection settings</a> control how StockWatch identifies an uptrend or downtrend. Existing stored signals are not rewritten.</p>
+    <p class="candlestick-pattern-note">The separate <a th:href="@{/settings/detection}">Detection settings</a> control how StockWatch identifies an uptrend or downtrend. Existing stored signals retain their original stop, target, and ratio snapshot.</p>
     <div class="form-group candlestick-pattern-search">
       <label for="candlestickPatternFilter">Find a pattern</label>
       <input id="candlestickPatternFilter" type="search" placeholder="For example: engulfing, shadow, bullish" autocomplete="off">
@@ -22,12 +22,27 @@
   </section>
 
   <form id="candlestickPatternDefinitionsForm" th:action="@{/settings/candlestick-patterns}" method="post" class="candlestick-pattern-preferences-form">
+    <section class="settings-card candlestick-trade-plan-overview">
+      <div class="settings-card-heading">
+        <div><span class="settings-number">02</span><h2>Risk-to-reward by interval</h2></div>
+        <span class="analysis-profile-state" th:text="${preferences.custom()} ? 'Personalized trade plan' : 'Factory trade plan'">Factory trade plan</span>
+      </div>
+      <p class="analysis-settings-intro">Set the reward multiple independently for each interval. A value of 2 means the target is twice as far from entry as the configured stop loss. Every trade still expires at candle 8 if neither close boundary is reached.</p>
+      <div class="candlestick-reward-risk-grid">
+        <label class="candlestick-reward-risk-control" th:each="ratio : ${candlestickRewardRiskProfiles}">
+          <span th:text="${ratio.label()}">Daily</span>
+          <small th:text="${'Factory: 1:' + #numbers.formatDecimal(ratio.factoryValue(), 1, 1)}">Factory: 1:2</small>
+          <span class="candlestick-ratio-input"><b>1 :</b><input type="number" required inputmode="decimal" min="0.1" max="20" step="0.1" th:name="${'rewardRisk.' + ratio.key()}" th:value="${ratio.value()}"></span>
+        </label>
+      </div>
+    </section>
+
     <section class="settings-card candlestick-pattern-card" th:each="profile, stat : ${preferences.profiles}"
              th:attr="data-pattern-search=${profile.label + ' ' + profile.formation + ' ' + profile.description}"
              th:id="${'candlestick-pattern-' + profile.key}">
       <div class="settings-card-heading candlestick-pattern-heading">
         <div>
-          <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 2, 2)}">02</span>
+          <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 3, 2)}">03</span>
           <div><p class="scoring-family-label" th:text="${profile.formation}">Two-candle bullish reversal</p><h2 th:text="${profile.label}">Bullish Engulfing</h2></div>
         </div>
         <div class="candlestick-pattern-heading-actions">
@@ -40,6 +55,31 @@
       <div class="analysis-safety-strip candlestick-fixed-rule-strip">
         <strong>Rules that stay fixed</strong>
         <span th:text="${profile.fixedRules}">The required candle directions and ordering stay fixed.</span>
+      </div>
+
+      <fieldset class="analysis-setting-group candlestick-stop-loss-group" th:if="${profile.directional()}">
+        <legend>Stop-loss rule</legend>
+        <p>Choose the adverse close boundary for this pattern. The selected rule is calculated from the actual entry close and stored with each new signal.</p>
+        <div class="candlestick-stop-loss-controls">
+          <label class="candlestick-select-control" th:for="${profile.key + '-stop-loss-mode'}">
+            <span>Method<small th:text="${'Factory: ' + profile.factoryStopLossLabel()}">Factory: textbook structural price</small></span>
+            <select th:id="${profile.key + '-stop-loss-mode'}" th:name="${profile.key + '.stopLossMode'}" required>
+              <option th:each="mode : ${stopLossModes}" th:value="${mode.name()}" th:text="${mode.label()}" th:selected="${mode == profile.stopLossMode}">Textbook structural price + buffer</option>
+            </select>
+          </label>
+          <label class="candlestick-value-control candlestick-stop-value" th:for="${profile.key + '-stop-loss-value'}">
+            <span th:text="${profile.stopLossValueLabel()}">Additional buffer (%)</span>
+            <span><input type="number" required inputmode="decimal" min="0" max="50" step="0.1" th:id="${profile.key + '-stop-loss-value'}" th:name="${profile.key + '.stopLossValuePercent'}" th:value="${profile.stopLossValuePercent}"><b>%</b></span>
+          </label>
+        </div>
+        <div class="analysis-safety-strip candlestick-stop-loss-explanation">
+          <strong>Available methods</strong>
+          <span th:each="mode : ${stopLossModes}"><b th:text="${mode.label()}">Method</b> <span th:text="${mode.description()}">Description</span></span>
+        </div>
+      </fieldset>
+      <div class="analysis-safety-strip candlestick-neutral-trade-note" th:unless="${profile.directional()}">
+        <strong>No stop loss for neutral patterns</strong>
+        <span>Doji is classified as HOLD, so it does not open a directional trade or receive a stop-loss and profit target.</span>
       </div>
 
       <div class="candlestick-pattern-rule-grid">
@@ -77,7 +117,7 @@
     <p id="candlestickPatternEmpty" class="settings-card settings-muted candlestick-pattern-empty" hidden>No pattern matches that search.</p>
 
     <section class="settings-card analysis-save-card candlestick-pattern-save-card">
-      <div><strong>Apply pattern definitions</strong><p>Changes affect future alerts, current-signal checks, and newly generated historical scans.</p></div>
+      <div><strong>Apply candlestick settings</strong><p>Changes affect future alerts, current-signal checks, and newly generated historical scans. Stored signals keep their original trade plan.</p></div>
       <button class="btn-accent" type="submit">Apply changes</button>
     </section>
   </form>
@@ -85,11 +125,11 @@
   <form th:each="profile : ${preferences.profiles}" th:id="${profile.key + '-reset-form'}" th:action="@{/settings/candlestick-patterns/reset}" method="post" class="hidden-reset-form"><input type="hidden" name="pattern" th:value="${profile.pattern.name()}"></form>
 
   <section class="settings-card analysis-factory-zone candlestick-pattern-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">17</span><h2>Factory restoration</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
+    <div class="settings-card-heading"><div><span class="settings-number">18</span><h2>Factory restoration</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
     <form th:action="@{/settings/candlestick-patterns/reset}" method="post" class="settings-action-row">
       <input type="hidden" name="pattern" value="all">
-      <div><h3>Restore every pattern definition</h3><p>Returns all candle measurements and prior-price-action requirements to StockWatch factory values.</p></div>
-      <button class="danger-button" type="submit">Restore factory definitions</button>
+      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, and interval risk-to-reward ratios to factory values.</p></div>
+      <button class="danger-button" type="submit">Restore candlestick defaults</button>
     </form>
   </section>
 </div>

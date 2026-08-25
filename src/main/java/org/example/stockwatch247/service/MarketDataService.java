@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
@@ -36,6 +37,8 @@ public class MarketDataService {
     private final long syncLeaseSeconds;
     private final MarketDataSyncCoordinator syncCoordinator;
     private final MarketDataHistoryStateStore historyStateStore;
+    private final CandleBatchStore candleBatchStore;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Autowired
     public MarketDataService(CandleRepository candleRepository,
@@ -44,6 +47,8 @@ public class MarketDataService {
                              YahooFinanceService yahooFinanceService,
                              MarketDataSyncCoordinator syncCoordinator,
                              MarketDataHistoryStateStore historyStateStore,
+                             CandleBatchStore candleBatchStore,
+                             ApplicationEventPublisher eventPublisher,
                              @Value("${market-data.refresh-cooldown.intraday-seconds:60}") long intradayCooldownSeconds,
                              @Value("${market-data.refresh-cooldown.daily-seconds:600}") long dailyCooldownSeconds,
                              @Value("${market-data.refresh-cooldown.higher-interval-seconds:3600}") long higherIntervalCooldownSeconds,
@@ -54,10 +59,28 @@ public class MarketDataService {
         this.yahooFinanceService = yahooFinanceService;
         this.syncCoordinator = syncCoordinator;
         this.historyStateStore = historyStateStore;
+        this.candleBatchStore = candleBatchStore;
+        this.eventPublisher = eventPublisher;
         this.intradayCooldownSeconds = Math.max(0L, intradayCooldownSeconds);
         this.dailyCooldownSeconds = Math.max(0L, dailyCooldownSeconds);
         this.higherIntervalCooldownSeconds = Math.max(0L, higherIntervalCooldownSeconds);
         this.syncLeaseSeconds = Math.max(1L, syncLeaseSeconds);
+    }
+
+    /** Test/backward-compatible constructor; production uses the batched store above. */
+    MarketDataService(CandleRepository candleRepository,
+                      StockAssetRepository stockAssetRepository,
+                      TwelveDataService twelveDataService,
+                      YahooFinanceService yahooFinanceService,
+                      MarketDataSyncCoordinator syncCoordinator,
+                      MarketDataHistoryStateStore historyStateStore,
+                      long intradayCooldownSeconds,
+                      long dailyCooldownSeconds,
+                      long higherIntervalCooldownSeconds,
+                      long syncLeaseSeconds) {
+        this(candleRepository, stockAssetRepository, twelveDataService, yahooFinanceService,
+                syncCoordinator, historyStateStore, null, null, intradayCooldownSeconds, dailyCooldownSeconds,
+                higherIntervalCooldownSeconds, syncLeaseSeconds);
     }
 
     public CandleSyncResult syncCandles(String rawSymbol, String interval, Long beforeTimestamp) {
@@ -65,8 +88,35 @@ public class MarketDataService {
     }
 
     public CandleSyncResult syncCandles(String rawSymbol, String interval, Long beforeTimestamp, boolean forceRefresh) {
+        return syncCandles(rawSymbol, interval, beforeTimestamp, forceRefresh, 1_000, false);
+    }
+
+    /**
+     * Bootstraps only enough history to warm the selected analysis profile. Once that
+     * history exists, normal refreshes ask providers for a small latest-candle delta.
+     */
+    public CandleSyncResult syncCandlesForAnalysis(String rawSymbol,
+                                                   String rawInterval,
+                                                   int requiredCandles) {
+        String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        String interval = SecurityInputValidator.requireInterval(rawInterval);
+        int required = Math.max(2, Math.min(1_000, requiredCandles));
+        long cached = candleRepository.countBySymbolAndTimeInterval(symbol, interval);
+        boolean bootstrapRequired = cached < required;
+        int outputSize = bootstrapRequired ? required : 10;
+        return syncCandles(symbol, interval, null, false, outputSize, bootstrapRequired);
+    }
+
+    private CandleSyncResult syncCandles(String rawSymbol,
+                                         String interval,
+                                         Long beforeTimestamp,
+                                         boolean forceRefresh,
+                                         int requestedOutputSize,
+                                         boolean bootstrapRequired) {
+        long syncStarted = System.nanoTime();
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         interval = SecurityInputValidator.requireInterval(interval);
+        int outputSize = Math.max(1, Math.min(1_000, requestedOutputSize));
 
         // Older chart scrolling reads from the database cache. The normal refresh keeps
         // the most recent page current without burning provider calls during pagination.
@@ -75,7 +125,7 @@ public class MarketDataService {
         }
 
         MarketDataSyncCoordinator.Claim claim = syncCoordinator.tryClaim(
-                symbol, interval, getProviderCooldownSeconds(interval), syncLeaseSeconds);
+                symbol, interval, bootstrapRequired ? 0L : getProviderCooldownSeconds(interval), syncLeaseSeconds);
         if (!claim.acquired()) {
             String reason = claim.status() == MarketDataSyncCoordinator.ClaimStatus.RECENT_SUCCESS
                     ? "recent successful sync"
@@ -94,7 +144,7 @@ public class MarketDataService {
                 String twelveDataFailure = null;
                 try {
                     String timeframe = toTwelveDataInterval(interval);
-                    bars = twelveDataService.getTimeSeries(symbol, timeframe, 1000);
+                    bars = twelveDataService.getTimeSeries(symbol, timeframe, outputSize);
                     if (bars.isEmpty()) {
                         throw new IllegalStateException("Twelve Data returned no candles.");
                     }
@@ -104,7 +154,7 @@ public class MarketDataService {
                     log.warn("Twelve Data candle sync unavailable for {} {}: {}. Trying Yahoo Finance.",
                             symbol, interval, twelveDataFailure);
                     try {
-                        bars = yahooFinanceService.getTimeSeries(symbol, interval, 1000);
+                        bars = yahooFinanceService.getTimeSeries(symbol, interval, outputSize);
                         if (bars.isEmpty()) {
                             throw new IllegalStateException("Yahoo Finance returned no candles.");
                         }
@@ -118,11 +168,21 @@ public class MarketDataService {
                 }
 
                 ensureAsset(symbol);
+                long persistenceStarted = System.nanoTime();
                 int persistedCandles = persistChangedCandles(symbol, interval, bars);
+                long persistenceMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                        System.nanoTime() - persistenceStarted);
                 syncCoordinator.markSuccessful(claim);
                 successful = true;
+                if (persistedCandles > 0 && eventPublisher != null) {
+                    eventPublisher.publishEvent(new CandleDataChangedEvent(symbol, interval, persistedCandles));
+                }
                 System.out.println("Fetched " + bars.size() + " " + interval + " candles for " + symbol + " from "
                         + source + "; persisted " + persistedCandles + " new or changed candles.");
+                log.info("Market data sync timing symbol={} interval={} requested={} returned={} source={} persisted={} persistenceMs={} totalMs={}",
+                        symbol, interval, outputSize, bars.size(), source, persistedCandles,
+                        persistenceMillis, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                System.nanoTime() - syncStarted));
                 return new CandleSyncResult(source, persistedCandles, null);
         } finally {
             if (!successful) {
@@ -334,7 +394,9 @@ public class MarketDataService {
         }
 
         if (!changedByTimestamp.isEmpty()) {
-            candleRepository.saveAll(changedByTimestamp.values());
+            List<Candle> changed = List.copyOf(changedByTimestamp.values());
+            if (candleBatchStore == null) candleRepository.saveAll(changed);
+            else candleBatchStore.upsert(changed);
         }
         return changedByTimestamp.size();
     }

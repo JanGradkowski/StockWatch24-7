@@ -64,6 +64,26 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
     List<AlertEvent> findAllByAlertRule_User(@Param("user") User user);
 
     @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
+    @Query("""
+            select event
+            from AlertEvent event
+            join event.alertRule rule
+            join rule.stockAsset asset
+            where rule.user = :user
+              and lower(asset.tickerSymbol) = lower(:symbol)
+              and rule.interval = :interval
+              and event.signalCandleTimestamp >= :cutoff
+              and event.deletedAt is null
+            order by event.signalCandleTimestamp desc, event.id desc
+            """)
+    List<AlertEvent> findRecentForTechnicalOutlook(
+            @Param("user") User user,
+            @Param("symbol") String symbol,
+            @Param("interval") TimeInterval interval,
+            @Param("cutoff") long cutoff,
+            Pageable pageable);
+
+    @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
     @Query("select event from AlertEvent event where event.alertRule.user = :user and event.alertRule.stockAsset = :stockAsset and event.deletedAt is null")
     Page<AlertEvent> findByAlertRule_UserAndStockAsset(
             @Param("user") User user,

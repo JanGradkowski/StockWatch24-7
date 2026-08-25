@@ -40,9 +40,9 @@ public class CandlestickSignalLifecycleService {
     public CandlestickSignalLifecycleService(
             AlertEventRepository alertEventRepository,
             AlertNotificationService notificationService,
-            @Value("${alerts.candlestick.lifecycle-window-candles:3}") int confirmationWindowCandles,
+            @Value("${alerts.candlestick.lifecycle-window-candles:8}") int confirmationWindowCandles,
             @Value("${alerts.elliott.lifecycle-window-candles:10}") int elliottConfirmationWindowCandles,
-            @Value("${alerts.candlestick.one-candle-outcome-window-candles:10}") int oneCandleOutcomeWindowCandles) {
+            @Value("${alerts.candlestick.one-candle-outcome-window-candles:8}") int oneCandleOutcomeWindowCandles) {
         this.alertEventRepository = alertEventRepository;
         this.notificationService = notificationService;
         this.confirmationWindowCandles = Math.clamp(
@@ -90,6 +90,15 @@ public class CandlestickSignalLifecycleService {
                                    DetectedSignal signal,
                                    List<Candle> chronologicalCandles,
                                    AnalysisPreferencesService.IntervalProfile profile) {
+        initializeTracking(event, signal, chronologicalCandles, profile,
+                CandlestickPatternPreferencesService.factoryPreferences());
+    }
+
+    public void initializeTracking(AlertEvent event,
+                                   DetectedSignal signal,
+                                   List<Candle> chronologicalCandles,
+                                   AnalysisPreferencesService.IntervalProfile profile,
+                                   CandlestickPatternPreferencesService.PreferencesView tradePreferences) {
         if (event == null || signal == null || isElliottPattern(signal.pattern())) {
             return;
         }
@@ -135,6 +144,19 @@ public class CandlestickSignalLifecycleService {
 
         boolean oneCandleCandidate =
                 CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern());
+        TimeInterval interval = event.getAlertRule() != null && event.getAlertRule().getInterval() != null
+                ? event.getAlertRule().getInterval()
+                : profile != null ? profile.interval() : TimeInterval.DAILY;
+        CandlestickPatternPreferencesService.PreferencesView effectivePreferences = tradePreferences == null
+                ? CandlestickPatternPreferencesService.factoryPreferences() : tradePreferences;
+        CandlestickPatternPreferencesService.PatternProfile patternProfile =
+                effectivePreferences.profile(signal.pattern());
+        double structuralStop = CandlestickSignalLifecyclePolicy.structuralStopPrice(
+                signal.pattern(), patternCandles);
+        double stopLoss = CandlestickSignalLifecyclePolicy.configuredStopPrice(
+                signal.tradeSignal(), signal.closePrice(), structuralStop,
+                patternProfile.stopLossMode(), patternProfile.stopLossValuePercent());
+        double rewardRiskRatio = effectivePreferences.rewardRiskRatio(interval);
         event.setLifecycleStatus(oneCandleCandidate
                 ? SignalLifecycleStatus.POTENTIAL
                 : SignalLifecycleStatus.DETECTED);
@@ -143,16 +165,24 @@ public class CandlestickSignalLifecycleService {
         event.setConfirmationTriggerPrice(
                 oneCandleCandidate
                         ? signal.closePrice()
-                        : signal.tradeSignal() == TradeSignal.BUY ? patternHigh : patternLow);
-        event.setInvalidationPrice(
-                signal.tradeSignal() == TradeSignal.BUY ? patternLow : patternHigh);
-        event.setConfirmationWindowCandles(oneCandleCandidate
-                ? oneCandleOutcomeWindowCandles
-                : profile == null ? confirmationWindowCandles : profile.candlestickResolutionCandles());
-        applyPercentageSnapshot(event, profile);
+                        : null);
+        event.setInvalidationPrice(stopLoss);
+        event.setStopLossPrice(stopLoss);
+        event.setStructuralStopPrice(structuralStop);
+        event.setStopLossMode(patternProfile.stopLossMode().name());
+        event.setStopLossValuePercent(patternProfile.stopLossValuePercent());
+        event.setRewardRiskRatio(rewardRiskRatio);
+        event.setTradePlanVersion(CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION);
+        event.setConfirmationWindowCandles(CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES);
+        event.setLifecycleConfirmationPercent(null);
+        event.setLifecycleInvalidationPercent(null);
         event.setLifecycleAnchorCandleTimestamp(signal.candleTimestamp());
         event.setDetectionCandleTimestamp(oneCandleCandidate ? null : signal.candleTimestamp());
         event.setDetectionClosePrice(oneCandleCandidate ? null : signal.closePrice());
+        if (!oneCandleCandidate) {
+            applyTradePlan(event, CandlestickSignalLifecyclePolicy.tradePlan(
+                    signal.tradeSignal(), signal.closePrice(), stopLoss, interval, rewardRiskRatio));
+        }
         event.setLifecycleResolutionReason(null);
         event.setLifecycleUpdatedAt(LocalDateTime.now());
     }
@@ -460,7 +490,12 @@ public class CandlestickSignalLifecycleService {
             }
             return null;
         }
-        LifecycleDecision resolution = hasPercentageRules(event)
+        LifecycleDecision resolution = event.hasCandlestickRiskRewardPlan()
+                ? decision(CandlestickSignalLifecyclePolicy.resolve(
+                        event.getTradeSignal(), event.getProfitTargetPrice(),
+                        event.getStopLossPrice(), subsequentCandles,
+                        CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES))
+                : hasPercentageRules(event)
                 ? resolveWithSnapshot(event, subsequentCandles, true)
                 : decision(CandlestickSignalLifecyclePolicy.resolve(
                         event.getTradeSignal(), event.getConfirmationTriggerPrice(),
@@ -483,16 +518,55 @@ public class CandlestickSignalLifecycleService {
         event.setDetectionCandleTimestamp(detectionCandle.getTimestamp());
         event.setDetectionClosePrice(detectionCandle.getClosePrice());
         event.setLifecycleAnchorCandleTimestamp(detectionCandle.getTimestamp());
-        event.setConfirmationTriggerPrice(event.getTradeSignal() == TradeSignal.BUY
-                ? event.getPatternHigh() : event.getPatternLow());
-        event.setInvalidationPrice(event.getTradeSignal() == TradeSignal.BUY
-                ? event.getPatternLow() : event.getPatternHigh());
+        if (event.hasCandlestickRiskRewardPlan()) {
+            TimeInterval interval = event.getAlertRule() == null || event.getAlertRule().getInterval() == null
+                    ? TimeInterval.DAILY : event.getAlertRule().getInterval();
+            double stopLoss = event.getStopLossPrice();
+            if (event.getStructuralStopPrice() != null
+                    && event.getStopLossMode() != null
+                    && event.getStopLossValuePercent() != null) {
+                CandlestickPatternPreferencesService.StopLossMode mode;
+                try {
+                    mode = CandlestickPatternPreferencesService.StopLossMode.valueOf(event.getStopLossMode());
+                } catch (IllegalArgumentException exception) {
+                    mode = CandlestickPatternPreferencesService.StopLossMode.STRUCTURAL_BUFFER;
+                }
+                stopLoss = CandlestickSignalLifecyclePolicy.configuredStopPrice(
+                        event.getTradeSignal(), detectionCandle.getClosePrice(),
+                        event.getStructuralStopPrice(), mode, event.getStopLossValuePercent());
+            }
+            applyTradePlan(event, CandlestickSignalLifecyclePolicy.tradePlan(
+                    event.getTradeSignal(), detectionCandle.getClosePrice(),
+                    stopLoss, interval, event.getRewardRiskRatio()));
+        } else {
+            event.setConfirmationTriggerPrice(event.getTradeSignal() == TradeSignal.BUY
+                    ? event.getPatternHigh() : event.getPatternLow());
+            event.setInvalidationPrice(event.getTradeSignal() == TradeSignal.BUY
+                    ? event.getPatternLow() : event.getPatternHigh());
+        }
         event.setResolutionCandleTimestamp(null);
         event.setResolutionCandleOffset(null);
         event.setResolutionClosePrice(null);
         event.setLifecycleResolutionReason(
                 "The immediately following candle confirmed the potential pattern; outcome tracking started from this close.");
         event.setLifecycleUpdatedAt(LocalDateTime.now());
+    }
+
+    private void applyTradePlan(AlertEvent event,
+                                CandlestickSignalLifecyclePolicy.TradePlan plan) {
+        event.setTradeEntryPrice(plan.entryPrice());
+        event.setStopLossPrice(plan.stopLossPrice());
+        event.setProfitTargetPrice(plan.profitTargetPrice());
+        event.setRewardRiskRatio(plan.rewardRiskRatio());
+        event.setTradePlanVersion(event.getStructuralStopPrice() != null
+                && event.getStopLossMode() != null && event.getStopLossValuePercent() != null
+                ? CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION : "CANDLE_RR_V1");
+        event.setConfirmationWindowCandles(plan.timeStopCandles());
+        // Retain these generic columns for old API consumers and for the
+        // shared tracked-lifecycle predicate. Candlestick UI uses the explicit
+        // trade-plan fields; Elliott continues to use boundary semantics.
+        event.setConfirmationTriggerPrice(plan.profitTargetPrice());
+        event.setInvalidationPrice(plan.stopLossPrice());
     }
 
     private boolean hasPercentageRules(AlertEvent event) {

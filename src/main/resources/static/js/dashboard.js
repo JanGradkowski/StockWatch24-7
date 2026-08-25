@@ -317,11 +317,12 @@
             const input = document.createElement("input");
             input.type = "checkbox";
             input.dataset.ruleId = String(rule.id);
-            input.setAttribute("aria-label", `Select ${rule.familyLabel} ${rule.intervalLabel} ${rule.tradeSignal}`);
+            const tradeSignalLabel = rule.tradeSignal === "SELL" ? "SELL/SHORT" : rule.tradeSignal;
+            input.setAttribute("aria-label", `Select ${rule.familyLabel} ${rule.intervalLabel} ${tradeSignalLabel}`);
             const copy = document.createElement("span");
             copy.className = "company-unfollow-rule-copy";
             const title = document.createElement("strong");
-            title.textContent = `${rule.familyLabel} · ${rule.tradeSignal}`;
+            title.textContent = `${rule.familyLabel} · ${tradeSignalLabel}`;
             const interval = document.createElement("small");
             interval.textContent = `${rule.intervalLabel} interval`;
             copy.append(title, interval);

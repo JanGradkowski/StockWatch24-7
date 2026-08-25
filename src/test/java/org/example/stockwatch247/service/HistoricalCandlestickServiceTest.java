@@ -48,9 +48,14 @@ class HistoricalCandlestickServiceTest {
         candles.get(31).setOpenPrice(102.0);
         candles.get(31).setClosePrice(101.0);
         candles.get(40).setClosePrice(100.0);
-        candles.get(50).setClosePrice(95.0);
+        candles.get(40).setHighPrice(102.0);
+        candles.get(40).setLowPrice(98.0);
+        candles.get(45).setClosePrice(95.0);
         candles.get(60).setClosePrice(100.0);
-        candles.get(70).setClosePrice(105.0);
+        candles.get(60).setHighPrice(102.0);
+        candles.get(60).setLowPrice(98.0);
+        candles.get(65).setClosePrice(105.0);
+        candles.get(77).setHighPrice(candles.get(77).getClosePrice() + 2.0);
         List<EnrichedCandle> enriched = candles.stream().map(this::enriched).toList();
         long successfulSellTimestamp = candles.get(40).getTimestamp();
         long successfulTimestamp = candles.get(60).getTimestamp();
@@ -123,8 +128,8 @@ class HistoricalCandlestickServiceTest {
         HistoricalCandlestickService.HistoricalScan second = service.scan(symbol, "1d", 60);
 
         assertThat(first.lookbackCandles()).isEqualTo(60);
-        assertThat(first.evaluationHorizonCandles()).isEqualTo(10);
-        assertThat(first.successThresholdPercent()).isEqualTo(3.0);
+        assertThat(first.timeStopCandles()).isEqualTo(8);
+        assertThat(first.rewardRiskRatio()).isEqualTo(2.0);
         assertThat(first.signals()).hasSize(3);
         assertThat(first.signals())
                 .noneMatch(signal -> signal.signalTimestamp() == rejectedTimestamp);
@@ -132,18 +137,20 @@ class HistoricalCandlestickServiceTest {
                 .singleElement()
                 .satisfies(signal -> {
                     assertThat(signal.status())
-                            .isEqualTo(HistoricalCandlestickService.HistoricalOutcome.SUCCESS);
+                            .isEqualTo(SignalLifecycleStatus.CONFIRMED);
                     assertThat(signal.directionalReturnPercent()).isEqualTo(5.0);
-                    assertThat(signal.impactLabel()).isEqualTo("Potential loss avoided");
+                    assertThat(signal.bestDirectionalMovePercent()).isEqualTo(4.0);
+                    assertThat(signal.impactLabel()).isEqualTo("Direction-adjusted entry-to-current/exit return");
                     assertThat(signal.lifecycle().terminal()).isTrue();
                 });
         assertThat(first.signals()).filteredOn(signal -> signal.signalTimestamp() == successfulTimestamp)
                 .singleElement()
                 .satisfies(signal -> {
             assertThat(signal.status())
-                    .isEqualTo(HistoricalCandlestickService.HistoricalOutcome.SUCCESS);
+                    .isEqualTo(SignalLifecycleStatus.CONFIRMED);
             assertThat(signal.directionalReturnPercent()).isEqualTo(5.0);
-                    assertThat(signal.impactLabel()).isEqualTo("Potential gain");
+            assertThat(signal.bestDirectionalMovePercent()).isEqualTo(4.0);
+                    assertThat(signal.impactLabel()).isEqualTo("Entry-to-current/exit return");
                     assertThat(signal.lifecycle().terminal()).isTrue();
                     assertThat(signal.trendLabel()).isEqualTo("Required downtrend");
                     assertThat(signal.trendStartTimestamp()).isLessThan(signal.patternStartTimestamp());
@@ -152,8 +159,9 @@ class HistoricalCandlestickServiceTest {
                 .singleElement()
                 .satisfies(signal -> {
             assertThat(signal.status())
-                    .isEqualTo(HistoricalCandlestickService.HistoricalOutcome.PENDING);
-            assertThat(signal.directionalReturnPercent()).isNull();
+                    .isEqualTo(SignalLifecycleStatus.DETECTED);
+            assertThat(signal.directionalReturnPercent()).isNotNull();
+            assertThat(signal.bestDirectionalMovePercent()).isNotNull();
             assertThat(signal.lifecycle().status()).isEqualTo(SignalLifecycleStatus.DETECTED);
         });
         assertThat(second.signals()).hasSize(3);
@@ -207,14 +215,14 @@ class HistoricalCandlestickServiceTest {
         assertThat(scanProfile("1wk", 72)).satisfies(scan -> {
             assertThat(scan.lookbackCandles()).isEqualTo(72);
             assertThat(scan.lookbackLabel()).isEqualTo("last 72 completed weekly candles");
-            assertThat(scan.evaluationHorizonCandles()).isEqualTo(4);
-            assertThat(scan.successThresholdPercent()).isEqualTo(4.0);
+            assertThat(scan.timeStopCandles()).isEqualTo(8);
+            assertThat(scan.rewardRiskRatio()).isEqualTo(3.0);
         });
         assertThat(scanProfile("1mo", 144)).satisfies(scan -> {
             assertThat(scan.lookbackCandles()).isEqualTo(144);
             assertThat(scan.lookbackLabel()).isEqualTo("last 144 completed monthly candles");
-            assertThat(scan.evaluationHorizonCandles()).isEqualTo(3);
-            assertThat(scan.successThresholdPercent()).isEqualTo(6.0);
+            assertThat(scan.timeStopCandles()).isEqualTo(8);
+            assertThat(scan.rewardRiskRatio()).isEqualTo(4.0);
         });
     }
 

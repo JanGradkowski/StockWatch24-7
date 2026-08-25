@@ -43,7 +43,7 @@
       <div>
         <h2 id="signal-archive-heading" class="panel-title">Signal history</h2>
         <p class="panel-meta">Unread signals are highlighted. Opening one marks it as read.</p>
-        <p class="panel-meta">Best and worst results are direction-aware moves from the applicable measurement start.</p>
+        <p class="panel-meta">Trade outcome shows the sell target, configured stop loss, or candle 8 time-stop return from the stored trade plan.</p>
       </div>
       <form method="get"
             th:action="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()})} : @{/signals}"
@@ -57,8 +57,7 @@
             <option value="interval" th:selected="${archive.sort() == 'interval'}">Interval</option>
             <option value="confidence" th:selected="${archive.sort() == 'confidence'}">Confidence score</option>
             <option value="status" th:selected="${archive.sort() == 'status'}">Signal status</option>
-            <option value="best-return" th:selected="${archive.sort() == 'best-return'}">Best result</option>
-            <option value="worst-return" th:selected="${archive.sort() == 'worst-return'}">Worst result</option>
+            <option value="trade-return" th:selected="${archive.sort() == 'trade-return'}">Trade outcome</option>
           </select>
         </label>
         <label>
@@ -106,7 +105,7 @@
 
       <div class="signal-archive-results">
         <div class="signal-archive-head" aria-hidden="true">
-          <span>Signal</span><span>Ticker</span><span>Interval</span><span>Received</span><span>Read</span><span>Signal status</span><span>Confidence score</span><span>Best result</span><span>Worst result</span><span></span>
+          <span>Signal</span><span>Ticker</span><span>Interval</span><span>Received</span><span>Read</span><span>Signal status</span><span>Confidence score</span><span>Trade outcome</span><span></span>
         </div>
         <div class="signal-archive-list">
           <div th:each="entry, row : ${archive.signals()}" th:with="signal=${entry.signal()}" class="signal-archive-entry">
@@ -141,6 +140,8 @@
                 <div class="signal-archive-company">
                   <strong th:text="${signal.symbol()}">AAPL</strong>
                   <span th:text="${signal.companyName()}">Apple Inc.</span>
+                  <span th:if="${signal.lifecycle().entryPrice() != null and signal.lifecycle().stopLossPrice() != null and signal.lifecycle().profitTargetPrice() != null}"
+                        th:text="${'Entry ' + #numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 2) + ' · Stop ' + #numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 2) + ' · Target ' + #numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 2) + ' · 1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)}">Entry 100.00 · Stop 95.00 · Target 110.00 · 1:2</span>
                 </div>
                 <span class="latest-interval" th:text="${signal.intervalLabel()}">Weekly</span>
                 <div class="signal-archive-date">
@@ -160,19 +161,13 @@
                   <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
                   <span th:text="${signal.setupScore() != null ? '/100' : 'N/A'}">/100</span>
                 </div>
-                <div class="signal-archive-result best" th:title="${entry.measurementStartLabel()}">
-                  <strong th:if="${entry.resultAvailable()}"
-                          th:classappend="${entry.bestDirectionalMovePercent() >= 0} ? ' positive' : ' negative'"
-                          th:text="${(entry.bestDirectionalMovePercent() >= 0 ? '+' : '') + #numbers.formatDecimal(entry.bestDirectionalMovePercent(), 1, 2) + '%'}">+6.20%</strong>
-                  <strong th:unless="${entry.resultAvailable()}" class="unavailable">N/A</strong>
-                  <span th:text="${entry.measurementStartLabel()}">From signal candle close · 03 Aug 2026</span>
-                </div>
-                <div class="signal-archive-result worst" th:title="${entry.measurementStartLabel()}">
-                  <strong th:if="${entry.resultAvailable()}"
-                          th:classappend="${entry.worstDirectionalMovePercent() >= 0} ? ' positive' : ' negative'"
-                          th:text="${(entry.worstDirectionalMovePercent() >= 0 ? '+' : '') + #numbers.formatDecimal(entry.worstDirectionalMovePercent(), 1, 2) + '%'}">-2.10%</strong>
-                  <strong th:unless="${entry.resultAvailable()}" class="unavailable">N/A</strong>
-                  <span th:text="${entry.measurementStartLabel()}">From signal candle close · 03 Aug 2026</span>
+                <div class="signal-archive-result outcome" th:title="${entry.outcome().detail()}">
+                  <strong th:if="${entry.outcome().available()}"
+                          th:classappend="${entry.outcome().returnPercent() >= 0} ? ' positive' : ' negative'"
+                          th:text="${entry.outcome().valueLabel()}">+2.00%</strong>
+                  <strong th:unless="${entry.outcome().available()}" class="unavailable">N/A</strong>
+                  <span th:text="${entry.outcome().label()}">Sold at target</span>
+                  <span th:text="${entry.outcome().priceDetail()}">Profit target reached · 110.00</span>
                 </div>
                 <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
               </a>

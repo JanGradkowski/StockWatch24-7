@@ -83,8 +83,12 @@ public class SettingsController {
             model.addAttribute("scoringPreferences", scoringPreferences.get(user));
         }
         if ("candlestick-patterns".equals(settingsTab)) {
-            model.addAttribute("candlestickPatternPreferences", candlestickPatternPreferences.get(user));
+            CandlestickPatternPreferencesService.PreferencesView preferences =
+                    candlestickPatternPreferences.get(user);
+            model.addAttribute("candlestickPatternPreferences", preferences);
+            model.addAttribute("candlestickRewardRiskProfiles", preferences.rewardRiskProfiles());
             model.addAttribute("trendRequirements", CandlestickPatternPreferencesService.TrendRequirement.values());
+            model.addAttribute("stopLossModes", CandlestickPatternPreferencesService.StopLossMode.values());
         }
         if ("elliott-waves".equals(settingsTab)) {
             model.addAttribute("elliottWavePreferences", elliottWavePreferences.get(user));
@@ -211,7 +215,7 @@ public class SettingsController {
                                       Principal principal, RedirectAttributes redirect) {
         try {
             candlestickPatternPreferences.save(current(principal), form);
-            redirect.addFlashAttribute("success", "Candlestick pattern definitions applied to future detections.");
+            redirect.addFlashAttribute("success", "Candlestick definitions and trade plans applied to future signals.");
         } catch (IllegalArgumentException exception) {
             redirect.addFlashAttribute("error", exception.getMessage());
         }
@@ -226,8 +230,8 @@ public class SettingsController {
                     : CandlePattern.valueOf(pattern.trim().toUpperCase());
             candlestickPatternPreferences.reset(current(principal), selected);
             redirect.addFlashAttribute("success", selected == null
-                    ? "All candlestick pattern definitions were restored to factory settings."
-                    : "The selected candlestick pattern was restored to factory settings.");
+                    ? "All candlestick definitions and trade plans were restored to factory settings."
+                    : "The selected candlestick definition and stop-loss rule were restored to factory settings.");
         } catch (IllegalArgumentException exception) {
             redirect.addFlashAttribute("error", "Choose a valid candlestick pattern to reset.");
         }

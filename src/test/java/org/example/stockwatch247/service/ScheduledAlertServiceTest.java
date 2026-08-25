@@ -154,7 +154,8 @@ class ScheduledAlertServiceTest {
         assertThat(savedEvent.getValue().getScoreVersion())
                 .isEqualTo(CandlePatternDetectionService.SETUP_SCORE_VERSION);
         assertThat(savedEvent.getValue().isLifecycleTracked()).isTrue();
-        assertThat(savedEvent.getValue().getConfirmationWindowCandles()).isEqualTo(3);
+        assertThat(savedEvent.getValue().getConfirmationWindowCandles()).isEqualTo(8);
+        assertThat(savedEvent.getValue().hasCandlestickRiskRewardPlan()).isTrue();
         assertThat(savedEvent.getValue().getConfidenceReasons())
                 .anyMatch(reason -> reason.startsWith("Pattern quality +"));
     }

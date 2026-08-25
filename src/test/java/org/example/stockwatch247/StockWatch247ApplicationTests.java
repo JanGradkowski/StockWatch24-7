@@ -541,7 +541,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString(
                         "<h1 id=\"settingsPageTitle\"><span>Analysis &amp; Alerts</span></h1>")))
                 .andExpect(content().string(containsString("Personal analysis profile")))
-                .andExpect(content().string(containsString("Signal resolution")))
+                .andExpect(content().string(containsString("Elliott lifecycle tracking")))
                 .andExpect(content().string(containsString("RSI period")))
                 .andExpect(content().string(containsString("Restore all factory settings")));
 
@@ -577,9 +577,12 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString(
                         "<h1 id=\"settingsPageTitle\"><span>Candlestick Patterns</span></h1>")))
                 .andExpect(content().string(containsString("Candlestick pattern definitions")))
+                .andExpect(content().string(containsString("Risk-to-reward by interval")))
+                .andExpect(content().string(containsString("Stop-loss rule")))
+                .andExpect(content().string(containsString("Fixed percentage from entry")))
                 .andExpect(content().string(containsString("Minimum second body versus first body")))
                 .andExpect(content().string(containsString("Raise this to require the engulfing candle")))
-                .andExpect(content().string(containsString("Restore factory definitions")));
+                .andExpect(content().string(containsString("Restore candlestick defaults")));
 
         mockMvc.perform(post("/settings/appearance").with(user(email)).with(csrf())
                         .param("theme", "LIGHT")
@@ -893,7 +896,12 @@ class StockWatch247ApplicationTests {
         event.setPatternLow(18.0);
         event.setConfirmationTriggerPrice(20.0);
         event.setInvalidationPrice(18.0);
-        event.setConfirmationWindowCandles(3);
+        event.setConfirmationWindowCandles(8);
+        event.setTradeEntryPrice(19.42);
+        event.setStopLossPrice(19.00);
+        event.setProfitTargetPrice(20.68);
+        event.setRewardRiskRatio(3.0);
+        event.setTradePlanVersion("CANDLE_RR_V1");
         event.setResolutionCandleTimestamp(Instant.parse("2026-07-20T00:00:00Z").getEpochSecond());
         event.setResolutionCandleOffset(1);
         event.setResolutionClosePrice(20.75);
@@ -965,8 +973,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString(symbol + " signals")))
                 .andExpect(content().string(containsString("Group and sort by")))
                 .andExpect(content().string(containsString("Select this page")))
-                .andExpect(content().string(containsString("Best result")))
-                .andExpect(content().string(containsString("Worst result")))
+                .andExpect(content().string(containsString("Trade outcome")))
+                .andExpect(content().string(containsString("Sold at target")))
+                .andExpect(content().string(containsString("+6.49%")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
                 .andExpect(content().string(containsString("Signal status")))
                 .andExpect(content().string(containsString("Confirmed")))
@@ -987,12 +996,10 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Confidence score")))
                 .andExpect(content().string(containsString("value=\"confidence\"")))
                 .andExpect(content().string(containsString("value=\"status\"")))
-                .andExpect(content().string(containsString("value=\"best-return\"")))
-                .andExpect(content().string(containsString("value=\"worst-return\"")))
-                .andExpect(content().string(containsString("Best result")))
-                .andExpect(content().string(containsString("Worst result")))
-                .andExpect(content().string(containsString("+10.71%")))
-                .andExpect(content().string(containsString("-4.74%")))
+                .andExpect(content().string(containsString("value=\"trade-return\"")))
+                .andExpect(content().string(containsString("Trade outcome")))
+                .andExpect(content().string(containsString("Sold at target")))
+                .andExpect(content().string(containsString("+6.49%")))
                 .andExpect(content().string(containsString("(unread)")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
 
@@ -1010,7 +1017,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Complete cached interval history")))
                 .andExpect(content().string(containsString("Why this score")))
                 .andExpect(content().string(containsString("Signal lifecycle timeline")))
-                .andExpect(content().string(containsString("Observed price outcome")))
+                .andExpect(content().string(containsString("Close-based trade outcome")))
                 .andExpect(content().string(containsString("Detection")))
                 .andExpect(content().string(containsString("Detected")))
                 .andExpect(content().string(containsString("Terminal update")))

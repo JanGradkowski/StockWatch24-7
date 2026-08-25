@@ -558,7 +558,13 @@ class AlertRuleServiceTest {
         event.setInvalidationPrice(98.0);
         event.setConfirmationWindowCandles(3);
         event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+        event.setTradeEntryPrice(100.0);
+        event.setStopLossPrice(98.0);
+        event.setProfitTargetPrice(104.0);
+        event.setRewardRiskRatio(2.0);
+        event.setTradePlanVersion(CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION);
         event.setResolutionCandleTimestamp(resolutionTimestamp);
+        event.setResolutionClosePrice(107.0);
         event.setSentAt(LocalDateTime.of(2026, 7, 17, 22, 15));
         event.setReadAt(LocalDateTime.of(2026, 7, 18, 9, 0));
 
@@ -566,27 +572,15 @@ class AlertRuleServiceTest {
                 org.mockito.ArgumentMatchers.eq(user),
                 org.mockito.ArgumentMatchers.any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
-        when(candleRepository
-                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
-                        "MARA", "1d", signalTimestamp, DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 3)))
-                .thenReturn(List.of(
-                        new Candle("MARA", "1d",
-                                Instant.parse("2026-07-21T00:00:00Z").getEpochSecond(),
-                                100.0, 110.0, 95.0, 105.0, 1_000L),
-                        new Candle("MARA", "1d", resolutionTimestamp,
-                                105.0, 108.0, 90.0, 107.0, 1_000L)
-                ));
-
         AlertRuleService.SignalArchivePage archive = service.getSignalArchive(user, "ticker", "asc", 0);
 
         assertThat(archive.totalSignals()).isEqualTo(1);
         assertThat(archive.sort()).isEqualTo("ticker");
         assertThat(archive.direction()).isEqualTo("asc");
         assertThat(archive.signals().getFirst().signal().hasBeenRead()).isTrue();
-        assertThat(archive.signals().getFirst().bestDirectionalMovePercent()).isEqualTo(10.0);
-        assertThat(archive.signals().getFirst().worstDirectionalMovePercent()).isEqualTo(-10.0);
-        assertThat(archive.signals().getFirst().resultWindowLabel())
-                .isEqualTo("2 of 3 completed candles");
+        assertThat(archive.signals().getFirst().outcome().label()).isEqualTo("Sold at target");
+        assertThat(archive.signals().getFirst().outcome().returnPercent()).isEqualTo(4.0);
+        assertThat(archive.signals().getFirst().outcome().price()).isEqualTo(104.0);
         org.mockito.ArgumentCaptor<Pageable> pageableCaptor = org.mockito.ArgumentCaptor.forClass(Pageable.class);
         verify(alertEventRepository).findByAlertRule_User(
                 org.mockito.ArgumentMatchers.eq(user), pageableCaptor.capture());
@@ -664,6 +658,11 @@ class AlertRuleServiceTest {
         event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
         event.setDetectionCandleTimestamp(detectionTimestamp);
         event.setDetectionClosePrice(99.0);
+        event.setTradeEntryPrice(99.0);
+        event.setStopLossPrice(105.0);
+        event.setProfitTargetPrice(87.0);
+        event.setRewardRiskRatio(2.0);
+        event.setTradePlanVersion(CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION);
         event.setResolutionCandleTimestamp(Instant.parse("2026-07-22T00:00:00Z").getEpochSecond());
         event.setResolutionCandleOffset(1);
         event.setResolutionClosePrice(92.0);
@@ -673,25 +672,13 @@ class AlertRuleServiceTest {
                 org.mockito.ArgumentMatchers.eq(user),
                 org.mockito.ArgumentMatchers.any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
-        when(candleRepository
-                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
-                        "AAPL", "1d", detectionTimestamp, DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 10)))
-                .thenReturn(List.of(new Candle(
-                        "AAPL", "1d", Instant.parse("2026-07-22T00:00:00Z").getEpochSecond(),
-                        98.0, 100.0, 90.0, 92.0, 1_000L)));
-
         AlertRuleService.SignalArchiveEntry entry =
                 service.getSignalArchive(user, "date", "desc", 0).signals().getFirst();
 
-        assertThat(entry.signal().directionLabel()).isEqualTo("Confirmed sell");
-        assertThat(entry.measurementStartLabel())
-                .startsWith("From detection candle close")
-                .contains("21 Jul 2026");
-        assertThat(entry.bestDirectionalMovePercent()).isCloseTo(9.0909, within(0.0001));
-        assertThat(entry.worstDirectionalMovePercent()).isCloseTo(-1.0101, within(0.0001));
-        verify(candleRepository)
-                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
-                        "AAPL", "1d", detectionTimestamp, DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 10));
+        assertThat(entry.signal().directionLabel()).isEqualTo("Confirmed sell/short");
+        assertThat(entry.outcome().label()).isEqualTo("Sold at target");
+        assertThat(entry.outcome().returnPercent()).isCloseTo(12.1212, within(0.0001));
+        assertThat(entry.outcome().price()).isEqualTo(87.0);
     }
 
     @Test
@@ -717,6 +704,13 @@ class AlertRuleServiceTest {
         event.setConfirmationTriggerPrice(98.0);
         event.setInvalidationPrice(102.0);
         event.setConfirmationWindowCandles(3);
+        event.setLifecycleStatus(SignalLifecycleStatus.INVALIDATED);
+        event.setTradeEntryPrice(100.0);
+        event.setStopLossPrice(102.0);
+        event.setProfitTargetPrice(96.0);
+        event.setRewardRiskRatio(2.0);
+        event.setTradePlanVersion(CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION);
+        event.setResolutionClosePrice(102.0);
         event.setSentAt(LocalDateTime.of(2026, 7, 20, 22, 15));
 
         AlertEvent unavailable = new AlertEvent();
@@ -729,25 +723,60 @@ class AlertRuleServiceTest {
 
         when(alertEventRepository.findAllByAlertRule_User(user))
                 .thenReturn(List.of(unavailable, event));
-        when(candleRepository
-                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
-                        "AAPL", "1d", signalTimestamp, DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 3)))
-                .thenReturn(List.of(new Candle(
-                        "AAPL", "1d", Instant.parse("2026-07-21T00:00:00Z").getEpochSecond(),
-                        100.0, 112.0, 92.0, 95.0, 1_000L)));
-
         AlertRuleService.SignalArchivePage archive = service
-                .getSignalArchive(user, "best-return", "asc", 0);
+                .getSignalArchive(user, "trade-return", "asc", 0);
         AlertRuleService.SignalArchiveEntry result = archive.signals().getFirst();
 
-        assertThat(result.bestDirectionalMovePercent()).isEqualTo(8.0);
-        assertThat(result.worstDirectionalMovePercent()).isEqualTo(-12.0);
-        assertThat(result.resultWindowLabel()).isEqualTo("1 of 3 completed candles");
+        assertThat(result.outcome().label()).isEqualTo("Stop loss reached");
+        assertThat(result.outcome().returnPercent()).isEqualTo(-2.0);
+        assertThat(result.outcome().valueLabel()).isEqualTo("102.00 (-2.00%)");
         assertThat(archive.signals()).extracting(entry -> entry.signal().id())
                 .containsExactly(303L, 304L);
-        assertThat(archive.signals().get(1).resultAvailable()).isFalse();
-        assertThat(archive.sort()).isEqualTo("best-return");
+        assertThat(archive.signals().get(1).outcome().available()).isFalse();
+        assertThat(archive.sort()).isEqualTo("trade-return");
         verify(alertEventRepository).findAllByAlertRule_User(user);
+    }
+
+    @Test
+    void expiredSignalArchiveShowsTheDirectionAdjustedCandleEightClose() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(
+                alertRuleRepository, alertEventRepository, mock(CandleRepository.class));
+        User user = new User();
+        user.setEmail("expired-archive@example.com");
+        AlertRule rule = rule(25L, user, stock(5L, "NFLX", "Netflix, Inc."),
+                TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.SELL);
+        AlertEvent event = new AlertEvent();
+        event.setId(306L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.BEARISH_ENGULFING);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(Instant.parse("2026-07-20T00:00:00Z").getEpochSecond());
+        event.setClosePrice(100.0);
+        event.setLifecycleStatus(SignalLifecycleStatus.EXPIRED);
+        event.setTradeEntryPrice(100.0);
+        event.setStopLossPrice(103.0);
+        event.setProfitTargetPrice(94.0);
+        event.setRewardRiskRatio(2.0);
+        event.setTradePlanVersion(CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION);
+        event.setConfirmationWindowCandles(CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES);
+        event.setResolutionCandleOffset(CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES);
+        event.setResolutionClosePrice(95.0);
+        event.setSentAt(LocalDateTime.of(2026, 7, 28, 22, 15));
+        when(alertEventRepository.findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
+
+        AlertRuleService.SignalArchiveOutcome outcome = service
+                .getSignalArchive(user, "date", "desc", 0)
+                .signals().getFirst().outcome();
+
+        assertThat(outcome.label()).isEqualTo("Candle 8 time stop");
+        assertThat(outcome.returnPercent()).isEqualTo(5.0);
+        assertThat(outcome.price()).isEqualTo(95.0);
+        assertThat(outcome.priceDetail()).isEqualTo("Trade closed at the candle 8 close · 95.00");
     }
 
     @Test
@@ -1021,6 +1050,18 @@ class AlertRuleServiceTest {
         event.setConfidenceScore(78);
         event.setScoreVersion(CandlePatternDetectionService.SETUP_SCORE_VERSION);
         event.setClosePrice(95.0);
+        event.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);
+        event.setDetectionCandleTimestamp(signalTimestamp);
+        event.setDetectionClosePrice(95.0);
+        event.setTradeEntryPrice(95.0);
+        event.setStopLossPrice(94.0);
+        event.setProfitTargetPrice(98.0);
+        event.setRewardRiskRatio(3.0);
+        event.setTradePlanVersion(CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION);
+        event.setConfirmationWindowCandles(CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES);
+        event.setResolutionCandleTimestamp(signalTimestamp + 2L * 7L * 86_400L);
+        event.setResolutionCandleOffset(2);
+        event.setResolutionClosePrice(99.0);
         when(alertEventRepository.findOwnedByIdAndUser(303L, user)).thenReturn(Optional.of(event));
 
         List<Candle> priorAscending = new ArrayList<>();
@@ -1064,8 +1105,9 @@ class AlertRuleServiceTest {
         assertThat(detail.chart().summary()).contains("highlighted region", "labeled arrows");
         assertThat(detail.observedOutcome().tracked()).isTrue();
         assertThat(detail.observedOutcome().outcomeAvailable()).isTrue();
-        assertThat(detail.observedOutcome().statusLabel()).isEqualTo("Successful");
-        assertThat(detail.observedOutcome().evaluationHorizonLabel()).isEqualTo("4-week horizon");
+        assertThat(detail.observedOutcome().statusLabel()).isEqualTo("Confirmed");
+        assertThat(detail.observedOutcome().timeStopLabel()).isEqualTo("Candle 8 time stop");
+        assertThat(detail.observedOutcome().bestDirectionalMovePercent()).isCloseTo(3.1579, within(0.0001));
         assertThat(detail.results().available()).isFalse();
         assertThat(detail.results().minimumForwardCandles()).isEqualTo(10);
         assertThat(detail.results().availableForwardCandles()).isEqualTo(4);

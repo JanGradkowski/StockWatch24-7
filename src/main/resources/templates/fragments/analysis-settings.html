@@ -8,10 +8,10 @@
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.profileLabel()}">Factory profile</span>
     </div>
-    <p class="analysis-settings-intro">Changes apply to future technical outlook calculations and newly detected signals. Existing signals keep the score, lifecycle rules, and profile snapshot recorded when they were created.</p>
+    <p class="analysis-settings-intro">Changes apply to future technical outlook calculations, Elliott lifecycle tracking, and market email delivery. Candlestick stop losses and interval R:R targets now live under Candlestick Patterns.</p>
     <div class="analysis-safety-strip">
       <strong>Completed candles only</strong>
-      <span>Percentage boundaries supplement structural rules. Elliott structure breaks always invalidate first.</span>
+      <span><a th:href="@{/settings/candlestick-patterns}">Open Candlestick Patterns</a> to configure every directional pattern's stop loss and each interval's R:R ratio.</span>
       <span>Unavailable indicators are excluded from the score denominator.</span>
     </div>
   </section>
@@ -24,16 +24,16 @@
       </div>
       <div class="delivery-preference-grid">
         <fieldset><legend>New activity</legend>
-          <label><input type="checkbox" name="email.newCandlestick" th:checked="${preferences.email().newCandlestick()}"><span><strong>Candlestick signals</strong><small>New confirmed candlestick detections</small></span></label>
+          <label><input type="checkbox" name="email.newCandlestick" th:checked="${preferences.email().newCandlestick()}"><span><strong>Candlestick signals</strong><small>New candlestick detections</small></span></label>
           <label><input type="checkbox" name="email.newElliott" th:checked="${preferences.email().newElliott()}"><span><strong>Elliott Wave signals</strong><small>Actionable Wave V and correction signals</small></span></label>
           <label><input type="checkbox" name="email.newHarmonic" th:checked="${preferences.email().harmonicEnabled()}"><span><strong>Harmonic Formation signals</strong><small>Confirmed Gartley, Bat, Butterfly, Crab, Shark, and Cypher formations</small></span></label>
           <label><input type="checkbox" name="email.insider" th:checked="${preferences.email().insider()}"><span><strong>Corporate insider activity</strong><small>Filed insider purchases and sales</small></span></label>
           <label><input type="checkbox" name="email.congressional" th:checked="${preferences.email().congressional()}"><span><strong>Congressional activity</strong><small>New public transaction disclosures</small></span></label>
         </fieldset>
         <fieldset><legend>Signal resolution</legend>
-          <label><input type="checkbox" name="email.confirmed" th:checked="${preferences.email().confirmed()}"><span><strong>Confirmed</strong><small>Expected follow-through occurred</small></span></label>
-          <label><input type="checkbox" name="email.invalidated" th:checked="${preferences.email().invalidated()}"><span><strong>Invalidated</strong><small>The opposite boundary or structure broke</small></span></label>
-          <label><input type="checkbox" name="email.expired" th:checked="${preferences.email().expired()}"><span><strong>Rejected / expired</strong><small>The next-candle gate failed or the resolution window ended</small></span></label>
+          <label><input type="checkbox" name="email.confirmed" th:checked="${preferences.email().confirmed()}"><span><strong>Confirmed</strong><small>Profit target reached, or Elliott follow-through confirmed</small></span></label>
+          <label><input type="checkbox" name="email.invalidated" th:checked="${preferences.email().invalidated()}"><span><strong>Invalidated</strong><small>Stop loss reached or Elliott structure broke</small></span></label>
+          <label><input type="checkbox" name="email.expired" th:checked="${preferences.email().expired()}"><span><strong>Rejected / expired</strong><small>The detection gate failed or the applicable time window ended</small></span></label>
         </fieldset>
         <fieldset><legend>Intervals</legend>
           <label><input type="checkbox" name="email.daily" th:checked="${preferences.email().daily()}"><span><strong>Daily</strong><small>Daily signal emails</small></span></label>
@@ -42,7 +42,7 @@
         </fieldset>
         <fieldset><legend>Directions</legend>
           <label><input type="checkbox" name="email.buy" th:checked="${preferences.email().buy()}"><span><strong>Buy</strong><small>Bullish signal emails</small></span></label>
-          <label><input type="checkbox" name="email.sell" th:checked="${preferences.email().sell()}"><span><strong>Sell</strong><small>Bearish signal emails</small></span></label>
+          <label><input type="checkbox" name="email.sell" th:checked="${preferences.email().sell()}"><span><strong>Sell/Short</strong><small>Bearish signal emails</small></span></label>
         </fieldset>
       </div>
       <p class="analysis-security-note">Account security, verification, password, and deletion emails are essential and are not affected.</p>
@@ -58,12 +58,12 @@
       </div>
 
       <div class="analysis-setting-groups">
-        <fieldset class="analysis-setting-group"><legend>Signal resolution</legend><p>Zero percent keeps the factory structural boundary only.</p>
+        <fieldset class="analysis-setting-group"><legend>Elliott lifecycle tracking</legend><p>These boundaries apply only to Elliott structures. Candlestick outcomes use their separate stop-loss, profit-target, and candle 8 time-stop trade plan.</p>
           <div class="analysis-input-grid">
-            <label><span>Candlestick resolution window<small>Completed candles before expiry</small></span><input type="number" min="1" max="20" required th:name="${profile.key() + '.candlestickResolutionCandles'}" th:value="${profile.candlestickResolutionCandles()}"></label>
+            <input type="hidden" th:name="${profile.key() + '.candlestickResolutionCandles'}" value="8">
             <label><span>Elliott resolution window<small>After the latest endpoint</small></span><input type="number" min="1" max="20" required th:name="${profile.key() + '.elliottResolutionCandles'}" th:value="${profile.elliottResolutionCandles()}"></label>
-            <label><span>Confirmation move (%)<small>Additional favorable close</small></span><input type="number" min="0" max="50" step="0.1" required th:name="${profile.key() + '.confirmationMovePercent'}" th:value="${profile.confirmationMovePercent()}"></label>
-            <label><span>Invalidation move (%)<small>Additional adverse close</small></span><input type="number" min="0" max="50" step="0.1" required th:name="${profile.key() + '.invalidationMovePercent'}" th:value="${profile.invalidationMovePercent()}"></label>
+            <label><span>Elliott confirmation move (%)<small>Additional favorable close</small></span><input type="number" min="0" max="50" step="0.1" required th:name="${profile.key() + '.confirmationMovePercent'}" th:value="${profile.confirmationMovePercent()}"></label>
+            <label><span>Elliott invalidation move (%)<small>Additional adverse close</small></span><input type="number" min="0" max="50" step="0.1" required th:name="${profile.key() + '.invalidationMovePercent'}" th:value="${profile.invalidationMovePercent()}"></label>
           </div>
         </fieldset>
 
@@ -71,10 +71,10 @@
           <div class="analysis-input-grid">
             <label><span>RSI period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.rsiPeriod'}" th:value="${profile.rsiPeriod()}"></label>
             <label><span>RSI buy boundary</span><input type="number" min="1" max="49" step="0.1" required th:name="${profile.key() + '.rsiBuyThreshold'}" th:value="${profile.rsiBuyThreshold()}"></label>
-            <label><span>RSI sell boundary</span><input type="number" min="51" max="99" step="0.1" required th:name="${profile.key() + '.rsiSellThreshold'}" th:value="${profile.rsiSellThreshold()}"></label>
+            <label><span>RSI sell/short boundary</span><input type="number" min="51" max="99" step="0.1" required th:name="${profile.key() + '.rsiSellThreshold'}" th:value="${profile.rsiSellThreshold()}"></label>
             <label><span>CCI period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.cciPeriod'}" th:value="${profile.cciPeriod()}"></label>
             <label><span>CCI buy boundary</span><input type="number" min="-500" max="-1" required th:name="${profile.key() + '.cciBuyThreshold'}" th:value="${profile.cciBuyThreshold()}"></label>
-            <label><span>CCI sell boundary</span><input type="number" min="1" max="500" required th:name="${profile.key() + '.cciSellThreshold'}" th:value="${profile.cciSellThreshold()}"></label>
+            <label><span>CCI sell/short boundary</span><input type="number" min="1" max="500" required th:name="${profile.key() + '.cciSellThreshold'}" th:value="${profile.cciSellThreshold()}"></label>
             <label><span>ATR period<small>Neutral volatility context</small></span><input type="number" min="2" max="500" required th:name="${profile.key() + '.atrPeriod'}" th:value="${profile.atrPeriod()}"></label>
             <label><span>Bollinger period</span><input type="number" min="2" max="500" required th:name="${profile.key() + '.bollingerPeriod'}" th:value="${profile.bollingerPeriod()}"></label>
             <label><span>Bollinger deviations</span><input type="number" min="0.5" max="5" step="0.1" required th:name="${profile.key() + '.bollingerDeviation'}" th:value="${profile.bollingerDeviation()}"></label>
@@ -142,14 +142,14 @@
     </section>
 
     <section class="settings-card analysis-save-card">
-      <div><strong>Save a versioned profile</strong><p>New signals store the interval profile used for scoring and lifecycle evaluation.</p></div>
+      <div><strong>Save a versioned analysis profile</strong><p>New calculations use these indicator, scoring, and Elliott lifecycle values.</p></div>
       <button type="submit" class="btn-accent">Apply analysis preferences</button>
     </section>
   </form>
 
   <section class="settings-card analysis-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">06</span><h2>Factory restoration</h2></div><p>Saved signals and account security settings are never rewritten.</p></div>
-    <div class="settings-action-row"><div><h3>Restore every analysis and alert preference</h3><p>All interval profiles, lifecycle rules, scoring rules, and market email choices return to StockWatch defaults.</p></div><button type="button" class="danger-button analysis-reset-trigger" data-reset-scope="all" data-reset-label="all analysis and alert">Restore all factory settings</button></div>
+    <div class="settings-card-heading"><div><span class="settings-number">06</span><h2>Factory restoration</h2></div><p>Candlestick trade plans, saved signals, and account security settings remain unchanged.</p></div>
+    <div class="settings-action-row"><div><h3>Restore every analysis and alert preference</h3><p>All indicator profiles, Elliott lifecycle rules, scoring rules, and market email choices return to StockWatch defaults.</p></div><button type="button" class="danger-button analysis-reset-trigger" data-reset-scope="all" data-reset-label="all analysis and alert">Restore all factory settings</button></div>
   </section>
 
   <dialog id="analysisFactoryResetDialog" class="settings-dialog analysis-reset-dialog">

@@ -26,6 +26,7 @@ public interface CandleRepository extends JpaRepository<Candle, Long> {
     List<Candle> findTop1BySymbolAndTimeIntervalOrderByTimestampDesc(String symbol, String timeInterval);
     List<Candle> findTop2BySymbolAndTimeIntervalOrderByTimestampDesc(String symbol, String timeInterval);
     List<Candle> findTop10BySymbolAndTimeIntervalOrderByTimestampDesc(String symbol, String timeInterval);
+    long countBySymbolAndTimeInterval(String symbol, String timeInterval);
     List<Candle> findBySymbolAndTimeIntervalOrderByTimestampAsc(String symbol, String timeInterval);
     List<Candle> findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
             String symbol, String timeInterval, Long timestamp);

@@ -11,6 +11,7 @@ import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.TimeInterval;
+import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.CongressionalTradeRepository;
@@ -270,7 +271,7 @@ public class ActivitySignalDetailService {
             RelatedSignalView view = new RelatedSignalView(
                     event.getId(),
                     humanize(event.getPattern().name()),
-                    humanize(event.getTradeSignal().name()),
+                    event.getTradeSignal() == TradeSignal.SELL ? "Sell/Short" : "Buy",
                     humanize(event.getAlertRule().getInterval().name()),
                     epochDate(event.getSignalCandleTimestamp()),
                     "/alerts/signals/" + event.getId());

@@ -16,7 +16,12 @@ import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.CongressionalTradeDeliveryRepository;
 import org.example.stockwatch247.repository.InsiderTradeDeliveryRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -24,18 +29,29 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.ToDoubleFunction;
 
 @Service
 public class TechnicalOutlookService {
+    private static final Logger log = LoggerFactory.getLogger(TechnicalOutlookService.class);
     private static final int CHART_CANDLES = 260;
     private static final int ANALYSIS_CANDLES = 320;
+    private static final int INDICATOR_SERIES_POINTS = 160;
+    private static final int OUTLOOK_CACHE_SIZE = 500;
+    private static final long OUTLOOK_CACHE_TTL_SECONDS = 300;
+    private static final int MARKET_HISTORY_CANDLES = 420;
 
     private final MarketDataService marketDataService;
     private final CandleRepository candleRepository;
@@ -45,6 +61,13 @@ public class TechnicalOutlookService {
     private final CongressionalTradeDeliveryRepository congressionalDeliveryRepository;
     private final InsiderTradeDeliveryRepository insiderDeliveryRepository;
     private final AnalysisPreferencesService preferencesService;
+    private final BoundedTtlCache<OutlookCacheKey, OutlookView> outlookCache =
+            new BoundedTtlCache<>(OUTLOOK_CACHE_SIZE, OUTLOOK_CACHE_TTL_SECONDS);
+    private final BoundedTtlCache<MarketCacheKey, MarketComparisonView> marketCache =
+            new BoundedTtlCache<>(OUTLOOK_CACHE_SIZE, OUTLOOK_CACHE_TTL_SECONDS);
+    private final Set<RefreshKey> refreshesInFlight = ConcurrentHashMap.newKeySet();
+    private final Map<RefreshKey, RefreshStatusView> refreshStatuses = new ConcurrentHashMap<>();
+    private Executor technicalOutlookExecutor;
 
     @Autowired
     public TechnicalOutlookService(MarketDataService marketDataService,
@@ -76,7 +99,68 @@ public class TechnicalOutlookService {
                 alertEventRepository, congressionalDeliveryRepository, insiderDeliveryRepository, null);
     }
 
+    @Autowired(required = false)
+    void configureTechnicalOutlookExecutor(
+            @Qualifier("technicalOutlookExecutor") Executor technicalOutlookExecutor) {
+        this.technicalOutlookExecutor = technicalOutlookExecutor;
+    }
+
     public OutlookView getOutlook(User user, String symbol, String rawInterval) {
+        return buildOutlook(user, symbol, rawInterval, true);
+    }
+
+    public OutlookView getSummaryOutlook(User user, String symbol, String rawInterval) {
+        return buildOutlook(user, symbol, rawInterval, false);
+    }
+
+    /**
+     * Loads one older chart page and enriches it with the active user profile.
+     * The extra candles requested before the visible page are indicator warm-up
+     * input only, so every returned point continues the existing overlays
+     * instead of restarting EMA, SMA, Bollinger, and VWAP at the page boundary.
+     */
+    public HistoricalChartPageView getHistoricalChartPage(User user,
+                                                           String rawSymbol,
+                                                           String rawInterval,
+                                                           long beforeTimestamp,
+                                                           int requestedLimit) {
+        IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
+        String symbol = rawSymbol.trim().toUpperCase(Locale.ROOT);
+        int limit = Math.max(1, Math.min(1_000, requestedLimit));
+        MarketDataService.CandlePage page = marketDataService.loadCandlePage(
+                symbol, interval.apiValue(), beforeTimestamp, limit);
+        if (page.candles().isEmpty()) {
+            return new HistoricalChartPageView(
+                    List.of(), page.nextCursor(), page.hasMore(), page.source(), page.failureMessage());
+        }
+
+        AnalysisPreferencesService.PreferencesView preferences = preferencesService == null
+                ? AnalysisPreferencesService.factoryPreferences()
+                : preferencesService.get(user);
+        TechnicalIndicatorProfile profile = preferencesService == null
+                ? TechnicalIndicatorProfile.forInterval(interval.timeInterval())
+                : preferencesService.technicalProfile(preferences.profile(interval.timeInterval()));
+        int pageSize = page.candles().size();
+        int requiredInput = enrichmentService.requiredInputCandles(pageSize, profile);
+        List<Candle> descending = new ArrayList<>(
+                candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                        symbol, interval.apiValue(), beforeTimestamp,
+                        PageRequest.of(0, Math.max(pageSize, requiredInput))));
+        Collections.reverse(descending);
+        List<EnrichedCandle> enriched = enrichmentService.analyze(
+                descending, pageSize, profile, false).candles();
+        List<ChartCandleView> chartCandles = enriched.stream()
+                .map(candle -> chartCandle(candle, false))
+                .toList();
+        return new HistoricalChartPageView(
+                chartCandles, page.nextCursor(), page.hasMore(), page.source(), page.failureMessage());
+    }
+
+    private OutlookView buildOutlook(User user,
+                                     String symbol,
+                                     String rawInterval,
+                                     boolean detailed) {
+        long totalStarted = System.nanoTime();
         IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
         AnalysisPreferencesService.PreferencesView preferences = preferencesService == null
                 ? AnalysisPreferencesService.factoryPreferences()
@@ -86,28 +170,44 @@ public class TechnicalOutlookService {
                 ? TechnicalIndicatorProfile.forInterval(interval.timeInterval())
                 : preferencesService.technicalProfile(rules);
         String normalizedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
-        refresh(normalizedSymbol, interval.apiValue());
+        OutlookCacheKey cacheKey = new OutlookCacheKey(
+                userKey(user), normalizedSymbol, interval.apiValue(), rules, detailed);
+        long now = Instant.now().getEpochSecond();
+        OutlookView cached = outlookCache.get(cacheKey, now);
+        if (cached != null) {
+            log.debug("Technical outlook cache hit symbol={} interval={} detail={} totalMs={}",
+                    normalizedSymbol, interval.apiValue(), detailed, elapsedMillis(totalStarted));
+            return cached;
+        }
 
-        List<Candle> rawCandles = candleRepository
-                .findBySymbolAndTimeIntervalOrderByTimestampAsc(normalizedSymbol, interval.apiValue());
+        long candlesStarted = System.nanoTime();
+        int requiredInput = enrichmentService.requiredInputCandles(ANALYSIS_CANDLES, technicalProfile);
+        List<Candle> rawCandles = latestCandles(normalizedSymbol, interval.apiValue(), requiredInput);
+        long candlesMs = elapsedMillis(candlesStarted);
         if (rawCandles.isEmpty()) {
             return OutlookView.unavailable(normalizedSymbol, interval);
         }
 
-        List<EnrichedCandle> candles = enrichmentService.enrich(
+        long analysisStarted = System.nanoTime();
+        TechnicalIndicatorEnrichmentService.AnalysisResult analysis = enrichmentService.analyze(
                 rawCandles,
                 Math.min(ANALYSIS_CANDLES, rawCandles.size()),
-                technicalProfile);
+                technicalProfile,
+                detailed);
+        long analysisMs = elapsedMillis(analysisStarted);
+        List<EnrichedCandle> candles = analysis.candles();
         if (candles.isEmpty()) {
             return OutlookView.unavailable(normalizedSymbol, interval);
         }
 
         StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(normalizedSymbol).orElse(null);
-        MarketComparisonView market = marketComparison(normalizedSymbol, asset, rules.marketRelativeThresholdPercent());
+        long relatedStarted = System.nanoTime();
+        MarketComparisonView market = marketComparison(
+                normalizedSymbol, asset, rules.marketRelativeThresholdPercent(), false);
         List<RecentSignalView> recentSignals = recentSignals(user, normalizedSymbol, interval.timeInterval());
-        List<TechnicalResearchSnapshot> research = enrichmentService.research(
-                rawCandles, Math.min(ANALYSIS_CANDLES, rawCandles.size()), technicalProfile);
-        List<IndicatorView> indicators = indicatorViews(candles, research, rules);
+        long relatedMs = elapsedMillis(relatedStarted);
+        long viewsStarted = System.nanoTime();
+        List<IndicatorView> indicators = indicatorViews(candles, analysis.research(), rules);
 
         List<VoteInput> rawVotes = new ArrayList<>();
         indicators.stream()
@@ -130,14 +230,17 @@ public class TechnicalOutlookService {
         List<CategoryView> categories = categoryViews(rawVotes, rules);
         ScoreView categoryScore = score(categories.stream().map(CategoryView::vote).toList(), rules);
         ScoreView headlineScore = rules.categoryBalancedHeadline() ? categoryScore : rawScore;
+        List<IndicatorView> responseIndicators = detailed ? indicators : indicators.stream()
+                .map(TechnicalOutlookService::withoutSeries)
+                .toList();
         List<ChartCandleView> chart = candles.stream()
                 .skip(Math.max(0, candles.size() - CHART_CANDLES))
-                .map(TechnicalOutlookService::chartCandle)
+                .map(candle -> chartCandle(candle, detailed))
                 .toList();
         List<ActivityMarkerView> activity = activityMarkers(user, normalizedSymbol, chart);
         EnrichedCandle latest = candles.getLast();
 
-        return new OutlookView(
+        OutlookView outlook = new OutlookView(
                 normalizedSymbol,
                 asset == null ? normalizedSymbol : asset.getCompanyName(),
                 interval.apiValue(),
@@ -149,7 +252,7 @@ public class TechnicalOutlookService {
                 headlineScore,
                 rawScore,
                 categories,
-                indicators,
+                responseIndicators,
                 chart,
                 recentSignals,
                 activity,
@@ -161,15 +264,166 @@ public class TechnicalOutlookService {
                         "Neutral: |score| < %.0f%%; slight until %.0f%%; moderate until %.0f%%; strong thereafter."
                                 .formatted(rules.neutralScorePercent(), rules.moderateScorePercent(), rules.strongScorePercent()),
                         "These are symmetric descriptive rules, not probabilities or investment advice."));
+        outlookCache.put(cacheKey, outlook, now);
+        long viewsMs = elapsedMillis(viewsStarted);
+        long totalMs = elapsedMillis(totalStarted);
+        if (totalMs >= 500) {
+            log.info("Technical outlook built symbol={} interval={} detail={} rawCandles={} totalMs={} candlesMs={} analysisMs={} relatedDataMs={} viewsMs={}",
+                    normalizedSymbol, interval.apiValue(), detailed, rawCandles.size(), totalMs,
+                    candlesMs, analysisMs, relatedMs, viewsMs);
+        } else {
+            log.debug("Technical outlook built symbol={} interval={} detail={} totalMs={}",
+                    normalizedSymbol, interval.apiValue(), detailed, totalMs);
+        }
+        return outlook;
     }
 
-    private void refresh(String symbol, String interval) {
+    public ScoreReportView getScoreReport(User user, String symbol, String rawInterval) {
+        OutlookView outlook = getOutlook(user, symbol, rawInterval);
+        return new ScoreReportView(outlook.available(), outlook.rawScore(), outlook.indicators(),
+                outlook.recentSignals(), outlook.methodology());
+    }
+
+    public MarketComparisonView getMarketReport(User user, String symbol, String rawInterval) {
+        IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
+        AnalysisPreferencesService.PreferencesView preferences = preferencesService == null
+                ? AnalysisPreferencesService.factoryPreferences()
+                : preferencesService.get(user);
+        AnalysisPreferencesService.IntervalProfile rules = preferences.profile(interval.timeInterval());
+        String normalized = symbol.trim().toUpperCase(Locale.ROOT);
+        StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(normalized).orElse(null);
+        return marketComparison(normalized, asset, rules.marketRelativeThresholdPercent(), true);
+    }
+
+    /**
+     * Queues provider refreshes outside the HTTP request that builds the page.
+     * The request itself always renders from completed candles already stored
+     * locally; a later request sees any newly persisted data.
+     */
+    public void requestBackgroundRefresh(String rawSymbol, String rawInterval) {
+        IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
+        int required = enrichmentService.requiredInputCandles(ANALYSIS_CANDLES, interval.timeInterval());
+        requestBackgroundRefresh(null, rawSymbol, interval, required);
+    }
+
+    public void requestBackgroundRefresh(User user, String rawSymbol, String rawInterval) {
+        IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
+        AnalysisPreferencesService.PreferencesView preferences = preferencesService == null
+                ? AnalysisPreferencesService.factoryPreferences()
+                : preferencesService.get(user);
+        TechnicalIndicatorProfile profile = preferencesService == null
+                ? TechnicalIndicatorProfile.forInterval(interval.timeInterval())
+                : preferencesService.technicalProfile(preferences.profile(interval.timeInterval()));
+        int required = enrichmentService.requiredInputCandles(ANALYSIS_CANDLES, profile);
+        requestBackgroundRefresh(user, rawSymbol, interval, required);
+    }
+
+    private void requestBackgroundRefresh(User user,
+                                          String rawSymbol,
+                                          IntervalDefinition interval,
+                                          int requiredCandles) {
+        if (technicalOutlookExecutor == null) return;
+        String symbol = rawSymbol.trim().toUpperCase(Locale.ROOT);
+        RefreshKey refreshKey = new RefreshKey(symbol, interval.apiValue());
+        if (!refreshesInFlight.add(refreshKey)) return;
+        refreshStatuses.put(refreshKey, RefreshStatusView.queuedStatus());
         try {
-            marketDataService.syncCandles(symbol, interval, null);
-        } catch (RuntimeException exception) {
-            // A previously cached completed-candle set is still useful and is
-            // explicitly identified as stale by the response freshness label.
+            technicalOutlookExecutor.execute(() -> {
+                long started = System.nanoTime();
+                refreshStatuses.put(refreshKey, RefreshStatusView.runningStatus());
+                try {
+                    boolean changed = refresh(symbol, interval.apiValue(), requiredCandles);
+                    if (changed) invalidate(symbol, interval.apiValue());
+                    if (user != null) {
+                        // Precompute the compact response while data is hot so
+                        // interval buttons usually become cache-only reads.
+                        buildOutlook(user, symbol, interval.apiValue(), false);
+                    }
+                    refreshStatuses.put(refreshKey, RefreshStatusView.readyStatus(elapsedMillis(started)));
+                } catch (RuntimeException exception) {
+                    log.warn("Technical outlook refresh failed symbol={} interval={}: {}",
+                            symbol, interval.apiValue(), exception.getMessage());
+                    refreshStatuses.put(refreshKey, RefreshStatusView.failedStatus(elapsedMillis(started)));
+                } finally {
+                    refreshesInFlight.remove(refreshKey);
+                }
+            });
+            requestBenchmarkRefresh(symbol);
+        } catch (RejectedExecutionException exception) {
+            refreshesInFlight.remove(refreshKey);
+            refreshStatuses.put(refreshKey, RefreshStatusView.failedStatus(0));
         }
+    }
+
+    private void requestBenchmarkRefresh(String symbol) {
+        StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
+        Benchmark benchmark = benchmarkFor(asset);
+        if (benchmark.symbol().equalsIgnoreCase(symbol)) return;
+        RefreshKey key = new RefreshKey(benchmark.symbol(), "1d");
+        if (!refreshesInFlight.add(key)) return;
+        try {
+            technicalOutlookExecutor.execute(() -> {
+                try {
+                    if (refresh(benchmark.symbol(), "1d", MARKET_HISTORY_CANDLES)) {
+                        outlookCache.removeIf(cacheKey -> cacheKey.symbol().equals(symbol));
+                    }
+                } catch (RuntimeException exception) {
+                    log.warn("Technical outlook benchmark refresh failed benchmark={}: {}",
+                            benchmark.symbol(), exception.getMessage());
+                } finally {
+                    refreshesInFlight.remove(key);
+                }
+            });
+        } catch (RejectedExecutionException exception) {
+            refreshesInFlight.remove(key);
+        }
+    }
+
+    public RefreshStatusView refreshStatus(String rawSymbol, String rawInterval) {
+        IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
+        String symbol = rawSymbol.trim().toUpperCase(Locale.ROOT);
+        RefreshKey key = new RefreshKey(symbol, interval.apiValue());
+        RefreshStatusView status = refreshStatuses.get(key);
+        if (status != null) return status;
+        boolean available = !candleRepository.findTop1BySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, interval.apiValue()).isEmpty();
+        return available ? RefreshStatusView.readyStatus(0) : RefreshStatusView.idleStatus();
+    }
+
+    public void invalidate(User user, String rawSymbol, String rawInterval) {
+        IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
+        long userKey = userKey(user);
+        String symbol = rawSymbol.trim().toUpperCase(Locale.ROOT);
+        outlookCache.removeIf(key -> key.userKey() == userKey
+                && key.symbol().equals(symbol)
+                && key.interval().equals(interval.apiValue()));
+    }
+
+    @EventListener
+    public void candleDataChanged(CandleDataChangedEvent event) {
+        if (event == null) return;
+        String symbol = event.symbol().toUpperCase(Locale.ROOT);
+        invalidate(symbol, event.interval());
+        marketCache.removeIf(key -> key.symbol().equals(symbol));
+        if ("1d".equals(event.interval()) && MarketIndexCatalog.findBySymbol(symbol).isPresent()) {
+            // A benchmark update can affect many stock outlooks, so discard the
+            // small bounded cache instead of serving stale relative scores.
+            outlookCache.removeIf(key -> true);
+            marketCache.removeIf(key -> true);
+        }
+    }
+
+    private void invalidate(String symbol, String interval) {
+        outlookCache.removeIf(key -> key.symbol().equals(symbol) && key.interval().equals(interval));
+    }
+
+    private boolean refresh(String symbol, String interval, int requiredCandles) {
+        return marketDataService.syncCandlesForAnalysis(symbol, interval, requiredCandles).candlesSynced() > 0;
+    }
+
+    private long userKey(User user) {
+        if (user == null) return 0L;
+        return user.getId() == null ? -System.identityHashCode(user) : user.getId();
     }
 
     private List<IndicatorView> indicatorViews(List<EnrichedCandle> candles,
@@ -402,17 +656,26 @@ public class TechnicalOutlookService {
         String levelLabel = "Support / resistance " + rules.supportResistancePeriod();
         String atrLabel = "ATR " + rules.atrPeriod();
         List<ValueAtCandle> values = new ArrayList<>();
+        ArrayDeque<Integer> minimumLows = new ArrayDeque<>();
+        ArrayDeque<Integer> maximumHighs = new ArrayDeque<>();
+        int lookback = rules.supportResistancePeriod();
         for (int index = 0; index < candles.size(); index++) {
             EnrichedCandle candle = candles.get(index);
-            int lookback = rules.supportResistancePeriod();
+            while (!minimumLows.isEmpty()
+                    && candles.get(minimumLows.getLast()).low() >= candle.low()) minimumLows.removeLast();
+            minimumLows.addLast(index);
+            while (!maximumHighs.isEmpty()
+                    && candles.get(maximumHighs.getLast()).high() <= candle.high()) maximumHighs.removeLast();
+            maximumHighs.addLast(index);
+            int expired = index - lookback;
+            while (!minimumLows.isEmpty() && minimumLows.getFirst() <= expired) minimumLows.removeFirst();
+            while (!maximumHighs.isEmpty() && maximumHighs.getFirst() <= expired) maximumHighs.removeFirst();
             if (index + 1 < lookback || !Double.isFinite(candle.atr())) {
                 values.add(new ValueAtCandle(candle, Double.NaN));
                 continue;
             }
-            double support = candles.subList(index - lookback + 1, index + 1).stream()
-                    .mapToDouble(EnrichedCandle::low).min().orElse(Double.NaN);
-            double resistance = candles.subList(index - lookback + 1, index + 1).stream()
-                    .mapToDouble(EnrichedCandle::high).max().orElse(Double.NaN);
+            double support = candles.get(minimumLows.getFirst()).low();
+            double resistance = candles.get(maximumHighs.getFirst()).high();
             double supportDistance = (candle.close() - support) / candle.atr();
             double resistanceDistance = (resistance - candle.close()) / candle.atr();
             double value = supportDistance <= resistanceDistance ? supportDistance : -resistanceDistance;
@@ -487,6 +750,7 @@ public class TechnicalOutlookService {
         }
         ValueAtCandle changed = available.get(changedIndex);
         List<IndicatorPointView> series = available.stream()
+                .skip(Math.max(0, available.size() - INDICATOR_SERIES_POINTS))
                 .map(item -> new IndicatorPointView(item.candle().timestamp(), finite(item.value()),
                         rule.vote(item.candle(), item.value())))
                 .toList();
@@ -520,6 +784,7 @@ public class TechnicalOutlookService {
         }
         ValueAtCandle changed = available.get(changedIndex);
         List<IndicatorPointView> series = available.stream()
+                .skip(Math.max(0, available.size() - INDICATOR_SERIES_POINTS))
                 .map(item -> new IndicatorPointView(item.candle().timestamp(), finite(item.value()),
                         rule.vote(item.value())))
                 .toList();
@@ -555,6 +820,7 @@ public class TechnicalOutlookService {
         }
         ResearchValue changed = available.get(changedIndex);
         List<IndicatorPointView> series = available.stream()
+                .skip(Math.max(0, available.size() - INDICATOR_SERIES_POINTS))
                 .map(item -> new IndicatorPointView(item.timestamp(), finite(item.value()), rule.vote(item.value())))
                 .toList();
         return new IndicatorView(key, label, category, unit, finite(latest.value()), latestVote,
@@ -596,11 +862,9 @@ public class TechnicalOutlookService {
                                                  String symbol,
                                                  TimeInterval outlookInterval) {
         long cutoff = cutoff(symbol, apiInterval(outlookInterval), 10);
-        return alertEventRepository.findAllByAlertRule_User(user).stream()
-                .filter(event -> event.getAlertRule().getStockAsset().getTickerSymbol().equalsIgnoreCase(symbol))
-                .filter(event -> event.getAlertRule().getInterval() == outlookInterval)
-                .filter(event -> event.getSignalCandleTimestamp() >= cutoff)
-                .sorted(Comparator.comparingLong(AlertEvent::getSignalCandleTimestamp).reversed())
+        if (cutoff == Long.MAX_VALUE) return List.of();
+        return alertEventRepository.findRecentForTechnicalOutlook(
+                        user, symbol, outlookInterval, cutoff, PageRequest.of(0, 100)).stream()
                 .map(event -> new RecentSignalView(
                         event.getId(),
                         event.getAlertRule().getPatternFamily().name(),
@@ -627,11 +891,12 @@ public class TechnicalOutlookService {
     }
 
     private long cutoff(String symbol, String interval, int candles) {
-        List<Candle> values = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval);
+        List<Candle> values = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, interval, PageRequest.of(0, Math.max(1, candles)));
         if (values.isEmpty()) {
             return Long.MAX_VALUE;
         }
-        return values.get(Math.max(0, values.size() - candles)).getTimestamp();
+        return values.getLast().getTimestamp();
     }
 
     private String observedResult(AlertEvent event) {
@@ -652,13 +917,11 @@ public class TechnicalOutlookService {
         LocalDate firstDate = Instant.ofEpochSecond(chart.getFirst().timestamp())
                 .atZone(ZoneOffset.UTC).toLocalDate();
         List<ActivityMarkerView> markers = new ArrayList<>();
-        congressionalDeliveryRepository.findAllForUser(user).stream()
-                .filter(delivery -> delivery.getTrade().getTickerSymbol().equalsIgnoreCase(symbol))
-                .filter(delivery -> !delivery.getTrade().getTransactionDate().isBefore(firstDate))
+        congressionalDeliveryRepository.findForTechnicalOutlook(
+                        user, symbol, firstDate, PageRequest.of(0, 200)).stream()
                 .forEach(delivery -> markers.add(congressionalMarker(delivery)));
-        insiderDeliveryRepository.findAllForUser(user).stream()
-                .filter(delivery -> delivery.getTrade().getTickerSymbol().equalsIgnoreCase(symbol))
-                .filter(delivery -> !delivery.getTrade().getTransactionDate().isBefore(firstDate))
+        insiderDeliveryRepository.findForTechnicalOutlook(
+                        user, symbol, firstDate, PageRequest.of(0, 200)).stream()
                 .forEach(delivery -> markers.add(insiderMarker(delivery)));
         return markers.stream().sorted(Comparator.comparing(ActivityMarkerView::date)).toList();
     }
@@ -681,15 +944,20 @@ public class TechnicalOutlookService {
     }
 
     private MarketComparisonView marketComparison(String symbol, StockAsset asset,
-                                                  double voteThresholdPercent) {
+                                                  double voteThresholdPercent,
+                                                  boolean includeRatioSeries) {
         Benchmark benchmark = benchmarkFor(asset);
-        if (!benchmark.symbol().equalsIgnoreCase(symbol)) {
-            refresh(benchmark.symbol(), "1d");
-        }
-        List<Candle> stock = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1d");
-        List<Candle> market = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(benchmark.symbol(), "1d");
+        MarketCacheKey cacheKey = new MarketCacheKey(
+                symbol, benchmark.symbol(), voteThresholdPercent, includeRatioSeries);
+        long now = Instant.now().getEpochSecond();
+        MarketComparisonView cached = marketCache.get(cacheKey, now);
+        if (cached != null) return cached;
+        List<Candle> stock = latestCandles(symbol, "1d", MARKET_HISTORY_CANDLES);
+        List<Candle> market = latestCandles(benchmark.symbol(), "1d", MARKET_HISTORY_CANDLES);
         if (stock.size() < 2 || market.size() < 2) {
-            return MarketComparisonView.unavailable(benchmark);
+            MarketComparisonView unavailable = MarketComparisonView.unavailable(benchmark);
+            marketCache.put(cacheKey, unavailable, now);
+            return unavailable;
         }
         LocalDate latestDate = min(date(stock.getLast()), date(market.getLast()));
         List<HorizonView> horizons = List.of(
@@ -710,7 +978,9 @@ public class TechnicalOutlookService {
                 .skip(Math.max(0, allRatios.size() - CHART_CANDLES))
                 .toList();
         if (ratios.size() < 2) {
-            return MarketComparisonView.unavailable(benchmark);
+            MarketComparisonView unavailable = MarketComparisonView.unavailable(benchmark);
+            marketCache.put(cacheKey, unavailable, now);
+            return unavailable;
         }
         double base = ratios.getFirst().ratio();
         List<RatioPointView> normalized = ratios.stream()
@@ -726,8 +996,11 @@ public class TechnicalOutlookService {
                 && trend.equals("IMPROVING") ? 1
                 : threeMonth.available() && threeMonth.excessReturn() < -voteThresholdPercent
                 && trend.equals("DETERIORATING") ? -1 : 0;
-        return new MarketComparisonView(true, benchmark.symbol(), benchmark.name(), trend, ratioChange,
-                vote, voteLabel(vote), horizons, normalized);
+        MarketComparisonView result = new MarketComparisonView(
+                true, benchmark.symbol(), benchmark.name(), trend, ratioChange,
+                vote, voteLabel(vote), horizons, includeRatioSeries ? normalized : List.of());
+        marketCache.put(cacheKey, result, now);
+        return result;
     }
 
     private HorizonView horizon(String label,
@@ -748,7 +1021,28 @@ public class TechnicalOutlookService {
     }
 
     private Candle atOrBefore(List<Candle> candles, LocalDate cutoff) {
-        return candles.stream().filter(candle -> !date(candle).isAfter(cutoff)).reduce((a, b) -> b).orElse(null);
+        int low = 0;
+        int high = candles.size() - 1;
+        Candle result = null;
+        while (low <= high) {
+            int middle = (low + high) >>> 1;
+            Candle candidate = candles.get(middle);
+            if (!date(candidate).isAfter(cutoff)) {
+                result = candidate;
+                low = middle + 1;
+            } else {
+                high = middle - 1;
+            }
+        }
+        return result;
+    }
+
+    private List<Candle> latestCandles(String symbol, String interval, int limit) {
+        List<Candle> descending = new ArrayList<>(
+                candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                        symbol, interval, PageRequest.of(0, Math.max(1, limit))));
+        Collections.reverse(descending);
+        return List.copyOf(descending);
     }
 
     private Benchmark benchmarkFor(StockAsset asset) {
@@ -785,12 +1079,21 @@ public class TechnicalOutlookService {
         return "Slight " + direction + " outlook";
     }
 
-    private static ChartCandleView chartCandle(EnrichedCandle candle) {
+    private static ChartCandleView chartCandle(EnrichedCandle candle, boolean includeVolumeProfile) {
         return new ChartCandleView(candle.timestamp(), candle.open(), candle.high(), candle.low(), candle.close(),
                 candle.volume(), finite(candle.fastEma()), finite(candle.slowEma()), finite(candle.longSma()),
                 finite(candle.lowerBollinger()), finite(candle.bollingerMiddle()), finite(candle.upperBollinger()),
-                finite(candle.rollingVwap()), finite(candle.volumeProfileValueAreaLow()),
-                finite(candle.volumeProfilePointOfControl()), finite(candle.volumeProfileValueAreaHigh()));
+                finite(candle.rollingVwap()),
+                includeVolumeProfile ? finite(candle.volumeProfileValueAreaLow()) : null,
+                includeVolumeProfile ? finite(candle.volumeProfilePointOfControl()) : null,
+                includeVolumeProfile ? finite(candle.volumeProfileValueAreaHigh()) : null);
+    }
+
+    private static IndicatorView withoutSeries(IndicatorView view) {
+        return new IndicatorView(view.key(), view.label(), view.category(), view.unit(), view.currentValue(),
+                view.vote(), view.classification(), view.scored(), view.explanation(), view.rule(),
+                view.stateChangedAt(), view.candlesSinceStateChange(), view.overlay(), List.of(),
+                view.referenceLines());
     }
 
     private static String freshness(long timestamp, IntervalDefinition interval) {
@@ -864,6 +1167,24 @@ public class TechnicalOutlookService {
     private record RawRatio(long timestamp, double ratio) { }
     private record ResearchValue(long timestamp, double value) { }
     private record Benchmark(String symbol, String name) { }
+    private record RefreshKey(String symbol, String interval) { }
+    private record OutlookCacheKey(long userKey, String symbol, String interval,
+                                   AnalysisPreferencesService.IntervalProfile profile,
+                                   boolean detailed) { }
+    private record MarketCacheKey(String symbol, String benchmarkSymbol,
+                                  double threshold, boolean includeRatioSeries) { }
+
+    public record RefreshStatusView(String state, boolean running, boolean ready, long elapsedMillis) {
+        private static RefreshStatusView idleStatus() { return new RefreshStatusView("IDLE", false, false, 0); }
+        private static RefreshStatusView queuedStatus() { return new RefreshStatusView("QUEUED", true, false, 0); }
+        private static RefreshStatusView runningStatus() { return new RefreshStatusView("RUNNING", true, false, 0); }
+        private static RefreshStatusView readyStatus(long elapsed) { return new RefreshStatusView("READY", false, true, elapsed); }
+        private static RefreshStatusView failedStatus(long elapsed) { return new RefreshStatusView("FAILED", false, false, elapsed); }
+    }
+
+    private static long elapsedMillis(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
 
     private record IntervalDefinition(String apiValue, String label, TimeInterval timeInterval) {
         private static IntervalDefinition parse(String raw) {
@@ -917,10 +1238,19 @@ public class TechnicalOutlookService {
                                 String rule, Long stateChangedAt, Integer candlesSinceStateChange,
                                 boolean overlay, List<IndicatorPointView> series, List<Double> referenceLines) { }
     public record IndicatorPointView(long timestamp, Double value, int vote) { }
+    public record ScoreReportView(boolean available, ScoreView rawScore,
+                                  List<IndicatorView> indicators,
+                                  List<RecentSignalView> recentSignals,
+                                  MethodologyView methodology) { }
     public record ChartCandleView(long timestamp, double open, double high, double low, double close,
                                   double volume, Double fastEma, Double slowEma, Double longSma,
                                   Double bollingerLower, Double bollingerMiddle, Double bollingerUpper,
                                   Double vwap, Double valueAreaLow, Double pointOfControl, Double valueAreaHigh) { }
+    public record HistoricalChartPageView(List<ChartCandleView> candles,
+                                          Long nextCursor,
+                                          boolean hasMore,
+                                          MarketDataService.CandleSource source,
+                                          String failureMessage) { }
     public record RecentSignalView(Long id, String family, String label, String direction, String interval,
                                    String intervalLabel, long timestamp, Integer score, String strength,
                                    String lifecycle, String observedResult, String detailUrl) { }

@@ -92,6 +92,30 @@ public class AlertEvent {
     @Column(name = "invalidation_price")
     private Double invalidationPrice;
 
+    @Column(name = "trade_entry_price")
+    private Double tradeEntryPrice;
+
+    @Column(name = "stop_loss_price")
+    private Double stopLossPrice;
+
+    @Column(name = "profit_target_price")
+    private Double profitTargetPrice;
+
+    @Column(name = "reward_risk_ratio")
+    private Double rewardRiskRatio;
+
+    @Column(name = "trade_plan_version", length = 32)
+    private String tradePlanVersion;
+
+    @Column(name = "structural_stop_price")
+    private Double structuralStopPrice;
+
+    @Column(name = "stop_loss_mode", length = 32)
+    private String stopLossMode;
+
+    @Column(name = "stop_loss_value_percent")
+    private Double stopLossValuePercent;
+
     @Column(name = "confirmation_window_candles")
     private Integer confirmationWindowCandles;
 
@@ -249,6 +273,15 @@ public class AlertEvent {
     public Double getInvalidationPrice() {
         return invalidationPrice;
     }
+
+    public Double getTradeEntryPrice() { return tradeEntryPrice; }
+    public Double getStopLossPrice() { return stopLossPrice; }
+    public Double getProfitTargetPrice() { return profitTargetPrice; }
+    public Double getRewardRiskRatio() { return rewardRiskRatio; }
+    public String getTradePlanVersion() { return tradePlanVersion; }
+    public Double getStructuralStopPrice() { return structuralStopPrice; }
+    public String getStopLossMode() { return stopLossMode; }
+    public Double getStopLossValuePercent() { return stopLossValuePercent; }
 
     public Integer getConfirmationWindowCandles() {
         return confirmationWindowCandles;
@@ -439,6 +472,21 @@ public class AlertEvent {
 
     public void setInvalidationPrice(Double invalidationPrice) {
         this.invalidationPrice = invalidationPrice;
+    }
+
+    public void setTradeEntryPrice(Double value) { this.tradeEntryPrice = value; }
+    public void setStopLossPrice(Double value) { this.stopLossPrice = value; }
+    public void setProfitTargetPrice(Double value) { this.profitTargetPrice = value; }
+    public void setRewardRiskRatio(Double value) { this.rewardRiskRatio = value; }
+    public void setTradePlanVersion(String value) { this.tradePlanVersion = value; }
+    public void setStructuralStopPrice(Double value) { this.structuralStopPrice = value; }
+    public void setStopLossMode(String value) { this.stopLossMode = value; }
+    public void setStopLossValuePercent(Double value) { this.stopLossValuePercent = value; }
+
+    public boolean hasCandlestickRiskRewardPlan() {
+        return ("CANDLE_RR_V1".equals(tradePlanVersion) || "CANDLE_RR_V2".equals(tradePlanVersion))
+                && stopLossPrice != null
+                && rewardRiskRatio != null;
     }
 
     public void setConfirmationWindowCandles(Integer confirmationWindowCandles) {

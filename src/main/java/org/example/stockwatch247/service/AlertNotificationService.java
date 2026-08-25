@@ -2,6 +2,7 @@ package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
+import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.InsiderTrade;
 import org.example.stockwatch247.model.InsiderTradeDelivery;
 import org.example.stockwatch247.model.User;
@@ -12,6 +13,7 @@ import org.example.stockwatch247.model.enums.CongressionalTradeType;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
+import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.service.congress.CongressionalTradeStore.ClaimedDelivery;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,9 +21,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.ZoneId;
+import java.util.List;
+import java.util.Locale;
 
 @Service
 public class AlertNotificationService {
@@ -30,25 +35,36 @@ public class AlertNotificationService {
     private final String fromAddress;
     private final ZoneId signalTimeZone;
     private final AnalysisPreferencesService preferencesService;
+    private final CandleRepository candleRepository;
 
     @Autowired
     public AlertNotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
                                     @Value("${alerts.email.enabled:false}") boolean emailEnabled,
                                     @Value("${alerts.email.from:no-reply@stockwatch.local}") String fromAddress,
                                     @Value("${alerts.email.time-zone:${alerts.schedule.zone:Europe/Brussels}}") String signalTimeZone,
-                                    AnalysisPreferencesService preferencesService) {
+                                    AnalysisPreferencesService preferencesService,
+                                    CandleRepository candleRepository) {
         this.mailSenderProvider = mailSenderProvider;
         this.emailEnabled = emailEnabled;
         this.fromAddress = fromAddress;
         this.signalTimeZone = ZoneId.of(signalTimeZone);
         this.preferencesService = preferencesService;
+        this.candleRepository = candleRepository;
     }
 
     AlertNotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
                              boolean emailEnabled,
                              String fromAddress,
                              String signalTimeZone) {
-        this(mailSenderProvider, emailEnabled, fromAddress, signalTimeZone, null);
+        this(mailSenderProvider, emailEnabled, fromAddress, signalTimeZone, null, null);
+    }
+
+    AlertNotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
+                             boolean emailEnabled,
+                             String fromAddress,
+                             String signalTimeZone,
+                             CandleRepository candleRepository) {
+        this(mailSenderProvider, emailEnabled, fromAddress, signalTimeZone, null, candleRepository);
     }
 
     public void sendVerificationEmail(User user, String verificationUrl) {
@@ -133,7 +149,7 @@ public class AlertNotificationService {
                     + " on " + rule.getStockAsset().getTickerSymbol()
                 : requiresNextCandleConfirmation
                 ? "StockWatch potential " + signal.tradeSignal().name().toLowerCase()
-                    + " pattern awaiting confirmation: " + signal.pattern()
+                    + " pattern awaiting detection gate: " + signal.pattern()
                     + " on " + rule.getStockAsset().getTickerSymbol()
                 : "StockWatch pattern detected: " + signal.pattern()
                     + " on " + rule.getStockAsset().getTickerSymbol();
@@ -142,7 +158,7 @@ public class AlertNotificationService {
                 : endOfWaveV
                 ? "End of Elliott impulse (wave V)"
                 : requiresNextCandleConfirmation
-                ? "Potential one-candle reversal; awaiting the immediately following completed candle"
+                ? "Potential one-candle reversal; awaiting the mandatory next-candle detection gate"
                 : lifecycleEvent != null && lifecycleEvent.isLifecycleTracked()
                 ? "Validated candlestick pattern; close-based lifecycle tracking started"
                 : "Validated candlestick pattern";
@@ -192,7 +208,7 @@ public class AlertNotificationService {
                 signal.pattern(),
                 eventDescription,
                 requiresNextCandleConfirmation
-                        ? "POTENTIAL " + signal.tradeSignal() + " — AWAITING CONFIRMATION"
+                        ? "POTENTIAL " + signal.tradeSignal() + " — AWAITING DETECTION GATE"
                         : signal.tradeSignal(),
                 setupStrengthLabel(signal.strength()),
                 signal.setupScore(),
@@ -371,6 +387,16 @@ public class AlertNotificationService {
                     rule.getInterval().name().toLowerCase()
             );
         }
+        if (rule.getPatternFamily() != AlertPatternFamily.CANDLESTICK) {
+            return "";
+        }
+        if (!lifecycleEvent.hasCandlestickRiskRewardPlan()) {
+            return """
+
+                    Candlestick trade status: CURRENT PLAN UNAVAILABLE
+                    This stored record predates the close-based candlestick trade-plan model. Retired confirmation-boundary statuses are not presented as current trade outcomes.
+                    """;
+        }
         if (CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern())) {
             String failureStatus = "If that next candle does not close " + confirmationDirection
                     + " the candidate candle close with a confirming "
@@ -378,38 +404,47 @@ public class AlertNotificationService {
                     + " body, this candidate is REJECTED and never becomes a signal.";
             return """
 
-                    Lifecycle status: POTENTIAL %s
-                    This is not a signal yet.
+                    Status: POTENTIAL %s — NO TRADE OPEN
+                    Meaning: this is a candidate, not a detected trade.
                     Mandatory detection gate: the immediately following completed candle must have a %s body and close %s the candidate candle close at %.4f
                     %s
-                    If accepted, the setup becomes DETECTED and its %d-candle outcome window starts from that next candle's close.
+                    Planned stop loss: %.4f
+                    Planned risk-to-reward: 1:%.0f
+                    If accepted: the next candle's close becomes entry / candle 0, the sell target is calculated from that entry and stop, and candle 8 becomes the time stop.
+                    Close rule: only completed-candle closes count; wick touches do not open or close a trade.
                     """.formatted(
                     signal.tradeSignal(),
                     signal.tradeSignal() == TradeSignal.BUY ? "green" : "red",
                     confirmationDirection,
                     lifecycleEvent.getConfirmationTriggerPrice(),
                     failureStatus,
-                    lifecycleEvent.getConfirmationWindowCandles());
+                    lifecycleEvent.getStopLossPrice(),
+                    lifecycleEvent.getRewardRiskRatio());
         }
-        String invalidationDirection = signal.tradeSignal()
-                == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "below" : "above";
+        if (lifecycleEvent.getTradeEntryPrice() != null
+                && lifecycleEvent.getProfitTargetPrice() != null) {
+            return """
+
+                    Status: DETECTED — TRADE OPEN
+                    Meaning: the candlestick trade is active until its target, stop, or candle 8 close.
+                    Trade entry: %.4f
+                    Stop loss: %.4f
+                    Price to sell / profit target: %.4f
+                    Risk-to-reward: 1:%.0f
+                    Time stop: candle 8 after detection (the signal candle is candle 0)
+                    Exit rule: completed-candle closes only; intraperiod wick touches do not close the trade.
+                    Lifecycle note: CONFIRMED means the target closed successfully, INVALIDATED means the stop closed the trade, and EXPIRED means candle 8 closed the trade.
+                    """.formatted(
+                    lifecycleEvent.getTradeEntryPrice(),
+                    lifecycleEvent.getStopLossPrice(),
+                    lifecycleEvent.getProfitTargetPrice(),
+                    lifecycleEvent.getRewardRiskRatio());
+        }
         return """
 
-                Lifecycle status: DETECTED
-                Confirmation rule: a subsequent completed candle must close %s %.4f
-                Invalidation rule: a subsequent completed candle must close %s %.4f first
-                %s
-                Observation window: %d completed %s candles
-                Lifecycle note: DETECTED remains the original alert. One CONFIRMED, INVALIDATED, or EXPIRED follow-up will be sent.
-                """.formatted(
-                confirmationDirection,
-                lifecycleEvent.getConfirmationTriggerPrice(),
-                invalidationDirection,
-                lifecycleEvent.getInvalidationPrice(),
-                percentageLifecycleRules(lifecycleEvent),
-                lifecycleEvent.getConfirmationWindowCandles(),
-                rule.getInterval().name().toLowerCase()
-        );
+                Candlestick trade status: CURRENT PLAN INCOMPLETE
+                The current risk/reward plan is missing its entry or target, so no retired boundary-based status description is substituted.
+                """;
     }
 
     private String percentageLifecycleRules(AlertEvent event) {
@@ -449,16 +484,26 @@ public class AlertNotificationService {
                 || status == SignalLifecycleStatus.REJECTED)) {
             return sendCandidateGateLifecycleEmail(event, status, rule, symbol);
         }
+        boolean candlestickSignal = rule.getPatternFamily() == AlertPatternFamily.CANDLESTICK;
+        if (candlestickSignal && status != SignalLifecycleStatus.DETECTED) {
+            return sendCandlestickTradeLifecycleEmail(event, rule, symbol);
+        }
         if (status == SignalLifecycleStatus.DETECTED) {
             throw new IllegalArgumentException("A terminal signal lifecycle status is required.");
         }
         String outcome = switch (status) {
-            case CONFIRMED -> "The expected close-based follow-through occurred.";
+            case CONFIRMED -> event.hasCandlestickRiskRewardPlan()
+                    ? "The completed-candle close reached the profit target and the trade closed successfully."
+                    : "The expected close-based follow-through occurred.";
             case REJECTED -> "The candidate failed its mandatory next-candle gate and never became a signal.";
-            case INVALIDATED -> elliottSignal
+            case INVALIDATED -> event.hasCandlestickRiskRewardPlan()
+                    ? "A completed-candle close reached the configured stop loss."
+                    : elliottSignal
                     ? "The stored Elliott structure stopped satisfying its hard wave rules before confirmation."
                     : "Price closed beyond the opposite lifecycle boundary before confirmation.";
-            case EXPIRED -> "The observation window ended without confirmation or invalidation.";
+            case EXPIRED -> event.hasCandlestickRiskRewardPlan()
+                    ? "Neither target nor stop was reached, so the trade closed at candle 8's close."
+                    : "The observation window ended without confirmation or invalidation.";
             case POTENTIAL, DETECTED -> throw new IllegalStateException("A terminal outcome is required.");
         };
         String lifecycleType = elliottSignal ? "Elliott Wave" : "Candlestick";
@@ -467,7 +512,9 @@ public class AlertNotificationService {
                 == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "above" : "below";
         String invalidationDirection = event.getTradeSignal()
                 == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "below" : "above";
-        String invalidationLine = elliottSignal
+        String invalidationLine = event.hasCandlestickRiskRewardPlan()
+                ? "Stop loss: completed-candle close at %.4f".formatted(event.getStopLossPrice())
+                : elliottSignal
                 ? event.getInvalidationPrice() == null
                 ? "Invalidation rule: hard Elliott structure rules (no fixed price boundary)"
                 : "Structural invalidation boundary: %.4f".formatted(event.getInvalidationPrice())
@@ -482,7 +529,10 @@ public class AlertNotificationService {
                             throw new IllegalStateException("A terminal detected-signal outcome is required.");
                 }
                 : event.getTradeSignal().name();
-        String confirmationLine = immediateConfirmationRequired
+        String confirmationLine = event.hasCandlestickRiskRewardPlan()
+                ? "Successful trade target: completed-candle close at %.4f".formatted(
+                        event.getProfitTargetPrice())
+                : immediateConfirmationRequired
                 ? "Outcome confirmation trigger: close %s %.4f".formatted(
                         expectedDirection, event.getConfirmationTriggerPrice())
                 : "Confirmation trigger: close %s %.4f".formatted(
@@ -496,6 +546,11 @@ public class AlertNotificationService {
         String resolutionReason = event.getLifecycleResolutionReason() == null
                 ? ""
                 : "\nResolution reason: " + event.getLifecycleResolutionReason();
+        String tradePlanLine = event.hasCandlestickRiskRewardPlan()
+                ? "Trade plan: entry %.4f | stop %.4f | target %.4f | risk-to-reward 1:%.0f"
+                        .formatted(event.getTradeEntryPrice(), event.getStopLossPrice(),
+                                event.getProfitTargetPrice(), event.getRewardRiskRatio())
+                : percentageLifecycleRules(event);
         String body = """
                 %s lifecycle update for %s.
 
@@ -532,7 +587,7 @@ public class AlertNotificationService {
                 event.getPatternHigh(),
                 confirmationLine,
                 invalidationLine,
-                percentageLifecycleRules(event),
+                tradePlanLine,
                 event.getConfirmationWindowCandles(),
                 rule.getInterval().name().toLowerCase(),
                 SignalPeriodFormatter.format(
@@ -559,6 +614,192 @@ public class AlertNotificationService {
         return true;
     }
 
+    private boolean sendCandlestickTradeLifecycleEmail(AlertEvent event,
+                                                       AlertRule rule,
+                                                       String symbol) {
+        SignalLifecycleStatus status = event.getLifecycleStatus();
+        if (status != SignalLifecycleStatus.CONFIRMED
+                && status != SignalLifecycleStatus.INVALIDATED
+                && status != SignalLifecycleStatus.EXPIRED) {
+            throw new IllegalArgumentException("A terminal candlestick trade status is required.");
+        }
+        if (!completeCandlestickTradePlan(event)) {
+            return sendLegacyCandlestickLifecycleNotice(event, rule, symbol);
+        }
+
+        double targetReturn = directionalReturnPercent(
+                event.getTradeSignal(), event.getTradeEntryPrice(), event.getProfitTargetPrice());
+        double exitReturn = directionalReturnPercent(
+                event.getTradeSignal(), event.getTradeEntryPrice(), event.getResolutionClosePrice());
+        Double favorableMove = status == SignalLifecycleStatus.CONFIRMED
+                ? targetReturn
+                : mostFavorableCompletedCloseMove(event, rule);
+        String favorableLine = favorableMove == null
+                ? "Most favorable completed-close move: unavailable because the completed trade path is not cached."
+                : "Most favorable completed-close move: %+.2f%%".formatted(favorableMove);
+        String statusMeaning = switch (status) {
+            case CONFIRMED -> "CONFIRMED means the profit target closed successfully and the trade ended at its planned R:R target.";
+            case INVALIDATED -> "INVALIDATED means a completed candle closed at or beyond the configured stop loss and ended the trade.";
+            case EXPIRED -> "EXPIRED means neither target nor stop closed first, so candle 8's completed close ended the trade.";
+            default -> throw new IllegalStateException("Unexpected candlestick trade status: " + status);
+        };
+        String resultReturnLine = status == SignalLifecycleStatus.CONFIRMED
+                ? "Trade result return: %+.2f%% (fixed at the exact entry-to-target return, even if the resolution close overshot the target)"
+                        .formatted(targetReturn)
+                : "Entry-to-exit return: %+.2f%%".formatted(exitReturn);
+        long entryTimestamp = event.getDetectionCandleTimestamp() == null
+                ? event.getSignalCandleTimestamp()
+                : event.getDetectionCandleTimestamp();
+        String body = """
+                Candlestick trade update for %s.
+
+                Status: %s
+                Status meaning: %s
+                Pattern: %s
+                Direction: %s
+                Interval: %s
+                Original signal period: %s
+
+                Close-based trade plan
+                Entry / candle 0: %.4f on %s
+                Stop loss: %.4f
+                Price to sell / profit target: %.4f
+                Risk-to-reward: 1:%.0f
+                Time stop: candle %d close
+                Decision rule: completed-candle closes only; intraperiod wick touches do not close the trade.
+
+                Trade resolution
+                Resolution candle: %s
+                Resolution candle number: %d
+                Resolution close: %.4f
+                %s
+                Target return: %+.2f%%
+                %s
+
+                CONFIRMED = target reached successfully. INVALIDATED = stop loss hit. EXPIRED = candle 8 time stop.
+                This is informational and excludes fees, slippage, taxes, dividends, and position sizing.
+                """.formatted(
+                symbol,
+                status,
+                statusMeaning,
+                event.getPattern(),
+                event.getTradeSignal(),
+                rule.getInterval(),
+                SignalPeriodFormatter.format(
+                        event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
+                event.getTradeEntryPrice(),
+                SignalPeriodFormatter.format(entryTimestamp, rule.getInterval(), signalTimeZone),
+                event.getStopLossPrice(),
+                event.getProfitTargetPrice(),
+                event.getRewardRiskRatio(),
+                CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES,
+                SignalPeriodFormatter.format(
+                        event.getResolutionCandleTimestamp(), rule.getInterval(), signalTimeZone),
+                event.getResolutionCandleOffset(),
+                event.getResolutionClosePrice(),
+                resultReturnLine,
+                targetReturn,
+                favorableLine);
+
+        if (!isSignalLifecycleEmailEnabled(event)) {
+            System.out.println("[EMAIL DISABLED] " + status
+                    + " candlestick trade email suppressed for " + symbol + ".");
+            return false;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(rule.getUser().getEmail());
+        message.setSubject("StockWatch candlestick trade " + status.name().toLowerCase(Locale.ROOT)
+                + ": " + event.getPattern() + " on " + symbol);
+        message.setText(body);
+        send(message);
+        return true;
+    }
+
+    private boolean completeCandlestickTradePlan(AlertEvent event) {
+        return event.hasCandlestickRiskRewardPlan()
+                && event.getTradeEntryPrice() != null
+                && event.getProfitTargetPrice() != null
+                && event.getResolutionCandleTimestamp() != null
+                && event.getResolutionCandleOffset() != null
+                && event.getResolutionClosePrice() != null;
+    }
+
+    private Double mostFavorableCompletedCloseMove(AlertEvent event, AlertRule rule) {
+        if (candleRepository == null || event.getResolutionCandleTimestamp() == null) return null;
+        long entryTimestamp = event.getDetectionCandleTimestamp() == null
+                ? event.getSignalCandleTimestamp()
+                : event.getDetectionCandleTimestamp();
+        List<Candle> tradeCandles = candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                        rule.getStockAsset().getTickerSymbol(),
+                        apiInterval(rule),
+                        entryTimestamp,
+                        event.getResolutionCandleTimestamp() + 1,
+                        PageRequest.of(0, CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES))
+                .stream()
+                .filter(candle -> candle.getClosePrice() != null
+                        && Double.isFinite(candle.getClosePrice()))
+                .toList();
+        if (tradeCandles.isEmpty()) return 0.0;
+        double favorableClose = event.getTradeSignal() == TradeSignal.BUY
+                ? tradeCandles.stream().mapToDouble(Candle::getClosePrice).max()
+                        .orElse(event.getTradeEntryPrice())
+                : tradeCandles.stream().mapToDouble(Candle::getClosePrice).min()
+                        .orElse(event.getTradeEntryPrice());
+        return Math.max(0.0, directionalReturnPercent(
+                event.getTradeSignal(), event.getTradeEntryPrice(), favorableClose));
+    }
+
+    private double directionalReturnPercent(TradeSignal direction, double entry, double exit) {
+        double marketReturn = entry == 0.0 ? 0.0 : ((exit - entry) / entry) * 100.0;
+        return direction == TradeSignal.SELL ? -marketReturn : marketReturn;
+    }
+
+    private String apiInterval(AlertRule rule) {
+        return switch (rule.getInterval()) {
+            case FIFTEEN_MINUTE -> "15min";
+            case ONE_HOUR -> "1h";
+            case FOUR_HOUR -> "4h";
+            case DAILY -> "1d";
+            case WEEKLY -> "1wk";
+            case MONTHLY -> "1mo";
+            case YEARLY -> "1y";
+            case ALL_TIME -> "1mo";
+        };
+    }
+
+    private boolean sendLegacyCandlestickLifecycleNotice(AlertEvent event,
+                                                          AlertRule rule,
+                                                          String symbol) {
+        if (!isSignalLifecycleEmailEnabled(event)) return false;
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(rule.getUser().getEmail());
+        message.setSubject("StockWatch candlestick record update unavailable: "
+                + event.getPattern() + " on " + symbol);
+        message.setText("""
+                A stored candlestick record changed for %s, but it predates the current close-based candlestick trade plan.
+
+                Current trade status: UNAVAILABLE
+                Pattern: %s
+                Direction: %s
+                Interval: %s
+                Original signal period: %s
+
+                The retired confirmation-boundary result is not being relabeled as CONFIRMED, INVALIDATED, or EXPIRED.
+                Those current statuses require a stored entry, configured stop loss, interval R:R target, and candle 8 time stop.
+                """.formatted(
+                symbol,
+                event.getPattern(),
+                event.getTradeSignal(),
+                rule.getInterval(),
+                SignalPeriodFormatter.format(
+                        event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone)));
+        send(message);
+        return true;
+    }
+
     private boolean sendCandidateGateLifecycleEmail(AlertEvent event,
                                                     SignalLifecycleStatus status,
                                                     AlertRule rule,
@@ -572,25 +813,45 @@ public class AlertNotificationService {
                 : event.getResolutionClosePrice();
         String gatePeriod = SignalPeriodFormatter.format(
                 gateTimestamp, rule.getInterval(), signalTimeZone);
-        String body = detected
-                ? """
-                    One-candle candidate accepted for %s.
+        String body;
+        if (!event.hasCandlestickRiskRewardPlan()) {
+            body = """
+                    Candlestick candidate update for %s.
 
-                    Status: DETECTED
+                    Current trade status: UNAVAILABLE
+                    Pattern: %s
+                    Direction: %s
+                    Candidate period: %s
+
+                    This stored candidate predates the close-based candlestick trade-plan model. Retired confirmation-boundary results are not substituted for the current close-based trade statuses.
+                    """.formatted(
+                    symbol,
+                    event.getPattern(),
+                    event.getTradeSignal(),
+                    SignalPeriodFormatter.format(
+                            event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone));
+        } else if (detected && event.getTradeEntryPrice() != null
+                && event.getProfitTargetPrice() != null) {
+            body = """
+                     One-candle candidate accepted for %s.
+
+                    Status: DETECTED — TRADE OPEN
+                    Status meaning: the mandatory gate passed and this candle's close is entry / candle 0.
                     Pattern: %s
                     Direction: %s
                     Candidate period: %s
                     Detection candle: %s
                     Detection close: %.4f
 
-                    The mandatory next-candle gate passed. This is now a real signal.
-                    Result measurement starts from this detection close.
-                    Outcome window: %d completed %s candles
-                    Confirmation trigger: %.4f
-                    Invalidation boundary: %.4f
-                    %s
+                     The mandatory next-candle gate passed. This is now a real signal.
+                     Trade entry: %.4f
+                     Stop loss: %.4f
+                    Price to sell / profit target: %.4f
+                     Risk-to-reward: 1:%.0f
+                     Time stop: candle 8 after detection (this detection candle is candle 0)
+                    Exit rule: completed-candle closes only; wick touches do not close the trade.
 
-                    The signal can now become CONFIRMED, INVALIDATED, or EXPIRED.
+                     CONFIRMED means the target closed successfully, INVALIDATED means the stop was hit, and EXPIRED means candle 8 closed the trade.
                     """.formatted(
                         symbol,
                         event.getPattern(),
@@ -599,23 +860,37 @@ public class AlertNotificationService {
                                 event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                         gatePeriod,
                         gateClose,
-                        event.getConfirmationWindowCandles(),
-                        rule.getInterval().name().toLowerCase(),
-                        event.getConfirmationTriggerPrice(),
-                        event.getInvalidationPrice(),
-                        percentageLifecycleRules(event))
-                : """
-                    One-candle candidate rejected for %s.
+                        event.getTradeEntryPrice(),
+                         event.getStopLossPrice(),
+                         event.getProfitTargetPrice(),
+                        event.getRewardRiskRatio());
+        } else if (detected) {
+            body = """
+                    One-candle candidate accepted for %s, but its current trade plan is incomplete.
 
-                    Status: REJECTED
-                    Pattern candidate: %s
+                    Current trade status: UNAVAILABLE
+                    Pattern: %s
+                    Direction: %s
+                    Detection candle: %s
+
+                    No retired confirmation-boundary status is substituted.
+                    """.formatted(symbol, event.getPattern(), event.getTradeSignal(), gatePeriod);
+        } else {
+            body = """
+                     One-candle candidate rejected for %s.
+
+                    Status: REJECTED — NO TRADE OPENED
+                    Status meaning: the mandatory next-candle gate failed, so this candidate never became a detected trade.
+                     Pattern candidate: %s
                     Potential direction: %s
                     Candidate period: %s
                     Gate candle: %s
                     Gate close: %.4f
 
-                    The immediately following candle did not provide the required %s-body close %s the candidate close at %.4f.
-                    The candidate never became a signal, so no outcome window or result is calculated.
+                     The immediately following candle did not provide the required %s-body close %s the candidate close at %.4f.
+                    Planned stop: %.4f
+                    Planned risk-to-reward if accepted: 1:%.0f
+                    No entry, profit target, time-stop trade, or trade return exists because the trade never opened.
                     """.formatted(
                         symbol,
                         event.getPattern(),
@@ -624,9 +899,12 @@ public class AlertNotificationService {
                                 event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                         gatePeriod,
                         gateClose,
-                        event.getTradeSignal() == TradeSignal.BUY ? "green" : "red",
-                        event.getTradeSignal() == TradeSignal.BUY ? "above" : "below",
-                        event.getClosePrice());
+                         event.getTradeSignal() == TradeSignal.BUY ? "green" : "red",
+                         event.getTradeSignal() == TradeSignal.BUY ? "above" : "below",
+                        event.getClosePrice(),
+                        event.getStopLossPrice(),
+                        event.getRewardRiskRatio());
+        }
 
         if (!isSignalLifecycleEmailEnabled(event)) {
             System.out.println("[EMAIL DISABLED] " + status

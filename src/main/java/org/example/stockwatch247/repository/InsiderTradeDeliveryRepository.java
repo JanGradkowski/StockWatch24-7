@@ -52,6 +52,24 @@ public interface InsiderTradeDeliveryRepository extends JpaRepository<InsiderTra
             select delivery
             from InsiderTradeDelivery delivery
             join fetch delivery.subscription subscription
+            join fetch delivery.trade trade
+            join fetch trade.stockAsset
+            where subscription.user = :user
+              and lower(trade.tickerSymbol) = lower(:symbol)
+              and trade.transactionDate >= :firstDate
+              and delivery.deletedAt is null
+            order by trade.transactionDate, delivery.id
+            """)
+    List<InsiderTradeDelivery> findForTechnicalOutlook(
+            @Param("user") User user,
+            @Param("symbol") String symbol,
+            @Param("firstDate") LocalDate firstDate,
+            Pageable pageable);
+
+    @Query("""
+            select delivery
+            from InsiderTradeDelivery delivery
+            join fetch delivery.subscription subscription
             where delivery.id = :deliveryId
               and subscription.user = :user
               and delivery.deletedAt is null

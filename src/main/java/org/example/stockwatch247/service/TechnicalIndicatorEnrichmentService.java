@@ -14,6 +14,7 @@ import org.ta4j.core.num.Num;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -133,8 +134,39 @@ public class TechnicalIndicatorEnrichmentService {
         validateInterval(candles, interval);
 
         BarSeries series = seriesFactory.create(candles);
+        return enrichPrepared(candles, latestCount, profile, series);
+    }
+
+    AnalysisResult analyze(List<Candle> rawCandles,
+                           int latestCount,
+                           TechnicalIndicatorProfile profile,
+                           boolean includeResearch) {
+        if (rawCandles == null || rawCandles.isEmpty() || latestCount <= 0) {
+            return new AnalysisResult(List.of(), List.of());
+        }
+        if (profile == null) throw new IllegalArgumentException("A technical indicator profile is required.");
+        List<Candle> candles = rawCandles.stream()
+                .filter(this::hasCompletePriceData)
+                .sorted(Comparator.comparing(Candle::getTimestamp))
+                .toList();
+        if (candles.isEmpty()) return new AnalysisResult(List.of(), List.of());
+        validateInterval(candles, profile.interval());
+        BarSeries series = seriesFactory.create(candles);
+        List<EnrichedCandle> enriched = enrichPrepared(candles, latestCount, profile, series);
+        List<TechnicalResearchSnapshot> research = includeResearch
+                ? researchPrepared(candles, latestCount, profile, series, false)
+                : List.of();
+        return new AnalysisResult(enriched, research);
+    }
+
+    private List<EnrichedCandle> enrichPrepared(List<Candle> candles,
+                                                int latestCount,
+                                                TechnicalIndicatorProfile profile,
+                                                BarSeries series) {
         TechnicalIndicatorParameters parameters = parameters(profile);
         Ta4jIndicatorRegistry.CoreIndicators indicators = indicatorRegistry.core(series, parameters);
+        VolumeProfileWindowStats volumeProfileStats = volumeProfileStats(
+                candles, profile.volumeProfilePeriod());
 
         int firstIndex = Math.max(0, candles.size() - latestCount);
         List<EnrichedCandle> enrichedCandles = new ArrayList<>();
@@ -144,7 +176,8 @@ public class TechnicalIndicatorEnrichmentService {
                     candles,
                     index,
                     profile.volumeProfilePeriod(),
-                    profile.volumeProfileValueAreaFraction()
+                    profile.volumeProfileValueAreaFraction(),
+                    volumeProfileStats
             );
             enrichedCandles.add(new EnrichedCandle(
                     candle.getTimestamp(),
@@ -222,6 +255,15 @@ public class TechnicalIndicatorEnrichmentService {
         if (candles.isEmpty()) return List.of();
         validateInterval(candles, profile.interval());
         BarSeries series = seriesFactory.create(candles);
+        return researchPrepared(candles, latestCount, profile, series, includeHistoricalKde);
+    }
+
+    private List<TechnicalResearchSnapshot> researchPrepared(
+            List<Candle> candles,
+            int latestCount,
+            TechnicalIndicatorProfile profile,
+            BarSeries series,
+            boolean includeHistoricalKde) {
         Ta4jIndicatorRegistry.ResearchIndicators indicators = indicatorRegistry.research(
                 series, parameters(profile));
         int firstIndex = Math.max(0, candles.size() - latestCount);
@@ -253,6 +295,9 @@ public class TechnicalIndicatorEnrichmentService {
         return List.copyOf(snapshots);
     }
 
+    record AnalysisResult(List<EnrichedCandle> candles,
+                          List<TechnicalResearchSnapshot> research) { }
+
     /**
      * Builds a deterministic volume-at-price approximation from the data that
      * this service actually owns. Each candle's reported volume is spread
@@ -263,21 +308,16 @@ public class TechnicalIndicatorEnrichmentService {
     private VolumeProfileSnapshot volumeProfile(List<Candle> candles,
                                                 int endIndex,
                                                 int period,
-                                                double valueAreaFraction) {
+                                                double valueAreaFraction,
+                                                VolumeProfileWindowStats stats) {
         if (period <= 0 || endIndex + 1 < period) {
             return VolumeProfileSnapshot.unavailable();
         }
 
         int startIndex = endIndex - period + 1;
-        double minimumPrice = Double.POSITIVE_INFINITY;
-        double maximumPrice = Double.NEGATIVE_INFINITY;
-        double totalVolume = 0.0;
-        for (int index = startIndex; index <= endIndex; index++) {
-            Candle candle = candles.get(index);
-            minimumPrice = Math.min(minimumPrice, candle.getLowPrice());
-            maximumPrice = Math.max(maximumPrice, candle.getHighPrice());
-            totalVolume += Math.max(0.0, candle.getVolume() == null ? 0.0 : candle.getVolume());
-        }
+        double minimumPrice = stats.minimumPrices()[endIndex];
+        double maximumPrice = stats.maximumPrices()[endIndex];
+        double totalVolume = stats.totalVolumes()[endIndex];
         if (!Double.isFinite(minimumPrice)
                 || !Double.isFinite(maximumPrice)
                 || maximumPrice < minimumPrice
@@ -341,6 +381,43 @@ public class TechnicalIndicatorEnrichmentService {
                 minimumPrice + valueAreaLowBin * binWidth,
                 minimumPrice + (valueAreaHighBin + 1.0) * binWidth
         );
+    }
+
+    private VolumeProfileWindowStats volumeProfileStats(List<Candle> candles, int period) {
+        int size = candles.size();
+        double[] minimumPrices = new double[size];
+        double[] maximumPrices = new double[size];
+        double[] totalVolumes = new double[size];
+        java.util.Arrays.fill(minimumPrices, Double.NaN);
+        java.util.Arrays.fill(maximumPrices, Double.NaN);
+        java.util.Arrays.fill(totalVolumes, Double.NaN);
+        ArrayDeque<Integer> lows = new ArrayDeque<>();
+        ArrayDeque<Integer> highs = new ArrayDeque<>();
+        double rollingVolume = 0.0;
+        for (int index = 0; index < size; index++) {
+            Candle candle = candles.get(index);
+            while (!lows.isEmpty()
+                    && candles.get(lows.getLast()).getLowPrice() >= candle.getLowPrice()) lows.removeLast();
+            lows.addLast(index);
+            while (!highs.isEmpty()
+                    && candles.get(highs.getLast()).getHighPrice() <= candle.getHighPrice()) highs.removeLast();
+            highs.addLast(index);
+            rollingVolume += nonNegativeVolume(candle);
+            int expired = index - period;
+            if (expired >= 0) rollingVolume -= nonNegativeVolume(candles.get(expired));
+            while (!lows.isEmpty() && lows.getFirst() <= expired) lows.removeFirst();
+            while (!highs.isEmpty() && highs.getFirst() <= expired) highs.removeFirst();
+            if (index + 1 >= period) {
+                minimumPrices[index] = candles.get(lows.getFirst()).getLowPrice();
+                maximumPrices[index] = candles.get(highs.getFirst()).getHighPrice();
+                totalVolumes[index] = rollingVolume;
+            }
+        }
+        return new VolumeProfileWindowStats(minimumPrices, maximumPrices, totalVolumes);
+    }
+
+    private double nonNegativeVolume(Candle candle) {
+        return Math.max(0.0, candle.getVolume() == null ? 0.0 : candle.getVolume());
     }
 
     private int volumeProfileBin(double price, double minimumPrice, double binWidth) {
@@ -471,4 +548,8 @@ public class TechnicalIndicatorEnrichmentService {
             return new VolumeProfileSnapshot(Double.NaN, Double.NaN, Double.NaN);
         }
     }
+
+    private record VolumeProfileWindowStats(double[] minimumPrices,
+                                            double[] maximumPrices,
+                                            double[] totalVolumes) { }
 }

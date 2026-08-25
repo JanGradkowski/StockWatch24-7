@@ -220,7 +220,7 @@
                 <span th:each="signal : ${company.tradeSignals()}"
                       class="dashboard-chip signal"
                       th:classappend="${signal.name() == 'BUY'} ? ' buy' : ' sell'"
-                      th:text="${signal}">BUY</span>
+                      th:text="${signal.name() == 'SELL' ? 'SELL/SHORT' : signal.name()}">BUY</span>
               </div>
             </div>
             <div class="event-count">

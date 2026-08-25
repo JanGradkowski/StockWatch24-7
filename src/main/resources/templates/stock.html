@@ -421,7 +421,7 @@
         <div class="alert-grid">
           <div class="alert-grid-label">Interval</div>
           <div class="alert-grid-label">Buy</div>
-          <div class="alert-grid-label">Sell</div>
+          <div class="alert-grid-label">Sell/Short</div>
 
           <div class="alert-row-label">Daily</div>
           <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily candlestick buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
@@ -443,7 +443,7 @@
         <div class="alert-grid">
           <div class="alert-grid-label">Interval</div>
           <div class="alert-grid-label">Buy</div>
-          <div class="alert-grid-label">Sell</div>
+          <div class="alert-grid-label">Sell/Short</div>
 
           <div class="alert-row-label">Daily</div>
           <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily Elliott Wave buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
@@ -982,6 +982,21 @@
   const stockPageLoader = document.getElementById('stockPageLoader');
   const stockLoaderStatus = document.getElementById('stockLoaderStatus');
   const stockWorkspace = document.querySelector('.stock-page');
+
+  function tradeSignalDisplayLabel(value, lowercase = false) {
+    const normalized = String(value || '').toUpperCase();
+    if (normalized === 'SELL') return lowercase ? 'sell/short' : 'SELL/SHORT';
+    if (normalized === 'BUY') return lowercase ? 'buy' : 'BUY';
+    return String(value || '');
+  }
+
+  document.querySelectorAll('[data-alert-signal="SELL"]').forEach(input => {
+    const label = input.closest('label');
+    const copy = label?.querySelector('.alert-eye-label');
+    if (copy && copy.textContent.trim().toLowerCase() === 'sell') copy.textContent = 'Sell/Short';
+    const ariaLabel = input.getAttribute('aria-label');
+    if (ariaLabel) input.setAttribute('aria-label', ariaLabel.replace(/sell signals/gi, 'sell/short signals'));
+  });
   let stockLoaderFinished = false;
   const stockLoaderSafetyTimer = window.setTimeout(() => {
     finishStockPageLoading('Workspace opened. Some market data may still be arriving.');
@@ -2206,7 +2221,7 @@
             .replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
     document.getElementById('harmonicFormationCardTitle').textContent = `${formation.direction === 'BEARISH' ? 'Bearish' : 'Bullish'} ${title}`;
     document.getElementById('harmonicFormationCardStage').textContent =
-            `${formation.tradeSignal} signal Â· ${formatHistoricalElliottPeriod(formation.confirmationTimestamp)} Â· score ${formation.qualityScore}/100`;
+            `${tradeSignalDisplayLabel(formation.tradeSignal)} signal Â· ${formatHistoricalElliottPeriod(formation.confirmationTimestamp)} Â· score ${formation.qualityScore}/100`;
     const confirmationIndex = globalCandleData.findIndex(
             candle => Number(candle.timestamp) === Number(formation.confirmationTimestamp));
     const signalClose = confirmationIndex < 0 ? NaN : Number(globalCandleData[confirmationIndex].close);
@@ -2998,7 +3013,7 @@
     document.getElementById('elliottWaveCardEyebrow').textContent = 'ELLIOTT WAVE';
     document.getElementById('elliottWaveCardTitle').textContent = `${titleDirection} structure`;
     document.getElementById('elliottWaveCardStage').textContent =
-            `${cardData.stageLabel} · ${cardData.tradeSignal} signal · ${cardData.signalPeriodLabel}`;
+            `${cardData.stageLabel} · ${tradeSignalDisplayLabel(cardData.tradeSignal)} signal · ${cardData.signalPeriodLabel}`;
 
     const status = document.getElementById('elliottWaveCardStatus');
     status.className = `elliott-wave-card-status ${cardData.statusClass}`;
@@ -3550,7 +3565,7 @@
               const direction = String(signal.tradeSignal || '').toLowerCase();
               button.type = 'button';
               button.className = `historical-candlestick-hit-target ${direction}`;
-              button.textContent = direction === 'sell' ? 'S' : 'B';
+              button.textContent = direction === 'sell' ? 'S/S' : 'B';
               button._historicalCandlestickSignal = signal;
               button._historicalCandlestickCluster = [signal];
               button.setAttribute('aria-label', `${signal.patternLabel}, ${signal.typeLabel}, ${signal.signalPeriodLabel}`);
@@ -3627,7 +3642,7 @@
               : (cluster.buy ? 'B' : 'S');
       representative.button.classList.toggle('cluster', signals.length > 1);
       representative.button.title = signals.length > 1
-              ? `${signals.length} nearby ${cluster.buy ? 'buy' : 'sell'} signals - open and cycle through them`
+              ? `${signals.length} nearby ${cluster.buy ? 'buy' : 'sell/short'} signals - open and cycle through them`
               : `Open ${signals[0].patternLabel} details`;
       representative.button.style.left = `${averageX}px`;
       representative.button.style.top = `${edgeY}px`;
@@ -3663,22 +3678,20 @@
     if (!signal) return;
     document.getElementById('historicalCandlestickCardTitle').textContent = signal.patternLabel || signal.pattern;
     document.getElementById('historicalCandlestickCardStage').textContent =
-            `${signal.signalPeriodLabel} - ${signal.typeLabel || signal.tradeSignal} - ${signal.formationLabel}`;
+            `${signal.signalPeriodLabel} - ${signal.typeLabel || tradeSignalDisplayLabel(signal.tradeSignal)} - ${signal.formationLabel}`;
     const status = document.getElementById('historicalCandlestickCardStatus');
     status.className = `elliott-wave-card-status ${signal.statusClass || 'pending'}`;
     status.textContent = signal.statusLabel || 'Awaiting outcome';
-    const value = Number(signal.directionalReturnPercent);
+    const outcome = historicalCandlestickCardOutcome(signal);
     const outcomeValue = document.getElementById('historicalCandlestickCardOutcomeValue');
-    outcomeValue.textContent = Number.isFinite(value) ? formatSignedPercent(value) : 'Pending';
-    outcomeValue.className = Number.isFinite(value) ? (value >= 0 ? 'positive' : 'negative') : '';
-    document.getElementById('historicalCandlestickCardOutcomeLabel').textContent =
-            signal.impactLabel || 'Observed outcome';
-    document.getElementById('historicalCandlestickCardOutcomeWindow').textContent =
-            `From signal candle close on ${signal.signalPeriodLabel} - ${signal.evaluationHorizonLabel || 'Fixed result window'} - ${Number(signal.setupScore || 0)}/100 setup score`;
+    outcomeValue.textContent = outcome.value;
+    outcomeValue.className = outcome.valueClass;
+    document.getElementById('historicalCandlestickCardOutcomeLabel').textContent = outcome.label;
+    document.getElementById('historicalCandlestickCardOutcomeWindow').textContent = outcome.detail;
     document.getElementById('historicalCandlestickCardTrend').textContent =
             `${signal.trendLabel || (String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'Required downtrend' : 'Required uptrend')} before the ${signal.formationLabel || 'pattern formation'}.`;
     document.getElementById('historicalCandlestickCardNote').textContent =
-            signal.outcomeSummary || 'The observed outcome is calculated from completed cached candle closes.';
+            signal.outcomeSummary || 'The trade outcome is calculated from completed cached candle closes.';
     document.getElementById('historicalCandlestickCardLink').href =
             historicalCandlestickDetailUrl(signal, null, true);
     const navigation = document.getElementById('historicalCandlestickCardClusterNavigation');
@@ -3686,6 +3699,91 @@
     document.getElementById('historicalCandlestickCardClusterPosition').textContent =
             `${activeHistoricalCandlestickSignalIndex + 1} of ${activeHistoricalCandlestickSignals.length} nearby signals`;
     highlightHistoricalCandlestickSignal(signal);
+  }
+
+  function historicalCandlestickCardOutcome(signal) {
+    const lifecycleStatus = String(signal.status || signal.statusLabel || '').toUpperCase();
+    const entry = optionalFiniteNumber(signal.tradeEntryPrice);
+    const stop = optionalFiniteNumber(signal.stopLossPrice);
+    const target = optionalFiniteNumber(signal.profitTargetPrice);
+    const exit = optionalFiniteNumber(signal.tradeExitPrice ?? signal.evaluationClose);
+    const targetReturn = historicalCandlestickDirectionalReturn(signal, target);
+    const stopReturn = historicalCandlestickDirectionalReturn(signal, stop);
+    const recordedReturn = optionalFiniteNumber(signal.tradeReturnPercent)
+            ?? historicalCandlestickDirectionalReturn(signal, exit);
+    const configuredTimeStop = optionalFiniteNumber(signal.timeStopCandles);
+    const configuredRewardRisk = optionalFiniteNumber(signal.rewardRiskRatio);
+    const timeStopCandles = configuredTimeStop ?? 8;
+    const rewardRiskRatio = configuredRewardRisk == null
+            ? null
+            : configuredRewardRisk.toFixed(0);
+    const entryLabel = entry == null ? 'n/a' : formatProfilePrice(entry);
+
+    if (lifecycleStatus === 'CONFIRMED') {
+      return {
+        label: 'Return at sell target',
+        value: targetReturn == null ? 'Target reached' : formatSignedPercent(targetReturn),
+        valueClass: targetReturn == null ? 'positive' : candlestickReturnClass(targetReturn),
+        detail: `Sold at ${target == null ? 'the profit target' : formatProfilePrice(target)} from entry ${entryLabel}${rewardRiskRatio == null ? '' : ` - 1:${rewardRiskRatio} R:R`}`
+      };
+    }
+    if (lifecycleStatus === 'INVALIDATED') {
+      const stopPriceLabel = stop == null ? 'Stop reached' : formatProfilePrice(stop);
+      return {
+        label: 'Stop loss reached',
+        value: stopReturn == null ? stopPriceLabel : `${stopPriceLabel} (${formatSignedPercent(stopReturn)})`,
+        valueClass: 'negative',
+        detail: `Trade closed at the configured stop loss from entry ${entryLabel}`
+      };
+    }
+    if (lifecycleStatus === 'EXPIRED') {
+      return {
+        label: `Return at candle ${timeStopCandles} time stop`,
+        value: recordedReturn == null ? 'Unavailable' : formatSignedPercent(recordedReturn),
+        valueClass: recordedReturn == null ? '' : candlestickReturnClass(recordedReturn),
+        detail: `Trade closed at ${exit == null ? 'the completed time-stop close' : formatProfilePrice(exit)}${signal.evaluationPeriodLabel ? ` on ${signal.evaluationPeriodLabel}` : ''}`
+      };
+    }
+    if (lifecycleStatus === 'DETECTED') {
+      return {
+        label: 'Potential return at sell target',
+        value: targetReturn == null ? 'Target pending' : formatSignedPercent(targetReturn),
+        valueClass: targetReturn == null ? '' : candlestickReturnClass(targetReturn),
+        detail: `Entry ${entryLabel} - target ${target == null ? 'n/a' : formatProfilePrice(target)} - stop ${stop == null ? 'n/a' : formatProfilePrice(stop)}${rewardRiskRatio == null ? '' : ` - 1:${rewardRiskRatio} R:R`} - candle ${timeStopCandles} time stop`
+      };
+    }
+    if (lifecycleStatus === 'REJECTED') {
+      return {
+        label: 'Rejected candidate',
+        value: 'No trade',
+        valueClass: '',
+        detail: 'The mandatory next-candle gate failed, so no entry, stop, or return applies.'
+      };
+    }
+    return {
+      label: 'Potential candidate',
+      value: 'Not opened',
+      valueClass: '',
+      detail: `Awaiting the mandatory next-candle detection gate - ${Number(signal.setupScore || 0)}/100 setup score`
+    };
+  }
+
+  function historicalCandlestickDirectionalReturn(signal, exitPrice) {
+    const entry = optionalFiniteNumber(signal.tradeEntryPrice);
+    const exit = optionalFiniteNumber(exitPrice);
+    if (entry == null || exit == null || entry === 0) return null;
+    const marketReturn = ((exit - entry) / entry) * 100;
+    return String(signal.tradeSignal).toUpperCase() === 'SELL' ? -marketReturn : marketReturn;
+  }
+
+  function optionalFiniteNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  function candlestickReturnClass(value) {
+    return Number(value) >= 0 ? 'positive' : 'negative';
   }
 
   function moveHistoricalCandlestickCard(direction) {
@@ -3967,8 +4065,8 @@
             `${history.intervalLabel || 'Historical'} candle patterns`;
     document.getElementById('historicalCandlestickResultsWindow').textContent =
             `${history.lookbackLabel || 'Recent completed candles'} · `
-            + `${history.evaluationHorizonLabel || 'fixed outcome horizon'} · `
-            + `${Number(history.successThresholdPercent || 0).toFixed(1)}% success threshold`;
+            + `8-candle close-based time stop · `
+            + `1:${history.interval === '1wk' ? 3 : history.interval === '1mo' ? 4 : 2} R:R`;
     document.getElementById('historicalCandlestickResultsStatus').textContent =
             `${signals.length} signal${signals.length === 1 ? '' : 's'} calculated now · `
             + 'No signal results were cached';
@@ -4006,7 +4104,7 @@
     cell.dataset.label = 'Type';
     const badge = document.createElement('span');
     badge.className = `historical-candlestick-type ${String(signal.tradeSignal || '').toLowerCase()}`;
-    badge.textContent = signal.typeLabel || signal.tradeSignal;
+    badge.textContent = signal.typeLabel || tradeSignalDisplayLabel(signal.tradeSignal);
     cell.append(badge);
     return cell;
   }
@@ -4023,7 +4121,7 @@
 
   function historicalCandlestickImpactCell(signal) {
     const cell = document.createElement('td');
-    cell.dataset.label = 'Historical impact';
+    cell.dataset.label = 'Trade return';
     const strong = document.createElement('strong');
     const value = Number(signal.directionalReturnPercent);
     strong.textContent = Number.isFinite(value)
@@ -4031,9 +4129,11 @@
             : 'Pending';
     strong.className = Number.isFinite(value) ? (value >= 0 ? 'positive' : 'negative') : '';
     const detail = document.createElement('span');
-    detail.textContent = signal.impactLabel || 'Outcome pending';
+    detail.textContent = signal.impactLabel || 'Trade return pending';
     const basis = document.createElement('small');
-    basis.textContent = `From signal candle close on ${signal.signalPeriodLabel || 'an unavailable date'}`;
+    basis.textContent = signal.tradeEntryPrice == null
+            ? 'Trade has not opened'
+            : `From trade entry at ${Number(signal.tradeEntryPrice).toFixed(4)}`;
     cell.append(strong, detail, basis);
     return cell;
   }

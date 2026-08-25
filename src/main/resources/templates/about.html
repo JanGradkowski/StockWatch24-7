@@ -168,7 +168,7 @@
                 <article><span>Search</span><h3>Find stocks, ETFs, and indexes</h3><p>Use local symbol data first and provider search when broader discovery is needed.</p></article>
                 <article><span>Charts</span><h3>Explore price and volume</h3><p>Switch line or candlestick mode, change intervals, zoom, and load older history as the chart scrolls.</p></article>
                 <article><span>Checks</span><h3>Run an immediate scan</h3><p>Refresh the selected interval and evaluate the newest completed candle without enabling an alert.</p></article>
-                <article><span>Alerts</span><h3>Choose the exact combinations</h3><p>Follow BUY or SELL candlestick and Elliott families independently for supported intervals.</p></article>
+                <article><span>Alerts</span><h3>Choose the exact combinations</h3><p>Follow BUY or SELL/SHORT candlestick and Elliott families independently for supported intervals.</p></article>
                 <article><span>History</span><h3>Research earlier detections</h3><p>Select the interval and number of candles, then inspect recalculated outcomes and detailed evidence.</p></article>
                 <article><span>Lifecycle</span><h3>Follow a setup after detection</h3><p>See whether a subsequent close confirms, invalidates, or lets the setup expire.</p></article>
                 <article><span>Dashboard</span><h3>Review companies and signals</h3><p>Separate technical instruments, active rule combinations, recent signals, and recovery status.</p></article>
@@ -286,7 +286,7 @@
                         <th scope="row">Hanging Man</th>
                         <td>Established uptrend</td>
                         <td>Same mandatory shape as Hammer; trend context changes its interpretation.</td>
-                        <td><span class="about-signal sell">SELL</span></td>
+                        <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
                         <th scope="row">Inverted Hammer</th>
@@ -298,7 +298,7 @@
                         <th scope="row">Shooting Star</th>
                         <td>Established uptrend</td>
                         <td>Same mandatory shape as Inverted Hammer; trend context changes its interpretation.</td>
-                        <td><span class="about-signal sell">SELL</span></td>
+                        <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
                         <th scope="row">Bullish Engulfing</th>
@@ -310,7 +310,7 @@
                         <th scope="row">Bearish Engulfing</th>
                         <td>Established uptrend</td>
                         <td>Bullish candle then bearish candle; the same body-size and complete body-engulfing rules apply in reverse.</td>
-                        <td><span class="about-signal sell">SELL</span></td>
+                        <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
                         <th scope="row">Piercing Line</th>
@@ -322,7 +322,7 @@
                         <th scope="row">Dark Cloud Cover</th>
                         <td>Established uptrend</td>
                         <td>Long bullish candle then strong bearish candle; second opens above the first close, closes below its midpoint, but remains above its open.</td>
-                        <td><span class="about-signal sell">SELL</span></td>
+                        <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
                         <th scope="row">Bullish Harami</th>
@@ -334,7 +334,7 @@
                         <th scope="row">Bearish Harami</th>
                         <td>Established uptrend</td>
                         <td>Long bullish candle contains a bearish body; the same relative small-body limits apply.</td>
-                        <td><span class="about-signal sell">SELL</span></td>
+                        <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
                         <th scope="row">Morning Star</th>
@@ -346,7 +346,7 @@
                         <th scope="row">Evening Star</th>
                         <td>Established uptrend</td>
                         <td>Long bullish first candle, small middle body, strong bearish third candle, and third close below the first candle’s midpoint.</td>
-                        <td><span class="about-signal sell">SELL</span></td>
+                        <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
                         <th scope="row">Three White Soldiers</th>
@@ -358,7 +358,7 @@
                         <th scope="row">Three Black Crows</th>
                         <td>Established uptrend</td>
                         <td>Three bearish bodies with the same relative-body rules; falling closes; opens inside prior bodies; lower shadows ≤ 30% of body.</td>
-                        <td><span class="about-signal sell">SELL</span></td>
+                        <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     </tbody>
                 </table>
@@ -557,17 +557,17 @@
 
             <div class="about-lifecycle">
                 <div class="about-lifecycle-line" aria-hidden="true"></div>
-                <article><span>1</span><strong>Detected</strong><p>The candlestick pattern or Elliott turning point closes and its structural boundaries are recorded.</p></article>
-                <article><span>2</span><strong>Confirmed</strong><p>A later completed BUY candle closes above the trigger, or SELL closes below it.</p></article>
-                <article><span>3</span><strong>Invalidated</strong><p>A BUY closes below the invalidation level, or SELL closes above it.</p></article>
-                <article><span>4</span><strong>Expired</strong><p>No boundary wins within three later completed candles for candlesticks or ten for Elliott Wave signals.</p></article>
+                <article><span>1</span><strong>Detected</strong><p>The candlestick trade opens at the detection close; single-candle candidates first need their mandatory next-candle gate.</p></article>
+                <article><span>2</span><strong>Confirmed</strong><p>A completed candle closes at or beyond the interval R:R profit target, successfully closing the candlestick trade.</p></article>
+                <article><span>3</span><strong>Invalidated</strong><p>A completed candle closes at or beyond the configured stop loss, closing the candlestick trade at a loss.</p></article>
+                <article><span>4</span><strong>Expired</strong><p>Neither level closed by candle 8, so candle 8&rsquo;s close ends the candlestick trade. Elliott retains its own configured window.</p></article>
             </div>
 
             <div class="about-callout">
                 <strong>Close-based, not intraday</strong>
                 <p>
-                    High/low touches and equality with a boundary do not resolve lifecycle state.
-                    Only a later completed candle’s close can confirm or invalidate the setup.
+                    Intraday high/low touches do not resolve lifecycle state. Only a completed candle&rsquo;s
+                    close is evaluated; a close exactly on the target or stop counts as reaching that level.
                 </p>
             </div>
 
@@ -586,7 +586,7 @@
             <div class="about-section-heading">
                 <span class="about-section-number">Guide / 07</span>
                 <div>
-                    <h2 id="history-title">Historical research without pretending it is a trade</h2>
+                    <h2 id="history-title">Historical lifecycle reconstruction</h2>
                     <p>
                         Historical scans are recalculated on demand and are not persisted as alert
                         events. The selected candle count controls the visible research window.
@@ -602,31 +602,31 @@
                 </article>
                 <article>
                     <span>Daily</span>
-                    <h3>10-session outcome</h3>
-                    <p>Success requires at least 3% in the detected direction at the fixed evaluation close.</p>
+                    <h3>Factory default: 1:2</h3>
+                    <p>The daily target uses the account's configured reward-to-risk ratio. Both the ratio and each pattern's stop-loss rule can be changed in settings.</p>
                 </article>
                 <article>
                     <span>Weekly</span>
-                    <h3>4-week outcome</h3>
-                    <p>Success requires at least 4% in the detected direction at the fourth completed weekly close.</p>
+                    <h3>Factory default: 1:3</h3>
+                    <p>The weekly target uses its own account-level ratio and the selected pattern's configured stop loss.</p>
                 </article>
                 <article>
                     <span>Monthly</span>
-                    <h3>3-month outcome</h3>
-                    <p>Success requires at least 6% in the detected direction at the third completed monthly close.</p>
+                    <h3>Factory default: 1:4</h3>
+                    <p>The monthly target is configured independently from the daily and weekly ratios.</p>
                 </article>
             </div>
 
             <div class="about-outcome-grid">
-                <article class="success"><strong>Successful</strong><p>Directional return reaches or exceeds the interval threshold.</p></article>
-                <article class="failure"><strong>Unsuccessful</strong><p>Directional return reaches the same threshold in the opposite direction.</p></article>
-                <article class="inconclusive"><strong>Inconclusive</strong><p>The fixed-horizon close stays between the positive and negative thresholds.</p></article>
-                <article class="pending"><strong>Pending</strong><p>Not enough later completed candles exist to evaluate the fixed horizon.</p></article>
+                <article class="success"><strong>Confirmed</strong><p>A completed close reaches the R:R profit target.</p></article>
+                <article class="failure"><strong>Invalidated</strong><p>A completed close reaches the configured stop loss.</p></article>
+                <article class="inconclusive"><strong>Expired</strong><p>Neither level wins, so candle 8&rsquo;s close ends the trade.</p></article>
+                <article class="pending"><strong>Pending</strong><p>The trade is still open and fewer than eight outcome candles are complete.</p></article>
             </div>
 
             <p class="about-method-note">
-                Historical impact is a close-to-close research measurement. It does not model entry
-                delay, spread, slippage, fees, taxes, borrow availability, dividends, stop execution,
+                Historical lifecycle uses completed closes as deterministic entry and exit observations.
+                It does not model spread, slippage, fees, taxes, borrow availability, dividends,
                 position sizing, capital limits, or overlapping trades.
             </p>
         </section>
@@ -645,7 +645,7 @@
 
             <div class="about-limit-grid">
                 <article><span>01</span><h3>Scores are not probabilities</h3><p>The candlestick score orders recorded confluence. Existing validation does not support reading 88/100 as an 88% chance of success.</p></article>
-                <article><span>02</span><h3>Pattern names are classifications</h3><p>Correct geometric classification does not prove that the following price move will match the assigned BUY or SELL direction.</p></article>
+                <article><span>02</span><h3>Pattern names are classifications</h3><p>Correct geometric classification does not prove that the following price move will match the assigned BUY or SELL/SHORT direction.</p></article>
                 <article><span>03</span><h3>Elliott interpretation remains heuristic</h3><p>Volatility-scaled pivots improve repeatability, but different sensitivity choices can still produce competing valid structures.</p></article>
                 <article><span>04</span><h3>Market data can be incomplete</h3><p>Listings have finite histories, providers can differ, and recently formed candles may be revised before their period completes.</p></article>
                 <article><span>05</span><h3>Historical outcomes are simplified</h3><p>Fixed close-to-close measurements are not executable portfolio simulations and do not include trading frictions.</p></article>

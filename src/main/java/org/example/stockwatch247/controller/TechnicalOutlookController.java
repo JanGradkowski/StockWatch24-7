@@ -36,8 +36,14 @@ public class TechnicalOutlookController {
     @GetMapping("/stock/{symbol}/technical-outlook")
     public String page(@PathVariable String symbol, Model model, Principal principal) {
         User user = requireUser(principal);
+        String normalizedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         model.addAttribute("firstName", user.getFirstName());
-        model.addAttribute("symbol", SecurityInputValidator.requireMarketSymbol(symbol));
+        model.addAttribute("symbol", normalizedSymbol);
+        // Warm all supported native intervals while the General tab opens so
+        // later interval switches normally hit completed local data.
+        outlookService.requestBackgroundRefresh(user, normalizedSymbol, "1d");
+        outlookService.requestBackgroundRefresh(user, normalizedSymbol, "1wk");
+        outlookService.requestBackgroundRefresh(user, normalizedSymbol, "1mo");
         return "technical-outlook";
     }
 
@@ -46,8 +52,61 @@ public class TechnicalOutlookController {
     public TechnicalOutlookService.OutlookView outlook(@PathVariable String symbol,
                                                        @RequestParam(defaultValue = "1d") String interval,
                                                        Principal principal) {
-        return outlookService.getOutlook(
+        User user = requireUser(principal);
+        String normalizedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String normalizedInterval = SecurityInputValidator.requireInterval(interval);
+        outlookService.requestBackgroundRefresh(user, normalizedSymbol, normalizedInterval);
+        return outlookService.getSummaryOutlook(user, normalizedSymbol, normalizedInterval);
+    }
+
+    @GetMapping("/api/stocks/{symbol}/technical-outlook/score-report")
+    @ResponseBody
+    public TechnicalOutlookService.ScoreReportView scoreReport(
+            @PathVariable String symbol,
+            @RequestParam(defaultValue = "1d") String interval,
+            Principal principal) {
+        return outlookService.getScoreReport(
                 requireUser(principal),
+                SecurityInputValidator.requireMarketSymbol(symbol),
+                SecurityInputValidator.requireInterval(interval));
+    }
+
+    @GetMapping("/api/stocks/{symbol}/technical-outlook/history")
+    @ResponseBody
+    public TechnicalOutlookService.HistoricalChartPageView historicalChartPage(
+            @PathVariable String symbol,
+            @RequestParam(defaultValue = "1d") String interval,
+            @RequestParam long before,
+            @RequestParam(defaultValue = "500") int limit,
+            Principal principal) {
+        return outlookService.getHistoricalChartPage(
+                requireUser(principal),
+                SecurityInputValidator.requireMarketSymbol(symbol),
+                SecurityInputValidator.requireInterval(interval),
+                SecurityInputValidator.requireBeforeTimestamp(before),
+                limit);
+    }
+
+    @GetMapping("/api/stocks/{symbol}/technical-outlook/market-comparison")
+    @ResponseBody
+    public TechnicalOutlookService.MarketComparisonView marketComparison(
+            @PathVariable String symbol,
+            @RequestParam(defaultValue = "1d") String interval,
+            Principal principal) {
+        return outlookService.getMarketReport(
+                requireUser(principal),
+                SecurityInputValidator.requireMarketSymbol(symbol),
+                SecurityInputValidator.requireInterval(interval));
+    }
+
+    @GetMapping("/api/stocks/{symbol}/technical-outlook/refresh-status")
+    @ResponseBody
+    public TechnicalOutlookService.RefreshStatusView refreshStatus(
+            @PathVariable String symbol,
+            @RequestParam(defaultValue = "1d") String interval,
+            Principal principal) {
+        requireUser(principal);
+        return outlookService.refreshStatus(
                 SecurityInputValidator.requireMarketSymbol(symbol),
                 SecurityInputValidator.requireInterval(interval));
     }
@@ -65,7 +124,8 @@ public class TechnicalOutlookController {
                 user,
                 timeInterval(interval),
                 request.periods());
-        return outlookService.getOutlook(user, normalizedSymbol, interval);
+        outlookService.invalidate(user, normalizedSymbol, interval);
+        return outlookService.getSummaryOutlook(user, normalizedSymbol, interval);
     }
 
     private TimeInterval timeInterval(String interval) {

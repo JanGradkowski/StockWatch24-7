@@ -238,6 +238,12 @@ class FrontendSecurityTest {
         assertTrue(definitions.contains("Factory:"));
         assertTrue(definitions.contains("setting.description"));
         assertTrue(definitions.contains("setting.effect"));
+        assertTrue(definitions.contains("Risk-to-reward by interval"));
+        assertTrue(definitions.contains("rewardRisk."));
+        assertTrue(definitions.contains("Stop-loss rule"));
+        assertTrue(definitions.contains(".stopLossMode"));
+        assertTrue(definitions.contains(".stopLossValuePercent"));
+        assertTrue(script.contains("FIXED_ENTRY_PERCENT"));
         assertTrue(definitions.contains("@{/settings/candlestick-patterns/reset}"));
         assertFalse(script.contains("innerHTML"));
     }
@@ -260,11 +266,33 @@ class FrontendSecurityTest {
         assertTrue(outlook.contains("rollingLevels(candles, mode, period)"));
         assertTrue(outlook.contains("settings.supportResistancePeriod"));
         assertTrue(outlook.contains("technical-outlook/indicator-periods"));
+        assertTrue(outlook.contains("id=\"technicalOutlookPageLoader\""));
+        assertTrue(outlook.contains("class=\"stock-page-loader\""));
+        assertTrue(outlook.contains("requestController = new AbortController()"));
+        assertTrue(outlook.contains("}, 50000)"));
+        assertTrue(outlook.contains("technical-outlook/score-report"));
+        assertTrue(outlook.contains("technical-outlook/market-comparison"));
+        assertTrue(outlook.contains("technical-outlook/refresh-status"));
+        assertTrue(outlook.contains("technical-outlook/history?interval="));
+        assertTrue(outlook.contains("priceCandleSeries.barsInLogicalRange(range)"));
+        assertTrue(outlook.contains("barsBefore < HISTORY_PREFETCH_THRESHOLD"));
+        assertTrue(outlook.contains("visibleRange.from + added"));
+        assertTrue(outlook.contains("priceHistoryByInterval"));
+        assertTrue(outlook.contains("id=\"technicalOutlookHistoryStatus\""));
+        assertTrue(outlook.contains("ensureTabRendered(activeTab)"));
+        assertTrue(outlook.contains("loadCompanyTrades(generation, controller.signal)"));
+        assertTrue(outlook.contains("function recommendationDisplayLabel(value)"));
+        assertTrue(outlook.contains("Sell/Short"));
+        assertTrue(outlook.contains("recommendationDisplayLabel(signal.direction)"));
         assertFalse(outlook.contains("innerHTML"));
         assertTrue(controller.contains("updateIndicatorPeriods"));
+        assertTrue(controller.contains("requestBackgroundRefresh"));
+        assertTrue(controller.contains("historicalChartPage"));
         assertTrue(service.contains("String rsiLabel = \"RSI \" + rules.rsiPeriod()"));
+        assertTrue(service.contains("getHistoricalChartPage"));
         assertTrue(service.contains("String emaPairLabel = fastEmaLabel + \" / \" + slowEmaLabel"));
         assertTrue(service.contains("IndicatorSettingsView.from(rules)"));
+        assertFalse(service.contains("refresh(normalizedSymbol, interval.apiValue())"));
     }
 
     @Test
@@ -451,8 +479,10 @@ class FrontendSecurityTest {
         assertTrue(historicalCandlestickDetail.contains("id=\"signalChart\""));
         assertTrue(historicalCandlestickDetail.contains("chart.candles()"));
         assertTrue(historicalCandlestickDetail.contains("signalDetailBehavior"));
-        assertTrue(historicalCandlestickDetail.contains("Candidate validation and follow-through"));
-        assertTrue(historicalCandlestickDetail.contains("signal.lifecycle().confirmationTriggerPrice()"));
+        assertTrue(historicalCandlestickDetail.contains("Detection and trade execution"));
+        assertTrue(historicalCandlestickDetail.contains("signal.lifecycle().profitTargetPrice()"));
+        assertTrue(historicalCandlestickDetail.contains("Most favorable completed-close move"));
+        assertTrue(historicalCandlestickDetail.contains("data-trade-time-stop-candles"));
         assertFalse(about.contains("th:utext"));
         assertFalse(about.contains("style="));
         assertFalse(about.contains("<style>"));
@@ -510,6 +540,9 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"MONTHLY\" data-alert-signal=\"SELL\""));
         assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\" data-alert-signal=\"BUY\""));
         assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\" data-alert-signal=\"SELL\""));
+        assertTrue(stock.contains("function tradeSignalDisplayLabel(value, lowercase = false)"));
+        assertTrue(stock.contains("Sell/Short</div>"));
+        assertTrue(stock.contains("copy.textContent = 'Sell/Short'"));
         assertTrue(stock.contains("class=\"alert-eye-input\" type=\"checkbox\""));
         assertTrue(stock.contains("class=\"alert-panel alert-star-panel\""));
         assertTrue(stock.contains("An outlined star is not followed; a filled star is followed."));
@@ -605,6 +638,12 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("signal.trendStartTimestamp"));
         assertTrue(stock.contains("historicalCandlestickDetailUrl(signal, null, true)"));
         assertTrue(stock.contains("activeHistoricalCandlestickSignals.length"));
+        assertTrue(stock.contains("function historicalCandlestickCardOutcome(signal)"));
+        assertTrue(stock.contains("Return at sell target"));
+        assertTrue(stock.contains("Stop loss reached"));
+        assertTrue(stock.contains("Return at candle ${timeStopCandles} time stop"));
+        assertTrue(stock.contains("Potential return at sell target"));
+        assertTrue(stock.contains("function historicalCandlestickDirectionalReturn(signal, exitPrice)"));
         assertTrue(stock.contains("reopenHistoricalCandlestickResultsFromUrl"));
 
         String navbar = Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html"));
@@ -995,19 +1034,17 @@ class FrontendSecurityTest {
         assertTrue(archive.contains("value=\"confidence\""));
         assertTrue(archive.contains("value=\"interval\""));
         assertTrue(archive.contains("value=\"status\""));
-        assertTrue(archive.contains("value=\"best-return\""));
-        assertTrue(archive.contains("value=\"worst-return\""));
+        assertTrue(archive.contains("value=\"trade-return\""));
         assertTrue(archive.contains("archive.groupKey"));
         assertTrue(archive.contains("signal.hasBeenRead()"));
         assertTrue(archive.contains("Signal status"));
         assertTrue(archive.contains("Confidence score"));
         assertTrue(archive.contains("signal.lifecycle().label()"));
-        assertTrue(archive.contains("entry.bestDirectionalMovePercent()"));
-        assertTrue(archive.contains("entry.worstDirectionalMovePercent()"));
-        assertTrue(archive.contains("From signal candle close"));
-        assertFalse(archive.contains("Through resolution candle"));
-        assertFalse(archive.contains("entry.resultWindowLabel()"));
-        assertTrue(archive.contains("direction-aware moves from the applicable measurement start"));
+        assertTrue(archive.contains("entry.outcome().valueLabel()"));
+        assertTrue(archive.contains("entry.outcome().priceDetail()"));
+        assertTrue(archive.contains("sell target, configured stop loss, or candle 8 time-stop return"));
+        assertFalse(archive.contains("entry.bestDirectionalMovePercent()"));
+        assertFalse(archive.contains("entry.worstDirectionalMovePercent()"));
         assertTrue(archive.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
         assertTrue(archive.contains("@{/signals/delete}"));
         assertTrue(archive.contains("name=\"signalIds\""));
@@ -1081,7 +1118,7 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("Favorable move in the signal direction"));
         assertTrue(signalDetail.contains("Adverse move against the signal"));
         assertTrue(signalDetail.contains("Applicable measurement start"));
-        assertTrue(signalDetail.contains("text: `${tradeSignal} measurement start`"));
+        assertTrue(signalDetail.contains("text: `${tradeSignal === 'SELL' ? 'SELL/SHORT' : tradeSignal} measurement start`"));
         assertTrue(signalDetail.contains("color: colors.signalStart"));
         assertTrue(signalDetail.contains("Best exit or re-entry in the selected window"));
         assertTrue(signalDetail.contains("id=\"signalChart\""));
@@ -1119,9 +1156,10 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("detail.text()"));
         assertTrue(signalDetail.contains("class=\"evidence-detail-list\""));
         assertTrue(signalDetail.contains("Detailed evidence was not stored for this signal"));
-        assertTrue(signalDetail.contains("Observed price outcome"));
+        assertTrue(signalDetail.contains("Close-based trade outcome"));
         assertTrue(signalDetail.contains("signal.observedOutcome().directionalReturnPercent()"));
-        assertTrue(signalDetail.contains("From signal candle close"));
+        assertTrue(signalDetail.contains("Most favorable completed-close move"));
+        assertTrue(signalDetail.contains("data-trade-target"));
         assertFalse(signalDetail.contains("result-measurement-basis"));
         assertFalse(signalDetail.contains("th:utext"));
         assertFalse(signalDetail.contains("style="));

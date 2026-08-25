@@ -17,9 +17,11 @@ import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedS
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -265,10 +267,51 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.DETECTED);
         assertThat(event.getPatternHigh()).isEqualTo(110.0);
         assertThat(event.getPatternLow()).isEqualTo(88.0);
-        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(110.0);
+        assertThat(event.getTradeEntryPrice()).isEqualTo(107.0);
+        assertThat(event.getStopLossPrice()).isEqualTo(88.0);
+        assertThat(event.getProfitTargetPrice()).isEqualTo(145.0);
+        assertThat(event.getRewardRiskRatio()).isEqualTo(2.0);
+        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(145.0);
         assertThat(event.getInvalidationPrice()).isEqualTo(88.0);
-        assertThat(event.getConfirmationWindowCandles()).isEqualTo(3);
+        assertThat(event.getConfirmationWindowCandles()).isEqualTo(8);
         assertThat(event.isLifecycleTracked()).isTrue();
+    }
+
+    @Test
+    void initializesNewSignalWithTheUsersPatternStopAndIntervalRewardRatioSnapshot() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3);
+        AlertEvent event = new AlertEvent();
+        DetectedSignal signal = signal(CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY, 200L, 107.0);
+        var factory = CandlestickPatternPreferencesService.factoryPreferences();
+        var profiles = factory.profiles().stream().map(profile ->
+                profile.pattern() == CandlePattern.BULLISH_ENGULFING
+                        ? new CandlestickPatternPreferencesService.PatternProfile(
+                        profile.pattern(), profile.key(), profile.label(), profile.formation(),
+                        profile.description(), profile.fixedRules(), profile.trendRequirement(),
+                        profile.factoryTrendRequirement(), profile.settings(),
+                        CandlestickPatternPreferencesService.StopLossMode.FIXED_ENTRY_PERCENT,
+                        5.0, false)
+                        : profile).toList();
+        var preferences = new CandlestickPatternPreferencesService.PreferencesView(
+                factory.version(), true, profiles,
+                Map.of(TimeInterval.DAILY, 3.5, TimeInterval.WEEKLY, 3.0, TimeInterval.MONTHLY, 4.0),
+                null);
+
+        service.initializeTracking(event, signal, List.of(
+                candle(100L, 105.0, 110.0, 90.0, 95.0),
+                candle(200L, 94.0, 108.0, 88.0, 107.0)
+        ), null, preferences);
+
+        assertThat(event.getStructuralStopPrice()).isEqualTo(88.0);
+        assertThat(event.getStopLossMode()).isEqualTo("FIXED_ENTRY_PERCENT");
+        assertThat(event.getStopLossValuePercent()).isEqualTo(5.0);
+        assertThat(event.getStopLossPrice()).isEqualTo(101.65);
+        assertThat(event.getRewardRiskRatio()).isEqualTo(3.5);
+        assertThat(event.getProfitTargetPrice()).isCloseTo(125.725, within(0.0000001));
+        assertThat(event.getTradePlanVersion()).isEqualTo("CANDLE_RR_V2");
     }
 
     @Test
@@ -287,7 +330,10 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.POTENTIAL);
         assertThat(event.getConfirmationTriggerPrice()).isEqualTo(101.0);
         assertThat(event.getInvalidationPrice()).isEqualTo(105.0);
-        assertThat(event.getConfirmationWindowCandles()).isEqualTo(10);
+        assertThat(event.getStopLossPrice()).isEqualTo(105.0);
+        assertThat(event.getRewardRiskRatio()).isEqualTo(2.0);
+        assertThat(event.getProfitTargetPrice()).isNull();
+        assertThat(event.getConfirmationWindowCandles()).isEqualTo(8);
         assertThat(event.getDetectionCandleTimestamp()).isNull();
     }
 
@@ -459,7 +505,7 @@ class CandlestickSignalLifecycleServiceTest {
     }
 
     @Test
-    void exactBoundaryClosesDoNotConfirmOrInvalidateAndEventuallyExpire() {
+    void exactTargetCloseConfirmsTheTrade() {
         Fixture fixture = fixture(TradeSignal.BUY, 105.0, 95.0);
         when(fixture.repository().findTrackedLifecycleEvents(
                 "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.DETECTED))
@@ -472,9 +518,9 @@ class CandlestickSignalLifecycleServiceTest {
                 candle(400L, 99.0, 104.0, 98.0, 102.0)
         ));
 
-        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.EXPIRED);
-        assertThat(fixture.event().getResolutionCandleOffset()).isEqualTo(3);
-        assertThat(fixture.event().getResolutionCandleTimestamp()).isEqualTo(400L);
+        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.CONFIRMED);
+        assertThat(fixture.event().getResolutionCandleOffset()).isEqualTo(1);
+        assertThat(fixture.event().getResolutionCandleTimestamp()).isEqualTo(200L);
     }
 
     @Test

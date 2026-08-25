@@ -448,7 +448,12 @@ public class ScheduledAlertService {
         event.setConfidenceReasons(personalizedSignal.reasons());
         event.setClosePrice(signal.closePrice());
         if (signalFamily(signal) == AlertPatternFamily.CANDLESTICK) {
-            lifecycleService.initializeTracking(event, personalizedSignal, candles, profile);
+            CandlestickPatternPreferencesService.PreferencesView patternPreferences =
+                    patternPreferencesService == null
+                            ? CandlestickPatternPreferencesService.factoryPreferences()
+                            : patternPreferencesService.get(rule.getUser());
+            lifecycleService.initializeTracking(
+                    event, personalizedSignal, candles, profile, patternPreferences);
         } else {
             lifecycleService.initializeElliottTracking(event, elliottStructure, profile);
         }

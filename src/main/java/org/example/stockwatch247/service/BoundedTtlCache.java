@@ -3,6 +3,7 @@ package org.example.stockwatch247.service;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /** Small synchronized LRU/TTL cache with a strict maximum entry count. */
 final class BoundedTtlCache<K, V> {
@@ -39,6 +40,12 @@ final class BoundedTtlCache<K, V> {
 
     synchronized int size() {
         return entries.size();
+    }
+
+    synchronized void removeIf(Predicate<K> predicate) {
+        if (predicate != null) {
+            entries.keySet().removeIf(predicate);
+        }
     }
 
     private void removeExpired(long nowEpochSeconds) {

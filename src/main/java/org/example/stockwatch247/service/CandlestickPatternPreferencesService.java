@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserCandlestickPatternPreferences;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.repository.UserCandlestickPatternPreferencesRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,10 +16,16 @@ import java.util.*;
 
 @Service
 public class CandlestickPatternPreferencesService {
-    public static final String PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V1";
+    public static final String PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V2";
+    private static final String LEGACY_PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V1";
+    private static final Map<TimeInterval, Double> FACTORY_REWARD_RISK = Map.of(
+            TimeInterval.DAILY, 2.0,
+            TimeInterval.WEEKLY, 3.0,
+            TimeInterval.MONTHLY, 4.0);
     private static final List<PatternDefinition> FACTORY = factoryDefinitions();
     private static final PreferencesView FACTORY_VIEW = materialize(
-            FACTORY.stream().map(CandlestickPatternPreferencesService::stored).toList(), null);
+            FACTORY.stream().map(CandlestickPatternPreferencesService::stored).toList(),
+            FACTORY_REWARD_RISK, null);
 
     private final UserCandlestickPatternPreferencesRepository repository;
     private final ObjectMapper objectMapper;
@@ -40,7 +47,7 @@ public class CandlestickPatternPreferencesService {
         if (user == null) throw new IllegalArgumentException("An account is required.");
         if (form == null) throw new IllegalArgumentException("Candlestick pattern settings are required.");
         List<StoredProfile> profiles = FACTORY.stream().map(definition -> parse(form, definition)).toList();
-        return persist(user, profiles);
+        return persist(user, profiles, parseRewardRisk(form));
     }
 
     @Transactional
@@ -54,7 +61,7 @@ public class CandlestickPatternPreferencesService {
         List<StoredProfile> profiles = current.profiles().stream()
                 .map(profile -> profile.pattern() == pattern ? stored(factory) : stored(profile))
                 .toList();
-        return persist(user, profiles);
+        return persist(user, profiles, current.rewardRiskRatios());
     }
 
     public static PreferencesView factoryPreferences() {
@@ -84,27 +91,60 @@ public class CandlestickPatternPreferencesService {
             values.put(numeric.key(), value);
         }
         validateRelationships(definition, values);
-        return new StoredProfile(definition.pattern(), trend, values);
+        StopLossMode stopLossMode = StopLossMode.STRUCTURAL_BUFFER;
+        double stopLossValuePercent = 0.0;
+        if (definition.pattern() != CandlePattern.DOJI) {
+            try {
+                stopLossMode = StopLossMode.valueOf(required(form, prefix + "stopLossMode")
+                        .toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                throw new IllegalArgumentException(definition.label() + ": choose a valid stop-loss method.");
+            }
+            stopLossValuePercent = decimal(form, prefix + "stopLossValuePercent",
+                    definition.label() + " stop-loss value");
+            validateStopLoss(definition.label(), stopLossMode, stopLossValuePercent);
+        }
+        return new StoredProfile(definition.pattern(), trend, values, stopLossMode, stopLossValuePercent);
     }
 
-    private PreferencesView persist(User user, List<StoredProfile> profiles) {
-        validateStored(profiles);
+    private Map<TimeInterval, Double> parseRewardRisk(MultiValueMap<String, String> form) {
+        Map<TimeInterval, Double> ratios = new EnumMap<>(TimeInterval.class);
+        for (TimeInterval interval : List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY)) {
+            double value = decimal(form, "rewardRisk." + interval.name().toLowerCase(Locale.ROOT),
+                    intervalLabel(interval) + " risk-to-reward ratio");
+            if (value < 0.1 || value > 20.0) {
+                throw new IllegalArgumentException(intervalLabel(interval)
+                        + " risk-to-reward ratio must be between 0.1 and 20.");
+            }
+            ratios.put(interval, value);
+        }
+        return Map.copyOf(ratios);
+    }
+
+    private PreferencesView persist(User user, List<StoredProfile> profiles,
+                                    Map<TimeInterval, Double> rewardRiskRatios) {
+        validateStored(profiles, rewardRiskRatios);
         UserCandlestickPatternPreferences entity = repository.findByUser(user)
                 .orElseGet(UserCandlestickPatternPreferences::new);
         entity.setUser(user);
         entity.setProfileVersion(PROFILE_VERSION);
-        entity.setPreferencesPayload(write(new StoredPreferences(PROFILE_VERSION, profiles)));
+        entity.setPreferencesPayload(write(new StoredPreferences(
+                PROFILE_VERSION, profiles, rewardRiskRatios)));
         entity.setUpdatedAt(Instant.now());
         repository.save(entity);
-        return materialize(profiles, entity.getUpdatedAt());
+        return materialize(profiles, rewardRiskRatios, entity.getUpdatedAt());
     }
 
     private PreferencesView read(UserCandlestickPatternPreferences entity) {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
-            if (!PROFILE_VERSION.equals(stored.version())) return factoryPreferences();
-            validateStored(stored.profiles());
-            return materialize(stored.profiles(), entity.getUpdatedAt());
+            if (!PROFILE_VERSION.equals(stored.version()) && !LEGACY_PROFILE_VERSION.equals(stored.version())) {
+                return factoryPreferences();
+            }
+            List<StoredProfile> profiles = normalizeProfiles(stored.profiles());
+            Map<TimeInterval, Double> ratios = normalizeRewardRisk(stored.rewardRiskRatios());
+            validateStored(profiles, ratios);
+            return materialize(profiles, ratios, entity.getUpdatedAt());
         } catch (JsonProcessingException | IllegalArgumentException exception) {
             return factoryPreferences();
         }
@@ -115,7 +155,9 @@ public class CandlestickPatternPreferencesService {
         catch (JsonProcessingException exception) { throw new IllegalStateException("Could not save candlestick settings.", exception); }
     }
 
-    private static PreferencesView materialize(List<StoredProfile> storedProfiles, Instant updatedAt) {
+    private static PreferencesView materialize(List<StoredProfile> storedProfiles,
+                                               Map<TimeInterval, Double> rewardRiskRatios,
+                                               Instant updatedAt) {
         List<PatternProfile> profiles = FACTORY.stream().map(definition -> {
             StoredProfile stored = storedProfiles.stream().filter(item -> item.pattern() == definition.pattern())
                     .findFirst().orElseThrow();
@@ -124,16 +166,23 @@ public class CandlestickPatternPreferencesService {
                     item.step(), stored.values().get(item.key()), item.factoryValue())).toList();
             boolean factory = stored.trendRequirement() == definition.factoryTrendRequirement()
                     && definition.settings().stream().allMatch(item ->
-                    Double.compare(stored.values().get(item.key()), item.factoryValue()) == 0);
+                    Double.compare(stored.values().get(item.key()), item.factoryValue()) == 0)
+                    && stored.stopLossMode() == StopLossMode.STRUCTURAL_BUFFER
+                    && Double.compare(stored.stopLossValuePercent(), 0.0) == 0;
             return new PatternProfile(definition.pattern(), definition.key(), definition.label(), definition.formation(),
                     definition.description(), definition.fixedRules(), stored.trendRequirement(),
-                    definition.factoryTrendRequirement(), settings, factory);
+                    definition.factoryTrendRequirement(), settings, stored.stopLossMode(),
+                    stored.stopLossValuePercent(), factory);
         }).toList();
-        return new PreferencesView(PROFILE_VERSION, profiles.stream().anyMatch(profile -> !profile.factoryProfile()),
-                profiles, updatedAt);
+        boolean customRatios = FACTORY_REWARD_RISK.entrySet().stream().anyMatch(entry ->
+                Double.compare(rewardRiskRatios.get(entry.getKey()), entry.getValue()) != 0);
+        return new PreferencesView(PROFILE_VERSION,
+                customRatios || profiles.stream().anyMatch(profile -> !profile.factoryProfile()),
+                profiles, rewardRiskRatios, updatedAt);
     }
 
-    private static void validateStored(List<StoredProfile> profiles) {
+    private static void validateStored(List<StoredProfile> profiles,
+                                       Map<TimeInterval, Double> rewardRiskRatios) {
         if (profiles == null || profiles.size() != FACTORY.size())
             throw new IllegalArgumentException("Every candlestick pattern definition is required.");
         for (PatternDefinition definition : FACTORY) {
@@ -142,12 +191,55 @@ public class CandlestickPatternPreferencesService {
             if (profile.trendRequirement() == null || profile.values() == null
                     || profile.values().size() != definition.settings().size())
                 throw new IllegalArgumentException("An incomplete candlestick pattern definition was saved.");
+            if (profile.stopLossMode() == null || profile.stopLossValuePercent() == null) {
+                throw new IllegalArgumentException("An incomplete candlestick stop-loss rule was saved.");
+            }
+            if (definition.pattern() != CandlePattern.DOJI) {
+                validateStopLoss(definition.label(), profile.stopLossMode(), profile.stopLossValuePercent());
+            }
             for (NumericDefinition numeric : definition.settings()) {
                 Double value = profile.values().get(numeric.key());
                 if (value == null || !Double.isFinite(value) || value < numeric.min() || value > numeric.max())
                     throw new IllegalArgumentException("A candlestick threshold is outside its supported range.");
             }
             validateRelationships(definition, profile.values());
+        }
+        if (rewardRiskRatios == null || !rewardRiskRatios.keySet().containsAll(FACTORY_REWARD_RISK.keySet())) {
+            throw new IllegalArgumentException("Every candlestick risk-to-reward ratio is required.");
+        }
+        FACTORY_REWARD_RISK.keySet().forEach(interval -> {
+            Double value = rewardRiskRatios.get(interval);
+            if (value == null || !Double.isFinite(value) || value < 0.1 || value > 20.0) {
+                throw new IllegalArgumentException("A candlestick risk-to-reward ratio is outside its supported range.");
+            }
+        });
+    }
+
+    private static List<StoredProfile> normalizeProfiles(List<StoredProfile> profiles) {
+        if (profiles == null) return List.of();
+        return profiles.stream().map(profile -> new StoredProfile(
+                profile.pattern(), profile.trendRequirement(), profile.values(),
+                profile.stopLossMode() == null ? StopLossMode.STRUCTURAL_BUFFER : profile.stopLossMode(),
+                profile.stopLossValuePercent() == null ? 0.0 : profile.stopLossValuePercent())).toList();
+    }
+
+    private static Map<TimeInterval, Double> normalizeRewardRisk(Map<TimeInterval, Double> ratios) {
+        Map<TimeInterval, Double> normalized = new EnumMap<>(TimeInterval.class);
+        normalized.putAll(FACTORY_REWARD_RISK);
+        if (ratios != null) ratios.forEach((interval, value) -> {
+            if (interval != null && value != null) normalized.put(interval, value);
+        });
+        return Map.copyOf(normalized);
+    }
+
+    private static void validateStopLoss(String label, StopLossMode mode, double value) {
+        if (!Double.isFinite(value)) {
+            throw new IllegalArgumentException(label + " stop-loss value must be a number.");
+        }
+        double minimum = mode == StopLossMode.FIXED_ENTRY_PERCENT ? 0.1 : 0.0;
+        if (value < minimum || value > 50.0) {
+            throw new IllegalArgumentException(label + " stop-loss value must be between "
+                    + display(minimum) + " and 50 percent.");
         }
     }
 
@@ -160,12 +252,14 @@ public class CandlestickPatternPreferencesService {
     private static StoredProfile stored(PatternDefinition definition) {
         Map<String, Double> values = new LinkedHashMap<>();
         definition.settings().forEach(setting -> values.put(setting.key(), setting.factoryValue()));
-        return new StoredProfile(definition.pattern(), definition.factoryTrendRequirement(), values);
+        return new StoredProfile(definition.pattern(), definition.factoryTrendRequirement(), values,
+                StopLossMode.STRUCTURAL_BUFFER, 0.0);
     }
     private static StoredProfile stored(PatternProfile profile) {
         Map<String, Double> values = new LinkedHashMap<>();
         profile.settings().forEach(setting -> values.put(setting.key(), setting.value()));
-        return new StoredProfile(profile.pattern(), profile.trendRequirement(), values);
+        return new StoredProfile(profile.pattern(), profile.trendRequirement(), values,
+                profile.stopLossMode(), profile.stopLossValuePercent());
     }
     private static PatternDefinition definition(CandlePattern pattern) {
         return FACTORY.stream().filter(item -> item.pattern() == pattern).findFirst()
@@ -175,6 +269,18 @@ public class CandlestickPatternPreferencesService {
         String value = form.getFirst(key);
         if (value == null || value.isBlank()) throw new IllegalArgumentException("Every candlestick setting must be submitted.");
         return value.trim();
+    }
+    private static double decimal(MultiValueMap<String, String> form, String key, String label) {
+        try {
+            double value = Double.parseDouble(required(form, key));
+            if (!Double.isFinite(value)) throw new NumberFormatException();
+            return value;
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(label + " must be a number.");
+        }
+    }
+    private static String intervalLabel(TimeInterval interval) {
+        return interval.name().substring(0, 1) + interval.name().substring(1).toLowerCase(Locale.ROOT);
     }
     private static String display(double value) { return value == Math.rint(value) ? Long.toString((long) value) : Double.toString(value); }
 
@@ -261,25 +367,81 @@ public class CandlestickPatternPreferencesService {
         TrendRequirement(String label) { this.label = label; }
         public String label() { return label; }
     }
+    public enum StopLossMode {
+        STRUCTURAL_BUFFER("Textbook structural price + buffer",
+                "Starts at the pattern's textbook invalidation high or low, then moves farther away by the selected percentage of entry price."),
+        FIXED_ENTRY_PERCENT("Fixed percentage from entry",
+                "Places the stop the selected adverse percentage away from the detection entry close.");
+        private final String label;
+        private final String description;
+        StopLossMode(String label, String description) {
+            this.label = label;
+            this.description = description;
+        }
+        public String label() { return label; }
+        public String description() { return description; }
+    }
     public record NumericSetting(String key, String label, String description, String unit, String effect,
                                  double min, double max, double step, double value, double factoryValue) {}
     public record PatternProfile(CandlePattern pattern, String key, String label, String formation,
                                  String description, String fixedRules, TrendRequirement trendRequirement,
                                  TrendRequirement factoryTrendRequirement, List<NumericSetting> settings,
+                                 StopLossMode stopLossMode, double stopLossValuePercent,
                                  boolean factoryProfile) {
+        public PatternProfile(CandlePattern pattern, String key, String label, String formation,
+                              String description, String fixedRules, TrendRequirement trendRequirement,
+                              TrendRequirement factoryTrendRequirement, List<NumericSetting> settings,
+                              boolean factoryProfile) {
+            this(pattern, key, label, formation, description, fixedRules, trendRequirement,
+                    factoryTrendRequirement, settings, StopLossMode.STRUCTURAL_BUFFER, 0.0,
+                    factoryProfile);
+        }
         public double value(String key) { return settings.stream().filter(item -> item.key().equals(key))
                 .findFirst().orElseThrow().value(); }
         public double fraction(String key) { return value(key) / 100.0; }
+        public boolean directional() { return pattern != CandlePattern.DOJI; }
+        public String stopLossValueLabel() {
+            return stopLossMode == StopLossMode.STRUCTURAL_BUFFER
+                    ? "Additional buffer (%)" : "Distance from entry (%)";
+        }
+        public String factoryStopLossLabel() { return "Textbook structural price (0% buffer)"; }
     }
-    public record PreferencesView(String version, boolean custom, List<PatternProfile> profiles, Instant updatedAt) {
+    public record PreferencesView(String version, boolean custom, List<PatternProfile> profiles,
+                                  Map<TimeInterval, Double> rewardRiskRatios, Instant updatedAt) {
+        public PreferencesView(String version, boolean custom, List<PatternProfile> profiles,
+                               Instant updatedAt) {
+            this(version, custom, profiles, FACTORY_REWARD_RISK, updatedAt);
+        }
+        public PreferencesView {
+            profiles = List.copyOf(profiles);
+            rewardRiskRatios = normalizeRewardRisk(rewardRiskRatios);
+        }
         public PatternProfile profile(CandlePattern pattern) { return profiles.stream().filter(item -> item.pattern() == pattern)
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Unsupported candlestick pattern.")); }
+        public double rewardRiskRatio(TimeInterval interval) {
+            return rewardRiskRatios.getOrDefault(interval, FACTORY_REWARD_RISK.get(TimeInterval.DAILY));
+        }
+        public double factoryRewardRiskRatio(TimeInterval interval) {
+            return FACTORY_REWARD_RISK.get(interval);
+        }
+        public List<RewardRiskProfile> rewardRiskProfiles() {
+            return List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY).stream()
+                    .map(interval -> new RewardRiskProfile(
+                            interval, interval.name().toLowerCase(Locale.ROOT), intervalLabel(interval),
+                            rewardRiskRatio(interval), factoryRewardRiskRatio(interval)))
+                    .toList();
+        }
     }
+    public record RewardRiskProfile(TimeInterval interval, String key, String label,
+                                    double value, double factoryValue) {}
     private record NumericDefinition(String key, String label, String description, String unit, String effect,
                                      double min, double max, double step, double factoryValue) {}
     private record PatternDefinition(CandlePattern pattern, String key, String label, String formation,
                                      String description, String fixedRules, TrendRequirement factoryTrendRequirement,
                                      List<NumericDefinition> settings) {}
-    private record StoredProfile(CandlePattern pattern, TrendRequirement trendRequirement, Map<String, Double> values) {}
-    private record StoredPreferences(String version, List<StoredProfile> profiles) {}
+    private record StoredProfile(CandlePattern pattern, TrendRequirement trendRequirement,
+                                 Map<String, Double> values, StopLossMode stopLossMode,
+                                 Double stopLossValuePercent) {}
+    private record StoredPreferences(String version, List<StoredProfile> profiles,
+                                     Map<TimeInterval, Double> rewardRiskRatios) {}
 }

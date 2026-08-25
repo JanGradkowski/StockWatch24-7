@@ -288,7 +288,7 @@ public class AnalysisPreferencesService {
                                            int volumeProfile) {
         return new IntervalProfile(
                 key, interval, label,
-                3, 10, 0.0, 0.0,
+                8, 10, 0.0, 0.0,
                 4, 6, 3.0, 0.25, true,
                 rsi, 30.0, 70.0, true,
                 atr,

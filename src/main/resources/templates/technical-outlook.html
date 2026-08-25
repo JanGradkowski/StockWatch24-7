@@ -11,7 +11,52 @@
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
 </head>
-<body>
+<body class="stock-is-loading">
+<div id="technicalOutlookPageLoader"
+     class="stock-page-loader"
+     role="status"
+     aria-live="polite"
+     aria-atomic="true"
+     aria-labelledby="technicalOutlookLoaderTitle">
+  <div class="stock-loader-grid" aria-hidden="true"></div>
+  <div class="stock-loader-glow stock-loader-glow-primary" aria-hidden="true"></div>
+  <div class="stock-loader-glow stock-loader-glow-violet" aria-hidden="true"></div>
+  <div class="stock-loader-content">
+    <div class="stock-loader-brand">
+      <span class="logo-mark" aria-hidden="true"></span>
+      <span class="logo-word">StockWatch <span>24/7</span></span>
+    </div>
+    <div class="stock-loader-market" aria-hidden="true">
+      <svg viewBox="0 0 620 230" focusable="false">
+        <g class="stock-loader-chart-grid">
+          <line x1="20" y1="45" x2="600" y2="45"/><line x1="20" y1="115" x2="600" y2="115"/>
+          <line x1="20" y1="185" x2="600" y2="185"/>
+        </g>
+        <g class="stock-loader-candles">
+          <line x1="62" y1="90" x2="62" y2="179"/><rect x="52" y="112" width="20" height="42"/>
+          <line x1="122" y1="107" x2="122" y2="194"/><rect x="112" y="128" width="20" height="43"/>
+          <line x1="182" y1="68" x2="182" y2="163"/><rect x="172" y="94" width="20" height="48"/>
+          <line x1="242" y1="52" x2="242" y2="139"/><rect x="232" y="73" width="20" height="43"/>
+          <line x1="302" y1="74" x2="302" y2="159"/><rect x="292" y="96" width="20" height="39"/>
+          <line x1="362" y1="41" x2="362" y2="126"/><rect x="352" y="62" width="20" height="42"/>
+          <line x1="422" y1="24" x2="422" y2="104"/><rect x="412" y="44" width="20" height="38"/>
+          <line x1="482" y1="47" x2="482" y2="131"/><rect x="472" y="67" width="20" height="42"/>
+          <line x1="542" y1="20" x2="542" y2="102"/><rect x="532" y="40" width="20" height="39"/>
+        </g>
+        <path class="stock-loader-path" d="M32 178 C92 166, 122 186, 182 139 S267 135, 322 100 S402 91, 452 61 S531 60, 590 28"/>
+        <circle class="stock-loader-path-point" cx="590" cy="28" r="6"/>
+      </svg>
+      <span class="stock-loader-scan-line"></span>
+    </div>
+    <div class="stock-loader-copy">
+      <span class="stock-loader-kicker">Cached technical analysis</span>
+      <h1 id="technicalOutlookLoaderTitle">Building <span th:text="${symbol}">AAPL</span> outlook</h1>
+      <p id="technicalOutlookLoaderStatus">Reading completed candles and technical evidence...</p>
+    </div>
+    <div class="stock-loader-progress" aria-hidden="true"><span></span></div>
+    <p class="stock-loader-note">Completed candles only &middot; Cached-first &middot; Interval-aware</p>
+  </div>
+</div>
 <div class="bg-animation" aria-hidden="true">
   <div class="glow-orb orb-1"></div>
   <div class="glow-orb orb-2"></div>
@@ -20,7 +65,8 @@
 
 <main id="technicalOutlookPage"
       class="page-container signal-detail-page technical-outlook-page"
-      th:attr="data-symbol=${symbol}">
+      th:attr="data-symbol=${symbol}"
+      aria-busy="true">
   <header class="signal-report-header technical-outlook-header">
     <div class="signal-report-heading">
       <div class="signal-report-eyebrow">Interval-aware technical workspace</div>
@@ -56,7 +102,10 @@
             aria-selected="false" aria-controls="virtualTradesPanel" data-outlook-tab="trades">Demo Trading</button>
   </nav>
 
-  <div id="outlookError" class="technical-outlook-error" role="alert" hidden></div>
+  <div id="outlookError" class="technical-outlook-error" role="alert" hidden>
+    <span id="outlookErrorMessage"></span>
+    <button id="retryOutlook" type="button" class="btn-secondary">Try again</button>
+  </div>
   <div id="outlookLoading" class="technical-outlook-loading" role="status">
     <span class="technical-outlook-loader" aria-hidden="true"></span>
     <span>Building the technical outlook…</span>
@@ -73,7 +122,7 @@
       <div class="technical-outlook-votes" aria-label="Headline votes">
         <div class="technical-vote buy"><span>Buy</span><strong id="headlineBuy">—</strong></div>
         <div class="technical-vote neutral"><span>Neutral</span><strong id="headlineNeutral">—</strong></div>
-        <div class="technical-vote sell"><span>Sell</span><strong id="headlineSell">—</strong></div>
+        <div class="technical-vote sell"><span>Sell/Short</span><strong id="headlineSell">—</strong></div>
       </div>
       <div id="categoryVoteGrid" class="technical-category-grid"></div>
     </section>
@@ -109,6 +158,7 @@
         <span id="longSmaLegend" class="legend-long">SMA 200</span><span id="bollingerLegend" class="legend-band">Bollinger 20, 2σ</span>
         <span id="vwapLegend" class="legend-vwap">VWAP 20</span><span id="levelLegend" class="legend-level">Support / resistance 20</span>
       </div>
+      <p id="technicalOutlookHistoryStatus" class="technical-outlook-freshness" role="status" aria-live="polite"></p>
       <div id="technicalOutlookPriceChart" class="technical-outlook-price-chart" aria-label="Candlestick technical outlook chart"></div>
       <p class="technical-chart-note">Markers identify demo trades, recent technical signals, <span id="rsiMarkerLabel">RSI 14</span> state changes, and followed congressional or insider activity. Each outlook uses only independent Elliott structures detected natively on its daily, weekly, or monthly interval; fractal subwaves are visualization-only.</p>
     </section>
@@ -267,17 +317,72 @@
   const encodedSymbol = encodeURIComponent(symbol);
   let currentInterval = '1d';
   let requestController = null;
+  let requestGeneration = 0;
   let priceChart = null;
   let priceFibonacciTool = null;
   let ratioChart = null;
   let miniCharts = [];
   let priceSeriesByOverlay = new Map();
+  let priceSeriesByField = new Map();
+  let priceCandleSeries = null;
+  let priceRangeListener = null;
+  let historyRequestController = null;
+  let elliottRequestGeneration = 0;
   let lastOutlook = null;
   let companyTrades = [];
   let pendingTradeSide = 'BUY';
   let virtualSizeMode = 'none';
   let pendingTradeRequestId = null;
   let pendingTradeToDelete = null;
+  let scoreReportOutlook = null;
+  let marketReportOutlook = null;
+  const outlookPageLoader = document.getElementById('technicalOutlookPageLoader');
+  const outlookLoaderStatus = document.getElementById('technicalOutlookLoaderStatus');
+  let outlookLoaderFinished = false;
+  let outlookLoaderSafetyTimer = null;
+  const HISTORY_PAGE_LIMIT = 500;
+  const HISTORY_PREFETCH_THRESHOLD = 30;
+  const INITIAL_VISIBLE_CANDLES = 140;
+  const priceHistoryByInterval = new Map();
+
+  function updateOutlookLoadingStatus(message) {
+    if (!outlookLoaderFinished && outlookLoaderStatus) outlookLoaderStatus.textContent = message;
+  }
+
+  function finishOutlookPageLoading(message) {
+    if (outlookLoaderFinished) return;
+    outlookLoaderFinished = true;
+    if (outlookLoaderSafetyTimer) window.clearTimeout(outlookLoaderSafetyTimer);
+    if (outlookLoaderStatus) outlookLoaderStatus.textContent = message;
+    page.setAttribute('aria-busy', 'false');
+    document.body.classList.remove('stock-is-loading');
+    if (outlookPageLoader) {
+      outlookPageLoader.classList.add('is-complete');
+      window.setTimeout(() => outlookPageLoader.remove(), 700);
+    }
+  }
+
+  function showOutlookError(message) {
+    document.getElementById('outlookErrorMessage').textContent = message;
+    document.getElementById('outlookError').hidden = false;
+  }
+
+  outlookLoaderSafetyTimer = window.setTimeout(() => {
+    requestController?.abort();
+    document.getElementById('outlookLoading').hidden = true;
+    showOutlookError('The outlook is still being refreshed. You can retry without leaving this page.');
+    finishOutlookPageLoading('The workspace opened while the background refresh continues.');
+  }, 60000);
+
+  function wait(milliseconds, signal) {
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(resolve, milliseconds);
+      signal.addEventListener('abort', () => {
+        window.clearTimeout(timer);
+        reject(new DOMException('Request cancelled', 'AbortError'));
+      }, { once: true });
+    });
+  }
 
   const colors = () => document.documentElement.dataset.theme === 'light'
           ? { text: '#26322b', grid: 'rgba(38,50,43,.09)', border: 'rgba(38,50,43,.18)',
@@ -315,6 +420,13 @@
     return Number.isFinite(numeric) ? `${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}${suffix}` : '—';
   }
 
+  function recommendationDisplayLabel(value) {
+    return String(value ?? '')
+            .replace(/\bSELL\b/g, 'SELL/SHORT')
+            .replace(/\bSell\b/g, 'Sell/Short')
+            .replace(/\bsell\b/g, 'sell/short');
+  }
+
   function element(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -323,8 +435,14 @@
   }
 
   function clearCharts() {
+    historyRequestController?.abort();
+    historyRequestController = null;
+    elliottRequestGeneration++;
     priceFibonacciTool?.destroy();
     priceFibonacciTool = null;
+    if (priceChart && priceRangeListener) {
+      priceChart.timeScale().unsubscribeVisibleLogicalRangeChange(priceRangeListener);
+    }
     if (priceChart) priceChart.remove();
     if (ratioChart) ratioChart.remove();
     miniCharts.forEach(chart => chart.remove());
@@ -332,40 +450,100 @@
     ratioChart = null;
     miniCharts = [];
     priceSeriesByOverlay = new Map();
+    priceSeriesByField = new Map();
+    priceCandleSeries = null;
+    priceRangeListener = null;
+  }
+
+  function mergeChartCandles(older, newer) {
+    const byTimestamp = new Map();
+    [...(older || []), ...(newer || [])].forEach(candle => {
+      const timestamp = Number(candle?.timestamp);
+      if (Number.isSafeInteger(timestamp) && timestamp > 0) byTimestamp.set(timestamp, candle);
+    });
+    return [...byTimestamp.values()].sort((left, right) => left.timestamp - right.timestamp);
+  }
+
+  function restoreIntervalHistory(outlook) {
+    const cached = priceHistoryByInterval.get(outlook.interval);
+    const candles = mergeChartCandles(cached?.candles, outlook.candles);
+    priceHistoryByInterval.set(outlook.interval, {
+      candles,
+      nextCursor: cached?.nextCursor ?? candles[0]?.timestamp ?? null,
+      hasMore: cached?.hasMore ?? candles.length > 0,
+      loading: false,
+      retryAttempts: cached?.retryAttempts ?? 0
+    });
+    return { ...outlook, candles };
   }
 
   async function loadOutlook(interval) {
     currentInterval = interval;
     if (requestController) requestController.abort();
     requestController = new AbortController();
+    const controller = requestController;
+    const generation = ++requestGeneration;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 50000);
     document.getElementById('outlookLoading').hidden = false;
     document.getElementById('outlookError').hidden = true;
+    updateOutlookLoadingStatus(`Building the ${interval === '1wk' ? 'weekly' : interval === '1mo' ? 'monthly' : 'daily'} cached outlook...`);
     document.querySelectorAll('[data-outlook-interval]').forEach(button =>
             button.classList.toggle('active', button.dataset.outlookInterval === interval));
     try {
-      const response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook?interval=${encodeURIComponent(interval)}`,
-              { signal: requestController.signal });
+      let response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook?interval=${encodeURIComponent(interval)}`,
+              { signal: controller.signal });
       if (!response.ok) throw new Error('The technical outlook could not be loaded.');
-      const outlook = await response.json();
-      if (!outlook.available) throw new Error('No completed candles are available for this interval yet.');
-      try {
-        const tradesResponse = await fetch(`/api/virtual-trades?symbol=${encodedSymbol}`, { signal: requestController.signal });
-        companyTrades = tradesResponse.ok ? await tradesResponse.json() : [];
-      } catch (tradeError) {
-        if (tradeError.name === 'AbortError') throw tradeError;
-        companyTrades = [];
+      let outlook = await response.json();
+      for (let attempt = 0; !outlook.available && attempt < 60; attempt++) {
+        updateOutlookLoadingStatus('Cached candles are being refreshed in the background...');
+        await wait(750, controller.signal);
+        const statusResponse = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook/refresh-status?interval=${encodeURIComponent(interval)}`,
+                { signal: controller.signal });
+        if (!statusResponse.ok) continue;
+        const status = await statusResponse.json();
+        if (status.state === 'FAILED') throw new Error('Market data providers could not complete this interval refresh.');
+        if (!status.ready) continue;
+        response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook?interval=${encodeURIComponent(interval)}`,
+                { signal: controller.signal });
+        if (!response.ok) throw new Error('The technical outlook could not be loaded.');
+        outlook = await response.json();
       }
+      if (!outlook?.available) throw new Error('No completed candles are available for this interval yet.');
+      if (generation !== requestGeneration) return;
+      outlook = restoreIntervalHistory(outlook);
       lastOutlook = outlook;
       render(outlook);
+      finishOutlookPageLoading(`${outlook.intervalLabel} technical outlook ready.`);
+      loadCompanyTrades(generation, controller.signal);
     } catch (error) {
-      if (error.name === 'AbortError') return;
-      const message = document.getElementById('outlookError');
-      message.textContent = error.message || 'The technical outlook is temporarily unavailable.';
-      message.hidden = false;
+      if (error.name === 'AbortError' && !timedOut) return;
+      if (generation !== requestGeneration) return;
+      showOutlookError(timedOut
+              ? 'The cached outlook took too long to build. Try again while the background refresh continues.'
+              : error.message || 'The technical outlook is temporarily unavailable.');
       clearCharts();
+      finishOutlookPageLoading('The workspace opened, but the analysis needs another attempt.');
     } finally {
-      document.getElementById('outlookLoading').hidden = true;
+      window.clearTimeout(timeout);
+      if (generation === requestGeneration) document.getElementById('outlookLoading').hidden = true;
     }
+  }
+
+  async function loadCompanyTrades(generation, signal) {
+    try {
+      const response = await fetch(`/api/virtual-trades?symbol=${encodedSymbol}`, { signal });
+      const trades = response.ok ? await response.json() : [];
+      if (generation !== requestGeneration) return;
+      companyTrades = trades;
+    } catch (error) {
+      if (error.name === 'AbortError' || generation !== requestGeneration) return;
+      companyTrades = [];
+    }
+    if (generation === requestGeneration) renderCompanyTrades();
   }
 
   function render(outlook) {
@@ -375,9 +553,10 @@
     renderIndicatorPeriodLabels(outlook);
     renderSummary(outlook);
     renderPriceChart(outlook);
-    renderScoreReport(outlook);
-    renderMarketComparison(outlook.marketComparison);
-    renderCompanyTrades();
+    scoreReportOutlook = null;
+    marketReportOutlook = null;
+    const activeTab = document.querySelector('[data-outlook-tab].active')?.dataset.outlookTab || 'general';
+    ensureTabRendered(activeTab);
   }
 
   function renderIndicatorPeriodLabels(outlook) {
@@ -404,9 +583,9 @@
 
   function renderSummary(outlook) {
     const score = outlook.headlineScore;
-    document.getElementById('headlineOutlookTitle').textContent = score.classification;
+    document.getElementById('headlineOutlookTitle').textContent = recommendationDisplayLabel(score.classification);
     document.getElementById('headlineOutlookScore').textContent =
-            `${score.buy} buy · ${score.neutral} neutral · ${score.sell} sell · Net technical score: ${score.net > 0 ? '+' : ''}${score.net} / ${score.denominator}`;
+            `${score.buy} buy · ${score.neutral} neutral · ${score.sell} sell/short · Net technical score: ${score.net > 0 ? '+' : ''}${score.net} / ${score.denominator}`;
     document.getElementById('headlineBuy').textContent = score.buy;
     document.getElementById('headlineNeutral').textContent = score.neutral;
     document.getElementById('headlineSell').textContent = score.sell;
@@ -415,7 +594,7 @@
     outlook.categories.forEach(category => {
       const card = element('article', `technical-category-card ${category.classification.toLowerCase()}`);
       card.append(element('span', '', category.label));
-      card.append(element('strong', '', category.classification));
+      card.append(element('strong', '', recommendationDisplayLabel(category.classification)));
       card.append(element('small', '', category.inputs.join(' · ')));
       grid.append(card);
     });
@@ -426,64 +605,184 @@
             .map(candle => ({ time: chartDate(candle.timestamp), value: Number(candle[field]) }));
   }
 
-  function addOverlay(name, options, data) {
+  function addOverlay(name, field, options, data) {
     if (!data.length) return null;
     const series = priceChart.addLineSeries({
       ...options, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
     });
     series.setData(data);
     priceSeriesByOverlay.set(name, [...(priceSeriesByOverlay.get(name) || []), series]);
+    priceSeriesByField.set(field, series);
     return series;
   }
 
   function rollingLevels(candles, mode, period) {
-    return candles.map((candle, index) => {
-      if (index + 1 < period) return null;
-      const windowValues = candles.slice(index - period + 1, index + 1);
-      const value = mode === 'support'
-              ? Math.min(...windowValues.map(item => Number(item.low)))
-              : Math.max(...windowValues.map(item => Number(item.high)));
-      return { time: chartDate(candle.timestamp), value };
-    }).filter(Boolean);
+    const field = mode === 'support' ? 'low' : 'high';
+    const deque = [];
+    const result = [];
+    candles.forEach((candle, index) => {
+      const value = Number(candle[field]);
+      while (deque.length) {
+        const tail = Number(candles[deque[deque.length - 1]][field]);
+        if (mode === 'support' ? tail < value : tail > value) break;
+        deque.pop();
+      }
+      deque.push(index);
+      const expired = index - period;
+      if (deque[0] <= expired) deque.shift();
+      if (index + 1 >= period) {
+        result.push({ time: chartDate(candle.timestamp), value: Number(candles[deque[0]][field]) });
+      }
+    });
+    return result;
   }
 
   function renderPriceChart(outlook) {
     const palette = colors();
     const container = document.getElementById('technicalOutlookPriceChart');
+    document.getElementById('technicalOutlookHistoryStatus').textContent = '';
     priceChart = LightweightCharts.createChart(container, chartOptions(Math.max(520, Math.min(680, window.innerHeight * .68))));
     const candles = outlook.candles;
-    const candleSeries = priceChart.addCandlestickSeries({
+    priceCandleSeries = priceChart.addCandlestickSeries({
       upColor: palette.up, downColor: palette.down, wickUpColor: palette.up, wickDownColor: palette.down,
       borderVisible: false
     });
-    candleSeries.setData(candles.map(candle => ({
+    priceCandleSeries.setData(candles.map(candle => ({
       time: chartDate(candle.timestamp), open: candle.open, high: candle.high, low: candle.low, close: candle.close
     })));
     const settings = outlook.indicatorSettings;
-    addOverlay('ema', { color: palette.fast, lineWidth: 2, title: `EMA ${settings.fastEmaPeriod}` }, lineData(candles, 'fastEma'));
-    addOverlay('ema', { color: palette.slow, lineWidth: 2, title: `EMA ${settings.slowEmaPeriod}` }, lineData(candles, 'slowEma'));
-    addOverlay('ema', { color: palette.long, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: `SMA ${settings.longSmaPeriod}` }, lineData(candles, 'longSma'));
-    addOverlay('bollinger', { color: palette.band, lineWidth: 1, title: `Bollinger ${settings.bollingerPeriod} lower` }, lineData(candles, 'bollingerLower'));
-    addOverlay('bollinger', { color: palette.band, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, title: `Bollinger ${settings.bollingerPeriod} middle` }, lineData(candles, 'bollingerMiddle'));
-    addOverlay('bollinger', { color: palette.band, lineWidth: 1, title: `Bollinger ${settings.bollingerPeriod} upper` }, lineData(candles, 'bollingerUpper'));
-    addOverlay('vwap', { color: palette.vwap, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: `VWAP ${settings.vwapPeriod}` }, lineData(candles, 'vwap'));
-    addOverlay('levels', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'support', settings.supportResistancePeriod));
-    addOverlay('levels', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'resistance', settings.supportResistancePeriod));
+    addOverlay('ema', 'fastEma', { color: palette.fast, lineWidth: 2, title: `EMA ${settings.fastEmaPeriod}` }, lineData(candles, 'fastEma'));
+    addOverlay('ema', 'slowEma', { color: palette.slow, lineWidth: 2, title: `EMA ${settings.slowEmaPeriod}` }, lineData(candles, 'slowEma'));
+    addOverlay('ema', 'longSma', { color: palette.long, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: `SMA ${settings.longSmaPeriod}` }, lineData(candles, 'longSma'));
+    addOverlay('bollinger', 'bollingerLower', { color: palette.band, lineWidth: 1, title: `Bollinger ${settings.bollingerPeriod} lower` }, lineData(candles, 'bollingerLower'));
+    addOverlay('bollinger', 'bollingerMiddle', { color: palette.band, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, title: `Bollinger ${settings.bollingerPeriod} middle` }, lineData(candles, 'bollingerMiddle'));
+    addOverlay('bollinger', 'bollingerUpper', { color: palette.band, lineWidth: 1, title: `Bollinger ${settings.bollingerPeriod} upper` }, lineData(candles, 'bollingerUpper'));
+    addOverlay('vwap', 'vwap', { color: palette.vwap, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: `VWAP ${settings.vwapPeriod}` }, lineData(candles, 'vwap'));
+    addOverlay('levels', 'support', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'support', settings.supportResistancePeriod));
+    addOverlay('levels', 'resistance', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'resistance', settings.supportResistancePeriod));
 
     const markers = signalMarkers(outlook).concat(activityMarkers(outlook), indicatorEventMarkers(outlook), virtualTradeMarkers(outlook));
     markers.sort((left, right) => String(left.time).localeCompare(String(right.time)));
-    candleSeries.setMarkers(markers);
-    priceChart.timeScale().fitContent();
+    priceCandleSeries.setMarkers(markers);
+    priceChart.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, candles.length - INITIAL_VISIBLE_CANDLES),
+      to: candles.length + 4
+    });
+    priceRangeListener = range => maybeLoadOlderPriceCandles(range);
+    priceChart.timeScale().subscribeVisibleLogicalRangeChange(priceRangeListener);
     if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
       priceFibonacciTool = new StockWatchFibonacciDrawingTool({
         chart: priceChart,
-        series: candleSeries,
+        series: priceCandleSeries,
         container,
         storageKey: `${window.location.pathname}:price:${currentInterval}`
       });
     }
     renderElliottStructures(outlook, priceChart);
     applyOverlayVisibility();
+  }
+
+  function updatePriceChartData(outlook) {
+    if (!priceCandleSeries) return;
+    const candles = outlook.candles;
+    priceCandleSeries.setData(candles.map(candle => ({
+      time: chartDate(candle.timestamp), open: candle.open, high: candle.high,
+      low: candle.low, close: candle.close
+    })));
+    ['fastEma', 'slowEma', 'longSma', 'bollingerLower', 'bollingerMiddle', 'bollingerUpper', 'vwap']
+            .forEach(field => priceSeriesByField.get(field)?.setData(lineData(candles, field)));
+    const period = outlook.indicatorSettings.supportResistancePeriod;
+    priceSeriesByField.get('support')?.setData(rollingLevels(candles, 'support', period));
+    priceSeriesByField.get('resistance')?.setData(rollingLevels(candles, 'resistance', period));
+    const markers = signalMarkers(outlook).concat(
+            activityMarkers(outlook), indicatorEventMarkers(outlook), virtualTradeMarkers(outlook));
+    markers.sort((left, right) => String(left.time).localeCompare(String(right.time)));
+    priceCandleSeries.setMarkers(markers);
+    priceFibonacciTool?.scheduleRender();
+  }
+
+  function maybeLoadOlderPriceCandles(range) {
+    const history = priceHistoryByInterval.get(currentInterval);
+    if (!range || !history || history.loading || !history.hasMore || !priceCandleSeries) return;
+    const barsInfo = priceCandleSeries.barsInLogicalRange(range);
+    const barsBefore = barsInfo?.barsBefore;
+    if ((Number.isFinite(barsBefore) && barsBefore < HISTORY_PREFETCH_THRESHOLD)
+            || (!Number.isFinite(barsBefore) && range.from < HISTORY_PREFETCH_THRESHOLD)) {
+      void loadOlderPriceCandles();
+    }
+  }
+
+  async function loadOlderPriceCandles() {
+    const interval = currentInterval;
+    const history = priceHistoryByInterval.get(interval);
+    const cursor = Number(history?.nextCursor);
+    if (!history || history.loading || !history.hasMore || !Number.isSafeInteger(cursor)) return;
+    history.loading = true;
+    const generation = requestGeneration;
+    const status = document.getElementById('technicalOutlookHistoryStatus');
+    status.textContent = 'Loading earlier completed candles...';
+    historyRequestController?.abort();
+    historyRequestController = new AbortController();
+    const controller = historyRequestController;
+    let pageAdvanced = false;
+    try {
+      const response = await fetch(
+              `/api/stocks/${encodedSymbol}/technical-outlook/history?interval=${encodeURIComponent(interval)}&before=${encodeURIComponent(cursor)}&limit=${HISTORY_PAGE_LIMIT}`,
+              { signal: controller.signal });
+      if (!response.ok) throw new Error('Earlier candles could not be loaded.');
+      const page = await response.json();
+      if (generation !== requestGeneration || interval !== currentInterval
+              || priceHistoryByInterval.get(interval) !== history) return;
+      const older = Array.isArray(page.candles) ? page.candles : [];
+      if (older.length) {
+        const nextCursor = Number(page.nextCursor ?? older[0].timestamp);
+        if (!Number.isSafeInteger(nextCursor) || nextCursor >= cursor) {
+          throw new Error('Historical candle cursor did not move backwards.');
+        }
+        const visibleRange = priceChart?.timeScale().getVisibleLogicalRange();
+        const existingTimestamps = new Set(history.candles.map(candle => Number(candle.timestamp)));
+        const merged = mergeChartCandles(older, history.candles);
+        const added = merged.reduce((count, candle) =>
+          count + (existingTimestamps.has(Number(candle.timestamp)) ? 0 : 1), 0);
+        history.candles = merged;
+        history.nextCursor = nextCursor;
+        history.hasMore = Boolean(page.hasMore) || older.length >= HISTORY_PAGE_LIMIT;
+        history.retryAttempts = 0;
+        pageAdvanced = added > 0;
+        lastOutlook = { ...lastOutlook, candles: merged };
+        updatePriceChartData(lastOutlook);
+        if (visibleRange && added > 0 && priceChart) {
+          priceChart.timeScale().setVisibleLogicalRange({
+            from: visibleRange.from + added,
+            to: visibleRange.to + added
+          });
+        }
+        void renderElliottStructures(lastOutlook, priceChart, true);
+      } else {
+        history.hasMore = Boolean(page.hasMore);
+        if (history.hasMore && page.source === 'CACHE_REFRESH_IN_PROGRESS' && history.retryAttempts < 4) {
+          const delay = 500 * (2 ** history.retryAttempts++);
+          window.setTimeout(() => {
+            if (interval === currentInterval && history.nextCursor === cursor && history.hasMore) {
+              void loadOlderPriceCandles();
+            }
+          }, delay);
+        }
+      }
+      status.textContent = history.hasMore ? '' : 'Beginning of available history reached.';
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.warn('Earlier technical-outlook candles unavailable', error);
+        status.textContent = 'Earlier candles could not be loaded. Scroll away and back to retry.';
+      }
+    } finally {
+      history.loading = false;
+      if (historyRequestController === controller) historyRequestController = null;
+      if (pageAdvanced && history.hasMore && priceChart) {
+        requestAnimationFrame(() => maybeLoadOlderPriceCandles(
+                priceChart.timeScale().getVisibleLogicalRange()));
+      }
+    }
   }
 
   function signalMarkers(outlook) {
@@ -494,7 +793,7 @@
               position: signal.direction === 'BUY' ? 'belowBar' : 'aboveBar',
               color: signal.direction === 'BUY' ? colors().up : colors().down,
               shape: signal.direction === 'BUY' ? 'arrowUp' : 'arrowDown',
-              text: `${signal.family === 'ELLIOTT_WAVE' ? 'EW' : 'C'} ${signal.direction}`
+              text: `${signal.family === 'ELLIOTT_WAVE' ? 'EW' : 'C'} ${recommendationDisplayLabel(signal.direction)}`
             }));
   }
 
@@ -544,13 +843,21 @@
     }).filter(marker => marker.time);
   }
 
-  async function renderElliottStructures(outlook, chart) {
+  async function renderElliottStructures(outlook, chart, replaceExisting = false) {
     if (!outlook.candles.length) return;
+    const requestId = ++elliottRequestGeneration;
+    const requestedInterval = currentInterval;
     try {
       const from = outlook.candles[0].timestamp;
-      const response = await fetch(`/api/stocks/${encodedSymbol}/elliott-waves/history?interval=${encodeURIComponent(currentInterval)}&from=${encodeURIComponent(from)}`);
-      if (!response.ok || currentInterval !== outlook.interval) return;
+      const response = await fetch(`/api/stocks/${encodedSymbol}/elliott-waves/history?interval=${encodeURIComponent(requestedInterval)}&from=${encodeURIComponent(from)}`);
+      if (!response.ok || requestId !== elliottRequestGeneration || chart !== priceChart
+              || currentInterval !== requestedInterval || requestedInterval !== outlook.interval) return;
       const history = await response.json();
+      if (requestId !== elliottRequestGeneration || chart !== priceChart) return;
+      if (replaceExisting) {
+        (priceSeriesByOverlay.get('elliott') || []).forEach(series => chart.removeSeries(series));
+        priceSeriesByOverlay.set('elliott', []);
+      }
       const palette = colors();
       (history.structures || []).slice(-8).forEach(structure => {
         const series = chart.addLineSeries({
@@ -581,7 +888,7 @@
   function renderScoreReport(outlook) {
     const raw = outlook.rawScore;
     document.getElementById('rawScoreClassification').textContent = raw.classification;
-    document.getElementById('rawVoteCounts').textContent = `${raw.buy} buy · ${raw.neutral} neutral · ${raw.sell} sell`;
+    document.getElementById('rawVoteCounts').textContent = `${raw.buy} buy · ${raw.neutral} neutral · ${raw.sell} sell/short`;
     document.getElementById('rawNetScore').textContent = `Net ${raw.net > 0 ? '+' : ''}${raw.net} / ${raw.denominator}`;
     renderIndicators(outlook.indicators);
     renderRecentSignals(outlook.recentSignals);
@@ -605,7 +912,7 @@
       const titleWrap = element('div');
       titleWrap.append(element('span', '', indicator.category.replaceAll('_', ' ')));
       titleWrap.append(element('h3', '', indicator.label));
-      header.append(titleWrap, element('strong', `indicator-vote ${researchOnly ? 'neutral' : indicator.classification.toLowerCase()}`, classification));
+      header.append(titleWrap, element('strong', `indicator-vote ${researchOnly ? 'neutral' : indicator.classification.toLowerCase()}`, recommendationDisplayLabel(classification)));
       const value = element('div', 'technical-indicator-value', indicator.currentValue === null
               ? 'Unavailable' : `${formatNumber(indicator.currentValue)} ${indicator.unit}`);
       const explanation = element('p', 'technical-indicator-explanation', indicator.explanation);
@@ -671,7 +978,7 @@
       meta.append(element('span', '', signal.intervalLabel));
       meta.append(element('span', '', chartDate(signal.timestamp)));
       const heading = element('div', 'technical-recent-signal-heading');
-      heading.append(element('h3', '', signal.label), element('strong', '', signal.direction));
+      heading.append(element('h3', '', signal.label), element('strong', '', recommendationDisplayLabel(signal.direction)));
       const details = element('p', '', `${signal.lifecycle} · ${signal.score === null ? signal.strength : `${signal.score}/100`} · ${signal.observedResult}`);
       card.append(meta, heading, details, element('span', 'technical-recent-signal-open', 'Open signal details →'));
       grid.append(card);
@@ -752,6 +1059,52 @@
     });
   }
 
+  async function loadScoreReport() {
+    const interval = currentInterval;
+    const generation = requestGeneration;
+    document.getElementById('indicatorCardGrid').replaceChildren(
+            element('p', 'technical-empty-state', 'Calculating detailed indicator histories...'));
+    try {
+      const response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook/score-report?interval=${encodeURIComponent(interval)}`,
+              { signal: requestController?.signal });
+      if (!response.ok) throw new Error('Score report unavailable.');
+      const report = await response.json();
+      if (generation !== requestGeneration || interval !== currentInterval) return;
+      renderScoreReport(report);
+      scoreReportOutlook = interval;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      document.getElementById('indicatorCardGrid').replaceChildren(
+              element('p', 'technical-empty-state', error.message || 'Score report unavailable.'));
+    }
+  }
+
+  async function loadMarketReport() {
+    const interval = currentInterval;
+    const generation = requestGeneration;
+    document.getElementById('relativeTrendBadge').textContent = 'Loading';
+    try {
+      const response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook/market-comparison?interval=${encodeURIComponent(interval)}`,
+              { signal: requestController?.signal });
+      if (!response.ok) throw new Error('Market comparison unavailable.');
+      const market = await response.json();
+      if (generation !== requestGeneration || interval !== currentInterval) return;
+      renderMarketComparison(market);
+      marketReportOutlook = interval;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      document.getElementById('relativeTrendBadge').textContent = 'Unavailable';
+      document.getElementById('benchmarkDescription').textContent = error.message || 'Market comparison unavailable.';
+    }
+  }
+
+  function ensureTabRendered(name) {
+    if (!lastOutlook) return;
+    if (name === 'score' && scoreReportOutlook !== currentInterval) loadScoreReport();
+    if (name === 'market' && marketReportOutlook !== currentInterval) loadMarketReport();
+    if (name === 'trades') renderCompanyTrades();
+  }
+
   function activateTab(name) {
     document.querySelectorAll('[data-outlook-tab]').forEach(button => {
       const active = button.dataset.outlookTab === name;
@@ -759,6 +1112,7 @@
       button.setAttribute('aria-selected', String(active));
     });
     document.querySelectorAll('[data-outlook-panel]').forEach(panel => panel.hidden = panel.dataset.outlookPanel !== name);
+    ensureTabRendered(name);
     window.setTimeout(() => {
       if (name === 'general' && priceChart) {
         priceChart.applyOptions({ width: document.getElementById('technicalOutlookPriceChart').clientWidth });
@@ -824,8 +1178,9 @@
         throw new Error(error.error || 'The indicator periods could not be saved.');
       }
       const outlook = await response.json();
-      lastOutlook = outlook;
-      render(outlook);
+      priceHistoryByInterval.delete(currentInterval);
+      lastOutlook = restoreIntervalHistory(outlook);
+      render(lastOutlook);
       indicatorPeriodDialog.close();
     } catch (error) {
       indicatorPeriodStatus.textContent = error.message || 'The indicator periods could not be saved.';
@@ -927,6 +1282,7 @@
           button.addEventListener('click', () => activateTab(button.dataset.outlookTab)));
   document.querySelectorAll('[data-outlook-interval]').forEach(button =>
           button.addEventListener('click', () => loadOutlook(button.dataset.outlookInterval)));
+  document.getElementById('retryOutlook').addEventListener('click', () => loadOutlook(currentInterval));
   document.querySelectorAll('[data-price-overlay]').forEach(input =>
           input.addEventListener('change', applyOverlayVisibility));
   window.addEventListener('resize', () => {

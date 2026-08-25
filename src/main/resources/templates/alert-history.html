@@ -53,7 +53,7 @@
           <div class="history-column-tags">
             <span class="column-tag signal"
                   th:classappend="${column.alert().tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-                  th:text="${column.alert().tradeSignal()}">BUY</span>
+                  th:text="${column.alert().tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : column.alert().tradeSignal().name()}">BUY</span>
             <span class="column-tag interval" th:text="${column.alert().intervalLabel()}">Weekly</span>
             <span th:if="${column.alert().researchHorizonLabel() != null}"
                   class="column-tag horizon"
@@ -108,6 +108,18 @@
               <div>
                 <span>Close</span>
                 <strong th:text="${event.closePrice() != null ? #numbers.formatDecimal(event.closePrice(), 1, 2) : 'N/A'}">125.50</strong>
+              </div>
+              <div th:if="${event.lifecycle().entryPrice() != null}">
+                <span>Trade entry</span>
+                <strong th:text="${#numbers.formatDecimal(event.lifecycle().entryPrice(), 1, 2)}">125.50</strong>
+              </div>
+              <div th:if="${event.lifecycle().stopLossPrice() != null}">
+                <span>Stop loss</span>
+                <strong th:text="${#numbers.formatDecimal(event.lifecycle().stopLossPrice(), 1, 2)}">120.00</strong>
+              </div>
+              <div th:if="${event.lifecycle().profitTargetPrice() != null}">
+                <span th:text="${'Target · 1:' + #numbers.formatDecimal(event.lifecycle().rewardRiskRatio(), 1, 0)}">Target · 1:2</span>
+                <strong th:text="${#numbers.formatDecimal(event.lifecycle().profitTargetPrice(), 1, 2)}">136.50</strong>
               </div>
             </div>
             <div class="signal-event-delivery">

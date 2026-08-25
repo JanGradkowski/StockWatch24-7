@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -69,6 +70,20 @@ public class ApiExceptionHandler {
         log.debug("Client disconnected while processing {} {}", request.getMethod(), request.getRequestURI());
     }
 
+    @ExceptionHandler(HttpMessageNotWritableException.class)
+    public void responseWriteFailed(HttpMessageNotWritableException exception,
+                                    HttpServletRequest request) {
+        if (isClientDisconnect(exception)) {
+            log.debug("Client disconnected while writing {} {}", request.getMethod(), request.getRequestURI());
+            return;
+        }
+        // A response may already be committed, so attempting to serialize a
+        // second JSON error can create another write failure. Preserve the
+        // diagnostic without writing to the unusable response.
+        log.error("Response serialization failed on {} {}",
+                request.getMethod(), request.getRequestURI(), exception);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> unexpected(Exception exception, HttpServletRequest request) {
         String requestId = UUID.randomUUID().toString();
@@ -77,5 +92,22 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                 "error", "An unexpected error occurred.",
                 "requestId", requestId));
+    }
+
+    private boolean isClientDisconnect(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String type = current.getClass().getSimpleName();
+            String message = current.getMessage() == null ? "" : current.getMessage().toLowerCase();
+            if (current instanceof AsyncRequestNotUsableException
+                    || type.equals("ClientAbortException")
+                    || message.contains("connection was aborted")
+                    || message.contains("broken pipe")
+                    || message.contains("connection reset")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }
