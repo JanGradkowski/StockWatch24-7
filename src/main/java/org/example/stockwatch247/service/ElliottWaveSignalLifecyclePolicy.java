@@ -54,10 +54,8 @@ final class ElliottWaveSignalLifecyclePolicy {
         }
         ElliottWaveDetectionService.ElliottWavePoint triggerPoint = points.get(points.size() - 2);
         ElliottWaveDetectionService.ElliottWavePoint endpoint = points.getLast();
-        String expectedTriggerLabel = correction ? "B" : "IV";
-        String expectedEndpointLabel = correction ? "C" : "V";
-        if (!expectedTriggerLabel.equalsIgnoreCase(triggerPoint.label())
-                || !expectedEndpointLabel.equalsIgnoreCase(endpoint.label())) {
+        if (!correction && (!"IV".equalsIgnoreCase(triggerPoint.label())
+                || !"V".equalsIgnoreCase(endpoint.label()))) {
             return Optional.empty();
         }
 
@@ -152,6 +150,7 @@ final class ElliottWaveSignalLifecyclePolicy {
                 continue;
             }
             boolean broken = switch (stage) {
+                case WAVE_II_END, WAVE_III_END, WAVE_IV_END -> false;
                 case WAVE_V_END -> bullishCycle
                         ? candle.high() > invalidationBoundary
                         : candle.low() < invalidationBoundary;

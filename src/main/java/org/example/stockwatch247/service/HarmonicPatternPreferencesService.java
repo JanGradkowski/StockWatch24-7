@@ -21,15 +21,20 @@ import java.util.Map;
 
 @Service
 public class HarmonicPatternPreferencesService {
-    public static final String PROFILE_VERSION = "USER_HARMONIC_RULES_V1";
+    public static final String PROFILE_VERSION = "USER_HARMONIC_RULES_V3";
+    private static final String LEGACY_PROFILE_VERSION_V1 = "USER_HARMONIC_RULES_V1";
+    private static final String LEGACY_PROFILE_VERSION_V2 = "USER_HARMONIC_RULES_V2";
 
     private static final List<NumericDefinition> GLOBALS = List.of(
-            number("fibonacciTolerancePercent", "Base Fibonacci tolerance", "Variance allowed around every configured ratio before a hard rule rejects the formation.", "%", .5, 10, .1, 4),
-            number("legEqualityTolerancePercent", "AB/CD equality tolerance", "Maximum AB versus CD difference when equality is required.", "%", 1, 20, .1, 8),
-            number("materialLegDifferencePercent", "Required AB/CD visual difference", "Minimum difference when a Bat or Crab requires AB and CD to look materially different.", "%", 2, 40, .1, 10),
+            number("fibonacciTolerancePercent", "Base Fibonacci tolerance", "Variance allowed around exact Fibonacci targets and range boundaries.", "%", .5, 10, .1, 3),
+            number("legEqualityTolerancePercent", "AB/CD target tolerance", "Variance allowed around the AB=CD and 1.27 alternate AB=CD targets.", "%", 1, 20, .1, 3),
+            number("materialLegDifferencePercent", "Crab AB/CD separation", "Minimum AB versus CD difference required by the Crab structure.", "%", 2, 40, .1, 10),
             number("minimumSwingPercent", "Minimum pivot-to-pivot move", "Filters tiny alternating swings before harmonic classification.", "%", 0, 25, .1, .5),
             number("pivotWindow", "Pivot confirmation candles", "Completed candles required on both sides of a swing endpoint.", "candles", 1, 10, 1, 2),
-            number("maximumFormations", "Maximum overlay formations", "Newest formations retained in one historical overlay response.", "formations", 1, 250, 1, 40)
+            number("maximumFormations", "Maximum overlay formations", "Newest formations retained in one historical overlay response.", "formations", 1, 250, 1, 250),
+            number("maximumPivotWindow", "Largest structural pivot window", "Longest left/right candle window used to retain broad structural extrema.", "candles", 2, 89, 1, 55),
+            number("maximumSwingPercent", "Largest swing hierarchy", "Maximum price reversal scale used to suppress counter-swings inside long formations.", "%", 5, 50, .5, 34),
+            number("maximumSkippedPivots", "Internal pivots allowed", "Advanced override for lower-level pivots XABCD may skip. The textbook-strict default requires consecutive pivots at one hierarchy level.", "pivots", 0, 8, 1, 0)
     );
 
     private static final Map<HarmonicPatternType, PatternDefinition> PATTERNS = definitions();
@@ -110,11 +115,65 @@ public class HarmonicPatternPreferencesService {
     private PreferencesView read(UserHarmonicPatternPreferences entity) {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
+            if (LEGACY_PROFILE_VERSION_V1.equals(stored.version())) stored = migrateLegacy(stored, true);
+            else if (LEGACY_PROFILE_VERSION_V2.equals(stored.version())) stored = migrateLegacy(stored, false);
             stored.validate();
             return view(stored, entity.getUpdatedAt());
         } catch (JsonProcessingException | IllegalArgumentException exception) {
             return factoryPreferences();
         }
+    }
+
+    private StoredPreferences migrateLegacy(StoredPreferences legacy, boolean correctV1Ratios) {
+        Map<String, Double> globals = new LinkedHashMap<>();
+        GLOBALS.forEach(definition -> globals.put(definition.key(),
+                legacy.globals().getOrDefault(definition.key(), definition.factoryValue())));
+        if (globals.getOrDefault("maximumFormations", 40.0) == 40.0) {
+            globals.put("maximumFormations", 250.0);
+        }
+        List<StoredPattern> patterns = new ArrayList<>();
+        for (PatternDefinition definition : PATTERNS.values()) {
+            StoredPattern old = legacy.patterns().stream()
+                    .filter(pattern -> pattern.pattern() == definition.pattern())
+                    .findFirst().orElse(null);
+            if (old == null) {
+                patterns.add(factoryPattern(definition));
+                continue;
+            }
+            Map<String, Double> ratios = new LinkedHashMap<>();
+            for (NumericDefinition ratio : definition.ratios()) {
+                double value = old.ratios().getOrDefault(ratio.key(), ratio.factoryValue());
+                if (correctV1Ratios && correctedLegacyKey(definition.pattern(), ratio.key())) {
+                    value = ratio.factoryValue();
+                }
+                ratios.put(ratio.key(), value);
+            }
+            if (correctV1Ratios) {
+                copyLegacyAlias(old.ratios(), ratios, definition.pattern(), "bTarget", "bPrimary");
+                copyLegacyAlias(old.ratios(), ratios, definition.pattern(), "completion", "completionPrimary");
+                copyLegacyAlias(old.ratios(), ratios, definition.pattern(), "bMax", "bPreferredMax");
+            }
+            patterns.add(new StoredPattern(definition.pattern(), old.enabled(), old.softViolationPercent(),
+                    ratios, old.hardRules()));
+        }
+        return new StoredPreferences(PROFILE_VERSION, globals, patterns);
+    }
+
+    private boolean correctedLegacyKey(HarmonicPatternType pattern, String key) {
+        return (pattern == HarmonicPatternType.GARTLEY && "extensionMin".equals(key))
+                || (pattern == HarmonicPatternType.BAT && "cdBcMin".equals(key))
+                || (pattern == HarmonicPatternType.BUTTERFLY && "extensionMax".equals(key))
+                || (pattern == HarmonicPatternType.CRAB && "extensionMin".equals(key));
+    }
+
+    private void copyLegacyAlias(Map<String, Double> old,
+                                 Map<String, Double> migrated,
+                                 HarmonicPatternType pattern,
+                                 String replacement,
+                                 String legacyKey) {
+        if (!PATTERNS.get(pattern).ratios().stream().anyMatch(item -> item.key().equals(replacement))) return;
+        Double value = old.get(legacyKey);
+        if (value != null) migrated.put(replacement, value);
     }
 
     private PreferencesView factoryPreferences() {
@@ -159,7 +218,10 @@ public class HarmonicPatternPreferencesService {
                 values.get("materialLegDifferencePercent") / 100.0,
                 values.get("minimumSwingPercent") / 100.0,
                 values.get("pivotWindow").intValue(),
-                values.get("maximumFormations").intValue());
+                values.get("maximumFormations").intValue(),
+                values.get("maximumPivotWindow").intValue(),
+                values.get("maximumSwingPercent") / 100.0,
+                values.get("maximumSkippedPivots").intValue());
     }
 
     private StoredPreferences stored(PreferencesView view) {
@@ -203,33 +265,32 @@ public class HarmonicPatternPreferencesService {
     private static Map<HarmonicPatternType, PatternDefinition> definitions() {
         Map<HarmonicPatternType, PatternDefinition> result = new LinkedHashMap<>();
         result.put(HarmonicPatternType.GARTLEY, pattern(HarmonicPatternType.GARTLEY,
-                "Inside completion with approximate AB/CD equality.", List.of(
-                        ratio("bPrimary", "Primary B retracement", 61.8), ratio("bStretch1", "First B alternative", 50),
-                        ratio("bStretch2", "Second B alternative", 70.7), ratio("bStretch3", "Third B alternative", 78.6),
-                        ratio("completionPrimary", "Primary D completion of XA", 78.6), ratio("completionStretch", "Stretched D completion of XA", 88.6),
+                "0.618 B and 0.786 XA completion with AB=CD or 1.27 alternate AB=CD.", List.of(
+                        ratio("bTarget", "B retracement of XA", 61.8),
+                        ratio("completion", "D completion of XA", 78.6),
                         ratio("cMin", "C retracement minimum of AB", 38.2), ratio("cMax", "C retracement maximum of AB", 88.6),
-                        ratio("extensionMin", "CD extension minimum of BC", 127.2), ratio("extensionMax", "CD extension maximum of BC", 161.8),
-                        ratio("legTarget", "AB/CD equality target", 100)), true));
+                        ratio("extensionMin", "CD extension minimum of BC", 113), ratio("extensionMax", "CD extension maximum of BC", 161.8),
+                        ratio("legPrimary", "AB=CD target", 100), ratio("legAlternate", "Alternate AB=CD target", 127)), true));
         result.put(HarmonicPatternType.BAT, pattern(HarmonicPatternType.BAT,
-                "Inside 0.886 completion with a visibly unequal AB/CD relationship.", List.of(
-                        ratio("bMin", "B retracement minimum of XA", 38.2), ratio("bPreferredMax", "Preferred B retracement maximum", 50),
-                        ratio("bStretchMax", "Stretched B retracement maximum", 57.7), ratio("completion", "D completion of XA", 88.6),
+                "0.382-0.50 B and 0.886 XA completion with AB=CD or its typical 1.27 alternate.", List.of(
+                        ratio("bMin", "B retracement minimum of XA", 38.2), ratio("bMax", "B retracement maximum of XA", 50),
+                        ratio("completion", "D completion of XA", 88.6),
                         ratio("cMin", "C retracement minimum of AB", 38.2), ratio("cMax", "C retracement maximum of AB", 88.6),
-                        ratio("cdAbMin", "CD/AB minimum", 161.8), ratio("cdAbMax", "CD/AB maximum", 200),
-                        ratio("cdBcMin", "CD/BC minimum", 200), ratio("cdBcMax", "CD/BC maximum", 261.8)), true));
+                        ratio("cdBcMin", "CD/BC minimum", 161.8), ratio("cdBcMax", "CD/BC maximum", 261.8),
+                        ratio("legPrimary", "AB=CD target", 100), ratio("legAlternate", "Alternate AB=CD target", 127)), true));
         result.put(HarmonicPatternType.BUTTERFLY, pattern(HarmonicPatternType.BUTTERFLY,
-                "Outside completion with B near 0.786 and approximate AB/CD equality.", List.of(
-                        ratio("bTarget", "B retracement of XA", 78.6), ratio("completionMin", "D completion minimum of XA", 127.2),
-                        ratio("completionMax", "D completion maximum of XA", 161.8), ratio("cMin", "C retracement minimum of AB", 38.2),
+                "0.786 B and 1.27 XA completion; 1.414 XA is an invalidation boundary, not a completion.", List.of(
+                        ratio("bTarget", "B retracement of XA", 78.6), ratio("completion", "D completion of XA", 127),
+                        ratio("cMin", "C retracement minimum of AB", 38.2),
                         ratio("cMax", "C retracement maximum of AB", 88.6), ratio("extensionMin", "CD extension minimum of BC", 161.8),
-                        ratio("extensionMax", "CD extension maximum of BC", 261.8), ratio("legTarget", "AB/CD equality target", 100)), true));
+                        ratio("extensionMax", "CD extension maximum of BC", 224),
+                        ratio("legPrimary", "AB=CD target", 100), ratio("legAlternate", "Alternate AB=CD target", 127)), true));
         result.put(HarmonicPatternType.CRAB, pattern(HarmonicPatternType.CRAB,
                 "Outside 1.618 completion with a visibly unequal AB/CD relationship.", List.of(
                         ratio("bMin", "B retracement minimum of XA", 38.2), ratio("bMax", "B retracement maximum of XA", 61.8),
-                        ratio("bPrimary", "Preferred B retracement", 38.2), ratio("bSecondary", "Alternative B retracement", 50),
-                        ratio("bMaximum", "Maximum B target", 61.8), ratio("completion", "D completion of XA", 161.8),
+                        ratio("completion", "D completion of XA", 161.8),
                         ratio("cMin", "C retracement minimum of AB", 38.2), ratio("cMax", "C retracement maximum of AB", 88.6),
-                        ratio("extensionMin", "CD extension minimum of BC", 224), ratio("extensionMax", "CD extension maximum of BC", 361.8)), true));
+                        ratio("extensionMin", "CD extension minimum of BC", 261.8), ratio("extensionMax", "CD extension maximum of BC", 361.8)), true));
         result.put(HarmonicPatternType.SHARK, pattern(HarmonicPatternType.SHARK,
                 "Official 0-X-A-B-C notation mapped to the common five-pivot structure.", List.of(
                         ratio("aMin", "A retracement minimum of 0X", 32), ratio("aMax", "A retracement maximum of 0X", 61.8),
@@ -273,7 +334,9 @@ public class HarmonicPatternPreferencesService {
         try {
             double value = Double.parseDouble(raw == null ? "" : raw.trim().replace(',', '.'));
             if (!Double.isFinite(value) || value < definition.min() || value > definition.max()) throw new NumberFormatException();
-            if (("pivotWindow".equals(definition.key()) || "maximumFormations".equals(definition.key()))
+            if (("pivotWindow".equals(definition.key()) || "maximumFormations".equals(definition.key())
+                    || "maximumPivotWindow".equals(definition.key())
+                    || "maximumSkippedPivots".equals(definition.key()))
                     && value != Math.rint(value)) throw new NumberFormatException();
             return value;
         } catch (NumberFormatException exception) {

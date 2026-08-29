@@ -6,6 +6,7 @@ import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AlertRuleService;
 import org.example.stockwatch247.service.EmailVerificationService;
 import org.example.stockwatch247.service.SignalScoringPreferencesService;
+import org.example.stockwatch247.service.TechnicalOutlookTrackingService;
 import org.example.stockwatch247.service.congress.CongressionalActivityService;
 import org.example.stockwatch247.service.insider.InsiderActivityService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
@@ -40,6 +42,7 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final EmailVerificationService emailVerificationService;
     private final SignalScoringPreferencesService scoringPreferencesService;
+    private TechnicalOutlookTrackingService technicalOutlookTrackingService;
     private final String dummyPasswordHash;
     @Autowired
     public AuthController(UserRepository userRepository,
@@ -67,6 +70,11 @@ public class AuthController {
                           EmailVerificationService emailVerificationService) {
         this(userRepository, alertRuleService, congressionalActivityService, insiderActivityService,
                 passwordEncoder, emailVerificationService, null);
+    }
+
+    @Autowired(required = false)
+    void configureTechnicalOutlookTracking(TechnicalOutlookTrackingService trackingService) {
+        this.technicalOutlookTrackingService = trackingService;
     }
     @GetMapping("/login")
     public String loginPage() {return "login";}
@@ -173,6 +181,17 @@ public class AuthController {
         if (currentUser != null) {
             var trackedCompanies = alertRuleService.getActiveCompanyViews(currentUser);
             var latestSignals = alertRuleService.getLatestSignalViews(currentUser);
+            var latestOutlookChanges = technicalOutlookTrackingService == null
+                    ? java.util.List.<TechnicalOutlookTrackingService.LatestOutlookChangeView>of()
+                    : technicalOutlookTrackingService.latestUnread(currentUser, 8);
+            var latestSignalItems = Stream.concat(
+                            latestSignals.stream().map(DashboardLatestSignalView::technical),
+                            latestOutlookChanges.stream().map(DashboardLatestSignalView::outlook))
+                    .sorted(Comparator.comparing(
+                            DashboardLatestSignalView::occurredAt,
+                            Comparator.nullsLast(Comparator.reverseOrder())))
+                    .limit(8)
+                    .toList();
             var congressionalActivities = congressionalActivityService
                     .getLatestDashboardActivity(currentUser, 10);
             var congressionalFollowedStocks = congressionalActivityService
@@ -196,6 +215,7 @@ public class AuthController {
             model.addAttribute("firstName", currentUser.getFirstName());
             model.addAttribute("trackedCompanies", trackedCompanies);
             model.addAttribute("latestSignals", latestSignals);
+            model.addAttribute("latestSignalItems", latestSignalItems);
             model.addAttribute("congressionalActivities", congressionalActivities);
             model.addAttribute("congressionalUnreadCount", congressionalUnreadCount);
             model.addAttribute("congressionalFollowedStocks", congressionalFollowedStocks);
@@ -230,6 +250,7 @@ public class AuthController {
             model.addAttribute("firstName", "Trader");
             model.addAttribute("trackedCompanies", java.util.List.of());
             model.addAttribute("latestSignals", java.util.List.of());
+            model.addAttribute("latestSignalItems", java.util.List.of());
             model.addAttribute("congressionalActivities", java.util.List.of());
             model.addAttribute("congressionalUnreadCount", 0L);
             model.addAttribute("congressionalFollowedStocks", java.util.List.of());
@@ -469,6 +490,21 @@ public class AuthController {
                         Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(TickerNotificationView::source)
                 .thenComparing(TickerNotificationView::id, Comparator.reverseOrder());
+    }
+
+    public record DashboardLatestSignalView(
+            String kind,
+            LocalDateTime occurredAt,
+            AlertRuleService.LatestSignalView technicalSignal,
+            TechnicalOutlookTrackingService.LatestOutlookChangeView outlookChange) {
+        private static DashboardLatestSignalView technical(AlertRuleService.LatestSignalView signal) {
+            return new DashboardLatestSignalView("TECHNICAL", signal.sentAt(), signal, null);
+        }
+
+        private static DashboardLatestSignalView outlook(
+                TechnicalOutlookTrackingService.LatestOutlookChangeView change) {
+            return new DashboardLatestSignalView("OUTLOOK", change.createdAt(), null, change);
+        }
     }
 
     public record TickerNotificationView(

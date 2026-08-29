@@ -45,6 +45,9 @@ public class HistoricalCandlestickService {
     private final TechnicalIndicatorEnrichmentService enrichmentService;
     private final CandlePatternDetectionService detectionService;
     private final CandleCompletionService completionService;
+    private final ElliottWaveDetectionService elliottWaveDetectionService;
+    private final HarmonicPatternDetectionService harmonicPatternDetectionService;
+    private final CrossPatternConfluenceService crossPatternConfluenceService;
     private final ZoneId signalTimeZone;
 
     @Autowired
@@ -56,7 +59,10 @@ public class HistoricalCandlestickService {
             CandlePatternDetectionService detectionService,
             CandleCompletionService completionService,
             @Value("${alerts.email.time-zone:${alerts.schedule.zone:Europe/Brussels}}") String signalTimeZone,
-            @Value("${alerts.candlestick.lifecycle-window-candles:8}") int ignoredConfirmationWindowCandles) {
+            @Value("${alerts.candlestick.lifecycle-window-candles:8}") int ignoredConfirmationWindowCandles,
+            ElliottWaveDetectionService elliottWaveDetectionService,
+            HarmonicPatternDetectionService harmonicPatternDetectionService,
+            CrossPatternConfluenceService crossPatternConfluenceService) {
         this.candleRepository = candleRepository;
         this.stockAssetRepository = stockAssetRepository;
         this.marketDataService = marketDataService;
@@ -64,6 +70,24 @@ public class HistoricalCandlestickService {
         this.detectionService = detectionService;
         this.completionService = completionService;
         this.signalTimeZone = ZoneId.of(signalTimeZone);
+        this.elliottWaveDetectionService = elliottWaveDetectionService;
+        this.harmonicPatternDetectionService = harmonicPatternDetectionService;
+        this.crossPatternConfluenceService = crossPatternConfluenceService;
+    }
+
+    HistoricalCandlestickService(
+            CandleRepository candleRepository,
+            StockAssetRepository stockAssetRepository,
+            MarketDataService marketDataService,
+            TechnicalIndicatorEnrichmentService enrichmentService,
+            CandlePatternDetectionService detectionService,
+            CandleCompletionService completionService,
+            String signalTimeZone,
+            int ignoredConfirmationWindowCandles) {
+        this(candleRepository, stockAssetRepository, marketDataService, enrichmentService,
+                detectionService, completionService, signalTimeZone, ignoredConfirmationWindowCandles,
+                new ElliottWaveDetectionService(), new HarmonicPatternDetectionService(),
+                new CrossPatternConfluenceService(detectionService));
     }
 
     public HistoricalScan scan(String symbol, String apiInterval) {
@@ -95,6 +119,9 @@ public class HistoricalCandlestickService {
                 analysisCandles,
                 profile.interval()
         );
+        requiredCandles = Math.max(
+                requiredCandles,
+                analysisCandles + definitions.circuitBreaker(profile.interval()).atrPeriod());
         List<Candle> storedCandles = candleRepository
                 .findBySymbolAndTimeIntervalOrderByTimestampDesc(
                         symbol,
@@ -228,9 +255,21 @@ public class HistoricalCandlestickService {
     private void synchronizeCandles(String symbol, String apiInterval) {
         MarketDataService.CandleSyncResult syncResult =
                 marketDataService.syncCandles(symbol, apiInterval, null);
-        if (!syncResult.successful()) {
-            throw new IllegalStateException("Candle refresh failed.");
+        if (syncResult.successful() || hasCompletedCachedCandle(symbol, apiInterval)) {
+            return;
         }
+        throw new MarketDataUnavailableException(symbol, apiInterval, syncResult.failureMessage());
+    }
+
+    private boolean hasCompletedCachedCandle(String symbol, String apiInterval) {
+        TimeInterval interval = ScanProfile.forApiInterval(apiInterval).interval();
+        return candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                        symbol,
+                        apiInterval,
+                        PageRequest.of(0, 2))
+                .stream()
+                .filter(this::hasCompletePriceData)
+                .anyMatch(candle -> completionService.isComplete(candle.getTimestamp(), interval));
     }
 
     private String companyName(String symbol) {
@@ -466,6 +505,11 @@ public class HistoricalCandlestickService {
         }
 
         int firstVisibleIndex = Math.max(0, enriched.size() - lookbackCandles);
+        List<EnrichedCandle> elliottEnriched = enrichmentService.enrichForElliott(
+                candles, candles.size(), profile.interval());
+        CrossPatternConfluenceService.Timeline confluenceTimeline = crossPatternConfluenceService.buildTimeline(
+                candles, enriched, elliottEnriched, profile.interval(), trendRules, definitions,
+                elliottWaveDetectionService, harmonicPatternDetectionService);
         List<HistoricalSignal> signals = new ArrayList<>();
         for (int signalIndex = firstVisibleIndex; signalIndex < enriched.size(); signalIndex++) {
             int firstContextIndex = Math.max(0, signalIndex - 99);
@@ -476,7 +520,10 @@ public class HistoricalCandlestickService {
                     : detectionService.detectAlertSignals(context, trendRules)).stream()
                     .filter(signal -> signal.candleTimestamp() == signalTimestamp)
                     .toList();
-            for (DetectedSignal signal : detected) {
+            for (DetectedSignal unadjustedSignal : detected) {
+                DetectedSignal signal = crossPatternConfluenceService.apply(
+                        unadjustedSignal, org.example.stockwatch247.model.enums.AlertPatternFamily.CANDLESTICK,
+                        confluenceTimeline);
                 HistoricalSignal historicalSignal = toHistoricalSignal(
                         symbol,
                         companyName,
@@ -571,6 +618,13 @@ public class HistoricalCandlestickService {
                 lifecycle.stopLossPrice(),
                 lifecycle.profitTargetPrice(),
                 lifecycle.rewardRiskRatio(),
+                lifecycle.structuralStopPrice(),
+                lifecycle.configuredStopLossPrice(),
+                lifecycle.atrCircuitBreakerApplied(),
+                lifecycle.atrValue(),
+                lifecycle.atrPeriod(),
+                lifecycle.atrMultiplier(),
+                lifecycle.activationThresholdPercent(),
                 lifecycle.confirmationWindowCandles(),
                 lifecycle.resolutionClosePrice(),
                 lifecycle.resolutionCandleTimestamp(),
@@ -650,10 +704,19 @@ public class HistoricalCandlestickService {
                 structuralStop, patternProfile.stopLossMode(),
                 patternProfile.stopLossValuePercent());
         double rewardRiskRatio = definitions.rewardRiskRatio(profile.interval());
+        CandlestickPatternPreferencesService.CircuitBreakerSettings circuitBreaker =
+                definitions.circuitBreaker(profile.interval());
+        int entryIndex = candidateGateRequired ? signalIndex + 1 : signalIndex;
+        double atr = entryPrice == null
+                ? Double.NaN
+                : CandlestickSignalLifecyclePolicy.averageTrueRange(
+                        candles, entryIndex, circuitBreaker.atrPeriod());
         CandlestickSignalLifecyclePolicy.TradePlan tradePlan = entryPrice == null
                 ? null
                 : CandlestickSignalLifecyclePolicy.tradePlan(
-                        signal.tradeSignal(), entryPrice, stopLoss, profile.interval(), rewardRiskRatio);
+                        signal.tradeSignal(), entryPrice, stopLoss, profile.interval(), rewardRiskRatio,
+                        atr, circuitBreaker);
+        if (tradePlan != null) stopLoss = tradePlan.stopLossPrice();
         Double profitTarget = tradePlan == null ? null : tradePlan.profitTargetPrice();
         CandlestickSignalLifecyclePolicy.LifecycleResolution resolution;
         SignalLifecycleStatus status;
@@ -682,6 +745,19 @@ public class HistoricalCandlestickService {
                 );
         String boundaryDirection = signal.tradeSignal() == TradeSignal.BUY ? "above" : "below";
         String invalidationDirection = signal.tradeSignal() == TradeSignal.BUY ? "below" : "above";
+        String circuitBreakerNote = tradePlan != null && tradePlan.atrCircuitBreakerApplied()
+                ? String.format(
+                        Locale.ROOT,
+                        " ATR circuit breaker active: the original %.4f stop implied a target move above %.2f%%, so the frozen %s ATR%s produced the active %.4f stop.",
+                        tradePlan.configuredStopLossPrice(),
+                        tradePlan.activationThresholdPercent(),
+                        tradePlan.atrPeriod(),
+                        tradePlan.atrValue() == null
+                                ? " was unavailable and the percentage cap was used"
+                                : String.format(Locale.ROOT, " %.4f × %.2f", tradePlan.atrValue(),
+                                tradePlan.atrMultiplier()),
+                        tradePlan.stopLossPrice())
+                : "";
         String summary = switch (status) {
             case POTENTIAL -> String.format(
                     Locale.ROOT,
@@ -705,7 +781,7 @@ public class HistoricalCandlestickService {
                             detectionClose,
                             profitTarget,
                             stopLoss,
-                            outcomeWindow)
+                            outcomeWindow) + circuitBreakerNote
                     : String.format(
                             Locale.ROOT,
                             "Trade opened at %.4f. A completed close at %.4f reaches the target; a close at %.4f hits the stop; otherwise candle %d closes the trade.",
@@ -713,7 +789,7 @@ public class HistoricalCandlestickService {
                             profitTarget,
                             stopLoss,
                             outcomeWindow
-                    );
+                    ) + circuitBreakerNote;
             case CONFIRMED -> String.format(
                     Locale.ROOT,
                     "Trade closed successfully on %s when candle %d closed at %.4f, reaching the %.4f profit target.",
@@ -754,6 +830,13 @@ public class HistoricalCandlestickService {
                 stopLoss,
                 profitTarget,
                 rewardRiskRatio,
+                structuralStop,
+                tradePlan == null ? stopLoss : tradePlan.configuredStopLossPrice(),
+                tradePlan != null && tradePlan.atrCircuitBreakerApplied(),
+                tradePlan == null ? null : tradePlan.atrValue(),
+                circuitBreaker.atrPeriod(),
+                circuitBreaker.atrMultiplier(),
+                circuitBreaker.activationThresholdPercent(),
                 detectionTimestamp,
                 detectionTimestamp == null ? null : SignalPeriodFormatter.format(
                         detectionTimestamp, profile.interval(), signalTimeZone),
@@ -1112,6 +1195,13 @@ public class HistoricalCandlestickService {
             Double stopLossPrice,
             Double profitTargetPrice,
             double rewardRiskRatio,
+            Double structuralStopPrice,
+            Double configuredStopLossPrice,
+            boolean atrCircuitBreakerApplied,
+            Double atrValue,
+            Integer atrPeriod,
+            Double atrMultiplier,
+            Double activationThresholdPercent,
             int timeStopCandles,
             Double tradeExitPrice,
             Long tradeExitTimestamp,
@@ -1167,6 +1257,13 @@ public class HistoricalCandlestickService {
             Double stopLossPrice,
             Double profitTargetPrice,
             double rewardRiskRatio,
+            Double structuralStopPrice,
+            Double configuredStopLossPrice,
+            boolean atrCircuitBreakerApplied,
+            Double atrValue,
+            Integer atrPeriod,
+            Double atrMultiplier,
+            Double activationThresholdPercent,
             Long detectionCandleTimestamp,
             String detectionPeriodLabel,
             Double detectionClosePrice,

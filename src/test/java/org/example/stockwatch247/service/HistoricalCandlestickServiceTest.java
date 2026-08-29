@@ -222,8 +222,86 @@ class HistoricalCandlestickServiceTest {
             assertThat(scan.lookbackCandles()).isEqualTo(144);
             assertThat(scan.lookbackLabel()).isEqualTo("last 144 completed monthly candles");
             assertThat(scan.timeStopCandles()).isEqualTo(8);
-            assertThat(scan.rewardRiskRatio()).isEqualTo(4.0);
+            assertThat(scan.rewardRiskRatio()).isEqualTo(3.0);
         });
+    }
+
+    @Test
+    void failedRefreshUsesCompletedCachedMonthlyCandles() {
+        String symbol = "CDR";
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        TechnicalIndicatorEnrichmentService enrichmentService = mock(TechnicalIndicatorEnrichmentService.class);
+        CandlePatternDetectionService detectionService = mock(CandlePatternDetectionService.class);
+        CandleCompletionService completionService = mock(CandleCompletionService.class);
+        List<Candle> cached = candles(symbol, "1mo", 2);
+
+        when(marketDataService.syncCandles(symbol, "1mo", null))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.NONE,
+                        0,
+                        "Both providers were unavailable."));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 2))).thenReturn(cached.reversed());
+        when(completionService.isComplete(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.eq(TimeInterval.MONTHLY)))
+                .thenReturn(true);
+        when(enrichmentService.requiredInputCandles(155, TimeInterval.MONTHLY)).thenReturn(10);
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 170))).thenReturn(cached.reversed());
+        when(enrichmentService.enrich(cached, cached.size(), TimeInterval.MONTHLY)).thenReturn(List.of());
+        when(stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)).thenReturn(Optional.empty());
+        HistoricalCandlestickService service = new HistoricalCandlestickService(
+                candleRepository,
+                stockAssetRepository,
+                marketDataService,
+                enrichmentService,
+                detectionService,
+                completionService,
+                "Europe/Brussels",
+                3);
+
+        HistoricalCandlestickService.HistoricalScan scan = service.scan(symbol, "1mo", 120);
+
+        assertThat(scan.completedCandlesLoaded()).isEqualTo(2);
+        assertThat(scan.signals()).isEmpty();
+    }
+
+    @Test
+    void failedRefreshWithoutCompletedCacheRaisesTypedUnavailableError() {
+        String symbol = "CDR";
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        TechnicalIndicatorEnrichmentService enrichmentService = mock(TechnicalIndicatorEnrichmentService.class);
+        CandlePatternDetectionService detectionService = mock(CandlePatternDetectionService.class);
+        CandleCompletionService completionService = mock(CandleCompletionService.class);
+
+        when(marketDataService.syncCandles(symbol, "1mo", null))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.NONE,
+                        0,
+                        "Both providers were unavailable."));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1mo", PageRequest.of(0, 2))).thenReturn(List.of());
+        HistoricalCandlestickService service = new HistoricalCandlestickService(
+                candleRepository,
+                stockAssetRepository,
+                marketDataService,
+                enrichmentService,
+                detectionService,
+                completionService,
+                "Europe/Brussels",
+                3);
+
+        assertThatThrownBy(() -> service.scan(symbol, "1mo", 120))
+                .isInstanceOf(MarketDataUnavailableException.class)
+                .hasMessage("Monthly candle data is temporarily unavailable for CDR.")
+                .satisfies(exception -> assertThat(
+                        ((MarketDataUnavailableException) exception).diagnosticMessage())
+                        .isEqualTo("Both providers were unavailable."));
     }
 
     @Test

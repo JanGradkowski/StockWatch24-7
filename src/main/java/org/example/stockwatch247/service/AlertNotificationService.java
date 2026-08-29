@@ -3,6 +3,7 @@ package org.example.stockwatch247.service;
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.Candle;
+import org.example.stockwatch247.model.ElliottStageTradePlan;
 import org.example.stockwatch247.model.InsiderTrade;
 import org.example.stockwatch247.model.InsiderTradeDelivery;
 import org.example.stockwatch247.model.User;
@@ -237,6 +238,194 @@ public class AlertNotificationService {
         return true;
     }
 
+    public boolean sendDevelopingElliottEmail(
+            AlertRule rule,
+            DetectedSignal signal,
+            AlertEvent event,
+            boolean invalidated) {
+        if (rule == null || signal == null || event == null || event.getElliottSignalStage() == null) {
+            throw new IllegalArgumentException("A developing Elliott stage is required for email delivery.");
+        }
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        String stage = switch (event.getElliottSignalStage()) {
+            case WAVE_II_END -> "Wave II ending";
+            case WAVE_III_END -> "Wave III ending";
+            case WAVE_IV_END -> "Wave IV ending";
+            case WAVE_V_END -> "Wave V ending";
+            case CORRECTION_END -> "ABC correction ending";
+        };
+        String subject = invalidated
+                ? "StockWatch Elliott count invalidated: " + symbol
+                : "StockWatch Elliott cycle updated: " + stage + " on " + symbol;
+        String body = invalidated
+                ? """
+                        A developing Elliott count was invalidated for %s.
+
+                        Interval: %s
+                        Last validated stage: %s
+                        Resolution price: %.4f
+                        Reason: %s
+
+                        This count is closed. StockWatch will continue searching for a new valid origin and alternate count.
+                        """.formatted(
+                        symbol, rule.getInterval(), stage, signal.closePrice(),
+                        event.getLifecycleResolutionReason() == null
+                                ? "A hard Elliott structure boundary was crossed."
+                                : event.getLifecycleResolutionReason())
+                : """
+                        A developing Elliott cycle was updated for %s.
+
+                        Interval: %s
+                        Current stage: %s
+                        Expected next move: %s
+                        Stage confirmation period: %s
+                        Confirmation close: %.4f
+                        Correction structure: %s
+                        Forecast: %s
+                        %s
+                        Structure confidence: %d/100
+
+                        Evidence
+                        %s
+
+                        The stop and target are rule-based projections, not guarantees or financial advice.
+                        """.formatted(
+                        symbol,
+                        rule.getInterval(),
+                        stage,
+                        signal.tradeSignal(),
+                        SignalPeriodFormatter.format(
+                                signal.candleTimestamp(), rule.getInterval(), signalTimeZone),
+                        signal.closePrice(),
+                        event.getElliottCorrectionType() == null
+                                ? "No completed parent correction yet" : event.getElliottCorrectionType(),
+                        event.getElliottForecastLabel(),
+                        elliottPossibleTradeSection(event),
+                        signal.setupScore(),
+                        SignalScoreBreakdown.formatEmail(signal.reasons(), signal.tradeSignal()));
+        if (!isDevelopingElliottEmailEnabled(rule)) {
+            System.out.println("[EMAIL DISABLED] Developing Elliott email suppressed for " + symbol + ".");
+            return false;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(rule.getUser().getEmail());
+        message.setSubject(subject);
+        message.setText(body);
+        send(message);
+        return true;
+    }
+
+    private String elliottPossibleTradeSection(AlertEvent event) {
+        if (event.getStopLossPrice() == null || event.getProfitTargetPrice() == null) {
+            return "Possible-trade plan: unavailable for this retained count.";
+        }
+        if (event.getTradeEntryPrice() == null || event.getElliottTargetZoneLow() == null
+                || event.getElliottTargetZoneHigh() == null
+                || event.getElliottRequiredRewardRiskRatio() == null) {
+            return """
+                    Possible-trade entry: %.4f
+                    Stop loss: %.4f
+                    Projected price target: %.4f
+                    """.formatted(event.getTradeEntryPrice(), event.getStopLossPrice(),
+                    event.getProfitTargetPrice());
+        }
+        return """
+                Possible-trade entry: %.4f
+                Structural stop: %.4f
+                Buffered stop loss: %.4f
+                Fibonacci target zone: %.4f to %.4f
+                Conservative target trigger: %.4f
+                Target basis: %s
+                Risk/reward: 1:%.2f (required 1:%.0f)
+                Trade-plan status: %s
+                """.formatted(
+                event.getTradeEntryPrice(), event.getStructuralStopPrice(), event.getStopLossPrice(),
+                event.getElliottTargetZoneLow(), event.getElliottTargetZoneHigh(),
+                event.getProfitTargetPrice(), event.getElliottTargetBasis(),
+                event.getRewardRiskRatio(), event.getElliottRequiredRewardRiskRatio(),
+                event.isElliottTradeActionable()
+                        ? "ACTIONABLE POSSIBLE TRADE" : "PROJECTION ONLY");
+    }
+
+    public boolean sendElliottTradePlanOutcomeEmail(ElliottStageTradePlan plan) {
+        if (plan == null || plan.getAlertEvent() == null
+                || plan.getAlertEvent().getAlertRule() == null || plan.getStatus() == null) {
+            throw new IllegalArgumentException("A resolved Elliott trade plan is required.");
+        }
+        AlertRule rule = plan.getAlertEvent().getAlertRule();
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        String outcome = switch (plan.getStatus()) {
+            case TARGET_REACHED -> "TARGET REACHED";
+            case STOPPED -> "STOP REACHED";
+            case STRUCTURE_INVALIDATED -> "ELLIOTT COUNT INVALIDATED";
+            case STAGE_COMPLETED -> "STAGE COMPLETED";
+            case REVISED -> "PLAN REVISED";
+            case ACTIVE -> "ACTIVE";
+            case PROJECTION_ONLY -> "PROJECTION ONLY";
+        };
+        String body = """
+                An Elliott possible-trade plan was resolved for %s.
+
+                Interval: %s
+                Elliott stage: %s
+                Expected move: %s
+                Outcome: %s
+                Entry: %.4f
+                Structural stop: %.4f
+                Buffered stop loss: %.4f
+                Fibonacci target zone: %.4f to %.4f
+                Conservative target trigger: %.4f
+                Target basis: %s
+                Risk/reward: 1:%.2f (required 1:%.0f)
+                Resolution period: %s
+                Resolution close: %.4f
+                Reason: %s
+
+                A structural invalidation closes the Elliott count itself. A buffered-stop outcome closes only this possible-trade plan unless a hard Elliott rule was also broken. This is a rule-based projection, not financial advice.
+                """.formatted(
+                symbol,
+                rule.getInterval(),
+                plan.getStage(),
+                plan.getExpectedMove(),
+                outcome,
+                plan.getEntryPrice(),
+                plan.getStructuralStopPrice(),
+                plan.getStopLossPrice(),
+                plan.getTargetZoneLow(),
+                plan.getTargetZoneHigh(),
+                plan.getTargetTriggerPrice(),
+                plan.getTargetBasis(),
+                plan.getActualRewardRiskRatio(),
+                plan.getRequiredRewardRiskRatio(),
+                plan.getResolutionTimestamp() == null ? "Unavailable" : SignalPeriodFormatter.format(
+                        plan.getResolutionTimestamp(), rule.getInterval(), signalTimeZone),
+                plan.getResolutionClosePrice() == null ? plan.getEntryPrice() : plan.getResolutionClosePrice(),
+                plan.getResolutionReason() == null ? outcome : plan.getResolutionReason());
+        SignalLifecycleStatus preferenceStatus = plan.getStatus()
+                == org.example.stockwatch247.model.enums.ElliottTradePlanStatus.TARGET_REACHED
+                ? SignalLifecycleStatus.CONFIRMED : SignalLifecycleStatus.INVALIDATED;
+        if (!emailEnabled || preferencesService != null
+                && !preferencesService.allowsLifecycleEmail(
+                rule.getUser(), preferenceStatus, rule.getInterval(), plan.getExpectedMove())) {
+            System.out.println("[EMAIL DISABLED] Elliott trade outcome email suppressed for " + symbol + ".");
+            return false;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(rule.getUser().getEmail());
+        message.setSubject("StockWatch Elliott trade plan: " + outcome + " on " + symbol);
+        message.setText(body);
+        send(message);
+        return true;
+    }
+
+    private boolean isDevelopingElliottEmailEnabled(AlertRule rule) {
+        return emailEnabled && (preferencesService == null || preferencesService.allowsNewSignalEmail(
+                rule.getUser(), AlertPatternFamily.ELLIOTT_WAVE,
+                rule.getInterval(), rule.getTradeSignal()));
+    }
+
     private boolean sendHarmonicSignalEmail(
             AlertRule rule,
             DetectedSignal signal,
@@ -263,9 +452,10 @@ public class AlertNotificationService {
                 Completion price: %.4f
                 Confirmation / signal period: %s
                 Confirmation candle close: %.4f
-                Geometry score: %d/100
+                %s
+                Setup score: %d/100
                 Score model: %s
-                Score meaning: hard structural rules passed; deductions come only from tolerated soft Fibonacci/proportion deviations.
+                Score meaning: hard structural rules passed; the base geometry score reflects tolerated soft Fibonacci/proportion deviations, then cross-pattern confluence from the preceding eight candles can add or subtract 10 points per other pattern family.
 
                 Formation points
                 %s
@@ -290,6 +480,7 @@ public class AlertNotificationService {
                 event.getHarmonicEndpointPrice(),
                 SignalPeriodFormatter.format(signal.candleTimestamp(), rule.getInterval(), signalTimeZone),
                 signal.closePrice(),
+                harmonicStopSection(event),
                 signal.setupScore(),
                 HarmonicPatternDetectionService.RULE_VERSION,
                 formatHarmonicPoints(event.getHarmonicPointsSnapshot(), rule),
@@ -306,6 +497,85 @@ public class AlertNotificationService {
         message.setTo(rule.getUser().getEmail());
         message.setSubject("StockWatch harmonic " + patternLabel.toLowerCase()
                 + ": " + signal.tradeSignal() + " on " + symbol);
+        message.setText(body);
+        send(message);
+        return true;
+    }
+
+    private String harmonicStopSection(AlertEvent event) {
+        if (event == null || !event.hasHarmonicStopPlan()) {
+            return "Structural stop plan: unavailable for this saved geometry.";
+        }
+        return """
+                Stop plan version: %s
+                Executable entry: %.4f (confirmation-candle close)
+                PRZ completion price: %.4f
+                Exact structural invalidation: %.4f
+                Invalidation basis: %s
+                Formula: %s
+                Equity liquidity buffer: %.2f%% / %.4f
+                Buffered executable stop: %.4f
+                Entry-to-stop distance: %.2f%%
+                Stop status: %s
+                """.formatted(
+                event.getTradePlanVersion(), event.getTradeEntryPrice(),
+                event.getHarmonicEndpointPrice(), event.getStructuralStopPrice(),
+                event.getHarmonicStopBasis(), event.getHarmonicStopFormula(),
+                event.getHarmonicStopBufferPercent(), event.getHarmonicStopBufferAmount(),
+                event.getStopLossPrice(), event.getHarmonicStopDistancePercent(),
+                event.getHarmonicStopStatus());
+    }
+
+    public boolean sendHarmonicStopOutcomeEmail(AlertEvent event, Candle breachedCandle) {
+        if (event == null || !event.hasHarmonicStopPlan() || event.getAlertRule() == null
+                || breachedCandle == null || breachedCandle.getTimestamp() == null) {
+            throw new IllegalArgumentException("A resolved harmonic stop plan is required.");
+        }
+        AlertRule rule = event.getAlertRule();
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        String patternLabel = event.getPattern().name()
+                .replace("HARMONIC_", "").replace('_', ' ');
+        String body = """
+                A harmonic structural stop was breached for %s.
+
+                Ticker: %s
+                Formation: %s
+                Direction: %s
+                Interval: %s
+                Entry: %.4f
+                PRZ completion price: %.4f
+                Structural invalidation: %.4f
+                Invalidation basis: %s
+                Buffer: %.2f%% / %.4f
+                Executable stop: %.4f
+                Resolution period: %s
+                Resolution candle high: %.4f
+                Resolution candle low: %.4f
+                Resolution candle close: %.4f
+                Reason: %s
+
+                Harmonic detection and the original saved geometry were not recalculated. This is a rule-based stop outcome, not financial advice.
+                """.formatted(
+                symbol, symbol, patternLabel, event.getTradeSignal(), rule.getInterval(),
+                event.getTradeEntryPrice(), event.getHarmonicEndpointPrice(),
+                event.getStructuralStopPrice(), event.getHarmonicStopBasis(),
+                event.getHarmonicStopBufferPercent(), event.getHarmonicStopBufferAmount(),
+                event.getStopLossPrice(), SignalPeriodFormatter.format(
+                        breachedCandle.getTimestamp(), rule.getInterval(), signalTimeZone),
+                breachedCandle.getHighPrice(), breachedCandle.getLowPrice(),
+                breachedCandle.getClosePrice(), event.getHarmonicStopResolutionReason());
+        if (!emailEnabled || preferencesService != null
+                && !preferencesService.allowsLifecycleEmail(
+                rule.getUser(), SignalLifecycleStatus.INVALIDATED,
+                rule.getInterval(), event.getTradeSignal())) {
+            System.out.println("[EMAIL DISABLED] Harmonic stop outcome email suppressed for " + symbol + ".");
+            return false;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(rule.getUser().getEmail());
+        message.setSubject("StockWatch harmonic stop breached: "
+                + patternLabel.toLowerCase() + " on " + symbol);
         message.setText(body);
         send(message);
         return true;
@@ -431,6 +701,7 @@ public class AlertNotificationService {
                     Stop loss: %.4f
                     Price to sell / profit target: %.4f
                     Risk-to-reward: 1:%.0f
+                    %s
                     Time stop: candle 8 after detection (the signal candle is candle 0)
                     Exit rule: completed-candle closes only; intraperiod wick touches do not close the trade.
                     Lifecycle note: CONFIRMED means the target closed successfully, INVALIDATED means the stop closed the trade, and EXPIRED means candle 8 closed the trade.
@@ -438,7 +709,8 @@ public class AlertNotificationService {
                     lifecycleEvent.getTradeEntryPrice(),
                     lifecycleEvent.getStopLossPrice(),
                     lifecycleEvent.getProfitTargetPrice(),
-                    lifecycleEvent.getRewardRiskRatio());
+                    lifecycleEvent.getRewardRiskRatio(),
+                    atrCircuitBreakerDescription(lifecycleEvent));
         }
         return """
 
@@ -550,6 +822,7 @@ public class AlertNotificationService {
                 ? "Trade plan: entry %.4f | stop %.4f | target %.4f | risk-to-reward 1:%.0f"
                         .formatted(event.getTradeEntryPrice(), event.getStopLossPrice(),
                                 event.getProfitTargetPrice(), event.getRewardRiskRatio())
+                        + "\n" + atrCircuitBreakerDescription(event)
                 : percentageLifecycleRules(event);
         String body = """
                 %s lifecycle update for %s.
@@ -665,6 +938,7 @@ public class AlertNotificationService {
                 Stop loss: %.4f
                 Price to sell / profit target: %.4f
                 Risk-to-reward: 1:%.0f
+                %s
                 Time stop: candle %d close
                 Decision rule: completed-candle closes only; intraperiod wick touches do not close the trade.
 
@@ -692,6 +966,7 @@ public class AlertNotificationService {
                 event.getStopLossPrice(),
                 event.getProfitTargetPrice(),
                 event.getRewardRiskRatio(),
+                atrCircuitBreakerDescription(event),
                 CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES,
                 SignalPeriodFormatter.format(
                         event.getResolutionCandleTimestamp(), rule.getInterval(), signalTimeZone),
@@ -714,6 +989,24 @@ public class AlertNotificationService {
         message.setText(body);
         send(message);
         return true;
+    }
+
+    private String atrCircuitBreakerDescription(AlertEvent event) {
+        if (event == null || !Boolean.TRUE.equals(event.getAtrCircuitBreakerApplied())) {
+            return "ATR circuit breaker: not activated";
+        }
+        String atrSource = event.getAtrCircuitBreakerValue() == null
+                ? "ATR was unavailable, so the percentage cap supplied the risk distance"
+                : "frozen ATR(%d) %.4f × %.2f".formatted(
+                        event.getAtrCircuitBreakerPeriod(),
+                        event.getAtrCircuitBreakerValue(),
+                        event.getAtrCircuitBreakerMultiplier());
+        return "ATR circuit breaker: ACTIVE | structural invalidation %.4f | original configured stop %.4f | %s | activation limit %.2f%%"
+                .formatted(
+                        event.getStructuralStopPrice(),
+                        event.getPreCircuitBreakerStopPrice(),
+                        atrSource,
+                        event.getAtrCircuitBreakerThresholdPercent());
     }
 
     private boolean completeCandlestickTradePlan(AlertEvent event) {
@@ -848,6 +1141,7 @@ public class AlertNotificationService {
                      Stop loss: %.4f
                     Price to sell / profit target: %.4f
                      Risk-to-reward: 1:%.0f
+                     %s
                      Time stop: candle 8 after detection (this detection candle is candle 0)
                     Exit rule: completed-candle closes only; wick touches do not close the trade.
 
@@ -863,7 +1157,8 @@ public class AlertNotificationService {
                         event.getTradeEntryPrice(),
                          event.getStopLossPrice(),
                          event.getProfitTargetPrice(),
-                        event.getRewardRiskRatio());
+                        event.getRewardRiskRatio(),
+                        atrCircuitBreakerDescription(event));
         } else if (detected) {
             body = """
                     One-candle candidate accepted for %s, but its current trade plan is incomplete.
@@ -1045,6 +1340,22 @@ public class AlertNotificationService {
 
     public boolean isEmailDeliveryEnabled() {
         return emailEnabled;
+    }
+
+    public boolean sendTechnicalOutlookChangeEmail(User user,
+                                                   org.example.stockwatch247.model.enums.TimeInterval interval,
+                                                   String subject,
+                                                   String body) {
+        if (!emailEnabled || preferencesService != null
+                && !preferencesService.allowsTechnicalOutlookEmail(user, interval)) {
+            System.out.println("[EMAIL DISABLED] Technical outlook change email suppressed for "
+                    + user.getEmail() + " " + interval + ".");
+            return false;
+        }
+        SimpleMailMessage message = baseMessage(user, subject);
+        message.setText(body);
+        send(message);
+        return true;
     }
 
     public boolean isSignalEmailEnabled(AlertRule rule, DetectedSignal signal) {

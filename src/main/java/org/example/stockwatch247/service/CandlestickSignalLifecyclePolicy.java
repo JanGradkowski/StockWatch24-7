@@ -16,7 +16,7 @@ import java.util.List;
  * semantics.</p>
  */
 final class CandlestickSignalLifecyclePolicy {
-    static final String RISK_REWARD_VERSION = "CANDLE_RR_V2";
+    static final String RISK_REWARD_VERSION = "CANDLE_RR_V3";
     static final int TIME_STOP_CANDLES = 8;
 
     private CandlestickSignalLifecyclePolicy() {
@@ -179,6 +179,18 @@ final class CandlestickSignalLifecyclePolicy {
                                double stopLoss,
                                TimeInterval interval,
                                double rewardRiskRatio) {
+        return tradePlan(tradeSignal, entryPrice, stopLoss, interval, rewardRiskRatio,
+                Double.NaN, new CandlestickPatternPreferencesService.CircuitBreakerSettings(
+                        false, 14, 1.5, interval == TimeInterval.DAILY ? 25.0 : 50.0));
+    }
+
+    static TradePlan tradePlan(TradeSignal tradeSignal,
+                               double entryPrice,
+                               double stopLoss,
+                               TimeInterval interval,
+                               double rewardRiskRatio,
+                               double atr,
+                               CandlestickPatternPreferencesService.CircuitBreakerSettings circuitBreaker) {
         double risk = tradeSignal == TradeSignal.BUY
                 ? entryPrice - stopLoss
                 : stopLoss - entryPrice;
@@ -188,19 +200,83 @@ final class CandlestickSignalLifecyclePolicy {
         if (!Double.isFinite(rewardRiskRatio) || rewardRiskRatio <= 0) {
             throw new IllegalArgumentException("A positive risk-to-reward ratio is required.");
         }
+        double configuredStopLoss = stopLoss;
+        boolean circuitBreakerApplied = false;
+        Double frozenAtr = null;
+        if (circuitBreaker != null && circuitBreaker.enabled()) {
+            double targetMovePercent = risk * rewardRiskRatio / entryPrice * 100.0;
+            if (targetMovePercent > circuitBreaker.activationThresholdPercent()) {
+                double maximumRisk = entryPrice
+                        * circuitBreaker.activationThresholdPercent() / 100.0 / rewardRiskRatio;
+                double atrRisk = Double.isFinite(atr) && atr > 0.0
+                        ? atr * circuitBreaker.atrMultiplier()
+                        : maximumRisk;
+                risk = Math.min(atrRisk, maximumRisk);
+                if (!Double.isFinite(risk) || risk <= 0.0) {
+                    throw new IllegalStateException("The ATR circuit breaker could not calculate positive risk.");
+                }
+                stopLoss = tradeSignal == TradeSignal.BUY
+                        ? entryPrice - risk
+                        : entryPrice + risk;
+                circuitBreakerApplied = true;
+                frozenAtr = Double.isFinite(atr) && atr > 0.0 ? atr : null;
+            }
+        }
         double profitTarget = tradeSignal == TradeSignal.BUY
                 ? entryPrice + risk * rewardRiskRatio
                 : entryPrice - risk * rewardRiskRatio;
-        if (!Double.isFinite(profitTarget)) {
+        if (!Double.isFinite(profitTarget) || profitTarget <= 0.0) {
             throw new IllegalStateException("The profit target could not be calculated.");
         }
-        return new TradePlan(entryPrice, stopLoss, profitTarget, rewardRiskRatio, TIME_STOP_CANDLES);
+        return new TradePlan(
+                entryPrice,
+                stopLoss,
+                profitTarget,
+                rewardRiskRatio,
+                TIME_STOP_CANDLES,
+                configuredStopLoss,
+                circuitBreakerApplied,
+                frozenAtr,
+                circuitBreaker == null ? null : circuitBreaker.atrPeriod(),
+                circuitBreaker == null ? null : circuitBreaker.atrMultiplier(),
+                circuitBreaker == null ? null : circuitBreaker.activationThresholdPercent());
+    }
+
+    static double averageTrueRange(List<Candle> chronologicalCandles, int throughIndex, int period) {
+        if (chronologicalCandles == null || chronologicalCandles.isEmpty()
+                || throughIndex < 0 || throughIndex >= chronologicalCandles.size()
+                || period < 2 || throughIndex + 1 < period) {
+            return Double.NaN;
+        }
+        int startIndex = throughIndex - period + 1;
+        double trueRangeTotal = 0.0;
+        Double previousClose = startIndex == 0
+                ? null : chronologicalCandles.get(startIndex - 1).getClosePrice();
+        for (int index = startIndex; index <= throughIndex; index++) {
+            Candle candle = chronologicalCandles.get(index);
+            if (candle == null || candle.getHighPrice() == null || candle.getLowPrice() == null
+                    || candle.getClosePrice() == null
+                    || !Double.isFinite(candle.getHighPrice())
+                    || !Double.isFinite(candle.getLowPrice())
+                    || !Double.isFinite(candle.getClosePrice())) {
+                return Double.NaN;
+            }
+            double trueRange = candle.getHighPrice() - candle.getLowPrice();
+            if (previousClose != null) {
+                trueRange = Math.max(trueRange, Math.abs(candle.getHighPrice() - previousClose));
+                trueRange = Math.max(trueRange, Math.abs(candle.getLowPrice() - previousClose));
+            }
+            trueRangeTotal += trueRange;
+            previousClose = candle.getClosePrice();
+        }
+        double atr = trueRangeTotal / period;
+        return Double.isFinite(atr) && atr > 0.0 ? atr : Double.NaN;
     }
 
     static double rewardRiskRatio(TimeInterval interval) {
         return switch (interval) {
             case WEEKLY -> 3.0;
-            case MONTHLY -> 4.0;
+            case MONTHLY -> 3.0;
             default -> 2.0;
         };
     }
@@ -264,6 +340,12 @@ final class CandlestickSignalLifecyclePolicy {
                      double stopLossPrice,
                      double profitTargetPrice,
                      double rewardRiskRatio,
-                     int timeStopCandles) {
+                     int timeStopCandles,
+                     double configuredStopLossPrice,
+                     boolean atrCircuitBreakerApplied,
+                     Double atrValue,
+                     Integer atrPeriod,
+                     Double atrMultiplier,
+                     Double activationThresholdPercent) {
     }
 }

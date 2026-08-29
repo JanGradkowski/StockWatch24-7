@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -144,6 +145,43 @@ class DistributedCoordinationIntegrationTest {
         assertThat(job.symbol()).isEqualTo(symbol);
         assertThat(job.interval()).isEqualTo(TimeInterval.DAILY);
         assertThat(job.scheduledFor()).isEqualTo(scheduledFor);
+    }
+
+    @Test
+    void outlookOnlyDailyWeeklyAndMonthlySubscriptionsEnterTheSamePendingJobQueue() {
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        String symbol = "O" + suffix;
+        Long userId = jdbcTemplate.queryForObject(
+                """
+                insert into users (email, password_hash, first_name, last_name, is_verified)
+                values (?, 'test-hash', 'Outlook', 'Queue', true)
+                returning id
+                """, Long.class, "outlook-queue-" + suffix.toLowerCase() + "@example.com");
+        Long assetId = jdbcTemplate.queryForObject(
+                """
+                insert into stock_assets (ticker_symbol, company_name, exchange, currency)
+                values (?, 'Outlook Queue Test', 'TEST', 'USD')
+                returning id
+                """, Long.class, symbol);
+        for (TimeInterval interval : List.of(
+                TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY)) {
+            jdbcTemplate.update("""
+                    insert into technical_outlook_subscriptions
+                        (user_id, stock_asset_id, interval, is_active)
+                    values (?, ?, ?, true)
+                    """, userId, assetId, interval.name());
+            Instant scheduledFor = Instant.parse("2099-02-01T00:00:00Z")
+                    .plusSeconds(interval.ordinal());
+
+            assertThat(jobStore.enqueueScheduledRun(interval, scheduledFor)).isGreaterThanOrEqualTo(1);
+            AlertCheckJobStore.AlertCheckJob job = jobStore
+                    .claimNextForSymbol(Duration.ofMinutes(5), symbol)
+                    .orElseThrow();
+            assertThat(job.symbol()).isEqualTo(symbol);
+            assertThat(job.interval()).isEqualTo(interval);
+            assertThat(job.scheduledFor()).isEqualTo(scheduledFor);
+            jobStore.complete(job.id());
+        }
     }
 
     @Test

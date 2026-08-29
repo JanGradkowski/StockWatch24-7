@@ -205,6 +205,10 @@ public class AnalysisPreferencesService {
         };
     }
 
+    public boolean allowsTechnicalOutlookEmail(User user, TimeInterval interval) {
+        return get(user).email().intervalEnabled(interval);
+    }
+
     @Transactional(readOnly = true)
     public boolean allowsInsiderEmail(User user) {
         return get(user).email().insider();

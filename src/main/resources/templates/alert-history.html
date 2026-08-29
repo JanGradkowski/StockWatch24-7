@@ -93,11 +93,15 @@
                 <time th:if="${event.lifecycle().terminal()}"
                       th:text="${event.lifecycle().resolutionPeriodLabel() != null ? 'Resolved ' + event.lifecycle().resolutionPeriodLabel() : 'Resolution period unavailable'}">Resolved 20&ndash;24 Jul 2026</time>
               </div>
-              <span th:if="${event.lifecycle().tracked()}"
+              <span th:if="${event.lifecycle().harmonicStopStatus() != null}"
+                    class="signal-lifecycle-pill"
+                    th:classappend="${event.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : ' detected'}"
+                    th:text="${event.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : 'Active stop'}">Active stop</span>
+              <span th:if="${event.lifecycle().harmonicStopStatus() == null and event.lifecycle().tracked()}"
                     class="signal-lifecycle-pill"
                     th:classappend="${' ' + event.lifecycle().cssClass()}"
                     th:text="${event.lifecycle().label()}">Detected</span>
-              <span th:unless="${event.lifecycle().tracked()}"
+              <span th:if="${event.lifecycle().harmonicStopStatus() == null and !event.lifecycle().tracked()}"
                     class="lifecycle-unavailable">Not tracked</span>
             </div>
             <div class="signal-event-metrics">
@@ -120,6 +124,10 @@
               <div th:if="${event.lifecycle().profitTargetPrice() != null}">
                 <span th:text="${'Target · 1:' + #numbers.formatDecimal(event.lifecycle().rewardRiskRatio(), 1, 0)}">Target · 1:2</span>
                 <strong th:text="${#numbers.formatDecimal(event.lifecycle().profitTargetPrice(), 1, 2)}">136.50</strong>
+              </div>
+              <div th:if="${event.lifecycle().atrCircuitBreakerApplied()}">
+                <span>ATR circuit breaker</span>
+                <strong>Active</strong>
               </div>
             </div>
             <div class="signal-event-delivery">

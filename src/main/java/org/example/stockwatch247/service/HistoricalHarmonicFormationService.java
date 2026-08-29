@@ -6,6 +6,7 @@ import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.ZoneId;
@@ -20,14 +21,33 @@ public class HistoricalHarmonicFormationService {
     private final CandleRepository candleRepository;
     private final CandleCompletionService candleCompletionService;
     private final HarmonicPatternDetectionService detectionService;
+    private final TechnicalIndicatorEnrichmentService enrichmentService;
+    private final ElliottWaveDetectionService elliottWaveDetectionService;
+    private final CrossPatternConfluenceService crossPatternConfluenceService;
 
+    @Autowired
     public HistoricalHarmonicFormationService(
             CandleRepository candleRepository,
             CandleCompletionService candleCompletionService,
-            HarmonicPatternDetectionService detectionService) {
+            HarmonicPatternDetectionService detectionService,
+            TechnicalIndicatorEnrichmentService enrichmentService,
+            ElliottWaveDetectionService elliottWaveDetectionService,
+            CrossPatternConfluenceService crossPatternConfluenceService) {
         this.candleRepository = candleRepository;
         this.candleCompletionService = candleCompletionService;
         this.detectionService = detectionService;
+        this.enrichmentService = enrichmentService;
+        this.elliottWaveDetectionService = elliottWaveDetectionService;
+        this.crossPatternConfluenceService = crossPatternConfluenceService;
+    }
+
+    HistoricalHarmonicFormationService(
+            CandleRepository candleRepository,
+            CandleCompletionService candleCompletionService,
+            HarmonicPatternDetectionService detectionService) {
+        this(candleRepository, candleCompletionService, detectionService,
+                null, new ElliottWaveDetectionService(),
+                new CrossPatternConfluenceService(new CandlePatternDetectionService()));
     }
 
     public HistoricalHarmonicDetail findDetail(
@@ -80,7 +100,11 @@ public class HistoricalHarmonicFormationService {
         List<CandleView> chartCandles = candles.subList(chartStart, chartEnd).stream()
                 .map(this::toCandleView)
                 .toList();
-        List<ScoreSectionView> scoreSections = formation.reasons().stream()
+        CrossPatternConfluenceService.Assessment confluence = historicalConfluence(
+                candles, timeInterval, formation, configuredDetector);
+        List<String> scoringReasons = new java.util.ArrayList<>(formation.reasons());
+        scoringReasons.add(confluence.reason());
+        List<ScoreSectionView> scoreSections = scoringReasons.stream()
                 .map(reason -> SignalScoreBreakdown.parse(
                         reason, "Harmonic geometry", formation.tradeSignal()))
                 .map(section -> new ScoreSectionView(
@@ -107,7 +131,7 @@ public class HistoricalHarmonicFormationService {
                 confirmationCandle.getClosePrice(),
                 SignalPeriodFormatter.format(
                         formation.confirmationTimestamp(), timeInterval, ZoneId.systemDefault()),
-                formation.qualityScore(),
+                confluence.adjustedScore(),
                 formation.classificationError(),
                 formation.ruleVersion(),
                 formation.points().stream()
@@ -115,11 +139,40 @@ public class HistoricalHarmonicFormationService {
                                 point.label(), point.timestamp(), point.price(), point.pivotType().name()))
                         .toList(),
                 formation.measurements(),
-                formation.reasons(),
+                List.copyOf(scoringReasons),
                 scoreSections,
                 chartCandles,
                 result(candles, confirmationIndex, confirmationCandle, formation.tradeSignal())
         );
+    }
+
+    private CrossPatternConfluenceService.Assessment historicalConfluence(
+            List<Candle> candles,
+            TimeInterval interval,
+            HarmonicPatternDetectionService.HarmonicFormation formation,
+            HarmonicPatternDetectionService configuredDetector) {
+        if (enrichmentService == null) {
+            return crossPatternConfluenceService.assess(
+                    formation.qualityScore(),
+                    org.example.stockwatch247.model.enums.AlertPatternFamily.HARMONIC_FORMATION,
+                    formation.tradeSignal(), formation.confirmationTimestamp(),
+                    new CrossPatternConfluenceService.Timeline(
+                            candles.stream().map(Candle::getTimestamp).toList(), List.of()));
+        }
+        List<org.example.stockwatch247.model.EnrichedCandle> candlestick = enrichmentService.enrich(
+                candles, candles.size(), interval);
+        List<org.example.stockwatch247.model.EnrichedCandle> elliott = enrichmentService.enrichForElliott(
+                candles, candles.size(), interval);
+        CrossPatternConfluenceService.Timeline timeline = crossPatternConfluenceService.buildTimeline(
+                candles, candlestick, elliott, interval,
+                CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval),
+                CandlestickPatternPreferencesService.factoryPreferences(),
+                elliottWaveDetectionService,
+                configuredDetector == null ? detectionService : configuredDetector);
+        return crossPatternConfluenceService.assess(
+                formation.qualityScore(),
+                org.example.stockwatch247.model.enums.AlertPatternFamily.HARMONIC_FORMATION,
+                formation.tradeSignal(), formation.confirmationTimestamp(), timeline);
     }
 
     private ResultView result(

@@ -8,6 +8,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SignalScoreBreakdownTest {
 
     @Test
+    void parsesSignedCrossPatternConfluenceAsItsOwnVisibleSection() {
+        SignalScoreBreakdown.Section section = SignalScoreBreakdown.parse(
+                "Cross-pattern confluence +10: base score 80/100; bullish Elliott wave occurred 3 candles earlier (+10 points); final score 90/100.",
+                "Evidence", TradeSignal.BUY);
+
+        assertThat(section.category()).isEqualTo("Cross-pattern confluence");
+        assertThat(section.scoreLabel()).isEqualTo("+10");
+        assertThat(section.status()).isEqualTo("Supporting confluence");
+        assertThat(section.scored()).isFalse();
+        assertThat(section.details()).singleElement()
+                .satisfies(detail -> assertThat(detail.text()).contains("final score 90/100"));
+    }
+
+    @Test
+    void exposesEachContributingFamilyAsSeparateRescorableEvidence() {
+        SignalScoreBreakdown.Section section = SignalScoreBreakdown.parse(
+                "Cross-pattern confluence +6: base score 70/100; Elliott wave correction was bullish and occurred 2 candles earlier (+18 points); Harmonic formation bat was bearish and occurred 1 candle earlier (-12 points); final score 76/100.",
+                "Evidence", TradeSignal.BUY);
+
+        assertThat(section.details()).extracting(SignalScoreBreakdown.Detail::label)
+                .containsExactly("Elliott wave", "Harmonic formation");
+        assertThat(section.details()).extracting(SignalScoreBreakdown.Detail::score)
+                .containsExactly("+18", "-12");
+    }
+
+    @Test
     void labelsEveryConfiguredIndicatorWithItsPeriods() {
         SignalScoreBreakdown.Section trend = SignalScoreBreakdown.parse(
                 "Trend indicators +0/20: weekly profile: EMA(8)/EMA(21) order was not aligned "

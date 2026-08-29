@@ -161,6 +161,41 @@ class MarketDataCooldownTest {
         verify(candleRepository, never()).findTop1BySymbolAndTimeIntervalOrderByTimestampDesc(anyString(), anyString());
     }
 
+    @Test
+    void failedProviderSyncIsNotImmediatelyRepeatedButForcedRefreshCanRetry() {
+        AtomicLong now = new AtomicLong(1_800_000_000L);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
+        TwelveDataService twelveDataService = mock(TwelveDataService.class);
+        YahooFinanceService yahooFinanceService = mock(YahooFinanceService.class);
+        when(twelveDataService.getTimeSeries("CDR", "1month", 1000))
+                .thenThrow(new IllegalStateException("plan restriction"));
+        when(yahooFinanceService.getTimeSeries("CDR", "1mo", 1000))
+                .thenThrow(new IllegalStateException("provider unavailable"));
+        MarketDataService service = new MarketDataService(
+                candleRepository,
+                stockAssetRepository,
+                twelveDataService,
+                yahooFinanceService,
+                new InMemoryMarketDataSyncCoordinator(now::get),
+                mock(MarketDataHistoryStateStore.class),
+                60,
+                600,
+                3_600,
+                180);
+
+        MarketDataService.CandleSyncResult first = service.syncCandles("CDR", "1mo", null, false);
+        MarketDataService.CandleSyncResult suppressed = service.syncCandles("CDR", "1mo", null, false);
+        MarketDataService.CandleSyncResult forced = service.syncCandles("CDR", "1mo", null, true);
+
+        assertThat(first.source()).isEqualTo(MarketDataService.CandleSource.NONE);
+        assertThat(suppressed.source()).isEqualTo(MarketDataService.CandleSource.NONE);
+        assertThat(suppressed.failureMessage()).isEqualTo(first.failureMessage());
+        assertThat(forced.source()).isEqualTo(MarketDataService.CandleSource.NONE);
+        verify(twelveDataService, times(2)).getTimeSeries("CDR", "1month", 1000);
+        verify(yahooFinanceService, times(2)).getTimeSeries("CDR", "1mo", 1000);
+    }
+
     private TestContext context(AtomicLong now,
                                 List<MarketDataBar> providerBars,
                                 List<Candle> existingCandles) {

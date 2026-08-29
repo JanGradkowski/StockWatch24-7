@@ -86,8 +86,8 @@
   <section class="signal-score-layout" aria-labelledby="historical-harmonic-score-heading">
     <article class="signal-score-card"
              th:classappend="${' ' + displayScore.band()}">
-      <div class="signal-score-card-topline"><div><span class="signal-section-kicker">Soft-rule compliance</span>
-        <h2 id="historical-harmonic-score-heading">Geometry score</h2></div>
+      <div class="signal-score-card-topline"><div><span class="signal-section-kicker">Geometry and cross-pattern confluence</span>
+        <h2 id="historical-harmonic-score-heading">Setup score</h2></div>
         <span class="signal-confidence-pill" th:text="${displayScore.strengthLabel()}">High compliance</span>
       </div>
       <div class="signal-score-visual">
@@ -96,7 +96,8 @@
         </div></div>
         <div class="signal-score-summary">
           <p th:text="${displayScore.explanation()}">Every hard direction, pivot-order, and point-boundary rule passed.</p>
-          <p th:if="${displayScore.customApplied()}" class="signal-factory-score-note">Original reconstructed geometry score: <strong th:text="${harmonic.qualityScore() + '/100'}">94/100</strong>.</p>
+          <p>The base geometry score is adjusted by same-ticker, same-interval candlestick and Elliott signals detected during the preceding eight completed candles.</p>
+          <p th:if="${displayScore.customApplied()}" class="signal-factory-score-note">Original reconstructed setup score: <strong th:text="${harmonic.qualityScore() + '/100'}">94/100</strong>.</p>
           <div class="signal-score-rail" role="meter" aria-valuemin="0" aria-valuemax="100"
                th:attr="aria-valuenow=${displayScore.score()}">
             <span th:each="segment : ${#numbers.sequence(1, 20)}" class="signal-score-segment"

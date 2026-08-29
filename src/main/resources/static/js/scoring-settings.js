@@ -9,6 +9,10 @@
       row.classList.toggle('excluded', !included.checked);
       if (included.checked) total += Number.parseInt(points.value, 10) || 0;
     });
+    card.querySelectorAll('.scoring-confluence-row').forEach(function (row) {
+      var included = row.querySelector('.scoring-confluence-include');
+      row.classList.toggle('excluded', !included.checked);
+    });
     var valid = total === 100;
     card.classList.toggle('invalid-total', !valid);
     card.querySelector('.scoring-total').textContent = total + ' / 100';

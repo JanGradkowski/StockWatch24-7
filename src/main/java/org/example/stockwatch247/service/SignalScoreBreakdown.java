@@ -17,6 +17,18 @@ final class SignalScoreBreakdown {
     private static final Pattern SCORED_REASON = Pattern.compile(
             "^(.+?)\\s+\\+([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?):\\s*(.+)$"
     );
+    private static final Pattern CROSS_PATTERN_REASON = Pattern.compile(
+            "^Cross-pattern confluence\\s+([+-][0-9]+):\\s*(.+)$",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CROSS_PATTERN_EVIDENCE = Pattern.compile(
+            "^(Candlestick pattern|Elliott wave|Harmonic formation)\\s+(.+?)\\s+was\\s+"
+                    + "(bullish|bearish)\\s+and occurred\\s+([0-9]+)\\s+candles?\\s+earlier\\s+"
+                    + "\\((.+)\\)$",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern CROSS_PATTERN_POINTS = Pattern.compile("^([+-][0-9]+)\\s+points$",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern DETAIL_SCORE = Pattern.compile(
             "\\s*\\(\\+([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)(?:\\s+[^)]*)?\\)"
     );
@@ -56,6 +68,21 @@ final class SignalScoreBreakdown {
 
     static Section parse(String reason, String fallbackCategory, TradeSignal direction) {
         String normalizedReason = reason == null ? "" : reason.trim();
+        Matcher crossPatternMatcher = CROSS_PATTERN_REASON.matcher(normalizedReason);
+        if (crossPatternMatcher.matches()) {
+            int adjustment = Integer.parseInt(crossPatternMatcher.group(1));
+            List<Detail> details = crossPatternDetails(crossPatternMatcher.group(2));
+            return new Section(
+                    "Cross-pattern confluence",
+                    crossPatternMatcher.group(1),
+                    null,
+                    adjustment > 0 ? "Supporting confluence"
+                            : adjustment < 0 ? "Opposing confluence" : "No adjustment",
+                    details.isEmpty() ? List.of(new Detail("Eight-candle comparison",
+                            sentence(crossPatternMatcher.group(2)), crossPatternMatcher.group(1))) : details,
+                    false
+            );
+        }
         Matcher scoreMatcher = SCORED_REASON.matcher(normalizedReason);
         if (!scoreMatcher.matches()) {
             return new Section(
@@ -107,6 +134,26 @@ final class SignalScoreBreakdown {
             }
         }
         return result.toString();
+    }
+
+    private static List<Detail> crossPatternDetails(String compactDetails) {
+        List<Detail> details = new ArrayList<>();
+        for (String rawFragment : compactDetails.split(";\\s*")) {
+            String fragment = rawFragment.trim();
+            Matcher matcher = CROSS_PATTERN_EVIDENCE.matcher(fragment);
+            if (!matcher.matches()) continue;
+            String family = capitalize(matcher.group(1));
+            String score = null;
+            Matcher points = CROSS_PATTERN_POINTS.matcher(matcher.group(5).trim());
+            if (points.matches()) score = points.group(1);
+            details.add(new Detail(family,
+                    sentence(matcher.group(2) + " was " + matcher.group(3)
+                            + " and occurred " + matcher.group(4)
+                            + ("1".equals(matcher.group(4)) ? " candle" : " candles")
+                            + " earlier (" + matcher.group(5) + ")"),
+                    score));
+        }
+        return List.copyOf(details);
     }
 
     private static List<Detail> parseDetails(String compactDetails, TradeSignal direction) {
@@ -357,7 +404,7 @@ final class SignalScoreBreakdown {
         }
 
         String scoreLabel() {
-            return scored ? earned + "/" + maximum : null;
+            return maximum == null ? earned : earned + "/" + maximum;
         }
     }
 

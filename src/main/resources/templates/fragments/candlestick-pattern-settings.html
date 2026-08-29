@@ -37,12 +37,56 @@
       </div>
     </section>
 
+    <section class="settings-card candlestick-circuit-breaker-overview">
+      <div class="settings-card-heading">
+        <div><span class="settings-number">03</span><h2>ATR target circuit breaker</h2></div>
+        <span class="analysis-profile-state" th:text="${preferences.custom()} ? 'Personalized safeguards' : 'Factory safeguards'">Factory safeguards</span>
+      </div>
+      <p class="analysis-settings-intro">When the normal structural/custom stop would produce a target move above the selected percentage, replace it with a frozen ATR-based risk distance. If that ATR distance would still exceed the limit, the percentage cap determines the final risk. Long stops are placed below entry and short stops above entry.</p>
+      <div class="analysis-safety-strip candlestick-circuit-breaker-guide">
+        <strong>Close-based and frozen</strong>
+        <span>ATR is calculated through the actual detection candle and never moves afterward.</span>
+        <span>The configured 1:R ratio and candle-8 time stop remain unchanged.</span>
+      </div>
+      <div class="candlestick-circuit-breaker-grid">
+        <fieldset class="analysis-setting-group candlestick-circuit-breaker-card" th:each="profile : ${candlestickCircuitBreakerProfiles}" th:classappend="${profile.enabled()} ? '' : ' disabled'">
+          <legend th:text="${profile.label()}">Daily</legend>
+          <label class="scoring-include-control candlestick-circuit-breaker-toggle">
+            <input type="checkbox" class="candlestick-circuit-breaker-enabled"
+                   th:name="${'circuitBreaker.' + profile.key() + '.enabled'}"
+                   th:checked="${profile.enabled()}">
+            <span><strong>Enable circuit breaker</strong><small>Factory: enabled</small></span>
+          </label>
+          <div class="candlestick-circuit-breaker-fields">
+            <label class="candlestick-value-control">
+              <span>ATR period <small th:text="${'Factory: ' + profile.factory().atrPeriod()}">Factory: 14</small></span>
+              <span><input type="number" required inputmode="numeric" min="2" max="500" step="1"
+                           th:name="${'circuitBreaker.' + profile.key() + '.atrPeriod'}"
+                           th:value="${profile.atrPeriod()}"><b>bars</b></span>
+            </label>
+            <label class="candlestick-value-control">
+              <span>ATR stop multiplier <small th:text="${'Factory: ' + profile.factory().atrMultiplier() + '×'}">Factory: 1.5×</small></span>
+              <span><input type="number" required inputmode="decimal" min="0.1" max="10" step="0.1"
+                           th:name="${'circuitBreaker.' + profile.key() + '.atrMultiplier'}"
+                           th:value="${profile.atrMultiplier()}"><b>×</b></span>
+            </label>
+            <label class="candlestick-value-control">
+              <span>Activate above <small th:text="${'Factory: ' + profile.factory().activationThresholdPercent() + '%'}">Factory: 25%</small></span>
+              <span><input type="number" required inputmode="decimal" min="1" max="95" step="0.5"
+                           th:name="${'circuitBreaker.' + profile.key() + '.activationThresholdPercent'}"
+                           th:value="${profile.activationThresholdPercent()}"><b>%</b></span>
+            </label>
+          </div>
+        </fieldset>
+      </div>
+    </section>
+
     <section class="settings-card candlestick-pattern-card" th:each="profile, stat : ${preferences.profiles}"
              th:attr="data-pattern-search=${profile.label + ' ' + profile.formation + ' ' + profile.description}"
              th:id="${'candlestick-pattern-' + profile.key}">
       <div class="settings-card-heading candlestick-pattern-heading">
         <div>
-          <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 3, 2)}">03</span>
+          <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 4, 2)}">04</span>
           <div><p class="scoring-family-label" th:text="${profile.formation}">Two-candle bullish reversal</p><h2 th:text="${profile.label}">Bullish Engulfing</h2></div>
         </div>
         <div class="candlestick-pattern-heading-actions">
@@ -125,10 +169,10 @@
   <form th:each="profile : ${preferences.profiles}" th:id="${profile.key + '-reset-form'}" th:action="@{/settings/candlestick-patterns/reset}" method="post" class="hidden-reset-form"><input type="hidden" name="pattern" th:value="${profile.pattern.name()}"></form>
 
   <section class="settings-card analysis-factory-zone candlestick-pattern-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">18</span><h2>Factory restoration</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
+    <div class="settings-card-heading"><div><span class="settings-number">19</span><h2>Factory restoration</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
     <form th:action="@{/settings/candlestick-patterns/reset}" method="post" class="settings-action-row">
       <input type="hidden" name="pattern" value="all">
-      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, and interval risk-to-reward ratios to factory values.</p></div>
+      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, interval risk-to-reward ratios, and ATR circuit breakers to factory values.</p></div>
       <button class="danger-button" type="submit">Restore candlestick defaults</button>
     </form>
   </section>

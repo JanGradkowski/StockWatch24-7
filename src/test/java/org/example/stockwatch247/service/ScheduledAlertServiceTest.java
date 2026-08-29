@@ -9,6 +9,7 @@ import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.ElliottSignalStage;
+import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
@@ -37,6 +38,281 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class ScheduledAlertServiceTest {
+
+    @Test
+    void dailyElliottLoadsPersistedHourlyChildrenThroughTheAnalysisCache() {
+        String symbol = "AAPL";
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        AlertRule rule = rule(
+                symbol, TimeInterval.DAILY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        List<Candle> parent = syntheticElliottCandles(symbol, "1d");
+        List<Candle> hourly = hourlyCandles(symbol, parent.getFirst().getTimestamp(), 600);
+
+        when(marketDataService.syncCandles(symbol, "1d", null, true))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.CACHE, 0, null));
+        when(marketDataService.syncCandlesForAnalysis(symbol, "60min", 1_000))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.CACHE, 0, null));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, "1d", PageRequest.of(0, 299))).thenReturn(parent.reversed());
+        when(candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+                        symbol, "60min", parent.getFirst().getTimestamp()))
+                .thenReturn(hourly);
+        when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
+                symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
+        when(detector.findDevelopingImpulses(any(), any())).thenReturn(List.of());
+        when(detector.detectAlertSignals(any())).thenReturn(List.of());
+        when(alertEventRepository.findDevelopingElliottEvents(symbol, TimeInterval.DAILY))
+                .thenReturn(List.of());
+
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, detector);
+
+        service.processSymbolInterval(symbol, TimeInterval.DAILY);
+
+        verify(marketDataService).syncCandlesForAnalysis(symbol, "60min", 1_000);
+        verify(marketDataService, never()).syncCandles(symbol, "60min", null, true);
+        verify(detector).findDevelopingImpulses(any(), any());
+    }
+
+    @Test
+    void developingElliottUsesSuppliedLowerDegreeCandles() {
+        String symbol = "SAP.DE";
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        AlertRule rule = rule(symbol, TimeInterval.WEEKLY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        List<EnrichedCandle> parent = List.of(enriched(1, 100.0));
+        List<EnrichedCandle> child = List.of(enriched(1, 99.0), enriched(2, 101.0));
+        Candle latest = candle(symbol, "1wk", 3, 105, 107, 103, 106);
+        ElliottWaveDetectionService.DevelopingImpulse waveTwo = developingCandidate(
+                ElliottSignalStage.WAVE_II_END,
+                CandlePattern.ELLIOTT_BULLISH_WAVE_II_END,
+                TradeSignal.BUY, latest.getTimestamp(), 106.0,
+                List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"),
+                        point("II", 3, 106, "LOW")));
+        when(detector.findDevelopingImpulses(parent, child)).thenReturn(List.of(waveTwo));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                rule, waveTwo.developmentKey())).thenReturn(Optional.empty());
+        when(alertEventRepository.findDevelopingElliottEvents(symbol, TimeInterval.WEEKLY))
+                .thenReturn(List.of());
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, detector);
+
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(rule),
+                List.of(latest), parent, child, latest.getTimestamp());
+
+        verify(detector).findDevelopingImpulses(parent, child);
+        verify(alertEventRepository).save(any(AlertEvent.class));
+    }
+
+    @Test
+    void developingElliottCycleCreatesOneWaveTwoSignalThenUpdatesItAtWaveThree() {
+        String symbol = "SAP.DE";
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        AlertRule rule = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        List<EnrichedCandle> enriched = List.of(enriched(1, 100.0));
+        Candle latestWaveTwo = candle(symbol, "1wk", 3, 105, 107, 103, 106);
+        ElliottWaveDetectionService.DevelopingImpulse waveTwo = developingCandidate(
+                ElliottSignalStage.WAVE_II_END,
+                CandlePattern.ELLIOTT_BULLISH_WAVE_II_END,
+                TradeSignal.BUY, 3 * 86_400L, 106.0,
+                List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"), point("II", 3, 106, "LOW")));
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(waveTwo));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                rule, "BULLISH:86400:172800")).thenReturn(Optional.empty());
+        when(alertEventRepository.findDevelopingElliottEvents(symbol, TimeInterval.WEEKLY))
+                .thenReturn(List.of());
+        when(notificationService.sendDevelopingElliottEmail(
+                eq(rule), any(DetectedSignal.class), any(AlertEvent.class), eq(false))).thenReturn(true);
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, detector);
+
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(rule),
+                List.of(latestWaveTwo), enriched, latestWaveTwo.getTimestamp());
+
+        ArgumentCaptor<AlertEvent> saved = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventRepository).save(saved.capture());
+        AlertEvent cycle = saved.getValue();
+        assertThat(cycle.getElliottSignalStage()).isEqualTo(ElliottSignalStage.WAVE_II_END);
+        assertThat(cycle.getPattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_WAVE_II_END);
+        assertThat(cycle.getStopLossPrice()).isEqualTo(98.0);
+        assertThat(cycle.getProfitTargetPrice()).isEqualTo(138.0);
+        assertThat(cycle.getElliottTransitionHistory()).contains("WAVE_II_END");
+
+        ElliottWaveDetectionService.DevelopingImpulse waveThree = developingCandidate(
+                ElliottSignalStage.WAVE_III_END,
+                CandlePattern.ELLIOTT_BULLISH_WAVE_III_END,
+                TradeSignal.SELL, 4 * 86_400L, 139.0,
+                List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"),
+                        point("II", 3, 106, "LOW"), point("III", 4, 140, "HIGH")));
+        Candle latestWaveThree = candle(symbol, "1wk", 4, 141, 142, 138, 139);
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(waveThree));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                rule, "BULLISH:86400:172800")).thenReturn(Optional.of(cycle));
+
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(rule),
+                List.of(latestWaveThree), enriched, latestWaveThree.getTimestamp());
+
+        assertThat(cycle.getElliottSignalStage()).isEqualTo(ElliottSignalStage.WAVE_III_END);
+        assertThat(cycle.getPattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_WAVE_III_END);
+        assertThat(cycle.getTradeSignal()).isEqualTo(TradeSignal.SELL);
+        assertThat(cycle.getElliottTransitionHistory().lines()).hasSize(2);
+        verify(notificationService, org.mockito.Mockito.times(2)).sendDevelopingElliottEmail(
+                eq(rule), any(DetectedSignal.class), eq(cycle), eq(false));
+    }
+
+    @Test
+    void waveVRemainsOnTheSameDevelopingCardUntilValidatedAbcCompletes() {
+        String symbol = "SAP.DE";
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        AlertRule rule = rule(symbol, TimeInterval.WEEKLY,
+                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        List<EnrichedCandle> enriched = List.of(enriched(1, 100.0));
+        List<ElliottWaveDetectionService.ElliottWavePoint> impulsePoints = List.of(
+                point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"),
+                point("II", 3, 110, "LOW"), point("III", 4, 145, "HIGH"),
+                point("IV", 5, 130, "LOW"), point("V", 6, 155, "HIGH"));
+        ElliottWaveDetectionService.ElliottWaveStructure waveVStructure =
+                elliottStructure(false, impulsePoints, 7 * 86_400L);
+        ElliottWaveDetectionService.DevelopingImpulse waveV = developingCandidate(
+                ElliottSignalStage.WAVE_V_END,
+                CandlePattern.ELLIOTT_BULLISH_WAVE_V_END,
+                TradeSignal.SELL, 7 * 86_400L, 152.0, impulsePoints, waveVStructure,
+                "Projected ABC correction", "Wave II and IV corrective structures");
+        AlertEvent cycle = new AlertEvent();
+        cycle.setAlertRule(rule);
+        cycle.setLifecycleStatus(SignalLifecycleStatus.DETECTED);
+        cycle.setElliottSignalStage(ElliottSignalStage.WAVE_IV_END);
+        cycle.setElliottDeveloping(true);
+        cycle.setElliottDevelopmentKey(waveV.developmentKey());
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(waveV));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                rule, waveV.developmentKey())).thenReturn(Optional.of(cycle));
+        when(alertEventRepository.findDevelopingElliottEvents(symbol, TimeInterval.WEEKLY))
+                .thenReturn(List.of());
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, detector);
+
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(rule),
+                List.of(candle(symbol, "1wk", 7, 153, 154, 151, 152)),
+                enriched, 7 * 86_400L);
+
+        String cycleKey = ElliottWaveSignalLifecyclePolicy.cycleKey(waveVStructure).orElseThrow();
+        assertThat(cycle.getElliottSignalStage()).isEqualTo(ElliottSignalStage.WAVE_V_END);
+        assertThat(cycle.getElliottCycleKey()).isEqualTo(cycleKey);
+        assertThat(cycle.isElliottDeveloping()).isTrue();
+        assertThat(cycle.getConfirmationWindowCandles()).isNull();
+
+        List<ElliottWaveDetectionService.ElliottWavePoint> correctionPoints = new ArrayList<>(impulsePoints);
+        correctionPoints.add(point("A", 8, 137, "LOW"));
+        correctionPoints.add(point("B", 9, 149, "HIGH"));
+        correctionPoints.add(point("C", 10, 128, "LOW"));
+        ElliottWaveDetectionService.ElliottWaveStructure correctionStructure =
+                elliottStructure(true, correctionPoints, 11 * 86_400L);
+        ElliottWaveDetectionService.DevelopingImpulse correction = developingCandidate(
+                ElliottSignalStage.CORRECTION_END,
+                CandlePattern.ELLIOTT_BULLISH_CORRECTION,
+                TradeSignal.BUY, 11 * 86_400L, 132.0, correctionPoints,
+                correctionStructure, "Projected primary-trend resumption toward Wave V",
+                "Zigzag 5-3-5 with triangular Wave B (3-3-3-3-3)");
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(correction));
+
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(rule),
+                List.of(candle(symbol, "1wk", 11, 130, 133, 129, 132)),
+                enriched, 11 * 86_400L);
+
+        assertThat(cycle.getElliottSignalStage()).isEqualTo(ElliottSignalStage.CORRECTION_END);
+        assertThat(cycle.getPattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+        assertThat(cycle.getTradeSignal()).isEqualTo(TradeSignal.BUY);
+        assertThat(cycle.isElliottDeveloping()).isFalse();
+        assertThat(cycle.getElliottCycleKey()).isEqualTo(cycleKey);
+        assertThat(cycle.getConfirmationWindowCandles()).isPositive();
+        assertThat(cycle.getElliottCorrectionType()).contains("Zigzag 5-3-5", "triangular Wave B");
+        verify(alertEventRepository, org.mockito.Mockito.times(2)).save(cycle);
+        verify(notificationService, org.mockito.Mockito.times(2)).sendDevelopingElliottEmail(
+                eq(rule), any(DetectedSignal.class), eq(cycle), eq(false));
+    }
+
+    @Test
+    void revisedPrimaryCountUpdatesTheSameSignalWithoutAnotherEmail() {
+        String symbol = "SAP.DE";
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        AlertRule rule = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        List<EnrichedCandle> enriched = List.of(enriched(1, 100.0));
+        Candle latest = candle(symbol, "1wk", 5, 113, 115, 112, 114);
+        ElliottWaveDetectionService.DevelopingImpulse firstCount = developingCandidate(
+                ElliottSignalStage.WAVE_II_END,
+                CandlePattern.ELLIOTT_BULLISH_WAVE_II_END,
+                TradeSignal.BUY, latest.getTimestamp(), 114.0,
+                List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"),
+                        point("II", 3, 106, "LOW")));
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(firstCount));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                rule, firstCount.developmentKey())).thenReturn(Optional.empty());
+        when(alertEventRepository.findDevelopingElliottEvents(symbol, TimeInterval.WEEKLY))
+                .thenReturn(List.of());
+        ScheduledAlertService service = service(
+                alertRuleRepository, alertEventRepository, candleRepository, marketDataService,
+                notificationService, detector);
+
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(rule),
+                List.of(latest), enriched, latest.getTimestamp());
+
+        ArgumentCaptor<AlertEvent> saved = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventRepository).save(saved.capture());
+        AlertEvent event = saved.getValue();
+        String originalSnapshot = event.getElliottStructureSnapshot();
+
+        ElliottWaveDetectionService.DevelopingImpulse revisedCount = developingCandidate(
+                ElliottSignalStage.WAVE_II_END,
+                CandlePattern.ELLIOTT_BULLISH_WAVE_II_END,
+                TradeSignal.BUY, latest.getTimestamp(), 114.0,
+                List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"),
+                        point("II", 4, 109, "LOW")));
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(revisedCount));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                rule, revisedCount.developmentKey())).thenReturn(Optional.of(event));
+
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(rule),
+                List.of(latest), enriched, latest.getTimestamp());
+
+        assertThat(event.getElliottStructureSnapshot()).isNotEqualTo(originalSnapshot);
+        assertThat(event.getElliottStructureSnapshot()).contains("II|345600|109.0000000000|LOW");
+        verify(alertEventRepository, org.mockito.Mockito.times(2)).save(event);
+        verify(notificationService, org.mockito.Mockito.times(1)).sendDevelopingElliottEmail(
+                eq(rule), any(DetectedSignal.class), eq(event), eq(false));
+    }
 
     @Test
     void confirmedHarmonicCreatesImmutableSignalSnapshotAndSendsEmail() {
@@ -74,6 +350,8 @@ class ScheduledAlertServiceTest {
                 notificationService, detectionService, new ElliottWaveDetectionService());
         service.configureHarmonicPatterns(new HarmonicPatternDetectionService(
                 new HarmonicPatternDetectionService.Rules(.04, .08, .10, 0.0, 1, 40)));
+        service.configureHarmonicStopPlans(
+                new HarmonicStopPlanService(alertEventRepository, notificationService));
 
         service.processSymbolInterval(symbol, TimeInterval.DAILY);
 
@@ -89,6 +367,14 @@ class ScheduledAlertServiceTest {
         assertThat(event.getValue().getHarmonicEndpointPrice()).isEqualTo(121.4);
         assertThat(event.getValue().getHarmonicPointsSnapshot()).contains("X|", "D|");
         assertThat(event.getValue().getHarmonicMeasurementsSnapshot()).contains("B_XA|");
+        assertThat(event.getValue().getTradePlanVersion()).isEqualTo(HarmonicStopPlanPolicy.VERSION);
+        assertThat(event.getValue().getTradeEntryPrice()).isEqualTo(130.0);
+        assertThat(event.getValue().getStructuralStopPrice()).isEqualTo(100.0);
+        assertThat(event.getValue().getStopLossPrice()).isEqualTo(99.5);
+        assertThat(event.getValue().getHarmonicStopBasis()).isEqualTo("Point X / 1.0 XA");
+        assertThat(event.getValue().getHarmonicStopBufferPercent()).isEqualTo(.5);
+        assertThat(event.getValue().getProfitTargetPrice()).isNull();
+        assertThat(event.getValue().getRewardRiskRatio()).isNull();
         assertThat(event.getValue().getScoreVersion())
                 .isEqualTo(HarmonicPatternDetectionService.RULE_VERSION);
         assertThat(event.getValue().getInitialEmailSentAt()).isNotNull();
@@ -101,6 +387,15 @@ class ScheduledAlertServiceTest {
 
         assertThat(scheduled.cron()).isEqualTo("${alerts.schedule.daily-cron:0 0 0 * * TUE-SAT}");
         assertThat(scheduled.zone()).isEqualTo("${alerts.schedule.zone:Europe/Brussels}");
+    }
+
+    @Test
+    void queuedAlertWorkerAllowsFourTickerChecksPerMinute() throws Exception {
+        Scheduled scheduled = ScheduledAlertService.class.getDeclaredMethod("processNextQueuedCheck")
+                .getAnnotation(Scheduled.class);
+
+        assertThat(scheduled.fixedDelayString())
+                .isEqualTo("${alerts.schedule.worker-delay-ms:15000}");
     }
 
     @Test
@@ -517,10 +812,10 @@ class ScheduledAlertServiceTest {
         when(detector.detectAlertSignals(any())).thenReturn(List.of(signal));
         when(detector.findStructureForSignal(any(), eq(signal.pattern()), eq(signalTimestamp)))
                 .thenReturn(Optional.of(structure));
-        when(alertEventRepository
-                .findFirstByAlertRuleAndElliottCycleKeyAndElliottSignalStageOrderByIdAsc(
-                        rule, cycleKey, ElliottSignalStage.WAVE_V_END))
-                .thenReturn(Optional.of(new AlertEvent()));
+        when(alertEventRepository.findElliottCycleStageForUser(
+                rule.getUser(), symbol, TimeInterval.MONTHLY, cycleKey,
+                ElliottSignalStage.WAVE_V_END, PageRequest.of(0, 1)))
+                .thenReturn(List.of(new AlertEvent()));
 
         ScheduledAlertService service = service(
                 alertRuleRepository,
@@ -630,6 +925,62 @@ class ScheduledAlertServiceTest {
         return new Candle(symbol, interval, day * 86_400L, open, high, low, close, 1_000L);
     }
 
+    private EnrichedCandle enriched(long timestamp, double close) {
+        return new EnrichedCandle(timestamp, close - .4, close + .6, close - .6, close,
+                1_500, 1_000, 55, close - 2, Double.NaN, Double.NaN, Double.NaN, 4);
+    }
+
+    private ElliottWaveDetectionService.ElliottWavePoint point(
+            String label, long day, double price, String type) {
+        return new ElliottWaveDetectionService.ElliottWavePoint(label, day * 86_400L, price, type);
+    }
+
+    private ElliottWaveDetectionService.DevelopingImpulse developingCandidate(
+            ElliottSignalStage stage,
+            CandlePattern pattern,
+            TradeSignal expectedMove,
+            long confirmationTimestamp,
+            double close,
+            List<ElliottWaveDetectionService.ElliottWavePoint> points) {
+        return new ElliottWaveDetectionService.DevelopingImpulse(
+                "BULLISH:86400:172800", "BULLISH", stage, pattern, expectedMove,
+                confirmationTimestamp, close, points.getLast().price(), 98.0, 138.0,
+                "Projected next wave", "Corrective A-B-C", 82, points,
+                List.of("Validated nested structure"), null);
+    }
+
+    private ElliottWaveDetectionService.DevelopingImpulse developingCandidate(
+            ElliottSignalStage stage,
+            CandlePattern pattern,
+            TradeSignal expectedMove,
+            long confirmationTimestamp,
+            double close,
+            List<ElliottWaveDetectionService.ElliottWavePoint> points,
+            ElliottWaveDetectionService.ElliottWaveStructure completedStructure,
+            String forecast,
+            String correctionType) {
+        return new ElliottWaveDetectionService.DevelopingImpulse(
+                "BULLISH:86400:172800", "BULLISH", stage, pattern, expectedMove,
+                confirmationTimestamp, close, points.getLast().price(), 98.0, 155.0,
+                forecast, correctionType, 86, points,
+                List.of("Validated nested structure"), completedStructure);
+    }
+
+    private ElliottWaveDetectionService.ElliottWaveStructure elliottStructure(
+            boolean correctionComplete,
+            List<ElliottWaveDetectionService.ElliottWavePoint> points,
+            long confirmationTimestamp) {
+        return new ElliottWaveDetectionService.ElliottWaveStructure(
+                "BULLISH", correctionComplete, List.copyOf(points), confirmationTimestamp, 86,
+                .5, false, 1.75, .4,
+                ElliottWaveDetectionService.ImpulseVariant.STANDARD,
+                correctionComplete ? ElliottWaveDetectionService.CorrectionVariant.STANDARD
+                        : ElliottWaveDetectionService.CorrectionVariant.NONE,
+                correctionComplete ? .48 : Double.NaN,
+                correctionComplete ? 1.1 : Double.NaN,
+                List.of());
+    }
+
     private List<Candle> syntheticElliottCandles(String symbol) {
         return syntheticElliottCandles(symbol, "1mo");
     }
@@ -662,6 +1013,16 @@ class ScheduledAlertServiceTest {
             }
         }
         return candles;
+    }
+
+    private List<Candle> hourlyCandles(String symbol, long firstTimestamp, int count) {
+        List<Candle> candles = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            double close = 100.0 + Math.sin(index / 8.0) * 4.0;
+            candles.add(new Candle(symbol, "60min", firstTimestamp + index * 3_600L,
+                    close - .2, close + .4, close - .4, close, 1_000L));
+        }
+        return List.copyOf(candles);
     }
 
     private List<Candle> syntheticWaveVEndCandles(String symbol) {

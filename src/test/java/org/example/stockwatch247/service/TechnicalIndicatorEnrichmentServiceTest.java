@@ -87,6 +87,27 @@ class TechnicalIndicatorEnrichmentServiceTest {
     }
 
     @Test
+    void elliottHourlyChildWavesUseTheFrozenNativeBarProfile() {
+        int signalCandles = 100;
+        int required = service.requiredElliottInputCandles(signalCandles, TimeInterval.ONE_HOUR);
+        List<Candle> history = IntStream.rangeClosed(1, required)
+                .mapToObj(index -> candle(index, "60min", 3_600L))
+                .toList();
+
+        List<EnrichedCandle> enriched =
+                service.enrichForElliott(history, signalCandles, TimeInterval.ONE_HOUR);
+
+        assertThat(required).isEqualTo(299);
+        assertThat(enriched).hasSize(signalCandles);
+        assertThat(enriched.getFirst().longSma()).isCloseTo(100.5, within(0.000_000_1));
+        assertThat(enriched.getLast().longSma()).isCloseTo(199.5, within(0.000_000_1));
+        assertThat(enriched).allSatisfy(candle -> {
+            assertThat(candle.rsi()).isFinite();
+            assertThat(candle.atr()).isFinite();
+        });
+    }
+
+    @Test
     void rejectsCandlesWhoseDeclaredIntervalDoesNotMatchTheRequestedProfile() {
         List<Candle> daily = IntStream.rangeClosed(1, 30)
                 .mapToObj(day -> candle(day, "1d", 86_400L))

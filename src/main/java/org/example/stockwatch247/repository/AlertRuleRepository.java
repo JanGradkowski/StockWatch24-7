@@ -45,6 +45,9 @@ public interface AlertRuleRepository extends JpaRepository<AlertRule, Long> {
     List<AlertRule> findByUserAndStockAssetAndIsActiveTrue(User user, StockAsset stockAsset);
 
     @EntityGraph(attributePaths = {"user", "stockAsset"})
+    List<AlertRule> findByUserAndStockAssetIn(User user, List<StockAsset> stockAssets);
+
+    @EntityGraph(attributePaths = {"user", "stockAsset"})
     List<AlertRule> findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(String tickerSymbol,
                                                                                        TimeInterval interval);
 

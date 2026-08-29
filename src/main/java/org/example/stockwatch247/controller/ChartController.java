@@ -13,7 +13,9 @@ import org.example.stockwatch247.service.ElliottWaveDetectionService;
 import org.example.stockwatch247.service.ElliottWavePreferencesService;
 import org.example.stockwatch247.service.HarmonicPatternDetectionService;
 import org.example.stockwatch247.service.HarmonicPatternPreferencesService;
+import org.example.stockwatch247.service.HistoricalSignalCacheService;
 import org.example.stockwatch247.service.TechnicalIndicatorEnrichmentService;
+import org.example.stockwatch247.service.ChartTechnicalIndicatorService;
 import org.example.stockwatch247.service.TwelveDataService;
 import org.example.stockwatch247.service.YahooFinanceService;
 import org.springframework.data.domain.PageRequest;
@@ -21,6 +23,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
@@ -30,6 +34,7 @@ import java.util.Set;
 @RequestMapping("/api/stocks")
 public class ChartController {
     private static final int LATEST_WAVE_CANDLES = 100;
+    private static final int HARMONIC_CONTEXT_CANDLES = 750;
 
     private final MarketDataService marketDataService;
     private final CandleRepository candleRepository;
@@ -44,6 +49,8 @@ public class ChartController {
     private HarmonicPatternDetectionService harmonicPatternDetectionService =
             new HarmonicPatternDetectionService();
     private HarmonicPatternPreferencesService harmonicPatternPreferencesService;
+    private HistoricalSignalCacheService historicalSignalCacheService;
+    private ChartTechnicalIndicatorService chartTechnicalIndicatorService;
 
     public ChartController(CandleRepository candleRepository,
                            LivePricingService livePricingService, MarketDataService marketDataService,
@@ -81,6 +88,16 @@ public class ChartController {
         this.harmonicPatternPreferencesService = preferencesService;
     }
 
+    @Autowired(required = false)
+    void configureHistoricalSignalCache(HistoricalSignalCacheService cacheService) {
+        this.historicalSignalCacheService = cacheService;
+    }
+
+    @Autowired
+    void configureChartTechnicalIndicators(ChartTechnicalIndicatorService service) {
+        this.chartTechnicalIndicatorService = service;
+    }
+
     @GetMapping("/{symbol}/candles")
     public CandlePageResponse getHistoricalCandles(
             @PathVariable String symbol,
@@ -97,6 +114,19 @@ public class ChartController {
                 page.hasMore(),
                 page.source().name(),
                 page.failureMessage());
+    }
+
+    @PostMapping("/{symbol}/chart-indicators")
+    public ChartTechnicalIndicatorService.IndicatorBatchView getChartIndicators(
+            @PathVariable String symbol,
+            @RequestParam(defaultValue = "1d") String interval,
+            @RequestBody ChartTechnicalIndicatorService.IndicatorBatchRequest request) {
+        symbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        interval = SecurityInputValidator.requireInterval(interval);
+        if (chartTechnicalIndicatorService == null) {
+            throw new IllegalStateException("Configurable chart indicators are unavailable.");
+        }
+        return chartTechnicalIndicatorService.calculate(symbol, interval, request);
     }
 
     @GetMapping("/{symbol}/live")
@@ -183,9 +213,41 @@ public class ChartController {
                                                                @RequestParam(required = false) Long from,
                                                                Principal principal) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String cacheSymbol = symbol;
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
         from = SecurityInputValidator.requireBeforeTimestamp(from);
         TimeInterval waveInterval = elliottInterval(validatedInterval);
+        if (historicalSignalCacheService == null) {
+            return calculateHistoricalElliottWaves(symbol, validatedInterval, from, principal, waveInterval);
+        }
+        marketDataService.syncCandles(symbol, validatedInterval, null);
+        ElliottWaveHistoryOverlay completeHistory = historicalSignalCacheService.getOrCompute(
+                HistoricalSignalCacheService.Family.ELLIOTT_WAVE,
+                symbol,
+                validatedInterval,
+                ElliottWaveDetectionService.SETUP_SCORE_VERSION,
+                elliottCacheSettings(principal, waveInterval),
+                ElliottWaveHistoryOverlay.class,
+                () -> calculateHistoricalElliottWaves(
+                        cacheSymbol, validatedInterval, null, principal, waveInterval));
+        if (from == null) {
+            return completeHistory;
+        }
+        long requestedFrom = from;
+        List<ElliottWaveOverlay> requestedStructures = completeHistory.structures().stream()
+                .filter(structure -> !structure.points().isEmpty()
+                        && structure.points().getFirst().timestamp() >= requestedFrom)
+                .toList();
+        return new ElliottWaveHistoryOverlay(
+                validatedInterval, labelStyle(validatedInterval), from, requestedStructures);
+    }
+
+    private ElliottWaveHistoryOverlay calculateHistoricalElliottWaves(
+            String symbol,
+            String validatedInterval,
+            Long from,
+            Principal principal,
+            TimeInterval waveInterval) {
         List<Candle> candles = from == null
                 ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval)
                 : candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
@@ -244,15 +306,48 @@ public class ChartController {
             @RequestParam(required = false) Long from,
             Principal principal) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String cacheSymbol = symbol;
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
         harmonicInterval(validatedInterval);
         from = SecurityInputValidator.requireBeforeTimestamp(from);
-        List<Candle> candles = from == null
-                ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval)
-                : candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
-                        symbol, validatedInterval, from);
+        if (historicalSignalCacheService == null) {
+            return calculateHistoricalHarmonicFormations(symbol, validatedInterval, from, principal);
+        }
+        marketDataService.syncCandles(symbol, validatedInterval, null);
+        HarmonicHistoryOverlay completeHistory = historicalSignalCacheService.getOrCompute(
+                HistoricalSignalCacheService.Family.HARMONIC_FORMATION,
+                symbol,
+                validatedInterval,
+                HarmonicPatternDetectionService.RULE_VERSION,
+                harmonicCacheSettings(principal),
+                HarmonicHistoryOverlay.class,
+                () -> calculateHistoricalHarmonicFormations(
+                        cacheSymbol, validatedInterval, null, principal));
+        if (from == null) {
+            return completeHistory;
+        }
+        long requestedFrom = from;
+        return new HarmonicHistoryOverlay(
+                validatedInterval,
+                from,
+                HarmonicPatternDetectionService.RULE_VERSION,
+                completeHistory.formations().stream()
+                        .filter(formation -> formation.points().getLast().timestamp() >= requestedFrom)
+                        .toList());
+    }
+
+    private HarmonicHistoryOverlay calculateHistoricalHarmonicFormations(
+            String symbol,
+            String validatedInterval,
+            Long from,
+            Principal principal) {
+        Long requestedFrom = from;
+        List<Candle> candles = harmonicDetectionCandles(symbol, validatedInterval, from);
         List<HarmonicPatternDetectionService.HarmonicFormation> formations =
-                harmonicDetector(principal).detectHistorical(candles);
+                harmonicDetector(principal).detectHistorical(candles).stream()
+                        .filter(formation -> requestedFrom == null
+                                || formation.points().getLast().timestamp() >= requestedFrom)
+                        .toList();
         return new HarmonicHistoryOverlay(
                 validatedInterval,
                 from,
@@ -266,6 +361,23 @@ public class ChartController {
         return getHistoricalHarmonicFormations(symbol, interval, from, null);
     }
 
+    private List<Candle> harmonicDetectionCandles(String symbol, String interval, Long from) {
+        if (from == null) {
+            return candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval);
+        }
+        List<Candle> context = candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                        symbol, interval, from, PageRequest.of(0, HARMONIC_CONTEXT_CANDLES));
+        List<Candle> requested = candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+                        symbol, interval, from);
+        List<Candle> combined = new ArrayList<>(context.size() + requested.size());
+        combined.addAll(context);
+        combined.addAll(requested);
+        combined.sort(Comparator.comparing(Candle::getTimestamp));
+        return List.copyOf(combined);
+    }
+
     private HarmonicPatternDetectionService harmonicDetector(Principal principal) {
         if (principal == null || userRepository == null || harmonicPatternPreferencesService == null) {
             return harmonicPatternDetectionService;
@@ -274,6 +386,38 @@ public class ChartController {
                 .map(user -> harmonicPatternPreferencesService.detector(
                         user, harmonicPatternDetectionService))
                 .orElse(harmonicPatternDetectionService);
+    }
+
+    private Object harmonicCacheSettings(Principal principal) {
+        if (principal == null || userRepository == null || harmonicPatternPreferencesService == null) {
+            return "factory";
+        }
+        return userRepository.findByEmailIgnoreCase(principal.getName())
+                .<Object>map(user -> {
+                    HarmonicPatternPreferencesService.PreferencesView preferences =
+                            harmonicPatternPreferencesService.get(user);
+                    return List.of(preferences.version(), preferences.rules(), preferences.patternRules());
+                })
+                .orElse("factory");
+    }
+
+    private Object elliottCacheSettings(Principal principal, TimeInterval interval) {
+        if (principal == null || userRepository == null || elliottWavePreferencesService == null) {
+            ElliottWavePreferencesService.PreferencesView preferences =
+                    ElliottWavePreferencesService.factoryPreferences();
+            return List.of(preferences.version(), preferences.profile(interval).rules());
+        }
+        return userRepository.findByEmailIgnoreCase(principal.getName())
+                .<Object>map(user -> {
+                    ElliottWavePreferencesService.PreferencesView preferences =
+                            elliottWavePreferencesService.get(user);
+                    return List.of(preferences.version(), preferences.profile(interval).rules());
+                })
+                .orElseGet(() -> {
+                    ElliottWavePreferencesService.PreferencesView preferences =
+                            ElliottWavePreferencesService.factoryPreferences();
+                    return List.of(preferences.version(), preferences.profile(interval).rules());
+                });
     }
 
     private ElliottWaveDetectionService detector(Principal principal, TimeInterval interval) {

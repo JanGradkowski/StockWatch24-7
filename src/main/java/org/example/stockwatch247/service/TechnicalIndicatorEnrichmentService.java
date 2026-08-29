@@ -446,6 +446,7 @@ public class TechnicalIndicatorEnrichmentService {
     private TimeInterval parseInterval(String rawInterval) {
         String normalized = rawInterval.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
+            case "1h", "60m", "60min", "one_hour", "hourly" -> TimeInterval.ONE_HOUR;
             case "1d", "daily" -> TimeInterval.DAILY;
             case "1wk", "1w", "weekly" -> TimeInterval.WEEKLY;
             case "1mo", "monthly" -> TimeInterval.MONTHLY;
@@ -474,6 +475,9 @@ public class TechnicalIndicatorEnrichmentService {
         }
         List<Long> sortedGaps = gaps.stream().sorted().toList();
         long medianGap = sortedGaps.get(sortedGaps.size() / 2);
+        if (medianGap <= Duration.ofHours(2).toSeconds()) {
+            return TimeInterval.ONE_HOUR;
+        }
         if (medianGap <= Duration.ofDays(4).toSeconds()) {
             return TimeInterval.DAILY;
         }

@@ -4,6 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import org.example.stockwatch247.service.MarketDataUnavailableException;
+import org.example.stockwatch247.service.TechnicalOutlookCapacityException;
 import org.example.stockwatch247.service.congress.CongressionalRefreshLimitException;
 import org.example.stockwatch247.service.insider.InsiderDataUnavailableException;
 import org.junit.jupiter.api.Test;
@@ -104,6 +106,17 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    void technicalOutlookCapacityReturnsItsSafeActionableMessage() {
+        ResponseEntity<Map<String, String>> response = handler.technicalOutlookCapacity(
+                new TechnicalOutlookCapacityException("You can track at most 300 companies."));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody())
+                .containsEntry("error", "You can track at most 300 companies.")
+                .containsEntry("code", "TECHNICAL_OUTLOOK_CAPACITY");
+    }
+
+    @Test
     void insiderProviderFailureReturnsItsSafeMessage() {
         ResponseEntity<Map<String, String>> response = handler.insiderDataUnavailable(
                 new InsiderDataUnavailableException(
@@ -116,6 +129,22 @@ class ApiExceptionHandlerTest {
                 .containsEntry(
                         "error",
                         "The API Ninjas insider-data quota has been reached.");
+    }
+
+    @Test
+    void candleProviderFailureReturnsSpecificServiceUnavailableResponse() {
+        ResponseEntity<Map<String, String>> response = handler.marketDataUnavailable(
+                new MarketDataUnavailableException(
+                        "CDR",
+                        "1mo",
+                        "Twelve Data plan restriction; Yahoo Finance unavailable"),
+                request("GET", "/api/stocks/CDR/candlestick-patterns/history"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody())
+                .containsEntry("code", "CANDLE_DATA_UNAVAILABLE")
+                .containsEntry("error", "Monthly candle data is temporarily unavailable for CDR.")
+                .doesNotContainValue("Twelve Data plan restriction; Yahoo Finance unavailable");
     }
 
     private MockHttpServletRequest request(String method, String uri) {

@@ -1,6 +1,8 @@
 package org.example.stockwatch247.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.example.stockwatch247.service.MarketDataUnavailableException;
+import org.example.stockwatch247.service.TechnicalOutlookCapacityException;
 import org.example.stockwatch247.service.congress.CongressionalRefreshLimitException;
 import org.example.stockwatch247.service.insider.InsiderDataUnavailableException;
 import org.slf4j.Logger;
@@ -46,6 +48,19 @@ public class ApiExceptionHandler {
                         "code", "INSIDER_DATA_UNAVAILABLE"));
     }
 
+    @ExceptionHandler(MarketDataUnavailableException.class)
+    public ResponseEntity<Map<String, String>> marketDataUnavailable(
+            MarketDataUnavailableException exception,
+            HttpServletRequest request) {
+        log.warn("Market data unavailable on {} {} for {} {}: {}",
+                request.getMethod(), request.getRequestURI(), exception.symbol(), exception.interval(),
+                exception.diagnosticMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of(
+                        "error", exception.getMessage(),
+                        "code", "CANDLE_DATA_UNAVAILABLE"));
+    }
+
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, String>> stateConflict(IllegalStateException exception) {
         String requestId = UUID.randomUUID().toString();
@@ -53,6 +68,14 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                 "error", "The request could not be completed.",
                 "requestId", requestId));
+    }
+
+    @ExceptionHandler(TechnicalOutlookCapacityException.class)
+    public ResponseEntity<Map<String, String>> technicalOutlookCapacity(
+            TechnicalOutlookCapacityException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "error", exception.getMessage(),
+                "code", "TECHNICAL_OUTLOOK_CAPACITY"));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

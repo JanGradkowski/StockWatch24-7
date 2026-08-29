@@ -52,6 +52,8 @@ public class AlertRuleService {
     private static final int SIGNAL_ARCHIVE_PAGE_SIZE = 50;
     private static final int MAX_ALERT_CHANGES_PER_REQUEST = 24;
     private static final int MINIMUM_RESULT_CANDLES = 10;
+    private static final List<TimeInterval> TEMPORARY_BULK_INTERVALS =
+            List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY);
 
     private final AlertRuleRepository alertRuleRepository;
     private final AlertEventRepository alertEventRepository;
@@ -72,6 +74,7 @@ public class AlertRuleService {
     private final AnalysisPreferencesService preferencesService;
     private final CandlestickPatternPreferencesService patternPreferencesService;
     private ElliottWavePreferencesService elliottWavePreferencesService;
+    private ElliottTradePlanService elliottTradePlanService;
     private HarmonicPatternDetectionService harmonicPatternDetectionService;
     private HarmonicPatternPreferencesService harmonicPatternPreferencesService;
 
@@ -90,7 +93,7 @@ public class AlertRuleService {
                              @Value("${alerts.elliott.daily-enabled:true}") boolean dailyElliottEnabled,
                              @Value("${alerts.elliott.weekly-enabled:true}") boolean weeklyElliottEnabled,
                              @Value("${alerts.elliott.monthly-enabled:true}") boolean monthlyElliottEnabled,
-                             @Value("${alerts.max-tracked-stocks-per-user:50}") int maxTrackedStocksPerUser,
+                             @Value("${alerts.max-tracked-stocks-per-user:300}") int maxTrackedStocksPerUser,
                              @Value("${alerts.max-global-tracked-stocks:500}") int maxGlobalTrackedStocks,
                              AnalysisPreferencesService preferencesService,
                              CandlestickPatternPreferencesService patternPreferencesService) {
@@ -117,6 +120,11 @@ public class AlertRuleService {
     @Autowired(required = false)
     void configureElliottWavePreferences(ElliottWavePreferencesService elliottWavePreferencesService) {
         this.elliottWavePreferencesService = elliottWavePreferencesService;
+    }
+
+    @Autowired(required = false)
+    void configureElliottTradePlans(ElliottTradePlanService elliottTradePlanService) {
+        this.elliottTradePlanService = elliottTradePlanService;
     }
 
     @Autowired(required = false)
@@ -684,6 +692,8 @@ public class AlertRuleService {
                 observedOutcome,
                 results,
                 toLifecycleView(event, rule.getInterval(), normalizeFamily(rule.getPatternFamily())),
+                elliottTradePlanService == null ? List.of()
+                        : elliottTradePlanService.history(event.getId(), user),
                 List.copyOf(reasons),
                 !reasons.isEmpty()
         );
@@ -1365,6 +1375,94 @@ public class AlertRuleService {
         changesByRule.values().forEach(change -> upsertAlertRule(user, stockAsset, change));
     }
 
+    /**
+     * Temporary testing helper that activates every supported technical family,
+     * direction, and production interval for a fixed top-200 U.S. universe.
+     * This intentionally bypasses the normal per-user 50-instrument quota only
+     * for this bounded universe; the global provider-capacity guard remains active.
+     */
+    @Transactional
+    public TemporaryBulkFollowResult followTemporaryTopUsCompanies(User user) {
+        if (user == null) {
+            throw new IllegalArgumentException("User is required.");
+        }
+
+        jdbcTemplate.queryForObject(
+                "select lock_name from security_resource_locks where lock_name = ? for update",
+                String.class,
+                "alert-stock-quota");
+
+        List<StockAsset> assets = TemporaryTopUsCompanyUniverse.SYMBOLS.stream()
+                .map(symbol -> stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
+                        .orElseGet(() -> twelveDataService.upsertStockAsset(
+                                symbol, symbol, "US", "USD")))
+                .toList();
+        long newlyGlobalSymbols = assets.stream()
+                .filter(asset -> !alertRuleRepository.existsByStockAssetAndIsActiveTrue(asset))
+                .count();
+        long globallyTracked = alertRuleRepository.countDistinctActiveStocks();
+        if (globallyTracked + newlyGlobalSymbols > maxGlobalTrackedStocks) {
+            throw new IllegalStateException(
+                    "The temporary top-200 universe would exceed global market data capacity.");
+        }
+
+        Map<BulkAlertRuleKey, AlertRule> existing = new LinkedHashMap<>();
+        for (AlertRule rule : alertRuleRepository.findByUserAndStockAssetIn(user, assets)) {
+            existing.put(new BulkAlertRuleKey(
+                    rule.getInterval(), rule.getTradeSignal(), rule.getPatternFamily(),
+                    rule.getStockAsset().getId()), rule);
+        }
+
+        List<AlertRule> changed = new ArrayList<>();
+        int createdRules = 0;
+        int reactivatedRules = 0;
+        int alreadyActiveRules = 0;
+        for (StockAsset asset : assets) {
+            for (TimeInterval interval : TEMPORARY_BULK_INTERVALS) {
+                for (AlertPatternFamily family : AlertPatternFamily.values()) {
+                    validateFamilyInterval(family, interval);
+                    for (TradeSignal signal : List.of(TradeSignal.BUY, TradeSignal.SELL)) {
+                        BulkAlertRuleKey key = new BulkAlertRuleKey(
+                                interval, signal, family, asset.getId());
+                        AlertRule rule = existing.get(key);
+                        if (rule == null) {
+                            rule = new AlertRule();
+                            rule.setUser(user);
+                            rule.setStockAsset(asset);
+                            rule.setInterval(interval);
+                            rule.setTradeSignal(signal);
+                            rule.setPatternFamily(family);
+                            rule.setTargetPattern(defaultTargetPattern(signal, family));
+                            rule.setActive(true);
+                            changed.add(rule);
+                            createdRules++;
+                        } else if (!rule.isActive()) {
+                            rule.setActive(true);
+                            changed.add(rule);
+                            reactivatedRules++;
+                        } else {
+                            alreadyActiveRules++;
+                        }
+                    }
+                }
+            }
+        }
+        if (!changed.isEmpty()) {
+            alertRuleRepository.saveAll(changed);
+        }
+        return new TemporaryBulkFollowResult(
+                TemporaryTopUsCompanyUniverse.COMPANY_COUNT,
+                TEMPORARY_BULK_INTERVALS.size()
+                        * AlertPatternFamily.values().length * 2,
+                createdRules,
+                reactivatedRules,
+                alreadyActiveRules,
+                TemporaryTopUsCompanyUniverse.COMPANY_COUNT
+                        * TEMPORARY_BULK_INTERVALS.size()
+                        * AlertPatternFamily.values().length * 2,
+                TemporaryTopUsCompanyUniverse.SNAPSHOT_LABEL);
+    }
+
     private AlertRuleChange validateAlertChange(AlertRuleChange change) {
         if (change == null || change.interval() == null || change.signal() == null) {
             throw new IllegalArgumentException("Alert interval and signal are required.");
@@ -1781,11 +1879,46 @@ public class AlertRuleService {
         String boundaryDirection = event.getTradeSignal() == TradeSignal.BUY ? "above" : "below";
         String invalidationDirection = event.getTradeSignal() == TradeSignal.BUY ? "below" : "above";
         boolean elliottSignal = event.isElliottSignal();
+        boolean developingElliottCycle = event.getElliottDevelopmentKey() != null;
         boolean riskRewardPlan = event.hasCandlestickRiskRewardPlan();
         boolean candlestickSignal = patternFamily == AlertPatternFamily.CANDLESTICK;
+        boolean harmonicStopPlan = patternFamily == AlertPatternFamily.HARMONIC_FORMATION
+                && event.hasHarmonicStopPlan();
         boolean immediateConfirmationRequired = isOneCandleReversal(event);
         String summary;
-        if (!tracked) {
+        if (developingElliottCycle && status == SignalLifecycleStatus.DETECTED) {
+            summary = String.format(
+                    Locale.ROOT,
+                    "%s. Expected move %s from %.4f; projected target %.4f and structural stop %.4f. Correction count: %s.",
+                    event.getElliottForecastLabel() == null
+                            ? "Developing Elliott impulse" : event.getElliottForecastLabel(),
+                    event.getTradeSignal(),
+                    event.getTradeEntryPrice(),
+                    event.getProfitTargetPrice(),
+                    event.getStopLossPrice(),
+                    event.getElliottCorrectionType() == null
+                            ? "not yet applicable" : event.getElliottCorrectionType());
+        } else if (developingElliottCycle && status == SignalLifecycleStatus.INVALIDATED) {
+            summary = "Developing Elliott count invalidated: "
+                    + (event.getLifecycleResolutionReason() == null
+                    ? "a hard structure boundary was crossed."
+                    : event.getLifecycleResolutionReason());
+        } else if (harmonicStopPlan) {
+            summary = "STOPPED".equals(event.getHarmonicStopStatus())
+                    ? String.format(
+                    Locale.ROOT,
+                    "The buffered harmonic stop at %.4f was breached at %.4f. %s",
+                    event.getStopLossPrice(),
+                    event.getHarmonicStopResolutionPrice(),
+                    event.getHarmonicStopResolutionReason())
+                    : String.format(
+                    Locale.ROOT,
+                    "Harmonic stop active from the %.4f confirmation close: exact structural invalidation %.4f, buffered stop %.4f (%s).",
+                    event.getTradeEntryPrice(),
+                    event.getStructuralStopPrice(),
+                    event.getStopLossPrice(),
+                    event.getHarmonicStopBasis());
+        } else if (!tracked) {
             summary = "Follow-up lifecycle tracking was not recorded for this signal.";
         } else if (candlestickSignal && !riskRewardPlan) {
             summary = "This legacy candlestick record predates the current close-based trade plan. Its old boundary result is not presented as a current CONFIRMED, INVALIDATED, or EXPIRED trade outcome.";
@@ -1912,6 +2045,33 @@ public class AlertRuleService {
                 event.getStopLossPrice(),
                 event.getProfitTargetPrice(),
                 event.getRewardRiskRatio(),
+                event.getElliottTargetMidPrice(),
+                event.getElliottTargetZoneLow(),
+                event.getElliottTargetZoneHigh(),
+                event.getElliottTargetBasis(),
+                event.getElliottRequiredRewardRiskRatio(),
+                event.isElliottTradeActionable(),
+                event.getElliottTradePlanStatus(),
+                event.getElliottTradeResolutionTimestamp(),
+                event.getElliottTradeResolutionClose(),
+                event.getElliottTradeResolutionReason(),
+                event.getHarmonicStopBasis(),
+                event.getHarmonicStopFormula(),
+                event.getHarmonicStopBufferAmount(),
+                event.getHarmonicStopBufferPercent(),
+                event.getHarmonicStopDistancePercent(),
+                event.getHarmonicStopStatus(),
+                event.getHarmonicStopResolutionTimestamp(),
+                event.getHarmonicStopResolutionPrice(),
+                event.getHarmonicStopResolutionReason(),
+                event.getHarmonicEndpointPrice(),
+                event.getStructuralStopPrice(),
+                event.getPreCircuitBreakerStopPrice(),
+                Boolean.TRUE.equals(event.getAtrCircuitBreakerApplied()),
+                event.getAtrCircuitBreakerValue(),
+                event.getAtrCircuitBreakerPeriod(),
+                event.getAtrCircuitBreakerMultiplier(),
+                event.getAtrCircuitBreakerThresholdPercent(),
                 event.getLifecycleConfirmationPercent(),
                 event.getLifecycleInvalidationPercent(),
                 event.getDetectionCandleTimestamp(),
@@ -1925,8 +2085,36 @@ public class AlertRuleService {
                 event.getFollowUpSentAt(),
                 event.getElliottEndpointPrice(),
                 event.getElliottSignalStage(),
-                event.getLifecycleResolutionReason()
+                event.getLifecycleResolutionReason(),
+                developingElliottCycle,
+                event.getElliottCorrectionType(),
+                event.getElliottForecastLabel(),
+                elliottTransitionLabels(event.getElliottTransitionHistory())
         );
+    }
+
+    private List<String> elliottTransitionLabels(String payload) {
+        if (payload == null || payload.isBlank()) return List.of();
+        List<String> labels = new ArrayList<>();
+        for (String row : payload.lines().toList()) {
+            String[] fields = row.split("\\|", -1);
+            try {
+                if (fields.length >= 5 && "INVALIDATED".equals(fields[1])) {
+                    labels.add("Invalidated after " + fields[2].replace('_', ' ')
+                            + " at close " + String.format(Locale.ROOT, "%.4f", Double.parseDouble(fields[3]))
+                            + " — " + fields[4]);
+                } else if (fields.length >= 7) {
+                    labels.add(fields[1].replace('_', ' ') + " · expected " + fields[2]
+                            + " · close " + String.format(Locale.ROOT, "%.4f", Double.parseDouble(fields[3]))
+                            + " · stop " + String.format(Locale.ROOT, "%.4f", Double.parseDouble(fields[4]))
+                            + " · target " + String.format(Locale.ROOT, "%.4f", Double.parseDouble(fields[5]))
+                            + " · " + fields[6]);
+                }
+            } catch (NumberFormatException ignored) {
+                // Keep malformed legacy transition rows out of the user-facing timeline.
+            }
+        }
+        return List.copyOf(labels);
     }
 
     private String lifecycleLabel(SignalLifecycleStatus status) {
@@ -1972,7 +2160,7 @@ public class AlertRuleService {
             return "This signal does not have a recorded setup score.";
         }
         if (HarmonicPatternDetectionService.RULE_VERSION.equals(scoreVersion)) {
-            return "Harmonic geometry score: every hard structural rule passed. Points are deducted only for accepted deviations from non-hard Fibonacci and proportion targets.";
+            return "Harmonic setup score: every hard structural rule passed. The base geometry score reflects accepted deviations from non-hard Fibonacci and proportion targets; same-ticker, same-interval Elliott and candlestick signals from the preceding eight candles then contribute cross-pattern confluence.";
         }
         String validationNote = CandlePatternDetectionService.SETUP_SCORE_VERSION.equals(scoreVersion)
                 ? " This V4 score is experimental and has not demonstrated stable out-of-sample predictive ordering."
@@ -2436,9 +2624,15 @@ public class AlertRuleService {
             ObservedPriceOutcomeView observedOutcome,
             SignalResultsView results,
             SignalLifecycleView lifecycle,
+            List<ElliottTradePlanService.StagePlanView> elliottTradePlans,
             List<SignalReasonView> reasons,
             boolean reasonsAvailable
     ) {
+        public SignalDetailView {
+            elliottTradePlans = elliottTradePlans == null
+                    ? List.of() : List.copyOf(elliottTradePlans);
+        }
+
         public String strengthLabel() {
             return setupStrengthLabel;
         }
@@ -2642,6 +2836,33 @@ public class AlertRuleService {
             Double stopLossPrice,
             Double profitTargetPrice,
             Double rewardRiskRatio,
+            Double elliottTargetMidPrice,
+            Double elliottTargetZoneLow,
+            Double elliottTargetZoneHigh,
+            String elliottTargetBasis,
+            Double elliottRequiredRewardRiskRatio,
+            boolean elliottTradeActionable,
+            String elliottTradePlanStatus,
+            Long elliottTradeResolutionTimestamp,
+            Double elliottTradeResolutionClose,
+            String elliottTradeResolutionReason,
+            String harmonicStopBasis,
+            String harmonicStopFormula,
+            Double harmonicStopBufferAmount,
+            Double harmonicStopBufferPercent,
+            Double harmonicStopDistancePercent,
+            String harmonicStopStatus,
+            Long harmonicStopResolutionTimestamp,
+            Double harmonicStopResolutionPrice,
+            String harmonicStopResolutionReason,
+            Double harmonicEndpointPrice,
+            Double structuralStopPrice,
+            Double configuredStopLossPrice,
+            boolean atrCircuitBreakerApplied,
+            Double atrValue,
+            Integer atrPeriod,
+            Double atrMultiplier,
+            Double activationThresholdPercent,
             Double confirmationMovePercent,
             Double invalidationMovePercent,
             Long detectionCandleTimestamp,
@@ -2655,8 +2876,16 @@ public class AlertRuleService {
             java.time.LocalDateTime followUpSentAt,
             Double elliottEndpointPrice,
             org.example.stockwatch247.model.enums.ElliottSignalStage elliottSignalStage,
-            String resolutionReason
+            String resolutionReason,
+            boolean developingElliottCycle,
+            String elliottCorrectionType,
+            String elliottForecastLabel,
+            List<String> elliottTransitionHistory
     ) {
+        public SignalLifecycleView {
+            elliottTransitionHistory = elliottTransitionHistory == null
+                    ? List.of() : List.copyOf(elliottTransitionHistory);
+        }
     }
 
     public record SignalReasonView(
@@ -2699,10 +2928,29 @@ public class AlertRuleService {
     ) {
     }
 
+    public record TemporaryBulkFollowResult(
+            int companies,
+            int rulesPerCompany,
+            int createdRules,
+            int reactivatedRules,
+            int alreadyActiveRules,
+            int activeRules,
+            String universeSnapshot
+    ) {
+    }
+
     private record AlertRuleKey(
             TimeInterval interval,
             TradeSignal signal,
             AlertPatternFamily patternFamily
+    ) {
+    }
+
+    private record BulkAlertRuleKey(
+            TimeInterval interval,
+            TradeSignal signal,
+            AlertPatternFamily patternFamily,
+            Long stockAssetId
     ) {
     }
 }

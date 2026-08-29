@@ -231,11 +231,12 @@
     </div>
     <div class="signal-trade-plan-grid">
       <article class="entry"><span>Entry · candle 0</span><strong th:text="${#numbers.formatDecimal(signal.tradeEntryPrice(), 1, 4)}">100.0000</strong><small th:text="${signal.lifecycle().detectionPeriodLabel() != null ? signal.lifecycle().detectionPeriodLabel() : signal.signalPeriodLabel()}">Detection period</small></article>
-      <article class="risk"><span>Stop loss</span><strong th:text="${#numbers.formatDecimal(signal.stopLossPrice(), 1, 4)}">95.0000</strong><small>Exact structural invalidation price</small></article>
+      <article class="risk"><span>Stop loss</span><strong th:text="${#numbers.formatDecimal(signal.stopLossPrice(), 1, 4)}">95.0000</strong><small th:text="${signal.atrCircuitBreakerApplied()} ? 'Active ATR/percentage-capped stop' : 'Configured structural or fixed stop'">Configured stop</small></article>
       <article class="reward"><span>Price to sell / target</span><strong th:text="${#numbers.formatDecimal(signal.profitTargetPrice(), 1, 4)}">110.0000</strong><small th:text="${'Risk-to-reward 1:' + #numbers.formatDecimal(signal.rewardRiskRatio(), 1, 0)}">Risk-to-reward 1:2</small></article>
       <article class="time"><span>Time stop</span><strong th:text="${'Candle ' + signal.timeStopCandles()}">Candle 8</strong><small>Exit at candle 8 close if no earlier target or stop close</small></article>
       <article class="favorable"><span th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Target return' : 'Most favorable completed-close move'}">Most favorable completed-close move</span><strong th:if="${signal.bestDirectionalMovePercent() != null}" class="positive" th:text="${'+' + #numbers.formatDecimal(signal.bestDirectionalMovePercent(), 1, 2) + '%'}">+4.00%</strong><strong th:unless="${signal.bestDirectionalMovePercent() != null}">Awaiting first outcome close</strong><small th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Fixed at the entry-to-target percentage' : 'Best close from entry through exit or the latest available candle'}">Best close in trade window</small></article>
       <article th:if="${signal.tradeExitPrice() != null}" class="exit"><span>Actual trade exit</span><strong th:text="${#numbers.formatDecimal(signal.tradeExitPrice(), 1, 4)}">103.0000</strong><small th:text="${signal.lifecycle().resolutionPeriodLabel()}">Resolution period</small></article>
+      <article th:if="${signal.atrCircuitBreakerApplied()}" class="risk"><span>ATR circuit breaker</span><strong>Active</strong><small th:text="${'Structural invalidation ' + #numbers.formatDecimal(signal.structuralStopPrice(), 1, 4) + ' · original configured stop ' + #numbers.formatDecimal(signal.configuredStopLossPrice(), 1, 4) + ' · ATR(' + signal.atrPeriod() + ') ' + (signal.atrValue() != null ? #numbers.formatDecimal(signal.atrValue(), 1, 4) + ' × ' + #numbers.formatDecimal(signal.atrMultiplier(), 1, 2) : 'unavailable; percentage cap used') + ' · activated above ' + #numbers.formatDecimal(signal.activationThresholdPercent(), 1, 2) + '%'}">Circuit-breaker calculation</small></article>
     </div>
     <p class="signal-trade-plan-summary" th:text="${signal.outcomeSummary()}">Historical trade summary.</p>
   </section>
@@ -423,7 +424,7 @@
       <div>
         <div class="signal-section-kicker">Reconstructed scoring evidence</div>
         <h2 id="historical-evidence-heading">Why this score</h2>
-        <p>Each category was calculated using only candles available when this pattern completed.</p>
+        <p>Each category was calculated using only candles available when this pattern completed. Elliott and harmonic signals from the preceding eight completed candles then adjust the score by ±10 per family.</p>
       </div>
       <span class="evidence-count">
         <span th:text="${displayScore.sections().size()}">7</span>&nbsp;categories
@@ -438,7 +439,7 @@
           <span class="evidence-number"
                 th:text="${#numbers.formatInteger(sectionStatus.index + 1, 2)}">01</span>
           <span class="evidence-category" th:text="${section.category()}">Pattern quality</span>
-          <span th:if="${section.scored()}"
+          <span th:if="${section.scoreLabel() != null}"
                 class="evidence-score"
                 th:text="${section.scoreLabel()}">24/25</span>
           <span class="evidence-impact" th:text="${section.statusLabel()}">Partial support</span>

@@ -81,8 +81,8 @@ class CandlestickSignalLifecyclePolicyTest {
         assertThat(daily.rewardRiskRatio()).isEqualTo(2.0);
         assertThat(weekly.profitTargetPrice()).isEqualTo(132.0);
         assertThat(weekly.rewardRiskRatio()).isEqualTo(3.0);
-        assertThat(monthly.profitTargetPrice()).isEqualTo(141.0);
-        assertThat(monthly.rewardRiskRatio()).isEqualTo(4.0);
+        assertThat(monthly.profitTargetPrice()).isEqualTo(132.0);
+        assertThat(monthly.rewardRiskRatio()).isEqualTo(3.0);
         assertThat(monthly.timeStopCandles()).isEqualTo(8);
     }
 
@@ -109,6 +109,71 @@ class CandlestickSignalLifecyclePolicyTest {
         assertThat(fixed.stopLossPrice()).isEqualTo(100.8);
         assertThat(fixed.profitTargetPrice()).isCloseTo(111.3, within(0.0000001));
         assertThat(fixed.rewardRiskRatio()).isEqualTo(1.5);
+    }
+
+    @Test
+    void circuitBreakerCapsAnExtremeLongPlanWithFrozenAtr() {
+        var settings = new CandlestickPatternPreferencesService.CircuitBreakerSettings(
+                true, 14, 1.5, 25.0);
+
+        var plan = CandlestickSignalLifecyclePolicy.tradePlan(
+                TradeSignal.BUY, 100.0, 70.0, TimeInterval.DAILY, 3.0, 4.0, settings);
+
+        assertThat(plan.atrCircuitBreakerApplied()).isTrue();
+        assertThat(plan.configuredStopLossPrice()).isEqualTo(70.0);
+        assertThat(plan.stopLossPrice()).isEqualTo(94.0);
+        assertThat(plan.profitTargetPrice()).isEqualTo(118.0);
+        assertThat(plan.atrValue()).isEqualTo(4.0);
+    }
+
+    @Test
+    void circuitBreakerCapsAnExtremeShortPlanAtTheConfiguredPercentageLimit() {
+        var settings = new CandlestickPatternPreferencesService.CircuitBreakerSettings(
+                true, 14, 2.0, 50.0);
+
+        var plan = CandlestickSignalLifecyclePolicy.tradePlan(
+                TradeSignal.SELL, 20.0, 100.0, TimeInterval.MONTHLY, 3.0, 30.0, settings);
+
+        assertThat(plan.atrCircuitBreakerApplied()).isTrue();
+        assertThat(plan.configuredStopLossPrice()).isEqualTo(100.0);
+        assertThat(plan.stopLossPrice()).isCloseTo(23.3333333333, within(0.0000001));
+        assertThat(plan.profitTargetPrice()).isEqualTo(10.0);
+        assertThat((plan.entryPrice() - plan.profitTargetPrice()) / plan.entryPrice() * 100.0)
+                .isEqualTo(50.0);
+    }
+
+    @Test
+    void circuitBreakerUsesPercentageRiskWhenAtrIsUnavailableAndDoesNotTouchNormalPlans() {
+        var settings = new CandlestickPatternPreferencesService.CircuitBreakerSettings(
+                true, 14, 1.5, 25.0);
+
+        var capped = CandlestickSignalLifecyclePolicy.tradePlan(
+                TradeSignal.SELL, 100.0, 150.0, TimeInterval.DAILY, 2.0,
+                Double.NaN, settings);
+        var normal = CandlestickSignalLifecyclePolicy.tradePlan(
+                TradeSignal.SELL, 100.0, 105.0, TimeInterval.DAILY, 2.0,
+                4.0, settings);
+
+        assertThat(capped.atrCircuitBreakerApplied()).isTrue();
+        assertThat(capped.atrValue()).isNull();
+        assertThat(capped.stopLossPrice()).isEqualTo(112.5);
+        assertThat(capped.profitTargetPrice()).isEqualTo(75.0);
+        assertThat(normal.atrCircuitBreakerApplied()).isFalse();
+        assertThat(normal.stopLossPrice()).isEqualTo(105.0);
+        assertThat(normal.profitTargetPrice()).isEqualTo(90.0);
+    }
+
+    @Test
+    void calculatesRollingAtrOnlyFromCandlesAvailableAtDetection() {
+        List<Candle> candles = List.of(
+                candle(1L, 10.0, 12.0, 9.0, 11.0),
+                candle(2L, 11.0, 14.0, 10.0, 13.0),
+                candle(3L, 13.0, 15.0, 12.0, 14.0),
+                candle(4L, 14.0, 30.0, 13.0, 29.0));
+
+        double atDetection = CandlestickSignalLifecyclePolicy.averageTrueRange(candles, 2, 3);
+
+        assertThat(atDetection).isEqualTo(10.0 / 3.0);
     }
 
     @Test

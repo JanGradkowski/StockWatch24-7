@@ -50,6 +50,9 @@ class ChartControllerHarmonicPatternTest {
         });
         verify(candles).findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
                 "MSFT", "1d", start);
+        verify(candles).findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                org.mockito.ArgumentMatchers.eq("MSFT"), org.mockito.ArgumentMatchers.eq("1d"),
+                org.mockito.ArgumentMatchers.eq(start), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -58,6 +61,32 @@ class ChartControllerHarmonicPatternTest {
 
         assertThatThrownBy(() -> controller.getHistoricalHarmonicFormations("MSFT", "1h", null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void usesEarlierWarmupCandlesForAFormationCrossingTheVisibleBoundary() {
+        CandleRepository candles = mock(CandleRepository.class);
+        ChartController controller = controller(candles);
+        controller.configureHarmonicPatterns(new HarmonicPatternDetectionService(
+                new HarmonicPatternDetectionService.Rules(.04, .08, .10, 0.0, 1, 40)));
+        long start = 1_700_000_000L;
+        long boundary = start + 2 * 86_400L;
+        List<Candle> history = gartleyCandles(start);
+        when(candles.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                org.mockito.ArgumentMatchers.eq("MSFT"), org.mockito.ArgumentMatchers.eq("1d"),
+                org.mockito.ArgumentMatchers.eq(boundary), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of(history.get(1), history.get(0)));
+        when(candles.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+                "MSFT", "1d", boundary)).thenReturn(history.subList(2, history.size()));
+
+        ChartController.HarmonicHistoryOverlay overlay =
+                controller.getHistoricalHarmonicFormations("MSFT", "1d", boundary);
+
+        assertThat(overlay.formations()).singleElement().satisfies(formation -> {
+            assertThat(formation.pattern()).isEqualTo(HarmonicPatternType.GARTLEY);
+            assertThat(formation.points().getFirst().timestamp()).isLessThan(boundary);
+            assertThat(formation.points().getLast().timestamp()).isGreaterThanOrEqualTo(boundary);
+        });
     }
 
     private ChartController controller(CandleRepository candles) {

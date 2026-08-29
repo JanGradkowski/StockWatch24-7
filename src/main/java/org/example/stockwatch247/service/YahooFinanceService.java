@@ -23,8 +23,10 @@ import java.net.URI;
 import java.text.Normalizer;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -97,7 +99,7 @@ public class YahooFinanceService {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         Optional<StockAsset> asset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol);
 
-        RuntimeException lastFailure = null;
+        RuntimeException primaryFailure = null;
         Set<String> candidates = initialCandidates(symbol, asset);
         for (String candidate : candidates) {
             try {
@@ -109,7 +111,7 @@ public class YahooFinanceService {
             } catch (UnexpectedGranularityException e) {
                 throw e;
             } catch (RuntimeException e) {
-                lastFailure = e;
+                primaryFailure = firstFailure(primaryFailure, e);
             }
         }
 
@@ -126,7 +128,7 @@ public class YahooFinanceService {
             } catch (UnexpectedGranularityException e) {
                 throw e;
             } catch (RuntimeException e) {
-                lastFailure = e;
+                primaryFailure = firstFailure(primaryFailure, e);
             }
         }
 
@@ -143,11 +145,11 @@ public class YahooFinanceService {
             } catch (UnexpectedGranularityException e) {
                 throw e;
             } catch (RuntimeException e) {
-                lastFailure = e;
+                primaryFailure = firstFailure(primaryFailure, e);
             }
         }
 
-        throw noDataFailure("candle data", symbol, candidates, lastFailure);
+        throw noDataFailure("candle data", symbol, candidates, primaryFailure);
     }
 
     public StockAsset refreshStockAssetMetadata(String rawSymbol) {
@@ -282,7 +284,7 @@ public class YahooFinanceService {
                 continue;
             }
 
-            if (!isCanonicalHigherIntervalTimestamp(providerTimestamp, yahooInterval)) {
+            if (!isCanonicalHigherIntervalTimestamp(providerTimestamp, yahooInterval, exchangeZone)) {
                 continue;
             }
             long timestamp = canonicalTimestamp(providerTimestamp, yahooInterval, exchangeZone);
@@ -764,11 +766,15 @@ public class YahooFinanceService {
                 : " Tried provider symbols: " + String.join(", ", attemptedSymbols) + ".";
         String failureDetail = cause == null || cause.getMessage() == null || cause.getMessage().isBlank()
                 ? ""
-                : " Last provider failure: " + cause.getMessage();
+                : " Primary provider failure: " + cause.getMessage();
         return new IllegalStateException(
                 "Yahoo Finance has no " + dataType + " for " + symbol + "." + attempts + failureDetail,
                 cause
         );
+    }
+
+    private RuntimeException firstFailure(RuntimeException existing, RuntimeException candidate) {
+        return existing == null ? candidate : existing;
     }
 
     private String toYahooInterval(String interval) {
@@ -816,24 +822,28 @@ public class YahooFinanceService {
             return timestamp;
         }
         if ("1mo".equals(interval)) {
-            LocalDate utcDate = Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC).toLocalDate();
-            return utcDate.withDayOfMonth(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+            LocalDate exchangeDate = Instant.ofEpochSecond(timestamp).atZone(exchangeZone).toLocalDate();
+            return exchangeDate.withDayOfMonth(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
         }
         LocalDate exchangeDate = Instant.ofEpochSecond(timestamp).atZone(exchangeZone).toLocalDate();
         return exchangeDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond();
     }
 
     private boolean isCanonicalHigherIntervalTimestamp(long timestamp,
-                                                       String interval) {
+                                                       String interval,
+                                                       ZoneId exchangeZone) {
         if (!"1mo".equals(interval)) {
             return true;
         }
-        LocalDate utcDate = Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC).toLocalDate();
+        ZonedDateTime exchangeDateTime = Instant.ofEpochSecond(timestamp).atZone(exchangeZone);
         // Yahoo can append a live, day-sized quote to an otherwise monthly response
         // while still reporting dataGranularity=1mo. It is not a monthly aggregate
         // and changes timestamp on every refresh, so accepting it creates several
-        // fake monthly candles in the same calendar month.
-        return utcDate.getDayOfMonth() == 1;
+        // fake monthly candles in the same calendar month. Monthly aggregate timestamps
+        // are exchange-local midnight on the first day. For European exchanges that
+        // instant is often still the final UTC evening of the previous month.
+        return exchangeDateTime.getDayOfMonth() == 1
+                && exchangeDateTime.toLocalTime().equals(LocalTime.MIDNIGHT);
     }
 
     private Optional<Double> numberAt(JsonNode values, int index) {

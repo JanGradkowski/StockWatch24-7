@@ -5,6 +5,15 @@
         if (!filter) return;
         const cards = Array.from(document.querySelectorAll('.candlestick-pattern-card'));
         const empty = document.getElementById('candlestickPatternEmpty');
+        document.querySelectorAll('.candlestick-circuit-breaker-card').forEach(function (card) {
+            const enabled = card.querySelector('.candlestick-circuit-breaker-enabled');
+            if (!enabled) return;
+            const refreshCircuitBreaker = function () {
+                card.classList.toggle('disabled', !enabled.checked);
+            };
+            enabled.addEventListener('change', refreshCircuitBreaker);
+            refreshCircuitBreaker();
+        });
         cards.forEach(function (card) {
             const mode = card.querySelector('select[name$=".stopLossMode"]');
             const value = card.querySelector('input[name$=".stopLossValuePercent"]');

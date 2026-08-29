@@ -30,7 +30,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("id=\"harmonicFormationHitTargets\""));
         assertTrue(stock.contains("function showHarmonicFormationCard"));
         assertTrue(stock.contains("/harmonic-formations/${encodeURIComponent(currentInterval)}"));
-        assertTrue(stock.contains("Confirmed harmonic formations now create signal records"));
+        assertTrue(stock.contains("A signal is recorded only after the terminal D/C pivot"));
         assertTrue(historical.contains("Historical harmonic signal"));
         assertTrue(historical.contains("Hard validity first, soft fit second"));
         assertTrue(historical.contains("id=\"graphicalOutlookTab\""));
@@ -154,6 +154,20 @@ class FrontendSecurityTest {
     }
 
     @Test
+    void harmonicSignalDetailShowsAStopOnlyPlanWithoutInventingTargets() throws IOException {
+        String signal = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
+
+        assertTrue(signal.contains("Harmonic structural stop plan"));
+        assertTrue(signal.contains("Exact structural invalidation"));
+        assertTrue(signal.contains("Equity liquidity buffer"));
+        assertTrue(signal.contains("Executable stop loss"));
+        assertTrue(signal.contains("data-trade-structural-stop"));
+        assertTrue(signal.contains("Structural invalidation"));
+        assertTrue(signal.contains("No profit target or R:R is shown"));
+        assertFalse(signal.contains("harmonicStopBasis()} ?"));
+    }
+
+    @Test
     void virtualTradeSurfacesExposeConfirmedCspSafeDeletion() throws IOException {
         String archive = Files.readString(Path.of("src/main/resources/templates/virtual-trades.html"));
         String outlook = Files.readString(Path.of("src/main/resources/templates/technical-outlook.html"));
@@ -183,6 +197,10 @@ class FrontendSecurityTest {
         assertTrue(scoring.contains("Included point total"));
         assertTrue(scoring.contains("Harmonic Formation"));
         assertTrue(scoring.contains("All nine included totals"));
+        assertTrue(scoring.contains("Cross-pattern confluence"));
+        assertTrue(scoring.contains(".supportingPoints"));
+        assertTrue(scoring.contains(".opposingPoints"));
+        assertTrue(scoring.contains("scoring-confluence-include"));
         assertTrue(scoring.contains("@{/settings/scoring/reset}"));
         assertTrue(script.contains("total === 100"));
         assertTrue(script.contains("apply.disabled = !valid"));
@@ -243,6 +261,11 @@ class FrontendSecurityTest {
         assertTrue(definitions.contains("Stop-loss rule"));
         assertTrue(definitions.contains(".stopLossMode"));
         assertTrue(definitions.contains(".stopLossValuePercent"));
+        assertTrue(definitions.contains("ATR target circuit breaker"));
+        assertTrue(definitions.contains("circuitBreaker."));
+        assertTrue(definitions.contains(".atrPeriod"));
+        assertTrue(definitions.contains(".atrMultiplier"));
+        assertTrue(definitions.contains(".activationThresholdPercent"));
         assertTrue(script.contains("FIXED_ENTRY_PERCENT"));
         assertTrue(definitions.contains("@{/settings/candlestick-patterns/reset}"));
         assertFalse(script.contains("innerHTML"));
@@ -564,6 +587,12 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("structure.points.slice(5)"));
         assertTrue(stock.contains("isCorrectiveElliottPoint"));
         assertTrue(stock.contains("id=\"elliottOverlayToggle\""));
+        assertTrue(stock.contains("data-add-chart-indicator=\"EMA\""));
+        assertTrue(stock.contains("data-add-chart-indicator=\"MACD\""));
+        assertTrue(stock.contains("data-add-chart-indicator=\"KELTNER\""));
+        assertTrue(stock.contains("/chart-indicators?interval="));
+        assertTrue(stock.contains("activeChartIndicators.set(id"));
+        assertTrue(stock.contains("id=\"dynamicIndicatorPanels\""));
         assertTrue(stock.contains("id=\"elliottSubwaveToggle\""));
         assertTrue(stock.contains("Independent Elliott structures"));
         assertTrue(stock.contains("Fractal subwaves"));
@@ -841,6 +870,12 @@ class FrontendSecurityTest {
         String navbar = Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html"));
 
         assertTrue(stock.contains("id=\"applyAlertChangesBtn\""));
+        assertTrue(stock.contains("id=\"toggleAllTechnicalMonitoringBtn\""));
+        assertTrue(stock.contains("async function toggleAllTechnicalMonitoring()"));
+        assertTrue(stock.contains("alertInputs().forEach(input =>"));
+        assertTrue(stock.contains("await setEveryOutlookSubscription(followEverything)"));
+        assertTrue(stock.contains("anyFollowed ? 'Unfollow all' : 'Follow all'"));
+        assertTrue(stock.contains("await Promise.all([loadAlertState(), loadOutlookFollowState()])"));
         assertTrue(stock.contains("id=\"unsavedAlertDialog\""));
         assertTrue(stock.contains("id=\"saveAlertChangesBeforeLeaveBtn\""));
         assertTrue(stock.contains("id=\"discardAlertChangesBtn\""));
@@ -992,7 +1027,13 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("company.representativeAlertId()"));
         assertTrue(dashboard.contains("company.ruleCount()"));
         assertFalse(dashboard.contains("th:each=\"alert : ${activeAlerts}\""));
-        assertTrue(dashboard.contains("th:each=\"signal : ${latestSignals}\""));
+        assertTrue(dashboard.contains("th:each=\"item : ${latestSignalItems}\""));
+        assertTrue(dashboard.contains("item.technicalSignal()"));
+        assertTrue(dashboard.contains("item.outlookChange()"));
+        assertTrue(dashboard.contains("change.detailUrl()"));
+        assertTrue(dashboard.contains("@{/signals}"));
+        assertFalse(archive.contains("technicalOutlook"));
+        assertFalse(archive.contains("outlookChange"));
         assertTrue(dashboard.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
         assertTrue(dashboard.contains("signal.setupScore()"));
         assertTrue(dashboard.contains("signal.signalPeriodLabel()"));
@@ -1179,5 +1220,33 @@ class FrontendSecurityTest {
         String replacementSetup = stock.substring(processorStart, candleLoopStart);
         assertTrue(replacementSetup.matches(
                 "(?s).*if\\s*\\(!isPrepend\\)\\s*\\{\\s*seenDates\\.clear\\(\\);\\s*}.*"));
+    }
+
+    @Test
+    void automatedOutlookFollowingUsesIntervalSubscriptionsAndDedicatedChangeReport() throws IOException {
+        String stock = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
+        String detail = Files.readString(
+                Path.of("src/main/resources/templates/technical-outlook-change.html"));
+
+        assertTrue(stock.contains(">Automated Technical Outlook</div>"));
+        assertTrue(stock.contains("data-outlook-follow-interval=\"DAILY\""));
+        assertTrue(stock.contains("data-outlook-follow-interval=\"WEEKLY\""));
+        assertTrue(stock.contains("data-outlook-follow-interval=\"MONTHLY\""));
+        assertTrue(stock.contains("/technical-outlook/subscriptions"));
+        assertTrue(stock.contains("class=\"alert-section outlook-alert-section\""));
+        assertTrue(stock.contains("class=\"alert-grid outlook-alert-grid\""));
+        assertTrue(stock.contains("class=\"alert-eye-input outlook-follow-input\""));
+        assertTrue(stock.contains("Follow outlook"));
+        assertFalse(stock.contains("class=\"outlook-follow-panel\""));
+        assertFalse(stock.contains("data-outlook-follow-signal"));
+        assertTrue(dashboard.contains("item.outlookChange()"));
+        assertTrue(detail.contains("data-change-tab=\"chart\""));
+        assertTrue(detail.contains("data-change-tab=\"report\""));
+        assertTrue(detail.contains("outlookChangeIndicatorCharts"));
+        assertTrue(detail.contains("outlookIndicatorDeltas"));
+        assertTrue(detail.contains("outlookSignalEvidence"));
+        assertFalse(detail.contains("th:utext"));
+        assertFalse(detail.contains("innerHTML"));
     }
 }

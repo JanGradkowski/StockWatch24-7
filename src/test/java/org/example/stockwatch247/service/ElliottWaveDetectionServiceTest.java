@@ -554,7 +554,7 @@ class ElliottWaveDetectionServiceTest {
                 .findSubdivision(candles, "IV", 150.0, 124.0)
                 .orElseThrow();
 
-        assertThat(subdivision.structureLabel()).isEqualTo("Corrective A-B-C");
+        assertThat(subdivision.structureLabel()).isEqualTo("Corrective zigzag A-B-C");
         assertThat(subdivision.points())
                 .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
                 .containsExactly("", "a", "b", "c");
@@ -579,6 +579,266 @@ class ElliottWaveDetectionServiceTest {
         assertThat(subdivision.points())
                 .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
                 .containsExactly("", "a", "b", "c", "d", "e");
+    }
+
+    @Test
+    void acceptsAContractingTriangleAsAStrictWaveFourCorrection() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 150.0),
+                anchor(8, 120.0),
+                anchor(15, 140.0),
+                anchor(22, 125.0),
+                anchor(29, 136.0),
+                anchor(36, 128.0)
+        ));
+
+        assertThat(detectionService.findStrictSubdivisions(candles, "IV", 150.0, 128.0))
+                .anySatisfy(subdivision -> {
+                    assertThat(subdivision.structureLabel()).contains("triangle");
+                    assertThat(subdivision.validated()).isTrue();
+                    assertThat(subdivision.points())
+                            .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
+                            .containsExactly("", "a", "b", "c", "d", "e");
+                });
+    }
+
+    @Test
+    void doesNotLabelAStandaloneTriangleAsWaveTwo() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 150.0),
+                anchor(8, 120.0),
+                anchor(15, 140.0),
+                anchor(22, 125.0),
+                anchor(29, 136.0),
+                anchor(36, 128.0)
+        ));
+
+        assertThat(detectionService.findStrictSubdivisions(candles, "II", 150.0, 128.0))
+                .noneMatch(subdivision -> subdivision.structureLabel().contains("triangle"));
+    }
+
+    @Test
+    void acceptsAMotiveDiagonalOnlyInLegalWaveOneOrFivePositions() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 100.0),
+                anchor(8, 120.0),
+                anchor(15, 108.0),
+                anchor(22, 128.0),
+                anchor(29, 116.0),
+                anchor(36, 134.0)
+        ));
+
+        assertThat(detectionService.findStrictSubdivisions(candles, "I", 99.4, 134.6))
+                .anyMatch(subdivision -> subdivision.structureLabel().contains("diagonal"));
+        assertThat(detectionService.findStrictSubdivisions(candles, "V", 99.4, 134.6))
+                .anyMatch(subdivision -> subdivision.structureLabel().contains("diagonal"));
+        assertThat(detectionService.findStrictSubdivisions(candles, "III", 99.4, 134.6))
+                .noneMatch(subdivision -> subdivision.structureLabel().contains("diagonal"));
+    }
+
+    @Test
+    void distinguishesATextbookFlatFromAZigzag() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 150.0),
+                anchor(10, 130.0),
+                anchor(19, 148.0),
+                anchor(30, 124.0)
+        ));
+
+        assertThat(detectionService.findStrictSubdivisions(candles, "IV", 150.6, 123.4))
+                .anyMatch(subdivision -> subdivision.structureLabel().equals("Corrective flat A-B-C"));
+    }
+
+    @Test
+    void recognizesASevenLegWxyComplexCorrection() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 150.0), anchor(8, 130.0), anchor(15, 142.0), anchor(22, 124.0),
+                anchor(29, 138.0), anchor(36, 118.0), anchor(43, 132.0), anchor(50, 110.0)
+        ));
+
+        assertThat(detectionService.findStrictSubdivisions(candles, "IV", 150.0, 110.0))
+                .anySatisfy(subdivision -> {
+                    assertThat(subdivision.structureLabel()).isEqualTo("Double zigzag W-X-Y");
+                    assertThat(subdivision.validated()).isTrue();
+                    assertThat(subdivision.points()).hasSize(8);
+                });
+    }
+
+    @Test
+    void distinguishesADoubleThreeCombinationFromADoubleZigzag() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 150.0), anchor(8, 130.0), anchor(15, 142.0), anchor(22, 124.0),
+                anchor(29, 138.0), anchor(36, 118.0), anchor(43, 136.0), anchor(50, 110.0)
+        ));
+
+        assertThat(detectionService.findStrictSubdivisions(candles, "IV", 150.6, 109.4))
+                .anyMatch(subdivision -> subdivision.structureLabel()
+                        .equals("Double-three combination W-X-Y"));
+    }
+
+    @Test
+    void permitsWaveTwoCombinationToEndInATriangleWithoutAdmittingAStandaloneTriangle() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 150.0), anchor(8, 130.0), anchor(15, 142.0), anchor(22, 124.0),
+                anchor(29, 138.0), anchor(36, 110.0), anchor(43, 132.0), anchor(50, 114.0),
+                anchor(57, 128.0), anchor(64, 118.0)
+        ));
+
+        assertThat(detectionService.findStrictSubdivisions(candles, "II", 150.6, 117.4))
+                .anySatisfy(subdivision -> {
+                    assertThat(subdivision.structureLabel())
+                            .isEqualTo("Double-three combination W-X-Y");
+                    assertThat(subdivision.validated()).isTrue();
+                    assertThat(subdivision.points()).hasSize(10);
+                    assertThat(subdivision.evidence())
+                            .anyMatch(item -> item.contains("ends with the only triangle"));
+                });
+    }
+
+    @Test
+    void invalidatesWaveTwoWhenAnInitialAbcExtendsIntoFiveSameDegreeWaves() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 90.0), anchor(8, 150.0),
+                anchor(15, 130.0), anchor(22, 142.0), anchor(29, 110.0),
+                anchor(36, 124.0), anchor(43, 100.0), anchor(44, 105.0)
+        ));
+        List<ElliottWaveDetectionService.ElliottWavePoint> parent = List.of(
+                new ElliottWaveDetectionService.ElliottWavePoint("0", 1L, 90.0, "LOW"),
+                new ElliottWaveDetectionService.ElliottWavePoint("I", 8L, 150.0, "HIGH"),
+                new ElliottWaveDetectionService.ElliottWavePoint("II", 29L, 110.0, "LOW"));
+
+        assertThat(detectionService.findActionaryStructureMismatch(
+                candles, ElliottSignalStage.WAVE_II_END, parent))
+                .hasValueSatisfying(invalidation ->
+                        assertThat(invalidation.reason()).contains(
+                                "Wave II extended into Motive", "instead of remaining a corrective structure"));
+    }
+
+    @Test
+    void invalidatesADevelopingWaveThreeThatResolvesAsAbcInsteadOfFiveSubwaves() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 100.0), anchor(8, 120.0), anchor(15, 110.0),
+                anchor(22, 130.0), anchor(29, 120.0), anchor(36, 140.0), anchor(37, 137.0)
+        ));
+        List<ElliottWaveDetectionService.ElliottWavePoint> parent = List.of(
+                new ElliottWaveDetectionService.ElliottWavePoint("0", 1L, 100.0, "LOW"),
+                new ElliottWaveDetectionService.ElliottWavePoint("I", 8L, 120.0, "HIGH"),
+                new ElliottWaveDetectionService.ElliottWavePoint("II", 15L, 110.0, "LOW"));
+
+        assertThat(detectionService.findActionaryStructureMismatch(
+                candles, ElliottSignalStage.WAVE_II_END, parent))
+                .hasValueSatisfying(invalidation ->
+                        assertThat(invalidation.reason()).contains("Wave III", "Corrective zigzag A-B-C"));
+    }
+
+    @Test
+    void detectsWaveTwoOnlyAfterNestedFiveAndCorrectiveStructuresAreConfirmed() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0),
+                anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
+                anchor(32, 124.0), anchor(40, 140.0),
+                anchor(48, 125.0), anchor(54, 134.0), anchor(62, 115.0), anchor(63, 119.0)
+        ));
+
+        assertThat(detectionService.findStrictSubdivisions(
+                candles.subList(5, 40), "I", 99.4, 140.6)).isNotEmpty();
+        assertThat(detectionService.findStrictSubdivisions(
+                candles.subList(39, 62), "II", 140.6, 114.4)).isNotEmpty();
+
+        assertThat(detectionService.findDevelopingImpulses(candles))
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.stage()).isEqualTo(ElliottSignalStage.WAVE_II_END);
+                    assertThat(candidate.pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_WAVE_II_END);
+                    assertThat(candidate.expectedMove()).isEqualTo(TradeSignal.BUY);
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave I: Motive"));
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave II: Corrective"));
+                    assertThat(candidate.targetPrice()).isGreaterThan(candidate.confirmationClose());
+                    assertThat(candidate.stopLossPrice()).isLessThan(100.0);
+                });
+    }
+
+    @Test
+    void emitsWaveFiveOnlyWhenAllFiveParentSubdivisionsValidate() {
+        List<EnrichedCandle> candles = syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0),
+                anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
+                anchor(32, 124.0), anchor(40, 140.0),
+                anchor(48, 125.0), anchor(54, 134.0), anchor(62, 115.0),
+                anchor(70, 145.0), anchor(76, 135.0), anchor(86, 180.0),
+                anchor(92, 165.0), anchor(102, 200.0),
+                anchor(110, 180.0), anchor(116, 192.0), anchor(124, 170.0),
+                anchor(132, 195.0), anchor(138, 185.0), anchor(148, 220.0),
+                anchor(154, 208.0), anchor(162, 230.0), anchor(163, 225.0)
+        ));
+
+        assertThat(detectionService.findDevelopingImpulses(candles))
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.stage()).isEqualTo(ElliottSignalStage.WAVE_V_END);
+                    assertThat(candidate.points())
+                            .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
+                            .containsExactly("0", "I", "II", "III", "IV", "V");
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave I: Motive"));
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave II: Corrective"));
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave III: Motive"));
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave IV: Corrective"));
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave V: Motive"));
+                    assertThat(candidate.completedStructure()).isNotNull();
+                });
+    }
+
+    @Test
+    void extendsAValidatedWaveFiveCycleIntoASameCycleZigzagCorrection() {
+        List<EnrichedCandle> candles = completeNestedImpulseWithNestedZigzagCorrection();
+
+        assertThat(detectionService.findDevelopingImpulseHypotheses(candles))
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.stage()).isEqualTo(ElliottSignalStage.CORRECTION_END);
+                    assertThat(candidate.pattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+                    assertThat(candidate.expectedMove()).isEqualTo(TradeSignal.BUY);
+                    assertThat(candidate.correctionType()).isEqualTo("Zigzag 5-3-5");
+                    assertThat(candidate.points())
+                            .extracting(ElliottWaveDetectionService.ElliottWavePoint::label)
+                            .containsExactly("0", "I", "II", "III", "IV", "V", "A", "B", "C");
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave A: Motive"));
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave B: Corrective"));
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave C: Motive"));
+                    assertThat(candidate.completedStructure()).isNotNull();
+                    assertThat(candidate.completedStructure().correctionComplete()).isTrue();
+                    assertThat(candidate.targetPrice()).isGreaterThan(candidate.confirmationClose());
+                    assertThat(candidate.stopLossPrice()).isLessThan(candidate.endpointPrice());
+                });
+    }
+
+    @Test
+    void extendsAValidatedWaveFiveCycleIntoASameCycleFlatCorrection() {
+        List<EnrichedCandle> candles = completeNestedImpulseWithNestedFlatCorrection();
+
+        assertThat(detectionService.findDevelopingImpulseHypotheses(candles))
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.stage()).isEqualTo(ElliottSignalStage.CORRECTION_END);
+                    assertThat(candidate.correctionType()).isEqualTo("Flat 3-3-5");
+                    assertThat(candidate.evidence()).anyMatch(reason ->
+                            reason.contains("Wave A: Corrective"));
+                    assertThat(candidate.evidence()).anyMatch(reason ->
+                            reason.contains("Wave B: Corrective"));
+                    assertThat(candidate.evidence()).anyMatch(reason ->
+                            reason.contains("Wave C: Motive"));
+                });
+    }
+
+    @Test
+    void permitsAContractingTriangleInsideWaveBButStillRequiresMotiveWaveC() {
+        List<EnrichedCandle> candles = completeNestedImpulseWithTriangularWaveB();
+
+        assertThat(detectionService.findDevelopingImpulseHypotheses(candles))
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.stage()).isEqualTo(ElliottSignalStage.CORRECTION_END);
+                    assertThat(candidate.correctionType()).isEqualTo(
+                            "Zigzag 5-3-5 with triangular Wave B (3-3-3-3-3)");
+                    assertThat(candidate.evidence()).anyMatch(reason ->
+                            reason.contains("Wave B: Contracting triangle A-B-C-D-E"));
+                    assertThat(candidate.evidence()).anyMatch(reason -> reason.contains("Wave C: Motive"));
+                });
     }
 
     @Test
@@ -650,6 +910,99 @@ class ElliottWaveDetectionServiceTest {
                 anchor(24, 110.0), anchor(38, 143.0), anchor(54, 126.0),
                 anchor(68, 150.0), anchor(69, 147.0)
         ));
+    }
+
+    private List<EnrichedCandle> completeNestedImpulseWithDoubleZigzagCorrection() {
+        return syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0),
+                anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
+                anchor(32, 124.0), anchor(40, 140.0),
+                anchor(48, 125.0), anchor(54, 134.0), anchor(62, 115.0),
+                anchor(70, 145.0), anchor(76, 135.0), anchor(86, 180.0),
+                anchor(92, 165.0), anchor(102, 200.0),
+                anchor(110, 180.0), anchor(116, 192.0), anchor(124, 170.0),
+                anchor(132, 195.0), anchor(138, 185.0), anchor(148, 220.0),
+                anchor(154, 208.0), anchor(162, 230.0), anchor(163, 225.0),
+                anchor(170, 180.0), anchor(178, 195.0), anchor(186, 165.0),
+                anchor(194, 190.0), anchor(202, 155.0), anchor(210, 175.0),
+                anchor(218, 140.0), anchor(219, 145.0)
+        ));
+    }
+
+    private List<EnrichedCandle> completeNestedImpulseWithNestedZigzagCorrection() {
+        return syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0),
+                anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
+                anchor(32, 124.0), anchor(40, 140.0),
+                anchor(48, 125.0), anchor(54, 134.0), anchor(62, 115.0),
+                anchor(70, 145.0), anchor(76, 135.0), anchor(86, 180.0),
+                anchor(92, 165.0), anchor(102, 200.0),
+                anchor(110, 180.0), anchor(116, 192.0), anchor(124, 170.0),
+                anchor(132, 195.0), anchor(138, 185.0), anchor(148, 220.0),
+                anchor(154, 208.0), anchor(162, 230.0),
+                anchor(170, 210.0), anchor(178, 218.0), anchor(186, 190.0),
+                anchor(194, 205.0), anchor(202, 175.0),
+                anchor(210, 190.0), anchor(218, 180.0), anchor(226, 198.0),
+                anchor(234, 170.0), anchor(242, 185.0), anchor(250, 150.0),
+                anchor(258, 165.0), anchor(266, 130.0), anchor(267, 135.0)
+        ));
+    }
+
+    private List<EnrichedCandle> completeNestedImpulseWithNestedFlatCorrection() {
+        return syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0),
+                anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
+                anchor(32, 124.0), anchor(40, 140.0),
+                anchor(48, 125.0), anchor(54, 134.0), anchor(62, 115.0),
+                anchor(70, 145.0), anchor(76, 135.0), anchor(86, 180.0),
+                anchor(92, 165.0), anchor(102, 200.0),
+                anchor(110, 180.0), anchor(116, 192.0), anchor(124, 170.0),
+                anchor(132, 195.0), anchor(138, 185.0), anchor(148, 220.0),
+                anchor(154, 208.0), anchor(162, 230.0),
+                anchor(170, 195.0), anchor(178, 215.0), anchor(186, 180.0),
+                anchor(194, 210.0), anchor(202, 190.0), anchor(210, 228.0),
+                anchor(218, 190.0), anchor(226, 205.0), anchor(234, 165.0),
+                anchor(242, 180.0), anchor(250, 140.0), anchor(251, 145.0)
+        ));
+    }
+
+    private List<EnrichedCandle> completeNestedImpulseWithTriangularWaveB() {
+        return syntheticSeries(List.of(
+                anchor(1, 112.0), anchor(6, 100.0),
+                anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
+                anchor(32, 124.0), anchor(40, 140.0),
+                anchor(48, 125.0), anchor(54, 134.0), anchor(62, 115.0),
+                anchor(70, 145.0), anchor(76, 135.0), anchor(86, 180.0),
+                anchor(92, 165.0), anchor(102, 200.0),
+                anchor(110, 180.0), anchor(116, 192.0), anchor(124, 170.0),
+                anchor(132, 195.0), anchor(138, 185.0), anchor(148, 220.0),
+                anchor(154, 208.0), anchor(162, 230.0),
+                anchor(170, 210.0), anchor(178, 218.0), anchor(186, 190.0),
+                anchor(194, 205.0), anchor(202, 175.0),
+                anchor(210, 205.0), anchor(218, 182.0), anchor(226, 200.0),
+                anchor(234, 187.0), anchor(242, 195.0),
+                anchor(250, 170.0), anchor(258, 185.0), anchor(266, 150.0),
+                anchor(274, 165.0), anchor(282, 130.0), anchor(283, 135.0)
+        ));
+    }
+
+    private List<EnrichedCandle> completeNestedImpulseWithTriangleEndingCorrection() {
+        List<Anchor> anchors = new ArrayList<>(List.of(
+                anchor(1, 112.0), anchor(6, 100.0),
+                anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
+                anchor(32, 124.0), anchor(40, 140.0),
+                anchor(48, 125.0), anchor(54, 134.0), anchor(62, 115.0),
+                anchor(70, 145.0), anchor(76, 135.0), anchor(86, 180.0),
+                anchor(92, 165.0), anchor(102, 200.0),
+                anchor(110, 180.0), anchor(116, 192.0), anchor(124, 170.0),
+                anchor(132, 195.0), anchor(138, 185.0), anchor(148, 220.0),
+                anchor(154, 208.0), anchor(162, 230.0), anchor(163, 225.0),
+                anchor(170, 180.0), anchor(178, 195.0), anchor(186, 165.0),
+                anchor(194, 190.0), anchor(202, 145.0), anchor(210, 180.0),
+                anchor(218, 150.0), anchor(226, 170.0), anchor(234, 155.0),
+                anchor(235, 160.0)
+        ));
+        return syntheticSeries(anchors);
     }
 
     private List<EnrichedCandle> deepBearishWaveTwoSeries(int lastIndex) {

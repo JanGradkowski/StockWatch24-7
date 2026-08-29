@@ -142,6 +142,9 @@
                   <span th:text="${signal.companyName()}">Apple Inc.</span>
                   <span th:if="${signal.lifecycle().entryPrice() != null and signal.lifecycle().stopLossPrice() != null and signal.lifecycle().profitTargetPrice() != null}"
                         th:text="${'Entry ' + #numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 2) + ' · Stop ' + #numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 2) + ' · Target ' + #numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 2) + ' · 1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)}">Entry 100.00 · Stop 95.00 · Target 110.00 · 1:2</span>
+                  <span th:if="${signal.lifecycle().harmonicStopStatus() != null}"
+                        th:text="${'Confirmation entry ' + #numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 2) + ' · Harmonic stop ' + #numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 2) + ' · ' + (signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'breached' : 'active')}">Confirmation entry 100.00 · Harmonic stop 95.00 · active</span>
+                  <span th:if="${signal.lifecycle().atrCircuitBreakerApplied()}">ATR circuit breaker active</span>
                 </div>
                 <span class="latest-interval" th:text="${signal.intervalLabel()}">Weekly</span>
                 <div class="signal-archive-date">
@@ -152,9 +155,9 @@
                       th:classappend="${signal.hasBeenRead()} ? ' read' : ' unread'"
                       th:text="${signal.hasBeenRead()} ? 'Read' : 'Unread'">Unread</span>
                 <span class="signal-lifecycle-pill signal-archive-lifecycle"
-                      th:classappend="${' ' + signal.lifecycle().cssClass()}"
+                      th:classappend="${signal.lifecycle().harmonicStopStatus() != null ? (signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : ' detected') : ' ' + signal.lifecycle().cssClass()}"
                       th:title="${signal.lifecycle().summary()}"
-                      th:text="${signal.lifecycle().label()}">Detected</span>
+                      th:text="${signal.lifecycle().harmonicStopStatus() != null ? (signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : 'Active stop') : signal.lifecycle().label()}">Detected</span>
                 <div class="latest-confidence" th:classappend="${' ' + signal.setupBand()}"
                      title="Heuristic confidence score, not a probability"
                      th:attr="aria-label=${signal.setupScore() != null ? 'Confidence score ' + signal.setupScore() + ' out of 100' : 'Confidence score unavailable'}">

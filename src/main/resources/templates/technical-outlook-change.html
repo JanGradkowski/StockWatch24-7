@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="${change.symbol() + ' outlook change — StockWatch 24/7'}">Outlook change — StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
+  <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="bg-animation" aria-hidden="true"><div class="glow-orb orb-1"></div><div class="glow-orb orb-2"></div></div>
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+
+<main class="page-container signal-detail-page outlook-change-page">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb">
+    <a th:href="@{/home}">Dashboard</a><span aria-hidden="true">/</span>
+    <a th:href="@{/stock/{symbol}/technical-outlook(symbol=${change.symbol()})}">Live Technical Outlook</a><span aria-hidden="true">/</span>
+    <span>Change report</span>
+  </nav>
+
+  <header class="signal-report-header technical-outlook-header outlook-change-header">
+    <div class="signal-report-heading">
+      <div class="signal-report-eyebrow">Immutable completed-candle comparison</div>
+      <h1><span th:text="${change.symbol()}">AAPL</span> <span th:text="${change.intervalLabel()}">Daily</span> outlook changed</h1>
+      <p th:text="${change.companyName() + ' · Recorded ' + #temporals.format(change.createdAt(), 'dd MMM uuuu, HH:mm')}">Apple Inc.</p>
+    </div>
+    <a class="btn-secondary" th:href="@{/stock/{symbol}/technical-outlook(symbol=${change.symbol()})}">Open current live outlook</a>
+  </header>
+
+  <section class="outlook-change-transition" aria-label="Outlook transition">
+    <div><span>Previous</span><strong th:text="${change.previousClassification()}">Slight buy outlook</strong><small th:text="${#numbers.formatDecimal(change.previousScore() * 100, 1, 1) + '% normalized score'}">20%</small></div>
+    <span class="outlook-change-arrow" aria-hidden="true">→</span>
+    <div><span>New</span><strong th:text="${change.currentClassification()}">Neutral outlook</strong><small th:text="${#numbers.formatDecimal(change.currentScore() * 100, 1, 1) + '% normalized score'}">0%</small></div>
+  </section>
+
+  <nav class="signal-view-tabs outlook-change-tabs" role="tablist" aria-label="Outlook change report sections">
+    <button id="outlookChangeChartTab" type="button" class="signal-view-tab active" role="tab" aria-selected="true" aria-controls="outlookChangeChartPanel" data-change-tab="chart">Chart</button>
+    <button id="outlookChangeReportTab" type="button" class="signal-view-tab" role="tab" aria-selected="false" aria-controls="outlookChangeReportPanel" data-change-tab="report">General report</button>
+  </nav>
+
+  <section id="outlookChangeChartPanel" class="technical-outlook-panel" role="tabpanel" aria-labelledby="outlookChangeChartTab">
+    <section class="signal-chart-card technical-outlook-chart-card">
+      <div class="signal-chart-card-heading technical-outlook-chart-heading">
+        <div><span class="signal-report-eyebrow">Snapshot at the classification change</span><h2>Price and overlay indicators</h2></div>
+      </div>
+      <div id="outlookChangePriceChart" class="technical-outlook-price-chart"></div>
+    </section>
+    <section class="signal-evidence-section outlook-change-indicator-charts-section">
+      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Synchronized indicator state</span><h2>Indicator panels</h2></div></div>
+      <div id="outlookChangeIndicatorCharts" class="outlook-change-indicator-charts"></div>
+    </section>
+  </section>
+
+  <section id="outlookChangeReportPanel" class="technical-outlook-panel" role="tabpanel" aria-labelledby="outlookChangeReportTab" hidden>
+    <section class="signal-evidence-section outlook-change-summary-section">
+      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Why the outlook changed</span><h2>General report</h2></div></div>
+      <p id="outlookChangeSummary" class="outlook-change-summary"></p>
+      <div id="outlookDecisiveDrivers" class="outlook-decisive-drivers"></div>
+    </section>
+
+    <section class="signal-evidence-section">
+      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Category-balanced headline inputs</span><h2>Category changes</h2></div></div>
+      <div id="outlookCategoryDeltas" class="outlook-delta-grid"></div>
+    </section>
+
+    <section class="signal-evidence-section">
+      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Every current indicator and previous snapshot</span><h2>Indicator report</h2></div></div>
+      <div id="outlookIndicatorDeltas" class="outlook-indicator-report"></div>
+    </section>
+
+    <section class="signal-lifecycle-section">
+      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Supporting and contradicting evidence</span><h2>New technical signals</h2></div></div>
+      <div id="outlookSignalEvidence" class="technical-recent-signal-grid"></div>
+    </section>
+  </section>
+</main>
+
+<script th:inline="javascript">
+  const outlookChange = /*[[${change}]]*/ {};
+  const currentSnapshot = outlookChange.currentSnapshot || {};
+  const changeReport = outlookChange.report || {};
+
+  function displayLabel(value) {
+    const text = String(value || 'Unavailable').replaceAll('_', ' ').toLowerCase();
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function formatIndicatorValue(value, unit) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 'Unavailable';
+    return `${number.toLocaleString(undefined, {maximumFractionDigits: 3})}${unit ? ` ${unit}` : ''}`;
+  }
+
+  function line(chart, color, data, width = 2) {
+    const series = chart.addLineSeries({color, lineWidth: width, priceLineVisible: false, lastValueVisible: false});
+    series.setData(data.filter(point => Number.isFinite(Number(point.value))).map(point => ({time: Number(point.time), value: Number(point.value)})));
+    return series;
+  }
+
+  function chartOptions(container, height) {
+    return {
+      width: container.clientWidth,
+      height,
+      layout: {background: {color: 'transparent'}, textColor: '#98a2b3'},
+      grid: {vertLines: {color: 'rgba(255,255,255,.04)'}, horzLines: {color: 'rgba(255,255,255,.04)'}},
+      rightPriceScale: {borderColor: 'rgba(255,255,255,.12)'},
+      timeScale: {borderColor: 'rgba(255,255,255,.12)', timeVisible: true}
+    };
+  }
+
+  function renderPriceChart() {
+    const container = document.getElementById('outlookChangePriceChart');
+    const candles = Array.isArray(currentSnapshot.candles) ? currentSnapshot.candles : [];
+    const chart = LightweightCharts.createChart(container, chartOptions(container, 540));
+    const candleSeries = chart.addCandlestickSeries({upColor: '#3ddc97', downColor: '#ff647c', borderVisible: false, wickUpColor: '#3ddc97', wickDownColor: '#ff647c'});
+    candleSeries.setData(candles.map(candle => ({time: Number(candle.timestamp), open: candle.open, high: candle.high, low: candle.low, close: candle.close})));
+    const overlays = [
+      ['fastEma', '#64e8bd'], ['slowEma', '#ffbd59'], ['longSma', '#a78bfa'],
+      ['bollingerLower', 'rgba(96,165,250,.55)'], ['bollingerMiddle', 'rgba(96,165,250,.85)'], ['bollingerUpper', 'rgba(96,165,250,.55)'],
+      ['vwap', '#f472b6'], ['pointOfControl', '#fb923c']
+    ];
+    overlays.forEach(([key, color]) => line(chart, color, candles.map(candle => ({time: candle.timestamp, value: candle[key]})), key === 'pointOfControl' ? 3 : 2));
+    const markers = (changeReport.signalEvidence || []).map(signal => ({
+      time: Number(signal.timestamp),
+      position: signal.direction === 'BUY' ? 'belowBar' : 'aboveBar',
+      color: signal.alignment === 'SUPPORTS' ? '#3ddc97' : signal.alignment === 'CONTRADICTS' ? '#ff647c' : '#ffbd59',
+      shape: signal.direction === 'BUY' ? 'arrowUp' : 'arrowDown',
+      text: signal.label
+    })).sort((a, b) => a.time - b.time);
+    candleSeries.setMarkers(markers);
+    chart.timeScale().fitContent();
+    new ResizeObserver(() => chart.applyOptions({width: container.clientWidth})).observe(container);
+  }
+
+  function renderIndicatorCharts() {
+    const host = document.getElementById('outlookChangeIndicatorCharts');
+    (currentSnapshot.indicators || []).filter(indicator => Array.isArray(indicator.series) && indicator.series.length).forEach((indicator, index) => {
+      const card = document.createElement('article');
+      card.className = 'outlook-indicator-chart-card';
+      const heading = document.createElement('div');
+      const label = document.createElement('strong');
+      label.textContent = indicator.label;
+      const value = document.createElement('span');
+      value.textContent = `${formatIndicatorValue(indicator.currentValue, indicator.unit)} · ${displayLabel(indicator.classification)}`;
+      heading.append(label, value);
+      const chartHost = document.createElement('div');
+      chartHost.className = 'outlook-mini-chart';
+      card.append(heading, chartHost);
+      host.append(card);
+      const container = chartHost;
+      const chart = LightweightCharts.createChart(container, chartOptions(container, 180));
+      line(chart, ['#64e8bd', '#a78bfa', '#ffbd59', '#60a5fa'][index % 4], indicator.series.map(point => ({time: point.timestamp, value: point.value})));
+      (indicator.referenceLines || []).forEach(reference => {
+        const series = chart.addLineSeries({color: 'rgba(255,255,255,.20)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false});
+        series.setData(indicator.series.map(point => ({time: Number(point.timestamp), value: Number(reference)})));
+      });
+      chart.timeScale().fitContent();
+      new ResizeObserver(() => chart.applyOptions({width: container.clientWidth})).observe(container);
+    });
+  }
+
+  function renderReport() {
+    document.getElementById('outlookChangeSummary').textContent = changeReport.summary || 'No comparison summary is available.';
+    const drivers = document.getElementById('outlookDecisiveDrivers');
+    if (!(changeReport.decisiveDrivers || []).length) {
+      const empty = document.createElement('p');
+      empty.textContent = 'No individual indicator vote changed; a configured headline threshold was crossed.';
+      drivers.append(empty);
+    }
+    else changeReport.decisiveDrivers.forEach(text => { const item = document.createElement('p'); item.textContent = text; drivers.append(item); });
+
+    const categories = document.getElementById('outlookCategoryDeltas');
+    (changeReport.categoryDeltas || []).forEach(delta => {
+      const card = document.createElement('article');
+      card.className = `outlook-delta-card${delta.voteChanged ? ' changed' : ''}`;
+      const label = document.createElement('strong');
+      label.textContent = delta.label;
+      const transition = document.createElement('span');
+      transition.textContent = `${displayLabel(delta.previousClassification)} → ${displayLabel(delta.currentClassification)}`;
+      const average = document.createElement('small');
+      average.textContent = `Average vote ${Number(delta.previousAverageVote).toFixed(2)} → ${Number(delta.currentAverageVote).toFixed(2)}`;
+      card.append(label, transition, average);
+      categories.append(card);
+    });
+
+    const indicators = document.getElementById('outlookIndicatorDeltas');
+    (changeReport.indicatorDeltas || []).forEach(delta => {
+      const card = document.createElement('article');
+      card.className = `outlook-indicator-delta${delta.voteChanged ? ' changed' : ''}`;
+      const heading = document.createElement('div');
+      const label = document.createElement('strong');
+      label.textContent = delta.label;
+      const category = document.createElement('span');
+      category.textContent = delta.category;
+      heading.append(label, category);
+      const values = document.createElement('div');
+      values.className = 'outlook-indicator-values';
+      values.append(indicatorSnapshot('Previous', delta.previousValue, delta.unit, delta.previousClassification));
+      const arrow = document.createElement('b');
+      arrow.textContent = '→';
+      values.append(arrow, indicatorSnapshot('Current', delta.currentValue, delta.unit, delta.currentClassification));
+      const explanation = document.createElement('p');
+      explanation.textContent = delta.currentExplanation;
+      const rule = document.createElement('small');
+      rule.className = 'outlook-rule-copy';
+      rule.textContent = `Rule: ${delta.rule}`;
+      card.append(heading, values, explanation, rule);
+      indicators.append(card);
+    });
+
+    const signals = document.getElementById('outlookSignalEvidence');
+    if (!(changeReport.signalEvidence || []).length) {
+      const empty = document.createElement('p');
+      empty.textContent = 'No new candlestick, Elliott, or harmonic signal was recorded between these snapshots.';
+      signals.append(empty);
+    }
+    else changeReport.signalEvidence.forEach(signal => {
+      const card = document.createElement('a');
+      card.className = `technical-recent-signal-card ${String(signal.alignment).toLowerCase()}`;
+      card.href = typeof signal.detailUrl === 'string' && signal.detailUrl.startsWith('/')
+              ? signal.detailUrl
+              : '#';
+      const heading = document.createElement('div');
+      const label = document.createElement('strong');
+      label.textContent = signal.label;
+      const family = document.createElement('span');
+      family.textContent = signal.family;
+      heading.append(label, family);
+      const alignment = document.createElement('b');
+      alignment.textContent = `${signal.direction} · ${displayLabel(signal.alignment)}`;
+      card.append(heading, alignment);
+      signals.append(card);
+    });
+  }
+
+  function indicatorSnapshot(prefix, value, unit, classification) {
+    const snapshot = document.createElement('span');
+    snapshot.append(document.createTextNode(`${prefix} `));
+    const amount = document.createElement('strong');
+    amount.textContent = formatIndicatorValue(value, unit);
+    const label = document.createElement('small');
+    label.textContent = displayLabel(classification);
+    snapshot.append(amount, label);
+    return snapshot;
+  }
+
+  document.querySelectorAll('[data-change-tab]').forEach(button => button.addEventListener('click', () => {
+    const requested = button.dataset.changeTab;
+    document.querySelectorAll('[data-change-tab]').forEach(tab => { const active = tab === button; tab.classList.toggle('active', active); tab.setAttribute('aria-selected', String(active)); });
+    document.getElementById('outlookChangeChartPanel').hidden = requested !== 'chart';
+    document.getElementById('outlookChangeReportPanel').hidden = requested !== 'report';
+  }));
+
+  renderPriceChart();
+  renderIndicatorCharts();
+  renderReport();
+</script>
+</body>
+</html>

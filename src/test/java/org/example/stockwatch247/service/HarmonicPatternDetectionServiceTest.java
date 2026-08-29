@@ -22,9 +22,10 @@ class HarmonicPatternDetectionServiceTest {
     @Test
     void classifiesEveryBullishFormationUsingItsPrimaryBAndCompletionIdentity() {
         assertPattern(bullish(100, 200, 138.2, 183.2, 121.4), HarmonicPatternType.GARTLEY);
-        assertPattern(bullish(100, 200, 150, 191.95, 111.4), HarmonicPatternType.BAT);
-        assertPattern(bullish(100, 200, 121.4, 151.4, 72.8), HarmonicPatternType.BUTTERFLY);
+        assertPattern(bullish(100, 200, 150, 174.9, 111.4), HarmonicPatternType.BAT);
+        assertPattern(bullish(100, 200, 121.4, 172.622, 73), HarmonicPatternType.BUTTERFLY);
         assertPattern(bullish(100, 200, 150, 194, 38.2), HarmonicPatternType.CRAB);
+        assertPattern(bullish(100, 200, 144, 190, 38.2), HarmonicPatternType.CRAB);
         assertPattern(bullish(100, 200, 150, 210, 111.4), HarmonicPatternType.SHARK);
         assertPattern(bullish(100, 200, 150, 227.2, 127.2), HarmonicPatternType.CYPHER);
     }
@@ -32,8 +33,8 @@ class HarmonicPatternDetectionServiceTest {
     @Test
     void mirrorsEveryFormationForBearishGeometry() {
         assertBearish(mirror(bullish(100, 200, 138.2, 183.2, 121.4), 300), HarmonicPatternType.GARTLEY);
-        assertBearish(mirror(bullish(100, 200, 150, 191.95, 111.4), 300), HarmonicPatternType.BAT);
-        assertBearish(mirror(bullish(100, 200, 121.4, 151.4, 72.8), 300), HarmonicPatternType.BUTTERFLY);
+        assertBearish(mirror(bullish(100, 200, 150, 174.9, 111.4), 300), HarmonicPatternType.BAT);
+        assertBearish(mirror(bullish(100, 200, 121.4, 172.622, 73), 300), HarmonicPatternType.BUTTERFLY);
         assertBearish(mirror(bullish(100, 200, 150, 194, 38.2), 300), HarmonicPatternType.CRAB);
         assertBearish(mirror(bullish(100, 200, 150, 210, 111.4), 300), HarmonicPatternType.SHARK);
         assertBearish(mirror(bullish(100, 200, 150, 227.2, 127.2), 300), HarmonicPatternType.CYPHER);
@@ -41,10 +42,20 @@ class HarmonicPatternDetectionServiceTest {
 
     @Test
     void resolvesTheHalfRetracementAndPointEightEightSixCompletionAsBatNotStretchedGartley() {
-        HarmonicFormation formation = detector.classify(bullish(100, 200, 150, 191.95, 111.4)).orElseThrow();
+        HarmonicFormation formation = detector.classify(bullish(100, 200, 150, 174.9, 111.4)).orElseThrow();
 
         assertThat(formation.pattern()).isEqualTo(HarmonicPatternType.BAT);
-        assertThat(formation.reasons()).anySatisfy(reason -> assertThat(reason).contains("materially different"));
+        assertThat(formation.reasons()).anySatisfy(reason -> assertThat(reason).contains("1.27 alternate"));
+    }
+
+    @Test
+    void rejectsValuesBetweenTheDiscreteAbCdAlternatives() {
+        assertThat(detector.classify(bullish(100, 200, 138.2, 191.543, 121.4))).isEmpty();
+    }
+
+    @Test
+    void doesNotTreatTheButterflyInvalidationBoundaryAsACompletion() {
+        assertThat(detector.classify(bullish(100, 200, 121.4, 158.422, 58.6))).isEmpty();
     }
 
     @Test
@@ -100,6 +111,42 @@ class HarmonicPatternDetectionServiceTest {
         assertThat(formation.confirmationTimestamp()).isEqualTo(start + 6 * 86_400L);
     }
 
+    @Test
+    void findsLargerFormationWhenMinorAlternatingPivotsInterruptTheBaseScale() {
+        long start = 1_700_000_000L;
+        long spacing = 86_400L;
+        List<Candle> candles = List.of(
+                candle(start, 110, 111, 109),
+                candle(start + spacing, 100.5, 101, 100),
+                candle(start + 2 * spacing, 199.5, 200, 199),
+                candle(start + 3 * spacing, 198.2, 198.5, 198),
+                candle(start + 4 * spacing, 198.7, 199, 198.5),
+                candle(start + 5 * spacing, 138.7, 139, 138.2),
+                candle(start + 6 * spacing, 182.7, 183.2, 182),
+                candle(start + 7 * spacing, 122, 123, 121.4),
+                candle(start + 8 * spacing, 130, 131, 129));
+
+        assertThat(detector.confirmedPivots(candles)).hasSizeGreaterThan(5);
+        assertThat(detector.detectHistorical(candles))
+                .extracting(HarmonicFormation::pattern)
+                .contains(HarmonicPatternType.GARTLEY);
+    }
+
+    @Test
+    void findsEightyCandleFormationDespiteLargeInternalCounterSwings() {
+        List<Candle> candles = longNoisyGartleyCandles();
+
+        assertThat(detector.confirmedPivots(candles)).hasSizeGreaterThan(12);
+        assertThat(detector.detectHistorical(candles))
+                .anySatisfy(formation -> {
+                    assertThat(formation.pattern()).isEqualTo(HarmonicPatternType.GARTLEY);
+                    assertThat(formation.points().getFirst().timestamp())
+                            .isEqualTo(candles.get(3).getTimestamp());
+                    assertThat(formation.points().getLast().timestamp())
+                            .isEqualTo(candles.get(83).getTimestamp());
+                });
+    }
+
     private void assertPattern(List<HarmonicPivot> pivots, HarmonicPatternType expected) {
         HarmonicFormation formation = detector.classify(pivots).orElseThrow();
         assertThat(formation.pattern()).isEqualTo(expected);
@@ -143,6 +190,51 @@ class HarmonicPatternDetectionServiceTest {
                 candle(start + 5 * spacing, 122, 123, 121.4),
                 candle(start + 6 * spacing, 130, 131, 129)
         );
+    }
+
+    private List<Candle> longNoisyGartleyCandles() {
+        double[] prices = {100, 200, 138.2, 183.2, 121.4};
+        int[] anchors = {3, 23, 43, 63, 83};
+        double[] centers = new double[87];
+        interpolate(centers, 0, 112, anchors[0], prices[0], 0.0);
+        for (int leg = 0; leg < 4; leg++) {
+            interpolate(centers, anchors[leg], prices[leg], anchors[leg + 1], prices[leg + 1], 7.0);
+        }
+        interpolate(centers, anchors[4], prices[4], centers.length - 1, 133, 0.0);
+        List<Candle> candles = new ArrayList<>();
+        long start = 1_600_000_000L;
+        for (int index = 0; index < centers.length; index++) {
+            int anchor = -1;
+            for (int point = 0; point < anchors.length; point++) {
+                if (anchors[point] == index) anchor = point;
+            }
+            double high = centers[index] + .02;
+            double low = centers[index] - .02;
+            if (anchor >= 0) {
+                if (anchor % 2 == 0) low = prices[anchor];
+                else high = prices[anchor];
+            }
+            candles.add(candle(start + index * 86_400L, centers[index], high, low));
+        }
+        return List.copyOf(candles);
+    }
+
+    private void interpolate(double[] values,
+                             int from,
+                             double fromValue,
+                             int to,
+                             double toValue,
+                             double amplitude) {
+        double lower = Math.min(fromValue, toValue) + .05;
+        double upper = Math.max(fromValue, toValue) - .05;
+        for (int index = from; index <= to; index++) {
+            double progress = (double) (index - from) / (to - from);
+            double baseline = fromValue + (toValue - fromValue) * progress;
+            double wave = amplitude * Math.sin(Math.PI * progress)
+                    * Math.sin(4.0 * Math.PI * progress);
+            values[index] = index == from ? fromValue : index == to ? toValue
+                    : Math.clamp(baseline + wave, lower, upper);
+        }
     }
 
     private Candle candle(long timestamp, double close, double high, double low) {

@@ -268,13 +268,40 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getPatternHigh()).isEqualTo(110.0);
         assertThat(event.getPatternLow()).isEqualTo(88.0);
         assertThat(event.getTradeEntryPrice()).isEqualTo(107.0);
-        assertThat(event.getStopLossPrice()).isEqualTo(88.0);
-        assertThat(event.getProfitTargetPrice()).isEqualTo(145.0);
+        assertThat(event.getPreCircuitBreakerStopPrice()).isEqualTo(88.0);
+        assertThat(event.getStopLossPrice()).isEqualTo(93.625);
+        assertThat(event.getProfitTargetPrice()).isEqualTo(133.75);
+        assertThat(event.getAtrCircuitBreakerApplied()).isTrue();
+        assertThat(event.getAtrCircuitBreakerValue()).isNull();
         assertThat(event.getRewardRiskRatio()).isEqualTo(2.0);
-        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(145.0);
-        assertThat(event.getInvalidationPrice()).isEqualTo(88.0);
+        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(133.75);
+        assertThat(event.getInvalidationPrice()).isEqualTo(93.625);
         assertThat(event.getConfirmationWindowCandles()).isEqualTo(8);
         assertThat(event.isLifecycleTracked()).isTrue();
+    }
+
+    @Test
+    void freezesAvailableAtrWhenTheLiveCircuitBreakerActivates() {
+        AlertEventRepository repository = mock(AlertEventRepository.class);
+        AlertNotificationService notifications = mock(AlertNotificationService.class);
+        CandlestickSignalLifecycleService service =
+                new CandlestickSignalLifecycleService(repository, notifications, 3);
+        AlertEvent event = new AlertEvent();
+        DetectedSignal signal = signal(
+                CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY, 1_400L, 107.0);
+        List<Candle> candles = new java.util.ArrayList<>();
+        java.util.stream.LongStream.rangeClosed(1, 12)
+                .forEach(index -> candles.add(candle(index * 100L, 100.0, 101.0, 99.0, 100.0)));
+        candles.add(candle(1_300L, 105.0, 110.0, 90.0, 95.0));
+        candles.add(candle(1_400L, 94.0, 108.0, 88.0, 107.0));
+
+        service.initializeTracking(event, signal, candles);
+
+        assertThat(event.getAtrCircuitBreakerApplied()).isTrue();
+        assertThat(event.getAtrCircuitBreakerPeriod()).isEqualTo(14);
+        assertThat(event.getAtrCircuitBreakerValue()).isCloseTo(64.0 / 14.0, within(0.0000001));
+        assertThat((event.getProfitTargetPrice() - event.getTradeEntryPrice())
+                / event.getTradeEntryPrice() * 100.0).isLessThanOrEqualTo(25.0);
     }
 
     @Test
@@ -311,7 +338,8 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getStopLossPrice()).isEqualTo(101.65);
         assertThat(event.getRewardRiskRatio()).isEqualTo(3.5);
         assertThat(event.getProfitTargetPrice()).isCloseTo(125.725, within(0.0000001));
-        assertThat(event.getTradePlanVersion()).isEqualTo("CANDLE_RR_V2");
+        assertThat(event.getTradePlanVersion()).isEqualTo("CANDLE_RR_V3");
+        assertThat(event.getAtrCircuitBreakerApplied()).isFalse();
     }
 
     @Test

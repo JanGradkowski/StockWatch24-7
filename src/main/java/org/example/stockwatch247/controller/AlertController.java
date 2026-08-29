@@ -27,6 +27,21 @@ public class AlertController {
         this.userRepository = userRepository;
     }
 
+    @PostMapping("/testing/top-us-200")
+    public ResponseEntity<?> followTemporaryTopUsCompanies(Principal principal) {
+        try {
+            User user = currentUser(principal);
+            return ResponseEntity.ok(alertRuleService.followTemporaryTopUsCompanies(user));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "The temporary test universe is invalid."));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", e.getMessage() == null
+                            ? "The temporary test universe could not be followed."
+                            : e.getMessage()));
+        }
+    }
+
     @GetMapping("/{symbol}")
     public Map<String, Object> getAlertState(@PathVariable String symbol, Principal principal) {
         User user = currentUser(principal);

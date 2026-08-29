@@ -427,11 +427,55 @@
         deleteAllButton.addEventListener("click", () => deleteRules(true));
     }
 
+    function initializeTemporaryTopUsUniverse() {
+        const button = document.getElementById("followTopUs200Button");
+        const status = document.getElementById("followTopUs200Status");
+        if (!button || !status) {
+            return;
+        }
+        const csrfToken = document.getElementById("accountThemeSync")?.dataset.csrfToken;
+        button.addEventListener("click", async () => {
+            if (!csrfToken) {
+                status.textContent = "The security token is unavailable. Refresh the dashboard and try again.";
+                return;
+            }
+            const confirmed = window.confirm(
+                "Temporary load test: follow 200 U.S. companies with all 18 technical rule combinations per company (3,600 active rules). Continue?"
+            );
+            if (!confirmed) {
+                return;
+            }
+            button.disabled = true;
+            button.setAttribute("aria-busy", "true");
+            button.textContent = "Activating 3,600 rules...";
+            status.textContent = "Creating or restoring the test universe. This can take several seconds.";
+            try {
+                const response = await fetch("/api/alerts/testing/top-us-200", {
+                    method: "POST",
+                    headers: {"X-CSRF-TOKEN": csrfToken},
+                    credentials: "same-origin"
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(payload.error || "The top-200 test universe could not be followed.");
+                }
+                status.textContent = `Active: ${payload.companies} companies and ${payload.activeRules} rules. Reloading dashboard...`;
+                window.location.reload();
+            } catch (error) {
+                button.disabled = false;
+                button.removeAttribute("aria-busy");
+                button.textContent = "Follow top 200 U.S. (test)";
+                status.textContent = error.message || "The top-200 test universe could not be followed.";
+            }
+        });
+    }
+
     function initializeDashboard() {
         initializeDashboardViews();
         initializeWatchFilters();
         initializeNotificationReadButtons();
         initializeCompanyUnfollow();
+        initializeTemporaryTopUsUniverse();
     }
 
     if (document.readyState === "loading") {

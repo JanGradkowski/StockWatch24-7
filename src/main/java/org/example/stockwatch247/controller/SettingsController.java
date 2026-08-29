@@ -87,6 +87,7 @@ public class SettingsController {
                     candlestickPatternPreferences.get(user);
             model.addAttribute("candlestickPatternPreferences", preferences);
             model.addAttribute("candlestickRewardRiskProfiles", preferences.rewardRiskProfiles());
+            model.addAttribute("candlestickCircuitBreakerProfiles", preferences.circuitBreakerProfiles());
             model.addAttribute("trendRequirements", CandlestickPatternPreferencesService.TrendRequirement.values());
             model.addAttribute("stopLossModes", CandlestickPatternPreferencesService.StopLossMode.values());
         }
@@ -183,7 +184,7 @@ public class SettingsController {
                           RedirectAttributes redirect) {
         try {
             scoringPreferences.save(current(principal), form);
-            redirect.addFlashAttribute("success", "Scoring changes applied. Every included profile totals 100 points.");
+            redirect.addFlashAttribute("success", "Scoring and cross-pattern confluence changes applied.");
         } catch (IllegalArgumentException exception) {
             redirect.addFlashAttribute("error", exception.getMessage());
         }

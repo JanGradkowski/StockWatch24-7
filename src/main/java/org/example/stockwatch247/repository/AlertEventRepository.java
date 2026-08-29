@@ -30,6 +30,31 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             String elliottCycleKey,
             ElliottSignalStage elliottSignalStage);
 
+    @Query("""
+            select event
+            from AlertEvent event
+            join event.alertRule rule
+            join rule.stockAsset asset
+            where rule.user = :user
+              and lower(asset.tickerSymbol) = lower(:symbol)
+              and rule.interval = :interval
+              and event.elliottCycleKey = :cycleKey
+              and event.elliottSignalStage = :stage
+              and event.deletedAt is null
+            order by event.id
+            """)
+    List<AlertEvent> findElliottCycleStageForUser(
+            @Param("user") User user,
+            @Param("symbol") String symbol,
+            @Param("interval") TimeInterval interval,
+            @Param("cycleKey") String cycleKey,
+            @Param("stage") ElliottSignalStage stage,
+            Pageable pageable);
+
+    Optional<AlertEvent> findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+            AlertRule alertRule,
+            String elliottDevelopmentKey);
+
     @Query("select count(event) from AlertEvent event where event.alertRule = :alertRule and event.deletedAt is null")
     long countByAlertRule(@Param("alertRule") AlertRule alertRule);
 
@@ -117,6 +142,23 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             @Param("interval") TimeInterval interval,
             @Param("family") AlertPatternFamily family);
 
+    @EntityGraph(attributePaths = {"alertRule", "alertRule.user", "alertRule.stockAsset"})
+    @Query("""
+            select event
+            from AlertEvent event
+            join event.alertRule rule
+            join rule.stockAsset asset
+            where lower(asset.tickerSymbol) = lower(:symbol)
+              and rule.interval = :interval
+              and event.elliottDeveloping = true
+              and event.lifecycleStatus = org.example.stockwatch247.model.enums.SignalLifecycleStatus.DETECTED
+              and event.deletedAt is null
+            order by event.id
+            """)
+    List<AlertEvent> findDevelopingElliottEvents(
+            @Param("symbol") String symbol,
+            @Param("interval") TimeInterval interval);
+
     @Query("""
             select event
             from AlertEvent event
@@ -171,6 +213,7 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
               and rule.patternFamily = :family
               and event.lifecycleStatus = :status
               and event.deletedAt is null
+              and (event.elliottDeveloping is null or event.elliottDeveloping = false)
               and (event.confirmationWindowCandles is null or event.elliottCycleKey is null)
             order by event.signalCandleTimestamp, event.id
             """)
@@ -179,4 +222,22 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             @Param("interval") TimeInterval interval,
             @Param("family") AlertPatternFamily family,
             @Param("status") SignalLifecycleStatus status);
+
+    @EntityGraph(attributePaths = {"alertRule", "alertRule.user", "alertRule.stockAsset"})
+    @Query("""
+            select event
+            from AlertEvent event
+            join event.alertRule rule
+            join rule.stockAsset asset
+            where lower(asset.tickerSymbol) = lower(:symbol)
+              and rule.interval = :interval
+              and rule.patternFamily = org.example.stockwatch247.model.enums.AlertPatternFamily.HARMONIC_FORMATION
+              and event.tradePlanVersion = 'HARMONIC_STOP_V1'
+              and event.harmonicStopStatus = 'ACTIVE'
+              and event.deletedAt is null
+            order by event.signalCandleTimestamp, event.id
+            """)
+    List<AlertEvent> findActiveHarmonicStopPlans(
+            @Param("symbol") String symbol,
+            @Param("interval") TimeInterval interval);
 }

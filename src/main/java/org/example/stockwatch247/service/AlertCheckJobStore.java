@@ -58,6 +58,13 @@ public class AlertCheckJobStore {
                       and event.confirmation_window_candles is not null
                       and event.pattern_high is not null
                       and event.pattern_low is not null
+
+                    union
+
+                    select asset.ticker_symbol as symbol, subscription.interval
+                    from technical_outlook_subscriptions subscription
+                    join stock_assets asset on asset.id = subscription.stock_asset_id
+                    where subscription.is_active = true
                 ) candidate on candidate.interval = inserted_run.interval
                 on conflict (symbol, interval, scheduled_for) do nothing
                 """,

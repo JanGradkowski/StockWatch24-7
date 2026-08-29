@@ -9,6 +9,8 @@ import org.example.stockwatch247.service.CandlePatternDetectionService;
 import org.example.stockwatch247.service.CandlestickPatternPreferencesService;
 import org.example.stockwatch247.service.HistoricalCandlestickService;
 import org.example.stockwatch247.service.HistoricalCandlestickService.HistoricalScan;
+import org.example.stockwatch247.service.HistoricalSignalCacheService;
+import org.example.stockwatch247.service.MarketDataService;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +29,8 @@ public class HistoricalCandlestickController {
     private final UserRepository userRepository;
     private final AnalysisPreferencesService analysisPreferences;
     private final CandlestickPatternPreferencesService patternPreferences;
+    private HistoricalSignalCacheService historicalSignalCacheService;
+    private MarketDataService marketDataService;
 
     @Autowired
     public HistoricalCandlestickController(HistoricalCandlestickService historicalCandlestickService,
@@ -43,6 +47,13 @@ public class HistoricalCandlestickController {
         this(historicalCandlestickService, null, null, null);
     }
 
+    @Autowired(required = false)
+    void configureHistoricalSignalCache(HistoricalSignalCacheService cacheService,
+                                        MarketDataService marketDataService) {
+        this.historicalSignalCacheService = cacheService;
+        this.marketDataService = marketDataService;
+    }
+
     @GetMapping("/{symbol}/candlestick-patterns/history")
     public ResponseEntity<HistoricalScan> historicalCandlestickPatterns(
             @PathVariable String symbol,
@@ -54,20 +65,44 @@ public class HistoricalCandlestickController {
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
         CandlePatternDetectionService.TrendDetectionRules trendRules = trendRules(principal, validatedInterval);
         CandlestickPatternPreferencesService.PreferencesView definitions = patternDefinitions(principal);
-        if (fullHistory) {
-            return ResponseEntity.ok()
-                    .cacheControl(CacheControl.noStore())
-                    .body(analysisPreferences == null
-                            ? historicalCandlestickService.scanAll(validatedSymbol, validatedInterval)
-                            : historicalCandlestickService.scanAll(validatedSymbol, validatedInterval, trendRules, definitions));
-        }
         int selectedLookback = lookbackCandles == null
                 ? historicalCandlestickService.defaultLookbackCandles(validatedInterval)
                 : lookbackCandles;
-        HistoricalScan scan = analysisPreferences == null
-                ? historicalCandlestickService.scan(validatedSymbol, validatedInterval, selectedLookback)
-                : historicalCandlestickService.scan(
-                validatedSymbol, validatedInterval, selectedLookback, trendRules, definitions);
+        java.util.function.Supplier<HistoricalScan> calculation = () -> {
+            if (fullHistory) {
+                return analysisPreferences == null
+                        ? historicalCandlestickService.scanAll(validatedSymbol, validatedInterval)
+                        : historicalCandlestickService.scanAll(
+                                validatedSymbol, validatedInterval, trendRules, definitions);
+            }
+            return analysisPreferences == null
+                    ? historicalCandlestickService.scan(validatedSymbol, validatedInterval, selectedLookback)
+                    : historicalCandlestickService.scan(
+                            validatedSymbol, validatedInterval, selectedLookback, trendRules, definitions);
+        };
+        HistoricalScan scan;
+        if (historicalSignalCacheService == null) {
+            scan = calculation.get();
+        } else {
+            if (marketDataService != null) {
+                marketDataService.syncCandles(validatedSymbol, validatedInterval, null);
+            }
+            scan = historicalSignalCacheService.getOrCompute(
+                    HistoricalSignalCacheService.Family.CANDLESTICK,
+                    validatedSymbol,
+                    validatedInterval,
+                    HistoricalCandlestickService.SCORE_VERSION,
+                    new CandlestickCacheProfile(
+                            fullHistory,
+                            selectedLookback,
+                            trendRules,
+                            definitions.version(),
+                            definitions.profiles(),
+                            definitions.rewardRiskRatios(),
+                            definitions.circuitBreakers()),
+                    HistoricalScan.class,
+                    calculation);
+        }
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .body(scan);
@@ -103,4 +138,14 @@ public class HistoricalCandlestickController {
                 .orElseThrow(() -> new IllegalArgumentException("Account not found."));
         return patternPreferences.get(user);
     }
+
+    private record CandlestickCacheProfile(
+            boolean fullHistory,
+            int lookbackCandles,
+            CandlePatternDetectionService.TrendDetectionRules trendRules,
+            String definitionVersion,
+            java.util.List<CandlestickPatternPreferencesService.PatternProfile> patternProfiles,
+            java.util.Map<TimeInterval, Double> rewardRiskRatios,
+            java.util.Map<TimeInterval, CandlestickPatternPreferencesService.CircuitBreakerSettings>
+                    circuitBreakers) { }
 }

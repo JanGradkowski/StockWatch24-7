@@ -22,9 +22,11 @@ import java.util.regex.Pattern;
 
 @Service
 public class SignalScoringPreferencesService {
-    public static final String PROFILE_VERSION = "USER_SIGNAL_SCORING_V1";
+    public static final String PROFILE_VERSION = "USER_SIGNAL_SCORING_V2";
+    private static final String LEGACY_PROFILE_VERSION = "USER_SIGNAL_SCORING_V1";
     private static final Pattern SCORE_LABEL = Pattern.compile(
             "^\\s*([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)\\s*$");
+    private static final Pattern SIGNED_ADJUSTMENT = Pattern.compile("^\\s*([+-][0-9]+)\\s*$");
 
     private static final List<ComponentDefinition> CANDLESTICK_COMPONENTS = List.of(
             new ComponentDefinition("patternQuality", "Pattern quality", "Pattern geometry and the required prior trend.", 25),
@@ -68,6 +70,22 @@ public class SignalScoringPreferencesService {
     @Transactional(readOnly = true)
     public Profile profile(User user, AlertPatternFamily family, TimeInterval interval) {
         return get(user).profile(family, interval);
+    }
+
+    public CrossPatternConfluenceService.Policy confluencePolicy(
+            User user, AlertPatternFamily family, TimeInterval interval) {
+        return confluencePolicy(profile(user, family, interval));
+    }
+
+    public CrossPatternConfluenceService.Policy confluencePolicy(Profile profile) {
+        if (profile == null) return CrossPatternConfluenceService.Policy.factory(null);
+        Map<AlertPatternFamily, CrossPatternConfluenceService.Weight> weights = new java.util.EnumMap<>(
+                AlertPatternFamily.class);
+        for (ConfluenceRule rule : profile.confluenceRules()) {
+            weights.put(rule.sourceFamily(), new CrossPatternConfluenceService.Weight(
+                    rule.included(), rule.supportingPoints(), rule.opposingPoints()));
+        }
+        return new CrossPatternConfluenceService.Policy(profile.family(), weights);
     }
 
     @Transactional
@@ -124,7 +142,11 @@ public class SignalScoringPreferencesService {
         }
 
         Map<String, EvidenceSection> byKey = new LinkedHashMap<>();
+        EvidenceSection confluenceSection = null;
         for (EvidenceSection section : safeEvidence) {
+            if ("Cross-pattern confluence".equalsIgnoreCase(section.category())) {
+                confluenceSection = section;
+            }
             String key = componentKey(profile.family(), section.category());
             if (key != null && parseScore(section.scoreLabel()) != null) byKey.putIfAbsent(key, section);
         }
@@ -153,7 +175,10 @@ public class SignalScoringPreferencesService {
             }
             total += earned;
         }
-        int score = Math.clamp((int) Math.round(total), 0, 100);
+        EvidenceSection rescoredConfluence = rescoreConfluence(profile, confluenceSection);
+        int confluenceAdjustment = confluenceAdjustment(profile, rescoredConfluence);
+        int score = Math.clamp((int) Math.round(total) + confluenceAdjustment, 0, 100);
+        if (rescoredConfluence != null) rescored.add(rescoredConfluence);
         return new DisplayScore(score, band(score), strength(score), explanation(score), true,
                 List.copyOf(rescored), !rescored.isEmpty(), "Custom scoring profile applied.");
     }
@@ -170,8 +195,20 @@ public class SignalScoringPreferencesService {
             }
             return new ScoringComponent(definition.key(), definition.label(), definition.description(), included, points);
         }).toList();
+        List<ConfluenceRule> confluenceRules = sourceFamilies(family).stream().map(sourceFamily -> {
+            String rulePrefix = prefix + "confluence." + familyKey(sourceFamily) + ".";
+            boolean included = checked(form, rulePrefix + "included");
+            int supportingPoints = integer(form, rulePrefix + "supportingPoints",
+                    familyLabel(sourceFamily) + " same-direction confluence");
+            int opposingPoints = integer(form, rulePrefix + "opposingPoints",
+                    familyLabel(sourceFamily) + " opposite-direction confluence");
+            validateConfluencePoints(sourceFamily, supportingPoints, opposingPoints);
+            return new ConfluenceRule(sourceFamily, familyLabel(sourceFamily), included,
+                    supportingPoints, opposingPoints);
+        }).toList();
         validateTotal(family, interval, components);
-        return new Profile(family, interval, familyLabel(family), intervalLabel(interval), components, false);
+        return new Profile(family, interval, familyLabel(family), intervalLabel(interval),
+                components, confluenceRules, false);
     }
 
     private PreferencesView persist(User user, List<Profile> profiles) {
@@ -222,7 +259,13 @@ public class SignalScoringPreferencesService {
         List<ScoringComponent> components = definitions(family).stream()
                 .map(item -> new ScoringComponent(item.key(), item.label(), item.description(), true, item.defaultPoints()))
                 .toList();
-        return new Profile(family, interval, familyLabel(family), intervalLabel(interval), components, true);
+        List<ConfluenceRule> confluenceRules = sourceFamilies(family).stream()
+                .map(source -> new ConfluenceRule(source, familyLabel(source), true,
+                        CrossPatternConfluenceService.POINTS_PER_FAMILY,
+                        CrossPatternConfluenceService.POINTS_PER_FAMILY))
+                .toList();
+        return new Profile(family, interval, familyLabel(family), intervalLabel(interval),
+                components, confluenceRules, true);
     }
 
     private static void validateProfiles(List<Profile> profiles) {
@@ -236,6 +279,7 @@ public class SignalScoringPreferencesService {
                         .filter(candidate -> candidate.family() == family && candidate.interval() == interval)
                         .findFirst().orElseThrow(() -> new IllegalArgumentException("A scoring profile is missing."));
                 validateTotal(family, interval, profile.components());
+                validateConfluenceRules(family, profile.confluenceRules());
             }
         }
     }
@@ -255,6 +299,32 @@ public class SignalScoringPreferencesService {
         }
     }
 
+    private static void validateConfluenceRules(AlertPatternFamily targetFamily,
+                                                List<ConfluenceRule> rules) {
+        List<AlertPatternFamily> expected = sourceFamilies(targetFamily);
+        if (rules == null || rules.size() != expected.size()) {
+            throw new IllegalArgumentException("Every cross-pattern confluence source must be submitted.");
+        }
+        for (AlertPatternFamily sourceFamily : expected) {
+            ConfluenceRule rule = rules.stream()
+                    .filter(candidate -> candidate.sourceFamily() == sourceFamily)
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            familyLabel(sourceFamily) + " confluence settings are missing."));
+            validateConfluencePoints(sourceFamily, rule.supportingPoints(), rule.opposingPoints());
+        }
+    }
+
+    private static void validateConfluencePoints(AlertPatternFamily sourceFamily,
+                                                 int supportingPoints,
+                                                 int opposingPoints) {
+        if (supportingPoints < 0 || supportingPoints > 100
+                || opposingPoints < 0 || opposingPoints > 100) {
+            throw new IllegalArgumentException(familyLabel(sourceFamily)
+                    + " confluence points must be between 0 and 100.");
+        }
+    }
+
     private static boolean matches(Profile profile, AlertPatternFamily family, TimeInterval interval) {
         return (family == null || profile.family() == family)
                 && (interval == null || profile.interval() == interval);
@@ -269,6 +339,7 @@ public class SignalScoringPreferencesService {
             if (!actual.key().equals(expected.key()) || actual.included() != expected.included()
                     || actual.points() != expected.points()) return false;
         }
+        if (!profile.confluenceRules().equals(factory.confluenceRules())) return false;
         return true;
     }
 
@@ -299,6 +370,66 @@ public class SignalScoringPreferencesService {
         } catch (NumberFormatException exception) {
             return null;
         }
+    }
+
+    private static int confluenceAdjustment(Profile profile, EvidenceSection section) {
+        if (section == null || section.scoreLabel() == null) return 0;
+        if (profile == null) {
+            Matcher matcher = SIGNED_ADJUSTMENT.matcher(section.scoreLabel());
+            return matcher.matches() ? Integer.parseInt(matcher.group(1)) : 0;
+        }
+        int adjustment = 0;
+        for (EvidenceDetail detail : section.details()) {
+            AlertPatternFamily sourceFamily = familyFromConfluenceLabel(detail.label());
+            if (sourceFamily == null) continue;
+            ConfluenceRule rule = profile.confluenceRule(sourceFamily);
+            if (!rule.included()) continue;
+            Matcher matcher = SIGNED_ADJUSTMENT.matcher(detail.scoreLabel() == null ? "" : detail.scoreLabel());
+            if (matcher.matches()) {
+                int storedDirection = Integer.parseInt(matcher.group(1));
+                adjustment += storedDirection >= 0 ? rule.supportingPoints() : -rule.opposingPoints();
+            } else if (detail.text() != null) {
+                String text = detail.text().toLowerCase(Locale.ROOT);
+                if (text.contains("opposite-direction evidence")) adjustment -= rule.opposingPoints();
+                else if (text.contains("same-direction evidence")) adjustment += rule.supportingPoints();
+            }
+        }
+        if (!section.details().isEmpty()) return adjustment;
+        Matcher matcher = SIGNED_ADJUSTMENT.matcher(section.scoreLabel());
+        return matcher.matches() ? Integer.parseInt(matcher.group(1)) : 0;
+    }
+
+    private static EvidenceSection rescoreConfluence(Profile profile, EvidenceSection section) {
+        if (profile == null || section == null || section.details().isEmpty()) return section;
+        List<EvidenceDetail> details = new ArrayList<>();
+        int adjustment = 0;
+        for (EvidenceDetail detail : section.details()) {
+            AlertPatternFamily sourceFamily = familyFromConfluenceLabel(detail.label());
+            if (sourceFamily == null) {
+                details.add(detail);
+                continue;
+            }
+            ConfluenceRule rule = profile.confluenceRule(sourceFamily);
+            Matcher matcher = SIGNED_ADJUSTMENT.matcher(detail.scoreLabel() == null ? "" : detail.scoreLabel());
+            boolean opposing = matcher.matches() && Integer.parseInt(matcher.group(1)) < 0;
+            if (!matcher.matches() && detail.text() != null) {
+                opposing = detail.text().toLowerCase(Locale.ROOT).contains("opposite-direction evidence");
+            }
+            int points = !rule.included() ? 0
+                    : opposing ? -rule.opposingPoints() : rule.supportingPoints();
+            adjustment += points;
+            String baseText = detail.text() == null ? "Evidence occurred within the preceding eight candles."
+                    : detail.text().replaceFirst("\\s*\\([^)]*(?:points|scoring profile)[^)]*\\)\\.?$", ".");
+            String settingText = rule.included()
+                    ? " Current scoring settings apply " + String.format(Locale.ROOT, "%+d", points) + " points."
+                    : " This source family is disabled in the current scoring settings.";
+            details.add(new EvidenceDetail(detail.label(), baseText + settingText,
+                    rule.included() ? String.format(Locale.ROOT, "%+d", points) : null));
+        }
+        String status = adjustment > 0 ? "Supporting confluence"
+                : adjustment < 0 ? "Opposing confluence" : "No adjustment";
+        return new EvidenceSection(section.category(), String.format(Locale.ROOT, "%+d", adjustment),
+                status, adjustment < 0, false, List.copyOf(details));
     }
 
     private static String format(double value) {
@@ -355,6 +486,9 @@ public class SignalScoringPreferencesService {
         return List.of(AlertPatternFamily.CANDLESTICK, AlertPatternFamily.ELLIOTT_WAVE,
                 AlertPatternFamily.HARMONIC_FORMATION);
     }
+    private static List<AlertPatternFamily> sourceFamilies(AlertPatternFamily targetFamily) {
+        return supportedFamilies().stream().filter(family -> family != targetFamily).toList();
+    }
     private static List<TimeInterval> supportedIntervals() {
         return List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY);
     }
@@ -372,6 +506,14 @@ public class SignalScoringPreferencesService {
             default -> "Candlestick";
         };
     }
+    private static AlertPatternFamily familyFromConfluenceLabel(String label) {
+        if (label == null) return null;
+        String normalized = label.toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("candlestick")) return AlertPatternFamily.CANDLESTICK;
+        if (normalized.startsWith("elliott")) return AlertPatternFamily.ELLIOTT_WAVE;
+        if (normalized.startsWith("harmonic")) return AlertPatternFamily.HARMONIC_FORMATION;
+        return null;
+    }
     private static String intervalKey(TimeInterval interval) { return interval.name().toLowerCase(Locale.ROOT); }
     private static String intervalLabel(TimeInterval interval) {
         String value = intervalKey(interval);
@@ -380,7 +522,8 @@ public class SignalScoringPreferencesService {
 
     private record StoredPreferences(String version, List<Profile> profiles) {
         private void validate() {
-            if (!PROFILE_VERSION.equals(version) || profiles == null) {
+            if ((!PROFILE_VERSION.equals(version) && !LEGACY_PROFILE_VERSION.equals(version))
+                    || profiles == null) {
                 throw new IllegalArgumentException("Unsupported scoring profile version.");
             }
         }
@@ -393,10 +536,24 @@ public class SignalScoringPreferencesService {
                 complete.add(stored.stream()
                         .filter(profile -> profile.family() == family && profile.interval() == interval)
                         .findFirst()
+                        .map(SignalScoringPreferencesService::completeProfile)
                         .orElseGet(() -> factoryProfile(family, interval)));
             }
         }
         return List.copyOf(complete);
+    }
+
+    private static Profile completeProfile(Profile stored) {
+        Profile factory = factoryProfile(stored.family(), stored.interval());
+        List<ConfluenceRule> rules = stored.confluenceRules() == null || stored.confluenceRules().isEmpty()
+                ? factory.confluenceRules() : sourceFamilies(stored.family()).stream()
+                .map(source -> stored.confluenceRules().stream()
+                        .filter(rule -> rule.sourceFamily() == source)
+                        .findFirst()
+                        .orElseGet(() -> factory.confluenceRule(source)))
+                .toList();
+        return new Profile(stored.family(), stored.interval(), familyLabel(stored.family()),
+                intervalLabel(stored.interval()), stored.components(), rules, false);
     }
 
     private record ComponentDefinition(String key, String label, String description, int defaultPoints) { }
@@ -410,16 +567,32 @@ public class SignalScoringPreferencesService {
     }
 
     public record Profile(AlertPatternFamily family, TimeInterval interval, String familyLabel,
-                          String intervalLabel, List<ScoringComponent> components, boolean factoryProfile) {
-        public Profile { components = components == null ? List.of() : List.copyOf(components); }
+                          String intervalLabel, List<ScoringComponent> components,
+                          List<ConfluenceRule> confluenceRules, boolean factoryProfile) {
+        public Profile {
+            components = components == null ? List.of() : List.copyOf(components);
+            confluenceRules = confluenceRules == null ? List.of() : List.copyOf(confluenceRules);
+        }
         public String key() { return familyKey(family) + "." + intervalKey(interval); }
         public int totalPoints() { return components.stream().filter(ScoringComponent::included).mapToInt(ScoringComponent::points).sum(); }
+        public ConfluenceRule confluenceRule(AlertPatternFamily sourceFamily) {
+            return confluenceRules.stream().filter(rule -> rule.sourceFamily() == sourceFamily)
+                    .findFirst().orElseGet(() -> new ConfluenceRule(sourceFamily,
+                            SignalScoringPreferencesService.familyLabel(sourceFamily), true,
+                            CrossPatternConfluenceService.POINTS_PER_FAMILY,
+                            CrossPatternConfluenceService.POINTS_PER_FAMILY));
+        }
         private Profile withFactoryProfile(boolean factory) {
-            return new Profile(family, interval, familyLabel, intervalLabel, components, factory);
+            return new Profile(family, interval, familyLabel, intervalLabel, components,
+                    confluenceRules, factory);
         }
     }
 
     public record ScoringComponent(String key, String label, String description, boolean included, int points) { }
+    public record ConfluenceRule(AlertPatternFamily sourceFamily, String sourceFamilyLabel,
+                                 boolean included, int supportingPoints, int opposingPoints) {
+        public String key() { return familyKey(sourceFamily); }
+    }
     public record EvidenceDetail(String label, String text, String scoreLabel) { }
     public record EvidenceSection(String category, String scoreLabel, String statusLabel, boolean caution,
                                   boolean scored, List<EvidenceDetail> details) {

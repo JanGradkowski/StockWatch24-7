@@ -43,11 +43,16 @@ class HarmonicPatternPreferencesServiceTest {
 
         assertThat(preferences.custom()).isFalse();
         assertThat(preferences.patterns()).hasSize(HarmonicPatternType.values().length);
-        assertThat(preferences.rules().fibonacciTolerance()).isEqualTo(.04);
+        assertThat(preferences.rules().fibonacciTolerance()).isEqualTo(.03);
         assertThat(preferences.rules().pivotWindow()).isEqualTo(2);
+        assertThat(preferences.rules().maximumPivotWindow()).isEqualTo(55);
+        assertThat(preferences.rules().maximumSwingFraction()).isEqualTo(.34);
+        assertThat(preferences.rules().maximumSkippedPivots()).isZero();
+        assertThat(preferences.rules().maximumFormations()).isEqualTo(250);
         assertThat(preferences.patternRules().profile(HarmonicPatternType.GARTLEY).enabled()).isTrue();
         assertThat(preferences.patternRules().profile(HarmonicPatternType.GARTLEY).ratios())
-                .containsEntry("bPrimary", .618);
+                .containsEntry("bTarget", .618)
+                .containsEntry("legAlternate", 1.27);
     }
 
     @Test
@@ -55,7 +60,7 @@ class HarmonicPatternPreferencesServiceTest {
         LinkedMultiValueMap<String, String> form = factoryForm();
         form.remove("pattern.gartley.hard.SECONDARY_RATIOS");
         form.set("pattern.gartley.softViolationPercent", "8.5");
-        form.set("pattern.gartley.bPrimary", "62.0");
+        form.set("pattern.gartley.bTarget", "62.0");
 
         var saved = service.save(user, form);
         var gartley = saved.patternRules().profile(HarmonicPatternType.GARTLEY);
@@ -64,7 +69,7 @@ class HarmonicPatternPreferencesServiceTest {
         assertThat(gartley.hardRules().get(HarmonicPatternDetectionService.RuleGroup.SECONDARY_RATIOS))
                 .isFalse();
         assertThat(gartley.softViolationTolerance()).isEqualTo(.085);
-        assertThat(gartley.ratios()).containsEntry("bPrimary", .62);
+        assertThat(gartley.ratios()).containsEntry("bTarget", .62);
         assertThat(service.get(user).patterns().stream()
                 .filter(profile -> profile.pattern() == HarmonicPatternType.GARTLEY)
                 .findFirst().orElseThrow().factoryProfile()).isFalse();
@@ -79,6 +84,33 @@ class HarmonicPatternPreferencesServiceTest {
         assertThatThrownBy(() -> service.save(user, form))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("visual leg difference");
+    }
+
+    @Test
+    void migratesVersionTwoProfilesToTheLongFormationHierarchy() throws Exception {
+        service.save(user, factoryForm());
+        ObjectMapper mapper = new ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode payload =
+                (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(
+                        stored.get().getPreferencesPayload());
+        payload.put("version", "USER_HARMONIC_RULES_V2");
+        com.fasterxml.jackson.databind.node.ObjectNode globals =
+                (com.fasterxml.jackson.databind.node.ObjectNode) payload.get("globals");
+        globals.remove("maximumPivotWindow");
+        globals.remove("maximumSwingPercent");
+        globals.remove("maximumSkippedPivots");
+        globals.put("maximumFormations", 40);
+        stored.get().setPreferencesPayload(mapper.writeValueAsString(payload));
+
+        var migrated = service.get(user);
+
+        assertThat(migrated.version()).isEqualTo("USER_HARMONIC_RULES_V3");
+        assertThat(migrated.rules().maximumPivotWindow()).isEqualTo(55);
+        assertThat(migrated.rules().maximumSwingFraction()).isEqualTo(.34);
+        assertThat(migrated.rules().maximumSkippedPivots()).isZero();
+        assertThat(migrated.rules().maximumFormations()).isEqualTo(250);
+        assertThat(migrated.patternRules().profile(HarmonicPatternType.BUTTERFLY).ratios())
+                .containsEntry("completion", 1.27);
     }
 
     private LinkedMultiValueMap<String, String> factoryForm() {

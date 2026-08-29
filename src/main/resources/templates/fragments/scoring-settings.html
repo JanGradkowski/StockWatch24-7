@@ -12,7 +12,7 @@
     <div class="analysis-safety-strip scoring-safety-strip">
       <strong>Exactly 100 points</strong>
       <span>Every profile must total 100 before changes can be applied.</span>
-      <span>The original detector score remains stored for audit; these weights control the score shown on signal detail reports.</span>
+      <span>Category weights control current detail reports; cross-pattern settings also control new stored alerts and their email score evidence.</span>
     </div>
   </section>
 
@@ -52,10 +52,36 @@
           </label>
         </div>
       </div>
+
+      <div class="scoring-confluence-block">
+        <div class="scoring-confluence-heading">
+          <div><span>Cross-pattern confluence</span><strong>Preceding eight candles</strong></div>
+          <p>Configure each other signal family independently. Supporting points are added for the same direction; opposing points are deducted for the opposite direction.</p>
+        </div>
+        <div class="scoring-confluence-list">
+          <div th:each="rule : ${profile.confluenceRules()}" class="scoring-confluence-row"
+               th:classappend="${rule.included()} ? '' : ' excluded'">
+            <label class="scoring-include-control scoring-confluence-toggle">
+              <input type="checkbox" class="scoring-confluence-include"
+                     th:name="${profile.key() + '.confluence.' + rule.key() + '.included'}"
+                     th:checked="${rule.included()}">
+              <span><strong th:text="${rule.sourceFamilyLabel()}">Elliott Wave</strong><small>Use the most recent signal from this family inside the eight-candle window.</small></span>
+            </label>
+            <div class="scoring-confluence-points">
+              <label><span>Same direction</span><div><b>+</b><input type="number" min="0" max="100" step="1" required
+                    th:name="${profile.key() + '.confluence.' + rule.key() + '.supportingPoints'}"
+                    th:value="${rule.supportingPoints()}"></div></label>
+              <label><span>Opposite direction</span><div><b>&minus;</b><input type="number" min="0" max="100" step="1" required
+                    th:name="${profile.key() + '.confluence.' + rule.key() + '.opposingPoints'}"
+                    th:value="${rule.opposingPoints()}"></div></label>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="settings-card analysis-save-card scoring-save-card">
-      <div><strong>Apply scoring changes</strong><p>All nine included totals are checked in the browser and again on the server.</p></div>
+      <div><strong>Apply scoring changes</strong><p>All nine included totals and every confluence value are checked in the browser and again on the server.</p></div>
       <button id="applyScoringChanges" type="submit" class="btn-accent">Apply changes</button>
     </section>
   </form>

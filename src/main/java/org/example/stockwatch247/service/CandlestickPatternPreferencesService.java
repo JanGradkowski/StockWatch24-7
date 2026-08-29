@@ -16,16 +16,22 @@ import java.util.*;
 
 @Service
 public class CandlestickPatternPreferencesService {
-    public static final String PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V2";
+    public static final String PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V4";
+    private static final String PREVIOUS_PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V3";
+    private static final String REWARD_RISK_MIGRATION_VERSION = "USER_CANDLESTICK_PATTERNS_V2";
     private static final String LEGACY_PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V1";
     private static final Map<TimeInterval, Double> FACTORY_REWARD_RISK = Map.of(
             TimeInterval.DAILY, 2.0,
             TimeInterval.WEEKLY, 3.0,
-            TimeInterval.MONTHLY, 4.0);
+            TimeInterval.MONTHLY, 3.0);
+    private static final Map<TimeInterval, CircuitBreakerSettings> FACTORY_CIRCUIT_BREAKERS = Map.of(
+            TimeInterval.DAILY, new CircuitBreakerSettings(true, 14, 1.5, 25.0),
+            TimeInterval.WEEKLY, new CircuitBreakerSettings(true, 14, 1.5, 50.0),
+            TimeInterval.MONTHLY, new CircuitBreakerSettings(true, 14, 1.5, 50.0));
     private static final List<PatternDefinition> FACTORY = factoryDefinitions();
     private static final PreferencesView FACTORY_VIEW = materialize(
             FACTORY.stream().map(CandlestickPatternPreferencesService::stored).toList(),
-            FACTORY_REWARD_RISK, null);
+            FACTORY_REWARD_RISK, FACTORY_CIRCUIT_BREAKERS, null);
 
     private final UserCandlestickPatternPreferencesRepository repository;
     private final ObjectMapper objectMapper;
@@ -47,7 +53,7 @@ public class CandlestickPatternPreferencesService {
         if (user == null) throw new IllegalArgumentException("An account is required.");
         if (form == null) throw new IllegalArgumentException("Candlestick pattern settings are required.");
         List<StoredProfile> profiles = FACTORY.stream().map(definition -> parse(form, definition)).toList();
-        return persist(user, profiles, parseRewardRisk(form));
+        return persist(user, profiles, parseRewardRisk(form), parseCircuitBreakers(form));
     }
 
     @Transactional
@@ -61,7 +67,7 @@ public class CandlestickPatternPreferencesService {
         List<StoredProfile> profiles = current.profiles().stream()
                 .map(profile -> profile.pattern() == pattern ? stored(factory) : stored(profile))
                 .toList();
-        return persist(user, profiles, current.rewardRiskRatios());
+        return persist(user, profiles, current.rewardRiskRatios(), current.circuitBreakers());
     }
 
     public static PreferencesView factoryPreferences() {
@@ -121,30 +127,53 @@ public class CandlestickPatternPreferencesService {
         return Map.copyOf(ratios);
     }
 
+    private Map<TimeInterval, CircuitBreakerSettings> parseCircuitBreakers(MultiValueMap<String, String> form) {
+        Map<TimeInterval, CircuitBreakerSettings> profiles = new EnumMap<>(TimeInterval.class);
+        for (TimeInterval interval : List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY)) {
+            String prefix = "circuitBreaker." + interval.name().toLowerCase(Locale.ROOT) + ".";
+            int atrPeriod = integer(form, prefix + "atrPeriod", intervalLabel(interval) + " ATR period");
+            double atrMultiplier = decimal(form, prefix + "atrMultiplier",
+                    intervalLabel(interval) + " ATR multiplier");
+            double activationThreshold = decimal(form, prefix + "activationThresholdPercent",
+                    intervalLabel(interval) + " circuit-breaker activation threshold");
+            CircuitBreakerSettings profile = new CircuitBreakerSettings(
+                    form.containsKey(prefix + "enabled"), atrPeriod, atrMultiplier, activationThreshold);
+            validateCircuitBreaker(interval, profile);
+            profiles.put(interval, profile);
+        }
+        return Map.copyOf(profiles);
+    }
+
     private PreferencesView persist(User user, List<StoredProfile> profiles,
-                                    Map<TimeInterval, Double> rewardRiskRatios) {
-        validateStored(profiles, rewardRiskRatios);
+                                    Map<TimeInterval, Double> rewardRiskRatios,
+                                    Map<TimeInterval, CircuitBreakerSettings> circuitBreakers) {
+        validateStored(profiles, rewardRiskRatios, circuitBreakers);
         UserCandlestickPatternPreferences entity = repository.findByUser(user)
                 .orElseGet(UserCandlestickPatternPreferences::new);
         entity.setUser(user);
         entity.setProfileVersion(PROFILE_VERSION);
         entity.setPreferencesPayload(write(new StoredPreferences(
-                PROFILE_VERSION, profiles, rewardRiskRatios)));
+                PROFILE_VERSION, profiles, rewardRiskRatios, circuitBreakers)));
         entity.setUpdatedAt(Instant.now());
         repository.save(entity);
-        return materialize(profiles, rewardRiskRatios, entity.getUpdatedAt());
+        return materialize(profiles, rewardRiskRatios, circuitBreakers, entity.getUpdatedAt());
     }
 
     private PreferencesView read(UserCandlestickPatternPreferences entity) {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
-            if (!PROFILE_VERSION.equals(stored.version()) && !LEGACY_PROFILE_VERSION.equals(stored.version())) {
+            if (!PROFILE_VERSION.equals(stored.version())
+                    && !PREVIOUS_PROFILE_VERSION.equals(stored.version())
+                    && !REWARD_RISK_MIGRATION_VERSION.equals(stored.version())
+                    && !LEGACY_PROFILE_VERSION.equals(stored.version())) {
                 return factoryPreferences();
             }
             List<StoredProfile> profiles = normalizeProfiles(stored.profiles());
-            Map<TimeInterval, Double> ratios = normalizeRewardRisk(stored.rewardRiskRatios());
-            validateStored(profiles, ratios);
-            return materialize(profiles, ratios, entity.getUpdatedAt());
+            Map<TimeInterval, Double> ratios = migratedRewardRisk(stored.version(), stored.rewardRiskRatios());
+            Map<TimeInterval, CircuitBreakerSettings> circuitBreakers =
+                    normalizeCircuitBreakers(stored.circuitBreakers());
+            validateStored(profiles, ratios, circuitBreakers);
+            return materialize(profiles, ratios, circuitBreakers, entity.getUpdatedAt());
         } catch (JsonProcessingException | IllegalArgumentException exception) {
             return factoryPreferences();
         }
@@ -157,6 +186,7 @@ public class CandlestickPatternPreferencesService {
 
     private static PreferencesView materialize(List<StoredProfile> storedProfiles,
                                                Map<TimeInterval, Double> rewardRiskRatios,
+                                               Map<TimeInterval, CircuitBreakerSettings> circuitBreakers,
                                                Instant updatedAt) {
         List<PatternProfile> profiles = FACTORY.stream().map(definition -> {
             StoredProfile stored = storedProfiles.stream().filter(item -> item.pattern() == definition.pattern())
@@ -176,13 +206,17 @@ public class CandlestickPatternPreferencesService {
         }).toList();
         boolean customRatios = FACTORY_REWARD_RISK.entrySet().stream().anyMatch(entry ->
                 Double.compare(rewardRiskRatios.get(entry.getKey()), entry.getValue()) != 0);
+        boolean customCircuitBreakers = FACTORY_CIRCUIT_BREAKERS.entrySet().stream().anyMatch(entry ->
+                !entry.getValue().equals(circuitBreakers.get(entry.getKey())));
         return new PreferencesView(PROFILE_VERSION,
-                customRatios || profiles.stream().anyMatch(profile -> !profile.factoryProfile()),
-                profiles, rewardRiskRatios, updatedAt);
+                customRatios || customCircuitBreakers
+                        || profiles.stream().anyMatch(profile -> !profile.factoryProfile()),
+                profiles, rewardRiskRatios, circuitBreakers, updatedAt);
     }
 
     private static void validateStored(List<StoredProfile> profiles,
-                                       Map<TimeInterval, Double> rewardRiskRatios) {
+                                       Map<TimeInterval, Double> rewardRiskRatios,
+                                       Map<TimeInterval, CircuitBreakerSettings> circuitBreakers) {
         if (profiles == null || profiles.size() != FACTORY.size())
             throw new IllegalArgumentException("Every candlestick pattern definition is required.");
         for (PatternDefinition definition : FACTORY) {
@@ -213,6 +247,12 @@ public class CandlestickPatternPreferencesService {
                 throw new IllegalArgumentException("A candlestick risk-to-reward ratio is outside its supported range.");
             }
         });
+        if (circuitBreakers == null
+                || !circuitBreakers.keySet().containsAll(FACTORY_CIRCUIT_BREAKERS.keySet())) {
+            throw new IllegalArgumentException("Every candlestick ATR circuit-breaker profile is required.");
+        }
+        FACTORY_CIRCUIT_BREAKERS.keySet().forEach(interval ->
+                validateCircuitBreaker(interval, circuitBreakers.get(interval)));
     }
 
     private static List<StoredProfile> normalizeProfiles(List<StoredProfile> profiles) {
@@ -230,6 +270,47 @@ public class CandlestickPatternPreferencesService {
             if (interval != null && value != null) normalized.put(interval, value);
         });
         return Map.copyOf(normalized);
+    }
+
+    private static Map<TimeInterval, CircuitBreakerSettings> normalizeCircuitBreakers(
+            Map<TimeInterval, CircuitBreakerSettings> profiles) {
+        Map<TimeInterval, CircuitBreakerSettings> normalized = new EnumMap<>(TimeInterval.class);
+        normalized.putAll(FACTORY_CIRCUIT_BREAKERS);
+        if (profiles != null) profiles.forEach((interval, profile) -> {
+            if (interval != null && profile != null) normalized.put(interval, profile);
+        });
+        return Map.copyOf(normalized);
+    }
+
+    private static Map<TimeInterval, Double> migratedRewardRisk(
+            String storedVersion,
+            Map<TimeInterval, Double> storedRatios) {
+        Map<TimeInterval, Double> normalized = new EnumMap<>(normalizeRewardRisk(storedRatios));
+        if (REWARD_RISK_MIGRATION_VERSION.equals(storedVersion)
+                && Double.compare(normalized.get(TimeInterval.DAILY), 2.0) == 0
+                && Double.compare(normalized.get(TimeInterval.WEEKLY), 3.0) == 0
+                && Double.compare(normalized.get(TimeInterval.MONTHLY), 4.0) == 0) {
+            normalized.put(TimeInterval.MONTHLY, FACTORY_REWARD_RISK.get(TimeInterval.MONTHLY));
+        }
+        return Map.copyOf(normalized);
+    }
+
+    private static void validateCircuitBreaker(TimeInterval interval, CircuitBreakerSettings profile) {
+        if (profile == null || profile.atrPeriod() < 2 || profile.atrPeriod() > 500) {
+            throw new IllegalArgumentException(intervalLabel(interval)
+                    + " ATR period must be between 2 and 500 candles.");
+        }
+        if (!Double.isFinite(profile.atrMultiplier())
+                || profile.atrMultiplier() < 0.1 || profile.atrMultiplier() > 10.0) {
+            throw new IllegalArgumentException(intervalLabel(interval)
+                    + " ATR multiplier must be between 0.1 and 10.");
+        }
+        if (!Double.isFinite(profile.activationThresholdPercent())
+                || profile.activationThresholdPercent() < 1.0
+                || profile.activationThresholdPercent() > 95.0) {
+            throw new IllegalArgumentException(intervalLabel(interval)
+                    + " circuit-breaker activation threshold must be between 1 and 95 percent.");
+        }
     }
 
     private static void validateStopLoss(String label, StopLossMode mode, double value) {
@@ -277,6 +358,13 @@ public class CandlestickPatternPreferencesService {
             return value;
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException(label + " must be a number.");
+        }
+    }
+    private static int integer(MultiValueMap<String, String> form, String key, String label) {
+        try {
+            return Integer.parseInt(required(form, key));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(label + " must be a whole number.");
         }
     }
     private static String intervalLabel(TimeInterval interval) {
@@ -407,14 +495,21 @@ public class CandlestickPatternPreferencesService {
         public String factoryStopLossLabel() { return "Textbook structural price (0% buffer)"; }
     }
     public record PreferencesView(String version, boolean custom, List<PatternProfile> profiles,
-                                  Map<TimeInterval, Double> rewardRiskRatios, Instant updatedAt) {
+                                  Map<TimeInterval, Double> rewardRiskRatios,
+                                  Map<TimeInterval, CircuitBreakerSettings> circuitBreakers,
+                                  Instant updatedAt) {
+        public PreferencesView(String version, boolean custom, List<PatternProfile> profiles,
+                               Map<TimeInterval, Double> rewardRiskRatios, Instant updatedAt) {
+            this(version, custom, profiles, rewardRiskRatios, FACTORY_CIRCUIT_BREAKERS, updatedAt);
+        }
         public PreferencesView(String version, boolean custom, List<PatternProfile> profiles,
                                Instant updatedAt) {
-            this(version, custom, profiles, FACTORY_REWARD_RISK, updatedAt);
+            this(version, custom, profiles, FACTORY_REWARD_RISK, FACTORY_CIRCUIT_BREAKERS, updatedAt);
         }
         public PreferencesView {
             profiles = List.copyOf(profiles);
             rewardRiskRatios = normalizeRewardRisk(rewardRiskRatios);
+            circuitBreakers = normalizeCircuitBreakers(circuitBreakers);
         }
         public PatternProfile profile(CandlePattern pattern) { return profiles.stream().filter(item -> item.pattern() == pattern)
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Unsupported candlestick pattern.")); }
@@ -424,6 +519,9 @@ public class CandlestickPatternPreferencesService {
         public double factoryRewardRiskRatio(TimeInterval interval) {
             return FACTORY_REWARD_RISK.get(interval);
         }
+        public CircuitBreakerSettings circuitBreaker(TimeInterval interval) {
+            return circuitBreakers.getOrDefault(interval, FACTORY_CIRCUIT_BREAKERS.get(TimeInterval.DAILY));
+        }
         public List<RewardRiskProfile> rewardRiskProfiles() {
             return List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY).stream()
                     .map(interval -> new RewardRiskProfile(
@@ -431,9 +529,26 @@ public class CandlestickPatternPreferencesService {
                             rewardRiskRatio(interval), factoryRewardRiskRatio(interval)))
                     .toList();
         }
+        public List<CircuitBreakerProfile> circuitBreakerProfiles() {
+            return List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY).stream()
+                    .map(interval -> {
+                        CircuitBreakerSettings value = circuitBreaker(interval);
+                        CircuitBreakerSettings factory = FACTORY_CIRCUIT_BREAKERS.get(interval);
+                        return new CircuitBreakerProfile(
+                                interval, interval.name().toLowerCase(Locale.ROOT), intervalLabel(interval),
+                                value.enabled(), value.atrPeriod(), value.atrMultiplier(),
+                                value.activationThresholdPercent(), factory);
+                    }).toList();
+        }
     }
     public record RewardRiskProfile(TimeInterval interval, String key, String label,
                                     double value, double factoryValue) {}
+    public record CircuitBreakerSettings(boolean enabled, int atrPeriod, double atrMultiplier,
+                                         double activationThresholdPercent) {}
+    public record CircuitBreakerProfile(TimeInterval interval, String key, String label,
+                                        boolean enabled, int atrPeriod, double atrMultiplier,
+                                        double activationThresholdPercent,
+                                        CircuitBreakerSettings factory) {}
     private record NumericDefinition(String key, String label, String description, String unit, String effect,
                                      double min, double max, double step, double factoryValue) {}
     private record PatternDefinition(CandlePattern pattern, String key, String label, String formation,
@@ -443,5 +558,6 @@ public class CandlestickPatternPreferencesService {
                                  Map<String, Double> values, StopLossMode stopLossMode,
                                  Double stopLossValuePercent) {}
     private record StoredPreferences(String version, List<StoredProfile> profiles,
-                                     Map<TimeInterval, Double> rewardRiskRatios) {}
+                                     Map<TimeInterval, Double> rewardRiskRatios,
+                                     Map<TimeInterval, CircuitBreakerSettings> circuitBreakers) {}
 }

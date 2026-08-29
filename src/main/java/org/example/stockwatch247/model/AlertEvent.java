@@ -116,6 +116,27 @@ public class AlertEvent {
     @Column(name = "stop_loss_value_percent")
     private Double stopLossValuePercent;
 
+    @Column(name = "pre_circuit_breaker_stop_price")
+    private Double preCircuitBreakerStopPrice;
+
+    @Column(name = "atr_circuit_breaker_enabled")
+    private Boolean atrCircuitBreakerEnabled;
+
+    @Column(name = "atr_circuit_breaker_applied")
+    private Boolean atrCircuitBreakerApplied;
+
+    @Column(name = "atr_circuit_breaker_value")
+    private Double atrCircuitBreakerValue;
+
+    @Column(name = "atr_circuit_breaker_period")
+    private Integer atrCircuitBreakerPeriod;
+
+    @Column(name = "atr_circuit_breaker_multiplier")
+    private Double atrCircuitBreakerMultiplier;
+
+    @Column(name = "atr_circuit_breaker_threshold_percent")
+    private Double atrCircuitBreakerThresholdPercent;
+
     @Column(name = "confirmation_window_candles")
     private Integer confirmationWindowCandles;
 
@@ -149,6 +170,12 @@ public class AlertEvent {
     @Column(name = "elliott_cycle_key", length = 192)
     private String elliottCycleKey;
 
+    @Column(name = "elliott_development_key", length = 192)
+    private String elliottDevelopmentKey;
+
+    @Column(name = "elliott_developing", nullable = false)
+    private Boolean elliottDeveloping = false;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "elliott_signal_stage", columnDefinition = "varchar(24)")
     private ElliottSignalStage elliottSignalStage;
@@ -158,6 +185,51 @@ public class AlertEvent {
 
     @Column(name = "elliott_endpoint_price")
     private Double elliottEndpointPrice;
+
+    @Column(name = "elliott_correction_type", length = 64)
+    private String elliottCorrectionType;
+
+    @Column(name = "elliott_forecast_label", length = 128)
+    private String elliottForecastLabel;
+
+    @Column(name = "elliott_target_mid_price")
+    private Double elliottTargetMidPrice;
+
+    @Column(name = "elliott_target_zone_low")
+    private Double elliottTargetZoneLow;
+
+    @Column(name = "elliott_target_zone_high")
+    private Double elliottTargetZoneHigh;
+
+    @Column(name = "elliott_target_basis", length = 255)
+    private String elliottTargetBasis;
+
+    @Column(name = "elliott_required_reward_risk_ratio")
+    private Double elliottRequiredRewardRiskRatio;
+
+    @Column(name = "elliott_trade_actionable")
+    private Boolean elliottTradeActionable;
+
+    @Column(name = "elliott_trade_plan_status", length = 32)
+    private String elliottTradePlanStatus;
+
+    @Column(name = "elliott_trade_resolution_timestamp")
+    private Long elliottTradeResolutionTimestamp;
+
+    @Column(name = "elliott_trade_resolution_close")
+    private Double elliottTradeResolutionClose;
+
+    @Column(name = "elliott_trade_resolution_reason", length = 255)
+    private String elliottTradeResolutionReason;
+
+    @Column(name = "elliott_stage_updated_at")
+    private LocalDateTime elliottStageUpdatedAt;
+
+    @Column(name = "elliott_structure_snapshot", columnDefinition = "text")
+    private String elliottStructureSnapshot;
+
+    @Column(name = "elliott_transition_history", columnDefinition = "text")
+    private String elliottTransitionHistory;
 
     @Column(name = "elliott_terminal_anchor_timestamp")
     private Long elliottTerminalAnchorTimestamp;
@@ -179,6 +251,33 @@ public class AlertEvent {
 
     @Column(name = "harmonic_measurements_snapshot", columnDefinition = "text")
     private String harmonicMeasurementsSnapshot;
+
+    @Column(name = "harmonic_stop_basis", length = 255)
+    private String harmonicStopBasis;
+
+    @Column(name = "harmonic_stop_formula", length = 255)
+    private String harmonicStopFormula;
+
+    @Column(name = "harmonic_stop_buffer_amount")
+    private Double harmonicStopBufferAmount;
+
+    @Column(name = "harmonic_stop_buffer_percent")
+    private Double harmonicStopBufferPercent;
+
+    @Column(name = "harmonic_stop_distance_percent")
+    private Double harmonicStopDistancePercent;
+
+    @Column(name = "harmonic_stop_status", length = 32)
+    private String harmonicStopStatus;
+
+    @Column(name = "harmonic_stop_resolution_timestamp")
+    private Long harmonicStopResolutionTimestamp;
+
+    @Column(name = "harmonic_stop_resolution_price")
+    private Double harmonicStopResolutionPrice;
+
+    @Column(name = "harmonic_stop_resolution_reason", length = 255)
+    private String harmonicStopResolutionReason;
 
     public Long getId() {
         return id;
@@ -282,6 +381,13 @@ public class AlertEvent {
     public Double getStructuralStopPrice() { return structuralStopPrice; }
     public String getStopLossMode() { return stopLossMode; }
     public Double getStopLossValuePercent() { return stopLossValuePercent; }
+    public Double getPreCircuitBreakerStopPrice() { return preCircuitBreakerStopPrice; }
+    public Boolean getAtrCircuitBreakerEnabled() { return atrCircuitBreakerEnabled; }
+    public Boolean getAtrCircuitBreakerApplied() { return atrCircuitBreakerApplied; }
+    public Double getAtrCircuitBreakerValue() { return atrCircuitBreakerValue; }
+    public Integer getAtrCircuitBreakerPeriod() { return atrCircuitBreakerPeriod; }
+    public Double getAtrCircuitBreakerMultiplier() { return atrCircuitBreakerMultiplier; }
+    public Double getAtrCircuitBreakerThresholdPercent() { return atrCircuitBreakerThresholdPercent; }
 
     public Integer getConfirmationWindowCandles() {
         return confirmationWindowCandles;
@@ -317,6 +423,9 @@ public class AlertEvent {
         return elliottCycleKey;
     }
 
+    public String getElliottDevelopmentKey() { return elliottDevelopmentKey; }
+    public boolean isElliottDeveloping() { return Boolean.TRUE.equals(elliottDeveloping); }
+
     public ElliottSignalStage getElliottSignalStage() {
         return elliottSignalStage;
     }
@@ -328,6 +437,22 @@ public class AlertEvent {
     public Double getElliottEndpointPrice() {
         return elliottEndpointPrice;
     }
+
+    public String getElliottCorrectionType() { return elliottCorrectionType; }
+    public String getElliottForecastLabel() { return elliottForecastLabel; }
+    public Double getElliottTargetMidPrice() { return elliottTargetMidPrice; }
+    public Double getElliottTargetZoneLow() { return elliottTargetZoneLow; }
+    public Double getElliottTargetZoneHigh() { return elliottTargetZoneHigh; }
+    public String getElliottTargetBasis() { return elliottTargetBasis; }
+    public Double getElliottRequiredRewardRiskRatio() { return elliottRequiredRewardRiskRatio; }
+    public boolean isElliottTradeActionable() { return Boolean.TRUE.equals(elliottTradeActionable); }
+    public String getElliottTradePlanStatus() { return elliottTradePlanStatus; }
+    public Long getElliottTradeResolutionTimestamp() { return elliottTradeResolutionTimestamp; }
+    public Double getElliottTradeResolutionClose() { return elliottTradeResolutionClose; }
+    public String getElliottTradeResolutionReason() { return elliottTradeResolutionReason; }
+    public LocalDateTime getElliottStageUpdatedAt() { return elliottStageUpdatedAt; }
+    public String getElliottStructureSnapshot() { return elliottStructureSnapshot; }
+    public String getElliottTransitionHistory() { return elliottTransitionHistory; }
 
     public Long getElliottTerminalAnchorTimestamp() {
         return elliottTerminalAnchorTimestamp;
@@ -351,9 +476,18 @@ public class AlertEvent {
     public Double getHarmonicEndpointPrice() { return harmonicEndpointPrice; }
     public String getHarmonicPointsSnapshot() { return harmonicPointsSnapshot; }
     public String getHarmonicMeasurementsSnapshot() { return harmonicMeasurementsSnapshot; }
+    public String getHarmonicStopBasis() { return harmonicStopBasis; }
+    public String getHarmonicStopFormula() { return harmonicStopFormula; }
+    public Double getHarmonicStopBufferAmount() { return harmonicStopBufferAmount; }
+    public Double getHarmonicStopBufferPercent() { return harmonicStopBufferPercent; }
+    public Double getHarmonicStopDistancePercent() { return harmonicStopDistancePercent; }
+    public String getHarmonicStopStatus() { return harmonicStopStatus; }
+    public Long getHarmonicStopResolutionTimestamp() { return harmonicStopResolutionTimestamp; }
+    public Double getHarmonicStopResolutionPrice() { return harmonicStopResolutionPrice; }
+    public String getHarmonicStopResolutionReason() { return harmonicStopResolutionReason; }
 
     public boolean isLifecycleTracked() {
-        return confirmationWindowCandles != null
+        return elliottDevelopmentKey != null || confirmationWindowCandles != null
                 && patternHigh != null
                 && patternLow != null
                 && confirmationTriggerPrice != null
@@ -482,9 +616,18 @@ public class AlertEvent {
     public void setStructuralStopPrice(Double value) { this.structuralStopPrice = value; }
     public void setStopLossMode(String value) { this.stopLossMode = value; }
     public void setStopLossValuePercent(Double value) { this.stopLossValuePercent = value; }
+    public void setPreCircuitBreakerStopPrice(Double value) { this.preCircuitBreakerStopPrice = value; }
+    public void setAtrCircuitBreakerEnabled(Boolean value) { this.atrCircuitBreakerEnabled = value; }
+    public void setAtrCircuitBreakerApplied(Boolean value) { this.atrCircuitBreakerApplied = value; }
+    public void setAtrCircuitBreakerValue(Double value) { this.atrCircuitBreakerValue = value; }
+    public void setAtrCircuitBreakerPeriod(Integer value) { this.atrCircuitBreakerPeriod = value; }
+    public void setAtrCircuitBreakerMultiplier(Double value) { this.atrCircuitBreakerMultiplier = value; }
+    public void setAtrCircuitBreakerThresholdPercent(Double value) { this.atrCircuitBreakerThresholdPercent = value; }
 
     public boolean hasCandlestickRiskRewardPlan() {
-        return ("CANDLE_RR_V1".equals(tradePlanVersion) || "CANDLE_RR_V2".equals(tradePlanVersion))
+        return ("CANDLE_RR_V1".equals(tradePlanVersion)
+                || "CANDLE_RR_V2".equals(tradePlanVersion)
+                || "CANDLE_RR_V3".equals(tradePlanVersion))
                 && stopLossPrice != null
                 && rewardRiskRatio != null;
     }
@@ -523,6 +666,9 @@ public class AlertEvent {
         this.elliottCycleKey = elliottCycleKey;
     }
 
+    public void setElliottDevelopmentKey(String value) { this.elliottDevelopmentKey = value; }
+    public void setElliottDeveloping(boolean value) { this.elliottDeveloping = value; }
+
     public void setElliottSignalStage(ElliottSignalStage elliottSignalStage) {
         this.elliottSignalStage = elliottSignalStage;
     }
@@ -533,6 +679,38 @@ public class AlertEvent {
 
     public void setElliottEndpointPrice(Double elliottEndpointPrice) {
         this.elliottEndpointPrice = elliottEndpointPrice;
+    }
+
+    public void setElliottCorrectionType(String value) {
+        this.elliottCorrectionType = normalizedText(value, 64);
+    }
+
+    public void setElliottForecastLabel(String value) {
+        this.elliottForecastLabel = normalizedText(value, 128);
+    }
+
+    public void setElliottTargetMidPrice(Double value) { this.elliottTargetMidPrice = value; }
+    public void setElliottTargetZoneLow(Double value) { this.elliottTargetZoneLow = value; }
+    public void setElliottTargetZoneHigh(Double value) { this.elliottTargetZoneHigh = value; }
+    public void setElliottTargetBasis(String value) { this.elliottTargetBasis = normalizedText(value, 255); }
+    public void setElliottRequiredRewardRiskRatio(Double value) { this.elliottRequiredRewardRiskRatio = value; }
+    public void setElliottTradeActionable(boolean value) { this.elliottTradeActionable = value; }
+    public void setElliottTradePlanStatus(String value) { this.elliottTradePlanStatus = normalizedText(value, 32); }
+    public void setElliottTradeResolutionTimestamp(Long value) { this.elliottTradeResolutionTimestamp = value; }
+    public void setElliottTradeResolutionClose(Double value) { this.elliottTradeResolutionClose = value; }
+    public void setElliottTradeResolutionReason(String value) { this.elliottTradeResolutionReason = normalizedText(value, 255); }
+
+    public void setElliottStageUpdatedAt(LocalDateTime value) { this.elliottStageUpdatedAt = value; }
+    public void setElliottStructureSnapshot(String value) {
+        this.elliottStructureSnapshot = normalizedLargeText(value, "Elliott structure snapshots");
+    }
+
+    public void appendElliottTransition(String value) {
+        String normalized = normalizedLargeText(value, "Elliott transition entries");
+        if (normalized == null) return;
+        String combined = elliottTransitionHistory == null || elliottTransitionHistory.isBlank()
+                ? normalized : elliottTransitionHistory + "\n" + normalized;
+        this.elliottTransitionHistory = normalizedLargeText(combined, "Elliott transition history");
     }
 
     public void setElliottTerminalAnchorTimestamp(Long elliottTerminalAnchorTimestamp) {
@@ -558,12 +736,42 @@ public class AlertEvent {
     public void setHarmonicEndpointPrice(Double value) { this.harmonicEndpointPrice = value; }
     public void setHarmonicPointsSnapshot(String value) { this.harmonicPointsSnapshot = normalizedSnapshot(value); }
     public void setHarmonicMeasurementsSnapshot(String value) { this.harmonicMeasurementsSnapshot = normalizedSnapshot(value); }
+    public void setHarmonicStopBasis(String value) { this.harmonicStopBasis = normalizedText(value, 255); }
+    public void setHarmonicStopFormula(String value) { this.harmonicStopFormula = normalizedText(value, 255); }
+    public void setHarmonicStopBufferAmount(Double value) { this.harmonicStopBufferAmount = value; }
+    public void setHarmonicStopBufferPercent(Double value) { this.harmonicStopBufferPercent = value; }
+    public void setHarmonicStopDistancePercent(Double value) { this.harmonicStopDistancePercent = value; }
+    public void setHarmonicStopStatus(String value) { this.harmonicStopStatus = normalizedText(value, 32); }
+    public void setHarmonicStopResolutionTimestamp(Long value) { this.harmonicStopResolutionTimestamp = value; }
+    public void setHarmonicStopResolutionPrice(Double value) { this.harmonicStopResolutionPrice = value; }
+    public void setHarmonicStopResolutionReason(String value) { this.harmonicStopResolutionReason = normalizedText(value, 255); }
+
+    public boolean hasHarmonicStopPlan() {
+        return "HARMONIC_STOP_V1".equals(tradePlanVersion)
+                && tradeEntryPrice != null && structuralStopPrice != null && stopLossPrice != null;
+    }
 
     private String normalizedSnapshot(String value) {
         if (value == null || value.isBlank()) return null;
         String normalized = value.trim();
         if (normalized.length() > 16_000) {
             throw new IllegalArgumentException("Harmonic snapshots must not exceed 16000 characters.");
+        }
+        return normalized;
+    }
+
+    private String normalizedText(String value, int maximumLength) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.trim();
+        return normalized.length() <= maximumLength
+                ? normalized : normalized.substring(0, maximumLength);
+    }
+
+    private String normalizedLargeText(String value, String label) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.trim();
+        if (normalized.length() > 32_000) {
+            throw new IllegalArgumentException(label + " must not exceed 32000 characters.");
         }
         return normalized;
     }

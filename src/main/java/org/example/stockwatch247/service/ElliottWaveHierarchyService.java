@@ -157,38 +157,77 @@ public class ElliottWaveHierarchyService {
             ElliottWaveDetectionService.ElliottWavePoint start = points.get(index - 1);
             ElliottWaveDetectionService.ElliottWavePoint end = points.get(index);
             String label = normalizeDegreeLabel(end.label());
-            waves.add(new Wave(cycleKey, Timeframe.MONTHLY, label, nature(label),
+            waves.add(new Wave(cycleKey, Timeframe.MONTHLY, label,
+                    rootChildNature(structure, label),
                     start.price(), end.price(), start.timestamp(), end.timestamp(), List.of()));
         }
         return List.copyOf(waves);
+    }
+
+    private WaveNature rootChildNature(
+            ElliottWaveDetectionService.ElliottWaveStructure structure,
+            String label) {
+        String normalized = normalizeDegreeLabel(label);
+        if (!structure.correctionComplete() || java.util.Set.of("1", "2", "3", "4", "5")
+                .contains(normalized)) return nature(normalized);
+        String prefix = normalized.contains(".")
+                ? normalized.substring(0, normalized.lastIndexOf('.') + 1) : "";
+        boolean triangleComponent = structure.points().stream()
+                .map(ElliottWaveDetectionService.ElliottWavePoint::label)
+                .filter(java.util.Objects::nonNull)
+                .map(this::normalizeDegreeLabel)
+                .anyMatch(candidate -> candidate.equals(prefix + "D") || candidate.equals(prefix + "E"));
+        if (triangleComponent) return WaveNature.CORRECTIVE;
+        String component = normalized.contains(".")
+                ? normalized.substring(normalized.lastIndexOf('.') + 1) : normalized;
+        if ((structure.correctionVariant() == ElliottWaveDetectionService.CorrectionVariant.EXPANDED_FLAT
+                || structure.correctionVariant() == ElliottWaveDetectionService.CorrectionVariant.RUNNING_FLAT)
+                && component.equals("A")) return WaveNature.CORRECTIVE;
+        return nature(normalized);
     }
 
     private List<Wave> childWaves(ElliottWaveDetectionService.ElliottSubdivision subdivision,
                                   Timeframe timeframe,
                                   Wave parent) {
         List<ElliottWaveDetectionService.ElliottWavePoint> points = subdivision.points();
-        int expected = parent.nature() == WaveNature.MOTIVE ? 5 : 3;
-        if (points.size() != expected + 1) return List.of();
+        if (points.size() < 2) return List.of();
+        if (parent.nature() == WaveNature.MOTIVE && points.size() != 6) return List.of();
         List<Wave> waves = new ArrayList<>();
         for (int index = 1; index < points.size(); index++) {
             ElliottWaveDetectionService.ElliottWavePoint start = points.get(index - 1);
             ElliottWaveDetectionService.ElliottWavePoint end = points.get(index);
             String label = parent.nature() == WaveNature.MOTIVE
                     ? Integer.toString(index)
-                    : Character.toString((char) ('A' + index - 1));
+                    : normalizeDegreeLabel(end.label());
             long startTime = start.timestamp();
             long endTime = end.timestamp();
             long parentEndExclusive = periodEndExclusive(parent.endTime(), parent.timeframe());
             if (startTime >= endTime || startTime < parent.startTime() || endTime >= parentEndExclusive) {
                 return List.of();
             }
-            waves.add(new Wave(parent.cycleKey(), timeframe, label, nature(label), start.price(), end.price(),
+            waves.add(new Wave(parent.cycleKey(), timeframe, label,
+                    childNature(subdivision.structureLabel(), label), start.price(), end.price(),
                     startTime, endTime, List.of()));
         }
         if (parent.nature() == WaveNature.MOTIVE && !waveThreeIsNotShortest(waves)) {
             return List.of();
         }
         return List.copyOf(waves);
+    }
+
+    private WaveNature childNature(String structureLabel, String label) {
+        String structure = structureLabel == null
+                ? "" : structureLabel.toLowerCase(java.util.Locale.ROOT);
+        String normalized = normalizeDegreeLabel(label);
+        String component = normalized.contains(".")
+                ? normalized.substring(normalized.lastIndexOf('.') + 1) : normalized;
+        if (structure.contains("triangle")) return WaveNature.CORRECTIVE;
+        if (component.equals("X") || component.matches("X[0-9]+")
+                || component.equals("B") || component.equals("D") || component.equals("E")) {
+            return WaveNature.CORRECTIVE;
+        }
+        if (structure.contains("flat") && component.equals("A")) return WaveNature.CORRECTIVE;
+        return nature(component);
     }
 
     static boolean waveThreeIsNotShortest(List<Wave> waves) {
@@ -328,9 +367,16 @@ public class ElliottWaveHierarchyService {
     }
 
     private WaveNature nature(String label) {
-        return switch (normalizeDegreeLabel(label)) {
+        String normalized = normalizeDegreeLabel(label);
+        if (normalized.contains(".")) {
+            normalized = normalized.substring(normalized.lastIndexOf('.') + 1);
+        }
+        if (normalized.equals("X") || normalized.matches("X[0-9]+")) {
+            return WaveNature.CORRECTIVE;
+        }
+        return switch (normalized) {
             case "1", "3", "5", "A", "C" -> WaveNature.MOTIVE;
-            case "2", "4", "B" -> WaveNature.CORRECTIVE;
+            case "2", "4", "B", "D", "E" -> WaveNature.CORRECTIVE;
             default -> throw new IllegalArgumentException("Unsupported Elliott degree label: " + label);
         };
     }

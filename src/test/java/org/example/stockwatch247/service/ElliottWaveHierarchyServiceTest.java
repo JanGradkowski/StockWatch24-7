@@ -84,6 +84,28 @@ class ElliottWaveHierarchyServiceTest {
     }
 
     @Test
+    void preservesEveryLegOfAComplexCorrectiveSubdivision() {
+        ElliottWaveHierarchyService.HierarchyView hierarchy = buildHierarchy(false, false, true);
+
+        ElliottWaveHierarchyService.Wave waveTwo = hierarchy.waves().stream()
+                .filter(wave -> "2".equals(wave.degreeLabel()))
+                .findFirst().orElseThrow();
+        assertThat(waveTwo.subwaves())
+                .extracting(ElliottWaveHierarchyService.Wave::degreeLabel)
+                .containsExactly("W.A", "W.B", "W.C", "X", "Y.A", "Y.B", "Y.C");
+        assertThat(waveTwo.subwaves())
+                .extracting(ElliottWaveHierarchyService.Wave::nature)
+                .containsExactly(
+                        ElliottWaveHierarchyService.WaveNature.MOTIVE,
+                        ElliottWaveHierarchyService.WaveNature.CORRECTIVE,
+                        ElliottWaveHierarchyService.WaveNature.MOTIVE,
+                        ElliottWaveHierarchyService.WaveNature.CORRECTIVE,
+                        ElliottWaveHierarchyService.WaveNature.MOTIVE,
+                        ElliottWaveHierarchyService.WaveNature.CORRECTIVE,
+                        ElliottWaveHierarchyService.WaveNature.MOTIVE);
+    }
+
+    @Test
     void hierarchyBoundaryRejectsAMotiveCountWhoseWaveThreeIsShortest() {
         List<ElliottWaveHierarchyService.Wave> invalid = List.of(
                 motiveWave("1", 100.0, 120.0, 1),
@@ -111,6 +133,12 @@ class ElliottWaveHierarchyServiceTest {
 
     private ElliottWaveHierarchyService.HierarchyView buildHierarchy(boolean rejectDailyWaveTwo,
                                                                        boolean includeSecondCycle) {
+        return buildHierarchy(rejectDailyWaveTwo, includeSecondCycle, false);
+    }
+
+    private ElliottWaveHierarchyService.HierarchyView buildHierarchy(boolean rejectDailyWaveTwo,
+                                                                       boolean includeSecondCycle,
+                                                                       boolean complexWaveTwo) {
         MarketDataService marketData = mock(MarketDataService.class);
         CandleCompletionService completion = mock(CandleCompletionService.class);
         TechnicalIndicatorEnrichmentService enrichment = mock(TechnicalIndicatorEnrichmentService.class);
@@ -153,6 +181,10 @@ class ElliottWaveHierarchyServiceTest {
                     boolean dailyInput = values.size() > 1
                             && values.get(1).timestamp() - values.get(0).timestamp() <= 86_400L;
                     if (rejectDailyWaveTwo && dailyInput && "2".equals(label)) return List.of();
+                    if (complexWaveTwo && !dailyInput && "2".equals(label)) {
+                        return complexCorrectionSubdivision(values,
+                                invocation.getArgument(2), invocation.getArgument(3));
+                    }
                     return subdivisions(values, label,
                             invocation.getArgument(2), invocation.getArgument(3));
                 });
@@ -200,6 +232,23 @@ class ElliottWaveHierarchyServiceTest {
         return List.of(new ElliottWaveDetectionService.ElliottSubdivision(
                 motive ? "Motive 1-2-3-4-5" : "Corrective A-B-C",
                 80, true, points, List.of("Validated"), List.of()));
+    }
+
+    private List<ElliottWaveDetectionService.ElliottSubdivision> complexCorrectionSubdivision(
+            List<EnrichedCandle> candles, double startPrice, double endPrice) {
+        List<String> labels = List.of("", "w.a", "w.b", "w.c", "x", "y.a", "y.b", "y.c");
+        List<ElliottWaveDetectionService.ElliottWavePoint> points = new ArrayList<>();
+        for (int index = 0; index < labels.size(); index++) {
+            int candleIndex = Math.min(candles.size() - 1,
+                    (int) Math.round(index * (candles.size() - 1.0) / (labels.size() - 1)));
+            double progress = index / (double) (labels.size() - 1);
+            points.add(new ElliottWaveDetectionService.ElliottWavePoint(
+                    labels.get(index), candles.get(candleIndex).timestamp(),
+                    startPrice + (endPrice - startPrice) * progress,
+                    index % 2 == 0 ? "HIGH" : "LOW"));
+        }
+        return List.of(new ElliottWaveDetectionService.ElliottSubdivision(
+                "Double zigzag W-X-Y", 80, true, points, List.of("Validated"), List.of()));
     }
 
     private List<Candle> candles(String interval, LocalDate start, LocalDate end, int stepDays) {

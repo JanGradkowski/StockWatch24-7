@@ -153,47 +153,96 @@
        data-stock-workspace-panel="general">
 
   <section class="chart-toolbar" aria-label="Chart controls">
-    <div class="toolbar-cluster">
+    <div class="toolbar-cluster toolbar-view-cluster">
       <span class="toolbar-label">View</span>
-      <div class="button-group">
-        <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line">Line</button>
-        <button id="candleBtn" type="button" class="view-toggle active" data-chart-mode="candle">Candles</button>
-        <button id="candlestickOverlayToggle"
-                type="button"
-                class="view-toggle"
-                aria-haspopup="dialog"
-                aria-controls="historicalCandlestickViewDialog"
-                aria-pressed="false">Candlestick signals</button>
-        <button id="elliottOverlayToggle" type="button" class="view-toggle" aria-pressed="false" disabled>Independent Elliott structures</button>
-        <button id="elliottSubwaveToggle" type="button" class="view-toggle" aria-pressed="false" disabled>Fractal subwaves</button>
-        <button id="harmonicOverlayToggle"
-                type="button"
-                class="view-toggle"
-                aria-pressed="false">Harmonic formations overlay</button>
-        <button id="anchoredVolumeProfileToggle"
-                type="button"
-                class="view-toggle"
-                aria-pressed="false">
-          Anchored volume profile
-        </button>
-        <button id="rsiOverlayToggle"
-                type="button"
-                class="view-toggle"
-                aria-pressed="false">
-          RSI overlay
-        </button>
-        <button id="volumeChartToggle"
-                type="button"
-                class="view-toggle active"
-                aria-controls="volumeChartPanel"
-                aria-pressed="true">
-          Volume: on
-        </button>
+      <div class="toolbar-controls-row">
+        <div class="button-group toolbar-direct-controls">
+          <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line">Line</button>
+          <button id="candleBtn" type="button" class="view-toggle active" data-chart-mode="candle">Candles</button>
+          <button id="volumeChartToggle"
+                  type="button"
+                  class="view-toggle active"
+                  aria-controls="volumeChartPanel"
+                  aria-pressed="true">
+            Volume: on
+          </button>
+        </div>
+
+        <div class="toolbar-menu-group">
+          <details class="chart-control-menu">
+            <summary class="view-toggle chart-control-menu-trigger">
+              <span>Buy/Short signals</span>
+              <span class="chart-control-menu-chevron" aria-hidden="true"></span>
+            </summary>
+            <div class="chart-control-menu-panel" role="group" aria-label="Buy and short signal overlays">
+              <button id="candlestickOverlayToggle"
+                      type="button"
+                      class="view-toggle chart-control-menu-item"
+                      aria-haspopup="dialog"
+                      aria-controls="historicalCandlestickViewDialog"
+                      aria-pressed="false">Candlestick signals</button>
+              <button id="elliottOverlayToggle"
+                      type="button"
+                      class="view-toggle chart-control-menu-item"
+                      aria-pressed="false"
+                      disabled>Independent Elliott structures</button>
+              <button id="elliottSubwaveToggle"
+                      type="button"
+                      class="view-toggle chart-control-menu-item"
+                      aria-pressed="false"
+                      disabled>Fractal subwaves</button>
+              <button id="harmonicOverlayToggle"
+                      type="button"
+                      class="view-toggle chart-control-menu-item"
+                      aria-pressed="false">Harmonic formations overlay</button>
+            </div>
+          </details>
+
+          <details class="chart-control-menu">
+            <summary class="view-toggle chart-control-menu-trigger">
+              <span>Technical indicators</span>
+              <span class="chart-control-menu-chevron" aria-hidden="true"></span>
+            </summary>
+            <div class="chart-control-menu-panel technical-indicator-menu-panel" role="group" aria-label="Technical indicator overlays">
+              <span class="chart-control-menu-section-label">Price overlays</span>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="EMA">Add EMA…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="SMA">Add SMA…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="BOLLINGER">Add Bollinger Bands…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="VWAP">Add rolling VWAP…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="SUPPORT_RESISTANCE">Add support / resistance…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="DONCHIAN">Add Donchian Channel…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="KELTNER">Add Keltner Channel…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="VOLUME_PROFILE">Add rolling volume profile…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="KDE_VOLUME_PROFILE">Add KDE profile mode…</button>
+              <span class="chart-control-menu-section-label">Indicator panels</span>
+              <button id="rsiOverlayToggle"
+                      type="button"
+                      class="view-toggle chart-control-menu-item"
+                      aria-pressed="false">RSI overlay</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="MACD">Add MACD…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="CCI">Add CCI…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="ATR">Add ATR…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="RELATIVE_VOLUME">Add relative volume…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="ADX_DMI">Add ADX / DMI…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="STOCHASTIC">Add Stochastic…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="STOCHASTIC_RSI">Add Stochastic RSI…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="OBV">Add OBV</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="MFI">Add Money Flow Index…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="TREND">Add trend state…</button>
+              <span class="chart-control-menu-section-label">Interactive tools</span>
+              <button id="anchoredVolumeProfileToggle"
+                      type="button"
+                      class="view-toggle chart-control-menu-item"
+                      aria-pressed="false">Anchored volume profile</button>
+              <div id="activeChartIndicatorList" class="active-chart-indicator-list" aria-live="polite"></div>
+            </div>
+          </details>
+        </div>
       </div>
     </div>
-    <div class="toolbar-cluster">
+    <div class="toolbar-cluster toolbar-interval-cluster">
       <span class="toolbar-label">Interval</span>
-      <div class="button-group">
+      <div class="button-group interval-button-group">
         <button id="int-1d" type="button" class="view-toggle active" data-chart-interval="1d">Daily</button>
         <button id="int-1wk" type="button" class="view-toggle" data-chart-interval="1wk">Weekly</button>
         <button id="int-1mo" type="button" class="view-toggle" data-chart-interval="1mo">Monthly</button>
@@ -210,6 +259,7 @@
     <div id="candlestickOverlayStatus" class="elliott-overlay-status candlestick-overlay-status" aria-live="polite"></div>
     <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite"></div>
     <div id="harmonicOverlayStatus" class="elliott-overlay-status harmonic-overlay-status" aria-live="polite"></div>
+    <div id="chartIndicatorOverlayLegend" class="chart-indicator-overlay-legend" aria-live="polite"></div>
     <div id="anchoredVolumeProfileSummary" class="anchored-volume-profile-summary">
       <div class="anchored-volume-profile-range">
         <span class="anchored-volume-profile-kicker">Anchored range</span>
@@ -335,6 +385,8 @@
          tabindex="0"><span aria-hidden="true"></span><small>Drag to resize</small></div>
   </section>
 
+  <div id="dynamicIndicatorPanels" class="dynamic-indicator-panels"></div>
+
   <section id="rsiChartPanel" class="chart-wrapper rsi-chart-wrapper resizable-chart-panel" hidden>
     <div class="chart-panel-head">
       <h2 id="rsiChartTitle" class="chart-panel-title">RSI (14)</h2>
@@ -403,10 +455,17 @@
     <div class="alert-header">
       <div>
         <h2 class="alert-title">Automated technical monitoring</h2>
-        <p class="alert-description">An outlined star is not followed; a filled star is followed. Select a star to change the draft, then apply it when you are ready. Confirmed harmonic formations now create signal records and follow the same email-delivery controls as technical alerts.</p>
+        <p class="alert-description">An outlined star is not followed; a filled star is followed. Pattern stars use the Apply changes button; Automated Technical Outlook stars save immediately because each one establishes or stops an interval baseline.</p>
       </div>
       <div class="alert-header-actions">
-        <div id="alertStatus" class="alert-status" aria-live="polite"></div>
+        <div class="alert-overall-follow-row">
+          <div id="alertStatus" class="alert-status" aria-live="polite"></div>
+          <button id="toggleAllTechnicalMonitoringBtn"
+                  type="button"
+                  class="btn-secondary alert-follow-all-btn"
+                  aria-pressed="false"
+                  disabled>Loading follow state...</button>
+        </div>
         <div class="alert-apply-row">
           <span id="alertDraftStatus" class="alert-draft-status" aria-live="polite">No unapplied changes</span>
           <button id="applyAlertChangesBtn" type="button" class="btn-accent alert-apply-btn" disabled>Apply changes</button>
@@ -479,6 +538,26 @@
           <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly bullish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0-55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bullish</span></label></div>
           <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly bearish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bearish</span></label></div>
         </div>
+      </div>
+
+      <div class="alert-section outlook-alert-section">
+        <div class="alert-section-title">Automated Technical Outlook</div>
+        <p class="alert-section-copy">Follow the complete automated outlook for each interval. There is one star per interval because outlook changes are not divided into Buy and Sell signals.</p>
+        <div id="outlookFollowStatus" class="outlook-alert-status" role="status" aria-live="polite">Loading outlook follows…</div>
+        <div class="alert-grid outlook-alert-grid" role="group" aria-label="Automated Technical Outlook intervals">
+          <div class="alert-grid-label">Interval</div>
+          <div class="alert-grid-label">Follow outlook</div>
+
+          <div class="alert-row-label">Daily</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="DAILY" aria-label="Follow daily Automated Technical Outlook"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label">Follow</span></label></div>
+
+          <div class="alert-row-label">Weekly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="WEEKLY" aria-label="Follow weekly Automated Technical Outlook"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label">Follow</span></label></div>
+
+          <div class="alert-row-label">Monthly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="MONTHLY" aria-label="Follow monthly Automated Technical Outlook"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label">Follow</span></label></div>
+        </div>
+        <p class="outlook-alert-note">The first completed candle creates a quiet baseline. Later classification changes are emailed and added to Latest Signals. These three stars save immediately.</p>
       </div>
     </div>
   </section>
@@ -929,6 +1008,30 @@
     </form>
   </dialog>
 
+  <dialog id="chartIndicatorDialog"
+          class="congressional-history-dialog chart-indicator-dialog"
+          aria-labelledby="chartIndicatorDialogTitle">
+    <form id="chartIndicatorForm" class="congressional-history-dialog-content chart-indicator-dialog-content">
+      <div class="congressional-history-heading">
+        <div>
+          <span class="congressional-history-kicker">Configurable indicator</span>
+          <h2 id="chartIndicatorDialogTitle">Add indicator</h2>
+          <p id="chartIndicatorDialogDescription">Choose the calculation parameters for this chart.</p>
+        </div>
+        <button id="closeChartIndicatorDialogBtn"
+                type="button"
+                class="congressional-dialog-close"
+                aria-label="Close indicator settings">&times;</button>
+      </div>
+      <div id="chartIndicatorFields" class="chart-indicator-fields"></div>
+      <p id="chartIndicatorError" class="rsi-period-error" role="alert"></p>
+      <div class="rsi-period-actions">
+        <button id="cancelChartIndicatorBtn" type="button" class="btn-secondary">Cancel</button>
+        <button type="submit" class="btn-primary">Add to chart</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="unsavedAlertDialog" class="unsaved-alert-dialog" aria-labelledby="unsavedAlertTitle">
     <div class="unsaved-alert-dialog-content">
       <span class="unsaved-alert-kicker">Unapplied changes</span>
@@ -1093,6 +1196,51 @@
   let volumeChartEnabled = true;
   let chartResizeObserver = null;
   let generalChartResizeFrame = null;
+  const activeChartIndicators = new Map();
+  const chartIndicatorPriceSeries = new Map();
+  const chartIndicatorPanels = new Map();
+  let pendingChartIndicatorType = null;
+  let chartIndicatorRequestSequence = 0;
+  let chartIndicatorRefreshTimer = null;
+
+  const CHART_INDICATOR_COLORS = [
+    '#b7f34a', '#64e8bd', '#9a8cff', '#ffb55f', '#55b8ff', '#ff647c',
+    '#f6df69', '#46d3c4', '#d993ff', '#ff8f70', '#7ea6ff', '#c2e970'
+  ];
+
+  const CHART_INDICATOR_SPECS = {
+    EMA: indicatorSpec('EMA', 'Exponential moving average on the price chart.', [periodField(20)]),
+    SMA: indicatorSpec('SMA', 'Simple moving average on the price chart.', [periodField(200)]),
+    BOLLINGER: indicatorSpec('Bollinger Bands', 'Population-standard-deviation envelope used by Automated Technical Analysis.', [periodField(20), numberField('deviation', 'Deviation multiplier', 2, 0.1, 10, 0.1)]),
+    VWAP: indicatorSpec('Rolling VWAP', 'Rolling typical-price volume-weighted average.', [periodField(20)]),
+    SUPPORT_RESISTANCE: indicatorSpec('Support / resistance', 'Rolling lowest low and highest high.', [periodField(20)]),
+    MACD: indicatorSpec('MACD', 'MACD line, signal line, and histogram in a synchronized panel.', [periodField(12, 'fast', 'Fast period'), periodField(26, 'slow', 'Slow period'), periodField(9, 'signal', 'Signal period')]),
+    CCI: indicatorSpec('CCI', 'Commodity Channel Index with ±100 guides.', [periodField(20)]),
+    ATR: indicatorSpec('ATR', 'Average True Range volatility panel.', [periodField(14)]),
+    RELATIVE_VOLUME: indicatorSpec('Relative volume', 'Signed candle volume divided by its rolling average.', [periodField(20)]),
+    ADX_DMI: indicatorSpec('ADX / DMI', 'ADX trend strength together with +DI and -DI.', [periodField(14)]),
+    STOCHASTIC: indicatorSpec('Stochastic oscillator', '%K and %D with 20/80 guides.', [periodField(14)]),
+    STOCHASTIC_RSI: indicatorSpec('Stochastic RSI', 'Stochastic RSI with 20/80 guides.', [periodField(14)]),
+    OBV: indicatorSpec('On-balance volume', 'Cumulative on-balance volume.', []),
+    MFI: indicatorSpec('Money Flow Index', 'Price-and-volume oscillator with 20/80 guides.', [periodField(14)]),
+    DONCHIAN: indicatorSpec('Donchian Channel', 'Rolling high/low channel on the price chart.', [periodField(20)]),
+    KELTNER: indicatorSpec('Keltner Channel', 'EMA and ATR volatility channel on the price chart.', [periodField(20), periodField(14, 'atrPeriod', 'ATR period'), numberField('multiplier', 'ATR multiplier', 2, 0.1, 10, 0.1)]),
+    TREND: indicatorSpec('TA4J trend state', 'Independent uptrend/downtrend state in a synchronized panel.', [periodField(20)]),
+    VOLUME_PROFILE: indicatorSpec('Rolling volume profile', 'Rolling OHLCV approximation of VAL, POC, and VAH.', [periodField(60), numberField('valueArea', 'Value area fraction', 0.7, 0.5, 0.95, 0.01)]),
+    KDE_VOLUME_PROFILE: indicatorSpec('KDE volume-profile mode', 'TA4J causal kernel-density volume-profile mode.', [periodField(60)])
+  };
+
+  function indicatorSpec(label, description, fields) {
+    return { label, description, fields };
+  }
+
+  function periodField(value, key = 'period', label = 'Period') {
+    return numberField(key, label, value, 2, 500, 1, 'Whole number from 2 to 500.');
+  }
+
+  function numberField(key, label, value, min, max, step, help = '') {
+    return { key, label, value, min, max, step, help };
+  }
 
   let isFetching = false;
   let isLoadingOlder = false;
@@ -1110,6 +1258,9 @@
   let alertStateLoaded = false;
   let alertSaveInProgress = false;
   let alertSavePromise = null;
+  let outlookFollowStateLoaded = false;
+  let outlookFollowSaveInProgress = false;
+  let technicalFollowAllBusy = false;
   let trackedAlertSummary = '';
   let pendingNavigationAction = null;
   let pageExitAllowed = false;
@@ -1232,6 +1383,9 @@
           if (rsiChart && rsiOverlayEnabled) {
             rsiChart.timeScale().setVisibleLogicalRange(range);
           }
+          chartIndicatorPanels.forEach(panel => {
+            panel.chart.timeScale().setVisibleLogicalRange(range);
+          });
         }
         scheduleAnchoredVolumeProfileRender();
         scheduleElliottHitTargetPositioning();
@@ -1331,7 +1485,7 @@
       updateStockLoadingStatus('Loading completed daily candles and technical context...');
       await loadChartData('1d');
       updateStockLoadingStatus('Loading monitoring preferences...');
-      await loadAlertState();
+      await Promise.all([loadAlertState(), loadOutlookFollowState()]);
 
       setChartMode('candle');
       updateStockLoadingStatus('Finalizing overlays and historical results...');
@@ -1368,6 +1522,9 @@
     updateHarmonicOverlayToggle();
     historicalCandlestickOverlayRequestSequence++;
     clearHistoricalCandlestickOverlayVisuals();
+    chartIndicatorRequestSequence++;
+    clearTimeout(chartIndicatorRefreshTimer);
+    activeChartIndicators.forEach((config, id) => removeChartIndicatorVisuals(id));
     anchoredVolumeProfileRequestSequence++;
     anchoredVolumeProfile = null;
     anchoredVolumeProfileAnchorTimestamp = null;
@@ -1559,6 +1716,7 @@
       lineSeries.setData(globalLineData.map(item => ({ ...item })));
       volumeSeries.setData(themedVolumeData());
       updateRsiOverlay();
+      scheduleChartIndicatorRefresh();
       fibonacciDrawingTool?.scheduleRender();
     } catch (err) {
       console.error("TradingView setData Crash:", err);
@@ -1820,6 +1978,313 @@
     }
     closeRsiPeriodDialog();
     enableRsiOverlay(period, overboughtBoundary, oversoldBoundary);
+  }
+
+  function openChartIndicatorDialog(type) {
+    const spec = CHART_INDICATOR_SPECS[type];
+    if (!spec) return;
+    pendingChartIndicatorType = type;
+    document.getElementById('chartIndicatorDialogTitle').textContent = `Add ${spec.label}`;
+    document.getElementById('chartIndicatorDialogDescription').textContent = spec.description;
+    document.getElementById('chartIndicatorError').textContent = '';
+    const fields = document.getElementById('chartIndicatorFields');
+    fields.replaceChildren();
+    spec.fields.forEach(field => {
+      const wrapper = document.createElement('label');
+      wrapper.className = 'chart-indicator-field';
+      const label = document.createElement('span');
+      label.textContent = field.label;
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.name = field.key;
+      input.value = String(field.value);
+      input.min = String(field.min);
+      input.max = String(field.max);
+      input.step = String(field.step);
+      input.inputMode = field.step === 1 ? 'numeric' : 'decimal';
+      input.required = true;
+      wrapper.append(label, input);
+      if (field.help) {
+        const help = document.createElement('small');
+        help.textContent = field.help;
+        wrapper.append(help);
+      }
+      fields.append(wrapper);
+    });
+    const dialog = document.getElementById('chartIndicatorDialog');
+    if (!dialog.open) dialog.showModal();
+    window.setTimeout(() => fields.querySelector('input')?.focus(), 0);
+  }
+
+  function closeChartIndicatorDialog() {
+    const dialog = document.getElementById('chartIndicatorDialog');
+    if (dialog.open) dialog.close();
+    pendingChartIndicatorType = null;
+  }
+
+  function submitChartIndicator(event) {
+    event.preventDefault();
+    const type = pendingChartIndicatorType;
+    const spec = CHART_INDICATOR_SPECS[type];
+    if (!spec) return;
+    const parameters = {};
+    for (const field of spec.fields) {
+      const input = event.currentTarget.elements.namedItem(field.key);
+      const value = Number(input?.value);
+      if (!Number.isFinite(value) || value < field.min || value > field.max
+              || (field.step === 1 && !Number.isSafeInteger(value))) {
+        document.getElementById('chartIndicatorError').textContent =
+                `${field.label} must be between ${field.min} and ${field.max}${field.step === 1 ? ' and must be a whole number' : ''}.`;
+        input?.focus();
+        return;
+      }
+      parameters[field.key] = value;
+    }
+    if (type === 'MACD' && parameters.fast >= parameters.slow) {
+      document.getElementById('chartIndicatorError').textContent =
+              'The MACD fast period must be below the slow period.';
+      event.currentTarget.elements.namedItem('fast')?.focus();
+      return;
+    }
+    const id = `${type.toLowerCase()}-${crypto.randomUUID()}`;
+    activeChartIndicators.set(id, { id, type, parameters, displayLabel: configuredIndicatorLabel(type, parameters) });
+    closeChartIndicatorDialog();
+    renderActiveChartIndicatorControls();
+    scheduleChartIndicatorRefresh(0);
+  }
+
+  function configuredIndicatorLabel(type, parameters) {
+    const spec = CHART_INDICATOR_SPECS[type];
+    const values = Object.values(parameters);
+    if (!values.length) return spec.label;
+    if (type === 'MACD') return `MACD ${parameters.fast}/${parameters.slow}/${parameters.signal}`;
+    if (type === 'BOLLINGER') return `Bollinger ${parameters.period} / ${parameters.deviation}σ`;
+    if (type === 'KELTNER') return `Keltner ${parameters.period} / ATR ${parameters.atrPeriod} × ${parameters.multiplier}`;
+    if (type === 'VOLUME_PROFILE') return `Rolling profile ${parameters.period}`;
+    return `${spec.label} ${values[0]}`;
+  }
+
+  function removeChartIndicator(id) {
+    activeChartIndicators.delete(id);
+    removeChartIndicatorVisuals(id);
+    renderActiveChartIndicatorControls();
+  }
+
+  function removeChartIndicatorVisuals(id) {
+    const priceSeries = chartIndicatorPriceSeries.get(id) || [];
+    priceSeries.forEach(series => {
+      try { priceChart?.removeSeries(series); } catch (ignored) { }
+    });
+    chartIndicatorPriceSeries.delete(id);
+    const panel = chartIndicatorPanels.get(id);
+    if (panel) {
+      panel.chart?.remove();
+      panel.element?.remove();
+      chartIndicatorPanels.delete(id);
+    }
+    renderChartIndicatorOverlayLegend();
+  }
+
+  function renderActiveChartIndicatorControls() {
+    const container = document.getElementById('activeChartIndicatorList');
+    container.replaceChildren();
+    activeChartIndicators.forEach(config => {
+      const chip = document.createElement('span');
+      chip.className = 'active-chart-indicator-chip';
+      const copy = document.createElement('span');
+      copy.textContent = config.displayLabel;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', `Remove ${config.displayLabel}`);
+      remove.addEventListener('click', event => {
+        event.stopPropagation();
+        removeChartIndicator(config.id);
+      });
+      chip.append(copy, remove);
+      container.append(chip);
+    });
+  }
+
+  function renderChartIndicatorOverlayLegend() {
+    const legend = document.getElementById('chartIndicatorOverlayLegend');
+    legend.replaceChildren();
+    activeChartIndicators.forEach(config => {
+      if (!chartIndicatorPriceSeries.has(config.id)) return;
+      const chip = document.createElement('span');
+      chip.className = 'chart-indicator-overlay-chip';
+      chip.style.borderColor = indicatorColor(config.id, 0);
+      const label = document.createElement('span');
+      label.textContent = config.displayLabel;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', `Remove ${config.displayLabel}`);
+      remove.addEventListener('click', () => removeChartIndicator(config.id));
+      chip.append(label, remove);
+      legend.append(chip);
+    });
+  }
+
+  function indicatorColor(id, seriesIndex) {
+    let hash = 0;
+    for (let index = 0; index < id.length; index++) hash = ((hash << 5) - hash + id.charCodeAt(index)) | 0;
+    const colorIndex = (Math.abs(hash) + seriesIndex * 3) % CHART_INDICATOR_COLORS.length;
+    return CHART_INDICATOR_COLORS.at(colorIndex);
+  }
+
+  function scheduleChartIndicatorRefresh(delay = 120) {
+    clearTimeout(chartIndicatorRefreshTimer);
+    if (!activeChartIndicators.size || !globalCandleData.length) return;
+    chartIndicatorRefreshTimer = window.setTimeout(refreshChartIndicators, delay);
+  }
+
+  async function refreshChartIndicators() {
+    if (!activeChartIndicators.size || !globalCandleData.length) return;
+    const requestId = ++chartIndicatorRequestSequence;
+    const requestedInterval = currentInterval;
+    const first = globalCandleData[0]?.timestamp;
+    const last = globalCandleData[globalCandleData.length - 1]?.timestamp;
+    try {
+      const response = await fetch(
+              `/api/stocks/${encodedTicker}/chart-indicators?interval=${encodeURIComponent(requestedInterval)}`,
+              {
+                method: 'POST',
+                headers: secureJsonHeaders(),
+                body: JSON.stringify({
+                  from: first,
+                  to: last,
+                  indicators: [...activeChartIndicators.values()].map(({ id, type, parameters }) => ({ id, type, parameters }))
+                })
+              });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || body.detail || body.error || 'Indicator calculation failed.');
+      }
+      const batch = await response.json();
+      if (requestId !== chartIndicatorRequestSequence || requestedInterval !== currentInterval) return;
+      const returned = new Set();
+      (batch.indicators || []).forEach(indicator => {
+        if (!activeChartIndicators.has(indicator.id)) return;
+        returned.add(indicator.id);
+        removeChartIndicatorVisuals(indicator.id);
+        const config = activeChartIndicators.get(indicator.id);
+        config.displayLabel = indicator.label || config.displayLabel;
+        if (indicator.placement === 'PRICE') {
+          renderPriceChartIndicator(indicator);
+        } else {
+          renderIndicatorPanel(indicator);
+        }
+      });
+      activeChartIndicators.forEach((config, id) => {
+        if (!returned.has(id)) removeChartIndicatorVisuals(id);
+      });
+      renderActiveChartIndicatorControls();
+      renderChartIndicatorOverlayLegend();
+    } catch (error) {
+      if (requestId !== chartIndicatorRequestSequence) return;
+      console.warn('Chart indicators unavailable', error);
+      const legend = document.getElementById('chartIndicatorOverlayLegend');
+      legend.textContent = error.message || 'Indicators could not be calculated.';
+    }
+  }
+
+  function indicatorPoints(points) {
+    return (points || []).map(point => ({
+      time: new Date(point.timestamp * 1000).toISOString().slice(0, 10),
+      value: Number(point.value)
+    })).filter(point => Number.isFinite(point.value));
+  }
+
+  function renderPriceChartIndicator(indicator) {
+    const created = [];
+    (indicator.series || []).forEach((definition, index) => {
+      const series = priceChart.addLineSeries({
+        color: indicatorColor(indicator.id, index),
+        lineWidth: definition.key === 'middle' || definition.key === 'poc' ? 2 : 1,
+        lineStyle: definition.key === 'middle' || definition.key === 'poc'
+                ? LightweightCharts.LineStyle.Dashed
+                : LightweightCharts.LineStyle.Solid,
+        title: `${indicator.label} · ${definition.label}`,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false
+      });
+      series.setData(indicatorPoints(definition.points));
+      created.push(series);
+    });
+    chartIndicatorPriceSeries.set(indicator.id, created);
+  }
+
+  function renderIndicatorPanel(indicator) {
+    const panelElement = document.createElement('section');
+    panelElement.className = 'chart-wrapper resizable-chart-panel dynamic-indicator-panel';
+    panelElement.dataset.indicatorId = indicator.id;
+    const heading = document.createElement('div');
+    heading.className = 'chart-panel-head';
+    const title = document.createElement('h2');
+    title.className = 'chart-panel-title';
+    title.textContent = indicator.label;
+    const actions = document.createElement('div');
+    actions.className = 'dynamic-indicator-panel-actions';
+    const meta = document.createElement('span');
+    meta.className = 'chart-panel-meta';
+    meta.textContent = 'Synchronized with price history';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'dynamic-indicator-panel-remove';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', () => removeChartIndicator(indicator.id));
+    actions.append(meta, remove);
+    heading.append(title, actions);
+    const container = document.createElement('div');
+    container.className = 'dynamic-indicator-chart';
+    panelElement.append(heading, container);
+    document.getElementById('dynamicIndicatorPanels').append(panelElement);
+
+    const options = chartThemeOptions();
+    const chart = LightweightCharts.createChart(container, {
+      ...options,
+      timeScale: { ...options.timeScale, visible: true },
+      handleScroll: false,
+      handleScale: false
+    });
+    const created = [];
+    (indicator.series || []).forEach((definition, index) => {
+      const color = indicatorColor(indicator.id, index);
+      const series = definition.style === 'HISTOGRAM'
+              ? chart.addHistogramSeries({
+                priceLineVisible: false,
+                lastValueVisible: true,
+                color,
+                base: 0
+              })
+              : chart.addLineSeries({
+                color,
+                lineWidth: 2,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: definition.label
+              });
+      const points = indicatorPoints(definition.points);
+      series.setData(definition.style === 'HISTOGRAM'
+              ? points.map(point => ({ ...point, color: point.value >= 0 ? '#64e8bd' : '#ff647c' }))
+              : points);
+      created.push(series);
+    });
+    if (created.length) {
+      (indicator.references || []).forEach(reference => created[0].createPriceLine({
+        price: reference,
+        color: 'rgba(150, 160, 154, 0.45)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: String(reference)
+      }));
+    }
+    chartIndicatorPanels.set(indicator.id, { chart, element: panelElement, container, series: created });
+    const range = priceChart?.timeScale().getVisibleLogicalRange();
+    if (range) chart.timeScale().setVisibleLogicalRange(range);
   }
 
   function maybeLoadOlderForVisibleRange(range) {
@@ -3341,8 +3806,84 @@
     } catch (err) {
       alertStateLoaded = false;
       updateAlertDraftUi();
+      updateTechnicalFollowAllButton();
       status.innerText = 'Alerts unavailable';
       console.warn("Alert state failed", err);
+    }
+  }
+
+  function outlookFollowInputs() {
+    return Array.from(document.querySelectorAll('[data-outlook-follow-interval]'));
+  }
+
+  function setOutlookFollowInputsDisabled(disabled) {
+    outlookFollowInputs().forEach(input => {
+      input.disabled = disabled;
+    });
+  }
+
+  function hydrateOutlookFollowState(state) {
+    outlookFollowInputs().forEach(input => {
+      input.checked = Boolean(state.intervals?.[input.dataset.outlookFollowInterval]);
+      input.dataset.persisted = String(input.checked);
+      if (!input.dataset.listenerBound) {
+        input.addEventListener('change', () => updateOutlookFollow(input));
+        input.dataset.listenerBound = 'true';
+      }
+    });
+    outlookFollowStateLoaded = true;
+    updateTechnicalFollowAllButton();
+  }
+
+  async function loadOutlookFollowState() {
+    const status = document.getElementById('outlookFollowStatus');
+    try {
+      const response = await fetch(`/api/stocks/${encodedTicker}/technical-outlook/subscriptions`);
+      if (!response.ok) throw new Error('Outlook follow state request failed');
+      const state = await response.json();
+      hydrateOutlookFollowState(state);
+      setOutlookFollowInputsDisabled(technicalFollowAllBusy);
+      status.textContent = 'Outlook monitoring ready';
+    } catch (error) {
+      outlookFollowStateLoaded = false;
+      status.textContent = 'Outlook monitoring unavailable';
+      outlookFollowInputs().forEach(input => input.disabled = true);
+      updateTechnicalFollowAllButton();
+      console.warn('Outlook follow state failed', error);
+    }
+  }
+
+  async function updateOutlookFollow(changedInput) {
+    const status = document.getElementById('outlookFollowStatus');
+    const previous = changedInput.dataset.persisted === 'true';
+    outlookFollowSaveInProgress = true;
+    setOutlookFollowInputsDisabled(true);
+    updateTechnicalFollowAllButton();
+    status.textContent = changedInput.checked
+            ? `Establishing ${changedInput.dataset.outlookFollowInterval.toLowerCase()} baseline…`
+            : 'Stopping this outlook interval…';
+    try {
+      const response = await fetch(`/api/stocks/${encodedTicker}/technical-outlook/subscriptions`, {
+        method: 'PUT',
+        headers: secureJsonHeaders(),
+        body: JSON.stringify({
+          interval: changedInput.dataset.outlookFollowInterval,
+          active: changedInput.checked
+        })
+      });
+      const state = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(state.error || 'Outlook follow could not be updated.');
+      hydrateOutlookFollowState(state);
+      status.textContent = changedInput.checked
+              ? 'Baseline saved. Future classification changes will be reported.'
+              : 'Outlook interval is no longer followed.';
+    } catch (error) {
+      changedInput.checked = previous;
+      status.textContent = error.message || 'Outlook follow could not be updated.';
+    } finally {
+      outlookFollowSaveInProgress = false;
+      setOutlookFollowInputsDisabled(technicalFollowAllBusy || !outlookFollowStateLoaded);
+      updateTechnicalFollowAllButton();
     }
   }
 
@@ -4066,7 +4607,7 @@
     document.getElementById('historicalCandlestickResultsWindow').textContent =
             `${history.lookbackLabel || 'Recent completed candles'} · `
             + `8-candle close-based time stop · `
-            + `1:${history.interval === '1wk' ? 3 : history.interval === '1mo' ? 4 : 2} R:R`;
+            + `1:${history.interval === '1wk' || history.interval === '1mo' ? 3 : 2} R:R`;
     document.getElementById('historicalCandlestickResultsStatus').textContent =
             `${signals.length} signal${signals.length === 1 ? '' : 's'} calculated now · `
             + 'No signal results were cached';
@@ -4571,6 +5112,7 @@
     document.getElementById('alertStatus').innerText = trackedAlertSummary;
     alertStateLoaded = true;
     updateAlertDraftUi();
+    updateTechnicalFollowAllButton();
   }
 
   function changedAlertInputs() {
@@ -4589,18 +5131,21 @@
     const draftStatus = document.getElementById('alertDraftStatus');
     const alertPanel = document.querySelector('.alert-panel');
 
-    applyButton.disabled = !alertStateLoaded || alertSaveInProgress || changedCount === 0;
+    applyButton.disabled = !alertStateLoaded || alertSaveInProgress
+            || technicalFollowAllBusy || changedCount === 0;
     alertPanel.classList.toggle('has-unapplied-changes', changedCount > 0);
     setAlertBeforeUnloadGuard(!pageExitAllowed && changedCount > 0);
     if (alertSaveInProgress) {
       applyButton.textContent = 'Applying...';
       draftStatus.textContent = 'Saving your changes';
+      updateTechnicalFollowAllButton();
       return;
     }
     applyButton.textContent = 'Apply changes';
     draftStatus.textContent = changedCount === 0
             ? 'No unapplied changes'
             : `${changedCount} unapplied change${changedCount === 1 ? '' : 's'}`;
+    updateTechnicalFollowAllButton();
   }
 
   function setAlertInputsDisabled(disabled) {
@@ -4658,8 +5203,94 @@
       return false;
     } finally {
       alertSaveInProgress = false;
-      setAlertInputsDisabled(false);
+      setAlertInputsDisabled(technicalFollowAllBusy || !alertStateLoaded);
       updateAlertDraftUi();
+    }
+  }
+
+  function hasAnyPersistedTechnicalFollow() {
+    const patternFollowed = Array.from(persistedAlertState.values()).some(Boolean);
+    const outlookFollowed = outlookFollowInputs()
+            .some(input => input.dataset.persisted === 'true');
+    return patternFollowed || outlookFollowed;
+  }
+
+  function updateTechnicalFollowAllButton() {
+    const button = document.getElementById('toggleAllTechnicalMonitoringBtn');
+    if (!button) return;
+    const stateReady = alertStateLoaded && outlookFollowStateLoaded;
+    const anyFollowed = stateReady && hasAnyPersistedTechnicalFollow();
+    button.disabled = !stateReady || alertSaveInProgress
+            || outlookFollowSaveInProgress || technicalFollowAllBusy;
+    button.setAttribute('aria-pressed', String(anyFollowed));
+    button.classList.toggle('following', anyFollowed);
+    button.textContent = technicalFollowAllBusy
+            ? (anyFollowed ? 'Unfollowing all...' : 'Following all...')
+            : (!stateReady ? 'Loading follow state...' : (anyFollowed ? 'Unfollow all' : 'Follow all'));
+  }
+
+  async function setEveryOutlookSubscription(active) {
+    const status = document.getElementById('outlookFollowStatus');
+    for (const input of outlookFollowInputs()) {
+      if ((input.dataset.persisted === 'true') === active) continue;
+      status.textContent = active
+              ? `Establishing ${input.dataset.outlookFollowInterval.toLowerCase()} baseline...`
+              : `Stopping ${input.dataset.outlookFollowInterval.toLowerCase()} outlook...`;
+      const response = await fetch(`/api/stocks/${encodedTicker}/technical-outlook/subscriptions`, {
+        method: 'PUT',
+        headers: secureJsonHeaders(),
+        body: JSON.stringify({
+          interval: input.dataset.outlookFollowInterval,
+          active
+        })
+      });
+      const state = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(state.error || 'The Automated Technical Outlook follows could not be updated.');
+      }
+      hydrateOutlookFollowState(state);
+    }
+  }
+
+  async function toggleAllTechnicalMonitoring() {
+    if (technicalFollowAllBusy || !alertStateLoaded || !outlookFollowStateLoaded) return;
+    const followEverything = !hasAnyPersistedTechnicalFollow();
+    const status = document.getElementById('alertStatus');
+    let outcomeMessage = '';
+    technicalFollowAllBusy = true;
+    setAlertInputsDisabled(true);
+    setOutlookFollowInputsDisabled(true);
+    updateAlertDraftUi();
+    updateTechnicalFollowAllButton();
+    status.textContent = followEverything
+            ? 'Following every technical rule...'
+            : 'Unfollowing every technical rule...';
+
+    try {
+      alertInputs().forEach(input => {
+        input.checked = followEverything;
+      });
+      updateAlertDraftUi();
+      if (!await persistAlertDraft()) {
+        throw new Error('The pattern follows could not be updated.');
+      }
+      await setEveryOutlookSubscription(followEverything);
+      outcomeMessage = followEverything
+              ? 'All technical rules and outlook intervals are now followed.'
+              : 'All technical rules and outlook intervals are now unfollowed.';
+    } catch (error) {
+      outcomeMessage = error.message || 'All technical monitoring could not be updated.';
+      console.warn('Follow-all technical monitoring update failed', error);
+    } finally {
+      await Promise.all([loadAlertState(), loadOutlookFollowState()]);
+      technicalFollowAllBusy = false;
+      setAlertInputsDisabled(!alertStateLoaded);
+      setOutlookFollowInputsDisabled(!outlookFollowStateLoaded);
+      updateAlertDraftUi();
+      updateTechnicalFollowAllButton();
+      if (alertStateLoaded) {
+        status.textContent = `${trackedAlertSummary} · ${outcomeMessage}`;
+      }
     }
   }
 
@@ -4735,6 +5366,8 @@
 
   function bindUnsavedAlertGuards() {
     document.getElementById('applyAlertChangesBtn').addEventListener('click', persistAlertDraft);
+    document.getElementById('toggleAllTechnicalMonitoringBtn')
+            .addEventListener('click', toggleAllTechnicalMonitoring);
     document.getElementById('keepEditingAlertsBtn').addEventListener('click', keepEditingAlertDraft);
     document.getElementById('discardAlertChangesBtn').addEventListener('click', continuePendingNavigation);
     document.getElementById('saveAlertChangesBeforeLeaveBtn').addEventListener('click', saveAlertDraftAndLeave);
@@ -4813,6 +5446,11 @@
         rsiChart.resize(rsiContainer.clientWidth, rsiContainer.clientHeight);
       }
     }
+    chartIndicatorPanels.forEach(panel => {
+      if (panel.container.clientWidth && panel.container.clientHeight) {
+        panel.chart.resize(panel.container.clientWidth, panel.container.clientHeight);
+      }
+    });
     scheduleAnchoredVolumeProfileRender();
     scheduleElliottHitTargetPositioning();
     scheduleHistoricalCandlestickHitTargetPositioning();
@@ -5061,6 +5699,14 @@
       rsiGuideLines[2]?.applyOptions({ color: rsiTheme.oversoldGuide });
       updateRsiOverlay();
     }
+    chartIndicatorPanels.forEach(panel => {
+      panel.chart.applyOptions({
+        ...options,
+        timeScale: { ...options.timeScale, visible: true },
+        handleScroll: false,
+        handleScale: false
+      });
+    });
     scheduleAnchoredVolumeProfileRender();
   });
 
@@ -5081,12 +5727,33 @@
           .addEventListener('click', toggleRsiOverlay);
   document.getElementById('volumeChartToggle')
           .addEventListener('click', toggleVolumeChart);
+  document.querySelectorAll('[data-add-chart-indicator]').forEach(button => {
+    button.addEventListener('click', () => openChartIndicatorDialog(button.dataset.addChartIndicator));
+  });
+  document.querySelectorAll('.chart-control-menu .chart-control-menu-item').forEach(button => {
+    button.addEventListener('click', () => button.closest('.chart-control-menu')?.removeAttribute('open'));
+  });
+  document.addEventListener('click', event => {
+    document.querySelectorAll('.chart-control-menu[open]').forEach(menu => {
+      if (!menu.contains(event.target)) menu.removeAttribute('open');
+    });
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    document.querySelectorAll('.chart-control-menu[open]').forEach(menu => menu.removeAttribute('open'));
+  });
   document.getElementById('rsiPeriodForm')
           .addEventListener('submit', submitRsiPeriod);
   document.getElementById('closeRsiPeriodDialogBtn')
           .addEventListener('click', closeRsiPeriodDialog);
   document.getElementById('cancelRsiPeriodBtn')
           .addEventListener('click', closeRsiPeriodDialog);
+  document.getElementById('chartIndicatorForm')
+          .addEventListener('submit', submitChartIndicator);
+  document.getElementById('closeChartIndicatorDialogBtn')
+          .addEventListener('click', closeChartIndicatorDialog);
+  document.getElementById('cancelChartIndicatorBtn')
+          .addEventListener('click', closeChartIndicatorDialog);
   document.getElementById('followCongressionalActivityBtn')
           .addEventListener('click', toggleCongressionalActivityFollow);
   document.getElementById('showCongressionalHistoryBtn')

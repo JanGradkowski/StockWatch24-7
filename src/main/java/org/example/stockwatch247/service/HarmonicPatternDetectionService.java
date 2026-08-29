@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.HashSet;
 
 /**
  * Detects completed harmonic formations using application-owned rules.
@@ -22,7 +24,7 @@ import java.util.Optional;
  */
 @Service
 public class HarmonicPatternDetectionService {
-    public static final String RULE_VERSION = "HARMONIC_V1";
+    public static final String RULE_VERSION = "HARMONIC_V3";
 
     private final Rules rules;
     private final PatternRuleSet patternRules;
@@ -64,17 +66,17 @@ public class HarmonicPatternDetectionService {
     public List<HarmonicFormation> detectHistorical(List<Candle> historicalCandles) {
         List<Candle> candles = normalize(historicalCandles);
         if (candles.size() < rules.pivotWindow() * 2 + 5) return List.of();
-        List<HarmonicPivot> pivots = confirmedPivots(candles);
-        if (pivots.size() < 5) return List.of();
-
         Map<String, HarmonicFormation> bestByCompletion = new LinkedHashMap<>();
-        for (int index = 4; index < pivots.size(); index++) {
-            List<HarmonicPivot> geometry = pivots.subList(index - 4, index + 1);
-            classify(geometry).ifPresent(formation -> bestByCompletion.merge(
-                    completionKey(formation),
-                    formation,
-                    this::betterFormation
-            ));
+        Set<String> scannedHierarchies = new HashSet<>();
+        Set<String> scannedGeometries = new HashSet<>();
+        List<Double> swingScales = pivotSwingScales(candles);
+        for (int pivotWindow : pivotWindows()) {
+            List<HarmonicPivot> candidates = pivotCandidates(candles, pivotWindow);
+            for (double swingScale : swingScales) {
+                List<HarmonicPivot> pivots = compressAlternating(candidates, swingScale);
+                if (pivots.size() < 5 || !scannedHierarchies.add(hierarchyKey(pivots))) continue;
+                scanGeometries(pivots, scannedGeometries, bestByCompletion);
+            }
         }
         List<HarmonicFormation> formations = bestByCompletion.values().stream()
                 .sorted(Comparator.comparingLong(HarmonicFormation::confirmationTimestamp)
@@ -109,7 +111,11 @@ public class HarmonicPatternDetectionService {
 
     public List<HarmonicPivot> confirmedPivots(List<Candle> historicalCandles) {
         List<Candle> candles = normalize(historicalCandles);
-        int window = rules.pivotWindow();
+        return compressAlternating(pivotCandidates(candles, rules.pivotWindow()),
+                rules.minimumSwingFraction());
+    }
+
+    private List<HarmonicPivot> pivotCandidates(List<Candle> candles, int window) {
         if (candles.size() < window * 2 + 1) return List.of();
         List<HarmonicPivot> candidates = new ArrayList<>();
         for (int index = window; index < candles.size() - window; index++) {
@@ -119,13 +125,17 @@ public class HarmonicPatternDetectionService {
             boolean strictHigh = false;
             boolean strictLow = false;
             for (int offset = 1; offset <= window; offset++) {
-                for (int neighbourIndex : List.of(index - offset, index + offset)) {
-                    Candle neighbour = candles.get(neighbourIndex);
-                    high &= current.getHighPrice() >= neighbour.getHighPrice();
-                    low &= current.getLowPrice() <= neighbour.getLowPrice();
-                    strictHigh |= current.getHighPrice() > neighbour.getHighPrice();
-                    strictLow |= current.getLowPrice() < neighbour.getLowPrice();
-                }
+                Candle left = candles.get(index - offset);
+                Candle right = candles.get(index + offset);
+                high &= current.getHighPrice() >= left.getHighPrice()
+                        && current.getHighPrice() >= right.getHighPrice();
+                low &= current.getLowPrice() <= left.getLowPrice()
+                        && current.getLowPrice() <= right.getLowPrice();
+                strictHigh |= current.getHighPrice() > left.getHighPrice()
+                        || current.getHighPrice() > right.getHighPrice();
+                strictLow |= current.getLowPrice() < left.getLowPrice()
+                        || current.getLowPrice() < right.getLowPrice();
+                if (!high && !low) break;
             }
             if (high && strictHigh && !(low && strictLow)) {
                 candidates.add(new HarmonicPivot(index, current.getTimestamp(), current.getHighPrice(),
@@ -135,10 +145,11 @@ public class HarmonicPatternDetectionService {
                         PivotType.LOW, candles.get(index + window).getTimestamp()));
             }
         }
-        return compressAlternating(candidates);
+        return List.copyOf(candidates);
     }
 
-    private List<HarmonicPivot> compressAlternating(List<HarmonicPivot> candidates) {
+    private List<HarmonicPivot> compressAlternating(List<HarmonicPivot> candidates,
+                                                    double minimumSwingFraction) {
         List<HarmonicPivot> pivots = new ArrayList<>();
         for (HarmonicPivot candidate : candidates) {
             if (pivots.isEmpty()) {
@@ -154,9 +165,94 @@ public class HarmonicPatternDetectionService {
                 continue;
             }
             double moveFraction = Math.abs(candidate.price() - previous.price()) / Math.abs(previous.price());
-            if (moveFraction >= rules.minimumSwingFraction()) pivots.add(candidate);
+            if (moveFraction >= minimumSwingFraction) pivots.add(candidate);
         }
         return List.copyOf(pivots);
+    }
+
+    private List<Integer> pivotWindows() {
+        List<Integer> windows = new ArrayList<>();
+        for (int window : List.of(rules.pivotWindow(), 3, 5, 8, 13, 21, 34, 55,
+                rules.maximumPivotWindow())) {
+            if (window < rules.pivotWindow() || window > rules.maximumPivotWindow()) continue;
+            if (!windows.contains(window)) windows.add(window);
+        }
+        windows.sort(Integer::compareTo);
+        return List.copyOf(windows);
+    }
+
+    private List<Double> pivotSwingScales(List<Candle> candles) {
+        List<Double> scales = new ArrayList<>();
+        double volatility = representativeTrueRangeFraction(candles);
+        List<Double> candidates = new ArrayList<>(List.of(
+                rules.minimumSwingFraction(), .01, .02, .03, .05, .08, .13, .21, .34,
+                rules.maximumSwingFraction()));
+        for (double multiple : List.of(1.0, 1.5, 2.0, 3.0, 5.0, 8.0)) {
+            candidates.add(volatility * multiple);
+        }
+        candidates.sort(Double::compareTo);
+        for (double scale : candidates) {
+            if (scale + 1e-12 < rules.minimumSwingFraction()) continue;
+            if (scale - 1e-12 > rules.maximumSwingFraction()) continue;
+            boolean duplicate = scales.stream()
+                    .anyMatch(existing -> Math.abs(existing - scale) < .0005);
+            if (!duplicate) scales.add(Math.max(rules.minimumSwingFraction(), scale));
+        }
+        return List.copyOf(scales);
+    }
+
+    private double representativeTrueRangeFraction(List<Candle> candles) {
+        List<Double> fractions = new ArrayList<>();
+        for (int index = 1; index < candles.size(); index++) {
+            Candle candle = candles.get(index);
+            double previousClose = candles.get(index - 1).getClosePrice();
+            double trueRange = Math.max(candle.getHighPrice() - candle.getLowPrice(),
+                    Math.max(Math.abs(candle.getHighPrice() - previousClose),
+                            Math.abs(candle.getLowPrice() - previousClose)));
+            double denominator = Math.max(Math.abs(previousClose), 1e-9);
+            double fraction = trueRange / denominator;
+            if (Double.isFinite(fraction) && fraction > 0.0) fractions.add(fraction);
+        }
+        if (fractions.isEmpty()) return rules.minimumSwingFraction();
+        fractions.sort(Double::compareTo);
+        return fractions.get(fractions.size() / 2);
+    }
+
+    private void scanGeometries(List<HarmonicPivot> pivots,
+                                Set<String> scannedGeometries,
+                                Map<String, HarmonicFormation> bestByCompletion) {
+        int structuralWindow = 5 + rules.maximumSkippedPivots();
+        for (int d = 4; d < pivots.size(); d++) {
+            int first = Math.max(0, d - structuralWindow + 1);
+            for (int x = first; x <= d - 4; x++) {
+                for (int a = x + 1; a <= d - 3; a++) {
+                    if (pivots.get(a).type() == pivots.get(x).type()) continue;
+                    for (int b = a + 1; b <= d - 2; b++) {
+                        if (pivots.get(b).type() != pivots.get(x).type()) continue;
+                        for (int c = b + 1; c <= d - 1; c++) {
+                            if (pivots.get(c).type() != pivots.get(a).type()
+                                    || pivots.get(d).type() != pivots.get(x).type()) continue;
+                            List<HarmonicPivot> geometry = List.of(
+                                    pivots.get(x), pivots.get(a), pivots.get(b), pivots.get(c), pivots.get(d));
+                            if (!scannedGeometries.add(geometryKey(geometry))) continue;
+                            classify(geometry).ifPresent(formation -> bestByCompletion.merge(
+                                    completionKey(formation), formation, this::betterFormation));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private String hierarchyKey(List<HarmonicPivot> pivots) {
+        StringBuilder key = new StringBuilder();
+        for (HarmonicPivot pivot : pivots) key.append(pivot.timestamp()).append(':');
+        return key.toString();
+    }
+
+    private String geometryKey(List<HarmonicPivot> geometry) {
+        return geometry.stream().map(pivot -> Long.toString(pivot.timestamp()))
+                .reduce((left, right) -> left + ":" + right).orElse("");
     }
 
     private Candidate gartley(List<HarmonicPivot> p, Direction direction, Ratios r) {
@@ -164,41 +260,37 @@ public class HarmonicPatternDetectionService {
         if (!enabled(pattern)) return null;
         if (!insideCompletion(p, direction)
                 || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cOfAb(), ratio(pattern, "cMin", .382), ratio(pattern, "cMax", .886))
-                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfBc(), ratio(pattern, "extensionMin", 1.272), ratio(pattern, "extensionMax", 1.618))
-                || !approximately(pattern, r.cdOfAb(), ratio(pattern, "legTarget", 1.0))) return null;
-        Match b = closest(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bPrimary", .618),
-                ratio(pattern, "bStretch1", .5), ratio(pattern, "bStretch2", .707), ratio(pattern, "bStretch3", .786));
-        Match d = closest(pattern, RuleGroup.COMPLETION, r.adOfXa(), ratio(pattern, "completionPrimary", .786),
-                ratio(pattern, "completionStretch", .886));
-        if (!b.accepted() || !d.accepted()) return null;
-        double bStretchPenalty = b.target() == ratio(pattern, "bPrimary", .618) ? 0.0 : .32;
-        double dStretchPenalty = d.target() == ratio(pattern, "completionPrimary", .786) ? 0.0 : .28;
+                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfBc(), ratio(pattern, "extensionMin", 1.13), ratio(pattern, "extensionMax", 1.618))) return null;
+        Match b = closest(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bTarget", .618));
+        Match d = closest(pattern, RuleGroup.COMPLETION, r.adOfXa(), ratio(pattern, "completion", .786));
+        Match leg = legClosest(pattern, r.cdOfAb(),
+                ratio(pattern, "legPrimary", 1.0), ratio(pattern, "legAlternate", 1.27));
+        if (!b.accepted() || !d.accepted() || !leg.accepted()) return null;
         return candidate(pattern, b, d,
                 secondaryError(r.cOfAb(), ratio(pattern, "cMin", .382), ratio(pattern, "cMax", .886),
-                        r.cdOfBc(), ratio(pattern, "extensionMin", 1.272), ratio(pattern, "extensionMax", 1.618),
-                        equalityError(r.cdOfAb())), bStretchPenalty, dStretchPenalty,
-                "Inside completion; AB and CD are approximately equal.");
+                        r.cdOfBc(), ratio(pattern, "extensionMin", 1.13), ratio(pattern, "extensionMax", 1.618),
+                        leg.error()), 0.0, 0.0,
+                "Inside completion; AB=CD or the 1.27 alternate AB=CD relationship is present.");
     }
 
     private Candidate bat(List<HarmonicPivot> p, Direction direction, Ratios r) {
         HarmonicPatternType pattern = HarmonicPatternType.BAT;
         if (!enabled(pattern)) return null;
         if (!insideCompletion(p, direction)
-                || !within(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bMin", .382), ratio(pattern, "bStretchMax", .577))
+                || !within(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bMin", .382), ratio(pattern, "bMax", .5))
                 || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cOfAb(), ratio(pattern, "cMin", .382), ratio(pattern, "cMax", .886))
-                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfAb(), ratio(pattern, "cdAbMin", 1.618), ratio(pattern, "cdAbMax", 2.0))
-                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfBc(), ratio(pattern, "cdBcMin", 2.0), ratio(pattern, "cdBcMax", 2.618))
-                || !materiallyDifferent(pattern, r.cdOfAb())) return null;
+                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfBc(), ratio(pattern, "cdBcMin", 1.618), ratio(pattern, "cdBcMax", 2.618))) return null;
         Match b = rangeMatch(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bMin", .382),
-                ratio(pattern, "bPreferredMax", .5), ratio(pattern, "bStretchMax", .577));
+                ratio(pattern, "bMax", .5), ratio(pattern, "bMax", .5));
         Match d = closest(pattern, RuleGroup.COMPLETION, r.adOfXa(), ratio(pattern, "completion", .886));
-        if (!b.accepted() || !d.accepted()) return null;
+        Match leg = legClosest(pattern, r.cdOfAb(),
+                ratio(pattern, "legPrimary", 1.0), ratio(pattern, "legAlternate", 1.27));
+        if (!b.accepted() || !d.accepted() || !leg.accepted()) return null;
         return candidate(pattern, b, d,
                 secondaryError(r.cOfAb(), ratio(pattern, "cMin", .382), ratio(pattern, "cMax", .886),
-                        r.cdOfAb(), ratio(pattern, "cdAbMin", 1.618), ratio(pattern, "cdAbMax", 2.0),
-                        rangeError(r.cdOfBc(), ratio(pattern, "cdBcMin", 2.0), ratio(pattern, "cdBcMax", 2.618))),
-                r.bOfXa() > ratio(pattern, "bPreferredMax", .5) ? .22 : 0.0, 0.0,
-                "Inside completion; CD is materially different from AB.");
+                        r.cdOfBc(), ratio(pattern, "cdBcMin", 1.618), ratio(pattern, "cdBcMax", 2.618),
+                        leg.error()), 0.0, 0.0,
+                "Inside completion; AB=CD or the typical 1.27 alternate AB=CD relationship is present.");
     }
 
     private Candidate butterfly(List<HarmonicPivot> p, Direction direction, Ratios r) {
@@ -206,18 +298,17 @@ public class HarmonicPatternDetectionService {
         if (!enabled(pattern)) return null;
         if (!outsideCompletion(p, direction)
                 || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cOfAb(), ratio(pattern, "cMin", .382), ratio(pattern, "cMax", .886))
-                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfBc(), ratio(pattern, "extensionMin", 1.618), ratio(pattern, "extensionMax", 2.618))
-                || !within(pattern, RuleGroup.COMPLETION, r.adOfXa(), ratio(pattern, "completionMin", 1.272), ratio(pattern, "completionMax", 1.618))
-                || !approximately(pattern, r.cdOfAb(), ratio(pattern, "legTarget", 1.0))) return null;
+                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfBc(), ratio(pattern, "extensionMin", 1.618), ratio(pattern, "extensionMax", 2.24))) return null;
         Match b = closest(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bTarget", .786));
-        Match d = rangeMatch(pattern, RuleGroup.COMPLETION, r.adOfXa(), ratio(pattern, "completionMin", 1.272),
-                ratio(pattern, "completionMax", 1.618), ratio(pattern, "completionMax", 1.618));
-        if (!b.accepted() || !d.accepted()) return null;
+        Match d = closest(pattern, RuleGroup.COMPLETION, r.adOfXa(), ratio(pattern, "completion", 1.27));
+        Match leg = legClosest(pattern, r.cdOfAb(),
+                ratio(pattern, "legPrimary", 1.0), ratio(pattern, "legAlternate", 1.27));
+        if (!b.accepted() || !d.accepted() || !leg.accepted()) return null;
         return candidate(pattern, b, d,
                 secondaryError(r.cOfAb(), ratio(pattern, "cMin", .382), ratio(pattern, "cMax", .886),
-                        r.cdOfBc(), ratio(pattern, "extensionMin", 1.618), ratio(pattern, "extensionMax", 2.618),
-                        equalityError(r.cdOfAb())), 0.0, 0.0,
-                "Extension completion; AB and CD are approximately equal.");
+                        r.cdOfBc(), ratio(pattern, "extensionMin", 1.618), ratio(pattern, "extensionMax", 2.24),
+                        leg.error()), 0.0, 0.0,
+                "1.27 XA completion; AB=CD or the 1.27 alternate AB=CD relationship is present.");
     }
 
     private Candidate crab(List<HarmonicPivot> p, Direction direction, Ratios r) {
@@ -226,15 +317,15 @@ public class HarmonicPatternDetectionService {
         if (!outsideCompletion(p, direction)
                 || !within(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bMin", .382), ratio(pattern, "bMax", .618))
                 || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cOfAb(), ratio(pattern, "cMin", .382), ratio(pattern, "cMax", .886))
-                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfBc(), ratio(pattern, "extensionMin", 2.24), ratio(pattern, "extensionMax", 3.618))
+                || !within(pattern, RuleGroup.SECONDARY_RATIOS, r.cdOfBc(), ratio(pattern, "extensionMin", 2.618), ratio(pattern, "extensionMax", 3.618))
                 || !materiallyDifferent(pattern, r.cdOfAb())) return null;
-        Match b = closest(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bPrimary", .382),
-                ratio(pattern, "bSecondary", .5), ratio(pattern, "bMaximum", .618));
+        Match b = rangeMatch(pattern, RuleGroup.PRIMARY_B, r.bOfXa(), ratio(pattern, "bMin", .382),
+                ratio(pattern, "bMax", .618), ratio(pattern, "bMax", .618));
         Match d = closest(pattern, RuleGroup.COMPLETION, r.adOfXa(), ratio(pattern, "completion", 1.618));
         if (!b.accepted() || !d.accepted()) return null;
         return candidate(pattern, b, d,
                 secondaryError(r.cOfAb(), ratio(pattern, "cMin", .382), ratio(pattern, "cMax", .886),
-                        r.cdOfBc(), ratio(pattern, "extensionMin", 2.24), ratio(pattern, "extensionMax", 3.618),
+                        r.cdOfBc(), ratio(pattern, "extensionMin", 2.618), ratio(pattern, "extensionMax", 3.618),
                         differenceError(r.cdOfAb())), 0.0, 0.0,
                 "Extreme 1.618 XA completion; CD is materially different from AB.");
     }
@@ -463,16 +554,31 @@ public class HarmonicPatternDetectionService {
     }
 
     private Match closest(HarmonicPatternType pattern, RuleGroup group, double value, double... targets) {
+        return closestWithTolerance(pattern, group, value, rules.fibonacciTolerance(), targets);
+    }
+
+    private Match legClosest(HarmonicPatternType pattern, double value, double... targets) {
+        return closestWithTolerance(pattern, RuleGroup.LEG_RELATIONSHIP, value,
+                rules.legEqualityTolerance(), targets);
+    }
+
+    private Match closestWithTolerance(HarmonicPatternType pattern,
+                                       RuleGroup group,
+                                       double value,
+                                       double baseTolerance,
+                                       double... targets) {
         double bestTarget = targets[0];
         double bestError = Double.POSITIVE_INFINITY;
         for (double target : targets) {
-            double error = Math.abs(value - target) / (target * rules.fibonacciTolerance());
+            double error = Math.abs(value - target) / (target * baseTolerance);
             if (error < bestError) {
                 bestError = error;
                 bestTarget = target;
             }
         }
-        return new Match(bestError <= allowedError(pattern, group), bestError, bestTarget);
+        double permitted = hard(pattern, group)
+                ? 1.0 : 1.0 + softTolerance(pattern) / baseTolerance;
+        return new Match(bestError <= permitted, bestError, bestTarget);
     }
 
     private Match rangeMatch(HarmonicPatternType pattern, RuleGroup group, double value,
@@ -492,15 +598,6 @@ public class HarmonicPatternDetectionService {
         double tolerance = tolerance(pattern, group);
         return value >= minimum * (1.0 - tolerance)
                 && value <= maximum * (1.0 + tolerance);
-    }
-
-    private boolean near(double value, double target, double tolerance) {
-        return Math.abs(value - target) <= target * tolerance;
-    }
-
-    private boolean approximately(HarmonicPatternType pattern, double value, double target) {
-        return near(value, target, rules.legEqualityTolerance()
-                + (hard(pattern, RuleGroup.LEG_RELATIONSHIP) ? 0.0 : softTolerance(pattern)));
     }
 
     private boolean materiallyDifferent(HarmonicPatternType pattern, double cdOfAb) {
@@ -527,10 +624,6 @@ public class HarmonicPatternDetectionService {
         return Math.abs(value - boundary) / (boundary * rules.fibonacciTolerance());
     }
 
-    private double equalityError(double value) {
-        return Math.abs(value - 1.0) / rules.legEqualityTolerance();
-    }
-
     private double differenceError(double value) {
         return Math.abs(value - 1.0) >= rules.materialLegDifference() ? 0.0 : 1.0;
     }
@@ -555,17 +648,13 @@ public class HarmonicPatternDetectionService {
         return rules.fibonacciTolerance() + (hard(pattern, group) ? 0.0 : softTolerance(pattern));
     }
 
-    private double allowedError(HarmonicPatternType pattern, RuleGroup group) {
-        return tolerance(pattern, group) / rules.fibonacciTolerance();
-    }
-
     private void addCandidate(List<Candidate> candidates, Candidate candidate) {
         if (candidate != null && Double.isFinite(candidate.classificationError())) candidates.add(candidate);
     }
 
     private String completionKey(HarmonicFormation formation) {
         HarmonicPoint terminal = formation.points().getLast();
-        return formation.direction() + ":" + terminal.timestamp();
+        return formation.pattern() + ":" + formation.direction() + ":" + terminal.timestamp();
     }
 
     private HarmonicFormation betterFormation(HarmonicFormation first, HarmonicFormation second) {
@@ -587,9 +676,22 @@ public class HarmonicPatternDetectionService {
                         double materialLegDifference,
                         double minimumSwingFraction,
                         int pivotWindow,
-                        int maximumFormations) {
+                        int maximumFormations,
+                        int maximumPivotWindow,
+                        double maximumSwingFraction,
+                        int maximumSkippedPivots) {
+        public Rules(double fibonacciTolerance,
+                     double legEqualityTolerance,
+                     double materialLegDifference,
+                     double minimumSwingFraction,
+                     int pivotWindow,
+                     int maximumFormations) {
+            this(fibonacciTolerance, legEqualityTolerance, materialLegDifference,
+                    minimumSwingFraction, pivotWindow, maximumFormations, 55, .34, 0);
+        }
+
         public static Rules defaults() {
-            return new Rules(.04, .08, .10, .005, 2, 40);
+            return new Rules(.03, .03, .10, .005, 2, 250, 55, .34, 0);
         }
 
         private Rules validated() {
@@ -597,7 +699,12 @@ public class HarmonicPatternDetectionService {
                     || !Double.isFinite(legEqualityTolerance) || legEqualityTolerance <= 0 || legEqualityTolerance > .20
                     || !Double.isFinite(materialLegDifference) || materialLegDifference <= legEqualityTolerance
                     || !Double.isFinite(minimumSwingFraction) || minimumSwingFraction < 0 || minimumSwingFraction > .25
-                    || pivotWindow < 1 || pivotWindow > 10 || maximumFormations < 1 || maximumFormations > 250) {
+                    || pivotWindow < 1 || pivotWindow > 10 || maximumFormations < 1 || maximumFormations > 250
+                    || maximumPivotWindow < pivotWindow || maximumPivotWindow > 89
+                    || !Double.isFinite(maximumSwingFraction)
+                    || maximumSwingFraction < Math.max(.05, minimumSwingFraction)
+                    || maximumSwingFraction > .50
+                    || maximumSkippedPivots < 0 || maximumSkippedPivots > 8) {
                 throw new IllegalArgumentException("Invalid harmonic detection rules.");
             }
             return this;

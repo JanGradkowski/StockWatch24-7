@@ -6,11 +6,13 @@ import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AnalysisPreferencesService;
 import org.example.stockwatch247.service.TechnicalOutlookService;
+import org.example.stockwatch247.service.TechnicalOutlookTrackingService;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,13 +26,16 @@ public class TechnicalOutlookController {
     private final UserRepository userRepository;
     private final TechnicalOutlookService outlookService;
     private final AnalysisPreferencesService preferencesService;
+    private final TechnicalOutlookTrackingService trackingService;
 
     public TechnicalOutlookController(UserRepository userRepository,
                                       TechnicalOutlookService outlookService,
-                                      AnalysisPreferencesService preferencesService) {
+                                      AnalysisPreferencesService preferencesService,
+                                      TechnicalOutlookTrackingService trackingService) {
         this.userRepository = userRepository;
         this.outlookService = outlookService;
         this.preferencesService = preferencesService;
+        this.trackingService = trackingService;
     }
 
     @GetMapping("/stock/{symbol}/technical-outlook")
@@ -128,6 +133,46 @@ public class TechnicalOutlookController {
         return outlookService.getSummaryOutlook(user, normalizedSymbol, interval);
     }
 
+    @GetMapping("/api/stocks/{symbol}/technical-outlook/subscriptions")
+    @ResponseBody
+    public TechnicalOutlookTrackingService.SubscriptionStateView subscriptionState(
+            @PathVariable String symbol, Principal principal) {
+        return trackingService.getState(
+                requireUser(principal), SecurityInputValidator.requireMarketSymbol(symbol));
+    }
+
+    @PutMapping("/api/stocks/{symbol}/technical-outlook/subscriptions")
+    @ResponseBody
+    public TechnicalOutlookTrackingService.SubscriptionStateView updateSubscription(
+            @PathVariable String symbol,
+            @RequestBody OutlookSubscriptionRequest request,
+            Principal principal) {
+        if (request == null || request.interval() == null) {
+            throw new IllegalArgumentException("A Daily, Weekly, or Monthly interval is required.");
+        }
+        TimeInterval interval;
+        try {
+            interval = TimeInterval.valueOf(request.interval().trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("A Daily, Weekly, or Monthly interval is required.");
+        }
+        return trackingService.setSubscription(
+                requireUser(principal), SecurityInputValidator.requireMarketSymbol(symbol),
+                interval, request.active());
+    }
+
+    @GetMapping("/technical-outlook/changes/{notificationId}")
+    public String changePage(@PathVariable Long notificationId,
+                             Model model,
+                             Principal principal) {
+        User user = requireUser(principal);
+        TechnicalOutlookTrackingService.OutlookChangeDetailView change =
+                trackingService.detail(user, notificationId);
+        model.addAttribute("firstName", user.getFirstName());
+        model.addAttribute("change", change);
+        return "technical-outlook-change";
+    }
+
     private TimeInterval timeInterval(String interval) {
         return switch (interval) {
             case "1wk" -> TimeInterval.WEEKLY;
@@ -169,4 +214,6 @@ public class TechnicalOutlookController {
                     supportResistancePeriod);
         }
     }
+
+    public record OutlookSubscriptionRequest(String interval, boolean active) { }
 }

@@ -7,6 +7,7 @@ import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.ZoneId;
@@ -22,16 +23,36 @@ public class HistoricalElliottWaveService {
     private final CandleCompletionService candleCompletionService;
     private final TechnicalIndicatorEnrichmentService enrichmentService;
     private final ElliottWaveDetectionService detectionService;
+    private final CandlePatternDetectionService candlestickDetectionService;
+    private final HarmonicPatternDetectionService harmonicPatternDetectionService;
+    private final CrossPatternConfluenceService crossPatternConfluenceService;
 
+    @Autowired
     public HistoricalElliottWaveService(
             CandleRepository candleRepository,
             CandleCompletionService candleCompletionService,
             TechnicalIndicatorEnrichmentService enrichmentService,
-            ElliottWaveDetectionService detectionService) {
+            ElliottWaveDetectionService detectionService,
+            CandlePatternDetectionService candlestickDetectionService,
+            HarmonicPatternDetectionService harmonicPatternDetectionService,
+            CrossPatternConfluenceService crossPatternConfluenceService) {
         this.candleRepository = candleRepository;
         this.candleCompletionService = candleCompletionService;
         this.enrichmentService = enrichmentService;
         this.detectionService = detectionService;
+        this.candlestickDetectionService = candlestickDetectionService;
+        this.harmonicPatternDetectionService = harmonicPatternDetectionService;
+        this.crossPatternConfluenceService = crossPatternConfluenceService;
+    }
+
+    HistoricalElliottWaveService(
+            CandleRepository candleRepository,
+            CandleCompletionService candleCompletionService,
+            TechnicalIndicatorEnrichmentService enrichmentService,
+            ElliottWaveDetectionService detectionService) {
+        this(candleRepository, candleCompletionService, enrichmentService, detectionService,
+                new CandlePatternDetectionService(), new HarmonicPatternDetectionService(),
+                new CrossPatternConfluenceService(new CandlePatternDetectionService()));
     }
 
     public HistoricalElliottWaveDetail findDetail(
@@ -98,7 +119,26 @@ public class HistoricalElliottWaveService {
                         detector.scoreHistoricalStructure(enriched, structure, stage, confirmationTimestamp))
                 .orElseGet(() -> new ElliottWaveDetectionService.ElliottScoreAssessment(
                         structure.qualityScore(), List.of()));
-        List<ScoreSectionView> scoreSections = score.reasons().stream()
+        List<EnrichedCandle> candlestickEnriched = enrichmentService.enrich(
+                candles, candles.size(), timeInterval);
+        CrossPatternConfluenceService.Timeline confluenceTimeline = crossPatternConfluenceService.buildTimeline(
+                candles,
+                candlestickEnriched,
+                enriched,
+                timeInterval,
+                CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(timeInterval),
+                CandlestickPatternPreferencesService.factoryPreferences(),
+                detector,
+                harmonicPatternDetectionService);
+        CrossPatternConfluenceService.Assessment confluence = crossPatternConfluenceService.assess(
+                score.score(),
+                org.example.stockwatch247.model.enums.AlertPatternFamily.ELLIOTT_WAVE,
+                tradeSignal,
+                confirmationTimestamp == null ? endpointTimestamp : confirmationTimestamp,
+                confluenceTimeline);
+        List<String> scoringReasons = new java.util.ArrayList<>(score.reasons());
+        scoringReasons.add(confluence.reason());
+        List<ScoreSectionView> scoreSections = scoringReasons.stream()
                 .map(reason -> SignalScoreBreakdown.parse(reason, "Elliott evidence", tradeSignal))
                 .map(section -> new ScoreSectionView(
                         section.category(),
@@ -140,7 +180,7 @@ public class HistoricalElliottWaveService {
                         confirmationTimestamp == null ? endpointTimestamp : confirmationTimestamp,
                         timeInterval,
                         ZoneId.systemDefault()),
-                score.score(),
+                confluence.adjustedScore(),
                 ElliottWaveDetectionService.SETUP_SCORE_VERSION,
                 scoreSections,
                 structure.waveTwoRetracement(),
@@ -160,6 +200,10 @@ public class HistoricalElliottWaveService {
     private ElliottWaveDetectionService.ElliottWavePoint endpoint(
             ElliottWaveDetectionService.ElliottWaveStructure structure,
             ElliottSignalStage stage) {
+        if (stage == ElliottSignalStage.CORRECTION_END && structure.correctionComplete()
+                && structure.points() != null && !structure.points().isEmpty()) {
+            return structure.points().getLast();
+        }
         String label = stage == ElliottSignalStage.CORRECTION_END ? "C" : "V";
         return structure.points().stream()
                 .filter(point -> label.equalsIgnoreCase(point.label()))

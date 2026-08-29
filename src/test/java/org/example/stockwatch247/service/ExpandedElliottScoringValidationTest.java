@@ -3,6 +3,7 @@ package org.example.stockwatch247.service;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.EnrichedCandle;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
@@ -150,6 +151,169 @@ class ExpandedElliottScoringValidationTest {
         System.out.println(report);
         System.out.println("Signal output: " + tradesPath);
         System.out.println("Summary output: " + summaryPath);
+    }
+
+    @Test
+    @EnabledIfSystemProperty(named = "backtest.elliott.developing.enabled", matches = "true")
+    void runsDevelopingMultiTimeframeValidation() throws Exception {
+        Path manifestPath = Path.of(System.getProperty(
+                "backtest.elliott.expanded.manifest-file", DEFAULT_MANIFEST.toString()));
+        Path dataPath = Path.of(System.getProperty(
+                "backtest.elliott.expanded.data-file", DEFAULT_DATA.toString()));
+        List<UniverseEntry> completeUniverse = loadAndValidateManifest(manifestPath);
+        int maximumSymbols = Math.min(completeUniverse.size(), Integer.getInteger(
+                "backtest.elliott.developing.max-symbols", completeUniverse.size()));
+        int developingWindow = Math.max(100, Integer.getInteger(
+                "backtest.elliott.developing.window", 200));
+        List<UniverseEntry> universe = completeUniverse.subList(0, maximumSymbols);
+        Map<String, List<Candle>> dailyBySymbol = loadDailyCandles(dataPath, completeUniverse);
+        ConcurrentLinkedQueue<DevelopingLabeledSignal> allNotifications = new ConcurrentLinkedQueue<>();
+        List<DevelopingCoverage> coverage = new ArrayList<>();
+
+        System.out.printf(Locale.ROOT,
+                "Developing Elliott multi-timeframe: symbols=%,d/%d weeklyWindow=%d monthlyWindow=100%n",
+                universe.size(), completeUniverse.size(), developingWindow);
+        for (IntervalRun run : RUNS) {
+            int runWindow = run.aggregation() == Aggregation.MONTHLY ? 100 : developingWindow;
+            AtomicInteger completed = new AtomicInteger();
+            List<DevelopingSymbolResult> results = universe.parallelStream()
+                    .map(entry -> analyzeDevelopingSymbol(
+                            entry, dailyBySymbol.get(entry.symbol()), run, runWindow))
+                    .peek(ignored -> {
+                        int count = completed.incrementAndGet();
+                        if (count % 25 == 0 || count == universe.size()) {
+                            System.out.printf(Locale.ROOT,
+                                    "  %s: processed %,d/%,d symbols%n",
+                                    run.label(), count, universe.size());
+                        }
+                    })
+                    .toList();
+            results.forEach(result -> allNotifications.addAll(result.notifications()));
+            coverage.add(new DevelopingCoverage(
+                    run, runWindow,
+                    results.stream().mapToInt(DevelopingSymbolResult::evaluatedWindows).sum(),
+                    results.stream().mapToInt(DevelopingSymbolResult::cycles).sum(),
+                    results.stream().mapToInt(result -> result.notifications().size()).sum()));
+        }
+
+        List<DevelopingLabeledSignal> ordered = allNotifications.stream()
+                .sorted(Comparator.comparing(DevelopingLabeledSignal::interval)
+                        .thenComparing(DevelopingLabeledSignal::symbol)
+                        .thenComparingLong(DevelopingLabeledSignal::signalTimestamp)
+                        .thenComparing(signal -> signal.stage().progressionOrder()))
+                .toList();
+        Files.createDirectories(OUTPUT_DIRECTORY);
+        String suffix = maximumSymbols == completeUniverse.size()
+                ? "full" : "first-" + maximumSymbols;
+        Path signalsPath = OUTPUT_DIRECTORY.resolve(
+                "expanded-elliott-developing-signals-" + suffix + ".csv");
+        Path summaryPath = OUTPUT_DIRECTORY.resolve(
+                "expanded-elliott-developing-summary-" + suffix + ".md");
+        writeDevelopingSignals(signalsPath, ordered);
+        String report = buildDevelopingReport(
+                completeUniverse.size(), universe.size(), coverage, ordered);
+        Files.writeString(summaryPath, report, StandardCharsets.UTF_8);
+        System.out.println(report);
+        System.out.println("Developing signal output: " + signalsPath);
+        System.out.println("Developing summary output: " + summaryPath);
+    }
+
+    private DevelopingSymbolResult analyzeDevelopingSymbol(
+            UniverseEntry entry,
+            List<Candle> daily,
+            IntervalRun run,
+            int signalWindow) {
+        List<Candle> parent = aggregate(daily, run.aggregation());
+        List<Candle> child = run.aggregation() == Aggregation.WEEKLY
+                ? daily : aggregate(daily, Aggregation.WEEKLY);
+        TimeInterval childInterval = run.aggregation() == Aggregation.WEEKLY
+                ? TimeInterval.DAILY : TimeInterval.WEEKLY;
+        int maximumHorizon = run.outcomes().stream()
+                .mapToInt(OutcomeWindow::candles).max().orElseThrow();
+        if (parent.size() < signalWindow + maximumHorizon) {
+            return new DevelopingSymbolResult(0, 0, List.of());
+        }
+        List<EnrichedCandle> enrichedParent = enrichmentService.enrichForElliott(
+                parent, parent.size(), run.intervalType());
+        List<EnrichedCandle> enrichedChild = enrichmentService.enrichForElliott(
+                child, child.size(), childInterval);
+        Map<String, Integer> maximumStageByCycle = new LinkedHashMap<>();
+        ElliottWaveDetectionService.DevelopingScanContext scanContext =
+                new ElliottWaveDetectionService.DevelopingScanContext();
+        List<DevelopingLabeledSignal> notifications = new ArrayList<>();
+        int lastIndex = parent.size() - maximumHorizon - 1;
+        for (int index = signalWindow - 1; index <= lastIndex; index++) {
+            Candle currentParent = parent.get(index);
+            Candle previousParent = parent.get(index - 1);
+            boolean confirmsLow = currentParent.getClosePrice() > previousParent.getHighPrice();
+            boolean confirmsHigh = currentParent.getClosePrice() < previousParent.getLowPrice();
+            if (!confirmsLow && !confirmsHigh) continue;
+            List<EnrichedCandle> window = enrichedParent.subList(
+                    index - signalWindow + 1, index + 1);
+            long nextParentTimestamp = parent.get(index + 1).getTimestamp();
+            List<EnrichedCandle> childAsOf = enrichedChild.subList(
+                    0, lowerBoundByTimestamp(enrichedChild, nextParentTimestamp));
+            long currentTimestamp = parent.get(index).getTimestamp();
+            for (ElliottWaveDetectionService.DevelopingImpulse candidate
+                    : detectionService.findDevelopingImpulses(window, childAsOf, scanContext)) {
+                if (candidate.confirmationTimestamp() != currentTimestamp) continue;
+                String cycleKey = run.interval() + '|' + entry.symbol() + '|'
+                        + candidate.developmentKey();
+                int progression = candidate.stage().progressionOrder();
+                int prior = maximumStageByCycle.getOrDefault(cycleKey, 0);
+                if (prior == 0 && candidate.stage() != ElliottSignalStage.WAVE_II_END) continue;
+                if (progression <= prior) continue;
+                maximumStageByCycle.put(cycleKey, progression);
+                int signalIndex = index;
+                List<Outcome> outcomes = run.outcomes().stream()
+                        .map(outcome -> evaluateDevelopingOutcome(
+                                parent, signalIndex, candidate.expectedMove(),
+                                candidate.confirmationClose(), outcome))
+                        .toList();
+                notifications.add(new DevelopingLabeledSignal(
+                        run.interval(), entry.symbol(), entry.cohort(), candidate.developmentKey(),
+                        candidate.stage(), candidate.expectedMove(), candidate.confidenceScore(),
+                        candidate.confirmationTimestamp(), candidate.confirmationClose(), outcomes));
+            }
+        }
+        return new DevelopingSymbolResult(
+                Math.max(0, lastIndex - signalWindow + 2),
+                maximumStageByCycle.size(), List.copyOf(notifications));
+    }
+
+    private int lowerBoundByTimestamp(List<EnrichedCandle> candles, long timestamp) {
+        int low = 0;
+        int high = candles.size();
+        while (low < high) {
+            int middle = (low + high) >>> 1;
+            if (candles.get(middle).timestamp() < timestamp) low = middle + 1;
+            else high = middle;
+        }
+        return low;
+    }
+
+    private Outcome evaluateDevelopingOutcome(
+            List<Candle> candles,
+            int signalIndex,
+            TradeSignal direction,
+            double entry,
+            OutcomeWindow window) {
+        int exitIndex = signalIndex + window.candles();
+        List<Candle> future = candles.subList(signalIndex + 1, exitIndex + 1);
+        double exit = candles.get(exitIndex).getClosePrice();
+        double closeReturn = directionalMove(direction, entry, exit);
+        double highest = future.stream().mapToDouble(Candle::getHighPrice).max().orElse(exit);
+        double lowest = future.stream().mapToDouble(Candle::getLowPrice).min().orElse(exit);
+        double best = direction == TradeSignal.BUY
+                ? percentMove(entry, highest) : -percentMove(entry, lowest);
+        double worst = direction == TradeSignal.BUY
+                ? percentMove(entry, lowest) : -percentMove(entry, highest);
+        OutcomeClass outcomeClass = closeReturn >= window.minimumMovePercent()
+                ? OutcomeClass.SUCCESS
+                : closeReturn <= -window.minimumMovePercent()
+                ? OutcomeClass.FAILURE : OutcomeClass.INCONCLUSIVE;
+        return new Outcome(window, candles.get(exitIndex).getTimestamp(), closeReturn,
+                best, worst, outcomeClass);
     }
 
     private void assertV1DetectionParity(List<LabeledSignal> v2Signals) throws IOException {
@@ -339,6 +503,117 @@ class ExpandedElliottScoringValidationTest {
         }
     }
 
+    private String buildDevelopingReport(
+            int frozenSymbols,
+            int testedSymbols,
+            List<DevelopingCoverage> coverage,
+            List<DevelopingLabeledSignal> notifications) {
+        StringBuilder report = new StringBuilder();
+        report.append("# Developing Elliott multi-timeframe validation\n\n");
+        report.append(String.format(Locale.ROOT,
+                "Frozen universe: %,d symbols; tested: %,d. "
+                        + "Weekly parent legs use daily child waves; monthly parent legs use weekly child waves. "
+                        + "One development key represents one app signal row; each higher stage represents an update/notification.\n\n",
+                frozenSymbols, testedSymbols));
+        report.append("Precision is success / (success + failure), excluding inconclusive outcomes. "
+                + "Returns are direction-adjusted for the move forecast immediately after each stage.\n\n");
+        report.append("| Interval | Parent window | Evaluated windows | Unique signal rows/cycles | Stage notifications |\n");
+        report.append("|---|---:|---:|---:|---:|\n");
+        coverage.forEach(item -> report.append(String.format(Locale.ROOT,
+                "| %s | %d | %,d | %,d | %,d |%n", item.run().label(), item.signalWindow(),
+                item.evaluatedWindows(), item.cycles(), item.notifications())));
+        report.append("\n## Stage counts\n\n");
+        report.append("| Interval | II | III | IV | V |\n");
+        report.append("|---|---:|---:|---:|---:|\n");
+        for (IntervalRun run : RUNS) {
+            report.append(String.format(Locale.ROOT, "| %s | %,d | %,d | %,d | %,d |%n",
+                    run.label(),
+                    countDeveloping(notifications, run, ElliottSignalStage.WAVE_II_END),
+                    countDeveloping(notifications, run, ElliottSignalStage.WAVE_III_END),
+                    countDeveloping(notifications, run, ElliottSignalStage.WAVE_IV_END),
+                    countDeveloping(notifications, run, ElliottSignalStage.WAVE_V_END)));
+        }
+        report.append("\n## Returns and precision\n\n");
+        report.append("| Interval | Horizon / move | Confidence | Stage | Notifications | Success | Failure | Inconclusive | Precision | Avg close return | Avg best move | Avg worst move |\n");
+        report.append("|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|\n");
+        for (IntervalRun run : RUNS) {
+            for (OutcomeWindow outcome : run.outcomes()) {
+                for (int threshold : List.of(60, 70, 75, 80)) {
+                    for (ElliottSignalStage stage : List.of(
+                            ElliottSignalStage.WAVE_II_END,
+                            ElliottSignalStage.WAVE_III_END,
+                            ElliottSignalStage.WAVE_IV_END,
+                            ElliottSignalStage.WAVE_V_END)) {
+                        appendDevelopingStatistics(
+                                report, notifications, run, outcome, threshold, stage);
+                    }
+                }
+            }
+        }
+        return report.toString();
+    }
+
+    private long countDeveloping(
+            List<DevelopingLabeledSignal> notifications,
+            IntervalRun run,
+            ElliottSignalStage stage) {
+        return notifications.stream()
+                .filter(signal -> signal.interval().equals(run.interval()))
+                .filter(signal -> signal.stage() == stage)
+                .count();
+    }
+
+    private void appendDevelopingStatistics(
+            StringBuilder report,
+            List<DevelopingLabeledSignal> notifications,
+            IntervalRun run,
+            OutcomeWindow window,
+            int threshold,
+            ElliottSignalStage stage) {
+        List<Outcome> outcomes = notifications.stream()
+                .filter(signal -> signal.interval().equals(run.interval()))
+                .filter(signal -> signal.stage() == stage)
+                .filter(signal -> signal.confidenceScore() >= threshold)
+                .map(signal -> signal.outcomes().stream()
+                        .filter(outcome -> outcome.window().equals(window))
+                        .findFirst().orElseThrow())
+                .toList();
+        long success = outcomes.stream()
+                .filter(outcome -> outcome.outcomeClass() == OutcomeClass.SUCCESS).count();
+        long failure = outcomes.stream()
+                .filter(outcome -> outcome.outcomeClass() == OutcomeClass.FAILURE).count();
+        long inconclusive = outcomes.size() - success - failure;
+        report.append(String.format(Locale.ROOT,
+                "| %s | %d / %.1f%% | %d+ | %s | %,d | %,d | %,d | %,d | %.2f%% | %+.2f%% | %+.2f%% | %+.2f%% |%n",
+                run.label(), window.candles(), window.minimumMovePercent(), threshold,
+                stage.name().replace("WAVE_", "").replace("_END", ""), outcomes.size(),
+                success, failure, inconclusive, percentage(success, success + failure),
+                average(outcomes, Outcome::closeReturnPercent),
+                average(outcomes, Outcome::bestMovePercent),
+                average(outcomes, Outcome::worstMovePercent)));
+    }
+
+    private void writeDevelopingSignals(
+            Path output,
+            List<DevelopingLabeledSignal> notifications) throws IOException {
+        try (BufferedWriter writer = Files.newBufferedWriter(output, StandardCharsets.UTF_8)) {
+            writer.write("interval,symbol,cohort,development_key,stage,direction,score,signal_timestamp,entry_price,horizon,minimum_move_percent,exit_timestamp,directional_close_return_percent,best_directional_move_percent,worst_directional_move_percent,outcome\n");
+            for (DevelopingLabeledSignal signal : notifications) {
+                for (Outcome outcome : signal.outcomes()) {
+                    writer.write(String.format(Locale.ROOT,
+                            "%s,%s,%s,%s,%s,%s,%d,%d,%.8f,%d,%.2f,%d,%.8f,%.8f,%.8f,%s%n",
+                            signal.interval(), signal.symbol(), signal.cohort(),
+                            signal.developmentKey(), signal.stage(), signal.direction(),
+                            signal.confidenceScore(), signal.signalTimestamp(), signal.entryPrice(),
+                            outcome.window().candles(), outcome.window().minimumMovePercent(),
+                            outcome.exitTimestamp(), outcome.closeReturnPercent(),
+                            outcome.bestMovePercent(), outcome.worstMovePercent(),
+                            outcome.outcomeClass()));
+                }
+            }
+        }
+    }
+
     private List<UniverseEntry> loadAndValidateManifest(Path path) throws IOException {
         assertTrue(Files.isRegularFile(path), "Frozen Elliott universe is missing: " + path);
         assertEquals(POWER_MANIFEST_SHA256, sha256(Files.readAllBytes(path)),
@@ -449,6 +724,17 @@ class ExpandedElliottScoringValidationTest {
                                  LocalDate lastDate, int dailyCandles) { }
 
     private record SymbolResult(int candles, int evaluatedWindows, List<LabeledSignal> signals) { }
+
+    private record DevelopingCoverage(IntervalRun run, int signalWindow, int evaluatedWindows,
+                                      int cycles, int notifications) { }
+
+    private record DevelopingSymbolResult(int evaluatedWindows, int cycles,
+                                          List<DevelopingLabeledSignal> notifications) { }
+
+    private record DevelopingLabeledSignal(
+            String interval, String symbol, String cohort, String developmentKey,
+            ElliottSignalStage stage, TradeSignal direction, int confidenceScore,
+            long signalTimestamp, double entryPrice, List<Outcome> outcomes) { }
 
     private record LabeledSignal(String interval, String symbol, String cohort,
                                  CandlePattern pattern, TradeSignal direction, int confidenceScore,

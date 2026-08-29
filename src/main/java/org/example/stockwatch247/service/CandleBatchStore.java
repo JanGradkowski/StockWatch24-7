@@ -14,14 +14,15 @@ public class CandleBatchStore {
     private static final int BATCH_SIZE = 100;
     private static final String UPSERT = """
             insert into candles
-                (symbol, time_interval, timestamp, open_price, high_price, low_price, close_price, volume)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
+                (symbol, time_interval, timestamp, open_price, high_price, low_price, close_price, volume, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
             on conflict (symbol, time_interval, timestamp) do update set
                 open_price = excluded.open_price,
                 high_price = excluded.high_price,
                 low_price = excluded.low_price,
                 close_price = excluded.close_price,
-                volume = excluded.volume
+                volume = excluded.volume,
+                updated_at = current_timestamp
             """;
 
     private final JdbcTemplate jdbcTemplate;

@@ -513,8 +513,11 @@ class YahooFinanceServiceTest {
         when(stockAssetRepository.findByTickerSymbolIgnoreCase("ZAB")).thenReturn(Optional.of(asset));
         when(stockAssetRepository.save(any(StockAsset.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        long october = LocalDate.of(2025, 10, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
-        long november = LocalDate.of(2025, 11, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        ZoneId warsaw = ZoneId.of("Europe/Warsaw");
+        long octoberAtExchangeMidnight = LocalDate.of(2025, 10, 1).atStartOfDay(warsaw).toEpochSecond();
+        long decemberAtExchangeMidnight = LocalDate.of(2025, 12, 1).atStartOfDay(warsaw).toEpochSecond();
+        long canonicalOctober = LocalDate.of(2025, 10, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        long canonicalDecember = LocalDate.of(2025, 12, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
         String response = """
                 {
                   "chart": {
@@ -540,7 +543,7 @@ class YahooFinanceServiceTest {
                     "error": null
                   }
                 }
-                """.formatted(october, november);
+                """.formatted(octoberAtExchangeMidnight, decemberAtExchangeMidnight);
 
         server.expect(requestTo(allOf(
                         containsString("/v8/finance/chart/ZAB.WA?"),
@@ -558,6 +561,8 @@ class YahooFinanceServiceTest {
 
         assertThat(bars).hasSize(2);
         assertThat(bars).extracting(MarketDataBar::providerSymbol).containsOnly("ZAB.WA");
+        assertThat(bars).extracting(MarketDataBar::timestamp)
+                .containsExactly(canonicalOctober, canonicalDecember);
         assertThat(bars).extracting(MarketDataBar::close).containsExactly(21.0, 22.0);
         server.verify();
     }
@@ -576,8 +581,10 @@ class YahooFinanceServiceTest {
         when(stockAssetRepository.findByTickerSymbolIgnoreCase("^GSPC")).thenReturn(Optional.of(asset));
         when(stockAssetRepository.save(any(StockAsset.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        long julyMonthly = LocalDate.of(2026, 7, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
-        long julyDailySnapshot = LocalDate.of(2026, 7, 29).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        ZoneId newYork = ZoneId.of("America/New_York");
+        long julyMonthlyAtExchangeMidnight = LocalDate.of(2026, 7, 1).atStartOfDay(newYork).toEpochSecond();
+        long canonicalJuly = LocalDate.of(2026, 7, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        long julyDailySnapshot = LocalDate.of(2026, 7, 29).atStartOfDay(newYork).plusHours(12).toEpochSecond();
         String response = """
                 {
                   "chart": {
@@ -604,7 +611,7 @@ class YahooFinanceServiceTest {
                     "error": null
                   }
                 }
-                """.formatted(julyMonthly, julyDailySnapshot);
+                """.formatted(julyMonthlyAtExchangeMidnight, julyDailySnapshot);
 
         server.expect(requestTo(containsString("interval=1mo")))
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
@@ -616,7 +623,7 @@ class YahooFinanceServiceTest {
         List<MarketDataBar> bars = service.getTimeSeries("^GSPC", "1mo", 1000);
 
         assertThat(bars).singleElement().satisfies(bar -> {
-            assertThat(bar.timestamp()).isEqualTo(julyMonthly);
+            assertThat(bar.timestamp()).isEqualTo(canonicalJuly);
             assertThat(bar.close()).isEqualTo(7489.72);
         });
         server.verify();

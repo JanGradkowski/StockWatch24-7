@@ -73,8 +73,8 @@
                aria-labelledby="latest-signals-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">Unread from the detector</div>
-            <h2 id="latest-signals-heading" class="panel-title">Latest signals <span class="panel-count" th:text="${#lists.size(latestSignals)}">0</span></h2>
+            <div class="panel-kicker">Unread technical detections and outlook changes</div>
+            <h2 id="latest-signals-heading" class="panel-title">Latest signals <span class="panel-count" th:text="${#lists.size(latestSignalItems)}">0</span></h2>
           </div>
           <div class="panel-heading-actions">
             <span class="panel-meta">Select a signal to explore its score</span>
@@ -82,20 +82,22 @@
           </div>
         </div>
 
-        <div th:if="${#lists.isEmpty(latestSignals)}" class="latest-signals-empty">
+        <div th:if="${#lists.isEmpty(latestSignalItems)}" class="latest-signals-empty">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
             <h3>No unread signals</h3>
-            <p>New matches from active rules will appear here. Signals you have opened remain available in the All signals archive.</p>
+            <p>New matches and followed outlook changes will appear here. Pattern detections you have opened remain available in All signals; outlook changes use their own reports.</p>
           </div>
         </div>
 
-        <div th:if="${!#lists.isEmpty(latestSignals)}">
+        <div th:if="${!#lists.isEmpty(latestSignalItems)}">
           <div class="latest-signal-head latest-signal-grid" aria-hidden="true">
             <span>Signal</span><span>Company</span><span>Interval</span><span>Candle period</span><span>Research horizon</span><span>Status</span><span>Setup score</span><span></span>
           </div>
           <div class="latest-signal-list">
-            <a th:each="signal : ${latestSignals}"
+            <th:block th:each="item : ${latestSignalItems}">
+            <a th:if="${item.technicalSignal() != null}"
+               th:with="signal=${item.technicalSignal()}"
                th:href="@{/alerts/signals/{id}(id=${signal.id()})}"
                class="latest-signal-row latest-signal-grid is-unread"
                th:aria-label="${'Open unread ' + signal.patternLabel() + ' score report for ' + signal.symbol()}">
@@ -125,11 +127,16 @@
                 <span th:unless="${signal.researchHorizonLabel() != null}" class="unavailable">Not applicable</span>
               </div>
               <div class="latest-lifecycle" aria-label="Lifecycle status">
-                <span th:if="${signal.lifecycle().tracked()}"
+                <span th:if="${signal.lifecycle().harmonicStopStatus() != null}"
+                      class="signal-lifecycle-pill"
+                      th:classappend="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : ' detected'}"
+                      th:title="${signal.lifecycle().summary()}"
+                      th:text="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : 'Active stop'}">Active stop</span>
+                <span th:if="${signal.lifecycle().harmonicStopStatus() == null and signal.lifecycle().tracked()}"
                       class="signal-lifecycle-pill"
                       th:classappend="${' ' + signal.lifecycle().cssClass()}"
                       th:text="${signal.lifecycle().label()}">Detected</span>
-                <span th:unless="${signal.lifecycle().tracked()}"
+                <span th:if="${signal.lifecycle().harmonicStopStatus() == null and !signal.lifecycle().tracked()}"
                       class="lifecycle-unavailable">Not tracked</span>
               </div>
               <div class="latest-confidence"
@@ -140,6 +147,43 @@
               </div>
               <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
             </a>
+            <a th:if="${item.outlookChange() != null}"
+               th:with="change=${item.outlookChange()}"
+               th:href="${change.detailUrl()}"
+               class="latest-signal-row latest-signal-grid is-unread outlook-change-row"
+               th:aria-label="${'Open ' + change.symbol() + ' ' + change.intervalLabel() + ' Automated Technical Outlook change report'}">
+              <div class="latest-signal-type">
+                <strong>Automated Technical Outlook</strong>
+                <div class="latest-signal-tags">
+                  <span class="latest-family-tag">Outlook change</span>
+                  <span class="latest-direction-tag outlook-transition"
+                        th:text="${change.previousClassification() + ' → ' + change.currentClassification()}">Slight buy outlook → Neutral outlook</span>
+                </div>
+              </div>
+              <div class="latest-company">
+                <strong th:text="${change.symbol()}">AAPL</strong>
+                <span th:text="${change.companyName()}">Apple Inc.</span>
+              </div>
+              <span class="latest-interval" th:text="${change.intervalLabel()}">Daily</span>
+              <div class="latest-signal-date">
+                <time th:text="${change.candlePeriodLabel()}">28 Aug 2026, 00:00 UTC</time>
+                <span th:text="${'Recorded ' + #temporals.format(change.createdAt(), 'HH:mm')}">Recorded 08:15</span>
+              </div>
+              <div class="latest-horizon">
+                <strong>Snapshot comparison</strong>
+                <span>Previous completed candle versus current</span>
+              </div>
+              <div class="latest-lifecycle" aria-label="Outlook status">
+                <span class="signal-lifecycle-pill confirmed">Changed</span>
+              </div>
+              <div class="latest-confidence outlook-score"
+                   th:attr="aria-label=${'Current normalized outlook score ' + #numbers.formatDecimal(change.currentScore() * 100, 1, 1) + ' percent'}">
+                <strong th:text="${#numbers.formatDecimal(change.currentScore() * 100, 1, 0)}">0</strong>
+                <span>%</span>
+              </div>
+              <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+            </a>
+            </th:block>
           </div>
         </div>
       </section>
@@ -153,27 +197,39 @@
           <h2 id="watch-desk-heading" class="panel-title">Market watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
           <span class="panel-meta">Open an instrument to see every followed rule</span>
         </div>
-        <div class="watch-filter-tabs" role="group" aria-label="Filter followed instruments">
-          <button id="watchFilterStocks"
-                  type="button"
-                  class="watch-filter-tab active"
-                  data-watch-filter="stocks"
-                  aria-controls="followedInstrumentList"
-                  aria-pressed="true">
-            <span>Stocks</span>
-            <strong th:text="${stockCompanyCount}">0</strong>
-          </button>
-          <button id="watchFilterFunds"
-                  type="button"
-                  class="watch-filter-tab"
-                  data-watch-filter="funds"
-                  aria-controls="followedInstrumentList"
-                  aria-pressed="false">
-            <span>Indexes / ETFs</span>
-            <strong th:text="${indexEtfCompanyCount}">0</strong>
-          </button>
+        <div class="watch-heading-actions">
+          <div class="temporary-market-test-control">
+            <button id="followTopUs200Button" type="button" class="btn-accent temporary-market-test-button">
+              Follow top 200 U.S. (test)
+            </button>
+            <span id="followTopUs200Status" class="temporary-market-test-status" role="status" aria-live="polite"></span>
+          </div>
+          <div class="watch-filter-tabs" role="group" aria-label="Filter followed instruments">
+            <button id="watchFilterStocks"
+                    type="button"
+                    class="watch-filter-tab active"
+                    data-watch-filter="stocks"
+                    aria-controls="followedInstrumentList"
+                    aria-pressed="true">
+              <span>Stocks</span>
+              <strong th:text="${stockCompanyCount}">0</strong>
+            </button>
+            <button id="watchFilterFunds"
+                    type="button"
+                    class="watch-filter-tab"
+                    data-watch-filter="funds"
+                    aria-controls="followedInstrumentList"
+                    aria-pressed="false">
+              <span>Indexes / ETFs</span>
+              <strong th:text="${indexEtfCompanyCount}">0</strong>
+            </button>
+          </div>
         </div>
       </div>
+
+      <p class="temporary-market-test-note">
+        Temporary load-test shortcut: activates Candlestick, Elliott Wave, and Harmonic Formation BUY and SELL rules on daily, weekly, and monthly intervals (18 rules per company). It does not follow Insider or Congress alerts.
+      </p>
 
       <div id="followedInstrumentList" th:if="${#lists.isEmpty(trackedCompanies)}" class="empty-state-card">
         <div class="empty-state-inner">
@@ -641,7 +697,7 @@
         </article>
         <article class="metric-card">
           <span class="metric-label">Latest signals</span>
-          <strong class="metric-value" th:text="${#lists.size(latestSignals)}">0</strong>
+          <strong class="metric-value" th:text="${#lists.size(latestSignalItems)}">0</strong>
           <span class="metric-note">Unread validated technical matches</span>
         </article>
         <article class="metric-card">

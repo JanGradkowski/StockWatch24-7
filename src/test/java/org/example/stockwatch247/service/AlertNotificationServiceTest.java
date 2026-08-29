@@ -7,6 +7,7 @@ import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
+import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.TimeInterval;
@@ -36,6 +37,79 @@ import static org.mockito.Mockito.when;
 class AlertNotificationServiceTest {
 
     @Test
+    void developingElliottEmailIncludesStageCorrectionStopAndNextWaveTarget() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.BUY);
+        rule.setPatternFamily(AlertPatternFamily.ELLIOTT_WAVE);
+        DetectedSignal signal = new DetectedSignal(
+                CandlePattern.ELLIOTT_BULLISH_WAVE_II_END, TradeSignal.BUY,
+                SignalStength.HIGH_CONFIDENCE, 86, List.of("Wave I and II subdivisions validated."),
+                Instant.parse("2026-07-20T00:00:00Z").getEpochSecond(), 106.0);
+        AlertEvent event = new AlertEvent();
+        event.setAlertRule(rule);
+        event.setPattern(signal.pattern());
+        event.setTradeSignal(signal.tradeSignal());
+        event.setSignalCandleTimestamp(signal.candleTimestamp());
+        event.setElliottSignalStage(ElliottSignalStage.WAVE_II_END);
+        event.setElliottCorrectionType("Corrective A-B-C");
+        event.setElliottForecastLabel("Projected Wave III");
+        event.setStopLossPrice(98.0);
+        event.setProfitTargetPrice(138.0);
+
+        service.sendDevelopingElliottEmail(rule, signal, event, false);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getSubject()).contains("Wave II ending", "AAPL");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Current stage: Wave II ending",
+                "Correction structure: Corrective A-B-C",
+                "Stop loss: 98.0000",
+                "Projected price target: 138.0000",
+                "Projected Wave III");
+    }
+
+    @Test
+    void completedCorrectionEmailUsesAbcStageNameAndValidatedStructure() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.BUY);
+        rule.setPatternFamily(AlertPatternFamily.ELLIOTT_WAVE);
+        DetectedSignal signal = new DetectedSignal(
+                CandlePattern.ELLIOTT_BULLISH_CORRECTION, TradeSignal.BUY,
+                SignalStength.HIGH_CONFIDENCE, 88, List.of("Wave C is motive (5)."),
+                Instant.parse("2026-07-20T00:00:00Z").getEpochSecond(), 128.0);
+        AlertEvent event = new AlertEvent();
+        event.setAlertRule(rule);
+        event.setElliottSignalStage(ElliottSignalStage.CORRECTION_END);
+        event.setElliottCorrectionType("Flat 3-3-5");
+        event.setElliottForecastLabel("Projected primary-trend resumption toward Wave V");
+        event.setStopLossPrice(124.0);
+        event.setProfitTargetPrice(155.0);
+
+        service.sendDevelopingElliottEmail(rule, signal, event, false);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getSubject()).contains("ABC correction ending", "AAPL");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Current stage: ABC correction ending",
+                "Correction structure: Flat 3-3-5",
+                "Projected primary-trend resumption toward Wave V");
+    }
+
+    @Test
     void harmonicEmailContainsCompletionConfirmationGeometryRatiosAndScoreMeaning() {
         @SuppressWarnings("unchecked")
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
@@ -61,6 +135,16 @@ class AlertNotificationServiceTest {
         event.setHarmonicEndpointPrice(120.5);
         event.setHarmonicPointsSnapshot("X|1752796800|100.0000000000|LOW\nD|1753056000|120.5000000000|LOW");
         event.setHarmonicMeasurementsSnapshot("AD_XA|0.7860000000\nB_XA|0.6180000000");
+        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradeEntryPrice(121.75);
+        event.setStructuralStopPrice(100.0);
+        event.setStopLossPrice(99.5);
+        event.setHarmonicStopBasis("Point X / 1.0 XA");
+        event.setHarmonicStopFormula("Internal Gartley invalidation at Point X");
+        event.setHarmonicStopBufferPercent(.5);
+        event.setHarmonicStopBufferAmount(.5);
+        event.setHarmonicStopDistancePercent(18.2752);
+        event.setHarmonicStopStatus("ACTIVE");
 
         service.sendSignalEmail(rule, signal, event);
 
@@ -75,10 +159,55 @@ class AlertNotificationServiceTest {
                 "Completion point: D",
                 "Completion price: 120.5000",
                 "Confirmation candle close: 121.7500",
-                "Geometry score: 94/100",
+                "Executable entry: 121.7500",
+                "Exact structural invalidation: 100.0000",
+                "Equity liquidity buffer: 0.50% / 0.5000",
+                "Buffered executable stop: 99.5000",
+                "Setup score: 94/100",
                 "hard structural rules passed",
                 "- B/XA: 0.6180",
-                "Score model: HARMONIC_V1");
+                "Score model: HARMONIC_V3");
+    }
+
+    @Test
+    void harmonicStopOutcomeEmailExplainsTheObservedBreachWithoutInventingATarget() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender mailSender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(mailSender);
+        AlertNotificationService service = new AlertNotificationService(
+                provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        AlertRule rule = dailyRule(TradeSignal.BUY);
+        rule.setPatternFamily(AlertPatternFamily.HARMONIC_FORMATION);
+        AlertEvent event = new AlertEvent();
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.HARMONIC_CRAB);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(100L);
+        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradeEntryPrice(85.0);
+        event.setHarmonicEndpointPrice(83.0);
+        event.setStructuralStopPrice(80.0);
+        event.setStopLossPrice(79.6);
+        event.setHarmonicStopBasis("2.0 XA extension");
+        event.setHarmonicStopBufferPercent(.5);
+        event.setHarmonicStopBufferAmount(.4);
+        event.setHarmonicStopStatus("STOPPED");
+        event.setHarmonicStopResolutionReason(
+                "The completed candle's low 79.5000 breached the buffered harmonic stop 79.6000.");
+        Candle breach = new Candle("AAPL", "1d", 101L, 81, 82, 79.5, 80.0, 1_000L);
+
+        service.sendHarmonicStopOutcomeEmail(event, breach);
+
+        org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
+                org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getSubject()).contains("harmonic stop breached", "AAPL");
+        assertThat(messageCaptor.getValue().getText()).contains(
+                "Formation: CRAB", "Entry: 85.0000", "Structural invalidation: 80.0000",
+                "Invalidation basis: 2.0 XA extension", "Executable stop: 79.6000",
+                "Resolution candle low: 79.5000", "not financial advice");
+        assertThat(messageCaptor.getValue().getText()).doesNotContain("Profit target", "Risk-to-reward");
     }
 
     @Test

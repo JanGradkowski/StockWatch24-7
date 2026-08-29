@@ -1,6 +1,8 @@
 package org.example.stockwatch247.model;
 import jakarta.persistence.*;
 
+import java.time.Instant;
+
 @Entity
 @Table(name = "candles", uniqueConstraints = {
         @UniqueConstraint(columnNames = {"symbol", "time_interval", "timestamp"})
@@ -24,6 +26,9 @@ public class Candle {
     private Double lowPrice;
     private Double closePrice;
     private Long volume;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
 
     public Candle(){}
 
@@ -68,6 +73,9 @@ public class Candle {
     public Long getId() {
         return id;
     }
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
     public void setId(Long id) {
         this.id = id;
     }
@@ -101,6 +109,12 @@ public class Candle {
 
     public void setTimestamp(Long timestamp) {
         this.timestamp = timestamp;
+    }
+
+    @PrePersist
+    @PreUpdate
+    void touchUpdatedAt() {
+        updatedAt = Instant.now();
     }
 
 }

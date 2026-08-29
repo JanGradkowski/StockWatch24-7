@@ -21,11 +21,14 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class MarketDataService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
+    private static final long FAILED_SYNC_COOLDOWN_NANOS = TimeUnit.SECONDS.toNanos(30L);
 
     private final CandleRepository candleRepository;
     private final StockAssetRepository stockAssetRepository;
@@ -39,6 +42,7 @@ public class MarketDataService {
     private final MarketDataHistoryStateStore historyStateStore;
     private final CandleBatchStore candleBatchStore;
     private final ApplicationEventPublisher eventPublisher;
+    private final Map<SyncKey, FailedSync> recentFailedSyncs = new ConcurrentHashMap<>();
 
     @Autowired
     public MarketDataService(CandleRepository candleRepository,
@@ -117,6 +121,14 @@ public class MarketDataService {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         interval = SecurityInputValidator.requireInterval(interval);
         int outputSize = Math.max(1, Math.min(1_000, requestedOutputSize));
+        SyncKey syncKey = new SyncKey(symbol, interval);
+
+        if (!forceRefresh) {
+            CandleSyncResult recentFailure = recentFailedSync(syncKey);
+            if (recentFailure != null) {
+                return recentFailure;
+            }
+        }
 
         // Older chart scrolling reads from the database cache. The normal refresh keeps
         // the most recent page current without burning provider calls during pagination.
@@ -163,6 +175,7 @@ public class MarketDataService {
                         String failure = "Twelve Data: " + twelveDataFailure
                                 + "; Yahoo Finance: " + yahooFailure.getMessage();
                         log.error("Failed syncing candles for {} {} from all providers: {}", symbol, interval, failure);
+                        rememberFailedSync(syncKey, failure);
                         return new CandleSyncResult(CandleSource.NONE, 0, failure);
                     }
                 }
@@ -173,6 +186,7 @@ public class MarketDataService {
                 long persistenceMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
                         System.nanoTime() - persistenceStarted);
                 syncCoordinator.markSuccessful(claim);
+                recentFailedSyncs.remove(syncKey);
                 successful = true;
                 if (persistedCandles > 0 && eventPublisher != null) {
                     eventPublisher.publishEvent(new CandleDataChangedEvent(symbol, interval, persistedCandles));
@@ -432,6 +446,24 @@ public class MarketDataService {
         return stored != null && Double.compare(stored, fetched) == 0;
     }
 
+    private CandleSyncResult recentFailedSync(SyncKey key) {
+        FailedSync failure = recentFailedSyncs.get(key);
+        if (failure == null) {
+            return null;
+        }
+        if (System.nanoTime() < failure.retryAfterNanos()) {
+            return new CandleSyncResult(CandleSource.NONE, 0, failure.message());
+        }
+        recentFailedSyncs.remove(key, failure);
+        return null;
+    }
+
+    private void rememberFailedSync(SyncKey key, String failureMessage) {
+        recentFailedSyncs.put(key, new FailedSync(
+                failureMessage,
+                System.nanoTime() + FAILED_SYNC_COOLDOWN_NANOS));
+    }
+
     public enum CandleSource {
         TWELVE_DATA,
         YAHOO_FINANCE,
@@ -444,6 +476,12 @@ public class MarketDataService {
         public boolean successful() {
             return source != CandleSource.NONE;
         }
+    }
+
+    private record SyncKey(String symbol, String interval) {
+    }
+
+    private record FailedSync(String message, long retryAfterNanos) {
     }
 
     public record CandlePage(List<Candle> candles,

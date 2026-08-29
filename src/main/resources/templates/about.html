@@ -612,8 +612,13 @@
                 </article>
                 <article>
                     <span>Monthly</span>
-                    <h3>Factory default: 1:4</h3>
+                    <h3>Factory default: 1:3</h3>
                     <p>The monthly target is configured independently from the daily and weekly ratios.</p>
+                </article>
+                <article>
+                    <span>ATR circuit breaker</span>
+                    <h3>25% daily · 50% weekly/monthly</h3>
+                    <p>If the configured stop implies a larger target move, the default plan switches to frozen ATR(14) × 1.5 risk, capped again at the interval percentage. Every value and the enable switch can be changed in candlestick settings.</p>
                 </article>
             </div>
 
