@@ -7,6 +7,18 @@ class TotpServiceTest {
     private final TotpService service = new TotpService();
 
     @Test
+    void rejectsMalformedSecretsAndNonAsciiOrOversizedFactors() {
+        String secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        assertThat(service.matchingStep(secret.toLowerCase(java.util.Locale.ROOT), "287-082", 59)).isEqualTo(1L);
+        for (String malformed : new String[]{"", secret + "!", secret.substring(1), "!" + secret.substring(1), "ß" + secret.substring(1)})
+            assertThat(service.matchingStep(malformed, "287082", 59)).isNull();
+        for (String code : new String[]{"２８７０８２", "287082x", " ".repeat(100) + "287082"})
+            assertThat(service.matchingStep(secret, code, 59)).isNull();
+        assertThat(service.matchingStep(secret, "287082", -1)).isNull();
+        assertThat(service.matchingStep(secret, "287082", 120)).isNull();
+    }
+
+    @Test
     void validatesTheRfc6238Sha1VectorWithSixDigitsAndClockSkew() {
         String secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
         assertThat(service.matchingStep(secret, "287082", 59)).isEqualTo(1L);

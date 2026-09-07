@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.TechnicalOutlookNotification;
 import org.example.stockwatch247.model.TechnicalOutlookSubscription;
@@ -53,7 +53,7 @@ class TechnicalOutlookTrackingServiceTest {
         TechnicalOutlookService outlooks = mock(TechnicalOutlookService.class);
         AnalysisPreferencesService preferences = mock(AnalysisPreferencesService.class);
         AlertNotificationService email = mock(AlertNotificationService.class);
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
         User user = new User();
         user.setId(11L);
         user.setEmail("outlook@example.com");
@@ -165,7 +165,7 @@ class TechnicalOutlookTrackingServiceTest {
 
         TechnicalOutlookTrackingService service = new TechnicalOutlookTrackingService(
                 subscriptions, notifications, assets, mock(TwelveDataService.class), outlooks,
-                preferences, mock(AlertNotificationService.class), new ObjectMapper(), jdbc,
+                preferences, mock(AlertNotificationService.class), tools.jackson.databind.json.JsonMapper.builder().build(), jdbc,
                 maximumCompanies, 500, 90, "http://localhost:8080");
         return new SubscriptionFixture(service, user);
     }

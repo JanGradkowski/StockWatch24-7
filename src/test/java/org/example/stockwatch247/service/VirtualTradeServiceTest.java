@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
@@ -61,7 +61,7 @@ class VirtualTradeServiceTest {
         });
         when(outlookService.getOutlook(any(), any(), any())).thenReturn(outlook("Moderate buy outlook", 3));
         service = new VirtualTradeService(tradeRepository, stockAssetRepository, candleRepository,
-                pricingService, outlookService, new ObjectMapper().findAndRegisterModules());
+                pricingService, outlookService, tools.jackson.databind.json.JsonMapper.builder().build());
     }
 
     @Test

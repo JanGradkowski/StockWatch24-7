@@ -1,6 +1,6 @@
 package org.example.stockwatch247;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.Candle;
@@ -54,7 +54,7 @@ import java.util.List;
 import static org.hamcrest.Matchers.containsString;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -69,6 +69,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = "alerts.schedule.enabled=false")
 @AutoConfigureMockMvc
 class StockWatch247ApplicationTests {
+    private final List<Long> sessionFixtureUsers = new ArrayList<>();
+    private org.springframework.test.web.servlet.request.RequestPostProcessor user(String email) {
+        User account = userRepository.findByEmailIgnoreCase(email).orElseGet(() -> {
+            User fixture = new User(); fixture.setEmail(email); fixture.setFirstName("Security"); fixture.setLastName("Fixture");
+            fixture.setPasswordHash("test-only-password-hash"); fixture.setVerified(true);
+            fixture = userRepository.saveAndFlush(fixture); sessionFixtureUsers.add(fixture.getId()); return fixture;
+        });
+        return request -> {
+            request.getSession().setAttribute(org.example.stockwatch247.security.AccountSession.SECURITY_VERSION, account.getSecurityVersion());
+            return org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user(email).postProcessRequest(request);
+        };
+    }
+    @org.junit.jupiter.api.AfterEach void removeSessionFixtureUsers() { userRepository.deleteAllById(sessionFixtureUsers); }
+
 
     @Autowired
     private MockMvc mockMvc;
@@ -207,10 +221,11 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(post("/virtual-trades/{id}/delete", trade.getId())
                         .param("sort", "ticker")
                         .param("direction", "asc")
+                        .param("period", "month")
                         .with(user(email))
                         .with(csrf()))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(header().string("Location", "/virtual-trades?sort=ticker&direction=asc"))
+                .andExpect(header().string("Location", "/virtual-trades?sort=ticker&direction=asc&period=month"))
                 .andExpect(flash().attribute("virtualTradeDeleteMessage", "Demo trade deleted."));
 
         assertThat(virtualTradeRepository.findById(trade.getId()).orElseThrow().getDeletedAt()).isNotNull();
@@ -614,7 +629,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(header().string("Content-Security-Policy", containsString("frame-ancestors 'none'")))
                 .andExpect(header().string("Content-Security-Policy", containsString("style-src-attr 'none'")))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
-                .andExpect(header().string("Referrer-Policy", "strict-origin-when-cross-origin"));
+                .andExpect(header().string("Referrer-Policy", "no-referrer"));
     }
 
     @Test
@@ -993,7 +1008,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Account signal archive")))
                 .andExpect(content().string(containsString("Group and sort by")))
                 .andExpect(content().string(containsString("Signal status")))
-                .andExpect(content().string(containsString("Confidence score")))
+                .andExpect(content().string(containsString("Setup score")))
                 .andExpect(content().string(containsString("value=\"confidence\"")))
                 .andExpect(content().string(containsString("value=\"status\"")))
                 .andExpect(content().string(containsString("value=\"trade-return\"")))
@@ -1002,6 +1017,16 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("+6.49%")))
                 .andExpect(content().string(containsString("(unread)")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
+
+        mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email))
+                        .param("returnTo", "/signals?state=unread&ticker=AAPL&page=2"))
+                .andExpect(status().isOk())
+                .andExpect(model().attribute("archiveReturnUrl", "/signals?state=unread&ticker=AAPL&page=2"))
+                .andExpect(content().string(containsString("Back to filtered signals")));
+        mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email))
+                        .param("returnTo", "https://example.com"))
+                .andExpect(status().isOk())
+                .andExpect(model().attributeDoesNotExist("archiveReturnUrl"));
 
         mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(email)))
                 .andExpect(status().isOk())
@@ -1054,7 +1079,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("class=\"history-back-button\"")))
                 .andExpect(content().string(containsString("data-history-back")))
-                .andExpect(content().string(containsString("/js/history-back.js")));
+                .andExpect(content().string(containsString("/js/history-back-")));
 
         User otherUser = new User();
         otherUser.setEmail("other-" + email);

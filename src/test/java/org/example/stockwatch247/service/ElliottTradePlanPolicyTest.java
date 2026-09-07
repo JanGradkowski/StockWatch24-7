@@ -46,6 +46,26 @@ class ElliottTradePlanPolicyTest {
     }
 
     @Test
+    void usesLogarithmicBearishProjectionOnlyAfterBothArithmeticWaveThreeTargetsReachZero() {
+        List<ElliottWaveDetectionService.ElliottWavePoint> mara = List.of(
+                point("0", 16.43), point("I", 8.68), point("II", 12.32));
+
+        ElliottTradePlanPolicy.TradePlan plan = ElliottTradePlanPolicy.calculate(
+                ElliottSignalStage.WAVE_II_END, "BEARISH", TradeSignal.SELL,
+                10.6635, mara, 1.0, TimeInterval.DAILY).orElseThrow();
+
+        double expectedMidpoint = 12.32 * Math.pow(8.68 / 16.43, 1.618);
+        assertThat(12.32 - Math.abs(8.68 - 16.43) * 1.618).isLessThanOrEqualTo(0.0);
+        assertThat(12.32 - Math.abs(8.68 - 16.43) * 2.618).isLessThanOrEqualTo(0.0);
+        assertThat(plan.targetMidpoint()).isCloseTo(expectedMidpoint, within(.000001));
+        assertThat(plan.targetTriggerPrice()).isCloseTo(expectedMidpoint * 1.015, within(.000001));
+        assertThat(plan.targetMidpoint()).isPositive();
+        assertThat(plan.targetBasis()).contains("Logarithmic Wave III", "both arithmetic extensions");
+        assertThat(plan.actionable()).isFalse();
+        assertThat(plan.qualification()).startsWith("Projection only:");
+    }
+
+    @Test
     void supportsEveryAlreadyDetectedStageWithTextbookStructuralAnchors() {
         ElliottTradePlanPolicy.TradePlan waveFour = plan(ElliottSignalStage.WAVE_III_END, TradeSignal.SELL, 126.0);
         ElliottTradePlanPolicy.TradePlan waveFive = plan(ElliottSignalStage.WAVE_IV_END, TradeSignal.BUY, 118.0);

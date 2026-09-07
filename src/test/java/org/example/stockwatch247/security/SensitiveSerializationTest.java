@@ -1,6 +1,6 @@
 package org.example.stockwatch247.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.controller.CandleResponse;
 import org.example.stockwatch247.model.Candle;
@@ -22,7 +22,7 @@ class SensitiveSerializationTest {
         // configured by Spring in the running application.
         user.setCreatedAt(null);
 
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(user);
+        String json = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(user);
 
         assertTrue(json.contains("user@example.com"));
         assertFalse(json.contains("bcrypt-hash"));
@@ -38,7 +38,7 @@ class SensitiveSerializationTest {
                 100.0, 102.0, 99.0, 101.0, 1_000L);
         candle.setId(987L);
 
-        String json = new ObjectMapper().writeValueAsString(CandleResponse.from(candle));
+        String json = tools.jackson.databind.json.JsonMapper.builder().build().writeValueAsString(CandleResponse.from(candle));
 
         assertTrue(json.contains("AAPL"));
         assertFalse(json.contains("987"));

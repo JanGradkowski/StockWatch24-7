@@ -1,7 +1,7 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserElliottWavePreferences;
 import org.example.stockwatch247.model.enums.TimeInterval;
@@ -34,6 +34,11 @@ public class ElliottWavePreferencesService {
 
     @Transactional(readOnly = true)
     public PreferencesView get(User user) {
+        return AnalysisComputationScope.memo(java.util.List.of(ElliottWavePreferencesService.class,
+                user == null ? "factory" : user.getId() == null ? user : user.getId()), () -> loadPreferences(user));
+    }
+
+    private PreferencesView loadPreferences(User user) {
         if (user == null) throw new IllegalArgumentException("An account is required.");
         return repository.findByUser(user).map(this::read).orElseGet(ElliottWavePreferencesService::factoryPreferences);
     }
@@ -110,7 +115,7 @@ public class ElliottWavePreferencesService {
             List<StoredProfile> normalized = normalizeStored(stored.profiles());
             validateStored(normalized);
             return materialize(normalized, entity.getUpdatedAt());
-        } catch (JsonProcessingException | IllegalArgumentException exception) {
+        } catch (JacksonException | IllegalArgumentException exception) {
             return factoryPreferences();
         }
     }
@@ -133,7 +138,7 @@ public class ElliottWavePreferencesService {
 
     private String write(StoredPreferences preferences) {
         try { return objectMapper.writeValueAsString(preferences); }
-        catch (JsonProcessingException exception) {
+        catch (JacksonException exception) {
             throw new IllegalStateException("Could not save Elliott Wave settings.", exception);
         }
     }

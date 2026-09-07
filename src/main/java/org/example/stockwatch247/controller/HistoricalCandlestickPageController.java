@@ -74,7 +74,7 @@ public class HistoricalCandlestickPageController {
         int selectedLookback = lookbackCandles == null
                 ? historicalCandlestickService.defaultLookbackCandles(validatedInterval)
                 : lookbackCandles;
-        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         model.addAttribute("firstName", currentUser == null ? "Trader" : currentUser.getFirstName());
         CandlePatternDetectionService.TrendDetectionRules trendRules = currentUser == null
                 || analysisPreferences == null

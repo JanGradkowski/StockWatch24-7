@@ -63,7 +63,7 @@ public class InsiderActivityService {
     private final boolean enabled;
     private final int historyDays;
     private final int maximumFollows;
-    private final Map<Long, Object> assetLocks = new ConcurrentHashMap<>();
+    private final Object[] assetLocks = java.util.stream.IntStream.range(0, 256).mapToObj(i -> new Object()).toArray();
 
     public InsiderActivityService(
             StockAssetRepository stockAssetRepository,
@@ -303,7 +303,7 @@ public class InsiderActivityService {
     }
 
     private void refreshAsset(StockAsset asset, boolean notifyFollowers) {
-        synchronized (assetLocks.computeIfAbsent(asset.getId(), ignored -> new Object())) {
+        synchronized (assetLocks[Math.floorMod(asset.getId().hashCode(), assetLocks.length)]) {
             updateRefreshAttempt(asset.getId(), null);
             try {
                 LocalDate earliest = todayUtc().minusDays(historyDays - 1L);
@@ -314,6 +314,7 @@ public class InsiderActivityService {
                             || providerTrade.transactionDate().isAfter(todayUtc())) {
                         continue;
                     }
+                    org.example.stockwatch247.service.JobLeaseGuard.requireOwnership();
                     StoredTrade stored = storeTrade(asset, providerTrade);
                     if (stored.inserted()) {
                         inserted.add(stored.trade());
@@ -388,6 +389,7 @@ public class InsiderActivityService {
             }
             if (notificationService.isEmailDeliveryEnabled()) {
                 try {
+                    org.example.stockwatch247.service.JobLeaseGuard.requireOwnership();
                     notificationService.sendInsiderTradeEmail(delivery);
                     delivery.setStatus(InsiderDeliveryStatus.SENT);
                     delivery.setSentAt(Instant.now());

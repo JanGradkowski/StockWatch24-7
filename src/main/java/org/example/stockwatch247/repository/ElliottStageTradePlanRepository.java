@@ -13,7 +13,13 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface ElliottStageTradePlanRepository extends JpaRepository<ElliottStageTradePlan, Long> {
+    @Query("select p from ElliottStageTradePlan p join fetch p.alertEvent e join e.alertRule r where e.id in :ids and r.user = :user order by p.stageRevision, p.id")
+    List<ElliottStageTradePlan> findOwnedHistories(@Param("ids") List<Long> ids, @Param("user") User user);
+
     List<ElliottStageTradePlan> findByAlertEventOrderByStageRevisionAsc(AlertEvent alertEvent);
+
+    java.util.Optional<ElliottStageTradePlan>
+    findFirstByAlertEventOrderByEntryTimestampDescStageRevisionDescIdDesc(AlertEvent alertEvent);
 
     long countByAlertEventAndStage(AlertEvent alertEvent,
                                    org.example.stockwatch247.model.enums.ElliottSignalStage stage);

@@ -54,21 +54,33 @@ public class PasswordRecoveryController {
         try {
             User user = users.findByEmailIgnoreCase(SecurityInputValidator.requireEmail(email))
                     .orElseThrow(() -> new IllegalArgumentException("The code or account details are invalid."));
-            security.resetPassword(user.getId(), code, newPassword, codes);
+            if (!security.resetPassword(user.getId(), code, newPassword, codes).successful()) {
+                model.addAttribute("error", "The code or account details are invalid.");
+                return "reset-password";
+            }
             return "redirect:/login?passwordReset=true";
         } catch (IllegalArgumentException exception) {
-            model.addAttribute("error", exception.getMessage()); return "reset-password";
+            model.addAttribute("error", "The code or account details are invalid."); return "reset-password";
         }
     }
 
     @GetMapping("/cancel-account-deletion")
-    public String cancelDeletionPage(@RequestParam String token, Model model) {
-        model.addAttribute("token", token);
-        return "cancel-account-deletion";
+    public String cancelDeletionPage(@RequestParam(required = false) String token, jakarta.servlet.http.HttpSession session) {
+        if (token != null) {
+            if (!token.matches("[A-Za-z0-9_-]{40,80}")) return "redirect:/login?deletionCancelError=true";
+            session.setAttribute("deletionCancellationToken", token);
+            session.setAttribute("deletionCancellationExpires", java.time.Instant.now().plusSeconds(600).getEpochSecond());
+            return "redirect:/cancel-account-deletion";
+        }
+        return session.getAttribute("deletionCancellationToken") == null ? "redirect:/login?deletionCancelError=true" : "cancel-account-deletion";
     }
 
     @PostMapping("/cancel-account-deletion")
-    public String cancelDeletion(@RequestParam String token) {
-        return deletion.cancel(token) ? "redirect:/login?deletionCancelled=true" : "redirect:/login?deletionCancelError=true";
+    public String cancelDeletion(jakarta.servlet.http.HttpSession session) {
+        Object token = session.getAttribute("deletionCancellationToken");
+        Object expires = session.getAttribute("deletionCancellationExpires");
+        session.removeAttribute("deletionCancellationToken"); session.removeAttribute("deletionCancellationExpires");
+        return token instanceof String value && expires instanceof Long deadline && deadline > java.time.Instant.now().getEpochSecond()
+                && deletion.cancel(value) ? "redirect:/login?deletionCancelled=true" : "redirect:/login?deletionCancelError=true";
     }
 }

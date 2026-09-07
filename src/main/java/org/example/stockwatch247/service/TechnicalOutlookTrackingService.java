@@ -1,7 +1,7 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.TechnicalOutlookNotification;
 import org.example.stockwatch247.model.TechnicalOutlookSubscription;
@@ -452,7 +452,7 @@ public class TechnicalOutlookTrackingService {
     private String write(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Technical outlook snapshot could not be stored.", exception);
         }
     }
@@ -460,7 +460,7 @@ public class TechnicalOutlookTrackingService {
     private TechnicalOutlookService.OutlookView readOutlook(String payload) {
         try {
             return objectMapper.readValue(payload, TechnicalOutlookService.OutlookView.class);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Stored technical outlook snapshot could not be read.", exception);
         }
     }
@@ -468,7 +468,7 @@ public class TechnicalOutlookTrackingService {
     private ChangeReport readReport(String payload) {
         try {
             return objectMapper.readValue(payload, ChangeReport.class);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Stored technical outlook change report could not be read.", exception);
         }
     }
@@ -519,19 +519,11 @@ public class TechnicalOutlookTrackingService {
 
     public static String apiInterval(TimeInterval interval) {
         requireSupported(interval);
-        return switch (interval) {
-            case WEEKLY -> "1wk";
-            case MONTHLY -> "1mo";
-            default -> "1d";
-        };
+        return interval.analysisApiValue();
     }
 
     public static String intervalLabel(TimeInterval interval) {
-        return switch (interval) {
-            case WEEKLY -> "Weekly";
-            case MONTHLY -> "Monthly";
-            default -> "Daily";
-        };
+        return interval.analysisLabel();
     }
 
     private enum EvaluationStatus { BASELINE, CHANGE, SKIPPED }

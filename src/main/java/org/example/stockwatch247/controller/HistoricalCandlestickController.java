@@ -47,7 +47,7 @@ public class HistoricalCandlestickController {
         this(historicalCandlestickService, null, null, null);
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureHistoricalSignalCache(HistoricalSignalCacheService cacheService,
                                         MarketDataService marketDataService) {
         this.historicalSignalCacheService = cacheService;
@@ -125,7 +125,7 @@ public class HistoricalCandlestickController {
         if (principal == null || userRepository == null || analysisPreferences == null) {
             return CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval);
         }
-        User user = userRepository.findByEmailIgnoreCase(principal.getName())
+        User user = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                 .orElseThrow(() -> new IllegalArgumentException("Account not found."));
         return analysisPreferences.trendDetectionRules(analysisPreferences.profile(user, interval));
     }
@@ -134,7 +134,7 @@ public class HistoricalCandlestickController {
         if (principal == null || userRepository == null || patternPreferences == null) {
             return CandlestickPatternPreferencesService.factoryPreferences();
         }
-        User user = userRepository.findByEmailIgnoreCase(principal.getName())
+        User user = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                 .orElseThrow(() -> new IllegalArgumentException("Account not found."));
         return patternPreferences.get(user);
     }

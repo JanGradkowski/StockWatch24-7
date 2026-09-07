@@ -42,6 +42,20 @@ public class AlertController {
         }
     }
 
+    @DeleteMapping
+    public ResponseEntity<?> unfollowAllTechnicalRules(Principal principal) {
+        try {
+            User user = currentUser(principal);
+            int unfollowedRules = alertRuleService.unfollowAllTechnicalRules(user);
+            return ResponseEntity.ok(Map.of("unfollowedRules", unfollowedRules));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid unfollow request."));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "The followed tickers could not be unfollowed."));
+        }
+    }
+
     @GetMapping("/{symbol}")
     public Map<String, Object> getAlertState(@PathVariable String symbol, Principal principal) {
         User user = currentUser(principal);
@@ -178,7 +192,7 @@ public class AlertController {
     }
 
     private User currentUser(Principal principal) {
-        return userRepository.findByEmailIgnoreCase(principal.getName())
+        return org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                 .orElseThrow(() -> new IllegalStateException("Authenticated user not found."));
     }
 

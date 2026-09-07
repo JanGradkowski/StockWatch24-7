@@ -50,6 +50,11 @@ import java.util.Map;
  */
 @Service
 public class ChartTechnicalIndicatorService {
+    private CandleRevisionService revisions;
+    private final BoundedTtlCache<java.util.List<Object>, IndicatorBatchView> resultCache = new BoundedTtlCache<>(64, 120);
+    @org.springframework.beans.factory.annotation.Autowired
+    void setRevisions(CandleRevisionService revisions) { this.revisions = revisions; }
+
     private static final int MAX_CONFIGURATIONS = 32;
     private static final int MAX_PERIOD = 500;
     private static final int PROFILE_BINS = 24;
@@ -68,16 +73,38 @@ public class ChartTechnicalIndicatorService {
         if (request.indicators().size() > MAX_CONFIGURATIONS) {
             throw new IllegalArgumentException("At most 32 chart indicators can be active at once.");
         }
-        List<Candle> candles = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(
-                symbol.toUpperCase(Locale.ROOT), interval);
+        symbol = symbol.toUpperCase(Locale.ROOT);
+        if (request.indicators().stream().anyMatch(config -> config == null || config.id() == null || config.id().isBlank()
+                || config.id().length() > 100 || config.parameters() != null && (config.parameters().size() > 8
+                || config.parameters().values().stream().anyMatch(value -> value == null || !Double.isFinite(value)))))
+            throw new IllegalArgumentException("Chart indicator configuration is invalid.");
+        // Copy nested request collections before using them as a cache key.
+        request = new IndicatorBatchRequest(request.from(), request.to(), request.indicators().stream()
+                .map(config -> new IndicatorConfiguration(config.id(), config.type(), config.parameters() == null ? Map.of() : Map.copyOf(config.parameters()))).toList());
+        var key = java.util.List.<Object>of(symbol, interval, request, revisions == null ? 0 : revisions.generation(symbol, interval));
+        var cached = resultCache.get(key, java.time.Instant.now().getEpochSecond());
+        if (cached != null) return cached;
+        List<Candle> candles = request.to() == null ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
+                : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanEqualOrderByTimestampAsc(symbol, interval, request.to());
         candles = candles.stream().filter(this::complete).sorted(Comparator.comparingLong(Candle::getTimestamp)).toList();
         if (candles.isEmpty()) return new IndicatorBatchView(interval, List.of());
         BarSeries series = seriesFactory.create(candles);
         List<IndicatorConfigurationView> results = new ArrayList<>();
+        Map<IndicatorConfiguration, IndicatorConfigurationView> calculated = new LinkedHashMap<>();
         for (IndicatorConfiguration config : request.indicators()) {
-            results.add(calculateOne(candles, series, config, request.from(), request.to()));
+            var computation = new IndicatorConfiguration("", config.type() == null ? "" : config.type().trim().toUpperCase(Locale.ROOT), config.parameters());
+            var values = calculated.get(computation);
+            if (values == null) {
+                values = calculateOne(candles, series, config, request.from(), request.to());
+                calculated.put(computation, values);
+            }
+            results.add(new IndicatorConfigurationView(config.id(), values.type(), values.label(), values.placement(),
+                    values.parameters(), values.series(), values.references()));
         }
-        return new IndicatorBatchView(interval, List.copyOf(results));
+        var result = new IndicatorBatchView(interval, List.copyOf(results));
+        long pointCount = result.indicators().stream().flatMap(config -> config.series().stream()).mapToLong(outputSeries -> outputSeries.points().size()).sum();
+        if (pointCount <= 10_000) resultCache.put(key, result, java.time.Instant.now().getEpochSecond());
+        return result;
     }
 
     private IndicatorConfigurationView calculateOne(List<Candle> candles,

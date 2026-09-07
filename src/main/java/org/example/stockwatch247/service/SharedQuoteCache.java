@@ -1,8 +1,8 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -37,7 +37,7 @@ public class SharedQuoteCache {
         }
         try {
             return Optional.of(objectMapper.readValue(values.getFirst(), QUOTE_TYPE));
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             jdbcTemplate.update("delete from live_quote_cache where symbol = ?", symbol);
             return Optional.empty();
         }
@@ -53,7 +53,7 @@ public class SharedQuoteCache {
                     set quote_json = excluded.quote_json, cached_at = excluded.cached_at
                     """,
                     symbol, objectMapper.writeValueAsString(quote));
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Could not serialize the shared quote cache entry", e);
         }
     }

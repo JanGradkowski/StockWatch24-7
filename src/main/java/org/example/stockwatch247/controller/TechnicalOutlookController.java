@@ -185,7 +185,7 @@ public class TechnicalOutlookController {
         if (principal == null) {
             throw new IllegalStateException("An authenticated user is required.");
         }
-        return userRepository.findByEmailIgnoreCase(principal.getName())
+        return org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                 .orElseThrow(() -> new IllegalStateException("Authenticated user was not found."));
     }
 

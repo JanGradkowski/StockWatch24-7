@@ -1,7 +1,7 @@
 package org.example.stockwatch247.service.congress;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.enums.CongressionalTradeType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -130,7 +130,7 @@ public class CongressInvestsClient implements CongressionalTradeProvider {
             return objectMapper.readTree(payload);
         } catch (IllegalStateException exception) {
             throw exception;
-        } catch (RestClientException | java.io.IOException exception) {
+        } catch (RestClientException | tools.jackson.core.JacksonException exception) {
             throw new IllegalStateException("CongressInvests data is temporarily unavailable.", exception);
         }
     }

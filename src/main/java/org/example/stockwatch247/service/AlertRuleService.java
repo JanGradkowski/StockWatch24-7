@@ -10,6 +10,8 @@ import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.ElliottSignalStage;
+import org.example.stockwatch247.model.enums.ElliottTradePlanStatus;
+import org.example.stockwatch247.model.enums.HarmonicStopStatus;
 import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.SignalStength;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
@@ -46,6 +48,25 @@ import java.util.stream.Collectors;
 
 @Service
 public class AlertRuleService {
+    private SignalArchiveQuery archiveQuery;
+    @Autowired
+    void setArchiveQuery(SignalArchiveQuery archiveQuery) { this.archiveQuery = archiveQuery; }
+
+    private List<SignalArchiveEntry> archiveEntries(List<AlertEvent> events) {
+        if (events.isEmpty()) return List.of();
+        if (archiveQuery == null || elliottTradePlanService == null)
+            return events.stream().map(this::toSignalArchiveEntry).toList();
+        var histories = elliottTradePlanService.histories(events.stream().map(AlertEvent::getId).toList(), events.getFirst().getAlertRule().getUser());
+        try (var scope = AnalysisComputationScope.open()) {
+            return events.stream().map(event -> {
+                var stages = elliottStageArchiveOutcomes(event, histories.getOrDefault(event.getId(), List.of()));
+                var outcome = stages.isEmpty() ? (normalizeFamily(event.getAlertRule().getPatternFamily()) == AlertPatternFamily.ELLIOTT_WAVE
+                        ? legacyElliottArchiveOutcome(event) : signalArchiveOutcome(event)) : stages.getLast();
+                return new SignalArchiveEntry(toLatestSignalView(event), outcome, stages);
+            }).toList();
+        }
+    }
+
     private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int HIGHER_INTERVAL_SIGNAL_CANDLES = 100;
     private static final int DASHBOARD_LATEST_SIGNAL_LIMIT = 8;
@@ -75,6 +96,7 @@ public class AlertRuleService {
     private final CandlestickPatternPreferencesService patternPreferencesService;
     private ElliottWavePreferencesService elliottWavePreferencesService;
     private ElliottTradePlanService elliottTradePlanService;
+    private ElliottProjectionService elliottProjectionService;
     private HarmonicPatternDetectionService harmonicPatternDetectionService;
     private HarmonicPatternPreferencesService harmonicPatternPreferencesService;
 
@@ -117,17 +139,22 @@ public class AlertRuleService {
         this.patternPreferencesService = patternPreferencesService;
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureElliottWavePreferences(ElliottWavePreferencesService elliottWavePreferencesService) {
         this.elliottWavePreferencesService = elliottWavePreferencesService;
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureElliottTradePlans(ElliottTradePlanService elliottTradePlanService) {
         this.elliottTradePlanService = elliottTradePlanService;
     }
 
-    @Autowired(required = false)
+    @Autowired
+    void configureElliottProjections(ElliottProjectionService elliottProjectionService) {
+        this.elliottProjectionService = elliottProjectionService;
+    }
+
+    @Autowired
     void configureHarmonicPatternPreferences(
             HarmonicPatternDetectionService harmonicPatternDetectionService,
             HarmonicPatternPreferencesService harmonicPatternPreferencesService) {
@@ -176,6 +203,14 @@ public class AlertRuleService {
         return rulesBySymbol.values().stream()
                 .map(this::toTrackedCompanyView)
                 .toList();
+    }
+
+    @Transactional
+    public int unfollowAllTechnicalRules(User user) {
+        if (user == null) {
+            throw new IllegalArgumentException("User is required.");
+        }
+        return alertRuleRepository.deactivateAllByUser(user);
     }
 
     @Transactional
@@ -353,20 +388,46 @@ public class AlertRuleService {
         return getSignalArchive(user, null, requestedSort, requestedDirection, requestedPage);
     }
 
+    public SignalArchivePage getSignalArchive(User user, String sort, String direction, int page,
+                                               SignalArchiveFilter filter) {
+        return filteredArchive(user, null, sort, direction, page, filter);
+    }
+
+    public CompanySignalArchive getCompanySignalArchive(User user, Long alertRuleId, String sort,
+                                                         String direction, int page, SignalArchiveFilter filter) {
+        AlertRule selected = alertRuleRepository.findByIdAndUserAndIsActiveTrue(alertRuleId, user)
+                .orElseThrow(() -> new IllegalArgumentException("Active alert rule not found."));
+        StockAsset asset = selected.getStockAsset();
+        return new CompanySignalArchive(selected.getId(), asset.getTickerSymbol(), asset.getCompanyName(),
+                filteredArchive(user, asset, sort, direction, page, filter));
+    }
+
+    private SignalArchivePage filteredArchive(User user, StockAsset asset, String sort, String direction,
+                                               int page, SignalArchiveFilter filter) {
+        if (!filter.applied()) return getSignalArchive(user, asset, sort, direction, page);
+        String sortKey = normalizeArchiveSort(sort);
+        String directionKey = "asc".equalsIgnoreCase(direction) ? "asc" : "desc";
+        var result = archiveQuery.page(user.getId(), asset == null ? null : asset.getId(), sortKey,
+                "asc".equals(directionKey), page, SIGNAL_ARCHIVE_PAGE_SIZE, filter);
+        return queryArchivePage(user, result, sortKey, directionKey);
+    }
+
+    private SignalArchivePage queryArchivePage(User user, SignalArchiveQuery.Result result, String sort, String direction) {
+        var byId = result.ids().isEmpty() ? java.util.Map.<Long, AlertEvent>of()
+                : alertEventRepository.findOwnedArchiveIds(result.ids(), user).stream()
+                    .collect(Collectors.toMap(AlertEvent::getId, event -> event));
+        var entries = archiveEntries(result.ids().stream().map(byId::get).filter(java.util.Objects::nonNull).toList());
+        return new SignalArchivePage(entries, result.page(), result.pages(), result.count(), sort, direction,
+                result.page() > 0, result.page() + 1 < result.pages());
+    }
+
     public CompanySignalArchive getCompanySignalArchive(User user,
                                                          Long alertRuleId,
                                                          String requestedSort,
                                                          String requestedDirection,
                                                          int requestedPage) {
-        AlertRule selectedRule = alertRuleRepository.findByIdAndUserAndIsActiveTrue(alertRuleId, user)
-                .orElseThrow(() -> new IllegalArgumentException("Active alert rule not found."));
-        StockAsset stockAsset = selectedRule.getStockAsset();
-        return new CompanySignalArchive(
-                selectedRule.getId(),
-                stockAsset.getTickerSymbol(),
-                stockAsset.getCompanyName(),
-                getSignalArchive(user, stockAsset, requestedSort, requestedDirection, requestedPage)
-        );
+        return getCompanySignalArchive(user, alertRuleId, requestedSort, requestedDirection,
+                requestedPage, new SignalArchiveFilter("all", ""));
     }
 
     private SignalArchivePage getSignalArchive(User user,
@@ -389,7 +450,7 @@ public class AlertRuleService {
             archive = signalArchivePage(user, stockAsset, page, archiveSort);
         }
         return new SignalArchivePage(
-                archive.getContent().stream().map(this::toSignalArchiveEntry).toList(),
+                archiveEntries(archive.getContent()),
                 archive.getNumber(),
                 archive.getTotalPages(),
                 archive.getTotalElements(),
@@ -448,6 +509,11 @@ public class AlertRuleService {
                                                              String directionKey,
                                                              Sort.Direction direction,
                                                              int requestedPage) {
+        if (archiveQuery != null) {
+            var result = archiveQuery.page(user.getId(), stockAsset == null ? null : stockAsset.getId(), direction == Sort.Direction.ASC,
+                    requestedPage, SIGNAL_ARCHIVE_PAGE_SIZE);
+            return queryArchivePage(user, result, sortKey, directionKey);
+        }
         List<AlertEvent> events = stockAsset == null
                 ? alertEventRepository.findAllByAlertRule_User(user)
                 : alertEventRepository.findAllByAlertRule_UserAndStockAsset(user, stockAsset);
@@ -488,16 +554,55 @@ public class AlertRuleService {
 
     private SignalArchiveEntry toSignalArchiveEntry(AlertEvent event) {
         LatestSignalView signal = toLatestSignalView(event);
+        List<SignalArchiveOutcome> stageOutcomes = elliottStageArchiveOutcomes(event);
         return new SignalArchiveEntry(
                 signal,
-                signalArchiveOutcome(event)
+                stageOutcomes.isEmpty() ? signalArchiveOutcome(event) : stageOutcomes.getLast(),
+                stageOutcomes
         );
     }
 
+    private List<SignalArchiveOutcome> elliottStageArchiveOutcomes(AlertEvent event) {
+        if (normalizeFamily(event.getAlertRule().getPatternFamily()) != AlertPatternFamily.ELLIOTT_WAVE
+                || elliottTradePlanService == null || event.getId() == null) {
+            return List.of();
+        }
+        List<ElliottTradePlanService.StagePlanView> plans = elliottTradePlanService.history(
+                event.getId(), event.getAlertRule().getUser());
+        return elliottStageArchiveOutcomes(event, plans);
+    }
+
+    private List<SignalArchiveOutcome> elliottStageArchiveOutcomes(AlertEvent event, List<ElliottTradePlanService.StagePlanView> plans) {
+        if (plans.isEmpty()) return List.of();
+        Map<ElliottSignalStage, List<ElliottTradePlanService.StagePlanView>> byStage = plans.stream()
+                .sorted(Comparator.comparingLong(ElliottTradePlanService.StagePlanView::entryTimestamp)
+                        .thenComparingInt(ElliottTradePlanService.StagePlanView::revision))
+                .collect(Collectors.groupingBy(
+                        ElliottTradePlanService.StagePlanView::stage,
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+        return byStage.values().stream()
+                .map(revisions -> {
+                    ElliottTradePlanService.StagePlanView notification = revisions.getFirst();
+                    ElliottTradePlanService.StagePlanView latest = revisions.getLast();
+                    return elliottArchiveOutcome(
+                            event,
+                            notification.entryTimestamp(),
+                            notification.entryPrice(),
+                            notification.expectedMove(),
+                            notification.stage(),
+                            latest);
+                })
+                .toList();
+    }
+
     private SignalArchiveOutcome signalArchiveOutcome(AlertEvent event) {
-        if (normalizeFamily(event.getAlertRule().getPatternFamily()) != AlertPatternFamily.CANDLESTICK) {
-            return SignalArchiveOutcome.unavailable(
-                    "No candlestick trade plan", "Close-based R:R outcomes apply to candlestick signals");
+        AlertPatternFamily family = normalizeFamily(event.getAlertRule().getPatternFamily());
+        if (family == AlertPatternFamily.HARMONIC_FORMATION) {
+            return harmonicArchiveOutcome(event);
+        }
+        if (family == AlertPatternFamily.ELLIOTT_WAVE) {
+            return elliottArchiveOutcome(event);
         }
         if (!event.hasCandlestickRiskRewardPlan()
                 || event.getTradeEntryPrice() == null
@@ -542,6 +647,174 @@ public class AlertRuleService {
                     "Potential candidate", "Awaiting the mandatory next-candle detection gate");
             case REJECTED -> SignalArchiveOutcome.unavailable(
                     "No trade", "Candidate rejected before a trade was opened");
+        };
+    }
+
+    private SignalArchiveOutcome harmonicArchiveOutcome(AlertEvent event) {
+        if (!HarmonicStopPlanPolicy.VERSION.equals(event.getTradePlanVersion())
+                || event.getTradeEntryPrice() == null
+                || event.getStopLossPrice() == null
+                || event.getHarmonicStopStatus() == null) {
+            return SignalArchiveOutcome.unavailable(
+                    "Outcome unavailable", "This harmonic signal predates the stored eight-candle plan");
+        }
+        double entry = event.getTradeEntryPrice();
+        HarmonicStopStatus status;
+        try {
+            status = HarmonicStopStatus.valueOf(event.getHarmonicStopStatus());
+        } catch (IllegalArgumentException exception) {
+            return SignalArchiveOutcome.unavailable(
+                    "Outcome unavailable", "The stored harmonic outcome status is not recognized");
+        }
+        return switch (status) {
+            case STOPPED -> SignalArchiveOutcome.available(
+                    "Harmonic stop reached",
+                    directionalReturnPercent(event.getTradeSignal(), entry, event.getStopLossPrice()),
+                    event.getStopLossPrice(),
+                    "Trade closed at the stored structural stop");
+            case TIME_STOPPED -> terminalOutcome(
+                    entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
+                    "Candle 8 time stop", "Trade closed at the candle 8 close");
+            case ACTIVE -> pendingOutcome(
+                    event, event.getSignalCandleTimestamp(), entry, event.getTradeSignal(),
+                    "Pending harmonic outcome", "Current return before the candle 8 time stop");
+        };
+    }
+
+    private SignalArchiveOutcome elliottArchiveOutcome(AlertEvent event) {
+        ElliottTradePlanService.StagePlanView plan = elliottTradePlanService == null
+                ? null : elliottTradePlanService.latestPlan(event).orElse(null);
+        if (plan == null) {
+            return legacyElliottArchiveOutcome(event);
+        }
+        if (plan.status() == ElliottTradePlanStatus.PROJECTION_ONLY) {
+            return SignalArchiveOutcome.unavailable(
+                    "Projection only", plan.qualification());
+        }
+        return elliottArchiveOutcome(
+                event, plan.entryTimestamp(), plan.entryPrice(), plan.expectedMove(), plan.stage(), plan);
+    }
+
+    private SignalArchiveOutcome elliottArchiveOutcome(
+            AlertEvent event,
+            long notificationTimestamp,
+            double notificationEntry,
+            TradeSignal expectedMove,
+            ElliottSignalStage notificationStage,
+            ElliottTradePlanService.StagePlanView latestPlan) {
+        if (latestPlan.status() == ElliottTradePlanStatus.PROJECTION_ONLY) {
+            return SignalArchiveOutcome.unavailable(
+                    elliottStageLabel(notificationStage) + " projection only", latestPlan.qualification());
+        }
+        String stage = elliottStageLabel(notificationStage);
+        return switch (latestPlan.status()) {
+            case ACTIVE -> pendingOutcome(
+                    event, notificationTimestamp, notificationEntry, expectedMove,
+                    "Pending " + stage + " outcome", "Current return since the notification close");
+            case TARGET_REACHED -> terminalOutcome(
+                    notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
+                    stage + " target reached", "Resolved at the completed-candle close");
+            case STOPPED -> terminalOutcome(
+                    notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
+                    stage + " stop reached", "Resolved at the completed-candle close");
+            case STRUCTURE_INVALIDATED -> terminalOutcome(
+                    notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
+                    stage + " invalidated", "Elliott structure invalidated");
+            case STAGE_COMPLETED -> terminalOutcome(
+                    notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
+                    stage + " completed", "Measured through confirmation of the next Elliott stage");
+            case REVISED -> terminalOutcome(
+                    notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
+                    stage + " revised", "Measured through the replacement stage endpoint");
+            case PROJECTION_ONLY -> throw new IllegalStateException("Handled above");
+        };
+    }
+
+    private SignalArchiveOutcome legacyElliottArchiveOutcome(AlertEvent event) {
+        if (event.getTradeEntryPrice() == null || event.getElliottTradePlanStatus() == null) {
+            return SignalArchiveOutcome.unavailable(
+                    "Outcome unavailable", "This Elliott signal predates the stored stage trade plan");
+        }
+        ElliottTradePlanStatus status;
+        try {
+            status = ElliottTradePlanStatus.valueOf(event.getElliottTradePlanStatus());
+        } catch (IllegalArgumentException exception) {
+            return SignalArchiveOutcome.unavailable(
+                    "Outcome unavailable", "The stored Elliott outcome status is not recognized");
+        }
+        if (status == ElliottTradePlanStatus.PROJECTION_ONLY) {
+            return SignalArchiveOutcome.unavailable(
+                    "Projection only", event.getElliottTradeResolutionReason());
+        }
+        if (status == ElliottTradePlanStatus.ACTIVE) {
+            return pendingOutcome(
+                    event, event.getSignalCandleTimestamp(), event.getTradeEntryPrice(), event.getTradeSignal(),
+                    "Pending Elliott outcome", "Current return since the notification close");
+        }
+        return terminalOutcome(
+                event.getTradeEntryPrice(), event.getTradeSignal(), event.getElliottTradeResolutionClose(),
+                "Elliott " + status.name().toLowerCase(Locale.ROOT).replace('_', ' '),
+                event.getElliottTradeResolutionReason());
+    }
+
+    private SignalArchiveOutcome pendingOutcome(
+            AlertEvent event,
+            Long entryTimestamp,
+            double entryPrice,
+            TradeSignal tradeSignal,
+            String label,
+            String detail) {
+        Double latestClose = latestCompletedCloseAfter(event, entryTimestamp);
+        return latestClose == null
+                ? SignalArchiveOutcome.unavailable(label, "Awaiting the first completed outcome candle")
+                : SignalArchiveOutcome.available(
+                label,
+                directionalReturnPercent(tradeSignal, entryPrice, latestClose),
+                latestClose,
+                detail);
+    }
+
+    private SignalArchiveOutcome terminalOutcome(
+            double entryPrice,
+            TradeSignal tradeSignal,
+            Double exitPrice,
+            String label,
+            String detail) {
+        return exitPrice == null || !Double.isFinite(exitPrice)
+                ? SignalArchiveOutcome.unavailable(label, "The stored resolution close is unavailable")
+                : SignalArchiveOutcome.available(
+                label,
+                directionalReturnPercent(tradeSignal, entryPrice, exitPrice),
+                exitPrice,
+                detail == null || detail.isBlank() ? "Stored trade-plan resolution" : detail);
+    }
+
+    private Double latestCompletedCloseAfter(AlertEvent event, Long entryTimestamp) {
+        if (event == null || event.getAlertRule() == null || entryTimestamp == null) return null;
+        AlertRule rule = event.getAlertRule();
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        return AnalysisComputationScope.memo(java.util.List.of("archive-candles", symbol, rule.getInterval()),
+                () -> candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(
+                        symbol, toApiInterval(rule.getInterval()))).stream()
+                .filter(candle -> candle.getTimestamp() != null
+                        && candle.getTimestamp() > entryTimestamp
+                        && candle.getClosePrice() != null
+                        && Double.isFinite(candle.getClosePrice()))
+                .filter(candle -> candleCompletionService == null
+                        || candleCompletionService.isComplete(candle.getTimestamp(), rule.getInterval()))
+                .map(Candle::getClosePrice)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String elliottStageLabel(ElliottSignalStage stage) {
+        if (stage == null) return "Elliott stage";
+        return switch (stage) {
+            case WAVE_II_END -> "Wave II";
+            case WAVE_III_END -> "Wave III";
+            case WAVE_IV_END -> "Wave IV";
+            case WAVE_V_END -> "Wave V";
+            case CORRECTION_END -> "correction";
         };
     }
 
@@ -654,8 +927,16 @@ public class AlertRuleService {
             ));
         }
         SignalChartView chart = toSignalChartView(event, rule);
+        backfillExistingElliottProjection(event, rule, chart);
         ObservedPriceOutcomeView observedOutcome = toObservedPriceOutcome(event, rule, chart);
         SignalResultsView results = toSignalResults(event, rule, chart);
+
+        ElliottProjectionService.ProjectionSetView elliottProjection =
+                elliottProjectionService == null ? null
+                        : elliottProjectionService.latestVisible(event.getId(), user).orElse(null);
+        List<ElliottProjectionService.ProjectionSetView> elliottProjectionHistory =
+                elliottProjectionService == null ? List.of()
+                        : elliottProjectionService.history(event.getId(), user);
 
         return new SignalDetailView(
                 event.getId(),
@@ -692,11 +973,61 @@ public class AlertRuleService {
                 observedOutcome,
                 results,
                 toLifecycleView(event, rule.getInterval(), normalizeFamily(rule.getPatternFamily())),
+                elliottProjection,
+                elliottProjectionHistory,
                 elliottTradePlanService == null ? List.of()
                         : elliottTradePlanService.history(event.getId(), user),
                 List.copyOf(reasons),
                 !reasons.isEmpty()
         );
+    }
+
+    private void backfillExistingElliottProjection(
+            AlertEvent event,
+            AlertRule rule,
+            SignalChartView chart) {
+        if (elliottProjectionService == null || event == null || rule == null
+                || normalizeFamily(rule.getPatternFamily()) != AlertPatternFamily.ELLIOTT_WAVE
+                || event.getTradeSignal() == null
+                || chart == null || !chart.available() || chart.elliottWave() == null
+                || chart.elliottWave().points().isEmpty()) {
+            return;
+        }
+        ElliottSignalStage stage = projectionStage(event);
+        if (stage == null) return;
+        List<ElliottWaveDetectionService.ElliottWavePoint> points = chart.elliottWave().points().stream()
+                .map(point -> new ElliottWaveDetectionService.ElliottWavePoint(
+                        point.label(), point.timestamp(), point.price(), point.pivotType()))
+                .toList();
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        String apiInterval = toApiInterval(rule.getInterval());
+        List<Candle> candles = chart.candles().stream()
+                .map(candle -> new Candle(
+                        symbol, apiInterval, candle.timestamp(), candle.open(), candle.high(),
+                        candle.low(), candle.close(), null))
+                .toList();
+        boolean created = elliottProjectionService.backfillIfMissing(
+                event, stage, chart.elliottWave().direction(),
+                event.getTradeSignal(), event.getSignalCandleTimestamp(),
+                event.getClosePrice() == null ? points.getLast().price() : event.getClosePrice(),
+                points, candles, rule.getInterval());
+        if (created) {
+            elliottProjectionService.evaluateOpenProjections(symbol, rule.getInterval(), candles);
+        }
+    }
+
+    private ElliottSignalStage projectionStage(AlertEvent event) {
+        if (event.getElliottSignalStage() != null) return event.getElliottSignalStage();
+        if (event.getPattern() == null) return null;
+        String pattern = event.getPattern().name();
+        if (pattern.contains("WAVE_II_END")) return ElliottSignalStage.WAVE_II_END;
+        if (pattern.contains("WAVE_III_END")) return ElliottSignalStage.WAVE_III_END;
+        if (pattern.contains("WAVE_IV_END")) return ElliottSignalStage.WAVE_IV_END;
+        if (pattern.contains("WAVE_V_END") || pattern.contains("TRUNCATED_WAVE_V_END")) {
+            return ElliottSignalStage.WAVE_V_END;
+        }
+        if (pattern.contains("CORRECTION_END")) return ElliottSignalStage.CORRECTION_END;
+        return null;
     }
 
     private SignalResultsView toSignalResults(AlertEvent event,
@@ -1120,6 +1451,10 @@ public class AlertRuleService {
                 || event.getPattern() == null || signalIndex < 0) {
             return null;
         }
+        ElliottWaveChartView storedDevelopingWave = toStoredDevelopingElliottWaveView(event, rule);
+        if (storedDevelopingWave != null) {
+            return storedDevelopingWave;
+        }
         List<Candle> detectionHistory = List.copyOf(candles.subList(0, signalIndex + 1));
         List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
                 detectionHistory,
@@ -1161,6 +1496,75 @@ public class AlertRuleService {
                 structure.impulseVariant(),
                 structure.correctionVariant()
         );
+    }
+
+    private ElliottWaveChartView toStoredDevelopingElliottWaveView(
+            AlertEvent event,
+            AlertRule rule) {
+        if (event.getElliottStructureSnapshot() == null
+                || event.getElliottStructureSnapshot().isBlank()
+                || event.getSignalCandleTimestamp() == null) {
+            return null;
+        }
+        List<ElliottWaveChartPointView> points = event.getElliottStructureSnapshot().lines()
+                .map(line -> line.split("\\|", -1))
+                .filter(fields -> fields.length == 4)
+                .map(fields -> {
+                    try {
+                        String label = rule.getInterval() == TimeInterval.WEEKLY
+                                ? fields[0].toLowerCase(Locale.ROOT)
+                                : fields[0];
+                        return new ElliottWaveChartPointView(
+                                label,
+                                Long.parseLong(fields[1]),
+                                Double.parseDouble(fields[2]),
+                                fields[3]
+                        );
+                    } catch (NumberFormatException exception) {
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (points.size() < 3) {
+            return null;
+        }
+
+        String patternName = event.getPattern().name();
+        boolean correctionComplete = event.getElliottSignalStage() == ElliottSignalStage.CORRECTION_END;
+        ElliottWaveDetectionService.ImpulseVariant impulseVariant = patternName.contains("TRUNCATED")
+                ? ElliottWaveDetectionService.ImpulseVariant.TRUNCATED_FIFTH
+                : ElliottWaveDetectionService.ImpulseVariant.STANDARD;
+        ElliottWaveDetectionService.CorrectionVariant correctionVariant = patternName.contains("EXPANDED_FLAT")
+                ? ElliottWaveDetectionService.CorrectionVariant.EXPANDED_FLAT
+                : patternName.contains("RUNNING_FLAT")
+                ? ElliottWaveDetectionService.CorrectionVariant.RUNNING_FLAT
+                : correctionComplete
+                ? ElliottWaveDetectionService.CorrectionVariant.STANDARD
+                : ElliottWaveDetectionService.CorrectionVariant.NONE;
+
+        return new ElliottWaveChartView(
+                patternName.contains("BEARISH") ? "BEARISH" : "BULLISH",
+                correctionComplete,
+                points,
+                event.getSignalCandleTimestamp(),
+                elliottRetracement(points, 0, 1, 2),
+                elliottRetracement(points, 2, 3, 4),
+                impulseVariant,
+                correctionVariant
+        );
+    }
+
+    private double elliottRetracement(
+            List<ElliottWaveChartPointView> points,
+            int originIndex,
+            int impulseIndex,
+            int retracementIndex) {
+        if (points.size() <= retracementIndex) return Double.NaN;
+        double impulseLength = Math.abs(
+                points.get(impulseIndex).price() - points.get(originIndex).price());
+        return impulseLength <= .000001 ? Double.NaN : Math.abs(
+                points.get(retracementIndex).price() - points.get(impulseIndex).price()) / impulseLength;
     }
 
     private boolean matchesRecordedElliottPattern(
@@ -1397,6 +1801,7 @@ public class AlertRuleService {
                         .orElseGet(() -> twelveDataService.upsertStockAsset(
                                 symbol, symbol, "US", "USD")))
                 .toList();
+        assets.forEach(this::normalizeTemporaryUsListing);
         long newlyGlobalSymbols = assets.stream()
                 .filter(asset -> !alertRuleRepository.existsByStockAssetAndIsActiveTrue(asset))
                 .count();
@@ -1461,6 +1866,17 @@ public class AlertRuleService {
                         * TEMPORARY_BULK_INTERVALS.size()
                         * AlertPatternFamily.values().length * 2,
                 TemporaryTopUsCompanyUniverse.SNAPSHOT_LABEL);
+    }
+
+    private void normalizeTemporaryUsListing(StockAsset asset) {
+        asset.setCurrency("USD");
+        asset.setCountry("US");
+        asset.setInstrumentType(InstrumentType.EQUITY);
+        if ("HD".equalsIgnoreCase(asset.getTickerSymbol())) {
+            asset.setCompanyName("The Home Depot, Inc.");
+            asset.setExchange("NYSE");
+            asset.setMicCode("XNYS");
+        }
     }
 
     private AlertRuleChange validateAlertChange(AlertRuleChange change) {
@@ -1681,19 +2097,11 @@ public class AlertRuleService {
     }
 
     private String toApiInterval(TimeInterval interval) {
-        return switch (interval) {
-            case WEEKLY -> "1wk";
-            case MONTHLY -> "1mo";
-            default -> "1d";
-        };
+        return interval.analysisApiValue();
     }
 
     private String intervalLabel(TimeInterval interval) {
-        return switch (interval) {
-            case WEEKLY -> "Weekly";
-            case MONTHLY -> "Monthly";
-            default -> "Daily";
-        };
+        return interval.analysisLabel();
     }
 
     private String familyLabel(AlertPatternFamily family) {
@@ -1813,9 +2221,7 @@ public class AlertRuleService {
     }
 
     private AlertPatternFamily signalFamily(DetectedSignal signal) {
-        if (isElliottPattern(signal.pattern())) return AlertPatternFamily.ELLIOTT_WAVE;
-        if (isHarmonicPattern(signal.pattern())) return AlertPatternFamily.HARMONIC_FORMATION;
-        return AlertPatternFamily.CANDLESTICK;
+        return AlertPatternFamily.forPattern(signal.pattern());
     }
 
     private boolean isElliottPattern(CandlePattern pattern) {
@@ -1907,13 +2313,17 @@ public class AlertRuleService {
             summary = "STOPPED".equals(event.getHarmonicStopStatus())
                     ? String.format(
                     Locale.ROOT,
-                    "The buffered harmonic stop at %.4f was breached at %.4f. %s",
+                    "The buffered harmonic stop was breached and the outcome closed at %.4f. %s",
                     event.getStopLossPrice(),
-                    event.getHarmonicStopResolutionPrice(),
                     event.getHarmonicStopResolutionReason())
+                    : "TIME_STOPPED".equals(event.getHarmonicStopStatus())
+                    ? String.format(
+                    Locale.ROOT,
+                    "The harmonic outcome window closed at candle 8's completed close of %.4f.",
+                    event.getHarmonicStopResolutionPrice())
                     : String.format(
                     Locale.ROOT,
-                    "Harmonic stop active from the %.4f confirmation close: exact structural invalidation %.4f, buffered stop %.4f (%s).",
+                    "Harmonic outcome active from the %.4f confirmation close: exact structural invalidation %.4f, buffered stop %.4f (%s), and candle 8 time stop.",
                     event.getTradeEntryPrice(),
                     event.getStructuralStopPrice(),
                     event.getStopLossPrice(),
@@ -2474,8 +2884,13 @@ public class AlertRuleService {
 
     public record SignalArchiveEntry(
             LatestSignalView signal,
-            SignalArchiveOutcome outcome
+            SignalArchiveOutcome outcome,
+            List<SignalArchiveOutcome> stageOutcomes
     ) {
+        public SignalArchiveEntry {
+            stageOutcomes = stageOutcomes == null ? List.of() : List.copyOf(stageOutcomes);
+        }
+
         private String groupKey(String sortKey) {
             return switch (sortKey) {
                 case "ticker" -> signal.symbol();
@@ -2624,11 +3039,15 @@ public class AlertRuleService {
             ObservedPriceOutcomeView observedOutcome,
             SignalResultsView results,
             SignalLifecycleView lifecycle,
+            ElliottProjectionService.ProjectionSetView elliottProjection,
+            List<ElliottProjectionService.ProjectionSetView> elliottProjectionHistory,
             List<ElliottTradePlanService.StagePlanView> elliottTradePlans,
             List<SignalReasonView> reasons,
             boolean reasonsAvailable
     ) {
         public SignalDetailView {
+            elliottProjectionHistory = elliottProjectionHistory == null
+                    ? List.of() : List.copyOf(elliottProjectionHistory);
             elliottTradePlans = elliottTradePlans == null
                     ? List.of() : List.copyOf(elliottTradePlans);
         }

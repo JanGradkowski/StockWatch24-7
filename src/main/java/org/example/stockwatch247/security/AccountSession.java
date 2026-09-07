@@ -6,5 +6,7 @@ public final class AccountSession {
     public static final String MFA_PENDING_AT = "MFA_PENDING_AT";
     public static final String MFA_SETUP_SECRET = "MFA_SETUP_SECRET";
     public static final String MFA_SETUP_AT = "MFA_SETUP_AT";
+    public static final String MFA_PENDING_VERSION = "MFA_PENDING_VERSION";
+    public static final String REQUEST_USER = AccountSession.class.getName() + ".user";
     private AccountSession() {}
 }

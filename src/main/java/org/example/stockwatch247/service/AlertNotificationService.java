@@ -31,6 +31,22 @@ import java.util.Locale;
 
 @Service
 public class AlertNotificationService {
+    private EmailOutboxService outbox;
+    @Autowired
+    void setOutbox(EmailOutboxService outbox) { this.outbox = outbox; }
+
+    private void queueAccount(SimpleMailMessage message, long lifetimeSeconds) {
+        if (outbox == null) send(message);
+        else outbox.enqueue(message, null, java.time.Duration.ofSeconds(lifetimeSeconds));
+    }
+
+    private void queueInitial(SimpleMailMessage message, AlertEvent event) {
+        if (outbox == null) send(message);
+        else outbox.enqueue(message, event == null ? null : event.getId(), java.time.Duration.ofDays(7));
+    }
+
+    public boolean usesDurableDelivery() { return outbox != null; }
+
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
     private final boolean emailEnabled;
     private final String fromAddress;
@@ -78,7 +94,7 @@ public class AlertNotificationService {
         message.setSubject("Verify your StockWatch 24/7 account");
         message.setText("Verify your email address by opening this one-time link:\n\n" + verificationUrl
                 + "\n\nIf you did not create this account, you can ignore this email.");
-        send(message);
+        queueAccount(message, 86400);
     }
 
     public void sendPasswordSecurityCode(User user, String code, boolean reset) {
@@ -88,14 +104,14 @@ public class AlertNotificationService {
         message.setText("Your one-time security code is:\n\n" + code
                 + "\n\nIt expires in 5 minutes and can be used once. "
                 + "If you did not request this, do not share the code and change your password.");
-        send(message);
+        queueAccount(message, 300);
     }
 
     public void sendSecurityNotice(User user, String subject, String body) {
         requireEmailDelivery();
         SimpleMailMessage message = baseMessage(user, subject);
         message.setText(body + "\n\nIf this was not you, reset your password immediately.");
-        send(message);
+        queueAccount(message, 86400);
     }
 
     public void sendAccountDeletionNotice(User user, String cancellationUrl) {
@@ -104,14 +120,14 @@ public class AlertNotificationService {
         message.setText("Your account has been disabled and is scheduled for permanent deletion in 7 days.\n\n"
                 + "To cancel the deletion, open this one-time link before the deadline:\n" + cancellationUrl
                 + "\n\nIf this was not you, cancel the deletion and reset your password immediately.");
-        send(message);
+        queueAccount(message, 86400);
     }
 
     public void sendAccountDeletedNotice(User user) {
         requireEmailDelivery();
         SimpleMailMessage message = baseMessage(user, "Your StockWatch account was deleted");
         message.setText("The seven-day cancellation period ended and your StockWatch account and associated account data were permanently deleted.");
-        send(message);
+        queueAccount(message, 86400);
     }
 
     private SimpleMailMessage baseMessage(User user, String subject) {
@@ -234,7 +250,7 @@ public class AlertNotificationService {
         message.setTo(rule.getUser().getEmail());
         message.setSubject(subject);
         message.setText(body);
-        send(message);
+        queueInitial(message, lifecycleEvent);
         return true;
     }
 
@@ -243,6 +259,10 @@ public class AlertNotificationService {
             DetectedSignal signal,
             AlertEvent event,
             boolean invalidated) {
+        return sendDevelopingElliottEmail(rule, signal, event, invalidated, false);
+    }
+
+    public boolean sendDevelopingElliottEmail(AlertRule rule, DetectedSignal signal, AlertEvent event, boolean invalidated, boolean initial) {
         if (rule == null || signal == null || event == null || event.getElliottSignalStage() == null) {
             throw new IllegalArgumentException("A developing Elliott stage is required for email delivery.");
         }
@@ -312,7 +332,10 @@ public class AlertNotificationService {
         message.setTo(rule.getUser().getEmail());
         message.setSubject(subject);
         message.setText(body);
-        send(message);
+        if (outbox == null) send(message);
+        else outbox.enqueue(message, event.getId(), java.time.Duration.ofDays(7),
+                initial ? "initial-alert:" + event.getId() : "elliott-stage:" + event.getId() + ":" + event.getElliottSignalStage() + ":" + signal.candleTimestamp() + ":" + invalidated,
+                initial ? "INITIAL" : "FOLLOW_UP");
         return true;
     }
 
@@ -498,7 +521,7 @@ public class AlertNotificationService {
         message.setSubject("StockWatch harmonic " + patternLabel.toLowerCase()
                 + ": " + signal.tradeSignal() + " on " + symbol);
         message.setText(body);
-        send(message);
+        queueInitial(message, event);
         return true;
     }
 

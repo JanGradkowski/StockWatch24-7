@@ -40,7 +40,7 @@ class HarmonicStopPlanServiceTest {
         assertThat(stopped).isEqualTo(1);
         assertThat(event.getHarmonicStopStatus()).isEqualTo(HarmonicStopStatus.STOPPED.name());
         assertThat(event.getHarmonicStopResolutionTimestamp()).isEqualTo(101L);
-        assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(94.5);
+        assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(95.0);
         assertThat(event.getHarmonicStopResolutionReason()).contains("low 94.5000");
         verify(notificationService).sendHarmonicStopOutcomeEmail(event, breach);
         verify(eventRepository).save(event);
@@ -54,7 +54,7 @@ class HarmonicStopPlanServiceTest {
 
         assertThat(service.evaluateActivePlans("TEST", TimeInterval.WEEKLY,
                 List.of(candle(101L, 105.5, 100, 104)))).isEqualTo(1);
-        assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(105.5);
+        assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(105.0);
         assertThat(event.getHarmonicStopResolutionReason()).contains("high 105.5000");
     }
 
@@ -69,6 +69,42 @@ class HarmonicStopPlanServiceTest {
         assertThat(event.getHarmonicStopStatus()).isEqualTo(HarmonicStopStatus.ACTIVE.name());
         verify(eventRepository, never()).save(any());
         verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void closesAtTheEighthCompletedCandleWhenNoStopWasBreached() {
+        AlertEvent event = activeEvent(TradeSignal.BUY, 95.0);
+        when(eventRepository.findActiveHarmonicStopPlans("TEST", TimeInterval.DAILY))
+                .thenReturn(List.of(event));
+        List<Candle> candles = java.util.stream.LongStream.rangeClosed(101, 108)
+                .mapToObj(timestamp -> candle(timestamp, 110, 96, timestamp == 108 ? 112 : 101))
+                .toList();
+
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY, candles)).isEqualTo(1);
+
+        assertThat(event.getHarmonicStopStatus()).isEqualTo(HarmonicStopStatus.TIME_STOPPED.name());
+        assertThat(event.getHarmonicStopResolutionTimestamp()).isEqualTo(108L);
+        assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(112.0);
+        assertThat(event.getHarmonicStopResolutionReason()).contains("candle 8");
+        verifyNoInteractions(notificationService);
+        verify(eventRepository).save(event);
+    }
+
+    @Test
+    void ignoresAStopBreachAfterTheEightCandleWindow() {
+        AlertEvent event = activeEvent(TradeSignal.BUY, 95.0);
+        when(eventRepository.findActiveHarmonicStopPlans("TEST", TimeInterval.DAILY))
+                .thenReturn(List.of(event));
+        List<Candle> candles = new java.util.ArrayList<>(java.util.stream.LongStream.rangeClosed(101, 108)
+                .mapToObj(timestamp -> candle(timestamp, 110, 96, 102))
+                .toList());
+        candles.add(candle(109, 100, 90, 92));
+
+        service.evaluateActivePlans("TEST", TimeInterval.DAILY, candles);
+
+        assertThat(event.getHarmonicStopStatus()).isEqualTo(HarmonicStopStatus.TIME_STOPPED.name());
+        assertThat(event.getHarmonicStopResolutionTimestamp()).isEqualTo(108L);
+        assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(102.0);
     }
 
     private AlertEvent activeEvent(TradeSignal signal, double stop) {

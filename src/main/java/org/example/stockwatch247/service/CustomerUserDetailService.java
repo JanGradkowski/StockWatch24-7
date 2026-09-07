@@ -21,11 +21,7 @@ public class CustomerUserDetailService implements UserDetailsService {
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
         User user = userRepository.findByEmailIgnoreCase(email).orElseThrow( ()
         -> new UsernameNotFoundException("User not found"));
-        return org.springframework.security.core.userdetails.User.builder()
-                .username(user.getEmail()) // Use email as the principal identifier
-                .password(user.getPasswordHash()) // Point to your specific password field
-                .roles("USER")
-                .disabled((verificationRequired && !user.isVerified()) || user.getDeletionRequestedAt() != null)
-                .build();
+        return new org.example.stockwatch247.security.AccountPrincipal(user,
+                (!verificationRequired || user.isVerified()) && user.getDeletionRequestedAt() == null);
     }
 }

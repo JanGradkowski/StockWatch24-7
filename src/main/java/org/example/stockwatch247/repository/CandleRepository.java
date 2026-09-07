@@ -11,6 +11,8 @@ import java.util.Optional;
 
 @Repository
 public interface CandleRepository extends JpaRepository<Candle, Long> {
+    java.util.List<Candle> findBySymbolAndTimeIntervalAndTimestampLessThanEqualOrderByTimestampAsc(String symbol, String interval, Long to);
+
 
     // 1. Initial Load: Get the latest 100 candles
     List<Candle> findTop100BySymbolAndTimeIntervalOrderByTimestampDesc(String symbol, String timeInterval);

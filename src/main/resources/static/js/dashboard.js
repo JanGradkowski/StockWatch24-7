@@ -2,66 +2,24 @@
     "use strict";
 
     function initializeDashboardViews() {
-        const viewButtons = Array.from(document.querySelectorAll("[data-dashboard-view-button]"));
         const viewSections = Array.from(document.querySelectorAll("[data-dashboard-view]"));
         const viewLayout = document.querySelector("[data-dashboard-view-layout]");
-        if (viewButtons.length === 0 || viewSections.length === 0) {
-            return;
-        }
+        if (viewSections.length === 0) return;
 
-        function activateView(view, moveFocus = false) {
-            const activeButton = viewButtons.find(button => button.dataset.dashboardViewButton === view);
-            if (!activeButton) {
-                return;
-            }
-
-            viewButtons.forEach(button => {
-                const selected = button === activeButton;
-                button.classList.toggle("active", selected);
-                button.setAttribute("aria-pressed", String(selected));
-            });
-
+        function activateView() {
+            const view = window.location.hash === "#ticker-alerts" ? "alerts" : "technical";
             viewSections.forEach(section => {
                 section.hidden = section.dataset.dashboardView !== view;
             });
-
             if (viewLayout) {
                 viewLayout.classList.toggle("ticker-alerts-active", view === "alerts");
             }
-
-            if (moveFocus) {
-                activeButton.focus();
-            }
+            window.dispatchEvent(new Event("stockwatch:dashboard-view"));
         }
 
-        viewButtons.forEach((button, index) => {
-            button.addEventListener("click", () => {
-                const view = button.dataset.dashboardViewButton;
-                activateView(view);
-                const url = new URL(window.location.href);
-                url.hash = view === "alerts" ? "ticker-alerts" : "";
-                window.history.replaceState(null, "", url);
-            });
-            button.addEventListener("keydown", event => {
-                let targetIndex = null;
-                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                    targetIndex = (index + 1) % viewButtons.length;
-                } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                    targetIndex = (index - 1 + viewButtons.length) % viewButtons.length;
-                } else if (event.key === "Home") {
-                    targetIndex = 0;
-                } else if (event.key === "End") {
-                    targetIndex = viewButtons.length - 1;
-                }
-
-                if (targetIndex != null) {
-                    event.preventDefault();
-                    activateView(viewButtons[targetIndex].dataset.dashboardViewButton, true);
-                }
-            });
-        });
-
-        activateView(window.location.hash === "#ticker-alerts" ? "alerts" : "technical");
+        activateView();
+        window.addEventListener("hashchange", activateView);
+        window.addEventListener("pageshow", activateView);
     }
 
     function initializeWatchFilters() {
@@ -428,13 +386,15 @@
     }
 
     function initializeTemporaryTopUsUniverse() {
-        const button = document.getElementById("followTopUs200Button");
+        const followButton = document.getElementById("followTopUs200Button");
+        const unfollowButton = document.getElementById("unfollowAllTickersButton");
         const status = document.getElementById("followTopUs200Status");
-        if (!button || !status) {
+        if ((!followButton && !unfollowButton) || !status) {
             return;
         }
         const csrfToken = document.getElementById("accountThemeSync")?.dataset.csrfToken;
-        button.addEventListener("click", async () => {
+
+        followButton?.addEventListener("click", async () => {
             if (!csrfToken) {
                 status.textContent = "The security token is unavailable. Refresh the dashboard and try again.";
                 return;
@@ -445,9 +405,9 @@
             if (!confirmed) {
                 return;
             }
-            button.disabled = true;
-            button.setAttribute("aria-busy", "true");
-            button.textContent = "Activating 3,600 rules...";
+            followButton.disabled = true;
+            followButton.setAttribute("aria-busy", "true");
+            followButton.textContent = "Activating 3,600 rules...";
             status.textContent = "Creating or restoring the test universe. This can take several seconds.";
             try {
                 const response = await fetch("/api/alerts/testing/top-us-200", {
@@ -462,10 +422,45 @@
                 status.textContent = `Active: ${payload.companies} companies and ${payload.activeRules} rules. Reloading dashboard...`;
                 window.location.reload();
             } catch (error) {
-                button.disabled = false;
-                button.removeAttribute("aria-busy");
-                button.textContent = "Follow top 200 U.S. (test)";
+                followButton.disabled = false;
+                followButton.removeAttribute("aria-busy");
+                followButton.textContent = "Follow top 200 U.S. (test)";
                 status.textContent = error.message || "The top-200 test universe could not be followed.";
+            }
+        });
+
+        unfollowButton?.addEventListener("click", async () => {
+            if (!csrfToken) {
+                status.textContent = "The security token is unavailable. Refresh the dashboard and try again.";
+                return;
+            }
+            const confirmed = window.confirm(
+                "Unfollow every ticker? This switches off all active technical rules for your followed stocks, indexes, and ETFs. Existing signal history remains available. Insider and Congress alerts are not affected."
+            );
+            if (!confirmed) {
+                return;
+            }
+            unfollowButton.disabled = true;
+            unfollowButton.setAttribute("aria-busy", "true");
+            unfollowButton.textContent = "Unfollowing all...";
+            status.textContent = "Switching off all followed technical rules...";
+            try {
+                const response = await fetch("/api/alerts", {
+                    method: "DELETE",
+                    headers: {"X-CSRF-TOKEN": csrfToken},
+                    credentials: "same-origin"
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(payload.error || "The followed tickers could not be unfollowed.");
+                }
+                status.textContent = `${payload.unfollowedRules} technical rules switched off. Reloading dashboard...`;
+                window.location.reload();
+            } catch (error) {
+                unfollowButton.disabled = false;
+                unfollowButton.removeAttribute("aria-busy");
+                unfollowButton.textContent = "Unfollow all tickers";
+                status.textContent = error.message || "The followed tickers could not be unfollowed.";
             }
         });
     }

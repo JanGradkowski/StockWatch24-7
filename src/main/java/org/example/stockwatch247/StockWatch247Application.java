@@ -1,6 +1,7 @@
 package org.example.stockwatch247;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationFeature;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,6 +30,7 @@ public class StockWatch247Application {
 
     @Bean
     public ObjectMapper objectMapper() {
-        return new ObjectMapper();
+        return tools.jackson.databind.json.JsonMapper.builder()
+                .disable(tools.jackson.databind.cfg.DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS).build();
     }
 }

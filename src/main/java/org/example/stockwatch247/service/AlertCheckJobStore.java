@@ -61,6 +61,36 @@ public class AlertCheckJobStore {
 
                     union
 
+                    select asset.ticker_symbol as symbol, rule.interval
+                    from alert_events event
+                    join alert_rules rule on rule.id = event.alert_rule_id
+                    join stock_assets asset on asset.id = rule.stock_asset_id
+                    where event.trade_plan_version = 'HARMONIC_STOP_V1'
+                      and event.harmonic_stop_status = 'ACTIVE'
+                      and event.deleted_at is null
+
+                    union
+
+                    select asset.ticker_symbol as symbol, rule.interval
+                    from elliott_stage_trade_plans plan
+                    join alert_events event on event.id = plan.alert_event_id
+                    join alert_rules rule on rule.id = event.alert_rule_id
+                    join stock_assets asset on asset.id = rule.stock_asset_id
+                    where plan.status = 'ACTIVE'
+                      and event.deleted_at is null
+
+                    union
+
+                    select asset.ticker_symbol as symbol, rule.interval
+                    from elliott_projection_sets projection
+                    join alert_events event on event.id = projection.alert_event_id
+                    join alert_rules rule on rule.id = event.alert_rule_id
+                    join stock_assets asset on asset.id = rule.stock_asset_id
+                    where projection.status = 'ACTIVE'
+                      and event.deleted_at is null
+
+                    union
+
                     select asset.ticker_symbol as symbol, subscription.interval
                     from technical_outlook_subscriptions subscription
                     join stock_assets asset on asset.id = subscription.stock_asset_id
@@ -135,15 +165,22 @@ public class AlertCheckJobStore {
         return jobs.stream().findFirst();
     }
 
-    public void complete(long jobId) {
-        jdbcTemplate.update(
+    public boolean renew(AlertCheckJob job, Duration lease) {
+        return jdbcTemplate.update("""
+            update alert_check_jobs set lease_until = current_timestamp + (? * interval '1 second')
+            where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
+            """, Math.max(1, lease.toSeconds()), job.id(), job.attempts()) == 1;
+    }
+
+    public boolean complete(AlertCheckJob job) {
+        return jdbcTemplate.update(
                 """
                 update alert_check_jobs
                 set status = 'COMPLETED', lease_until = null, last_error = null,
                     updated_at = current_timestamp
-                where id = ? and status = 'PROCESSING'
+                where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
                 """,
-                jobId);
+                job.id(), job.attempts()) == 1;
     }
 
     public void retryOrFail(AlertCheckJob job, String error, int maximumAttempts, Duration retryDelay) {
@@ -153,9 +190,9 @@ public class AlertCheckJobStore {
                     """
                     update alert_check_jobs
                     set status = 'FAILED', lease_until = null, last_error = ?, updated_at = current_timestamp
-                    where id = ? and status = 'PROCESSING'
+                    where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
                     """,
-                    safeError, job.id());
+                    safeError, job.id(), job.attempts());
             return;
         }
         jdbcTemplate.update(
@@ -164,9 +201,9 @@ public class AlertCheckJobStore {
                 set status = 'PENDING', lease_until = null, last_error = ?,
                     available_at = current_timestamp + (? * interval '1 second'),
                     updated_at = current_timestamp
-                where id = ? and status = 'PROCESSING'
+                where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
                 """,
-                safeError, Math.max(1L, retryDelay.toSeconds()), job.id());
+                safeError, Math.max(1L, retryDelay.toSeconds()), job.id(), job.attempts());
     }
 
     public int pendingCount() {

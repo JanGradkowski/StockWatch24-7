@@ -30,6 +30,8 @@
     <span>Signal analysis</span>
   </nav>
 
+  <a th:if="${archiveReturnUrl != null}" th:href="${archiveReturnUrl}" class="text-link archive-return-link">&larr; Back to filtered signals</a>
+
   <header class="signal-report-header">
     <div class="signal-report-copy">
       <div class="eyebrow">Signal analysis</div>
@@ -248,6 +250,8 @@
         <span th:if="${signal.chart().elliottWave().correctionComplete()}"><i class="signal-chart-key corrective" aria-hidden="true"></i>Corrective A&ndash;B&ndash;C</span>
         <span><i class="signal-chart-key subwave" aria-hidden="true"></i>Subwaves on hover</span>
         <span><i class="signal-chart-key confirmation" aria-hidden="true"></i>Recorded confirmation</span>
+        <span th:if="${signal.elliottProjection() != null}"><i class="signal-chart-key projection" aria-hidden="true"></i>Conditional projection</span>
+        <span th:if="${signal.elliottProjection() != null}"><i class="signal-chart-key projection-zone" aria-hidden="true"></i>Target and candle window</span>
       </th:block>
       <th:block th:if="${signal.chart().harmonic() != null}">
         <span><i class="signal-chart-key motive" aria-hidden="true"></i>Saved harmonic geometry</span>
@@ -316,6 +320,22 @@
       <li th:each="point : ${signal.chart().elliottWave().points()}"
           th:attr="data-label=${point.label()},data-time=${point.timestamp()},data-price=${point.price()},data-pivot-type=${point.pivotType()}"></li>
     </ol>
+    <ol th:if="${signal.elliottProjection() != null}"
+        id="signalElliottProjectionData" hidden aria-hidden="true"
+        th:attr="data-stage=${signal.elliottProjection().stage().name()},
+                 data-source-time=${signal.elliottProjection().sourceTimestamp()},
+                 data-source-price=${signal.elliottProjection().sourcePrice()}">
+      <li th:each="scenario : ${signal.elliottProjection().scenarios()}"
+          th:attr="data-key=${scenario.key()},data-label=${scenario.label()},
+                   data-status=${scenario.status().name()},data-rank=${scenario.rank()},
+                   data-confidence=${scenario.confidence()},
+                   data-zone-low=${scenario.targetZoneLow()},data-zone-high=${scenario.targetZoneHigh()},
+                   data-min-candles=${scenario.minimumCandles()},data-max-candles=${scenario.maximumCandles()}">
+        <span th:each="point : ${scenario.path()}" data-projection-point
+              th:attr="data-offset=${point.candleOffset()},data-time=${point.timestamp()},
+                       data-price=${point.price()},data-label=${point.label()}"></span>
+      </li>
+    </ol>
     <ol th:if="${signal.chart().harmonic() != null}"
         id="signalHarmonicData"
         hidden
@@ -335,6 +355,66 @@
         <p th:text="${signal.chart().unavailableReason()}">The original candle is not in the local cache.</p>
       </div>
     </div>
+  </section>
+
+  <section th:if="${signal.elliottProjection() != null and !#lists.isEmpty(signal.elliottProjection().scenarios())}"
+           class="elliott-projection-card" aria-labelledby="elliott-projection-heading">
+    <div class="elliott-projection-heading">
+      <div>
+        <div class="signal-section-kicker">Conditional Elliott map</div>
+        <h2 id="elliott-projection-heading">How the next wave could develop</h2>
+        <p>These are competing textbook paths, not exact price predictions. Price zones and completed-candle windows are evaluated; the dashed route between them is schematic.</p>
+      </div>
+      <span class="elliott-projection-stage"
+            th:text="${#strings.replace(signal.elliottProjection().stage().name(), '_', ' ')}">WAVE II END</span>
+    </div>
+    <div class="elliott-projection-grid">
+      <article th:each="scenario : ${signal.elliottProjection().scenarios()}"
+               class="elliott-projection-scenario"
+               th:classappend="${scenario.status().name() == 'DISFAVORED' ? ' disfavored' : (scenario.rank() == 1 ? ' preferred' : '')}">
+        <header>
+          <span class="elliott-projection-rank" th:text="${scenario.rank() == 1 ? 'Preferred' : 'Alternate ' + (scenario.rank() - 1)}">Preferred</span>
+          <span class="elliott-projection-confidence" th:text="${scenario.confidence() + '/100 confidence'}">62/100 confidence</span>
+        </header>
+        <h3 th:text="${scenario.label()}">Standard Wave III</h3>
+        <p th:text="${scenario.description()}">Five-wave advance.</p>
+        <dl>
+          <div><dt>Target zone</dt><dd th:text="${#numbers.formatDecimal(scenario.targetZoneLow(), 1, 4) + ' – ' + #numbers.formatDecimal(scenario.targetZoneHigh(), 1, 4)}">108–112</dd></div>
+          <div><dt>Expected timing</dt><dd th:text="${'Candles ' + scenario.minimumCandles() + '–' + scenario.maximumCandles()}">Candles 6–14</dd></div>
+          <div><dt>Textbook basis</dt><dd th:text="${scenario.targetBasis()}">161.8% extension</dd></div>
+          <div th:if="${scenario.hardInvalidationPrice() != null}"><dt>Hard invalidation</dt><dd th:text="${scenario.hardInvalidationSide() + ' ' + #numbers.formatDecimal(scenario.hardInvalidationPrice(), 1, 4)}">BELOW 95</dd></div>
+        </dl>
+        <div class="elliott-projection-state" th:classappend="${scenario.status().name() == 'DISFAVORED' ? ' warning' : ''}">
+          <span th:text="${#strings.replace(scenario.status().name(), '_', ' ')}">ACTIVE</span>
+          <p th:text="${scenario.evaluationNote()}">Awaiting the next candle.</p>
+        </div>
+        <ul>
+          <li th:each="evidence : ${scenario.evidence()}" th:text="${evidence}">Evidence</li>
+        </ul>
+      </article>
+    </div>
+    <p class="elliott-projection-footnote">
+      Only completed candles update these scenarios. A hard rule breach invalidates a path; a guideline or timing mismatch merely disfavors it.
+      <span th:if="${signal.elliottProjection().hiddenScenarioCount() > 0}"
+            th:text="${signal.elliottProjection().hiddenScenarioCount() + ' invalidated or finished path(s) are hidden from the chart but retained for audit history.'}">Hidden paths retained.</span>
+      <span th:if="${!signal.alertRuleActive()}">This existing map remains monitored after unfollowing, but no new ticker notifications are created.</span>
+    </p>
+  </section>
+
+  <section th:if="${signal.elliottProjection() == null and !#lists.isEmpty(signal.elliottProjectionHistory())}"
+           class="elliott-projection-card elliott-projection-archive"
+           aria-labelledby="elliott-projection-archive-heading">
+    <div th:each="projection, projectionStat : ${signal.elliottProjectionHistory()}"
+         th:if="${projectionStat.first}" class="elliott-projection-heading">
+      <div>
+        <div class="signal-section-kicker">Conditional Elliott map · archive</div>
+        <h2 id="elliott-projection-archive-heading">No projected path remains active</h2>
+        <p th:text="${projection.resolutionReason() != null ? projection.resolutionReason() : 'The historical paths no longer satisfy their stored structural conditions.'}">All paths are terminal.</p>
+      </div>
+      <span class="elliott-projection-stage terminal"
+            th:text="${#strings.replace(projection.status().name(), '_', ' ')}">INVALIDATED</span>
+    </div>
+    <p class="elliott-projection-footnote">The dashed paths are intentionally removed when a wave ends, its endpoint is revised, or its structural rules fail. The discarded scenarios remain stored for auditability.</p>
   </section>
 
   <section th:if="${signal.patternFamily().name() == 'CANDLESTICK' and signal.lifecycle().entryPrice() != null}"
@@ -401,13 +481,13 @@
            aria-labelledby="harmonic-stop-plan-heading">
     <div class="signal-trade-plan-heading">
       <div>
-        <div class="signal-section-kicker">Harmonic structural stop plan</div>
-        <h2 id="harmonic-stop-plan-heading">Entry, invalidation, and buffered stop</h2>
-        <p>This stop is calculated only after the harmonic detector validates and confirms the saved geometry. It does not alter formation detection or scoring.</p>
+        <div class="signal-section-kicker">Harmonic eight-candle outcome plan</div>
+        <h2 id="harmonic-stop-plan-heading">Entry, invalidation, stop, and time exit</h2>
+        <p>The plan starts only after the harmonic detector validates and confirms the saved geometry. It does not alter formation detection or scoring.</p>
       </div>
       <span class="signal-lifecycle-pill"
-            th:classappend="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : ' detected'}"
-            th:text="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : 'Active stop'}">Active stop</span>
+            th:classappend="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? ' expired' : ' detected')}"
+            th:text="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? 'Candle 8 complete' : 'Active outcome')}">Active outcome</span>
     </div>
     <div class="signal-trade-plan-grid">
       <article class="entry"><span>Executable entry</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${'Confirmation close · ' + signal.signalPeriodLabel()}">Confirmation close</small></article>
@@ -416,10 +496,10 @@
       <article><span>Structural formula</span><strong th:text="${signal.lifecycle().harmonicStopFormula()}">A + (X − A) × 1.414</strong><small>The saved formation points are used directly.</small></article>
       <article class="time"><span>Equity liquidity buffer</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopBufferPercent(), 1, 2) + '%'}">0.50%</strong><small th:text="${'Price buffer ' + #numbers.formatDecimal(signal.lifecycle().harmonicStopBufferAmount(), 1, 4)}">Price buffer 0.4750</small></article>
       <article class="risk"><span>Executable stop loss</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">94.5250</strong><small th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopDistancePercent(), 1, 2) + '% from entry'}">5.48% from entry</small></article>
-      <article th:if="${signal.lifecycle().harmonicStopStatus() != null}"><span>Stop status</span><strong th:text="${#strings.replace(signal.lifecycle().harmonicStopStatus(), '_', ' ')}">ACTIVE</strong><small th:text="${signal.lifecycle().harmonicStopResolutionReason() != null ? signal.lifecycle().harmonicStopResolutionReason() : 'Awaiting a later completed candle high/low breach'}">Awaiting outcome</small></article>
-      <article th:if="${signal.lifecycle().harmonicStopResolutionPrice() != null}" class="exit"><span>Observed breach extreme</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopResolutionPrice(), 1, 4)}">94.0000</strong><small>First later completed candle crossing the buffered stop.</small></article>
+      <article th:if="${signal.lifecycle().harmonicStopStatus() != null}"><span>Outcome status</span><strong th:text="${#strings.replace(signal.lifecycle().harmonicStopStatus(), '_', ' ')}">ACTIVE</strong><small th:text="${signal.lifecycle().harmonicStopResolutionReason() != null ? signal.lifecycle().harmonicStopResolutionReason() : 'Awaiting a stop breach or the eighth completed candle'}">Awaiting outcome</small></article>
+      <article th:if="${signal.lifecycle().harmonicStopResolutionPrice() != null}" class="exit"><span>Outcome exit</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopResolutionPrice(), 1, 4)}">94.0000</strong><small th:text="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stored executable stop price.' : 'Eighth completed candle close.'}">Stored outcome exit.</small></article>
     </div>
-    <p class="signal-trade-plan-summary">No profit target or R:R is shown because this version implements only the supplied harmonic invalidation rules. Candle highs/lows determine a stop breach; the confirmation candle itself is never evaluated retrospectively.</p>
+    <p class="signal-trade-plan-summary">No profit target or R:R is shown. Candle highs/lows determine an earlier structural stop breach; otherwise candle 8's completed close ends the outcome window. The confirmation candle is excluded.</p>
   </section>
 
   <section th:if="${signal.chart().harmonic() != null}"
@@ -834,6 +914,7 @@
   </dialog>
 </main>
 <th:block th:fragment="signalDetailBehavior">
+<script th:src="@{/js/signal-tabs.js}"></script>
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
   (function () {
     'use strict';
@@ -860,45 +941,7 @@
       }
     }
 
-    function activateTab(name, updateHash) {
-      const requestedTab = tabs.find(tab => tab.dataset.signalTab === name);
-      if (name === 'results' && requestedTab?.dataset.resultsAvailable !== 'true') {
-        showResultsUnavailableDialog();
-        return false;
-      }
-      const selected = panels[name] ? name : 'graphical';
-      tabs.forEach(tab => {
-        const active = tab.dataset.signalTab === selected;
-        tab.classList.toggle('active', active);
-        tab.setAttribute('aria-selected', String(active));
-        tab.tabIndex = active ? 0 : -1;
-      });
-      Object.entries(panels).forEach(([panelName, panel]) => {
-        if (!panel) return;
-        const active = panelName === selected;
-        panel.hidden = !active;
-        panel.classList.toggle('active', active);
-      });
-      if (updateHash && window.history && window.history.replaceState) {
-        const hash = selected === 'score'
-          ? '#score-report'
-          : (selected === 'results' ? '#results' : '#graphical-outlook');
-        window.history.replaceState(null, '', hash);
-      }
-      if (selected === 'results') window.setTimeout(ensureResultsChart, 0);
-      return true;
-    }
-
-    tabs.forEach((tab, index) => {
-      tab.addEventListener('click', () => activateTab(tab.dataset.signalTab, true));
-      tab.addEventListener('keydown', event => {
-        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-        event.preventDefault();
-        const offset = event.key === 'ArrowRight' ? 1 : -1;
-        const next = tabs[(index + offset + tabs.length) % tabs.length];
-        if (activateTab(next.dataset.signalTab, true)) next.focus();
-      });
-    });
+    const activateTab = window.StockWatchSignalTabs(tabs, panels, showResultsUnavailableDialog, ensureResultsChart);
     document.getElementById('closeSignalResultsUnavailableDialog')
       ?.addEventListener('click', () => document.getElementById('signalResultsUnavailableDialog')?.close());
     const initialTab = window.location.hash === '#score-report'
@@ -1079,6 +1122,7 @@
     const container = document.getElementById('signalChart');
     const dataList = document.getElementById('signalChartData');
     const elliottDataList = document.getElementById('signalElliottWaveData');
+    const elliottProjectionDataList = document.getElementById('signalElliottProjectionData');
     const harmonicDataList = document.getElementById('signalHarmonicData');
     if (!container || !dataList || typeof LightweightCharts === 'undefined') return;
 
@@ -1253,12 +1297,13 @@
       }];
       if (Number.isFinite(tradePlan.resolutionTime) && tradePlan.resolutionTime > 0
           && candleData.some(candle => candle.time === tradePlan.resolutionTime)) {
+        const harmonicTimeStopped = tradePlan.status === 'TIME_STOPPED';
         harmonicStopMarkers.push({
           time: tradePlan.resolutionTime,
           position: container.dataset.direction === 'SELL' ? 'aboveBar' : 'belowBar',
-          color: initialColors.tradeStop,
+          color: harmonicTimeStopped ? initialColors.timeStop : initialColors.tradeStop,
           shape: 'circle',
-          text: 'Buffered stop breached'
+          text: harmonicTimeStopped ? 'Candle 8 outcome' : 'Buffered stop breached'
         });
       }
       candles.setMarkers(harmonicStopMarkers);
@@ -1299,6 +1344,32 @@
       })).filter(point => Number.isFinite(point.timestamp) && Number.isFinite(point.price))
     } : null;
 
+    const elliottProjections = elliottProjectionDataList
+      ? Array.from(elliottProjectionDataList.children).map(item => ({
+          key: item.dataset.key || '',
+          label: item.dataset.label || 'Conditional path',
+          status: item.dataset.status || 'ACTIVE',
+          rank: Number(item.dataset.rank),
+          confidence: Number(item.dataset.confidence),
+          zoneLow: Number(item.dataset.zoneLow),
+          zoneHigh: Number(item.dataset.zoneHigh),
+          minimumCandles: Number(item.dataset.minCandles),
+          maximumCandles: Number(item.dataset.maxCandles),
+          points: Array.from(item.querySelectorAll('[data-projection-point]')).map(point => ({
+            candleOffset: Number(point.dataset.offset),
+            timestamp: Number(point.dataset.time),
+            price: Number(point.dataset.price),
+            label: point.dataset.label || ''
+          })).filter(point => Number.isFinite(point.timestamp) && Number.isFinite(point.price))
+        })).filter(scenario => scenario.points.length >= 2)
+      : [];
+
+    function projectionPalette(theme) {
+      return theme === 'light'
+        ? ['#397b12', '#087da8', '#7d4cc7']
+        : ['#b7f34a', '#59c3ff', '#c995ff'];
+    }
+
     function isCorrectiveElliottPoint(point) {
       return ['A', 'B', 'C'].includes(String(point.label || '').toUpperCase());
     }
@@ -1318,6 +1389,7 @@
     }
 
     const elliottRootSeries = [];
+    const elliottProjectionSeries = [];
 
     function renderElliottSegment(wave, points, color, includeMarker) {
       if (points.length < 2) return null;
@@ -1368,13 +1440,13 @@
           lastValueVisible: false,
           priceLineVisible: false
         });
-        const buyConfirmation = elliottWave.correctionComplete
-          ? elliottWave.direction === 'BULLISH'
-          : elliottWave.direction === 'BEARISH';
+        const buyConfirmation = container.dataset.direction === 'BUY';
         const weekly = container.dataset.interval === 'WEEKLY';
-        const endpointLabel = elliottWave.correctionComplete
-          ? (weekly ? 'c' : 'C')
-          : (weekly ? 'v' : 'V');
+        const recordedEndpoint = [...elliottWave.points]
+          .reverse()
+          .find(point => String(point.label || '').trim());
+        const endpointLabel = recordedEndpoint?.label
+          || (elliottWave.correctionComplete ? (weekly ? 'c' : 'C') : (weekly ? 'v' : 'V'));
         confirmationSeries.setData([{ time: confirmationCandle.time, value: confirmationCandle.close }]);
         confirmationSeries.setMarkers([{
           time: confirmationCandle.time,
@@ -1386,6 +1458,29 @@
         elliottRootSeries.push(confirmationSeries);
       }
     }
+
+    const initialProjectionColors = projectionPalette(document.documentElement.dataset.theme);
+    elliottProjections.forEach((scenario, index) => {
+      const color = initialProjectionColors[Math.min(index, initialProjectionColors.length - 1)];
+      const series = chart.addLineSeries({
+        color,
+        lineWidth: scenario.rank === 1 ? 3 : 2,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        crosshairMarkerVisible: true,
+        lastValueVisible: false,
+        priceLineVisible: false
+      });
+      series.setData(scenario.points.map(point => ({ time: point.timestamp, value: point.price })));
+      const endpoint = scenario.points[scenario.points.length - 1];
+      series.setMarkers([{
+        time: endpoint.timestamp,
+        position: scenario.points[0].price <= endpoint.price ? 'aboveBar' : 'belowBar',
+        color,
+        shape: 'circle',
+        text: `${scenario.rank === 1 ? 'Preferred' : `Alt ${scenario.rank - 1}`} · ${scenario.confidence}/100`
+      }]);
+      elliottProjectionSeries.push({ series, scenario, colorIndex: index });
+    });
 
     if (harmonicFormation && harmonicFormation.points.length === 5) {
       const harmonicColor = HARMONIC_FORMATION_COLOR;
@@ -1457,6 +1552,17 @@
     annotationLayer.setAttribute('aria-hidden', 'true');
     container.append(annotationLayer);
 
+    const projectionZones = elliottProjections.map((scenario, index) => {
+      const zone = document.createElement('div');
+      zone.className = `elliott-projection-chart-zone rank-${Math.min(index + 1, 3)}`;
+      if (scenario.status === 'DISFAVORED') zone.classList.add('disfavored');
+      const label = document.createElement('span');
+      label.textContent = `${scenario.rank === 1 ? 'Preferred' : `Alt ${scenario.rank - 1}`} target · candles ${scenario.minimumCandles}–${scenario.maximumCandles}`;
+      zone.append(label);
+      annotationLayer.append(zone);
+      return { zone, scenario };
+    });
+
     let rewardZone = null;
     let riskZone = null;
     let timeStopLine = null;
@@ -1513,6 +1619,26 @@
     }
 
     function renderAnnotations() {
+      projectionZones.forEach(({ zone, scenario }) => {
+        const first = scenario.points[0];
+        const last = scenario.points[scenario.points.length - 1];
+        const minimumPoint = scenario.points.find(
+          point => point.candleOffset >= scenario.minimumCandles) || last;
+        const minimumTime = minimumPoint.timestamp;
+        const startX = chart.timeScale().timeToCoordinate(minimumTime);
+        const endX = chart.timeScale().timeToCoordinate(last.timestamp);
+        const highY = candles.priceToCoordinate(scenario.zoneHigh);
+        const lowY = candles.priceToCoordinate(scenario.zoneLow);
+        if ([startX, endX, highY, lowY].some(value => value === null)) {
+          zone.hidden = true;
+          return;
+        }
+        zone.hidden = false;
+        zone.style.left = `${Math.min(startX, endX)}px`;
+        zone.style.width = `${Math.max(3, Math.abs(endX - startX))}px`;
+        zone.style.top = `${Math.min(highY, lowY)}px`;
+        zone.style.height = `${Math.max(4, Math.abs(lowY - highY))}px`;
+      });
       if (hasTradePlan && rewardZone && riskZone && timeStopLine) {
         const entryIndex = candleData.findIndex(candle => candle.time === tradePlan.entryTime);
         const entryX = chart.timeScale().timeToCoordinate(tradePlan.entryTime);
@@ -1610,9 +1736,11 @@
           candle => candle.time === elliottWave.confirmationTimestamp
         );
         if (firstWaveIndex >= 0 && confirmationIndex >= 0) {
+          const longestProjection = elliottProjections.reduce(
+            (longest, scenario) => Math.max(longest, scenario.maximumCandles || 0), 0);
           chart.timeScale().setVisibleLogicalRange({
             from: Math.max(-0.5, firstWaveIndex - 4),
-            to: confirmationIndex + 8
+            to: confirmationIndex + Math.max(8, longestProjection + 2)
           });
           return;
         }
@@ -1688,6 +1816,10 @@
         tradePriceLines[2].applyOptions({ color: colors.tradeStop });
       }
       trendSeries.applyOptions({ color: colors.trend });
+      const projectionColors = projectionPalette(event.detail.theme);
+      elliottProjectionSeries.forEach(item => item.series.applyOptions({
+        color: projectionColors[Math.min(item.colorIndex, projectionColors.length - 1)]
+      }));
       requestAnimationFrame(renderAnnotations);
     });
   }());

@@ -1,7 +1,7 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserHarmonicPatternPreferences;
 import org.example.stockwatch247.model.enums.HarmonicPatternType;
@@ -50,8 +50,13 @@ public class HarmonicPatternPreferencesService {
 
     @Transactional(readOnly = true)
     public PreferencesView get(User user) {
+        return AnalysisComputationScope.memo(java.util.List.of(HarmonicPatternPreferencesService.class,
+                user == null ? "factory" : user.getId() == null ? user : user.getId()), () -> loadPreferences(user));
+    }
+
+    private PreferencesView loadPreferences(User user) {
         if (user == null) throw new IllegalArgumentException("An account is required.");
-        return repository.findByUser(user).map(this::read).orElseGet(this::factoryPreferences);
+        return repository.findByUser(user).map(this::read).orElseGet(HarmonicPatternPreferencesService::factoryPreferences);
     }
 
     @Transactional
@@ -119,7 +124,7 @@ public class HarmonicPatternPreferencesService {
             else if (LEGACY_PROFILE_VERSION_V2.equals(stored.version())) stored = migrateLegacy(stored, false);
             stored.validate();
             return view(stored, entity.getUpdatedAt());
-        } catch (JsonProcessingException | IllegalArgumentException exception) {
+        } catch (JacksonException | IllegalArgumentException exception) {
             return factoryPreferences();
         }
     }
@@ -176,11 +181,11 @@ public class HarmonicPatternPreferencesService {
         if (value != null) migrated.put(replacement, value);
     }
 
-    private PreferencesView factoryPreferences() {
+    public static PreferencesView factoryPreferences() {
         return view(factoryStored(), null);
     }
 
-    private PreferencesView view(StoredPreferences stored, Instant updatedAt) {
+    private static PreferencesView view(StoredPreferences stored, Instant updatedAt) {
         List<NumericSetting> globals = GLOBALS.stream()
                 .map(definition -> setting(definition, stored.globals().get(definition.key())))
                 .toList();
@@ -237,7 +242,7 @@ public class HarmonicPatternPreferencesService {
         return new StoredPreferences(PROFILE_VERSION, globals, patterns);
     }
 
-    private StoredPreferences factoryStored() {
+    private static StoredPreferences factoryStored() {
         Map<String, Double> globals = new LinkedHashMap<>();
         GLOBALS.forEach(item -> globals.put(item.key(), item.factoryValue()));
         return new StoredPreferences(PROFILE_VERSION, globals,
@@ -352,7 +357,7 @@ public class HarmonicPatternPreferencesService {
     private String write(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Harmonic preferences could not be serialized.", exception);
         }
     }

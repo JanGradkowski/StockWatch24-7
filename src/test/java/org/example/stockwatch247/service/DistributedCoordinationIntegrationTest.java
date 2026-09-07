@@ -35,6 +35,9 @@ class DistributedCoordinationIntegrationTest {
     @Autowired
     private SharedQuoteCache quoteCache;
 
+    @Autowired
+    private MarketDataProviderRequestBudget providerRequestBudget;
+
     @Test
     void rateLimitCounterIsAtomicAndSharedThroughPostgres() {
         String key = "integration:" + UUID.randomUUID();
@@ -42,6 +45,21 @@ class DistributedCoordinationIntegrationTest {
         assertThat(rateLimiter.tryAcquire(key, 2, Duration.ofMinutes(1))).isTrue();
         assertThat(rateLimiter.tryAcquire(key, 2, Duration.ofMinutes(1))).isTrue();
         assertThat(rateLimiter.tryAcquire(key, 2, Duration.ofMinutes(1))).isFalse();
+    }
+
+    @Test
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    void twelveDataBudgetStopsAtTheConfiguredDistributedMinuteLimit() {
+        jdbcTemplate.update("delete from market_data_provider_usage where provider = 'TWELVE_DATA'");
+
+        for (int request = 0; request < 7; request++) {
+            providerRequestBudget.reserveTwelveDataRequest();
+        }
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        providerRequestBudget::reserveTwelveDataRequest)
+                .isInstanceOf(MarketDataProviderRequestBudget.BudgetUnavailableException.class)
+                .hasMessageContaining("minute request budget");
     }
 
     @Test
@@ -73,7 +91,7 @@ class DistributedCoordinationIntegrationTest {
         // A second app instance must not overtake an in-flight earlier run for the same symbol.
         assertThat(jobStore.claimNextForSymbol(Duration.ofMinutes(5), symbol)).isEmpty();
 
-        jobStore.complete(job.id());
+        jobStore.complete(job);
         assertThat(jobStore.enqueue(symbol, TimeInterval.DAILY, scheduledFor)).isZero();
         AlertCheckJobStore.AlertCheckJob nextJob = jobStore
                 .claimNextForSymbol(Duration.ofMinutes(5), symbol)
@@ -180,7 +198,7 @@ class DistributedCoordinationIntegrationTest {
             assertThat(job.symbol()).isEqualTo(symbol);
             assertThat(job.interval()).isEqualTo(interval);
             assertThat(job.scheduledFor()).isEqualTo(scheduledFor);
-            jobStore.complete(job.id());
+            jobStore.complete(job);
         }
     }
 

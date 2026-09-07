@@ -15,8 +15,11 @@
     <div class="glow-orb orb-2"></div>
 </div>
 
+<th:block th:if="${showAppNavigation == true}">
+    <div th:replace="~{fragments/navbar :: navbar}"></div>
+</th:block>
 <div class="about-shell">
-    <nav class="navbar landing-nav about-nav" aria-label="Main navigation">
+    <nav th:unless="${showAppNavigation == true}" class="navbar landing-nav about-nav" aria-label="Main navigation">
         <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home">
             <span class="logo-mark" aria-hidden="true"></span>
             <span class="logo-word">StockWatch <span>24/7</span></span>

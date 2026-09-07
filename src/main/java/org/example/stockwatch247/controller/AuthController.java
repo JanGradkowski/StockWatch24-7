@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AlertRuleService;
+import org.example.stockwatch247.service.SignalArchiveFilter;
 import org.example.stockwatch247.service.EmailVerificationService;
 import org.example.stockwatch247.service.SignalScoringPreferencesService;
 import org.example.stockwatch247.service.TechnicalOutlookTrackingService;
@@ -72,7 +73,7 @@ public class AuthController {
                 passwordEncoder, emailVerificationService, null);
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureTechnicalOutlookTracking(TechnicalOutlookTrackingService trackingService) {
         this.technicalOutlookTrackingService = trackingService;
     }
@@ -176,7 +177,7 @@ public class AuthController {
     @GetMapping("/home")
     public String homePage(Model model, Principal principal) {
         // We can fetch the full user object using the email from Principal
-        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
 
         if (currentUser != null) {
             var trackedCompanies = alertRuleService.getActiveCompanyViews(currentUser);
@@ -275,23 +276,31 @@ public class AuthController {
                                    @RequestParam(defaultValue = "date") String sort,
                                    @RequestParam(defaultValue = "desc") String direction,
                                    @RequestParam(defaultValue = "0") int page,
+                                   @RequestParam(defaultValue = "all") String state,
+                                   @RequestParam(defaultValue = "") String ticker,
                                    Model model,
                                    Principal principal) {
-        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (currentUser == null) {
             return "redirect:/login";
         }
+        var filter = new SignalArchiveFilter(state, ticker);
         model.addAttribute("firstName", currentUser.getFirstName());
         AlertRuleService.CompanySignalArchive companyArchive = alertRuleService.getCompanySignalArchive(
-                currentUser, alertRuleId, sort, direction, page);
+                currentUser, alertRuleId, sort, direction, page, filter);
         model.addAttribute("companyArchive", companyArchive);
         model.addAttribute("archive", companyArchive.archive());
+        archiveNavigation(model, companyArchive.archive(), filter, "/alerts/" + alertRuleId);
         return "all-signals";
     }
 
     @GetMapping("/alerts/signals/{alertEventId}")
-    public String signalDetailPage(@PathVariable Long alertEventId, Model model, Principal principal) {
-        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+    public String signalDetailPage(@PathVariable Long alertEventId, Model model, Principal principal,
+                                   @RequestParam(defaultValue = "") String returnTo) {
+        if (returnTo.length() <= 1024 && returnTo.matches("^/(signals|alerts/[0-9]+)(\\?[^\\r\\n#]*)?$")) {
+            model.addAttribute("archiveReturnUrl", returnTo);
+        }
+        User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (currentUser == null) {
             return "redirect:/login";
         }
@@ -328,20 +337,30 @@ public class AuthController {
     public String allSignalsPage(@RequestParam(defaultValue = "date") String sort,
                                  @RequestParam(defaultValue = "desc") String direction,
                                  @RequestParam(defaultValue = "0") int page,
+                                 @RequestParam(defaultValue = "all") String state,
+                                 @RequestParam(defaultValue = "") String ticker,
                                  Model model,
                                  Principal principal) {
-        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (currentUser == null) {
             return "redirect:/login";
         }
+        var filter = new SignalArchiveFilter(state, ticker);
         model.addAttribute("firstName", currentUser.getFirstName());
-        model.addAttribute("archive", alertRuleService.getSignalArchive(
-                currentUser,
-                sort,
-                direction,
-                page
-        ));
+        var archive = alertRuleService.getSignalArchive(currentUser, sort, direction, page, filter);
+        model.addAttribute("archive", archive);
+        archiveNavigation(model, archive, filter, "/signals");
         return "all-signals";
+    }
+
+    private void archiveNavigation(Model model, AlertRuleService.SignalArchivePage archive,
+                                   SignalArchiveFilter filter, String path) {
+        model.addAttribute("archiveFilter", filter);
+        model.addAttribute("archiveClearUrl", path);
+        model.addAttribute("archiveReturnUrl", org.springframework.web.util.UriComponentsBuilder.fromPath(path)
+                .queryParam("sort", archive.sort()).queryParam("direction", archive.direction())
+                .queryParam("page", archive.page()).queryParam("state", filter.state())
+                .queryParam("ticker", filter.ticker()).build().encode().toUriString());
     }
 
     @GetMapping("/activity-signals")
@@ -350,7 +369,7 @@ public class AuthController {
                                          @RequestParam(defaultValue = "0") int page,
                                          Model model,
                                          Principal principal) {
-        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (currentUser == null) {
             return "redirect:/login";
         }
@@ -364,7 +383,7 @@ public class AuthController {
                             @RequestParam(required = false) String mic,
                             Model model,
                             Principal principal) {
-        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (currentUser != null) {
             model.addAttribute("firstName", currentUser.getFirstName());
         }
@@ -463,7 +482,7 @@ public class AuthController {
             return "date";
         }
         return switch (requestedSort.toLowerCase(Locale.ROOT)) {
-            case "company", "transaction", "type", "actor" ->
+            case "ticker", "company", "transaction", "type", "actor" ->
                     requestedSort.toLowerCase(Locale.ROOT);
             default -> "date";
         };
@@ -472,6 +491,7 @@ public class AuthController {
     private Comparator<TickerNotificationView> activityComparator(String sort, String direction) {
         Comparator<String> textOrder = Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER);
         Comparator<TickerNotificationView> primary = switch (sort) {
+            case "ticker" -> Comparator.comparing(TickerNotificationView::symbol, textOrder);
             case "company" -> Comparator.comparing(TickerNotificationView::companyName, textOrder)
                     .thenComparing(TickerNotificationView::symbol, textOrder);
             case "transaction" -> Comparator.comparing(
@@ -556,6 +576,7 @@ public class AuthController {
 
         public String groupKey(TickerNotificationView signal) {
             return switch (sort) {
+                case "ticker" -> signal.symbol().toLowerCase(Locale.ROOT);
                 case "company" -> signal.companyName().toLowerCase(Locale.ROOT);
                 case "transaction" -> signal.transactionType();
                 case "type" -> signal.source();
@@ -566,6 +587,7 @@ public class AuthController {
 
         public String groupLabel(TickerNotificationView signal) {
             return switch (sort) {
+                case "ticker" -> signal.symbol();
                 case "company" -> signal.companyName();
                 case "transaction" -> signal.transactionTypeLabel();
                 case "type" -> signal.sourceLabel();
@@ -577,6 +599,7 @@ public class AuthController {
 
         public String groupDetail(TickerNotificationView signal) {
             return switch (sort) {
+                case "ticker" -> signal.companyName();
                 case "company" -> signal.symbol();
                 case "transaction" -> "Transaction direction";
                 case "type" -> "Activity signal source";

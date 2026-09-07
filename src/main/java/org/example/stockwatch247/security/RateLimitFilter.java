@@ -53,6 +53,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 "account:" + account)) {
             return;
         }
+        if (isPasswordReset(request) && account != null
+                && !tryAcquire(response, new Limit("reset-account", 8, Duration.ofMinutes(15)), "account:" + account)) return;
+        if (isSensitivePasswordAction(request)
+                && !tryAcquire(response, new Limit("settings-password-client", 20, Duration.ofMinutes(10)),
+                    "ip:" + request.getRemoteAddr())) return;
         filterChain.doFilter(request, response);
     }
 
@@ -71,6 +76,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private Limit limitFor(HttpServletRequest request) {
         String method = request.getMethod();
         String path = request.getRequestURI();
+        if (isPasswordReset(request)) return new Limit("reset-client", 20, Duration.ofMinutes(15));
+        if (isSensitivePasswordAction(request)) return new Limit("settings-password", 8, Duration.ofMinutes(10));
         if (isLogin(request)) {
             return new Limit("login", 10, Duration.ofMinutes(1));
         }
@@ -122,8 +129,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return "POST".equals(request.getMethod()) && "/resend-verification".equals(request.getRequestURI());
     }
 
+    private boolean isPasswordReset(HttpServletRequest request) {
+        return "POST".equals(request.getMethod()) && "/reset-password".equals(request.getServletPath().isEmpty()
+                ? request.getRequestURI() : request.getServletPath());
+    }
+
+    private boolean isSensitivePasswordAction(HttpServletRequest request) {
+        String path = request.getServletPath().isEmpty() ? request.getRequestURI() : request.getServletPath();
+        return "POST".equals(request.getMethod()) && (path.equals("/settings/password")
+                || path.equals("/settings/password/code") || path.equals("/settings/mfa/start"));
+    }
+
     private String accountKey(HttpServletRequest request) {
-        if (!isLogin(request) && !isVerificationResend(request)) {
+        if (!isLogin(request) && !isVerificationResend(request) && !isPasswordReset(request)) {
             return null;
         }
         String email = request.getParameter("email");

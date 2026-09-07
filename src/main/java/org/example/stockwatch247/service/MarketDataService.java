@@ -21,7 +21,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -42,7 +41,7 @@ public class MarketDataService {
     private final MarketDataHistoryStateStore historyStateStore;
     private final CandleBatchStore candleBatchStore;
     private final ApplicationEventPublisher eventPublisher;
-    private final Map<SyncKey, FailedSync> recentFailedSyncs = new ConcurrentHashMap<>();
+    private final BoundedTtlCache<SyncKey, FailedSync> recentFailedSyncs = new BoundedTtlCache<>(1024, 300);
 
     @Autowired
     public MarketDataService(CandleRepository candleRepository,
@@ -53,6 +52,7 @@ public class MarketDataService {
                              MarketDataHistoryStateStore historyStateStore,
                              CandleBatchStore candleBatchStore,
                              ApplicationEventPublisher eventPublisher,
+                             MarketDataProviderRequestBudget providerRequestBudget,
                              @Value("${market-data.refresh-cooldown.intraday-seconds:60}") long intradayCooldownSeconds,
                              @Value("${market-data.refresh-cooldown.daily-seconds:600}") long dailyCooldownSeconds,
                              @Value("${market-data.refresh-cooldown.higher-interval-seconds:3600}") long higherIntervalCooldownSeconds,
@@ -83,8 +83,24 @@ public class MarketDataService {
                       long higherIntervalCooldownSeconds,
                       long syncLeaseSeconds) {
         this(candleRepository, stockAssetRepository, twelveDataService, yahooFinanceService,
-                syncCoordinator, historyStateStore, null, null, intradayCooldownSeconds, dailyCooldownSeconds,
+                syncCoordinator, historyStateStore, null, null, null, intradayCooldownSeconds, dailyCooldownSeconds,
                 higherIntervalCooldownSeconds, syncLeaseSeconds);
+    }
+
+    MarketDataService(CandleRepository candleRepository,
+                      StockAssetRepository stockAssetRepository,
+                      TwelveDataService twelveDataService,
+                      YahooFinanceService yahooFinanceService,
+                      MarketDataSyncCoordinator syncCoordinator,
+                      MarketDataHistoryStateStore historyStateStore,
+                      MarketDataProviderRequestBudget providerRequestBudget,
+                      long intradayCooldownSeconds,
+                      long dailyCooldownSeconds,
+                      long higherIntervalCooldownSeconds,
+                      long syncLeaseSeconds) {
+        this(candleRepository, stockAssetRepository, twelveDataService, yahooFinanceService,
+                syncCoordinator, historyStateStore, null, null, providerRequestBudget,
+                intradayCooldownSeconds, dailyCooldownSeconds, higherIntervalCooldownSeconds, syncLeaseSeconds);
     }
 
     public CandleSyncResult syncCandles(String rawSymbol, String interval, Long beforeTimestamp) {
@@ -163,8 +179,13 @@ public class MarketDataService {
                     source = CandleSource.TWELVE_DATA;
                 } catch (Exception e) {
                     twelveDataFailure = failureMessage(e);
-                    log.warn("Twelve Data candle sync unavailable for {} {}: {}. Trying Yahoo Finance.",
-                            symbol, interval, twelveDataFailure);
+                    if (e instanceof MarketDataProviderRequestBudget.BudgetUnavailableException) {
+                        log.info("Twelve Data candle sync skipped for {} {}: {} Trying Yahoo Finance.",
+                                symbol, interval, twelveDataFailure);
+                    } else {
+                        log.warn("Twelve Data candle sync unavailable for {} {}: {}. Trying Yahoo Finance.",
+                                symbol, interval, twelveDataFailure);
+                    }
                     try {
                         bars = yahooFinanceService.getTimeSeries(symbol, interval, outputSize);
                         if (bars.isEmpty()) {
@@ -186,7 +207,7 @@ public class MarketDataService {
                 long persistenceMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
                         System.nanoTime() - persistenceStarted);
                 syncCoordinator.markSuccessful(claim);
-                recentFailedSyncs.remove(syncKey);
+                recentFailedSyncs.removeIf(syncKey::equals);
                 successful = true;
                 if (persistedCandles > 0 && eventPublisher != null) {
                     eventPublisher.publishEvent(new CandleDataChangedEvent(symbol, interval, persistedCandles));
@@ -447,21 +468,21 @@ public class MarketDataService {
     }
 
     private CandleSyncResult recentFailedSync(SyncKey key) {
-        FailedSync failure = recentFailedSyncs.get(key);
+        FailedSync failure = recentFailedSyncs.get(key, System.nanoTime() / 1_000_000_000L);
         if (failure == null) {
             return null;
         }
         if (System.nanoTime() < failure.retryAfterNanos()) {
             return new CandleSyncResult(CandleSource.NONE, 0, failure.message());
         }
-        recentFailedSyncs.remove(key, failure);
+        recentFailedSyncs.removeIf(key::equals);
         return null;
     }
 
     private void rememberFailedSync(SyncKey key, String failureMessage) {
         recentFailedSyncs.put(key, new FailedSync(
                 failureMessage,
-                System.nanoTime() + FAILED_SYNC_COOLDOWN_NANOS));
+                System.nanoTime() + FAILED_SYNC_COOLDOWN_NANOS), System.nanoTime() / 1_000_000_000L);
     }
 
     public enum CandleSource {

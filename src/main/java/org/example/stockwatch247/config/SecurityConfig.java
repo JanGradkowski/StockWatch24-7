@@ -54,7 +54,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 1. Public Routes (Added /login here explicitly)
                         .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/webjars/**",
-                                "/signup", "/login", "/login/2fa", "/verify-email", "/resend-verification",
+                                "/images/**", "/signup", "/login", "/login/2fa", "/login/2fa/cancel", "/verify-email", "/resend-verification",
                                 "/forgot-password", "/reset-password", "/cancel-account-deletion", "/about").permitAll()
 
                         // 2. Protected Routes (Added /stock/** here for the new stock page)
@@ -82,7 +82,7 @@ public class SecurityConfig {
                 )
                 .headers(headers -> headers
                         .referrerPolicy(referrer -> referrer
-                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
                         .permissionsPolicyHeader(permissions -> permissions.policy(
                                 "camera=(), microphone=(), geolocation=(), payment=(), usb=()"))
                 )
@@ -104,6 +104,14 @@ public class SecurityConfig {
         }
 
         return http.build();
+    }
+
+    @Bean
+    public org.springframework.boot.web.servlet.FilterRegistrationBean<AccountSessionValidationFilter> accountFilterRegistration(
+            AccountSessionValidationFilter filter) {
+        var registration = new org.springframework.boot.web.servlet.FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean

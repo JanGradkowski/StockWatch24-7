@@ -18,6 +18,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
+@org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "diagnostic.local-data.enabled", matches = "true")
 class GspcActiveTrendDiagnosticTest {
     @Autowired CandleRepository candleRepository;
     @Autowired TechnicalIndicatorEnrichmentService enrichmentService;

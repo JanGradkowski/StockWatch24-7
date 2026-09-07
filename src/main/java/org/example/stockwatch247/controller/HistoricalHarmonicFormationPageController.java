@@ -53,7 +53,7 @@ public class HistoricalHarmonicFormationPageController {
         String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
         User user = principal == null ? null
-                : userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+                : org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         model.addAttribute("firstName", user == null ? "Trader" : user.getFirstName());
         HistoricalHarmonicFormationService.HistoricalHarmonicDetail harmonic = user == null
                 || harmonicPreferences == null || harmonicDetector == null

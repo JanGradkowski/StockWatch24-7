@@ -8,6 +8,7 @@ import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.model.enums.TradeSignal;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
@@ -59,6 +60,10 @@ public interface AlertRuleRepository extends JpaRepository<AlertRule, Long> {
 
     @Query("select count(distinct ar.stockAsset.id) from AlertRule ar where ar.user = :user and ar.isActive = true")
     long countDistinctActiveStocksByUser(User user);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update AlertRule ar set ar.isActive = false where ar.user = :user and ar.isActive = true")
+    int deactivateAllByUser(User user);
 
     boolean existsByStockAssetAndIsActiveTrue(StockAsset stockAsset);
 

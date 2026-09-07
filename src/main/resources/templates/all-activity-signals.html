@@ -46,6 +46,7 @@
           <span>Group and sort by</span>
           <select name="sort">
             <option value="date" th:selected="${archive.sort() == 'date'}">Transaction date</option>
+            <option value="ticker" th:selected="${archive.sort() == 'ticker'}">Ticker</option>
             <option value="company" th:selected="${archive.sort() == 'company'}">Company</option>
             <option value="transaction" th:selected="${archive.sort() == 'transaction'}">Buy / sale</option>
             <option value="type" th:selected="${archive.sort() == 'type'}">Signal type</option>
@@ -96,8 +97,17 @@
       </div>
 
       <div class="signal-archive-results">
-        <div class="activity-signal-archive-head" aria-hidden="true">
-          <span>Signal</span><span>Company</span><span>Buyer / seller</span><span>Transaction</span><span>Directional return</span><span>Dates</span><span>Read</span><span></span>
+        <div class="activity-signal-archive-head">
+          <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'type', 'Signal', 'asc', ${null})}"></a>
+          <div class="archive-column-sort-stack">
+            <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'ticker', 'Ticker', 'asc', ${null})}"></a>
+            <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'company', 'Company', 'asc', ${null})}"></a>
+          </div>
+          <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'actor', 'Buyer / seller', 'asc', ${null})}"></a>
+          <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'transaction', 'Buy / sale', 'asc', ${null})}"></a>
+          <span>Directional return</span>
+          <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'date', 'Traded', 'desc', ${null})}"></a>
+          <span>Read</span><span></span>
         </div>
         <div class="signal-archive-list">
           <div th:each="signal, row : ${archive.signals()}" class="signal-archive-entry">

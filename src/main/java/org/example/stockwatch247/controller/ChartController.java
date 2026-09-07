@@ -69,26 +69,26 @@ public class ChartController {
         this.elliottWaveDetectionService = elliottWaveDetectionService;
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureElliottWavePreferences(UserRepository userRepository,
                                          ElliottWavePreferencesService elliottWavePreferencesService) {
         this.userRepository = userRepository;
         this.elliottWavePreferencesService = elliottWavePreferencesService;
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureHarmonicPatterns(HarmonicPatternDetectionService harmonicPatternDetectionService) {
         if (harmonicPatternDetectionService != null) {
             this.harmonicPatternDetectionService = harmonicPatternDetectionService;
         }
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureHarmonicPatternPreferences(HarmonicPatternPreferencesService preferencesService) {
         this.harmonicPatternPreferencesService = preferencesService;
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureHistoricalSignalCache(HistoricalSignalCacheService cacheService) {
         this.historicalSignalCacheService = cacheService;
     }
@@ -217,8 +217,10 @@ public class ChartController {
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
         from = SecurityInputValidator.requireBeforeTimestamp(from);
         TimeInterval waveInterval = elliottInterval(validatedInterval);
+        var settings = elliottPreferences(principal).profile(waveInterval).rules();
+        var historicalDetector = elliottWaveDetectionService.configured(settings);
         if (historicalSignalCacheService == null) {
-            return calculateHistoricalElliottWaves(symbol, validatedInterval, from, principal, waveInterval);
+            return calculateHistoricalElliottWaves(symbol, validatedInterval, from, detector(principal, waveInterval), waveInterval);
         }
         marketDataService.syncCandles(symbol, validatedInterval, null);
         ElliottWaveHistoryOverlay completeHistory = historicalSignalCacheService.getOrCompute(
@@ -226,10 +228,10 @@ public class ChartController {
                 symbol,
                 validatedInterval,
                 ElliottWaveDetectionService.SETUP_SCORE_VERSION,
-                elliottCacheSettings(principal, waveInterval),
+                settings,
                 ElliottWaveHistoryOverlay.class,
                 () -> calculateHistoricalElliottWaves(
-                        cacheSymbol, validatedInterval, null, principal, waveInterval));
+                        cacheSymbol, validatedInterval, null, historicalDetector, waveInterval));
         if (from == null) {
             return completeHistory;
         }
@@ -246,13 +248,12 @@ public class ChartController {
             String symbol,
             String validatedInterval,
             Long from,
-            Principal principal,
+            ElliottWaveDetectionService detector,
             TimeInterval waveInterval) {
         List<Candle> candles = from == null
                 ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval)
                 : candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
                         symbol, validatedInterval, from);
-        ElliottWaveDetectionService detector = detector(principal, waveInterval);
         List<ElliottWaveOverlay> structures = detector
                 .findHistoricalWaveStructures(
                         enrichmentService.enrichForElliott(
@@ -310,8 +311,10 @@ public class ChartController {
         String validatedInterval = SecurityInputValidator.requireInterval(interval);
         harmonicInterval(validatedInterval);
         from = SecurityInputValidator.requireBeforeTimestamp(from);
+        var preferences = harmonicPreferences(principal);
+        var historicalDetector = harmonicPatternDetectionService.configured(preferences.rules(), preferences.patternRules());
         if (historicalSignalCacheService == null) {
-            return calculateHistoricalHarmonicFormations(symbol, validatedInterval, from, principal);
+            return calculateHistoricalHarmonicFormations(symbol, validatedInterval, from, harmonicDetector(principal));
         }
         marketDataService.syncCandles(symbol, validatedInterval, null);
         HarmonicHistoryOverlay completeHistory = historicalSignalCacheService.getOrCompute(
@@ -319,10 +322,10 @@ public class ChartController {
                 symbol,
                 validatedInterval,
                 HarmonicPatternDetectionService.RULE_VERSION,
-                harmonicCacheSettings(principal),
+                List.of(preferences.version(), preferences.rules(), preferences.patternRules()),
                 HarmonicHistoryOverlay.class,
                 () -> calculateHistoricalHarmonicFormations(
-                        cacheSymbol, validatedInterval, null, principal));
+                        cacheSymbol, validatedInterval, null, historicalDetector));
         if (from == null) {
             return completeHistory;
         }
@@ -340,11 +343,11 @@ public class ChartController {
             String symbol,
             String validatedInterval,
             Long from,
-            Principal principal) {
+            HarmonicPatternDetectionService historicalDetector) {
         Long requestedFrom = from;
         List<Candle> candles = harmonicDetectionCandles(symbol, validatedInterval, from);
         List<HarmonicPatternDetectionService.HarmonicFormation> formations =
-                harmonicDetector(principal).detectHistorical(candles).stream()
+                historicalDetector.detectHistorical(candles).stream()
                         .filter(formation -> requestedFrom == null
                                 || formation.points().getLast().timestamp() >= requestedFrom)
                         .toList();
@@ -382,49 +385,31 @@ public class ChartController {
         if (principal == null || userRepository == null || harmonicPatternPreferencesService == null) {
             return harmonicPatternDetectionService;
         }
-        return userRepository.findByEmailIgnoreCase(principal.getName())
+        return org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                 .map(user -> harmonicPatternPreferencesService.detector(
                         user, harmonicPatternDetectionService))
                 .orElse(harmonicPatternDetectionService);
     }
 
-    private Object harmonicCacheSettings(Principal principal) {
-        if (principal == null || userRepository == null || harmonicPatternPreferencesService == null) {
-            return "factory";
-        }
-        return userRepository.findByEmailIgnoreCase(principal.getName())
-                .<Object>map(user -> {
-                    HarmonicPatternPreferencesService.PreferencesView preferences =
-                            harmonicPatternPreferencesService.get(user);
-                    return List.of(preferences.version(), preferences.rules(), preferences.patternRules());
-                })
-                .orElse("factory");
+    private HarmonicPatternPreferencesService.PreferencesView harmonicPreferences(Principal principal) {
+        if (principal == null || userRepository == null || harmonicPatternPreferencesService == null)
+            return HarmonicPatternPreferencesService.factoryPreferences();
+        return org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
+                .map(harmonicPatternPreferencesService::get).orElseGet(HarmonicPatternPreferencesService::factoryPreferences);
     }
 
-    private Object elliottCacheSettings(Principal principal, TimeInterval interval) {
-        if (principal == null || userRepository == null || elliottWavePreferencesService == null) {
-            ElliottWavePreferencesService.PreferencesView preferences =
-                    ElliottWavePreferencesService.factoryPreferences();
-            return List.of(preferences.version(), preferences.profile(interval).rules());
-        }
-        return userRepository.findByEmailIgnoreCase(principal.getName())
-                .<Object>map(user -> {
-                    ElliottWavePreferencesService.PreferencesView preferences =
-                            elliottWavePreferencesService.get(user);
-                    return List.of(preferences.version(), preferences.profile(interval).rules());
-                })
-                .orElseGet(() -> {
-                    ElliottWavePreferencesService.PreferencesView preferences =
-                            ElliottWavePreferencesService.factoryPreferences();
-                    return List.of(preferences.version(), preferences.profile(interval).rules());
-                });
+    private ElliottWavePreferencesService.PreferencesView elliottPreferences(Principal principal) {
+        if (principal == null || userRepository == null || elliottWavePreferencesService == null)
+            return ElliottWavePreferencesService.factoryPreferences();
+        return org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
+                .map(elliottWavePreferencesService::get).orElseGet(ElliottWavePreferencesService::factoryPreferences);
     }
 
     private ElliottWaveDetectionService detector(Principal principal, TimeInterval interval) {
         if (principal == null || userRepository == null || elliottWavePreferencesService == null) {
             return elliottWaveDetectionService;
         }
-        return userRepository.findByEmailIgnoreCase(principal.getName())
+        return org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                 .map(user -> elliottWaveDetectionService.configured(
                         elliottWavePreferencesService.get(user).profile(interval).rules()))
                 .orElse(elliottWaveDetectionService);

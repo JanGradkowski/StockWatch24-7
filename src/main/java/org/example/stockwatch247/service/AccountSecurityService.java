@@ -14,7 +14,11 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.time.Instant;
+import java.time.Clock;
+import java.util.Locale;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,12 +32,24 @@ public class AccountSecurityService {
     private final SecurityCryptoService crypto;
     private final TotpService totp;
     private final AlertNotificationService notifications;
+    private final Clock clock;
+    private final boolean verificationRequired;
     private final SecureRandom random = new SecureRandom();
 
     public AccountSecurityService(UserRepository users, MfaRecoveryCodeRepository recoveryCodes,
                                   SecurityEventRepository events, PasswordEncoder passwordEncoder,
                                   SecurityCryptoService crypto, TotpService totp,
                                   AlertNotificationService notifications) {
+        this(users, recoveryCodes, events, passwordEncoder, crypto, totp, notifications, Clock.systemUTC(), true);
+    }
+
+    @Autowired
+    public AccountSecurityService(UserRepository users, MfaRecoveryCodeRepository recoveryCodes,
+            SecurityEventRepository events, PasswordEncoder passwordEncoder, SecurityCryptoService crypto,
+            TotpService totp, AlertNotificationService notifications, Clock clock,
+            @Value("${security.email-verification.required:true}") boolean verificationRequired) {
+        this.clock = clock;
+        this.verificationRequired = verificationRequired;
         this.users = users; this.recoveryCodes = recoveryCodes; this.events = events;
         this.passwordEncoder = passwordEncoder; this.crypto = crypto; this.totp = totp;
         this.notifications = notifications;
@@ -45,7 +61,7 @@ public class AccountSecurityService {
     }
 
     @Transactional
-    public long changePassword(Long userId, String currentPassword, String code, String newPassword,
+    public PasswordChangeResult changePassword(Long userId, String currentPassword, String code, String newPassword,
                                PasswordSecurityCodeService codeService) {
         User user = locked(userId);
         SecurityInputValidator.requirePassword(newPassword);
@@ -53,31 +69,32 @@ public class AccountSecurityService {
         if (passwordEncoder.matches(newPassword, user.getPasswordHash()))
             throw new IllegalArgumentException("Choose a password different from your current password.");
         if (!codeService.consume(userId, PasswordSecurityCodeService.CHANGE, code))
-            throw new IllegalArgumentException("The security code is invalid, expired, or has too many failed attempts.");
+            return PasswordChangeResult.rejected();
         user.setPasswordHash(passwordEncoder.encode(newPassword));
-        user.setPasswordChangedAt(LocalDateTime.now());
+        user.setPasswordChangedAt(LocalDateTime.now(clock));
         user.setSecurityVersion(user.getSecurityVersion() + 1);
         users.save(user);
         record(user, "PASSWORD_CHANGED", "Password changed; other sessions were signed out.");
         notice(user, "Your StockWatch password was changed", "Your password was changed and other sessions were signed out.");
-        return user.getSecurityVersion();
+        return PasswordChangeResult.accepted(user.getSecurityVersion());
     }
 
     @Transactional
-    public void resetPassword(Long userId, String code, String newPassword,
+    public PasswordChangeResult resetPassword(Long userId, String code, String newPassword,
                               PasswordSecurityCodeService codeService) {
         User user = locked(userId);
         SecurityInputValidator.requirePassword(newPassword);
-        if (passwordEncoder.matches(newPassword, user.getPasswordHash()))
-            throw new IllegalArgumentException("Choose a password different from your current password.");
+        if (!user.isVerified() || user.getDeletionRequestedAt() != null) return PasswordChangeResult.rejected();
         if (!codeService.consume(userId, PasswordSecurityCodeService.RESET, code))
-            throw new IllegalArgumentException("The security code is invalid, expired, or has too many failed attempts.");
+            return PasswordChangeResult.rejected();
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) return PasswordChangeResult.rejected();
         user.setPasswordHash(passwordEncoder.encode(newPassword));
-        user.setPasswordChangedAt(LocalDateTime.now());
+        user.setPasswordChangedAt(LocalDateTime.now(clock));
         user.setSecurityVersion(user.getSecurityVersion() + 1);
         users.save(user);
         record(user, "PASSWORD_RESET", "Password reset using a verified email code.");
         notice(user, "Your StockWatch password was reset", "Your password was reset and every existing session was signed out.");
+        return PasswordChangeResult.accepted(user.getSecurityVersion());
     }
 
     @Transactional
@@ -85,7 +102,7 @@ public class AccountSecurityService {
         User user = locked(userId);
         if (user.isMfaEnabled()) throw new IllegalArgumentException("Authenticator verification is already enabled.");
         Long acceptedSetupStep = setupSecret == null ? null
-                : totp.matchingStep(setupSecret, code, Instant.now().getEpochSecond());
+                : totp.matchingStep(setupSecret, code, clock.instant().getEpochSecond());
         if (acceptedSetupStep == null)
             throw new IllegalArgumentException("Enter the current six-digit code from your authenticator app.");
         SecurityCryptoService.EncryptedValue encrypted = crypto.encrypt(setupSecret, context(user));
@@ -128,9 +145,21 @@ public class AccountSecurityService {
     }
 
     @Transactional
-    public boolean verifyLoginFactor(Long userId, String factorCode) {
-        User user = locked(userId);
-        return user.isMfaEnabled() && verifyFactorLocked(user, factorCode, true);
+    public Optional<AcceptedLogin> verifyLoginFactor(Long userId, long expectedVersion,
+                                                   long startedAt, String factorCode) {
+        User user = users.findByIdForUpdate(userId).orElse(null);
+        long now = clock.instant().getEpochSecond();
+        if (user == null || startedAt > now || now - startedAt >= 300
+                || user.getSecurityVersion() != expectedVersion || user.getDeletionRequestedAt() != null
+                || verificationRequired && !user.isVerified() || !user.isMfaEnabled()) return Optional.empty();
+        if (!verifyFactorLocked(user, factorCode, true)) return Optional.empty();
+        return Optional.of(new AcceptedLogin(user.getEmail(), user.getSecurityVersion()));
+    }
+
+    public record AcceptedLogin(String email, long securityVersion) { }
+    public record PasswordChangeResult(boolean successful, long securityVersion) {
+        static PasswordChangeResult rejected() { return new PasswordChangeResult(false, -1); }
+        static PasswordChangeResult accepted(long version) { return new PasswordChangeResult(true, version); }
     }
 
     @Transactional
@@ -187,19 +216,20 @@ public class AccountSecurityService {
 
     private boolean verifyFactorLocked(User user, String factorCode, boolean allowRecovery) {
         if (!user.isMfaEnabled() || factorCode == null) return false;
-        String compact = factorCode.trim().replace(" ", "").replace("-", "");
+        String compact = TotpService.normalizeFactor(factorCode);
+        if (compact == null) return false;
         if (compact.matches("\\d{6}")) {
             String secret = crypto.decrypt(user.getMfaSecretCiphertext(), user.getMfaSecretIv(), context(user));
-            Long step = totp.matchingStep(secret, compact, Instant.now().getEpochSecond());
+            Long step = totp.matchingStep(secret, compact, clock.instant().getEpochSecond());
             if (step == null || user.getLastAcceptedTotpStep() != null && step <= user.getLastAcceptedTotpStep()) return false;
             user.setLastAcceptedTotpStep(step); users.save(user); return true;
         }
         if (!allowRecovery) return false;
-        String hash = hashRecovery(compact.toUpperCase());
+        String hash = hashRecovery(compact.toUpperCase(Locale.ROOT));
         for (MfaRecoveryCode recovery : recoveryCodes.findByUserIdAndUsedAtIsNull(user.getId())) {
             if (MessageDigest.isEqual(hash.getBytes(StandardCharsets.US_ASCII),
                     recovery.getCodeHash().getBytes(StandardCharsets.US_ASCII))) {
-                recovery.setUsedAt(LocalDateTime.now()); recoveryCodes.save(recovery); return true;
+                recovery.setUsedAt(LocalDateTime.now(clock)); recoveryCodes.save(recovery); return true;
             }
         }
         return false;
@@ -210,7 +240,7 @@ public class AccountSecurityService {
         List<String> raw = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             byte[] bytes = new byte[10]; random.nextBytes(bytes);
-            String code = java.util.HexFormat.of().formatHex(bytes).toUpperCase();
+            String code = java.util.HexFormat.of().formatHex(bytes).toUpperCase(Locale.ROOT);
             String display = code.substring(0, 10) + "-" + code.substring(10);
             MfaRecoveryCode entity = new MfaRecoveryCode(); entity.setUser(user);
             entity.setCodeHash(hashRecovery(code)); recoveryCodes.save(entity); raw.add(display);

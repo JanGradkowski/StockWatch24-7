@@ -28,6 +28,10 @@ import java.util.Map;
 
 @Controller
 public class SettingsController {
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+    @org.springframework.beans.factory.annotation.Autowired
+    void setClock(java.time.Clock clock) { this.clock = clock; }
+
     private final UserRepository users;
     private final AlertRuleRepository alertRules;
     private final AccountSecurityService security;
@@ -76,6 +80,11 @@ public class SettingsController {
         model.addAttribute("firstName", user.getFirstName());
         model.addAttribute("user", user);
         model.addAttribute("securityEvents", security.recentEvents(user.getId()));
+        if ("general".equals(settingsTab)) {
+            var expiry = passwordCodes.activeChangeCodeExpiry(user.getId());
+            model.addAttribute("passwordCodePending", expiry.isPresent());
+            model.addAttribute("passwordCodeExpiresAt", expiry.map(Instant::toString).orElse(""));
+        }
         if ("analysis".equals(settingsTab) || "detection".equals(settingsTab)) {
             model.addAttribute("analysisPreferences", analysisPreferences.get(user));
         }
@@ -100,7 +109,7 @@ public class SettingsController {
         Object setup = session.getAttribute(AccountSession.MFA_SETUP_SECRET);
         Object setupAt = session.getAttribute(AccountSession.MFA_SETUP_AT);
         if (setup instanceof String secret && setupAt instanceof Long started
-                && started >= Instant.now().minusSeconds(600).getEpochSecond() && !user.isMfaEnabled()) {
+                && started >= clock.instant().minusSeconds(600).getEpochSecond() && !user.isMfaEnabled()) {
             String uri = totp.provisioningUri(user.getEmail(), secret);
             model.addAttribute("mfaSetupSecret", secret);
             model.addAttribute("mfaQrDataUri", totp.qrDataUri(uri));
@@ -348,10 +357,10 @@ public class SettingsController {
         } else try {
             boolean sent = passwordCodes.issue(user, PasswordSecurityCodeService.CHANGE, request.getRemoteAddr());
             redirect.addFlashAttribute(sent ? "success" : "error", sent
-                    ? "A one-time code was sent to your verified email. It expires in 5 minutes."
+                    ? "Email code requested. Check your inbox and continue with step 2."
                     : "Too many code requests. Please wait before trying again.");
         } catch (IllegalStateException exception) {
-            redirect.addFlashAttribute("error", "Email delivery is unavailable. Check the SMTP configuration.");
+            redirect.addFlashAttribute("error", "We could not send your code. Please try again later.");
         }
         return "redirect:/settings#password";
     }
@@ -364,8 +373,12 @@ public class SettingsController {
             redirect.addFlashAttribute("error", "The new passwords do not match."); return "redirect:/settings#password";
         }
         try {
-            long version = security.changePassword(current(principal).getId(), currentPassword, code, newPassword, passwordCodes);
-            session.setAttribute(AccountSession.SECURITY_VERSION, version);
+            var result = security.changePassword(current(principal).getId(), currentPassword, code, newPassword, passwordCodes);
+            if (!result.successful()) {
+                redirect.addFlashAttribute("error", "The security code is invalid, expired, or has too many failed attempts.");
+                return "redirect:/settings#password";
+            }
+            session.setAttribute(AccountSession.SECURITY_VERSION, result.securityVersion());
             redirect.addFlashAttribute("success", "Password changed. All other sessions were signed out.");
         } catch (IllegalArgumentException exception) { redirect.addFlashAttribute("error", exception.getMessage()); }
         return "redirect:/settings#password";
@@ -381,7 +394,7 @@ public class SettingsController {
             redirect.addFlashAttribute("error", "Authenticator verification is already enabled.");
         } else {
             session.setAttribute(AccountSession.MFA_SETUP_SECRET, totp.newSecret());
-            session.setAttribute(AccountSession.MFA_SETUP_AT, Instant.now().getEpochSecond());
+            session.setAttribute(AccountSession.MFA_SETUP_AT, clock.instant().getEpochSecond());
             redirect.addFlashAttribute("success", "Scan the QR code, then enter the current authenticator code.");
         }
         return "redirect:/settings#mfa";
@@ -394,7 +407,7 @@ public class SettingsController {
         Object secret = session.getAttribute(AccountSession.MFA_SETUP_SECRET);
         Object started = session.getAttribute(AccountSession.MFA_SETUP_AT);
         if (!(secret instanceof String rawSecret) || !(started instanceof Long at)
-                || at < Instant.now().minusSeconds(600).getEpochSecond()) {
+                || at < clock.instant().minusSeconds(600).getEpochSecond()) {
             redirect.addFlashAttribute("error", "Authenticator setup expired. Start again.");
             return "redirect:/settings#mfa";
         }
@@ -490,7 +503,7 @@ public class SettingsController {
                 .findByUserAndIsActiveTrueOrderByStockAsset_TickerSymbolAscIntervalAscPatternFamilyAscTradeSignalAsc(user)
                 .stream().map(this::ruleExport).toList();
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("exportedAt", Instant.now().toString()); data.put("email", user.getEmail());
+        data.put("exportedAt", clock.instant().toString()); data.put("email", user.getEmail());
         data.put("firstName", user.getFirstName()); data.put("lastName", user.getLastName());
         data.put("createdAt", user.getCreatedAt()); data.put("theme", user.getThemePreference());
         data.put("elliottMotiveColor", user.getElliottMotiveColor());
@@ -513,7 +526,7 @@ public class SettingsController {
         item.put("signal", rule.getTradeSignal()); item.put("createdAt", rule.getCreatedAt()); return item;
     }
     private User current(Principal principal) {
-        return users.findByEmailIgnoreCase(principal.getName()).orElseThrow(() -> new IllegalArgumentException("Account not found."));
+        return org.example.stockwatch247.security.CurrentAccount.find(users, principal.getName()).orElseThrow(() -> new IllegalArgumentException("Account not found."));
     }
     private boolean allowFactorAttempt(Long userId, HttpServletRequest request) {
         String client = request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();

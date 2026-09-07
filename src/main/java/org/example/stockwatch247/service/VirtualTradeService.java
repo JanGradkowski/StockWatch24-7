@@ -1,7 +1,7 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
@@ -33,6 +33,10 @@ import java.util.UUID;
 
 @Service
 public class VirtualTradeService {
+    private VirtualTradeArchiveQuery archiveQuery;
+    @org.springframework.beans.factory.annotation.Autowired
+    void setArchiveQuery(VirtualTradeArchiveQuery archiveQuery) { this.archiveQuery = archiveQuery; }
+
     private static final MathContext MONEY_CONTEXT = new MathContext(18, RoundingMode.HALF_UP);
     private static final BigDecimal MAX_SIZE = new BigDecimal("1000000000000");
     private static final String SNAPSHOT_VERSION = "TECHNICAL_OUTLOOK_V1";
@@ -150,9 +154,22 @@ public class VirtualTradeService {
     }
 
     @Transactional(readOnly = true)
-    public ArchiveView archive(User user, String rawSort, String rawDirection) {
+    public ArchiveView archive(User user, String rawSort, String rawDirection) { return archive(user, rawSort, rawDirection, 0); }
+
+    @Transactional(readOnly = true)
+    public ArchiveView archive(User user, String rawSort, String rawDirection, int requestedPage) {
         String sort = normalizeSort(rawSort);
         String direction = "asc".equalsIgnoreCase(rawDirection) ? "asc" : "desc";
+        if (archiveQuery != null) {
+            var result = archiveQuery.page(user.getId(), sort, direction, requestedPage);
+            var byId = result.ids().isEmpty() ? Map.<Long, VirtualTrade>of() : tradeRepository.findOwnedIds(result.ids(), user).stream()
+                    .collect(java.util.stream.Collectors.toMap(VirtualTrade::getId, trade -> trade));
+            Map<String, Quote> prices = new LinkedHashMap<>();
+            var trades = result.ids().stream().map(byId::get).filter(java.util.Objects::nonNull)
+                    .map(trade -> toTradeView(trade, trade.getStatus() == VirtualTradeStatus.CLOSED ? exitQuote(trade)
+                            : prices.computeIfAbsent(trade.getStockAsset().getTickerSymbol(), this::cachedQuote))).toList();
+            return new ArchiveView(trades, sort, direction, (int) result.count(), result.page(), result.pages());
+        }
         Map<String, Quote> quotes = new LinkedHashMap<>();
         List<TradeView> trades = tradeRepository.findAllForUser(user).stream()
                 .map(trade -> toTradeView(trade, trade.getStatus() == VirtualTradeStatus.CLOSED
@@ -313,7 +330,7 @@ public class VirtualTradeService {
     private String writeSnapshot(TechnicalSnapshot snapshot) {
         try {
             return objectMapper.writeValueAsString(snapshot);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("The technical entry snapshot could not be stored.", exception);
         }
     }
@@ -321,7 +338,7 @@ public class VirtualTradeService {
     private TechnicalSnapshot readSnapshot(String payload) {
         try {
             return objectMapper.readValue(payload, TechnicalSnapshot.class);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("The stored technical snapshot could not be read.", exception);
         }
     }
@@ -424,7 +441,10 @@ public class VirtualTradeService {
                             double directionalPriceDifference, BigDecimal monetaryResult, String outcomeLabel,
                             long trackingDays, String detailUrl) { }
 
-    public record ArchiveView(List<TradeView> trades, String sort, String direction, int totalTrades) {
+    public record ArchiveView(List<TradeView> trades, String sort, String direction, int totalTrades, int page, int totalPages) {
+        public ArchiveView(List<TradeView> trades, String sort, String direction, int totalTrades) {
+            this(trades, sort, direction, totalTrades, 0, totalTrades == 0 ? 0 : 1);
+        }
         public String groupKey(TradeView trade) {
             return switch (sort) {
                 case "ticker" -> trade.symbol();

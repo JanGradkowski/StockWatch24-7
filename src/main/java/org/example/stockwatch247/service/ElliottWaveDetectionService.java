@@ -79,6 +79,10 @@ public class ElliottWaveDetectionService {
         return new ElliottWaveDetectionService(presentSignalLookbackCandles, scoringModel, rules);
     }
 
+    public int minimumSignalConfidence() {
+        return detectionRules.minimumSignalConfidence();
+    }
+
     public List<DetectedSignal> detect(List<EnrichedCandle> recentCandles) {
         if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return List.of();

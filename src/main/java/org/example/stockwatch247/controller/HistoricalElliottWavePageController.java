@@ -42,7 +42,7 @@ public class HistoricalElliottWavePageController {
         this(userRepository, historicalElliottWaveService, null);
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureElliottWavePreferences(ElliottWavePreferencesService elliottWavePreferences) {
         this.elliottWavePreferences = elliottWavePreferences;
     }
@@ -66,7 +66,7 @@ public class HistoricalElliottWavePageController {
             default -> throw new IllegalArgumentException(
                     "Historical Elliott details require a daily, weekly, or monthly interval.");
         };
-        User currentUser = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         model.addAttribute("firstName", currentUser == null ? "Trader" : currentUser.getFirstName());
         HistoricalElliottWaveService.HistoricalElliottWaveDetail wave =
                 currentUser == null || elliottWavePreferences == null

@@ -46,11 +46,12 @@ class InsiderActivityPollingServiceTest {
         when(fixture.jobStore().claimNext(any())).thenReturn(Optional.of(job));
         when(fixture.activityService().pollScheduledActivity(7L, "AAPL")).thenReturn(true);
         when(fixture.jobStore().pendingCount()).thenReturn(0);
+        when(fixture.jobStore().complete(job)).thenReturn(true);
 
         fixture.service().processNextQueuedCheck();
 
         verify(fixture.activityService()).pollScheduledActivity(7L, "AAPL");
-        verify(fixture.jobStore()).complete(19L);
+        verify(fixture.jobStore()).complete(job);
         assertThat(output)
                 .contains("Insider activity job completed for AAPL")
                 .contains("All queued insider activity checks completed.");

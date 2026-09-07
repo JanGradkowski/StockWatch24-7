@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<th:block th:fragment="sidebar">
+  <dialog id="appSidebar" class="app-sidebar" open aria-label="Workspace navigation"
+          th:attr="data-active-section=${navigationSection}">
+    <div class="app-sidebar-brand">
+      <a class="logo" th:href="@{/home}" aria-label="StockWatch 24/7 home">
+        <span class="logo-mark" aria-hidden="true"></span>
+        <span class="logo-word">StockWatch <span>24/7</span></span>
+      </a>
+      <button type="button" class="app-nav-icon-button app-sidebar-close" aria-label="Close navigation">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
+      </button>
+    </div>
+    <p class="app-sidebar-caption">Your workspace</p>
+    <nav class="app-sidebar-links" aria-label="Main navigation">
+      <a th:href="@{/home}" data-nav-section="home" th:attr="aria-current=${navigationSection == 'home' ? 'page' : null}" title="Home" aria-label="Home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg><span>Home</span>
+      </a>
+      <a th:href="@{/signals}" data-nav-section="signals" th:attr="aria-current=${navigationSection == 'signals' ? 'page' : null}" title="Technical signals" aria-label="Technical signals">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v3m0 8v7M12 3v8m0 7v3M19 3v2m0 7v9"/><rect x="3" y="6" width="4" height="8" rx="1"/><rect x="10" y="11" width="4" height="7" rx="1"/><rect x="17" y="5" width="4" height="7" rx="1"/></svg><span>Technical signals</span>
+      </a>
+      <a th:href="@{/home#ticker-alerts}" data-nav-section="alerts" th:attr="aria-current=${navigationSection == 'alerts' ? 'page' : null}" title="Ticker alerts — insider and congressional activity" aria-label="Ticker alerts">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M12 2V1"/></svg><span>Ticker alerts</span>
+      </a>
+      <a th:href="@{/virtual-trades}" data-nav-section="demo" th:attr="aria-current=${navigationSection == 'demo' ? 'page' : null}" title="Demo trading" aria-label="Demo trading">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="2"/><path d="M8 6V3h8v3M3 12h18M10 12v3h4v-3"/></svg><span>Demo trading</span>
+      </a>
+      <a th:href="@{/settings}" data-nav-section="settings" th:attr="aria-current=${navigationSection == 'settings' ? 'page' : null}" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span>Settings</span>
+      </a>
+    </nav>
+    <div class="app-sidebar-footer">
+      <nav class="app-sidebar-links" aria-label="Support">
+        <a th:href="@{/about}" data-nav-section="help" th:attr="aria-current=${navigationSection == 'help' ? 'page' : null}" title="Help & about" aria-label="Help and about">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1 .7-1.5 1-1.5 2M12 17h.01"/></svg><span>Help &amp; about</span>
+        </a>
+      </nav>
+      <button type="button" class="app-sidebar-collapse" aria-controls="appSidebar" aria-expanded="true" aria-label="Collapse sidebar" title="Collapse sidebar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m7-11-3 3 3 3"/></svg><span>Collapse sidebar</span>
+      </button>
+    </div>
+  </dialog>
+</th:block>
+</body>
+</html>

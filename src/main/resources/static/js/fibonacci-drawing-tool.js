@@ -49,6 +49,7 @@
             this.onPointerDown = event => this.handlePointerDown(event);
             this.onPointerMove = event => this.handlePointerMove(event);
             this.onPointerUp = event => this.handlePointerUp(event);
+            this.onContextMenu = event => this.handleContextMenu(event);
             this.onKeyDown = event => this.handleKeyDown(event);
             this.onChartInteraction = () => this.scheduleRender();
             this.onThemeChange = () => this.scheduleRender();
@@ -56,6 +57,7 @@
             this.canvas.addEventListener('pointermove', this.onPointerMove);
             this.canvas.addEventListener('pointerup', this.onPointerUp);
             this.canvas.addEventListener('pointercancel', this.onPointerUp);
+            this.container.addEventListener('contextmenu', this.onContextMenu);
             this.container.addEventListener('wheel', this.onChartInteraction, {passive: true});
             this.container.addEventListener('pointermove', this.onChartInteraction, {passive: true});
             document.addEventListener('keydown', this.onKeyDown);
@@ -79,7 +81,7 @@
 
             this.navigateButton = createButton('Navigate', 'Move and zoom the chart');
             this.navigateButton.dataset.fibonacciAction = 'navigate';
-            this.fibonacciButton = createButton('Fib', 'Draw or edit Fibonacci retracements and extensions');
+            this.fibonacciButton = createButton('Fib', 'Draw or edit Fibonacci retracements and extensions. Right-click to stop drawing.');
             this.fibonacciButton.dataset.fibonacciAction = 'draw';
             this.longButton = createButton('Long', 'Draw a long position with target, stop, and risk/reward');
             this.longButton.dataset.fibonacciAction = 'long';
@@ -161,6 +163,7 @@
                 this.selectedId = hit.drawing.id;
                 const start = this.screenPoints(hit.drawing);
                 this.drag = {
+                    pointerId: event.pointerId,
                     type: hit.type,
                     drawing: hit.drawing,
                     pointer: {x: point.x, y: point.y},
@@ -319,6 +322,15 @@
                 : 'Fibonacci drawing selected';
             this.save();
             this.scheduleRender();
+        }
+
+        handleContextMenu(event) {
+            if (!isDrawingMode(this.mode)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            // Finish an existing edit before leaving drawing mode; discard only an unfinished draft.
+            if (this.drag) this.handlePointerUp({pointerId: this.drag.pointerId});
+            this.setMode('navigate');
         }
 
         handleKeyDown(event) {
@@ -681,6 +693,7 @@
             this.canvas.removeEventListener('pointermove', this.onPointerMove);
             this.canvas.removeEventListener('pointerup', this.onPointerUp);
             this.canvas.removeEventListener('pointercancel', this.onPointerUp);
+            this.container.removeEventListener('contextmenu', this.onContextMenu);
             this.container.removeEventListener('wheel', this.onChartInteraction);
             this.container.removeEventListener('pointermove', this.onChartInteraction);
             document.removeEventListener('keydown', this.onKeyDown);

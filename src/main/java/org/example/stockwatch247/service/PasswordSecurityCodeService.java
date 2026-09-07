@@ -14,6 +14,10 @@ import java.time.LocalDateTime;
 
 @Service
 public class PasswordSecurityCodeService {
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+    @org.springframework.beans.factory.annotation.Autowired
+    void setClock(java.time.Clock clock) { this.clock = clock; }
+
     public static final String CHANGE = "PASSWORD_CHANGE";
     public static final String RESET = "PASSWORD_RESET";
     private final PasswordSecurityCodeRepository repository;
@@ -37,8 +41,8 @@ public class PasswordSecurityCodeService {
         if (!validPurpose(purpose)) throw new IllegalArgumentException("Unsupported security-code purpose.");
         if (!rateLimiter.tryAcquire("password-code:account:" + user.getId() + ":" + purpose, 3, Duration.ofMinutes(15))
                 || !rateLimiter.tryAcquire("password-code:client:" + clientKey, 10, Duration.ofMinutes(15))) return false;
-        String rawCode = String.format("%08d", random.nextInt(100_000_000));
-        LocalDateTime now = LocalDateTime.now();
+        String rawCode = String.format(java.util.Locale.ROOT, "%08d", random.nextInt(100_000_000));
+        LocalDateTime now = LocalDateTime.now(clock);
         PasswordSecurityCode challenge = repository.findByUserIdAndPurpose(user.getId(), purpose)
                 .orElseGet(PasswordSecurityCode::new);
         challenge.setUser(user);
@@ -60,15 +64,23 @@ public class PasswordSecurityCodeService {
     @Transactional
     public boolean consume(Long userId, String purpose, String rawCode) {
         PasswordSecurityCode challenge = repository.findForUpdate(userId, purpose).orElse(null);
-        if (challenge == null || challenge.getExpiresAt().isBefore(LocalDateTime.now())
-                || challenge.getFailedAttempts() >= 5 || rawCode == null) return false;
-        if (!passwordEncoder.matches(rawCode.trim(), challenge.getCodeHash())) {
+        if (challenge == null || !challenge.getExpiresAt().isAfter(LocalDateTime.now(clock))
+                || challenge.getFailedAttempts() >= 5) return false;
+        if (rawCode == null || !rawCode.trim().matches("[0-9]{8}")
+                || !passwordEncoder.matches(rawCode.trim(), challenge.getCodeHash())) {
             challenge.setFailedAttempts(challenge.getFailedAttempts() + 1);
             repository.save(challenge);
             return false;
         }
         repository.delete(challenge);
         return true;
+    }
+
+    public java.util.Optional<java.time.Instant> activeChangeCodeExpiry(Long userId) {
+        return repository.findByUserIdAndPurpose(userId, CHANGE)
+                .filter(code -> code.getFailedAttempts() < 5
+                        && code.getExpiresAt().isAfter(LocalDateTime.now(clock)))
+                .map(code -> code.getExpiresAt().atZone(clock.getZone()).toInstant());
     }
 
     private boolean validPurpose(String purpose) { return CHANGE.equals(purpose) || RESET.equals(purpose); }

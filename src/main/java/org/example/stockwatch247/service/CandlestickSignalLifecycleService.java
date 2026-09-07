@@ -59,7 +59,7 @@ public class CandlestickSignalLifecycleService {
                 oneCandleOutcomeWindowCandles, 1, MAXIMUM_CONFIRMATION_WINDOW);
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureElliottWavePreferences(ElliottWavePreferencesService elliottWavePreferencesService) {
         this.elliottWavePreferencesService = elliottWavePreferencesService;
     }
@@ -255,6 +255,7 @@ public class CandlestickSignalLifecycleService {
             TimeInterval interval,
             List<EnrichedCandle> enrichedCandles,
             ElliottWaveDetectionService elliottWaveDetectionService) {
+        JobLeaseGuard.requireOwnership();
         if (symbol == null || symbol.isBlank() || interval == null
                 || enrichedCandles == null || enrichedCandles.isEmpty()
                 || elliottWaveDetectionService == null) {
@@ -287,6 +288,7 @@ public class CandlestickSignalLifecycleService {
     public LifecycleEvaluationResult evaluatePending(String symbol,
                                                      TimeInterval interval,
                                                      List<Candle> availableCandles) {
+        JobLeaseGuard.requireOwnership();
         return evaluatePending(symbol, interval, availableCandles, List.of(), null);
     }
 
@@ -312,6 +314,7 @@ public class CandlestickSignalLifecycleService {
             List<Candle> availableCandles,
             List<EnrichedCandle> enrichedCandles,
             ElliottWaveDetectionService elliottWaveDetectionService) {
+        JobLeaseGuard.requireOwnership();
         List<AlertEvent> pendingEvents = new ArrayList<>();
         pendingEvents.addAll(alertEventRepository.findTrackedLifecycleEvents(
                 symbol, interval, SignalLifecycleStatus.POTENTIAL));

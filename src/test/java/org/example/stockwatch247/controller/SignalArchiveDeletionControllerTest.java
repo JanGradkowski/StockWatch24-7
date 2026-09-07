@@ -30,13 +30,15 @@ class SignalArchiveDeletionControllerTest {
         RedirectAttributesModelMap redirect = new RedirectAttributesModelMap();
 
         String view = controller.deleteCompanyTechnicalSignals(
-                9L, List.of(17L, 23L), null, "confidence", "asc", 2, principal, redirect);
+                9L, List.of(17L, 23L), null, "confidence", "asc", 2, "unread", " aapl ", principal, redirect);
 
         assertThat(view).isEqualTo("redirect:/alerts/9");
         assertThat(redirect.getFlashAttributes().get("signalDeleteMessage")).isEqualTo("2 signals deleted.");
         assertThat(redirect.getAttribute("sort")).isEqualTo("confidence");
         assertThat(redirect.getAttribute("direction")).isEqualTo("asc");
         assertThat(redirect.getAttribute("page")).isEqualTo("2");
+        assertThat(redirect.getAttribute("state")).isEqualTo("unread");
+        assertThat(redirect.getAttribute("ticker")).isEqualTo("AAPL");
         verify(deletionService).deleteTechnicalSignals(user, List.of(17L, 23L));
     }
 }

@@ -140,6 +140,7 @@ public class ElliottTradePlanService {
             String symbol,
             TimeInterval interval,
             List<Candle> availableCandles) {
+        JobLeaseGuard.requireOwnership();
         if (symbol == null || symbol.isBlank() || interval == null
                 || availableCandles == null || availableCandles.isEmpty()) return 0;
         List<Candle> candles = availableCandles.stream()
@@ -226,11 +227,25 @@ public class ElliottTradePlanService {
     }
 
     @Transactional(readOnly = true)
+    public java.util.Map<Long, List<StagePlanView>> histories(List<Long> ids, User user) {
+        if (ids.isEmpty()) return java.util.Map.of();
+        return planRepository.findOwnedHistories(ids, user).stream().collect(java.util.stream.Collectors.groupingBy(
+                plan -> plan.getAlertEvent().getId(), java.util.stream.Collectors.mapping(this::view, java.util.stream.Collectors.toList())));
+    }
+
+    @Transactional(readOnly = true)
     public List<StagePlanView> history(Long eventId, User user) {
         if (eventId == null || user == null) return List.of();
         return planRepository.findOwnedHistory(eventId, user).stream()
                 .map(this::view)
                 .toList();
+    }
+
+    Optional<StagePlanView> latestPlan(AlertEvent event) {
+        if (event == null || event.getId() == null) return Optional.empty();
+        return planRepository
+                .findFirstByAlertEventOrderByEntryTimestampDescStageRevisionDescIdDesc(event)
+                .map(this::view);
     }
 
     private StagePlanView view(ElliottStageTradePlan plan) {

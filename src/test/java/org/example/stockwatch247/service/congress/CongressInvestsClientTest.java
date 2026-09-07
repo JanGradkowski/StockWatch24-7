@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service.congress;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.enums.CongressionalTradeType;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -25,7 +25,7 @@ class CongressInvestsClientTest {
         CongressionalProviderRequestBudget budget = mock(CongressionalProviderRequestBudget.class);
         CongressInvestsClient client = new CongressInvestsClient(
                 restTemplate,
-                new ObjectMapper(),
+                tools.jackson.databind.json.JsonMapper.builder().build(),
                 budget,
                 true,
                 "https://congress.example.test/",
@@ -98,7 +98,7 @@ class CongressInvestsClientTest {
         CongressionalProviderRequestBudget budget = mock(CongressionalProviderRequestBudget.class);
         CongressInvestsClient client = new CongressInvestsClient(
                 restTemplate,
-                new ObjectMapper(),
+                tools.jackson.databind.json.JsonMapper.builder().build(),
                 budget,
                 true,
                 "https://congress.example.test",
@@ -125,7 +125,7 @@ class CongressInvestsClientTest {
         CongressionalProviderRequestBudget budget = mock(CongressionalProviderRequestBudget.class);
         CongressInvestsClient client = new CongressInvestsClient(
                 restTemplate,
-                new ObjectMapper(),
+                tools.jackson.databind.json.JsonMapper.builder().build(),
                 budget,
                 true,
                 "https://congress.example.test",

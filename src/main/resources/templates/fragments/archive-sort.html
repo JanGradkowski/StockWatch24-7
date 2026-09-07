@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<a th:fragment="column(path, archive, key, label, initialDirection, filter)"
+   th:with="active=${archive.sort() == key},next=${active ? (archive.direction() == 'asc' ? 'desc' : 'asc') : initialDirection}"
+   class="archive-column-sort"
+   th:classappend="${active ? 'is-' + archive.direction() : ''}"
+   th:href="${filter != null} ? @{${path}(sort=${key},direction=${next},page=0,state=${filter.state()},ticker=${filter.ticker()})} : @{${path}(sort=${key},direction=${next},page=0)}"
+   th:attr="data-sort-key=${key},data-sort-direction=${active ? archive.direction() : 'none'},aria-label=${label + (active ? ', currently ' + (archive.direction() == 'asc' ? 'ascending' : 'descending') : '') + '. Sort ' + (next == 'asc' ? 'ascending' : 'descending')},title=${'Sort ' + label + ' ' + (next == 'asc' ? 'ascending' : 'descending')}">
+  <span th:text="${label}">Ticker</span>
+  <svg viewBox="0 0 12 16" aria-hidden="true" focusable="false">
+    <path class="sort-arrow-up" d="m3 6 3-3 3 3"/>
+    <path class="sort-arrow-down" d="m3 10 3 3 3-3"/>
+  </svg>
+</a>
+</body>
+</html>

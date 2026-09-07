@@ -8,6 +8,8 @@ import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.ElliottSignalStage;
+import org.example.stockwatch247.model.enums.ElliottTradePlanStatus;
+import org.example.stockwatch247.model.enums.HarmonicStopStatus;
 import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.SignalLifecycleStatus;
 import org.example.stockwatch247.model.enums.SignalStength;
@@ -37,6 +39,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyDouble;
+import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -163,6 +168,24 @@ class AlertRuleServiceTest {
         assertThat(unfollowed).isEqualTo(2);
         assertThat(activeRules).allMatch(rule -> !rule.isActive());
         verify(alertRuleRepository).saveAll(activeRules);
+    }
+
+    @Test
+    void unfollowAllTechnicalRulesDeactivatesEveryActiveRuleForTheUser() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertRuleService service = service(
+                alertRuleRepository,
+                mock(AlertEventRepository.class),
+                mock(CandleRepository.class),
+                mock(StockAssetRepository.class));
+        User user = new User();
+        user.setEmail("unfollow-everything@example.com");
+        when(alertRuleRepository.deactivateAllByUser(user)).thenReturn(3_600);
+
+        int unfollowed = service.unfollowAllTechnicalRules(user);
+
+        assertThat(unfollowed).isEqualTo(3_600);
+        verify(alertRuleRepository).deactivateAllByUser(user);
     }
 
     @Test
@@ -780,6 +803,85 @@ class AlertRuleServiceTest {
     }
 
     @Test
+    void harmonicArchiveShowsItsDirectionAdjustedCandleEightOutcome() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertRuleService service = service(
+                alertRuleRepository, alertEventRepository, mock(CandleRepository.class));
+        User user = new User();
+        user.setEmail("harmonic-archive@example.com");
+        AlertRule rule = rule(26L, user, stock(6L, "MSFT", "Microsoft Corporation"),
+                TimeInterval.DAILY, AlertPatternFamily.HARMONIC_FORMATION, TradeSignal.SELL);
+        AlertEvent event = new AlertEvent();
+        event.setId(307L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.HARMONIC_BAT);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(Instant.parse("2026-07-10T00:00:00Z").getEpochSecond());
+        event.setSentAt(LocalDateTime.of(2026, 7, 10, 22, 15));
+        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradeEntryPrice(100.0);
+        event.setStopLossPrice(106.0);
+        event.setHarmonicStopStatus(HarmonicStopStatus.TIME_STOPPED.name());
+        event.setHarmonicStopResolutionPrice(92.0);
+        when(alertEventRepository.findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
+
+        AlertRuleService.SignalArchiveEntry entry = service
+                .getSignalArchive(user, "date", "desc", 0).signals().getFirst();
+
+        assertThat(entry.outcome().label()).isEqualTo("Candle 8 time stop");
+        assertThat(entry.outcome().returnPercent()).isEqualTo(8.0);
+        assertThat(entry.outcome().price()).isEqualTo(92.0);
+        assertThat(entry.stageOutcomes()).isEmpty();
+    }
+
+    @Test
+    void elliottArchiveShowsOneOutcomePerNotifiedStageAndMeasuresFromOriginalNotificationClose() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository, candleRepository);
+        ElliottTradePlanService tradePlanService = mock(ElliottTradePlanService.class);
+        service.configureElliottTradePlans(tradePlanService);
+        User user = new User();
+        user.setEmail("elliott-archive@example.com");
+        AlertRule rule = rule(27L, user, stock(7L, "MARA", "MARA Holdings, Inc."),
+                TimeInterval.DAILY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        AlertEvent event = new AlertEvent();
+        event.setId(308L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_III_END);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(300L);
+        event.setSentAt(LocalDateTime.of(2026, 7, 20, 22, 15));
+        when(alertEventRepository.findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
+        when(tradePlanService.history(308L, user)).thenReturn(List.of(
+                stagePlan(ElliottSignalStage.WAVE_II_END, 1, TradeSignal.BUY,
+                        ElliottTradePlanStatus.REVISED, 100L, 100.0, 110.0),
+                stagePlan(ElliottSignalStage.WAVE_II_END, 2, TradeSignal.BUY,
+                        ElliottTradePlanStatus.STAGE_COMPLETED, 150L, 102.0, 120.0),
+                stagePlan(ElliottSignalStage.WAVE_III_END, 1, TradeSignal.SELL,
+                        ElliottTradePlanStatus.ACTIVE, 200L, 120.0, null)));
+        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc("MARA", "1d"))
+                .thenReturn(List.of(new Candle(
+                        "MARA", "1d", 250L, 116.0, 117.0, 113.0, 114.0, 1_000L)));
+
+        AlertRuleService.SignalArchiveEntry entry = service
+                .getSignalArchive(user, "date", "desc", 0).signals().getFirst();
+
+        assertThat(entry.stageOutcomes()).hasSize(2);
+        assertThat(entry.stageOutcomes().get(0).label()).isEqualTo("Wave II completed");
+        assertThat(entry.stageOutcomes().get(0).returnPercent()).isEqualTo(20.0);
+        assertThat(entry.stageOutcomes().get(1).label()).isEqualTo("Pending Wave III outcome");
+        assertThat(entry.stageOutcomes().get(1).returnPercent()).isEqualTo(5.0);
+        assertThat(entry.outcome()).isEqualTo(entry.stageOutcomes().getLast());
+    }
+
+    @Test
     void signalArchiveSupportsConfidenceAndLifecycleStatusSorting() {
         AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
@@ -1240,6 +1342,84 @@ class AlertRuleServiceTest {
     }
 
     @Test
+    void developingWaveTwoSignalDetailDrawsItsStoredZeroOneTwoPivots() {
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(
+                mock(AlertRuleRepository.class), alertEventRepository, candleRepository);
+        ElliottProjectionService projectionService = mock(ElliottProjectionService.class);
+        service.configureElliottProjections(projectionService);
+        User user = new User();
+        user.setEmail("developing-elliott-owner@example.com");
+        String symbol = "AAPL";
+        AlertRule rule = rule(
+                25L,
+                user,
+                stock(15L, symbol, "Apple Inc."),
+                TimeInterval.DAILY,
+                AlertPatternFamily.ELLIOTT_WAVE,
+                TradeSignal.BUY
+        );
+        long waveZeroTimestamp = 86_400L;
+        long waveOneTimestamp = 2 * 86_400L;
+        long waveTwoTimestamp = 3 * 86_400L;
+        long confirmationTimestamp = 4 * 86_400L;
+        AlertEvent event = new AlertEvent();
+        event.setId(306L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_II_END);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(confirmationTimestamp);
+        event.setSignalStrength(SignalStength.MEDIUM_CONFIDENCE);
+        event.setConfidenceScore(82);
+        event.setClosePrice(110.0);
+        event.setElliottSignalStage(ElliottSignalStage.WAVE_II_END);
+        event.setElliottStructureSnapshot("""
+                0|86400|100.0000000000|LOW
+                I|172800|120.0000000000|HIGH
+                II|259200|108.0000000000|LOW
+                """);
+        when(alertEventRepository.findOwnedByIdAndUser(306L, user)).thenReturn(Optional.of(event));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, "1d"))
+                .thenReturn(List.of(
+                        new Candle(symbol, "1d", waveZeroTimestamp, 101.0, 102.0, 99.0, 100.0, 1_000L),
+                        new Candle(symbol, "1d", waveOneTimestamp, 118.0, 121.0, 117.0, 120.0, 1_000L),
+                        new Candle(symbol, "1d", waveTwoTimestamp, 110.0, 111.0, 107.0, 108.0, 1_000L),
+                        new Candle(symbol, "1d", confirmationTimestamp, 108.0, 111.0, 107.5, 110.0, 1_000L)
+                ));
+        when(projectionService.backfillIfMissing(
+                any(), any(), any(), any(), anyLong(), anyDouble(),
+                any(), any(), any())).thenReturn(true);
+        when(projectionService.latestVisible(306L, user)).thenReturn(Optional.empty());
+        when(projectionService.history(306L, user)).thenReturn(List.of());
+
+        AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 306L);
+
+        assertThat(detail.chart().elliottWave()).isNotNull();
+        assertThat(detail.chart().elliottWave().direction()).isEqualTo("BULLISH");
+        assertThat(detail.chart().elliottWave().confirmationTimestamp())
+                .isEqualTo(confirmationTimestamp);
+        assertThat(detail.chart().elliottWave().waveTwoRetracement()).isCloseTo(.6, within(.0001));
+        assertThat(detail.chart().elliottWave().points())
+                .extracting(AlertRuleService.ElliottWaveChartPointView::label)
+                .containsExactly("0", "I", "II");
+        assertThat(detail.chart().elliottWave().points())
+                .extracting(AlertRuleService.ElliottWaveChartPointView::timestamp)
+                .containsExactly(waveZeroTimestamp, waveOneTimestamp, waveTwoTimestamp);
+        verify(projectionService).backfillIfMissing(
+                org.mockito.ArgumentMatchers.eq(event),
+                org.mockito.ArgumentMatchers.eq(ElliottSignalStage.WAVE_II_END),
+                org.mockito.ArgumentMatchers.eq("BULLISH"),
+                org.mockito.ArgumentMatchers.eq(TradeSignal.BUY),
+                org.mockito.ArgumentMatchers.eq(confirmationTimestamp),
+                org.mockito.ArgumentMatchers.eq(110.0),
+                any(), any(), org.mockito.ArgumentMatchers.eq(TimeInterval.DAILY));
+        verify(projectionService).evaluateOpenProjections(
+                org.mockito.ArgumentMatchers.eq(symbol),
+                org.mockito.ArgumentMatchers.eq(TimeInterval.DAILY), any());
+    }
+
+    @Test
     void signalDetailRejectsAnEventThatIsNotOwnedByTheUser() {
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
         AlertRuleService service = service(mock(AlertRuleRepository.class), alertEventRepository);
@@ -1313,6 +1493,24 @@ class AlertRuleServiceTest {
                 "Europe/Brussels",
                 Clock.fixed(MANUAL_CHECK_NOW, ZoneOffset.UTC)
         );
+    }
+
+    private ElliottTradePlanService.StagePlanView stagePlan(
+            ElliottSignalStage stage,
+            int revision,
+            TradeSignal expectedMove,
+            ElliottTradePlanStatus status,
+            long entryTimestamp,
+            double entryPrice,
+            Double resolutionPrice) {
+        return new ElliottTradePlanService.StagePlanView(
+                stage, revision, expectedMove, status, entryTimestamp, entryPrice,
+                95.0, 94.5, 90.0,
+                110.0, 108.0, 112.0, 108.0,
+                "Test Fibonacci target", 1.0, 2.0, 2.5,
+                true, "Actionable test plan",
+                resolutionPrice == null ? null : entryTimestamp + 1,
+                resolutionPrice, resolutionPrice == null ? null : "Test resolution");
     }
 
     private StockAsset stock(Long id, String symbol, String companyName) {

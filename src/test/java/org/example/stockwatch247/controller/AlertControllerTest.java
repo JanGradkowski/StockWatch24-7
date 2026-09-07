@@ -23,6 +23,24 @@ import static org.mockito.Mockito.when;
 class AlertControllerTest {
 
     @Test
+    void unfollowsEveryTechnicalRuleForTheAuthenticatedUser() {
+        AlertRuleService service = mock(AlertRuleService.class);
+        UserRepository users = mock(UserRepository.class);
+        AlertController controller = new AlertController(service, users);
+        User user = new User();
+        user.setEmail("unfollow-all@example.com");
+        Principal principal = user::getEmail;
+        when(users.findByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
+        when(service.unfollowAllTechnicalRules(user)).thenReturn(3_600);
+
+        var response = controller.unfollowAllTechnicalRules(principal);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isEqualTo(Map.of("unfollowedRules", 3_600));
+        verify(service).unfollowAllTechnicalRules(user);
+    }
+
+    @Test
     void unfollowsEveryTechnicalRuleForTheCompany() {
         AlertRuleService service = mock(AlertRuleService.class);
         UserRepository users = mock(UserRepository.class);

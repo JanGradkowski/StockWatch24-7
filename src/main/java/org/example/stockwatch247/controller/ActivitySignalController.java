@@ -28,7 +28,7 @@ public class ActivitySignalController {
             @PathVariable Long deliveryId,
             Model model,
             Principal principal) {
-        User user = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User user = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (user == null) {
             return "redirect:/login";
         }
@@ -43,7 +43,7 @@ public class ActivitySignalController {
             @PathVariable Long tradeId,
             Model model,
             Principal principal) {
-        User user = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+        User user = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (user == null) {
             return "redirect:/login";
         }

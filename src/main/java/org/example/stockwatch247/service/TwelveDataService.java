@@ -1,7 +1,7 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.example.stockwatch247.market.MarketIndexCatalog;
 import org.example.stockwatch247.model.StockAsset;
@@ -339,19 +339,29 @@ public class TwelveDataService {
         return symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
     }
 
+    @Value("${twelve-data.enabled:true}")
+    private boolean providerEnabled = true;
+    private MarketDataProviderRequestBudget requestBudget;
+    @Autowired
+    void setRequestBudget(MarketDataProviderRequestBudget requestBudget) { this.requestBudget = requestBudget; }
+
     private JsonNode query(URI uri) {
+        if (!providerEnabled) throw new IllegalStateException("Twelve Data is disabled.");
         validateApiKey();
+        if (requestBudget != null) requestBudget.reserveTwelveDataRequest();
         try {
             String response = restTemplate.getForObject(uri, String.class);
             JsonNode root = objectMapper.readTree(response);
             failOnApiError(root);
             return root;
         } catch (RestClientResponseException e) {
+            if (requestBudget != null) requestBudget.recordTwelveDataFailure(describeHttpError(e));
             throw new IllegalStateException("Twelve Data request failed: " + describeHttpError(e), e);
         } catch (RestClientException e) {
             throw new IllegalStateException(
                     "Twelve Data response could not be read: " + describeClientFailure(e), e);
         } catch (RuntimeException e) {
+            if (requestBudget != null) requestBudget.recordTwelveDataFailure(e.getMessage());
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException(

@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserSignalScoringPreferences;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
@@ -35,7 +35,7 @@ class SignalScoringPreferencesServiceTest {
             stored.set(value);
             return value;
         });
-        service = new SignalScoringPreferencesService(repository, new ObjectMapper());
+        service = new SignalScoringPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
     }
 
     @Test
@@ -224,11 +224,11 @@ class SignalScoringPreferencesServiceTest {
         form.set("elliott.weekly.proportions.points", "15");
         service.save(user, form);
 
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
         var payload = mapper.readTree(stored.get().getPreferencesPayload());
-        ((com.fasterxml.jackson.databind.node.ObjectNode) payload).put("version", "USER_SIGNAL_SCORING_V1");
+        ((tools.jackson.databind.node.ObjectNode) payload).put("version", "USER_SIGNAL_SCORING_V1");
         payload.get("profiles").forEach(profile ->
-                ((com.fasterxml.jackson.databind.node.ObjectNode) profile).remove("confluenceRules"));
+                ((tools.jackson.databind.node.ObjectNode) profile).remove("confluenceRules"));
         stored.get().setProfileVersion("USER_SIGNAL_SCORING_V1");
         stored.get().setPreferencesPayload(mapper.writeValueAsString(payload));
 

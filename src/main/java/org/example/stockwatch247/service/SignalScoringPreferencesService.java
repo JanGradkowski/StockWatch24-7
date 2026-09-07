@@ -1,7 +1,7 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserSignalScoringPreferences;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
@@ -63,6 +63,11 @@ public class SignalScoringPreferencesService {
 
     @Transactional(readOnly = true)
     public PreferencesView get(User user) {
+        return AnalysisComputationScope.memo(java.util.List.of(SignalScoringPreferencesService.class,
+                user == null ? "factory" : user.getId() == null ? user : user.getId()), () -> loadPreferences(user));
+    }
+
+    private PreferencesView loadPreferences(User user) {
         if (user == null) throw new IllegalArgumentException("An account is required.");
         return repository.findByUser(user).map(this::read).orElseGet(this::factoryPreferences);
     }
@@ -242,7 +247,7 @@ public class SignalScoringPreferencesService {
             return new PreferencesView(PROFILE_VERSION,
                     normalizedProfiles.stream().anyMatch(profile -> !profile.factoryProfile()),
                     normalizedProfiles, entity.getUpdatedAt());
-        } catch (JsonProcessingException | IllegalArgumentException exception) {
+        } catch (JacksonException | IllegalArgumentException exception) {
             return factoryPreferences();
         }
     }
@@ -477,7 +482,7 @@ public class SignalScoringPreferencesService {
     private String write(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Scoring preferences could not be serialized.", exception);
         }
     }

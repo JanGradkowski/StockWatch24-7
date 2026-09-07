@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserAnalysisPreferences;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
@@ -28,7 +28,7 @@ class AnalysisPreferencesServiceTest {
     @Test
     void migratesLegacyDailyFactoryDetectionValuesButPreservesTheStoredTerminalMargin() throws Exception {
         UserAnalysisPreferencesRepository repository = mock(UserAnalysisPreferencesRepository.class);
-        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = tools.jackson.databind.json.JsonMapper.builder().build();
         AnalysisPreferencesService service = new AnalysisPreferencesService(repository, objectMapper);
         User user = new User();
         UserAnalysisPreferences entity = new UserAnalysisPreferences();
@@ -70,7 +70,7 @@ class AnalysisPreferencesServiceTest {
     @Test
     void savesAndReadsPerIntervalIndicatorAndDeliveryPreferences() {
         UserAnalysisPreferencesRepository repository = mock(UserAnalysisPreferencesRepository.class);
-        AnalysisPreferencesService service = new AnalysisPreferencesService(repository, new ObjectMapper());
+        AnalysisPreferencesService service = new AnalysisPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
         User user = new User();
         user.setEmail("profile@example.com");
         when(repository.findByUser(user)).thenReturn(Optional.empty());
@@ -114,7 +114,7 @@ class AnalysisPreferencesServiceTest {
     @Test
     void rejectsUnsafeMovingAverageOrdering() {
         AnalysisPreferencesService service = new AnalysisPreferencesService(
-                mock(UserAnalysisPreferencesRepository.class), new ObjectMapper());
+                mock(UserAnalysisPreferencesRepository.class), tools.jackson.databind.json.JsonMapper.builder().build());
         MultiValueMap<String, String> form = factoryForm();
         form.set("daily.fastEmaPeriod", "60");
         form.set("daily.slowEmaPeriod", "50");
@@ -127,7 +127,7 @@ class AnalysisPreferencesServiceTest {
     @Test
     void updatesOnlyTheSelectedIntervalsIndicatorPeriodsFromTheOutlookPage() {
         UserAnalysisPreferencesRepository repository = mock(UserAnalysisPreferencesRepository.class);
-        AnalysisPreferencesService service = new AnalysisPreferencesService(repository, new ObjectMapper());
+        AnalysisPreferencesService service = new AnalysisPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
         User user = new User();
         when(repository.findByUser(user)).thenReturn(Optional.empty());
         AnalysisPreferencesService.IndicatorPeriods periods = new AnalysisPreferencesService.IndicatorPeriods(
@@ -152,7 +152,7 @@ class AnalysisPreferencesServiceTest {
     @Test
     void updatesAndResetsOnlyPerIntervalCandlestickDetectionRules() {
         UserAnalysisPreferencesRepository repository = mock(UserAnalysisPreferencesRepository.class);
-        AnalysisPreferencesService service = new AnalysisPreferencesService(repository, new ObjectMapper());
+        AnalysisPreferencesService service = new AnalysisPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
         User user = new User();
         when(repository.findByUser(user)).thenReturn(Optional.empty());
         MultiValueMap<String, String> analysisForm = factoryForm();

@@ -24,7 +24,7 @@ public class ElliottWaveDrilldownController {
         this.drilldownService = drilldownService;
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureElliottWavePreferences(UserRepository userRepository,
                                          ElliottWavePreferencesService preferencesService) {
         this.userRepository = userRepository;
@@ -47,7 +47,7 @@ public class ElliottWaveDrilldownController {
                 parentStart, parentEnd, parentStartPrice, parentEndPrice, asOfExclusive,
                 principal == null || userRepository == null || preferencesService == null
                         ? null
-                        : userRepository.findByEmailIgnoreCase(principal.getName())
+                        : org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                                 .map(user -> preferencesService.get(user).profile(interval).rules())
                                 .orElse(null));
     }

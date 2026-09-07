@@ -16,6 +16,8 @@ import java.util.Optional;
 
 @Service
 public class HarmonicStopPlanService {
+    static final int OUTCOME_WINDOW_CANDLES = 8;
+
     private final AlertEventRepository eventRepository;
     private final AlertNotificationService notificationService;
 
@@ -76,6 +78,7 @@ public class HarmonicStopPlanService {
             String symbol,
             TimeInterval interval,
             List<Candle> availableCandles) {
+        JobLeaseGuard.requireOwnership();
         if (symbol == null || symbol.isBlank() || interval == null
                 || availableCandles == null || availableCandles.isEmpty()) return 0;
         List<Candle> candles = availableCandles.stream()
@@ -84,33 +87,59 @@ public class HarmonicStopPlanService {
                         && candle.getClosePrice() != null)
                 .sorted(Comparator.comparing(Candle::getTimestamp))
                 .toList();
-        int stopped = 0;
+        int resolved = 0;
         for (AlertEvent event : eventRepository.findActiveHarmonicStopPlans(symbol, interval)) {
-            Candle breached = firstStopBreach(event, candles);
-            if (breached == null) continue;
-            double observedExtreme = event.getTradeSignal() == TradeSignal.BUY
-                    ? breached.getLowPrice() : breached.getHighPrice();
-            event.setHarmonicStopStatus(HarmonicStopStatus.STOPPED.name());
-            event.setHarmonicStopResolutionTimestamp(breached.getTimestamp());
-            event.setHarmonicStopResolutionPrice(observedExtreme);
-            event.setHarmonicStopResolutionReason(stopReason(event, breached, observedExtreme));
-            event.setSentAt(LocalDateTime.now());
-            event.setReadAt(null);
-            event.setLifecycleUpdatedAt(LocalDateTime.now());
-            if (notificationService.sendHarmonicStopOutcomeEmail(event, breached)) {
-                event.setFollowUpSentAt(LocalDateTime.now());
+            List<Candle> outcomeCandles = candles.stream()
+                    .filter(candle -> event.getSignalCandleTimestamp() != null
+                            && candle.getTimestamp() > event.getSignalCandleTimestamp())
+                    .limit(OUTCOME_WINDOW_CANDLES)
+                    .toList();
+            Candle breached = firstStopBreach(event, outcomeCandles);
+            if (breached != null) {
+                resolveStop(event, breached);
+            } else if (outcomeCandles.size() == OUTCOME_WINDOW_CANDLES) {
+                resolveTimeStop(event, outcomeCandles.getLast());
+            } else {
+                continue;
             }
             eventRepository.save(event);
-            stopped++;
+            resolved++;
         }
-        return stopped;
+        return resolved;
+    }
+
+    private void resolveStop(AlertEvent event, Candle breached) {
+        double observedExtreme = event.getTradeSignal() == TradeSignal.BUY
+                ? breached.getLowPrice() : breached.getHighPrice();
+        event.setHarmonicStopStatus(HarmonicStopStatus.STOPPED.name());
+        event.setHarmonicStopResolutionTimestamp(breached.getTimestamp());
+        event.setHarmonicStopResolutionPrice(event.getStopLossPrice());
+        event.setHarmonicStopResolutionReason(stopReason(event, breached, observedExtreme));
+        markResolved(event);
+        if (notificationService.sendHarmonicStopOutcomeEmail(event, breached)) {
+            event.setFollowUpSentAt(LocalDateTime.now());
+        }
+    }
+
+    private void resolveTimeStop(AlertEvent event, Candle eighthCandle) {
+        event.setHarmonicStopStatus(HarmonicStopStatus.TIME_STOPPED.name());
+        event.setHarmonicStopResolutionTimestamp(eighthCandle.getTimestamp());
+        event.setHarmonicStopResolutionPrice(eighthCandle.getClosePrice());
+        event.setHarmonicStopResolutionReason(
+                "The harmonic outcome window ended at candle 8's completed close.");
+        markResolved(event);
+    }
+
+    private void markResolved(AlertEvent event) {
+        event.setSentAt(LocalDateTime.now());
+        event.setReadAt(null);
+        event.setLifecycleUpdatedAt(LocalDateTime.now());
     }
 
     private Candle firstStopBreach(AlertEvent event, List<Candle> candles) {
         if (event == null || event.getSignalCandleTimestamp() == null
                 || event.getStopLossPrice() == null) return null;
         for (Candle candle : candles) {
-            if (candle.getTimestamp() <= event.getSignalCandleTimestamp()) continue;
             boolean breached = event.getTradeSignal() == TradeSignal.BUY
                     ? candle.getLowPrice() <= event.getStopLossPrice()
                     : candle.getHighPrice() >= event.getStopLossPrice();

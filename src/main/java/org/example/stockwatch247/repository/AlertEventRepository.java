@@ -22,8 +22,18 @@ import java.util.Optional;
 
 @Repository
 public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"alertRule", "alertRule.user", "alertRule.stockAsset"})
+    @org.springframework.data.jpa.repository.Query("select e from AlertEvent e where e.id in :ids and e.alertRule.user = :user and e.deletedAt is null")
+    java.util.List<AlertEvent> findOwnedArchiveIds(@org.springframework.data.repository.query.Param("ids") java.util.List<Long> ids,
+            @org.springframework.data.repository.query.Param("user") User user);
+
     boolean existsByAlertRuleAndPatternAndSignalCandleTimestamp(AlertRule alertRule, CandlePattern pattern,
                                                                 Long signalCandleTimestamp);
+
+    Optional<AlertEvent> findFirstByAlertRuleAndPatternAndSignalCandleTimestampOrderByIdAsc(
+            AlertRule alertRule,
+            CandlePattern pattern,
+            Long signalCandleTimestamp);
 
     Optional<AlertEvent> findFirstByAlertRuleAndElliottCycleKeyAndElliottSignalStageOrderByIdAsc(
             AlertRule alertRule,

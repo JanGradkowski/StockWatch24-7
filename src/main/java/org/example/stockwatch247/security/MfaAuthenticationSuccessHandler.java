@@ -16,6 +16,10 @@ import java.time.Instant;
 
 @Component
 public class MfaAuthenticationSuccessHandler implements AuthenticationSuccessHandler {
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+    @org.springframework.beans.factory.annotation.Autowired
+    void setClock(java.time.Clock clock) { this.clock = clock; }
+
     private final UserRepository users;
     public MfaAuthenticationSuccessHandler(UserRepository users) { this.users = users; }
 
@@ -23,9 +27,17 @@ public class MfaAuthenticationSuccessHandler implements AuthenticationSuccessHan
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException, ServletException {
         User user = users.findByEmailIgnoreCase(authentication.getName()).orElseThrow();
+        if (authentication.getPrincipal() instanceof AccountPrincipal principal
+                && (principal.securityVersion() != user.getSecurityVersion() || user.getDeletionRequestedAt() != null)) {
+            SecurityContextHolder.clearContext();
+            request.getSession().invalidate();
+            response.sendRedirect(request.getContextPath() + "/login?expired=true");
+            return;
+        }
         if (user.isMfaEnabled()) {
             request.getSession().setAttribute(AccountSession.MFA_PENDING_USER_ID, user.getId());
-            request.getSession().setAttribute(AccountSession.MFA_PENDING_AT, Instant.now().getEpochSecond());
+            request.getSession().setAttribute(AccountSession.MFA_PENDING_VERSION, user.getSecurityVersion());
+            request.getSession().setAttribute(AccountSession.MFA_PENDING_AT, clock.instant().getEpochSecond());
             SecurityContextHolder.clearContext();
             request.getSession().removeAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
             response.sendRedirect(request.getContextPath() + "/login/2fa");

@@ -26,12 +26,15 @@ import java.util.Locale;
 /**
  * On-demand historical candlestick analysis for the stock workspace.
  *
- * <p>Results are intentionally neither persisted nor cached. Every request
- * refreshes the candle source, scans the configured recent window, and derives
- * outcomes from completed candles.</p>
+ * <p>Full-history results are cached by candle revision, completion boundary, and effective settings.
+ * Recent-window scans derive outcomes from completed candles.</p>
  */
 @Service
 public class HistoricalCandlestickService {
+    private HistoricalSignalCacheService historicalCache;
+    @Autowired
+    void setHistoricalCache(HistoricalSignalCacheService historicalCache) { this.historicalCache = historicalCache; }
+
     private static final int CANDLESTICK_TIME_STOP_CANDLES = 8;
     public static final String SCORE_VERSION = CandlePatternDetectionService.SETUP_SCORE_VERSION;
     public static final int MIN_LOOKBACK_CANDLES = 1;
@@ -178,6 +181,16 @@ public class HistoricalCandlestickService {
                                   CandlestickPatternPreferencesService.PreferencesView definitions) {
         ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
         synchronizeCandles(symbol, apiInterval);
+        if (historicalCache != null) return historicalCache.getOrCompute(HistoricalSignalCacheService.Family.CANDLESTICK,
+                symbol, apiInterval, SCORE_VERSION, List.of(trendRules, definitions,
+                        completionService.firstIncompleteCandleTimestamp(profile.interval()), companyName(symbol)),
+                HistoricalScan.class, () -> calculateAll(symbol, apiInterval, trendRules, definitions));
+        return calculateAll(symbol, apiInterval, trendRules, definitions);
+    }
+
+    private HistoricalScan calculateAll(String symbol, String apiInterval,
+            CandlePatternDetectionService.TrendDetectionRules trendRules, CandlestickPatternPreferencesService.PreferencesView definitions) {
+        ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
         List<Candle> completedCandles = candleRepository
                 .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, apiInterval)
                 .stream()

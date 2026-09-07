@@ -7,7 +7,7 @@ limit_conn_zone $binary_remote_addr zone=stockwatch_connections:10m;
 # Log the normalized path, not the query string (verification tokens live in queries).
 log_format stockwatch '$remote_addr - $remote_user [$time_local] '
                       '"$request_method $uri $server_protocol" $status $body_bytes_sent '
-                      '"$http_referer" "$http_user_agent"';
+                      '"$http_user_agent"';
 
 upstream stockwatch_backend {
     # Keep port 8080 private. Only this trusted proxy may reach it.

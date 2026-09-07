@@ -18,6 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,12 +50,19 @@ class TemporaryTopUsCompanyUniverseTest {
         user.setId(7L);
         user.setEmail("bulk-test@example.com");
         AtomicLong ids = new AtomicLong(1);
+        AtomicReference<StockAsset> homeDepot = new AtomicReference<>();
         when(assets.findByTickerSymbolIgnoreCase(anyString())).thenAnswer(invocation -> {
             StockAsset asset = new StockAsset();
             asset.setId(ids.getAndIncrement());
             asset.setTickerSymbol(invocation.getArgument(0));
             asset.setCompanyName(invocation.getArgument(0));
             asset.setExchange("US");
+            if ("HD".equals(invocation.getArgument(0))) {
+                asset.setCompanyName("Unrelated HD listing");
+                asset.setCurrency("PEN");
+                asset.setCountry("PE");
+                homeDepot.set(asset);
+            }
             return Optional.of(asset);
         });
         when(rules.existsByStockAssetAndIsActiveTrue(any(StockAsset.class))).thenReturn(false);
@@ -97,6 +105,11 @@ class TemporaryTopUsCompanyUniverseTest {
         assertThat(result.createdRules()).isEqualTo(3_599);
         assertThat(result.alreadyActiveRules()).isEqualTo(1);
         assertThat(result.activeRules()).isEqualTo(3_600);
+        assertThat(homeDepot.get().getCompanyName()).isEqualTo("The Home Depot, Inc.");
+        assertThat(homeDepot.get().getCurrency()).isEqualTo("USD");
+        assertThat(homeDepot.get().getCountry()).isEqualTo("US");
+        assertThat(homeDepot.get().getExchange()).isEqualTo("NYSE");
+        assertThat(homeDepot.get().getMicCode()).isEqualTo("XNYS");
         ArgumentCaptor<List<AlertRule>> saved = ArgumentCaptor.forClass(List.class);
         verify(rules).saveAll(saved.capture());
         assertThat(saved.getValue()).hasSize(3_599);

@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.enums.InstrumentType;
 import org.example.stockwatch247.model.enums.MarketDataProvider;
@@ -92,7 +92,7 @@ class YahooFinanceServiceTest {
 
         YahooFinanceService service = new YahooFinanceService(
                 restTemplate,
-                new ObjectMapper(),
+                tools.jackson.databind.json.JsonMapper.builder().build(),
                 stockAssetRepository,
                 providerSymbolRegistry,
                 "https://query1.finance.yahoo.com",
@@ -186,7 +186,7 @@ class YahooFinanceServiceTest {
 
         YahooFinanceService service = new YahooFinanceService(
                 restTemplate,
-                new ObjectMapper(),
+                tools.jackson.databind.json.JsonMapper.builder().build(),
                 stockAssetRepository,
                 providerSymbolRegistry,
                 "https://query1.finance.yahoo.com",
@@ -265,7 +265,7 @@ class YahooFinanceServiceTest {
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
 
         YahooFinanceService service = new YahooFinanceService(
-                restTemplate, new ObjectMapper(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
 
         List<MarketDataBar> bars = service.getTimeSeries("SAP", "1d", 1000);
 
@@ -338,7 +338,7 @@ class YahooFinanceServiceTest {
 
         YahooFinanceService service = new YahooFinanceService(
                 restTemplate,
-                new ObjectMapper(),
+                tools.jackson.databind.json.JsonMapper.builder().build(),
                 stockAssetRepository,
                 providerSymbolRegistry,
                 "https://query1.finance.yahoo.com",
@@ -425,7 +425,7 @@ class YahooFinanceServiceTest {
                 .andRespond(withSuccess(warsawResponse, MediaType.APPLICATION_JSON));
 
         YahooFinanceService service = new YahooFinanceService(
-                restTemplate, new ObjectMapper(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
 
         List<MarketDataBar> bars = service.getTimeSeries("CDR", "1d", 1000);
 
@@ -485,7 +485,7 @@ class YahooFinanceServiceTest {
                         not(containsString("range=")))))
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         YahooFinanceService service = new YahooFinanceService(
-                restTemplate, new ObjectMapper(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
 
         List<MarketDataBar> bars = service.getTimeSeries("SPX", "1wk", 1000);
 
@@ -554,7 +554,7 @@ class YahooFinanceServiceTest {
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
 
         YahooFinanceService service = new YahooFinanceService(
-                restTemplate, new ObjectMapper(), stockAssetRepository,
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), stockAssetRepository,
                 "https://query1.finance.yahoo.com", true);
 
         List<MarketDataBar> bars = service.getTimeSeries("ZAB", "1mo", 1000);
@@ -617,7 +617,7 @@ class YahooFinanceServiceTest {
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
 
         YahooFinanceService service = new YahooFinanceService(
-                restTemplate, new ObjectMapper(), stockAssetRepository,
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), stockAssetRepository,
                 "https://query1.finance.yahoo.com", true);
 
         List<MarketDataBar> bars = service.getTimeSeries("^GSPC", "1mo", 1000);
@@ -678,7 +678,7 @@ class YahooFinanceServiceTest {
         server.expect(requestTo(containsString("/v8/finance/chart/ZTS?")))
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         YahooFinanceService service = new YahooFinanceService(
-                restTemplate, new ObjectMapper(), stockAssetRepository,
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), stockAssetRepository,
                 "https://query1.finance.yahoo.com", true);
 
         List<MarketDataBar> bars = service.getTimeSeries("ZTS", "1wk", 1000);
@@ -741,7 +741,7 @@ class YahooFinanceServiceTest {
                 })
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
         YahooFinanceService service = new YahooFinanceService(
-                restTemplate, new ObjectMapper(), stockAssetRepository,
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), stockAssetRepository,
                 "https://query1.finance.yahoo.com", true);
 
         List<MarketDataBar> bars = service.getTimeSeriesBefore("MSFT", "1d", 2, before);
@@ -793,7 +793,7 @@ class YahooFinanceServiceTest {
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
 
         YahooFinanceService service = new YahooFinanceService(
-                restTemplate, new ObjectMapper(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), stockAssetRepository, "https://query1.finance.yahoo.com", true);
 
         assertThatThrownBy(() -> service.getTimeSeries("SPX", "1wk", 1000))
                 .isInstanceOf(IllegalStateException.class)

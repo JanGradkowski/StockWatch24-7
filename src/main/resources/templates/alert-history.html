@@ -96,7 +96,7 @@
               <span th:if="${event.lifecycle().harmonicStopStatus() != null}"
                     class="signal-lifecycle-pill"
                     th:classappend="${event.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : ' detected'}"
-                    th:text="${event.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : 'Active stop'}">Active stop</span>
+                    th:text="${event.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : (event.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? 'Candle 8 complete' : 'Active outcome')}">Active outcome</span>
               <span th:if="${event.lifecycle().harmonicStopStatus() == null and event.lifecycle().tracked()}"
                     class="signal-lifecycle-pill"
                     th:classappend="${' ' + event.lifecycle().cssClass()}"

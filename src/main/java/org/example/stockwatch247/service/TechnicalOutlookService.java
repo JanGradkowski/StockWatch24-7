@@ -66,7 +66,11 @@ public class TechnicalOutlookService {
     private final BoundedTtlCache<MarketCacheKey, MarketComparisonView> marketCache =
             new BoundedTtlCache<>(OUTLOOK_CACHE_SIZE, OUTLOOK_CACHE_TTL_SECONDS);
     private final Set<RefreshKey> refreshesInFlight = ConcurrentHashMap.newKeySet();
-    private final Map<RefreshKey, RefreshStatusView> refreshStatuses = new ConcurrentHashMap<>();
+    private final BoundedTtlCache<RefreshKey, RefreshStatusView> refreshStatuses = new BoundedTtlCache<>(1024, 600);
+    private CandleRevisionService revisions;
+    @org.springframework.beans.factory.annotation.Autowired
+    void setRevisions(CandleRevisionService revisions) { this.revisions = revisions; }
+    private long generation(String symbol, String interval) { return revisions == null ? 0 : revisions.generation(symbol, interval); }
     private Executor technicalOutlookExecutor;
 
     @Autowired
@@ -99,7 +103,7 @@ public class TechnicalOutlookService {
                 alertEventRepository, congressionalDeliveryRepository, insiderDeliveryRepository, null);
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configureTechnicalOutlookExecutor(
             @Qualifier("technicalOutlookExecutor") Executor technicalOutlookExecutor) {
         this.technicalOutlookExecutor = technicalOutlookExecutor;
@@ -170,8 +174,10 @@ public class TechnicalOutlookService {
                 ? TechnicalIndicatorProfile.forInterval(interval.timeInterval())
                 : preferencesService.technicalProfile(rules);
         String normalizedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
+        StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(normalizedSymbol).orElse(null);
         OutlookCacheKey cacheKey = new OutlookCacheKey(
-                userKey(user), normalizedSymbol, interval.apiValue(), rules, detailed);
+                userKey(user), normalizedSymbol, interval.apiValue(), rules, detailed,
+                generation(normalizedSymbol, interval.apiValue()), generation(normalizedSymbol, "1d"), generation(benchmarkFor(asset).symbol(), "1d"));
         long now = Instant.now().getEpochSecond();
         OutlookView cached = outlookCache.get(cacheKey, now);
         if (cached != null) {
@@ -200,7 +206,6 @@ public class TechnicalOutlookService {
             return OutlookView.unavailable(normalizedSymbol, interval);
         }
 
-        StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(normalizedSymbol).orElse(null);
         long relatedStarted = System.nanoTime();
         MarketComparisonView market = marketComparison(
                 normalizedSymbol, asset, rules.marketRelativeThresholdPercent(), false);
@@ -326,11 +331,11 @@ public class TechnicalOutlookService {
         String symbol = rawSymbol.trim().toUpperCase(Locale.ROOT);
         RefreshKey refreshKey = new RefreshKey(symbol, interval.apiValue());
         if (!refreshesInFlight.add(refreshKey)) return;
-        refreshStatuses.put(refreshKey, RefreshStatusView.queuedStatus());
+        refreshStatuses.put(refreshKey, RefreshStatusView.queuedStatus(), Instant.now().getEpochSecond());
         try {
             technicalOutlookExecutor.execute(() -> {
                 long started = System.nanoTime();
-                refreshStatuses.put(refreshKey, RefreshStatusView.runningStatus());
+                refreshStatuses.put(refreshKey, RefreshStatusView.runningStatus(), Instant.now().getEpochSecond());
                 try {
                     boolean changed = refresh(symbol, interval.apiValue(), requiredCandles);
                     if (changed) invalidate(symbol, interval.apiValue());
@@ -339,11 +344,11 @@ public class TechnicalOutlookService {
                         // interval buttons usually become cache-only reads.
                         buildOutlook(user, symbol, interval.apiValue(), false);
                     }
-                    refreshStatuses.put(refreshKey, RefreshStatusView.readyStatus(elapsedMillis(started)));
+                    refreshStatuses.put(refreshKey, RefreshStatusView.readyStatus(elapsedMillis(started)), Instant.now().getEpochSecond());
                 } catch (RuntimeException exception) {
                     log.warn("Technical outlook refresh failed symbol={} interval={}: {}",
                             symbol, interval.apiValue(), exception.getMessage());
-                    refreshStatuses.put(refreshKey, RefreshStatusView.failedStatus(elapsedMillis(started)));
+                    refreshStatuses.put(refreshKey, RefreshStatusView.failedStatus(elapsedMillis(started)), Instant.now().getEpochSecond());
                 } finally {
                     refreshesInFlight.remove(refreshKey);
                 }
@@ -351,7 +356,7 @@ public class TechnicalOutlookService {
             requestBenchmarkRefresh(symbol);
         } catch (RejectedExecutionException exception) {
             refreshesInFlight.remove(refreshKey);
-            refreshStatuses.put(refreshKey, RefreshStatusView.failedStatus(0));
+            refreshStatuses.put(refreshKey, RefreshStatusView.failedStatus(0), Instant.now().getEpochSecond());
         }
     }
 
@@ -383,7 +388,7 @@ public class TechnicalOutlookService {
         IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
         String symbol = rawSymbol.trim().toUpperCase(Locale.ROOT);
         RefreshKey key = new RefreshKey(symbol, interval.apiValue());
-        RefreshStatusView status = refreshStatuses.get(key);
+        RefreshStatusView status = refreshStatuses.get(key, Instant.now().getEpochSecond());
         if (status != null) return status;
         boolean available = !candleRepository.findTop1BySymbolAndTimeIntervalOrderByTimestampDesc(
                 symbol, interval.apiValue()).isEmpty();
@@ -948,7 +953,7 @@ public class TechnicalOutlookService {
                                                   boolean includeRatioSeries) {
         Benchmark benchmark = benchmarkFor(asset);
         MarketCacheKey cacheKey = new MarketCacheKey(
-                symbol, benchmark.symbol(), voteThresholdPercent, includeRatioSeries);
+                symbol, benchmark.symbol(), voteThresholdPercent, includeRatioSeries, generation(symbol, "1d"), generation(benchmark.symbol(), "1d"));
         long now = Instant.now().getEpochSecond();
         MarketComparisonView cached = marketCache.get(cacheKey, now);
         if (cached != null) return cached;
@@ -1170,9 +1175,9 @@ public class TechnicalOutlookService {
     private record RefreshKey(String symbol, String interval) { }
     private record OutlookCacheKey(long userKey, String symbol, String interval,
                                    AnalysisPreferencesService.IntervalProfile profile,
-                                   boolean detailed) { }
+                                   boolean detailed, long generation, long dailyGeneration, long benchmarkGeneration) { }
     private record MarketCacheKey(String symbol, String benchmarkSymbol,
-                                  double threshold, boolean includeRatioSeries) { }
+                                  double threshold, boolean includeRatioSeries, long generation, long benchmarkGeneration) { }
 
     public record RefreshStatusView(String state, boolean running, boolean ready, long elapsedMillis) {
         private static RefreshStatusView idleStatus() { return new RefreshStatusView("IDLE", false, false, 0); }

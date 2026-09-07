@@ -331,6 +331,7 @@
 
 </main>
 
+<script th:src="@{/js/signal-tabs.js}"></script>
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
 (function () {
   'use strict';
@@ -354,44 +355,7 @@
     }
   }
 
-  function activateTab(name, updateHash) {
-    const requestedTab = tabs.find(tab => tab.dataset.signalTab === name);
-    if (name === 'results' && requestedTab?.dataset.resultsAvailable !== 'true') {
-      showResultsUnavailableDialog();
-      return false;
-    }
-    const selected = panels[name] ? name : 'graphical';
-    tabs.forEach(tab => {
-      const active = tab.dataset.signalTab === selected;
-      tab.classList.toggle('active', active);
-      tab.setAttribute('aria-selected', String(active));
-      tab.tabIndex = active ? 0 : -1;
-    });
-    Object.entries(panels).forEach(([panelName, panel]) => {
-      if (!panel) return;
-      const active = panelName === selected;
-      panel.hidden = !active;
-      panel.classList.toggle('active', active);
-    });
-    if (updateHash && window.history && window.history.replaceState) {
-      const hash = selected === 'score' ? '#score-report' : selected === 'results' ? '#results' : '#graphical-outlook';
-      window.history.replaceState(null, '', hash);
-    }
-    if (selected === 'results') window.setTimeout(ensureResultsChart, 0);
-    return true;
-  }
-
-  tabs.forEach((tab, index) => {
-    tab.addEventListener('click', () => activateTab(tab.dataset.signalTab, true));
-    tab.addEventListener('keydown', event => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-      event.preventDefault();
-      const offset = event.key === 'ArrowRight' ? 1 : -1;
-      const nextIndex = (index + offset + tabs.length) % tabs.length;
-      const next = tabs[nextIndex];
-      if (activateTab(next.dataset.signalTab, true)) next.focus();
-    });
-  });
+    const activateTab = window.StockWatchSignalTabs(tabs, panels, showResultsUnavailableDialog, ensureResultsChart);
   document.getElementById('closeSignalResultsUnavailableDialog')?.addEventListener('click', () => document.getElementById('signalResultsUnavailableDialog')?.close());
   const initialTab = window.location.hash === '#score-report' ? 'score' : window.location.hash === '#results' ? 'results' : 'graphical';
   activateTab(initialTab, false);

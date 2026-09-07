@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Settings — StockWatch 24/7</title><script th:src="@{/js/theme.js}"></script><link rel="stylesheet" th:href="@{/css/style.css}"></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Settings — StockWatch 24/7</title><script th:src="@{/js/theme.js}"></script><link rel="stylesheet" th:href="@{/css/style.css}">
+<script defer th:src="@{/js/settings-security.js}"></script>
+</head>
 <body class="settings-page">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 <main class="settings-shell">
@@ -19,7 +21,7 @@
       <h1 id="settingsPageTitle" th:switch="${settingsTab}"><span th:case="'appearance'">Appearance</span><span th:case="'analysis'">Analysis &amp; Alerts</span><span th:case="'scoring'">Scoring settings</span><span th:case="'candlestick-patterns'">Candlestick Patterns</span><span th:case="'elliott-waves'">Elliott Waves</span><span th:case="'harmonic-formations'">Harmonic Formations</span><span th:case="'detection'">Detection settings</span><span th:case="*">General settings</span></h1>
       <p id="settingsPageDescription" th:switch="${settingsTab}"><span th:case="'appearance'">Set your default color mode and make chart overlays unmistakable.</span><span th:case="'analysis'">Control technical outlook inputs, Elliott lifecycle tracking, and market email delivery.</span><span th:case="'scoring'">Customize the 100-point score shown for each signal type and interval.</span><span th:case="'candlestick-patterns'">Customize pattern definitions and the stop-loss and risk-to-reward plan used for every future candlestick trade.</span><span th:case="'elliott-waves'">Customize exactly how daily, weekly, and monthly motive and corrective structures are detected.</span><span th:case="'harmonic-formations'">Customize harmonic ratios, tolerances, and hard-versus-soft classification rules.</span><span th:case="'detection'">Customize how prior price action qualifies as an uptrend or downtrend for candlestick detection.</span><span th:case="*">Manage password protection, sign-in verification, sessions, and account data.</span></p>
     </div><span class="settings-email" th:text="${user.email}">user@example.com</span></header>
-    <div th:if="${success}" class="settings-message success-msg" th:text="${success}"></div><div th:if="${error}" class="settings-message error-msg" th:text="${error}"></div><div th:if="${param.appearanceSaved}" class="settings-message success-msg">Appearance preferences applied.</div>
+    <div th:if="${success}" class="settings-message success-msg" role="status" th:text="${success}"></div><div th:if="${error}" class="settings-message error-msg" role="alert" th:text="${error}"></div><div th:if="${param.appearanceSaved}" class="settings-message success-msg">Appearance preferences applied.</div>
 
     <section th:if="${settingsTab == 'appearance'}" class="settings-card appearance-settings-card" id="appearance"><div class="settings-card-heading"><div><span class="settings-number">01</span><h2>Workspace appearance</h2></div><p>These account defaults follow you to every device.</p></div>
       <form th:action="@{/settings/appearance}" method="post" class="appearance-settings-form">
@@ -77,9 +79,34 @@
       <div th:replace="~{fragments/harmonic-pattern-settings :: harmonicPatternSettings(${harmonicPatternPreferences})}"></div>
     </th:block>
 
-    <section th:if="${settingsTab == 'general'}" class="settings-card" id="password"><div class="settings-card-heading"><div><span class="settings-number">01</span><h2>Password</h2></div><p>A verified email code expires after five minutes and can only be used once.</p></div>
-      <div class="settings-two-column"><form th:action="@{/settings/password/code}" method="post" class="settings-form"><h3>1. Request a code</h3><div class="form-group"><label for="codeCurrentPassword">Current password</label><input id="codeCurrentPassword" type="password" name="currentPassword" required maxlength="72" autocomplete="current-password"></div><button class="btn-primary" type="submit">Send email code</button></form>
-      <form th:action="@{/settings/password}" method="post" class="settings-form"><h3>2. Change password</h3><div class="form-group"><label for="changeCurrentPassword">Current password</label><input id="changeCurrentPassword" type="password" name="currentPassword" required maxlength="72" autocomplete="current-password"></div><div class="form-group"><label for="passwordCode">Eight-digit email code</label><input id="passwordCode" name="code" required minlength="8" maxlength="8" inputmode="numeric" autocomplete="one-time-code"></div><div class="form-group"><label for="newPassword">New password</label><input id="newPassword" type="password" name="newPassword" required minlength="15" maxlength="72" autocomplete="new-password"></div><div class="form-group"><label for="confirmPassword">Confirm new password</label><input id="confirmPassword" type="password" name="confirmPassword" required minlength="15" maxlength="72" autocomplete="new-password"></div><button class="btn-accent" type="submit">Change password</button></form></div>
+    <section th:if="${settingsTab == 'general'}" class="settings-card" id="password">
+      <div class="settings-card-heading"><div><span class="settings-number">01</span><h2>Password</h2></div><p>Confirm your email before choosing a new password.</p></div>
+      <ol class="password-steps" aria-label="Password change progress">
+        <li th:classappend="${passwordCodePending} ? ' is-complete' : ' is-current'" th:attr="aria-current=${!passwordCodePending ? 'step' : null}">1. Request email code</li>
+        <li th:classappend="${passwordCodePending} ? ' is-current' : ''" th:attr="aria-current=${passwordCodePending ? 'step' : null}">2. Choose new password</li>
+      </ol>
+      <details class="password-code-request" th:open="${!passwordCodePending}">
+        <summary th:text="${passwordCodePending ? 'Need another code? Request a new one' : 'Step 1: verify your current password'}">Step 1: verify your current password</summary>
+        <form th:action="@{/settings/password/code}" method="post" class="settings-form" data-security-submit>
+          <p th:text="${'We will email a code to ' + user.email + '. A new code replaces the previous one.'}"></p>
+          <div class="form-group"><label for="codeCurrentPassword">Current password</label><input id="codeCurrentPassword" type="password" name="currentPassword" required maxlength="72" autocomplete="current-password"></div>
+          <button class="btn-primary" type="submit" data-pending-label="Requesting code...">Send email code</button>
+        </form>
+      </details>
+      <div th:if="${passwordCodePending}" class="password-code-status" role="status">
+        <p th:text="${'Check your inbox at ' + user.email + ' for the eight-digit code.'}"></p>
+        <p data-code-expiry th:attr="data-expires-at=${passwordCodeExpiresAt}">The code expires five minutes after it was requested. Delivery can take a moment; check your spam folder too.</p>
+      </div>
+      <form th:if="${passwordCodePending}" th:action="@{/settings/password}" method="post" class="settings-form password-change-form" data-security-submit>
+        <h3>2. Change password</h3>
+        <div class="form-group"><label for="passwordCode">Eight-digit email code</label><input id="passwordCode" name="code" required pattern="[0-9]{8}" minlength="8" maxlength="8" inputmode="numeric" autocomplete="one-time-code"></div>
+        <div class="form-group"><label for="changeCurrentPassword">Current password</label><input id="changeCurrentPassword" type="password" name="currentPassword" required maxlength="72" autocomplete="current-password"></div>
+        <div class="form-group"><label for="newPassword">New password</label><input id="newPassword" type="password" name="newPassword" required minlength="15" maxlength="72" autocomplete="new-password" aria-describedby="newPasswordHelp"><p id="newPasswordHelp">Use 15 to 72 characters. A long, unique passphrase works well.</p></div>
+        <div class="form-group"><label for="confirmPassword">Confirm new password</label><input id="confirmPassword" type="password" name="confirmPassword" required minlength="15" maxlength="72" autocomplete="new-password"></div>
+        <p>Your other sessions will be signed out after the change.</p>
+        <button class="btn-accent" type="submit" data-pending-label="Changing password...">Change password</button>
+      </form>
+      <p th:unless="${passwordCodePending}" class="settings-muted">After requesting a code, enter it here to continue. Codes expire after five minutes and can only be used once.</p>
     </section>
 
     <section th:if="${settingsTab == 'general'}" class="settings-card" id="mfa"><div class="settings-card-heading"><div><span class="settings-number">02</span><h2>Authenticator app</h2></div><span class="security-status" th:classappend="${user.mfaEnabled} ? ' enabled' : ''" th:text="${user.mfaEnabled} ? 'Enabled' : 'Disabled'">Disabled</span></div>

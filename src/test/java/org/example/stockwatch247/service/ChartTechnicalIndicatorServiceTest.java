@@ -16,9 +16,27 @@ import static org.mockito.Mockito.when;
 class ChartTechnicalIndicatorServiceTest {
 
     @Test
+    void boundedRangePreservesRecursiveAndCumulativeIndicatorContinuity() {
+        CandleRepository repository = mock(CandleRepository.class);
+        var history = candles(400);
+        long cutoff = 250L * 86_400L;
+        when(repository.findBySymbolAndTimeIntervalOrderByTimestampAsc("AAPL", "1d")).thenReturn(history);
+        when(repository.findBySymbolAndTimeIntervalAndTimestampLessThanEqualOrderByTimestampAsc("AAPL", "1d", cutoff))
+                .thenReturn(history.stream().filter(candle -> candle.getTimestamp() <= cutoff).toList());
+        var service = new ChartTechnicalIndicatorService(repository);
+        var indicators = List.of(config("ema", "EMA", Map.of("period", 20.0)), config("obv", "OBV", Map.of()));
+        var full = service.calculate("AAPL", "1d", new ChartTechnicalIndicatorService.IndicatorBatchRequest(200L * 86_400L, null, indicators));
+        var range = service.calculate("AAPL", "1d", new ChartTechnicalIndicatorService.IndicatorBatchRequest(200L * 86_400L, cutoff, indicators));
+        for (int i = 0; i < indicators.size(); i++) {
+            var expected = full.indicators().get(i).series().getFirst().points().stream().filter(point -> point.timestamp() <= cutoff).toList();
+            assertThat(range.indicators().get(i).series().getFirst().points()).isNotEmpty().containsExactlyElementsOf(expected);
+        }
+    }
+
+    @Test
     void calculatesEveryAutomatedOutlookIndicatorAsFiniteChartSeries() {
         CandleRepository repository = mock(CandleRepository.class);
-        when(repository.findBySymbolAndTimeIntervalOrderByTimestampAsc("AAPL", "1d"))
+        when(repository.findBySymbolAndTimeIntervalAndTimestampLessThanEqualOrderByTimestampAsc(org.mockito.ArgumentMatchers.eq("AAPL"), org.mockito.ArgumentMatchers.eq("1d"), org.mockito.ArgumentMatchers.anyLong()))
                 .thenReturn(candles(260));
         ChartTechnicalIndicatorService service = new ChartTechnicalIndicatorService(repository);
 

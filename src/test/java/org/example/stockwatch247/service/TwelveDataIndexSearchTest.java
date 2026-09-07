@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.repository.StockAssetRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -25,7 +25,7 @@ class TwelveDataIndexSearchTest {
         StockAssetRepository repository = mock(StockAssetRepository.class);
         when(repository.findAll()).thenReturn(List.of());
         TwelveDataService service = new TwelveDataService(
-                new RestTemplate(), new ObjectMapper(), repository, "", "https://api.twelvedata.com");
+                new RestTemplate(), tools.jackson.databind.json.JsonMapper.builder().build(), repository, "", "https://api.twelvedata.com");
 
         List<Map<String, Object>> suggestions = service.searchSymbols("SPX");
 
@@ -59,7 +59,7 @@ class TwelveDataIndexSearchTest {
                         }
                         """, MediaType.APPLICATION_JSON));
         TwelveDataService service = new TwelveDataService(
-                restTemplate, new ObjectMapper(), repository, "test-key", "https://api.twelvedata.com");
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), repository, "test-key", "https://api.twelvedata.com");
 
         List<Map<String, Object>> suggestions = service.searchSymbols("Dino");
 
@@ -103,7 +103,7 @@ class TwelveDataIndexSearchTest {
                         }
                         """, MediaType.APPLICATION_JSON));
         TwelveDataService service = new TwelveDataService(
-                restTemplate, new ObjectMapper(), repository, "test-key", "https://api.twelvedata.com");
+                restTemplate, tools.jackson.databind.json.JsonMapper.builder().build(), repository, "test-key", "https://api.twelvedata.com");
 
         List<Map<String, Object>> suggestions = service.searchSymbols("SPX");
 

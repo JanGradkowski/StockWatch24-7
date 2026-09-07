@@ -57,10 +57,17 @@ final class ElliottTradePlanPolicy {
                 hardInvalidation = wave0;
                 hardInvalidationSide = bullishCycle ? BoundarySide.BELOW : BoundarySide.ABOVE;
                 double waveOneLength = Math.abs(wave1 - wave0);
-                targets.add(target(wave2 + cycleSign * waveOneLength * 1.618,
+                double standardArithmeticTarget = wave2 + cycleSign * waveOneLength * 1.618;
+                double extendedArithmeticTarget = wave2 + cycleSign * waveOneLength * 2.618;
+                targets.add(target(standardArithmeticTarget,
                         "Wave III at 161.8% of Wave I from Wave II", 1.618));
-                targets.add(target(wave2 + cycleSign * waveOneLength * 2.618,
+                targets.add(target(extendedArithmeticTarget,
                         "Extended Wave III at 261.8% of Wave I from Wave II", 2.618));
+                if (bearishCycle
+                        && standardArithmeticTarget <= 0.0
+                        && extendedArithmeticTarget <= 0.0) {
+                    targets.add(logarithmicBearishWaveThreeTarget(wave0, wave1, wave2));
+                }
             }
             case WAVE_III_END -> {
                 Double wave3 = price(points, "III");
@@ -173,6 +180,17 @@ final class ElliottTradePlanPolicy {
 
     private static TargetCandidate target(double midpoint, String basis, Double fibonacciRatio) {
         return new TargetCandidate(midpoint, basis, fibonacciRatio);
+    }
+
+    private static TargetCandidate logarithmicBearishWaveThreeTarget(
+            double wave0,
+            double wave1,
+            double wave2) {
+        if (wave0 <= 0.0 || wave1 <= 0.0 || wave2 <= 0.0 || wave1 >= wave0) return null;
+        double midpoint = wave2 * Math.pow(wave1 / wave0, 1.618);
+        return target(midpoint,
+                "Logarithmic Wave III at 161.8% after both arithmetic extensions reached zero",
+                1.618);
     }
 
     private static Double price(

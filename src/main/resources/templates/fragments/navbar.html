@@ -1,9 +1,16 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
-<div th:fragment="navbar">
+<div th:fragment="navbar" th:classappend="${showAppNavigation == true} ? 'app-navigation' : ''">
+  <th:block th:if="${showAppNavigation == true}">
+    <th:block th:replace="~{fragments/app-sidebar :: sidebar}"></th:block>
+  </th:block>
   <nav class="navbar" aria-label="Application navigation">
-    <a class="logo" th:href="@{/home}" aria-label="StockWatch 24/7 dashboard">
+    <button th:if="${showAppNavigation == true}" id="appMenuToggle" type="button" class="app-nav-icon-button app-menu-toggle"
+            aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <a class="logo app-header-logo" th:href="@{/home}" aria-label="StockWatch 24/7 dashboard">
       <span class="logo-mark" aria-hidden="true"></span>
       <span class="logo-word">StockWatch <span>24/7</span></span>
     </a>
@@ -18,10 +25,6 @@
 
     <div class="nav-links">
       <span th:if="${firstName != null}" class="nav-user"><span class="nav-user-dot" aria-hidden="true"></span><span th:text="${firstName}">Trader</span></span>
-      <a th:if="${firstName != null}" th:href="@{/settings}" class="nav-settings-link" aria-label="Settings" title="Settings">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.7a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path></svg>
-      </a>
-      <a th:if="${firstName != null}" href="/home" class="btn-primary">Dashboard</a>
       <form th:if="${firstName != null}" th:action="@{/logout}" method="post" class="logout-form">
         <button type="submit" class="logout-btn">Sign out</button>
       </form>
@@ -36,6 +39,8 @@
   <th:block th:if="${firstName != null}">
     <div th:replace="~{fragments/history-back :: historyBack(@{/home})}"></div>
   </th:block>
+
+  <script th:if="${showAppNavigation == true}" th:src="@{/js/app-navigation.js}"></script>
 
   <script th:attr="nonce=${cspNonce}">
     document.addEventListener("DOMContentLoaded", function() {

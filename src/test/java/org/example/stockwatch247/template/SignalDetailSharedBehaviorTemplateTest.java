@@ -22,7 +22,10 @@ class SignalDetailSharedBehaviorTemplateTest {
 
         SpringTemplateEngine engine = new SpringTemplateEngine();
         engine.setTemplateResolver(resolver);
-        Context context = new Context();
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        var application = org.thymeleaf.web.servlet.JakartaServletWebApplication.buildApplication(request.getServletContext());
+        var context = new org.thymeleaf.context.WebContext(application.buildExchange(request, response));
         context.setVariable("elliottMotiveColor", "#3B82F6");
         context.setVariable("elliottCorrectiveColor", "#A855F7");
         context.setVariable("elliottSubwaveColor", "#F59E0B");

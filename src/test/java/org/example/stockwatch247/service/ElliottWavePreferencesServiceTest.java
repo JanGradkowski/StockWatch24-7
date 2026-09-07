@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserElliottWavePreferences;
 import org.example.stockwatch247.model.enums.TimeInterval;
@@ -33,7 +33,7 @@ class ElliottWavePreferencesServiceTest {
             stored.set(value);
             return value;
         });
-        service = new ElliottWavePreferencesService(repository, new ObjectMapper().findAndRegisterModules());
+        service = new ElliottWavePreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
     }
 
     @Test
@@ -103,9 +103,9 @@ class ElliottWavePreferencesServiceTest {
         form.set("weekly.minimumSignalConfidence", "82");
         service.save(user, form);
         UserElliottWavePreferences entity = stored.get();
-        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-        var root = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(entity.getPreferencesPayload());
-        var profiles = (com.fasterxml.jackson.databind.node.ArrayNode) root.get("profiles");
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var root = (tools.jackson.databind.node.ObjectNode) mapper.readTree(entity.getPreferencesPayload());
+        var profiles = (tools.jackson.databind.node.ArrayNode) root.get("profiles");
         profiles.remove(0);
         entity.setPreferencesPayload(mapper.writeValueAsString(root));
 

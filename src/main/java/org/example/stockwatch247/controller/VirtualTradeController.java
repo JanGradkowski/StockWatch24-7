@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.VirtualTradeService;
+import org.example.stockwatch247.service.DemoPortfolioService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -23,21 +24,26 @@ import java.security.Principal;
 public class VirtualTradeController {
     private final UserRepository userRepository;
     private final VirtualTradeService virtualTradeService;
+    private final DemoPortfolioService portfolioService;
 
     public VirtualTradeController(UserRepository userRepository,
-                                  VirtualTradeService virtualTradeService) {
+                                  VirtualTradeService virtualTradeService, DemoPortfolioService portfolioService) {
         this.userRepository = userRepository;
         this.virtualTradeService = virtualTradeService;
+        this.portfolioService = portfolioService;
     }
 
     @GetMapping("/virtual-trades")
     public String archive(@RequestParam(defaultValue = "date") String sort,
                           @RequestParam(defaultValue = "desc") String direction,
+                          @RequestParam(defaultValue = "0") int page,
+                          @RequestParam(defaultValue = "overall") String period,
                           Principal principal,
                           Model model) {
         User user = requireUser(principal);
         model.addAttribute("firstName", user.getFirstName());
-        model.addAttribute("archive", virtualTradeService.archive(user, sort, direction));
+        model.addAttribute("archive", virtualTradeService.archive(user, sort, direction, page));
+        model.addAttribute("portfolio", portfolioService.portfolio(user.getId(), period));
         return "virtual-trades";
     }
 
@@ -53,6 +59,7 @@ public class VirtualTradeController {
     public String deleteFromArchive(@PathVariable Long tradeId,
                                     @RequestParam(defaultValue = "date") String sort,
                                     @RequestParam(defaultValue = "desc") String direction,
+                                    @RequestParam(defaultValue = "overall") String period,
                                     Principal principal,
                                     RedirectAttributes redirectAttributes) {
         User user = requireUser(principal);
@@ -64,6 +71,7 @@ public class VirtualTradeController {
         }
         redirectAttributes.addAttribute("sort", sort);
         redirectAttributes.addAttribute("direction", "asc".equalsIgnoreCase(direction) ? "asc" : "desc");
+        redirectAttributes.addAttribute("period", DemoPortfolioService.normalizePeriod(period));
         return "redirect:/virtual-trades";
     }
 
@@ -104,7 +112,7 @@ public class VirtualTradeController {
         if (principal == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
-        return userRepository.findByEmailIgnoreCase(principal.getName())
+        return org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
     }
 }

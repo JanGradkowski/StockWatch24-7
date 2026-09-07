@@ -25,7 +25,7 @@ public class ElliottWaveHierarchyController {
         this.hierarchyService = hierarchyService;
     }
 
-    @Autowired(required = false)
+    @Autowired
     void configurePreferences(UserRepository userRepository,
                               ElliottWavePreferencesService preferencesService) {
         this.userRepository = userRepository;
@@ -41,7 +41,7 @@ public class ElliottWaveHierarchyController {
         ElliottWaveDetectionService.DetectionRules weeklyRules = null;
         ElliottWaveDetectionService.DetectionRules dailyRules = null;
         if (principal != null && userRepository != null && preferencesService != null) {
-            var user = userRepository.findByEmailIgnoreCase(principal.getName()).orElse(null);
+            var user = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
             if (user != null) {
                 var preferences = preferencesService.get(user);
                 monthlyRules = preferences.profile(TimeInterval.MONTHLY).rules();

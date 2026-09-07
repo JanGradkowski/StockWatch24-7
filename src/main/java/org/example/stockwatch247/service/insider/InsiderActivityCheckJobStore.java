@@ -110,8 +110,15 @@ public class InsiderActivityCheckJobStore {
         return jobs.stream().findFirst();
     }
 
-    public void complete(long jobId) {
-        jdbcTemplate.update(
+    public boolean renew(InsiderActivityCheckJob job, Duration lease) {
+        return jdbcTemplate.update("""
+            update insider_activity_check_jobs set lease_until = current_timestamp + (? * interval '1 second')
+            where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
+            """, Math.max(1, lease.toSeconds()), job.id(), job.attempts()) == 1;
+    }
+
+    public boolean complete(InsiderActivityCheckJob job) {
+        return jdbcTemplate.update(
                 """
                 update insider_activity_check_jobs
                 set status = 'COMPLETED',
@@ -119,9 +126,9 @@ public class InsiderActivityCheckJobStore {
                     last_error = null,
                     updated_at = current_timestamp
                 where id = ?
-                  and status = 'PROCESSING'
+                  and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
                 """,
-                jobId);
+                job.id(), job.attempts()) == 1;
     }
 
     public void retryOrFail(
@@ -139,10 +146,10 @@ public class InsiderActivityCheckJobStore {
                         last_error = ?,
                         updated_at = current_timestamp
                     where id = ?
-                      and status = 'PROCESSING'
+                      and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
                     """,
                     safeError,
-                    job.id());
+                    job.id(), job.attempts());
             return;
         }
         jdbcTemplate.update(
@@ -154,11 +161,11 @@ public class InsiderActivityCheckJobStore {
                     available_at = current_timestamp + (? * interval '1 second'),
                     updated_at = current_timestamp
                 where id = ?
-                  and status = 'PROCESSING'
+                  and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
                 """,
                 safeError,
                 Math.max(1L, retryDelay.toSeconds()),
-                job.id());
+                job.id(), job.attempts());
     }
 
     public int pendingCount() {

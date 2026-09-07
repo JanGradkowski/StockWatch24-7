@@ -17,6 +17,10 @@ import java.util.Base64;
 
 @Service
 public class AccountDeletionService {
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+    @org.springframework.beans.factory.annotation.Autowired
+    void setClock(java.time.Clock clock) { this.clock = clock; }
+
     private final UserRepository users;
     private final SecurityEventRepository events;
     private final AlertNotificationService notifications;
@@ -35,8 +39,8 @@ public class AccountDeletionService {
         User user = users.findByIdForUpdate(userId).orElseThrow(() -> new IllegalArgumentException("Account not found."));
         byte[] bytes = new byte[32]; random.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        LocalDateTime deadline = LocalDateTime.now().plusDays(7);
-        user.setDeletionRequestedAt(LocalDateTime.now());
+        LocalDateTime deadline = LocalDateTime.now(clock).plusDays(7);
+        user.setDeletionRequestedAt(LocalDateTime.now(clock));
         user.setDeletionCancelExpiresAt(deadline);
         user.setDeletionCancelTokenHash(hash(token));
         user.setSecurityVersion(user.getSecurityVersion() + 1);
@@ -51,7 +55,7 @@ public class AccountDeletionService {
         if (rawToken == null || rawToken.length() < 40 || rawToken.length() > 80) return false;
         User user = users.findByDeletionCancelTokenHash(hash(rawToken)).orElse(null);
         if (user == null || user.getDeletionCancelExpiresAt() == null
-                || user.getDeletionCancelExpiresAt().isBefore(LocalDateTime.now())) return false;
+                || user.getDeletionCancelExpiresAt().isBefore(LocalDateTime.now(clock))) return false;
         user.setDeletionRequestedAt(null); user.setDeletionCancelExpiresAt(null); user.setDeletionCancelTokenHash(null);
         user.setSecurityVersion(user.getSecurityVersion() + 1); users.save(user);
         SecurityEvent event = new SecurityEvent(); event.setUser(user); event.setEventType("DELETION_CANCELLED");
@@ -65,8 +69,8 @@ public class AccountDeletionService {
     @Scheduled(cron = "${security.account-deletion.cleanup-cron:0 30 3 * * *}")
     @Transactional
     public void deleteExpiredAccounts() {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(7);
-        users.findByDeletionRequestedAtLessThanEqual(cutoff).forEach(user -> {
+        LocalDateTime cutoff = LocalDateTime.now(clock).minusDays(7);
+        users.findExpiredDeletionBatch(cutoff).forEach(user -> {
             try { notifications.sendAccountDeletedNotice(user); }
             catch (RuntimeException ignored) { System.err.println("Final account deletion notice could not be sent."); }
             users.delete(user);

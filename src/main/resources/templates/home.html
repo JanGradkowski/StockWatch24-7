@@ -26,45 +26,6 @@
     <div class="hero-status">Monitoring online</div>
   </header>
 
-  <nav class="dashboard-view-navigation" aria-label="Dashboard views">
-    <div class="dashboard-view-navigation-copy">
-      <span>Dashboard view</span>
-      <strong>Separate chart signals from company-event alerts</strong>
-    </div>
-    <div class="dashboard-view-tabs" role="group" aria-label="Dashboard navigation and views">
-      <a id="allSignalsDashboardButton"
-         th:href="@{/signals}"
-         class="dashboard-view-tab dashboard-view-link">
-        <span>All signals</span>
-        <small>Browse the complete signal archive</small>
-      </a>
-      <a id="virtualTradesDashboardButton"
-         th:href="@{/virtual-trades}"
-         class="dashboard-view-tab dashboard-view-link virtual-trades-dashboard-link">
-        <span>Demo Trading</span>
-        <small>Review every tracked paper decision</small>
-      </a>
-      <button id="technicalAnalysisViewButton"
-              type="button"
-              class="dashboard-view-tab active"
-              data-dashboard-view-button="technical"
-              aria-pressed="true"
-              aria-controls="technicalDashboardMetrics technicalWatchDesk latestTechnicalSignals systemPulsePanel">
-        <span>Technical analysis</span>
-        <small>Rules, signals and market monitoring</small>
-      </button>
-      <button id="tickerAlertsViewButton"
-              type="button"
-              class="dashboard-view-tab"
-              data-dashboard-view-button="alerts"
-              aria-pressed="false"
-              aria-controls="tickerAlertsIntroduction latestTickerNotifications congressionalActivityDashboard insiderActivityDashboard">
-        <span>Insider &amp; Congress Alerts</span>
-        <small>Filings and company activity</small>
-      </button>
-    </div>
-  </nav>
-
   <div class="grid-layout" data-dashboard-view-layout>
     <div class="dashboard-main-stack">
       <section id="latestTechnicalSignals"
@@ -77,10 +38,12 @@
             <h2 id="latest-signals-heading" class="panel-title">Latest signals <span class="panel-count" th:text="${#lists.size(latestSignalItems)}">0</span></h2>
           </div>
           <div class="panel-heading-actions">
-            <span class="panel-meta">Select a signal to explore its score</span>
-            <a th:href="@{/signals}" class="btn-secondary panel-action-button">All signals</a>
+            <span class="panel-meta">Open a signal to review what changed</span>
+            <a th:href="@{/signals(state='unread')}" class="text-link">Unread archive</a>
           </div>
         </div>
+
+        <p class="panel-meta dashboard-score-help">Pattern scores are evidence ratings out of 100, not probabilities. Outlook percentages describe the outlook score, not investment returns.</p>
 
         <div th:if="${#lists.isEmpty(latestSignalItems)}" class="latest-signals-empty">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
@@ -131,7 +94,7 @@
                       class="signal-lifecycle-pill"
                       th:classappend="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : ' detected'}"
                       th:title="${signal.lifecycle().summary()}"
-                      th:text="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : 'Active stop'}">Active stop</span>
+                      th:text="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? 'Candle 8 complete' : 'Active outcome')}">Active outcome</span>
                 <span th:if="${signal.lifecycle().harmonicStopStatus() == null and signal.lifecycle().tracked()}"
                       class="signal-lifecycle-pill"
                       th:classappend="${' ' + signal.lifecycle().cssClass()}"
@@ -199,9 +162,17 @@
         </div>
         <div class="watch-heading-actions">
           <div class="temporary-market-test-control">
-            <button id="followTopUs200Button" type="button" class="btn-accent temporary-market-test-button">
-              Follow top 200 U.S. (test)
-            </button>
+            <div class="temporary-market-test-actions">
+              <button id="followTopUs200Button" type="button" class="btn-accent temporary-market-test-button">
+                Follow top 200 U.S. (test)
+              </button>
+              <button id="unfollowAllTickersButton"
+                      type="button"
+                      class="danger-outline-button temporary-market-test-button"
+                      th:disabled="${#lists.isEmpty(trackedCompanies)}">
+                Unfollow all tickers
+              </button>
+            </div>
             <span id="followTopUs200Status" class="temporary-market-test-status" role="status" aria-live="polite"></span>
           </div>
           <div class="watch-filter-tabs" role="group" aria-label="Filter followed instruments">

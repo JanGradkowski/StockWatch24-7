@@ -71,7 +71,7 @@ public class CongressionalActivityController {
         if (principal == null) {
             throw new IllegalStateException("Authentication is required.");
         }
-        return userRepository.findByEmailIgnoreCase(principal.getName())
+        return org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName())
                 .orElseThrow(() -> new IllegalStateException("The signed-in account no longer exists."));
     }
 

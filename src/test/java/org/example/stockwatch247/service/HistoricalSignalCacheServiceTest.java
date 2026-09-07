@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,8 +35,12 @@ class HistoricalSignalCacheServiceTest {
         transactionManager = mock(PlatformTransactionManager.class);
         service = new HistoricalSignalCacheService(
                 jdbcTemplate,
-                new ObjectMapper().findAndRegisterModules(),
+                tools.jackson.databind.json.JsonMapper.builder().build(),
                 transactionManager);
+        when(jdbcTemplate.queryForObject(anyString(), org.mockito.ArgumentMatchers.eq(Long.class), any(Object[].class)))
+                .thenReturn(1L);
+        when(jdbcTemplate.update(contains("insert into historical_signal_cache_leases"), any(Object[].class)))
+                .thenReturn(1);
     }
 
     @Test
@@ -86,7 +90,7 @@ class HistoricalSignalCacheServiceTest {
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of());
         when(jdbcTemplate.query(anyString(), any(ResultSetExtractor.class), any(Object[].class)))
-                .thenReturn(null);
+                .thenReturn(true);
         TransactionStatus transactionStatus = mock(TransactionStatus.class);
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(transactionStatus);
@@ -106,7 +110,7 @@ class HistoricalSignalCacheServiceTest {
 
         assertThat(result).isEqualTo(new CachedResult("recalculated", List.of(4, 5)));
         assertThat(calculations).hasValue(1);
-        verify(jdbcTemplate).update(contains("insert into historical_signal_cache"), any(Object[].class));
+        verify(jdbcTemplate).update(contains("insert into historical_signal_cache\n"), any(Object[].class));
         verify(transactionManager).commit(transactionStatus);
     }
 

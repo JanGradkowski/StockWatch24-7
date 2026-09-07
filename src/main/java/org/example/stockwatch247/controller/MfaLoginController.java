@@ -22,6 +22,10 @@ import java.time.Instant;
 
 @Controller
 public class MfaLoginController {
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+    @org.springframework.beans.factory.annotation.Autowired
+    void setClock(java.time.Clock clock) { this.clock = clock; }
+
     private final UserRepository users;
     private final AccountSecurityService security;
     private final UserDetailsService userDetails;
@@ -48,17 +52,31 @@ public class MfaLoginController {
                 || !rateLimiter.tryAcquire("mfa-login:client:" + client, 20, Duration.ofMinutes(10))) {
             model.addAttribute("error", "Too many attempts. Please wait before trying again."); return "login-2fa";
         }
-        if (!security.verifyLoginFactor(userId, code)) {
+        Object pendingVersion = request.getSession().getAttribute(AccountSession.MFA_PENDING_VERSION);
+        Object pendingAt = request.getSession().getAttribute(AccountSession.MFA_PENDING_AT);
+        if (!(pendingVersion instanceof Long version) || !(pendingAt instanceof Long started)) {
+            request.getSession().invalidate();
+            return "redirect:/login?expired=true";
+        }
+        var accepted = security.verifyLoginFactor(userId, version, started, code);
+        if (accepted.isEmpty()) {
             model.addAttribute("error", "That authenticator or recovery code is invalid."); return "login-2fa";
         }
-        User user = users.findById(userId).orElseThrow();
-        var details = userDetails.loadUserByUsername(user.getEmail());
+        var identity = accepted.get();
+        var details = userDetails.loadUserByUsername(identity.email());
+        if (!details.isEnabled() || !details.isAccountNonLocked() || !details.isAccountNonExpired()
+                || !details.isCredentialsNonExpired()) {
+            request.getSession().invalidate();
+            return "redirect:/login?expired=true";
+        }
+        request.changeSessionId();
         var authentication = UsernamePasswordAuthenticationToken.authenticated(details, null, details.getAuthorities());
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication); SecurityContextHolder.setContext(context);
         request.getSession().removeAttribute(AccountSession.MFA_PENDING_USER_ID);
         request.getSession().removeAttribute(AccountSession.MFA_PENDING_AT);
-        request.getSession().setAttribute(AccountSession.SECURITY_VERSION, user.getSecurityVersion());
+        request.getSession().removeAttribute(AccountSession.MFA_PENDING_VERSION);
+        request.getSession().setAttribute(AccountSession.SECURITY_VERSION, identity.securityVersion());
         contextRepository.saveContext(context, request, response);
         return "redirect:/home";
     }
@@ -70,9 +88,10 @@ public class MfaLoginController {
         Object id = session.getAttribute(AccountSession.MFA_PENDING_USER_ID);
         Object at = session.getAttribute(AccountSession.MFA_PENDING_AT);
         if (!(id instanceof Long userId) || !(at instanceof Long started)
-                || started < Instant.now().minusSeconds(300).getEpochSecond()) {
+                || started < clock.instant().minusSeconds(300).getEpochSecond()) {
             session.removeAttribute(AccountSession.MFA_PENDING_USER_ID);
             session.removeAttribute(AccountSession.MFA_PENDING_AT);
+            session.removeAttribute(AccountSession.MFA_PENDING_VERSION);
             return null;
         }
         return userId;

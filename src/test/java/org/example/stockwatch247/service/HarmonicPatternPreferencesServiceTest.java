@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserHarmonicPatternPreferences;
 import org.example.stockwatch247.model.enums.HarmonicPatternType;
@@ -34,7 +34,7 @@ class HarmonicPatternPreferencesServiceTest {
             stored.set(value);
             return value;
         });
-        service = new HarmonicPatternPreferencesService(repository, new ObjectMapper());
+        service = new HarmonicPatternPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
     }
 
     @Test
@@ -89,13 +89,13 @@ class HarmonicPatternPreferencesServiceTest {
     @Test
     void migratesVersionTwoProfilesToTheLongFormationHierarchy() throws Exception {
         service.save(user, factoryForm());
-        ObjectMapper mapper = new ObjectMapper();
-        com.fasterxml.jackson.databind.node.ObjectNode payload =
-                (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        tools.jackson.databind.node.ObjectNode payload =
+                (tools.jackson.databind.node.ObjectNode) mapper.readTree(
                         stored.get().getPreferencesPayload());
         payload.put("version", "USER_HARMONIC_RULES_V2");
-        com.fasterxml.jackson.databind.node.ObjectNode globals =
-                (com.fasterxml.jackson.databind.node.ObjectNode) payload.get("globals");
+        tools.jackson.databind.node.ObjectNode globals =
+                (tools.jackson.databind.node.ObjectNode) payload.get("globals");
         globals.remove("maximumPivotWindow");
         globals.remove("maximumSwingPercent");
         globals.remove("maximumSkippedPivots");

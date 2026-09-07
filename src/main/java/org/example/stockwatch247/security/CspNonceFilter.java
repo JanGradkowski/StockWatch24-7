@@ -25,6 +25,7 @@ public class CspNonceFilter extends OncePerRequestFilter {
         // narrowly-scoped compatibility exception on the authenticated chart page only.
         String styleAttributes = request.getRequestURI().startsWith("/stock/")
                 || request.getRequestURI().startsWith("/activity-signals/")
+                || request.getRequestURI().startsWith("/technical-outlook/changes/")
                 ? "style-src-attr 'unsafe-inline'; "
                 : "style-src-attr 'none'; ";
         response.setHeader("Content-Security-Policy",

@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service.insider;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.enums.InsiderTradeType;
 import org.example.stockwatch247.security.RequestRateLimiter;
 import org.junit.jupiter.api.Test;
@@ -130,7 +130,7 @@ class ApiNinjasInsiderClientTest {
             String apiKey) {
         return new ApiNinjasInsiderClient(
                 restTemplate,
-                new ObjectMapper(),
+                tools.jackson.databind.json.JsonMapper.builder().build(),
                 rateLimiter,
                 true,
                 "https://api.api-ninjas.com/v1/",

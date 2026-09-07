@@ -14,7 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.time.Instant;
+import java.security.GeneralSecurityException;
 import java.util.Base64;
 import java.util.Locale;
 
@@ -26,7 +26,7 @@ public class TotpService {
     public String newSecret() {
         byte[] secret = new byte[20];
         random.nextBytes(secret);
-        return encodeBase32(secret);
+        try { return encodeBase32(secret); } finally { java.util.Arrays.fill(secret, (byte) 0); }
     }
 
     public String provisioningUri(String email, String secret) {
@@ -47,39 +47,42 @@ public class TotpService {
         }
     }
 
+    /** Returns a candidate step only; callers must atomically enforce replay protection. */
     public Long matchingStep(String secret, String rawCode, long nowEpochSeconds) {
-        String code = normalizeCode(rawCode);
-        if (code == null) return null;
-        long current = nowEpochSeconds / 30L;
-        for (long step = current - 1; step <= current + 1; step++) {
-            if (MessageDigest.isEqual(code.getBytes(StandardCharsets.US_ASCII),
-                    generate(secret, step).getBytes(StandardCharsets.US_ASCII))) return step;
-        }
-        return null;
-    }
-
-    public boolean verify(String secret, String code) {
-        return matchingStep(secret, code, Instant.now().getEpochSecond()) != null;
-    }
-
-    private String generate(String secret, long step) {
+        String code = normalizeFactor(rawCode);
+        if (code == null || !code.matches("[0-9]{6}") || nowEpochSeconds < 0) return null;
+        final byte[] decoded;
+        try { decoded = decodeBase32(secret); }
+        catch (IllegalArgumentException exception) { return null; }
+        byte[] supplied = code.getBytes(StandardCharsets.US_ASCII);
         try {
             Mac mac = Mac.getInstance("HmacSHA1");
-            mac.init(new SecretKeySpec(decodeBase32(secret), "HmacSHA1"));
-            byte[] hash = mac.doFinal(ByteBuffer.allocate(8).putLong(step).array());
-            int offset = hash[hash.length - 1] & 0x0f;
-            int binary = ((hash[offset] & 0x7f) << 24) | ((hash[offset + 1] & 0xff) << 16)
-                    | ((hash[offset + 2] & 0xff) << 8) | (hash[offset + 3] & 0xff);
-            return String.format(Locale.ROOT, "%06d", binary % 1_000_000);
-        } catch (Exception e) {
-            throw new IllegalStateException("Could not verify authenticator code.", e);
-        }
+            mac.init(new SecretKeySpec(decoded, "HmacSHA1"));
+            long current = nowEpochSeconds / 30L;
+            Long matched = null;
+            for (long step = Math.max(0, current - 1); step <= current + 1; step++) {
+                if (MessageDigest.isEqual(supplied, generate(mac, step)) && matched == null) matched = step;
+            }
+            return matched;
+        } catch (GeneralSecurityException exception) {
+            throw new IllegalStateException("Could not verify authenticator code.", exception);
+        } finally { java.util.Arrays.fill(decoded, (byte) 0); }
     }
 
-    private String normalizeCode(String raw) {
-        if (raw == null) return null;
-        String code = raw.replace(" ", "").replace("-", "");
-        return code.matches("\\d{6}") ? code : null;
+    private byte[] generate(Mac mac, long step) {
+        byte[] hash = mac.doFinal(ByteBuffer.allocate(8).putLong(step).array());
+        int offset = hash[hash.length - 1] & 0x0f;
+        int binary = ((hash[offset] & 0x7f) << 24) | ((hash[offset + 1] & 0xff) << 16)
+                | ((hash[offset + 2] & 0xff) << 8) | (hash[offset + 3] & 0xff);
+        int value = binary % 1_000_000;
+        byte[] digits = new byte[6];
+        for (int index = 5; index >= 0; index--) { digits[index] = (byte) ('0' + value % 10); value /= 10; }
+        return digits;
+    }
+
+    public static String normalizeFactor(String raw) {
+        if (raw == null || raw.length() > 64) return null;
+        return raw.trim().replace(" ", "").replace("-", "");
     }
 
     private String encodeBase32(byte[] bytes) {
@@ -94,11 +97,12 @@ public class TotpService {
     }
 
     private byte[] decodeBase32(String encoded) {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        if (encoded == null || !encoded.matches("[A-Za-z2-7]{32}")) throw new IllegalArgumentException("Invalid authenticator secret.");
+        ByteArrayOutputStream output = new ByteArrayOutputStream(20);
         int buffer = 0, bits = 0;
         for (char c : encoded.toUpperCase(Locale.ROOT).toCharArray()) {
             int value = c >= 'A' && c <= 'Z' ? c - 'A' : c >= '2' && c <= '7' ? c - '2' + 26 : -1;
-            if (value < 0) continue;
+            if (value < 0) throw new IllegalArgumentException("Invalid authenticator secret.");
             buffer = (buffer << 5) | value; bits += 5;
             if (bits >= 8) { output.write((buffer >> (bits - 8)) & 255); bits -= 8; }
         }

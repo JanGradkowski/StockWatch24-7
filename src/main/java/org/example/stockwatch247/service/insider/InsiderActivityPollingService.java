@@ -14,6 +14,13 @@ import java.time.Duration;
 
 @Service
 public class InsiderActivityPollingService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.service.BackgroundJobDispatcher dispatcher;
+
+    private org.example.stockwatch247.service.JobLeaseGuard leaseGuard;
+    @org.springframework.beans.factory.annotation.Autowired
+    void setLeaseGuard(org.example.stockwatch247.service.JobLeaseGuard leaseGuard) { this.leaseGuard = leaseGuard; }
+
     private static final Logger log = LoggerFactory.getLogger(InsiderActivityPollingService.class);
 
     private final InsiderActivityService activityService;
@@ -65,6 +72,8 @@ public class InsiderActivityPollingService {
     @Scheduled(
             fixedDelayString = "${insider-activity.worker-delay-ms:60000}",
             initialDelayString = "${insider-activity.worker-initial-delay-ms:30000}")
+    public void dispatchPending() { dispatcher.submit("insider", this::processNextQueuedCheck); }
+
     public void processNextQueuedCheck() {
         if (!enabled) {
             return;
@@ -75,11 +84,11 @@ public class InsiderActivityPollingService {
         }
 
         InsiderActivityCheckJob job = claimedJob.get();
-        try {
+        try (var claim = leaseGuard == null ? null : leaseGuard.protect(() -> jobStore.renew(job, jobLease), jobLease)) {
             boolean checked = activityService.pollScheduledActivity(
                     job.stockAssetId(),
                     job.tickerSymbol());
-            jobStore.complete(job.id());
+            if (!jobStore.complete(job)) throw new IllegalStateException("Job ownership changed before acknowledgement.");
             if (checked) {
                 log.info("Insider activity job completed for {} scheduled for {}.",
                         job.tickerSymbol(), job.scheduledFor());

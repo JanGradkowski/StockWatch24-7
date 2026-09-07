@@ -1,6 +1,6 @@
 package org.example.stockwatch247.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.UserCandlestickPatternPreferences;
 import org.example.stockwatch247.model.enums.CandlePattern;
@@ -34,7 +34,7 @@ class CandlestickPatternPreferencesServiceTest {
             stored.set(value);
             return value;
         });
-        service = new CandlestickPatternPreferencesService(repository, new ObjectMapper().findAndRegisterModules());
+        service = new CandlestickPatternPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
     }
 
     @Test
@@ -153,8 +153,8 @@ class CandlestickPatternPreferencesServiceTest {
     void addsFactoryCircuitBreakersToVersionThreeProfilesThatPredateTheFeature() throws Exception {
         service.save(user, factoryForm());
         UserCandlestickPatternPreferences entity = stored.get();
-        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-        var payload = (com.fasterxml.jackson.databind.node.ObjectNode)
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var payload = (tools.jackson.databind.node.ObjectNode)
                 mapper.readTree(entity.getPreferencesPayload());
         payload.put("version", "USER_CANDLESTICK_PATTERNS_V3");
         payload.remove("circuitBreakers");

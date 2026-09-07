@@ -11,6 +11,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface VirtualTradeRepository extends JpaRepository<VirtualTrade, Long> {
+    @Query("select t from VirtualTrade t join fetch t.stockAsset where t.id in :ids and t.user = :user and t.deletedAt is null")
+    List<VirtualTrade> findOwnedIds(@Param("ids") List<Long> ids, @Param("user") User user);
+
     @Query("""
             select trade from VirtualTrade trade
             join fetch trade.stockAsset
