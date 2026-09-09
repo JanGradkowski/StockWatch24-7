@@ -6,6 +6,8 @@
   <title>Demo Trading &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true"><div class="glow-orb orb-1"></div><div class="glow-orb orb-2"></div></div>
@@ -19,7 +21,7 @@
     <div>
       <div class="eyebrow">Paper decisions &middot; no real orders</div>
       <h1 class="title">Demo Trading</h1>
-      <p class="subtitle">Review every virtual buy and sell decision. Buys show return; sells show avoided loss or missed upside and never imply a short position.</p>
+      <p class="subtitle">Review your demo trades. Buys track returns; sells track avoided losses or missed gains, not short positions.</p>
     </div>
     <div class="signal-archive-total" aria-label="Total demo trades">
       <strong th:text="${archive.totalTrades()}">0</strong>
@@ -30,7 +32,7 @@
   <section id="demoPortfolio" class="demo-portfolio" aria-labelledby="demoPortfolioHeading">
     <div class="portfolio-section-heading"><div><div class="eyebrow">Your demo portfolio</div><h2 id="demoPortfolioHeading" class="panel-title">Value and performance</h2></div><p class="panel-meta">Select a period to see its best and worst performing stocks.</p></div>
     <div th:if="${portfolio.currencies().isEmpty()}" class="portfolio-empty">
-      <strong>0.00</strong><h3>No funded demo buys yet</h3><p>Add a quantity or investment amount when creating a demo BUY to start tracking portfolio value.</p>
+      <strong>0.00</strong><h3>No sized buy trades yet</h3><p>Create a demo buy with a quantity or investment amount to track portfolio value.</p>
     </div>
     <article th:each="balance : ${portfolio.currencies()}" class="portfolio-currency">
       <header class="portfolio-value-heading">
@@ -40,7 +42,7 @@
         </div>
         <dl class="portfolio-value-breakdown">
           <div><dt>Open positions</dt><dd th:text="${balance.openValue() != null ? #numbers.formatDecimal(balance.openValue(), 1, 2) + ' ' + balance.currency() : 'Unavailable'}"></dd></div>
-          <div><dt>Closed-buy proceeds</dt><dd th:text="${#numbers.formatDecimal(balance.cash(), 1, 2) + ' ' + balance.currency()}"></dd></div>
+          <div><dt>Cash from closed buys</dt><dd th:text="${#numbers.formatDecimal(balance.cash(), 1, 2) + ' ' + balance.currency()}"></dd></div>
           <div><dt>Total invested</dt><dd th:text="${#numbers.formatDecimal(balance.invested(), 1, 2) + ' ' + balance.currency()}"></dd></div>
         </dl>
       </header>
@@ -61,20 +63,20 @@
       <div class="portfolio-rankings">
         <section class="portfolio-ranking" aria-label="Best performing stocks"><h4>Top 3 performers</h4>
           <ol><li th:each="stock : ${balance.selected().best()}"><a th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"><strong th:text="${stock.symbol()}"></strong><span th:text="${stock.companyName()}"></span></a><div><strong th:classappend="${stock.returnPercent().signum() >= 0 ? ' portfolio-positive' : ' portfolio-negative'}" th:text="${(stock.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(stock.returnPercent(), 1, 2) + '%'}"></strong><small th:text="${(stock.gain().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(stock.gain(), 1, 2) + ' ' + balance.currency()}"></small></div></li></ol>
-          <p th:if="${balance.selected().best().isEmpty()}" class="panel-meta">No priced stock positions for this period.</p>
+          <p th:if="${balance.selected().best().isEmpty()}" class="panel-meta">No stock prices available for this period.</p>
         </section>
         <section class="portfolio-ranking" aria-label="Worst performing stocks"><h4>Bottom 3 performers</h4>
           <ol><li th:each="stock : ${balance.selected().worst()}"><a th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"><strong th:text="${stock.symbol()}"></strong><span th:text="${stock.companyName()}"></span></a><div><strong th:classappend="${stock.returnPercent().signum() >= 0 ? ' portfolio-positive' : ' portfolio-negative'}" th:text="${(stock.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(stock.returnPercent(), 1, 2) + '%'}"></strong><small th:text="${(stock.gain().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(stock.gain(), 1, 2) + ' ' + balance.currency()}"></small></div></li></ol>
-          <p th:if="${balance.selected().worst().isEmpty()}" class="panel-meta">No priced stock positions for this period.</p>
+          <p th:if="${balance.selected().worst().isEmpty()}" class="panel-meta">No stock prices available for this period.</p>
         </section>
       </div>
       <p th:if="${balance.selected().unavailableStocks() > 0}" class="panel-meta" th:text="${balance.selected().unavailableStocks() + ' stocks are excluded from these rankings because comparison prices are missing.'}"></p>
     </article>
     <p th:if="${portfolio.excludedTrades() > 0}" class="panel-meta" th:text="${portfolio.excludedTrades() + ' sell decisions or trades without a monetary size are excluded from portfolio totals and rankings.'}"></p>
     <details class="portfolio-method"><summary>How portfolio performance is calculated</summary>
-      <p>Portfolio value combines open BUY positions and proceeds from closed BUYs. Each BUY adds its recorded investment; closed proceeds are not automatically reinvested. SELL decisions are tracked separately in trade history.</p>
-      <p>Returns measure profit or loss divided by capital at the start of the period plus new investments. Adding a trade is not counted as a gain. Multiple buys of the same stock are combined by invested value. Closed positions stop affecting later stock rankings; their proceeds remain in portfolio value.</p>
-      <p>Prices use cached, completed daily closes. Day compares the latest trading close with the preceding available close; week looks back seven calendar days and month one calendar month. Missing comparison data is shown as N/A. Different currencies have separate totals. Fees, dividends, taxes and currency conversion are not included.</p>
+      <p>Portfolio value includes open demo buys and cash from closed buys. Each buy adds its investment; cash is not automatically reinvested. Demo sells are listed separately.</p>
+      <p>Return is profit or loss divided by starting capital plus new investments. Adding a trade is not a gain. Rankings combine buys of the same stock by invested value; closed positions only affect periods when they were held.</p>
+      <p>Prices are completed daily closes. Day compares the latest two closes; week looks back seven days and month one calendar month. Missing data is N/A. Currencies have separate totals. Fees, dividends, taxes and currency conversion are excluded.</p>
       <p>Rankings show up to three stocks per list. With fewer than six stocks, a stock may appear in both lists.</p>
     </details>
   </section>
@@ -83,11 +85,11 @@
     <div class="signal-archive-toolbar">
       <div>
         <h2 id="virtualTradesHeading" class="panel-title">Trade history</h2>
-        <p class="panel-meta">Open trades update from the latest cached price. Closing one freezes its final price, outcome, and technical comparison.</p>
+        <p class="panel-meta">Open trades use the latest available price. Closing a trade saves its final result and analysis.</p>
       </div>
       <form method="get" th:action="@{/virtual-trades}" class="signal-archive-sort-form" aria-label="Sort demo trades">
         <input type="hidden" name="period" th:value="${portfolio.selectedPeriod()}">
-        <label><span>Group and sort by</span><select name="sort">
+        <label><span>Sort by</span><select name="sort">
           <option value="date" th:selected="${archive.sort() == 'date'}">Date</option>
           <option value="ticker" th:selected="${archive.sort() == 'ticker'}">Ticker</option>
           <option value="side" th:selected="${archive.sort() == 'side'}">Buy or sell</option>
@@ -109,7 +111,7 @@
 
     <div th:if="${#lists.isEmpty(archive.trades())}" class="latest-signals-empty signal-archive-empty">
       <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
-      <div><h3>No demo trades yet</h3><p>Open a stock&rsquo;s Full Technical Outlook to record your first demo buy or sell decision.</p></div>
+      <div><h3>No demo trades yet</h3><p>Open a stock&rsquo;s Technical Outlook to record your first demo buy or sell decision.</p></div>
     </div>
 
     <div th:if="${!#lists.isEmpty(archive.trades())}" class="signal-archive-results virtual-trade-archive-results">
@@ -127,7 +129,7 @@
                class="virtual-trade-archive-row"
                th:classappend="${' ' + #strings.toLowerCase(trade.side())}">
             <div class="virtual-trade-decision">
-              <span class="virtual-trade-side-pill" th:text="${trade.sideLabel()}">Virtual Buy</span>
+              <span class="virtual-trade-side-pill" th:text="${trade.sideLabel()}">Demo buy</span>
               <strong th:text="${trade.intervalLabel() + ' outlook'}">Daily outlook</strong>
             </div>
             <div><strong th:text="${trade.symbol()}">AAPL</strong><span th:text="${trade.companyName()}">Apple Inc.</span></div>
@@ -172,7 +174,7 @@
 
 <dialog class="unsaved-alert-dialog signal-delete-dialog" data-virtual-trade-delete-dialog aria-labelledby="virtual-trade-delete-dialog-title">
   <div class="unsaved-alert-dialog-content">
-    <span class="unsaved-alert-kicker">Permanent archive action</span>
+    <span class="unsaved-alert-kicker">Delete from history</span>
     <h2 id="virtual-trade-delete-dialog-title">Delete demo trade?</h2>
     <p data-virtual-trade-delete-message>This removes the demo trade from your account and cannot be undone.</p>
     <div class="unsaved-alert-dialog-actions">

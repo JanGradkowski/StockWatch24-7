@@ -6,9 +6,9 @@
     <div class="settings-card-heading">
       <div><span class="settings-number">01</span><h2>Candlestick trend detection</h2></div>
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
-            th:text="${preferences.profileLabel()}">Factory profile</span>
+            th:text="${preferences.profileLabel()}">Default profile</span>
     </div>
-    <p class="analysis-settings-intro">Daily, Weekly, and Monthly detection uses two independent definitions of trend. The adaptive model verifies swing structure, regression direction, continuity, and terminal position. The original model separately verifies the configured percentage move and directional candle count. Either model can establish a trend unless they directly conflict.</p>
+    <p class="analysis-settings-intro">Trend detection combines price structure with a minimum move and candle count. Either method can qualify a trend, but opposite results reject it.</p>
     <div class="analysis-safety-strip detection-safety-strip">
       <strong>Completed candles only</strong>
       <span>The pattern candle or candles are excluded from the prior-trend window.</span>
@@ -23,21 +23,21 @@
       <div class="settings-card-heading interval-profile-heading">
         <div><span class="settings-number" th:text="${'0' + (stat.index + 2)}">02</span><div>
           <h2 th:text="${profile.label() + ' detection'}">Daily detection</h2>
-          <p>Adaptive trend structure plus an independently calculated original move/count rule.</p>
+          <p>Price structure, minimum move and directional candles.</p>
         </div></div>
         <button type="button" class="danger-outline-button detection-reset-trigger"
                 th:attr="data-reset-scope=${profile.interval().name()},data-reset-label=${profile.label()}">Reset this interval</button>
       </div>
 
       <div class="analysis-setting-groups detection-rule-grid">
-        <fieldset class="analysis-setting-group"><legend>Conflict-aware combined trend</legend>
+        <fieldset class="analysis-setting-group"><legend>Combining the two methods</legend>
           <p>A buy pattern is eligible when either model identifies a downtrend; a sell/short pattern is eligible when either identifies an uptrend. A sideways or unavailable result does not veto the other model, but opposite directional results reject the trend.</p>
         </fieldset>
 
-        <fieldset class="analysis-setting-group"><legend>Active trend position</legend>
+        <fieldset class="analysis-setting-group"><legend>Position within the trend</legend>
           <p>The last completed close before the pattern must still be meaningfully beyond the median close of the exact trend leg shown on the chart. The margin is volatility-adjusted rather than a hardcoded percentage.</p>
           <div class="analysis-input-grid detection-input-grid">
-            <label><span>Median-position margin (ATR)<small th:text="${profile.interval().name() == 'DAILY'} ? 'Factory default: 0.25 ATR' : 'Factory default: 0.00 ATR (correct side required)'">Factory default</small></span>
+            <label><span>Median-position margin (ATR)<small th:text="${profile.interval().name() == 'DAILY'} ? 'Default: 0.25 ATR' : 'Default: 0.00 ATR (correct side required)'">Factory default</small></span>
               <input type="number" min="0" max="10" step="0.05" required
                      th:name="${profile.key() + '.trendTerminalMedianDistanceAtr'}"
                      th:value="${profile.trendTerminalMedianDistanceAtr()}">
@@ -81,8 +81,8 @@
   </form>
 
   <section class="settings-card analysis-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">05</span><h2>Detection factory restoration</h2></div><p>Other analysis, scoring, email, and account settings remain unchanged.</p></div>
-    <div class="settings-action-row"><div><h3>Restore all candlestick detection rules</h3><p>Restores the conflict-aware OR defaults for every interval: the adaptive model or an independent 3% move and 4/6 directional-candle rule, with direct conflicts rejected.</p></div><button type="button" class="danger-button detection-reset-trigger" data-reset-scope="all" data-reset-label="all intervals">Restore detection defaults</button></div>
+    <div class="settings-card-heading"><div><span class="settings-number">05</span><h2>Reset detection settings</h2></div><p>Other analysis, scoring, email, and account settings remain unchanged.</p></div>
+    <div class="settings-action-row"><div><h3>Restore all candlestick detection rules</h3><p>Restores the default trend rules for all intervals: price structure or a 3% move with four of six candles supporting the trend. Opposite results reject the trend.</p></div><button type="button" class="danger-button detection-reset-trigger" data-reset-scope="all" data-reset-label="all intervals">Restore detection defaults</button></div>
   </section>
 
   <dialog id="detectionFactoryResetDialog" class="settings-dialog analysis-reset-dialog">

@@ -6,8 +6,11 @@
   <title th:text="${change.symbol() + ' outlook change — StockWatch 24/7'}">Outlook change — StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/chart-theme.js}"></script>
   <script th:src="@{/js/chart-legend.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true"><div class="glow-orb orb-1"></div><div class="glow-orb orb-2"></div></div>
@@ -22,7 +25,7 @@
 
   <header class="signal-report-header technical-outlook-header outlook-change-header">
     <div class="signal-report-heading">
-      <div class="signal-report-eyebrow">Immutable completed-candle comparison</div>
+      <div class="signal-report-eyebrow">Saved outlook change</div>
       <h1><span th:text="${change.symbol()}">AAPL</span> <span th:text="${change.intervalLabel()}">Daily</span> outlook changed</h1>
       <p th:text="${change.companyName() + ' · Recorded ' + #temporals.format(change.createdAt(), 'dd MMM uuuu, HH:mm')}">Apple Inc.</p>
     </div>
@@ -56,14 +59,14 @@
   <section id="outlookChangeChartPanel" class="technical-outlook-panel" role="tabpanel" aria-labelledby="outlookChangeChartTab">
     <section class="signal-chart-card technical-outlook-chart-card">
       <div class="signal-chart-card-heading technical-outlook-chart-heading">
-        <div><span class="signal-report-eyebrow">Snapshot at the classification change</span><h2>Price and overlay indicators</h2></div>
+        <div><span class="signal-report-eyebrow">At the time of the change</span><h2>Price and overlay indicators</h2></div>
       </div>
       <div id="outlookChangeOverlayLegend"></div>
-      <p class="chart-legend-note">Uncheck a label to hide it. Candles show price: green for a rise, pink for a fall. Visibility changes do not affect this saved outlook.</p>
+      <p class="chart-legend-note">Uncheck indicators to hide them. This does not change the saved analysis.</p>
       <div id="outlookChangePriceChart" class="technical-outlook-price-chart"></div>
     </section>
     <section class="signal-evidence-section outlook-change-indicator-charts-section">
-      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Synchronized indicator state</span><h2>Indicator panels</h2></div></div>
+      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Individual indicators</span><h2>Indicator panels</h2></div></div>
       <div id="outlookChangePanelLegend"></div>
       <div id="outlookChangeIndicatorCharts" class="outlook-change-indicator-charts"></div>
     </section>
@@ -77,19 +80,19 @@
     </section>
 
     <section class="signal-evidence-section">
-      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Category-balanced headline inputs</span><h2>Category changes</h2></div></div>
+      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Changes by category</span><h2>Category changes</h2></div></div>
       <div id="outlookCategoryDeltas" class="outlook-delta-grid"></div>
     </section>
 
     <section class="signal-evidence-section outlook-indicator-report-section">
-      <div class="signal-section-heading outlook-section-heading"><div><span class="signal-report-eyebrow">Changed indicators first, with unchanged context available</span><h2>Indicator report</h2></div>
+      <div class="signal-section-heading outlook-section-heading"><div><span class="signal-report-eyebrow">Changes by indicator</span><h2>Indicator report</h2></div>
         <button id="toggleUnchangedIndicators" type="button" class="outlook-section-toggle" aria-expanded="false" hidden>Show unchanged indicators</button>
       </div>
       <div id="outlookIndicatorDeltas" class="outlook-indicator-report"></div>
     </section>
 
     <section class="signal-lifecycle-section outlook-signal-evidence-section">
-      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Supporting and contradicting evidence</span><h2>New technical signals</h2></div></div>
+      <div class="signal-section-heading"><div><span class="signal-report-eyebrow">Related signals</span><h2>New technical signals</h2></div></div>
       <div id="outlookSignalEvidence" class="technical-recent-signal-grid"></div>
     </section>
   </section>
@@ -165,7 +168,7 @@
   function renderPriceChart() {
     const container = document.getElementById('outlookChangePriceChart');
     const candles = Array.isArray(currentSnapshot.candles) ? currentSnapshot.candles : [];
-    const chart = LightweightCharts.createChart(container, chartOptions(container, 540));
+    const chart = StockWatchCharts.createChart(container, chartOptions(container, 540));
     const candleSeries = chart.addCandlestickSeries({upColor: '#3ddc97', downColor: '#ff647c', borderVisible: false, wickUpColor: '#3ddc97', wickDownColor: '#ff647c'});
     candleSeries.setData(candles.map(candle => ({time: Number(candle.timestamp), open: candle.open, high: candle.high, low: candle.low, close: candle.close})));
     const settings = currentSnapshot.indicatorSettings || {};
@@ -204,7 +207,7 @@
           candleSeries.setMarkers(markers.filter(marker => markerVisibility.get(marker.color)));
         }});
     }
-    StockWatchChartLegend.mount(document.getElementById('outlookChangeOverlayLegend'), legendItems, 'Chart legend · visible overlays');
+    StockWatchChartLegend.mount(document.getElementById('outlookChangeOverlayLegend'), legendItems, 'Chart indicators');
     chart.timeScale().fitContent();
     new ResizeObserver(() => chart.applyOptions({width: container.clientWidth})).observe(container);
   }
@@ -228,7 +231,7 @@
       card.append(heading, chartHost);
       host.append(card);
       const container = chartHost;
-      const chart = LightweightCharts.createChart(container, chartOptions(container, 180));
+      const chart = StockWatchCharts.createChart(container, chartOptions(container, 180));
       const color = ['#64e8bd', '#a78bfa', '#ffbd59', '#60a5fa'][index % 4];
       line(chart, color, indicator.series.map(point => ({time: point.timestamp, value: point.value})));
       const references = (indicator.referenceLines || []).filter(validChartValue);
@@ -253,7 +256,7 @@
     if (!(changeReport.decisiveDrivers || []).length) {
       const empty = document.createElement('p');
       empty.className = 'outlook-empty-state';
-      empty.textContent = 'No individual indicator vote changed; a configured headline threshold was crossed.';
+      empty.textContent = 'The overall score crossed an outlook threshold, although individual buy, neutral and sell votes stayed the same.';
       drivers.append(empty);
     }
     else changeReport.decisiveDrivers.forEach((text, index) => {
@@ -371,7 +374,7 @@
       const status = element('div', 'outlook-evidence-status');
       status.append(
               element('span', `outlook-alignment-badge ${alignmentClass}`, displayLabel(signal.alignment)),
-              element('small', '', `${displayLabel(signal.alignment)} the newly recorded outlook`)
+              element('small', '', signal.alignment === 'SUPPORTS' ? 'Supports the new outlook' : signal.alignment === 'CONTRADICTS' ? 'Contradicts the new outlook' : 'Mixed evidence for the new outlook')
       );
       card.append(meta, heading, status, element('span', 'technical-recent-signal-open', 'Open signal details →'));
       signals.append(card);

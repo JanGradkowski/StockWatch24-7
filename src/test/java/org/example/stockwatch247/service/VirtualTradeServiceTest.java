@@ -75,7 +75,7 @@ class VirtualTradeServiceTest {
         ArgumentCaptor<VirtualTrade> captor = ArgumentCaptor.forClass(VirtualTrade.class);
         org.mockito.Mockito.verify(tradeRepository).saveAndFlush(captor.capture());
         VirtualTrade stored = captor.getValue();
-        assertThat(view.sideLabel()).isEqualTo("Virtual Buy");
+        assertThat(view.sideLabel()).isEqualTo("Demo buy");
         assertThat(view.entryPrice()).isEqualByComparingTo("100.00000000");
         assertThat(view.quantity()).isEqualByComparingTo("25.00000000");
         assertThat(view.notionalValue()).isEqualByComparingTo("2500.00000000");
@@ -130,7 +130,7 @@ class VirtualTradeServiceTest {
 
         assertThat(closed.status()).isEqualTo("CLOSED");
         assertThat(closed.resultPercent()).isEqualTo(-10.0);
-        assertThat(closed.outcomeLabel()).isEqualTo("Missed upside");
+        assertThat(closed.outcomeLabel()).isEqualTo("Missed gain");
         assertThat(stored.getExitPrice()).isEqualByComparingTo("110.00000000");
         assertThat(stored.getExitSnapshot()).contains("TECHNICAL_OUTLOOK_V1");
     }

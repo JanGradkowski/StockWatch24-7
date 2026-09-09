@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Settings — StockWatch 24/7</title><script th:src="@{/js/theme.js}"></script><link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 <script defer th:src="@{/js/settings-security.js}"></script>
 </head>
 <body class="settings-page">
@@ -19,18 +21,18 @@
   <div class="settings-content" th:id="${settingsTab}">
     <header class="settings-header"><div><p class="eyebrow">Your account</p>
       <h1 id="settingsPageTitle" th:switch="${settingsTab}"><span th:case="'appearance'">Appearance</span><span th:case="'analysis'">Analysis &amp; Alerts</span><span th:case="'scoring'">Scoring settings</span><span th:case="'candlestick-patterns'">Candlestick Patterns</span><span th:case="'elliott-waves'">Elliott Waves</span><span th:case="'harmonic-formations'">Harmonic Formations</span><span th:case="'detection'">Detection settings</span><span th:case="*">General settings</span></h1>
-      <p id="settingsPageDescription" th:switch="${settingsTab}"><span th:case="'appearance'">Set your default color mode and make chart overlays unmistakable.</span><span th:case="'analysis'">Control technical outlook inputs, Elliott lifecycle tracking, and market email delivery.</span><span th:case="'scoring'">Customize the 100-point score shown for each signal type and interval.</span><span th:case="'candlestick-patterns'">Customize pattern definitions and the stop-loss and risk-to-reward plan used for every future candlestick trade.</span><span th:case="'elliott-waves'">Customize exactly how daily, weekly, and monthly motive and corrective structures are detected.</span><span th:case="'harmonic-formations'">Customize harmonic ratios, tolerances, and hard-versus-soft classification rules.</span><span th:case="'detection'">Customize how prior price action qualifies as an uptrend or downtrend for candlestick detection.</span><span th:case="*">Manage password protection, sign-in verification, sessions, and account data.</span></p>
+      <p id="settingsPageDescription" th:switch="${settingsTab}"><span th:case="'appearance'">Choose your theme and chart colours.</span><span th:case="'analysis'">Control technical outlook inputs, Elliott lifecycle tracking, and market email delivery.</span><span th:case="'scoring'">Customize the 100-point score shown for each signal type and interval.</span><span th:case="'candlestick-patterns'">Customize pattern definitions and the stop-loss and risk-to-reward plan used for every future candlestick trade.</span><span th:case="'elliott-waves'">Choose the Elliott Wave detection rules for each interval.</span><span th:case="'harmonic-formations'">Customize harmonic ratios, tolerances, and hard-versus-soft classification rules.</span><span th:case="'detection'">Customize how prior price action qualifies as an uptrend or downtrend for candlestick detection.</span><span th:case="*">Manage password protection, sign-in verification, sessions, and account data.</span></p>
     </div><span class="settings-email" th:text="${user.email}">user@example.com</span></header>
     <div th:if="${success}" class="settings-message success-msg" role="status" th:text="${success}"></div><div th:if="${error}" class="settings-message error-msg" role="alert" th:text="${error}"></div><div th:if="${param.appearanceSaved}" class="settings-message success-msg">Appearance preferences applied.</div>
 
-    <section th:if="${settingsTab == 'appearance'}" class="settings-card appearance-settings-card" id="appearance"><div class="settings-card-heading"><div><span class="settings-number">01</span><h2>Workspace appearance</h2></div><p>These account defaults follow you to every device.</p></div>
+    <section th:if="${settingsTab == 'appearance'}" class="settings-card appearance-settings-card" id="appearance"><div class="settings-card-heading"><div><span class="settings-number">01</span><h2>Appearance</h2></div><p>Saved for your account on all devices.</p></div>
       <form th:action="@{/settings/appearance}" method="post" class="appearance-settings-form">
         <fieldset class="appearance-fieldset">
           <legend>Color mode</legend>
           <p>Choose the mode used when you sign in on a new device.</p>
           <div class="theme-choice-grid">
-            <label class="theme-choice"><input type="radio" name="theme" value="DARK" th:checked="${user.themePreference == 'DARK'}"><span class="theme-preview dark-preview"><i></i><i></i><i></i></span><strong>Dark</strong><small>Low-glare market workspace</small></label>
-            <label class="theme-choice"><input type="radio" name="theme" value="LIGHT" th:checked="${user.themePreference == 'LIGHT'}"><span class="theme-preview light-preview"><i></i><i></i><i></i></span><strong>Light</strong><small>Bright, high-contrast workspace</small></label>
+            <label class="theme-choice"><input type="radio" name="theme" value="DARK" th:checked="${user.themePreference == 'DARK'}"><span class="theme-preview dark-preview"><i></i><i></i><i></i></span><strong>Dark</strong><small>Dark background</small></label>
+            <label class="theme-choice"><input type="radio" name="theme" value="LIGHT" th:checked="${user.themePreference == 'LIGHT'}"><span class="theme-preview light-preview"><i></i><i></i><i></i></span><strong>Light</strong><small>Light background</small></label>
           </div>
         </fieldset>
         <fieldset class="appearance-fieldset">
@@ -39,7 +41,7 @@
           <div class="elliott-color-grid">
             <label class="elliott-color-choice" for="harmonicFormationColor"><span><strong>Formation geometry</strong><small>Harmonic pivot lines, labels, and confirmation markers</small></span><input id="harmonicFormationColor" type="color" name="harmonicFormationColor" th:value="${user.harmonicFormationColor}" value="#22C55E" required></label>
           </div>
-          <p class="appearance-default-note">Default: market green <code>#22C55E</code>.</p>
+          <p class="appearance-default-note">Default: green <code>#22C55E</code>.</p>
         </fieldset>
         <fieldset class="appearance-fieldset">
           <legend>Elliott Wave overlays</legend>
@@ -49,7 +51,7 @@
             <label class="elliott-color-choice" for="elliottCorrectiveColor"><span><strong>Corrective A–B–C</strong><small>Wave V through the corrective sequence</small></span><input id="elliottCorrectiveColor" type="color" name="elliottCorrectiveColor" th:value="${user.elliottCorrectiveColor}" value="#A855F7" required></label>
             <label class="elliott-color-choice" for="elliottSubwaveColor"><span><strong>Hovered subwaves</strong><small>Temporary i–v, a–c, or a–e count inside the wave under your pointer</small></span><input id="elliottSubwaveColor" type="color" name="elliottSubwaveColor" th:value="${user.elliottSubwaveColor}" value="#F59E0B" required></label>
           </div>
-          <p class="appearance-default-note">Defaults: electric blue <code>#3B82F6</code> for I–V, vivid violet <code>#A855F7</code> for A–B–C, and amber <code>#F59E0B</code> for subwaves.</p>
+          <p class="appearance-default-note">Defaults: blue <code>#3B82F6</code> for I–V, violet <code>#A855F7</code> for A–B–C, and amber <code>#F59E0B</code> for subwaves.</p>
         </fieldset>
         <button class="btn-accent appearance-apply-button" type="submit">Apply changes</button>
       </form>
@@ -140,7 +142,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const label = button.dataset.resetLabel || 'selected';
         resetScope.value = scope;
         resetCopy.textContent = 'The ' + label.toLowerCase()
-                + ' preferences will be replaced with StockWatch factory defaults. Existing signals will not change.';
+                + ' preferences will be replaced with StockWatch defaults. Existing signals will not change.';
         resetDialog.showModal();
       });
     });
@@ -155,7 +157,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const label = button.dataset.resetLabel || 'selected intervals';
         detectionResetScope.value = scope;
         detectionResetCopy.textContent = 'The ' + label.toLowerCase()
-                + ' candlestick detection rules will be replaced with StockWatch factory defaults. Other preferences will not change.';
+                + ' candlestick detection rules will be replaced with StockWatch defaults. Other preferences will not change.';
         detectionResetDialog.showModal();
       });
     });

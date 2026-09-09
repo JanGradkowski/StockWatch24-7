@@ -185,7 +185,7 @@ public class SignalScoringPreferencesService {
         int score = Math.clamp((int) Math.round(total) + confluenceAdjustment, 0, 100);
         if (rescoredConfluence != null) rescored.add(rescoredConfluence);
         return new DisplayScore(score, band(score), strength(score), explanation(score), true,
-                List.copyOf(rescored), !rescored.isEmpty(), "Custom scoring profile applied.");
+                List.copyOf(rescored), !rescored.isEmpty(), "Your scoring settings are applied.");
     }
 
     private Profile parseProfile(MultiValueMap<String, String> form,
@@ -431,8 +431,8 @@ public class SignalScoringPreferencesService {
             details.add(new EvidenceDetail(detail.label(), baseText + settingText,
                     rule.included() ? String.format(Locale.ROOT, "%+d", points) : null));
         }
-        String status = adjustment > 0 ? "Supporting confluence"
-                : adjustment < 0 ? "Opposing confluence" : "No adjustment";
+        String status = adjustment > 0 ? "Supporting signals"
+                : adjustment < 0 ? "Opposing signals" : "No adjustment";
         return new EvidenceSection(section.category(), String.format(Locale.ROOT, "%+d", adjustment),
                 status, adjustment < 0, false, List.copyOf(details));
     }
@@ -452,17 +452,17 @@ public class SignalScoringPreferencesService {
     private static DisplayScore display(int score, boolean custom, List<EvidenceSection> sections) {
         int normalized = Math.clamp(score, 0, 100);
         return new DisplayScore(normalized, band(normalized), strength(normalized), explanation(normalized),
-                custom, sections, !sections.isEmpty(), custom ? "Custom scoring profile applied." : "Factory scoring profile.");
+                custom, sections, !sections.isEmpty(), custom ? "Your scoring settings are applied." : "Default scoring settings.");
     }
 
     private static String band(int score) { return score >= 85 ? "high" : score >= 75 ? "medium" : "low"; }
     private static String strength(int score) {
-        return score >= 85 ? "High confluence" : score >= 75 ? "Moderate confluence" : "Low confluence";
+        return score >= 85 ? "High support" : score >= 75 ? "Moderate support" : "Low support";
     }
     private static String explanation(int score) {
-        if (score >= 85) return "High heuristic confluence: broad alignment across the selected technical evidence.";
-        if (score >= 75) return "Moderate heuristic confluence: several selected factors align, with some mixed evidence.";
-        return "Low heuristic confluence: supporting evidence in the selected scoring parameters is limited.";
+        if (score >= 85) return "Most selected indicators support this signal.";
+        if (score >= 75) return "Several selected indicators support this signal; others are mixed.";
+        return "Few selected indicators support this signal.";
     }
 
     private static int integer(MultiValueMap<String, String> form, String key, String label) {

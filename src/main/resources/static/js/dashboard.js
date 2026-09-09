@@ -179,7 +179,7 @@
                         .map(panel => refreshPanel(panel))
                         .some(Boolean);
                     if (status) {
-                        status.textContent = "Notification marked as read. It remains available in All activity signals.";
+                        status.textContent = "Notification marked as read. It remains available in All ticker alerts.";
                     }
                     if (needsBackfill) {
                         reloadTickerAlerts();

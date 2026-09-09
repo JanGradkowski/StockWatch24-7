@@ -4,15 +4,15 @@
 <div th:fragment="analysisSettings(preferences)" class="analysis-settings-stack">
   <section class="settings-card analysis-profile-overview">
     <div class="settings-card-heading">
-      <div><span class="settings-number">01</span><h2>Personal analysis profile</h2></div>
+      <div><span class="settings-number">01</span><h2>Analysis settings</h2></div>
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
-            th:text="${preferences.profileLabel()}">Factory profile</span>
+            th:text="${preferences.profileLabel()}">Default profile</span>
     </div>
     <p class="analysis-settings-intro">Changes apply to future technical outlook calculations, Elliott lifecycle tracking, and market email delivery. Candlestick stop losses and interval R:R targets now live under Candlestick Patterns.</p>
     <div class="analysis-safety-strip">
       <strong>Completed candles only</strong>
       <span><a th:href="@{/settings/candlestick-patterns}">Open Candlestick Patterns</a> to configure every directional pattern's stop loss and each interval's R:R ratio.</span>
-      <span>Unavailable indicators are excluded from the score denominator.</span>
+      <span>Missing indicators do not count toward the overall score.</span>
     </div>
   </section>
 
@@ -33,7 +33,7 @@
         <fieldset><legend>Signal resolution</legend>
           <label><input type="checkbox" name="email.confirmed" th:checked="${preferences.email().confirmed()}"><span><strong>Confirmed</strong><small>Profit target reached, or Elliott follow-through confirmed</small></span></label>
           <label><input type="checkbox" name="email.invalidated" th:checked="${preferences.email().invalidated()}"><span><strong>Invalidated</strong><small>Stop loss reached or Elliott structure broke</small></span></label>
-          <label><input type="checkbox" name="email.expired" th:checked="${preferences.email().expired()}"><span><strong>Rejected / expired</strong><small>The detection gate failed or the applicable time window ended</small></span></label>
+          <label><input type="checkbox" name="email.expired" th:checked="${preferences.email().expired()}"><span><strong>Rejected / expired</strong><small>The pattern was rejected or its time limit expired</small></span></label>
         </fieldset>
         <fieldset><legend>Intervals</legend>
           <label><input type="checkbox" name="email.daily" th:checked="${preferences.email().daily()}"><span><strong>Daily</strong><small>Daily signal emails</small></span></label>
@@ -52,7 +52,7 @@
              th:each="profile, stat : ${preferences.profiles()}"
              th:id="${'analysis-' + profile.key()}">
       <div class="settings-card-heading interval-profile-heading">
-        <div><span class="settings-number" th:text="${'0' + (stat.index + 3)}">03</span><div><h2 th:text="${profile.label() + ' analysis'}">Daily analysis</h2><p>All periods are completed native candles.</p></div></div>
+        <div><span class="settings-number" th:text="${'0' + (stat.index + 3)}">03</span><div><h2 th:text="${profile.label() + ' analysis'}">Daily analysis</h2><p>Periods are measured in completed candles of the selected interval.</p></div></div>
         <button type="button" class="danger-outline-button analysis-reset-trigger"
                 th:attr="data-reset-scope=${profile.interval().name()},data-reset-label=${profile.label()}">Reset this interval</button>
       </div>
@@ -135,31 +135,31 @@
           <div class="analysis-score-switches">
             <label><input type="checkbox" th:name="${profile.key() + '.scoreCandlestickSignals'}" th:checked="${profile.scoreCandlestickSignals()}">Include recent candlestick signals</label>
             <label><input type="checkbox" th:name="${profile.key() + '.scoreElliottSignals'}" th:checked="${profile.scoreElliottSignals()}">Include recent Elliott signals</label>
-            <label><input type="checkbox" th:name="${profile.key() + '.categoryBalancedHeadline'}" th:checked="${profile.categoryBalancedHeadline()}">Use category-balanced headline</label>
+            <label><input type="checkbox" th:name="${profile.key() + '.categoryBalancedHeadline'}" th:checked="${profile.categoryBalancedHeadline()}">Give each indicator category equal weight in the overall outlook</label>
           </div>
         </fieldset>
       </div>
     </section>
 
     <section class="settings-card analysis-save-card">
-      <div><strong>Save a versioned analysis profile</strong><p>New calculations use these indicator, scoring, and Elliott lifecycle values.</p></div>
+      <div><strong>Save analysis settings</strong><p>New calculations use these indicator, scoring, and Elliott lifecycle values.</p></div>
       <button type="submit" class="btn-accent">Apply analysis preferences</button>
     </section>
   </form>
 
   <section class="settings-card analysis-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">06</span><h2>Factory restoration</h2></div><p>Candlestick trade plans, saved signals, and account security settings remain unchanged.</p></div>
-    <div class="settings-action-row"><div><h3>Restore every analysis and alert preference</h3><p>All indicator profiles, Elliott lifecycle rules, scoring rules, and market email choices return to StockWatch defaults.</p></div><button type="button" class="danger-button analysis-reset-trigger" data-reset-scope="all" data-reset-label="all analysis and alert">Restore all factory settings</button></div>
+    <div class="settings-card-heading"><div><span class="settings-number">06</span><h2>Reset to defaults</h2></div><p>Candlestick trade plans, saved signals, and account security settings remain unchanged.</p></div>
+    <div class="settings-action-row"><div><h3>Restore every analysis and alert preference</h3><p>All indicator profiles, Elliott lifecycle rules, scoring rules, and market email choices return to StockWatch defaults.</p></div><button type="button" class="danger-button analysis-reset-trigger" data-reset-scope="all" data-reset-label="all analysis and alert">Reset analysis and email settings</button></div>
   </section>
 
   <dialog id="analysisFactoryResetDialog" class="settings-dialog analysis-reset-dialog">
     <form method="dialog" class="dialog-close-form"><button aria-label="Close factory reset confirmation">×</button></form>
     <div class="dialog-danger-mark" aria-hidden="true">!</div>
-    <h2>Restore factory settings?</h2>
+    <h2>Reset to defaults?</h2>
     <p id="analysisFactoryResetCopy">The selected preferences will be replaced with StockWatch defaults.</p>
     <form th:action="@{/settings/analysis-alerts/reset}" method="post" class="settings-form">
       <input id="analysisFactoryResetScope" type="hidden" name="scope" value="all">
-      <button type="submit" class="danger-button danger-button-full">Confirm factory reset</button>
+      <button type="submit" class="danger-button danger-button-full">Reset settings</button>
     </form>
   </dialog>
 </div>

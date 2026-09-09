@@ -3,12 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title th:text="${signal.symbol() + ' activity signal analysis — StockWatch 24/7'}">Activity signal analysis &mdash; StockWatch 24/7</title>
+  <title th:text="${signal.symbol() + ' ticker alert details — StockWatch 24/7'}">Ticker alert details &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/chart-theme.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true">
@@ -22,14 +25,14 @@
   <nav class="signal-breadcrumb" aria-label="Breadcrumb">
     <a th:href="@{/home}">Dashboard</a>
     <span aria-hidden="true">/</span>
-    <a th:href="@{/activity-signals}">All activity signals</a>
+    <a th:href="@{/activity-signals}">All ticker alerts</a>
     <span aria-hidden="true">/</span>
     <span>Signal analysis</span>
   </nav>
 
   <header class="signal-report-header">
     <div class="signal-report-copy">
-      <div class="eyebrow">Activity signal analysis</div>
+      <div class="eyebrow">Ticker alert details</div>
       <div class="signal-report-title-row">
         <h1 class="title" th:text="${signal.source() == 'INSIDER' ? 'Insider ' + signal.transactionTypeLabel() : 'Congressional ' + signal.transactionTypeLabel()}">Insider sale</h1>
         <span class="signal-report-id" th:text="${'SIGNAL #' + signal.id()}">SIGNAL #142</span>
@@ -60,7 +63,7 @@
     <button id="graphicalOutlookTab" class="signal-view-tab active" type="button" role="tab"
             aria-selected="true" aria-controls="graphicalOutlookPanel" data-signal-tab="graphical">
       <span class="signal-tab-icon" aria-hidden="true">&#9650;</span>
-      <span><strong>Graphical outlook</strong><small>See the transaction on its chart</small></span>
+      <span><strong>Chart</strong><small>See the transaction on its chart</small></span>
     </button>
     <button id="scoreReportTab" class="signal-view-tab" type="button" role="tab"
             aria-selected="false" aria-controls="scoreReportPanel" data-signal-tab="score">
@@ -71,7 +74,7 @@
             aria-selected="false" aria-controls="resultsPanel" data-signal-tab="results"
             th:attr="data-results-available=${signal.results().available()}">
       <span class="signal-tab-icon results" aria-hidden="true">%</span>
-      <span><strong>Results</strong><small>Measure the cached forward outcome</small></span>
+      <span><strong>Results</strong><small>See price changes after the transaction</small></span>
     </button>
   </nav>
 
@@ -85,11 +88,11 @@
             on the <span data-detail-chart-interval-label>daily</span> <span th:text="${signal.symbol()}">JNJ</span> chart
           </h2>
           <p th:if="${signal.chart().available()}" data-detail-chart-summary>
-            The filed transaction date and reported execution price are marked against complete cached daily candles.
+            The chart marks the reported transaction date and price.
           </p>
         </div>
         <div class="signal-chart-heading-actions">
-          <span class="signal-chart-cache-badge" data-detail-chart-status>Complete cached daily history &middot; no API request</span>
+          <span class="signal-chart-cache-badge" data-detail-chart-status>Available daily price history</span>
           <div class="signal-detail-interval-switcher"
                role="group"
                aria-label="Chart candle interval"
@@ -125,7 +128,7 @@
            th:attr="aria-label=${'Alternate interval transaction chart for ' + signal.symbol()}" role="img"></div>
       <div class="signal-chart-unavailable signal-detail-interval-error" data-detail-interval-error hidden>
         <span aria-hidden="true">!</span>
-        <div><h3>Chart interval is unavailable</h3><p data-detail-interval-error-message>Completed candles could not be loaded for this interval.</p></div>
+        <div><h3>Chart interval is unavailable</h3><p data-detail-interval-error-message>Price history is unavailable for this interval.</p></div>
       </div>
       <ol th:if="${signal.chart().available()}" id="signalChartData" hidden aria-hidden="true">
         <li th:each="candle : ${signal.chart().candles()}"
@@ -136,7 +139,7 @@
         <span aria-hidden="true">i</span>
         <div>
           <h3>Chart context is unavailable for this signal</h3>
-          <p th:text="${signal.chart().unavailableReason()}">The transaction candle is not in the local cache.</p>
+          <p th:text="${signal.chart().unavailableReason()}">Price data for the transaction date is unavailable.</p>
         </div>
       </div>
     </section>
@@ -224,7 +227,7 @@
       </div>
       <div th:unless="${signal.technical().available()}" class="signal-evidence-unavailable">
         <div class="legacy-signal-mark" aria-hidden="true">i</div>
-        <div><h3>Technical snapshot unavailable</h3><p th:text="${signal.technical().unavailableReason()}">The daily candle could not be reconstructed.</p></div>
+        <div><h3>Technical snapshot unavailable</h3><p th:text="${signal.technical().unavailableReason()}">Daily price data is unavailable for this date.</p></div>
       </div>
     </section>
 
@@ -233,7 +236,7 @@
         <div>
           <div class="signal-section-kicker">Around the transaction date</div>
           <h2 id="related-signals-heading">Related technical signals</h2>
-          <p>Owned daily, weekly, and monthly candlestick or Elliott Wave signals detected near this activity.</p>
+          <p>Your saved technical signals near the transaction date.</p>
         </div>
         <span class="evidence-count">
           <span th:text="${signal.relatedSignals().candlestickSignals().size() + signal.relatedSignals().elliottSignals().size()}">2</span>&nbsp;signals
@@ -260,7 +263,7 @@
       <div th:if="${#lists.isEmpty(signal.relatedSignals().candlestickSignals()) and #lists.isEmpty(signal.relatedSignals().elliottSignals())}"
            class="signal-evidence-unavailable">
         <div class="legacy-signal-mark" aria-hidden="true">i</div>
-        <div><h3>No related technical signals</h3><p>No owned daily, weekly, or monthly candlestick or Elliott Wave signal was detected near this transaction.</p></div>
+        <div><h3>No related technical signals</h3><p>None of your saved technical signals were detected near this transaction.</p></div>
       </div>
     </section>
 
@@ -268,8 +271,8 @@
       <div class="method-note-index" aria-hidden="true">01</div>
       <div>
         <div class="signal-section-kicker">Reading the report</div>
-        <h2 id="activity-method-heading">Historical context, not a recommendation</h2>
-        <p>The indicator snapshot uses only completed cached candles available for the transaction period. Related signals are limited to this account&rsquo;s saved technical alerts. <strong>This is research context, not financial advice or evidence that the filer traded on these indicators.</strong></p>
+        <h2 id="activity-method-heading">About these results</h2>
+        <p>The indicator snapshot uses only completed candles available for the transaction period. Related signals are limited to this account&rsquo;s saved technical alerts. <strong>These indicators do not show why the person traded.</strong></p>
       </div>
     </section>
   </div>
@@ -282,22 +285,21 @@
                       data-best-action-label=${signal.results().bestActionLabel()}">
       <div class="signal-results-heading">
         <div>
-          <div class="signal-section-kicker">Completed-candle follow-through</div>
-          <h2>Direction-aware result after the transaction</h2>
+          <h2>Price change after the transaction</h2>
           <p>The line starts at the reported execution price, or the disclosed daily-close proxy, and measures each subsequent completed daily close in the transaction direction.</p>
         </div>
-        <span class="signal-chart-cache-badge">Cached candles only &middot; no API request</span>
+        <span class="signal-chart-cache-badge">Completed closing prices</span>
       </div>
 
       <div class="signal-results-metrics" aria-live="polite">
         <article><span id="resultHorizonLabel" th:text="${signal.results().outcomeLabel()}">Gain / loss</span><strong id="resultHorizonReturn">+0.00%</strong><small id="resultHorizonDifference">+0.0000 per share</small></article>
-        <article><span>Selected-window close</span><strong id="resultHorizonClose">0.0000</strong><small id="resultHorizonPeriod">Period unavailable</small></article>
+        <article><span>Closing price</span><strong id="resultHorizonClose">0.0000</strong><small id="resultHorizonPeriod">Period unavailable</small></article>
         <article class="best-result"><span id="resultBestActionLabel" th:text="${signal.results().bestActionLabel()}">Best sell close</span><strong id="resultBestClose">0.0000</strong><small id="resultBestPeriod">Period unavailable</small></article>
-        <article class="best-result"><span>Best direction-aware outcome</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference">+0.0000 per share</small></article>
+        <article class="best-result"><span>Best result in this period</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference">+0.0000 per share</small></article>
       </div>
 
       <div id="signalResultsChart" class="signal-results-chart" role="img"
-           th:attr="aria-label=${'Direction-aware activity result chart for ' + signal.symbol()}"></div>
+           th:attr="aria-label=${'Price-change chart for ' + signal.symbol()}"></div>
       <div class="signal-results-legend" aria-label="Results chart color legend">
         <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the transaction direction</span>
         <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the transaction direction</span>
@@ -310,7 +312,7 @@
       </ol>
 
       <div class="signal-results-window-control">
-        <div class="signal-results-window-copy"><label for="resultWindowSlider">Forward evaluation window</label><p>Choose how many completed candles after the transaction to include.</p></div>
+        <div class="signal-results-window-copy"><label for="resultWindowSlider">Results period</label><p>Choose how many completed candles after the transaction to include.</p></div>
         <output id="resultWindowValue" for="resultWindowSlider" th:text="${signal.results().minimumForwardCandles() + ' candles'}">10 candles</output>
         <input id="resultWindowSlider" type="range" th:min="${signal.results().minimumForwardCandles()}" th:max="${signal.results().availableForwardCandles()}" th:value="${signal.results().minimumForwardCandles()}" step="1"
                th:attr="aria-valuemin=${signal.results().minimumForwardCandles()},aria-valuemax=${signal.results().availableForwardCandles()},aria-valuenow=${signal.results().minimumForwardCandles()}">
@@ -323,7 +325,7 @@
   <dialog th:unless="${signal.results().available()}" id="signalResultsUnavailableDialog" class="unsaved-alert-dialog signal-results-unavailable-dialog" aria-labelledby="signalResultsUnavailableTitle">
     <div class="unsaved-alert-dialog-content">
       <span class="unsaved-alert-kicker">Outcome window still forming</span>
-      <h2 id="signalResultsUnavailableTitle">Results need more completed candles</h2>
+      <h2 id="signalResultsUnavailableTitle">Not enough price history yet</h2>
       <p th:text="${signal.results().unavailableReason()}">At least 10 completed candles after the transaction are required.</p>
       <div class="unsaved-alert-dialog-actions"><button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary">Understood</button></div>
     </div>
@@ -351,7 +353,7 @@
     if (typeof dialog.showModal === 'function') {
       if (!dialog.open) dialog.showModal();
     } else {
-      window.alert(dialog.querySelector('p')?.textContent || 'Results need more completed candles.');
+      window.alert(dialog.querySelector('p')?.textContent || 'Not enough price history yet.');
     }
   }
 
@@ -387,7 +389,7 @@
       time: Number(item.dataset.time), open: Number(item.dataset.open), high: Number(item.dataset.high),
       low: Number(item.dataset.low), close: Number(item.dataset.close)
     })).filter(candle => Object.values(candle).every(Number.isFinite));
-    priceChart = LightweightCharts.createChart(chartContainer, {
+    priceChart = StockWatchCharts.createChart(chartContainer, {
       autoSize: true,
       layout: {textColor: colors.text, fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', background: {type: 'solid', color: 'transparent'}},
       grid: {vertLines: {color: colors.grid}, horzLines: {color: colors.grid}},
@@ -463,7 +465,7 @@
     if (!resultsContainer || !resultsData.length || typeof LightweightCharts === 'undefined') return;
     if (!resultsChart) {
       const colors = chartColors();
-      resultsChart = LightweightCharts.createChart(resultsContainer, {autoSize:true,layout:{textColor:colors.text,fontFamily:'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',background:{type:'solid',color:'transparent'}},grid:{vertLines:{color:colors.grid},horzLines:{color:colors.grid}},crosshair:{mode:0},rightPriceScale:{borderColor:colors.border},timeScale:{borderColor:colors.border,timeVisible:true,rightOffset:2},handleScroll:true,handleScale:true});
+      resultsChart = StockWatchCharts.createChart(resultsContainer, {autoSize:true,layout:{textColor:colors.text,fontFamily:'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',background:{type:'solid',color:'transparent'}},grid:{vertLines:{color:colors.grid},horzLines:{color:colors.grid}},crosshair:{mode:0},rightPriceScale:{borderColor:colors.border},timeScale:{borderColor:colors.border,timeVisible:true,rightOffset:2},handleScroll:true,handleScale:true});
       resultsSeries = resultsChart.addLineSeries({color:colors.neutral,lineWidth:3,lastValueVisible:true,priceLineVisible:false,crosshairMarkerVisible:true,priceFormat:{type:'custom',formatter:value=>signedNumber(value,2,'%')}});
       resultsSeries.createPriceLine({price:0,color:colors.border,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'Transaction price'});
     }

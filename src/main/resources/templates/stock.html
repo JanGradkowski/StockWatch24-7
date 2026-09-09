@@ -6,8 +6,11 @@
   <title th:text="${symbol} + ' — Market workspace'"></title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
   <!-- TradingView Lightweight Charts (Industry Standard) -->
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/chart-theme.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <meta name="_csrf" th:content="${_csrf.token}">
@@ -59,17 +62,17 @@
     </div>
 
     <div class="stock-loader-copy">
-      <span class="stock-loader-kicker">Market data initialization</span>
+      <span class="stock-loader-kicker">Loading chart</span>
       <h1 id="stockLoaderTitle">
         Opening <span th:text="${symbol}">AAPL</span> workspace
       </h1>
-      <p id="stockLoaderStatus">Preparing the market canvas...</p>
+      <p id="stockLoaderStatus">Loading prices…</p>
     </div>
 
     <div class="stock-loader-progress" aria-hidden="true">
       <span></span>
     </div>
-    <p class="stock-loader-note">Completed candles only · Price · Volume · Technical context</p>
+    <p class="stock-loader-note">Price, volume and indicators</p>
   </div>
 </div>
 
@@ -83,7 +86,7 @@
 <main class="stock-page" aria-busy="true">
   <header class="price-header">
     <div class="market-identity">
-      <div class="stock-eyebrow">Live market workspace</div>
+      <div class="stock-eyebrow">Stock chart</div>
       <div class="ticker-name"><span th:text="${symbol}">AAPL</span><span id="instrumentTypeDisplay" class="instrument-type-badge" data-instrument-type="EQUITY">Stock</span></div>
       <div class="interval-label">Daily Interval</div>
     </div>
@@ -91,11 +94,11 @@
       <div>
         <span class="stock-workspace-action-kicker">Demo trading &middot; no real order</span>
         <h2 id="stockDemoTradeTitle">Record a demo trade at the current quote</h2>
-        <p>Capture the selected interval's technical state and follow a hypothetical decision.</p>
+        <p>Save the current price and analysis to track a demo trade.</p>
       </div>
       <div class="virtual-trade-launch-actions">
-        <button type="button" class="btn-accent virtual-buy-button" data-stock-demo-trade="BUY">Virtual Buy</button>
-        <button type="button" class="btn-secondary virtual-sell-button" data-stock-demo-trade="SELL">Virtual Sell</button>
+        <button type="button" class="btn-accent virtual-buy-button" data-stock-demo-trade="BUY">Demo buy</button>
+        <button type="button" class="btn-secondary virtual-sell-button" data-stock-demo-trade="SELL">Demo sell</button>
       </div>
     </section>
     <div class="quote-block">
@@ -117,7 +120,7 @@
               aria-controls="generalWorkspacePanel"
               tabindex="0"
               data-stock-workspace-tab="general">
-        <span>General</span>
+        <span>Chart</span>
         <small>Charts and market history</small>
       </button>
       <button id="technicalAnalysisWorkspaceTab"
@@ -139,7 +142,7 @@
               aria-controls="tickerAlertsWorkspacePanel"
               tabindex="-1"
               data-stock-workspace-tab="ticker-alerts">
-        <span>Insider &amp; Congress Alerts</span>
+        <span>Ticker alerts</span>
         <small>Congressional and insider activity</small>
       </button>
     </div>
@@ -178,7 +181,7 @@
                       type="button"
                       class="view-toggle chart-control-menu-item"
                       aria-haspopup="dialog"
-                      aria-controls="historicalCandlestickViewDialog"
+                      aria-controls="historicalCandlestickLookbackDialog"
                       aria-pressed="false">Candlestick signals</button>
               <button id="elliottOverlayToggle"
                       type="button"
@@ -411,7 +414,7 @@
   <section id="volumeChartPanel" class="chart-wrapper resizable-chart-panel">
     <div class="chart-panel-head">
       <h2 class="volume-title">Trading volume</h2>
-      <span class="chart-panel-meta">Synchronized with price history</span>
+      <span class="chart-panel-meta">Uses the chart's time range</span>
     </div>
     <div id="volumeChartContainer" class="volume-chart-container"></div>
     <div class="chart-resize-handle"
@@ -440,13 +443,13 @@
   <section class="stock-workspace-action-card technical-outlook-launcher"
            aria-labelledby="fullTechnicalOutlookTitle">
     <div>
-      <span class="stock-workspace-action-kicker">Complete technical workspace</span>
-      <h2 id="fullTechnicalOutlookTitle">Full Technical Outlook</h2>
-      <p>Review the synchronized chart, category-balanced outlook, auditable indicator votes, recent signals, and market-relative performance.</p>
+      <span class="stock-workspace-action-kicker">Technical analysis</span>
+      <h2 id="fullTechnicalOutlookTitle">Technical Outlook</h2>
+      <p>See the overall outlook, individual indicators and recent signals.</p>
     </div>
     <a class="btn-accent full-technical-outlook-button"
        th:href="@{/stock/{symbol}/technical-outlook(symbol=${symbol})}">
-      Open Full Technical Outlook
+      Open Technical Outlook
     </a>
   </section>
 
@@ -454,7 +457,7 @@
     <div class="alert-header">
       <div>
         <h2 class="alert-title">Automated technical monitoring</h2>
-        <p class="alert-description">An outlined star is not followed; a filled star is followed. Pattern stars use the Apply changes button; Automated Technical Outlook stars save immediately because each one establishes or stops an interval baseline.</p>
+        <p class="alert-description">Filled stars indicate alerts you follow. Click Apply changes to save pattern alerts. Outlook alerts save immediately.</p>
       </div>
       <div class="alert-header-actions">
         <div class="alert-overall-follow-row">
@@ -475,7 +478,7 @@
     <div class="alert-sections-layout">
       <div class="alert-section">
         <div class="alert-section-title">Candlestick Patterns</div>
-        <p class="alert-section-copy">Context-validated pattern detections across each supported candle interval.</p>
+        <p class="alert-section-copy">Alerts when a candlestick pattern meets your detection rules.</p>
         <div class="alert-grid">
           <div class="alert-grid-label">Interval</div>
           <div class="alert-grid-label">Buy</div>
@@ -497,7 +500,7 @@
 
       <div class="alert-section">
         <div class="alert-section-title">Elliott Wave Patterns</div>
-        <p class="alert-section-copy">Independent Elliott structures detected natively on daily, weekly, and monthly candles. These alerts never use hierarchy subwaves.</p>
+        <p class="alert-section-copy">Alerts for Elliott Wave patterns on daily, weekly and monthly charts. Hover-only subwaves do not trigger alerts.</p>
         <div class="alert-grid">
           <div class="alert-grid-label">Interval</div>
           <div class="alert-grid-label">Buy</div>
@@ -519,7 +522,7 @@
 
       <div class="alert-section harmonic-alert-section">
         <div class="alert-section-title">Harmonic Formations</div>
-        <p class="alert-section-copy">Track bullish and bearish Gartley, Bat, Butterfly, Crab, Shark, and Cypher completions. A signal is recorded only after the terminal D/C pivot has enough right-side candles to be confirmed.</p>
+        <p class="alert-section-copy">Alerts for confirmed harmonic patterns. Confirmation requires candles after the final turning point.</p>
         <div class="alert-grid">
           <div class="alert-grid-label">Interval</div>
           <div class="alert-grid-label">Bullish</div>
@@ -541,7 +544,7 @@
 
       <div class="alert-section outlook-alert-section">
         <div class="alert-section-title">Automated Technical Outlook</div>
-        <p class="alert-section-copy">Follow the complete automated outlook for each interval. There is one star per interval because outlook changes are not divided into Buy and Sell signals.</p>
+        <p class="alert-section-copy">Get alerts when an interval's overall outlook changes.</p>
         <div id="outlookFollowStatus" class="outlook-alert-status" role="status" aria-live="polite">Loading outlook follows…</div>
         <div class="alert-grid outlook-alert-grid" role="group" aria-label="Automated Technical Outlook intervals">
           <div class="alert-grid-label">Interval</div>
@@ -556,7 +559,7 @@
           <div class="alert-row-label">Monthly</div>
           <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="MONTHLY" aria-label="Follow monthly Automated Technical Outlook"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label">Follow</span></label></div>
         </div>
-        <p class="outlook-alert-note">The first completed candle creates a quiet baseline. Later classification changes are emailed and added to Latest Signals. These three stars save immediately.</p>
+        <p class="outlook-alert-note">The first check records the current outlook. Later changes appear in Latest signals and may trigger emails. These stars save immediately.</p>
       </div>
     </div>
   </section>
@@ -575,7 +578,7 @@
            aria-labelledby="tickerAlertsEligibilityTitle"
            hidden>
     <span class="stock-workspace-action-kicker">Stock-specific data</span>
-    <h2 id="tickerAlertsEligibilityTitle">Insider &amp; Congress Alerts are not available for this instrument</h2>
+    <h2 id="tickerAlertsEligibilityTitle">Ticker alerts are not available for this instrument</h2>
     <p>Congressional and corporate-insider disclosures are filed against individual companies. They are therefore available for stocks, but not for indexes or ETFs.</p>
   </section>
 
@@ -587,7 +590,7 @@
       <div>
         <div class="congressional-panel-kicker">Stocks only · public disclosures</div>
         <h2 id="congressionalActivityTitle">Congressional trading activity</h2>
-        <p>Follow newly observed purchase and sale disclosures for this stock. New activity appears on your dashboard and is sent by email.</p>
+        <p>Follow newly observed purchase and sale disclosures for this stock. New filings appear in Ticker alerts. Emails follow your notification settings.</p>
       </div>
       <div class="congressional-panel-actions">
         <button id="followCongressionalActivityBtn"
@@ -626,7 +629,7 @@
            hidden>
     <div class="congressional-panel-header">
       <div>
-        <div class="congressional-panel-kicker">Stocks only · Growing SEC insider archive</div>
+        <div class="congressional-panel-kicker">Company insider filings</div>
         <h2 id="insiderActivityTitle">Corporate insider activity</h2>
         <p>Follow newly filed open-market purchases and sales by company officers, directors, and other reporting insiders.</p>
       </div>
@@ -650,8 +653,7 @@
         Directional return compares the filed transaction price with the latest completed daily close.
       </p>
       <p id="insiderBaselineNotice">
-        Cached observations are kept for history. The current latest 10 establish a no-alert baseline,
-        then daily checks merge newly observed rows.
+        Past filings remain in history. Alerts start with new filings found after you follow the stock.
       </p>
       <p>
         Data provided by
@@ -659,7 +661,7 @@
            target="_blank"
            rel="noopener noreferrer">API Ninjas</a>
         from public SEC insider filings.
-        Free-tier coverage is limited to the 10 latest rows and can miss larger bursts between checks.
+        Coverage is limited to 10 filings per check, so some filings may be missed.
         Awards, gifts, option exercises, and zero-price grants are excluded.
         Informational only, not financial advice.
       </p>
@@ -674,7 +676,7 @@
     <div class="congressional-history-dialog-content">
       <div class="congressional-history-heading">
         <div>
-          <span class="congressional-panel-kicker">Cached disclosure archive</span>
+          <span class="congressional-panel-kicker">Past filings</span>
           <h2 id="congressionalHistoryTitle">Congressional trading history</h2>
           <p id="congressionalHistoryWindow">Relevant purchase and sale disclosures from the last 365 days.</p>
         </div>
@@ -716,9 +718,9 @@
     <div class="congressional-history-dialog-content insider-history-dialog-content">
       <div class="congressional-history-heading">
         <div>
-          <span class="congressional-panel-kicker">Cache-first accumulated archive</span>
+          <span class="congressional-panel-kicker">Past filings</span>
           <h2 id="insiderHistoryTitle">Corporate insider trading history</h2>
-          <p id="insiderHistoryWindow">Loading stored observations, then checking the provider's latest 10.</p>
+          <p id="insiderHistoryWindow">Loading insider filings…</p>
         </div>
         <button id="closeInsiderHistoryBtn"
                 type="button"
@@ -754,85 +756,6 @@
     </div>
   </dialog>
 
-  <dialog id="historicalCandlestickViewDialog"
-          class="congressional-history-dialog historical-candlestick-dialog view-picker-dialog"
-          aria-labelledby="historicalCandlestickViewTitle">
-    <div class="congressional-history-dialog-content">
-      <div class="congressional-history-heading">
-        <div>
-          <span class="congressional-panel-kicker">Historical candle patterns</span>
-          <h2 id="historicalCandlestickViewTitle">How would you like to explore them?</h2>
-          <p>Use the complete chart overlay for visual context, or keep the detailed research table.</p>
-        </div>
-        <button id="closeHistoricalCandlestickViewBtn"
-                type="button"
-                class="congressional-dialog-close"
-                aria-label="Close historical candlestick view picker">&times;</button>
-      </div>
-      <div class="historical-candlestick-view-grid">
-        <button type="button"
-                class="historical-candlestick-view-option graphical"
-                data-historical-candlestick-view="graphical">
-          <span>Recommended</span>
-          <strong>Graphical overlay</strong>
-          <small>Show every detected pattern for the chart interval, directly on its candle with required-trend context.</small>
-        </button>
-        <button type="button"
-                class="historical-candlestick-view-option"
-                data-historical-candlestick-view="list">
-          <span>Research table</span>
-          <strong>List view</strong>
-          <small>Choose an interval and scan window, then compare every signal in the existing table.</small>
-        </button>
-      </div>
-    </div>
-  </dialog>
-
-  <dialog id="historicalCandlestickIntervalDialog"
-          class="congressional-history-dialog historical-candlestick-dialog interval-picker-dialog"
-          aria-labelledby="historicalCandlestickIntervalTitle">
-    <div class="congressional-history-dialog-content">
-      <div class="congressional-history-heading">
-        <div>
-          <span class="congressional-panel-kicker">On-demand pattern research</span>
-          <h2 id="historicalCandlestickIntervalTitle">Choose a candle interval</h2>
-          <p>After choosing the interval, you can set exactly how many completed candles to scan.</p>
-        </div>
-        <button id="closeHistoricalCandlestickIntervalBtn"
-                type="button"
-                class="congressional-dialog-close"
-                aria-label="Close historical candlestick interval picker">&times;</button>
-      </div>
-      <div class="historical-candlestick-interval-grid">
-        <button type="button"
-                class="historical-candlestick-interval-option"
-                data-historical-candlestick-interval="1d">
-          <span>Daily</span>
-          <strong>Daily candles</strong>
-          <small>Outcome after 10 trading sessions</small>
-        </button>
-        <button type="button"
-                class="historical-candlestick-interval-option"
-                data-historical-candlestick-interval="1wk">
-          <span>Weekly</span>
-          <strong>Weekly candles</strong>
-          <small>Outcome after 4 weeks</small>
-        </button>
-        <button type="button"
-                class="historical-candlestick-interval-option"
-                data-historical-candlestick-interval="1mo">
-          <span>Monthly</span>
-          <strong>Monthly candles</strong>
-          <small>Outcome after 3 months</small>
-        </button>
-      </div>
-      <p class="congressional-history-disclaimer">
-        Signals are recalculated when requested and are not stored or cached.
-        Historical measurements do not include execution costs and are not financial advice.
-      </p>
-    </div>
-  </dialog>
-
   <dialog id="historicalCandlestickLookbackDialog"
           class="congressional-history-dialog historical-candlestick-dialog lookback-picker-dialog"
           aria-labelledby="historicalCandlestickLookbackTitle">
@@ -842,14 +765,19 @@
         <div>
           <span id="historicalCandlestickLookbackInterval"
                 class="congressional-panel-kicker">Selected interval</span>
-          <h2 id="historicalCandlestickLookbackTitle">Choose how many candles to scan</h2>
-          <p>The estimate updates as you type. The result uses completed candles only.</p>
+          <h2 id="historicalCandlestickLookbackTitle">Find historical patterns</h2>
+          <p>Choose the interval and how to display the patterns.</p>
         </div>
         <button id="closeHistoricalCandlestickLookbackBtn"
                 type="button"
                 class="congressional-dialog-close"
                 aria-label="Close historical candlestick lookback picker">&times;</button>
       </div>
+      <div class="historical-scan-options">
+        <label for="historicalScanInterval">Interval<select id="historicalScanInterval"><option value="1d">Daily</option><option value="1wk">Weekly</option><option value="1mo">Monthly</option></select></label>
+        <label for="historicalScanView">Display<select id="historicalScanView"><option value="list">Results table</option><option value="graphical">On the chart</option></select></label>
+      </div>
+      <p id="historicalScanChartNote" class="form-hint" hidden>The chart shows patterns across all available history. Use the results table to scan a specific number of candles.</p>
       <label class="historical-candlestick-lookback-field"
              for="historicalCandlestickLookbackInput">
         <span>Number of candles</span>
@@ -866,7 +794,7 @@
           Enter a whole number from 1 to 750.
         </small>
       </label>
-      <div class="historical-candlestick-lookback-preview" aria-live="polite">
+      <div class="historical-candlestick-lookback-preview" id="historicalScanPreview" aria-live="polite">
         <span>Estimated earliest candle</span>
         <strong id="historicalCandlestickLookbackDate">Enter a candle count</strong>
         <small id="historicalCandlestickLookbackDateHelp">
@@ -877,14 +805,11 @@
          class="historical-candlestick-lookback-error"
          role="alert"></p>
       <div class="historical-candlestick-lookback-actions">
-        <button id="backToHistoricalCandlestickIntervalBtn"
-                type="button"
-                class="btn-secondary">Back</button>
+        <button id="cancelHistoricalScanBtn" type="button" class="btn-secondary">Cancel</button>
         <button type="submit" class="btn-primary">Show historical patterns</button>
       </div>
       <p class="congressional-history-disclaimer">
-        Signals are recalculated when requested and are not stored or cached.
-        Historical measurements do not include execution costs and are not financial advice.
+        Historical results reflect the available price data and your current settings. They exclude trading costs.
       </p>
     </form>
   </dialog>
@@ -895,7 +820,7 @@
     <div class="congressional-history-dialog-content">
       <div class="congressional-history-heading">
         <div>
-          <span class="congressional-panel-kicker">On-demand historical scan</span>
+          <span class="congressional-panel-kicker">Historical patterns</span>
           <h2 id="historicalCandlestickResultsTitle">Historical candle patterns</h2>
           <p id="historicalCandlestickResultsWindow">Select an interval to calculate historical signals.</p>
         </div>
@@ -934,8 +859,7 @@
         No valid candlestick signals were found in this interval's current history window.
       </div>
       <p id="historicalCandlestickResultsDisclaimer" class="congressional-history-disclaimer">
-        Success is a fixed close-to-close research measurement, not a simulated trade.
-        Results are recalculated on every request and are never persisted.
+        These results use completed closing prices, not actual executions. They are separate from demo-trading performance.
       </p>
     </div>
   </dialog>
@@ -1033,9 +957,9 @@
 
   <dialog id="unsavedAlertDialog" class="unsaved-alert-dialog" aria-labelledby="unsavedAlertTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">Unapplied changes</span>
+      <span class="unsaved-alert-kicker">Unsaved changes</span>
       <h2 id="unsavedAlertTitle">Save your alert changes before leaving?</h2>
-      <p>Your checkbox changes have not been applied yet. You can save them now, discard them, or keep editing.</p>
+      <p>Save your alert changes, discard them, or keep editing.</p>
       <div id="unsavedAlertDialogStatus" class="unsaved-alert-dialog-status" aria-live="polite"></div>
       <div class="unsaved-alert-dialog-actions">
         <button id="keepEditingAlertsBtn" type="button" class="btn-secondary">Keep editing</button>
@@ -1049,9 +973,9 @@
           class="unsaved-alert-dialog virtual-trade-create-dialog"
           aria-labelledby="stockDemoTradeDialogTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">Paper trading &middot; no real order</span>
+      <span class="unsaved-alert-kicker">Demo trading &middot; no real order</span>
       <h2 id="stockDemoTradeDialogTitle">Create demo trade</h2>
-      <p id="stockDemoTradeExplanation">The current quote and selected interval's technical state will be captured when you confirm.</p>
+      <p id="stockDemoTradeExplanation">Confirm to save the current price and analysis for the selected interval.</p>
       <div class="virtual-trade-size-mode" role="group" aria-label="Demo trade sizing">
         <button type="button" class="active" data-stock-demo-size-mode="none">Percentage only</button>
         <button type="button" data-stock-demo-size-mode="quantity">Quantity</button>
@@ -1075,9 +999,13 @@
   const ticker = /*[[${symbol}]]*/ 'AAPL';
   const selectedMic = /*[[${selectedMic}]]*/ null;
   const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
+    StockWatchCharts.preserveColors([ELLIOTT_MOTIVE_COLOR]);
   const ELLIOTT_CORRECTIVE_COLOR = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
+    StockWatchCharts.preserveColors([ELLIOTT_CORRECTIVE_COLOR]);
   const ELLIOTT_SUBWAVE_COLOR = /*[[${elliottSubwaveColor}]]*/ '#F59E0B';
+    StockWatchCharts.preserveColors([ELLIOTT_SUBWAVE_COLOR]);
   const HARMONIC_FORMATION_COLOR = /*[[${harmonicFormationColor}]]*/ '#22C55E';
+    StockWatchCharts.preserveColors([HARMONIC_FORMATION_COLOR]);
 </script>
 <script th:src="@{/js/stock-workspace.js}"></script>
 </body>

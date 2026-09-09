@@ -27,6 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties = "alerts.schedule.enabled=false")
+@org.springframework.context.annotation.Import(org.example.stockwatch247.support.DesignPreviewCapture.class)
 @AutoConfigureMockMvc
 @Transactional
 class UsabilityFlowIntegrationTest {

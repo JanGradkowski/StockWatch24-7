@@ -6,11 +6,11 @@
     <div class="settings-card-heading">
       <div><span class="settings-number">01</span><h2>Harmonic Formation definitions</h2></div>
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
-            th:text="${preferences.custom()} ? 'Custom definitions' : 'Factory definitions'">Factory definitions</span>
+            th:text="${preferences.custom()} ? 'Custom definitions' : 'Default settings'">Default settings</span>
     </div>
-    <p class="analysis-settings-intro">Control pivot construction, Fibonacci percentages, and the hard-versus-soft ratio gates used for Gartley, Bat, Butterfly, Crab, Shark, and Cypher detection. One profile applies consistently to daily, weekly, and monthly formations.</p>
+    <p class="analysis-settings-intro">Set turning-point and Fibonacci rules for harmonic patterns. These settings apply to daily, weekly and monthly charts.</p>
     <div class="analysis-safety-strip elliott-definition-guide">
-      <strong>Locked structural validity</strong>
+      <strong>Required pattern rules</strong>
       <span>Direction, chronological pivot order, alternating highs/lows, inside/outside completion, and pattern-specific point boundaries always remain hard rules.</span>
       <span>A hard ratio accepts only the base Fibonacci tolerance. A soft ratio may exceed it by the pattern&rsquo;s extra soft-rule allowance and loses score as it stretches.</span>
       <span>Changes affect future alerts and newly reconstructed overlays. Saved signals retain their original geometry and score evidence.</span>
@@ -30,7 +30,7 @@
             <small th:text="${setting.description()}">Description</small>
           </label>
           <label class="candlestick-value-control" th:for="${'harmonic-global-' + setting.key()}">
-            <span>Value <small>Factory: <b th:text="${setting.factoryValue() + ' ' + setting.unit()}">4 %</b></small></span>
+            <span>Value <small>Default: <b th:text="${setting.factoryValue() + ' ' + setting.unit()}">4 %</b></small></span>
             <span><input type="number" required inputmode="decimal" th:id="${'harmonic-global-' + setting.key()}"
                          th:name="${'global.' + setting.key()}" th:min="${setting.min()}" th:max="${setting.max()}"
                          th:step="${setting.step()}" th:value="${setting.value()}"><b th:text="${setting.unit()}">%</b></span>
@@ -49,7 +49,7 @@
         </div>
         <div class="candlestick-pattern-heading-actions">
           <span class="analysis-profile-state" th:classappend="${profile.factoryProfile()} ? '' : ' custom'"
-                th:text="${profile.factoryProfile()} ? 'Factory' : 'Custom'">Factory</span>
+                th:text="${profile.factoryProfile()} ? 'Default' : 'Custom'">Default</span>
           <button class="danger-outline-button" type="submit" th:form="${profile.key() + '-harmonic-reset-form'}">Reset this pattern</button>
         </div>
       </div>
@@ -59,12 +59,12 @@
         <label class="elliott-switch-row harmonic-enabled-row">
           <input type="checkbox" th:name="${'pattern.' + profile.key() + '.enabled'}" value="true" th:checked="${profile.enabled()}">
           <span class="elliott-switch-control" aria-hidden="true"></span>
-          <span><strong>Detect this formation</strong><small>When disabled, this pattern is excluded from overlays, historical reconstruction, and future alerts.</small><em>Factory: enabled</em></span>
+          <span><strong>Detect this formation</strong><small>When disabled, this pattern is excluded from overlays, historical reconstruction, and future alerts.</small><em>Default: enabled</em></span>
         </label>
         <label class="elliott-switch-row" th:each="hardRule : ${profile.hardRules()}">
           <input type="checkbox" th:name="${'pattern.' + profile.key() + '.hard.' + hardRule.group().name()}" value="true" th:checked="${hardRule.hard()}">
           <span class="elliott-switch-control" aria-hidden="true"></span>
-          <span><strong th:text="${hardRule.label()}">B-point ratio is hard</strong><small th:text="${hardRule.description()}">Reject outside tolerance.</small><em>Disable to allow a scored violation up to the extra allowance below.</em><b>Factory: hard</b></span>
+          <span><strong th:text="${hardRule.label()}">B-point ratio is hard</strong><small th:text="${hardRule.description()}">Reject outside tolerance.</small><em>Turn off to accept deviations within the extra allowance, with a lower score.</em><b>Default: hard</b></span>
         </label>
       </div>
 
@@ -75,7 +75,7 @@
           <em>Larger values accept more stretched geometry, but those deviations reduce the harmonic score.</em>
         </label>
         <label class="candlestick-value-control" th:for="${profile.key() + '-soft-tolerance'}">
-          <span>Value <small>Factory: <b>5%</b></small></span>
+          <span>Value <small>Default: <b>5%</b></small></span>
           <span><input type="number" required inputmode="decimal" min="0" max="25" step="0.1"
                        th:id="${profile.key() + '-soft-tolerance'}"
                        th:name="${'pattern.' + profile.key() + '.softViolationPercent'}"
@@ -86,7 +86,7 @@
       <section class="elliott-rule-section">
         <div class="elliott-rule-section-heading">
           <div><span class="elliott-rule-kicker">Ratios</span><h3>Fibonacci definition</h3></div>
-          <p>Values are percentages of the price leg named in each label. For example, 61.8% is stored and evaluated as 0.618.</p>
+          <p>Values are percentages of the price leg named in each label. For example, 61.8% means 61.8% of that price move.</p>
         </div>
         <div class="elliott-setting-list">
           <div class="candlestick-threshold-row elliott-number-row" th:each="setting : ${profile.ratios()}">
@@ -95,7 +95,7 @@
               <small th:text="${setting.description()}">Price-length ratio.</small>
             </label>
             <label class="candlestick-value-control" th:for="${profile.key() + '-' + setting.key()}">
-              <span>Value <small>Factory: <b th:text="${setting.factoryValue() + '%'}">61.8%</b></small></span>
+              <span>Value <small>Default: <b th:text="${setting.factoryValue() + '%'}">61.8%</b></small></span>
               <span><input type="number" required inputmode="decimal" th:id="${profile.key() + '-' + setting.key()}"
                            th:name="${'pattern.' + profile.key() + '.' + setting.key()}"
                            th:min="${setting.min()}" th:max="${setting.max()}" th:step="${setting.step()}"
@@ -107,7 +107,7 @@
     </section>
 
     <section class="settings-card analysis-save-card candlestick-pattern-save-card">
-      <div><strong>Apply Harmonic Formation definitions</strong><p>Ranges, tolerances, and hard/soft groups are validated before the profile is stored.</p></div>
+      <div><strong>Apply Harmonic Formation definitions</strong><p>Save the ratios, tolerances and required rules for future detections.</p></div>
       <button class="btn-accent" type="submit">Apply changes</button>
     </section>
   </form>
@@ -118,11 +118,11 @@
   </form>
 
   <section class="settings-card analysis-factory-zone candlestick-pattern-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">09</span><h2>Factory restoration</h2></div><p>Scoring, email, appearance, candlestick, and Elliott settings remain unchanged.</p></div>
+    <div class="settings-card-heading"><div><span class="settings-number">09</span><h2>Reset to defaults</h2></div><p>Scoring, email, appearance, candlestick, and Elliott settings remain unchanged.</p></div>
     <form th:action="@{/settings/harmonic-formations/reset}" method="post" class="settings-action-row">
       <input type="hidden" name="pattern" value="all">
-      <div><h3>Restore every harmonic definition</h3><p>Returns all shared tolerances, Fibonacci ratios, enabled patterns, and hard-rule groups to StockWatch factory values.</p></div>
-      <button class="danger-button" type="submit">Restore factory definitions</button>
+      <div><h3>Restore every harmonic definition</h3><p>Returns all shared tolerances, Fibonacci ratios, enabled patterns, and hard-rule groups to StockWatch defaults.</p></div>
+      <button class="danger-button" type="submit">Restore defaults</button>
     </form>
   </section>
 </div>

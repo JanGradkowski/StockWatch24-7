@@ -372,7 +372,7 @@ public class VirtualTradeService {
         try {
             return VirtualTradeSide.valueOf(raw == null ? "" : raw.toUpperCase(Locale.ROOT));
         } catch (RuntimeException exception) {
-            throw new IllegalArgumentException("Choose Virtual Buy or Virtual Sell.");
+            throw new IllegalArgumentException("Choose Demo buy or Demo sell.");
         }
     }
 
@@ -390,7 +390,7 @@ public class VirtualTradeService {
     }
 
     private static String sideLabel(VirtualTradeSide side) {
-        return side == VirtualTradeSide.BUY ? "Virtual Buy" : "Virtual Sell";
+        return side == VirtualTradeSide.BUY ? "Demo buy" : "Demo sell";
     }
 
     private static String statusLabel(VirtualTradeStatus status) {
@@ -400,7 +400,7 @@ public class VirtualTradeService {
     private static String outcomeLabel(VirtualTradeSide side, double percent) {
         if (Math.abs(percent) < 0.000001) return "No change";
         if (side == VirtualTradeSide.BUY) return percent > 0 ? "Gain" : "Loss";
-        return percent > 0 ? "Avoided loss" : "Missed upside";
+        return percent > 0 ? "Avoided loss" : "Missed gain";
     }
 
     private static String interval(TimeInterval interval) {

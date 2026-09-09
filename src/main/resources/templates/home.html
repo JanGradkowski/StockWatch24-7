@@ -6,6 +6,8 @@
   <title>Dashboard — StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/dashboard.js}" defer></script>
 </head>
 <body class="history-back-disabled">
@@ -19,11 +21,11 @@
 <main class="dashboard-container">
   <header class="app-hero welcome-header">
     <div class="app-hero-copy">
-      <div class="eyebrow">Personal market desk</div>
+      <div class="eyebrow">Your watchlist</div>
       <h1 class="welcome-text">Good to see you, <span class="primary-text" th:text="${firstName}">Trader</span>.</h1>
-      <p class="welcome-subtitle">Your automated signal desk is ready. Search for a stock, ETF, or index above to inspect its chart or configure another alert.</p>
+      <p class="welcome-subtitle">Search for a stock, ETF, or index to view its chart or set up alerts.</p>
     </div>
-    <div class="hero-status">Monitoring online</div>
+    <div class="hero-status">Automatic alerts</div>
   </header>
 
   <div class="grid-layout" data-dashboard-view-layout>
@@ -34,16 +36,15 @@
                aria-labelledby="latest-signals-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">Unread technical detections and outlook changes</div>
+            <div class="panel-kicker">New signals and outlook changes</div>
             <h2 id="latest-signals-heading" class="panel-title">Latest signals <span class="panel-count" th:text="${#lists.size(latestSignalItems)}">0</span></h2>
           </div>
           <div class="panel-heading-actions">
-            <span class="panel-meta">Open a signal to review what changed</span>
             <a th:href="@{/signals(state='unread')}" class="text-link">Unread archive</a>
           </div>
         </div>
 
-        <p class="panel-meta dashboard-score-help">Pattern scores are evidence ratings out of 100, not probabilities. Outlook percentages describe the outlook score, not investment returns.</p>
+        <details class="dashboard-score-help"><summary>About scores</summary><p>Pattern scores are evidence ratings out of 100, not probabilities. Outlook percentages describe the outlook score, not investment returns.</p></details>
 
         <div th:if="${#lists.isEmpty(latestSignalItems)}" class="latest-signals-empty">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
@@ -157,14 +158,14 @@
                aria-labelledby="watch-desk-heading">
       <div class="panel-heading watch-panel-heading">
         <div>
-          <h2 id="watch-desk-heading" class="panel-title">Market watch desk <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
-          <span class="panel-meta">Open an instrument to see every followed rule</span>
+          <h2 id="watch-desk-heading" class="panel-title">Watchlist <span class="panel-count" th:text="${#lists.size(trackedCompanies)}">0</span></h2>
+          <span class="panel-meta">Open a stock to manage its alerts</span>
         </div>
         <div class="watch-heading-actions">
-          <div class="temporary-market-test-control">
+          <details class="watchlist-management"><summary>Manage watchlist</summary><div class="temporary-market-test-control">
             <div class="temporary-market-test-actions">
-              <button id="followTopUs200Button" type="button" class="btn-accent temporary-market-test-button">
-                Follow top 200 U.S. (test)
+              <button id="followTopUs200Button" type="button" class="btn-secondary temporary-market-test-button">
+                Follow top 200 U.S. stocks
               </button>
               <button id="unfollowAllTickersButton"
                       type="button"
@@ -175,6 +176,10 @@
             </div>
             <span id="followTopUs200Status" class="temporary-market-test-status" role="status" aria-live="polite"></span>
           </div>
+      <p class="temporary-market-test-note">
+        Adds 18 technical alert rules per stock: buy and sell rules for three pattern families across daily, weekly and monthly intervals. Insider and congressional alerts are separate.
+      </p>
+          </details>
           <div class="watch-filter-tabs" role="group" aria-label="Filter followed instruments">
             <button id="watchFilterStocks"
                     type="button"
@@ -198,14 +203,12 @@
         </div>
       </div>
 
-      <p class="temporary-market-test-note">
-        Temporary load-test shortcut: activates Candlestick, Elliott Wave, and Harmonic Formation BUY and SELL rules on daily, weekly, and monthly intervals (18 rules per company). It does not follow Insider or Congress alerts.
-      </p>
+
 
       <div id="followedInstrumentList" th:if="${#lists.isEmpty(trackedCompanies)}" class="empty-state-card">
         <div class="empty-state-inner">
           <div class="empty-icon" aria-hidden="true">⌁</div>
-          <h3>Your alert desk is quiet</h3>
+          <h3>No alerts set up yet</h3>
           <p>Use the market search in the navigation bar, open an instrument, and switch on the technical signals you want monitored.</p>
         </div>
       </div>
@@ -292,9 +295,9 @@
                aria-labelledby="ticker-alerts-view-heading"
                hidden>
         <div>
-          <div class="panel-kicker">Company-event monitoring</div>
-          <h2 id="ticker-alerts-view-heading">Insider &amp; Congress Alerts</h2>
-          <p>Follow material company activity without mixing it into technical chart signals. Congressional disclosures and corporate insider filings are monitored as distinct, explainable sources.</p>
+          <div class="panel-kicker">Insider and congressional filings</div>
+          <h2 id="ticker-alerts-view-heading">Ticker alerts</h2>
+          <p>Purchases and sales reported by company insiders and members of Congress.</p>
         </div>
         <div class="ticker-alerts-summary-grid">
           <div class="ticker-alerts-summary">
@@ -319,7 +322,7 @@
                aria-labelledby="latest-ticker-notifications-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">Fresh from followed company events</div>
+            <div class="panel-kicker">New filings for stocks you follow</div>
             <h2 id="latest-ticker-notifications-heading" class="panel-title">
               Latest notifications
               <span class="panel-count" data-notification-count th:text="${tickerNotificationUnreadCount}">0</span>
@@ -334,7 +337,7 @@
                     data-read-all-source="ALL"
                     th:hidden="${tickerNotificationUnreadCount == 0}"
                     data-read-endpoints="/api/congressional-activity/notifications/read-all|/api/insider-activity/notifications/read-all">Mark all as read</button>
-            <a th:href="@{/activity-signals}" class="btn-secondary panel-action-button">All activity signals</a>
+            <a th:href="@{/activity-signals}" class="btn-secondary panel-action-button">All ticker alerts</a>
           </div>
         </div>
 
@@ -346,7 +349,7 @@
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
             <h3>No unread ticker notifications</h3>
-            <p>Newly observed filings will appear here. Notifications you mark as read remain available in All activity signals.</p>
+            <p>Newly observed filings will appear here. Notifications you mark as read remain available in All ticker alerts.</p>
           </div>
         </div>
 
@@ -415,7 +418,7 @@
                aria-labelledby="congressional-dashboard-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">Public disclosure monitor</div>
+            <div class="panel-kicker">Congressional filings</div>
             <h2 id="congressional-dashboard-heading" class="panel-title">
               Congressional activity
               <span class="panel-count" data-notification-count th:text="${congressionalUnreadCount}">0</span>
@@ -441,7 +444,7 @@
              th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"
              class="congressional-follow-chip">
             <strong th:text="${stock.symbol()}">AAPL</strong>
-            <span th:if="${stock.baselinePending()}">baseline pending</span>
+            <span th:if="${stock.baselinePending()}">Preparing alerts</span>
           </a>
         </div>
 
@@ -455,7 +458,7 @@
               Open a stock and switch on congressional activity alerts to start following newly reported purchases and sales.
             </p>
             <p th:unless="${#lists.isEmpty(congressionalFollowedStocks)}">
-              Your followed stocks are active. New disclosures observed after each follow began will appear here and be sent by email.
+              New filings will appear here. Emails follow your notification settings.
             </p>
           </div>
         </div>
@@ -537,7 +540,7 @@
                aria-labelledby="insider-dashboard-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">SEC corporate filing monitor</div>
+            <div class="panel-kicker">Insider filings</div>
             <h2 id="insider-dashboard-heading" class="panel-title">
               Corporate insider activity
               <span class="panel-count" data-notification-count th:text="${insiderUnreadCount}">0</span>
@@ -563,7 +566,7 @@
              th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"
              class="congressional-follow-chip">
             <strong th:text="${stock.symbol()}">AAPL</strong>
-            <span th:if="${stock.baselinePending()}">baseline pending</span>
+            <span th:if="${stock.baselinePending()}">Preparing alerts</span>
           </a>
         </div>
 
@@ -577,7 +580,7 @@
               Open a stock and follow corporate insider activity to monitor newly filed purchases and sales.
             </p>
             <p th:unless="${#lists.isEmpty(insiderFollowedStocks)}">
-              Daily checks are active. New filings observed after each baseline was established will appear here and be sent by email.
+              New filings will appear here. Emails follow your notification settings.
             </p>
           </div>
         </div>
@@ -642,8 +645,7 @@
           <a href="https://api-ninjas.com/api/insidertrading"
              target="_blank"
              rel="noopener noreferrer">API Ninjas</a>.
-          Each free-tier check merges the 10 latest rows into StockWatch's accumulated archive;
-          larger bursts between daily checks can still be missed.
+          Coverage is limited to the latest 10 filings per check, so busy periods may have gaps.
           Directional return measures a purchase rising or a sale being followed by a decline, from the filed price to the latest completed close.
           It is not a realized return or a recommendation.
         </p>
@@ -657,50 +659,31 @@
                class="metrics-grid dashboard-sidebar-metrics"
                aria-label="Technical monitoring overview">
         <article class="metric-card">
-          <span class="metric-label">Technical instruments</span>
+          <span class="metric-label">Followed instruments</span>
           <strong class="metric-value" th:text="${#lists.size(trackedCompanies)}">0</strong>
-          <span class="metric-note">Unique instruments with active signal rules</span>
+          <span class="metric-note">Stocks, indexes and ETFs with alerts</span>
         </article>
         <article class="metric-card">
           <span class="metric-label">Active rules</span>
           <strong class="metric-value" th:text="${activeRuleCount}">0</strong>
-          <span class="metric-note">Technical combinations currently followed</span>
+          <span class="metric-note">Pattern, direction and interval combinations</span>
         </article>
         <article class="metric-card">
           <span class="metric-label">Latest signals</span>
           <strong class="metric-value" th:text="${#lists.size(latestSignalItems)}">0</strong>
-          <span class="metric-note">Unread validated technical matches</span>
+          <span class="metric-note">Unread signals and outlook changes</span>
         </article>
         <article class="metric-card">
-          <span class="metric-label">Recovery mode</span>
-          <strong class="metric-value market-up">Armed</strong>
+          <span class="metric-label">Missed checks</span>
+          <strong class="metric-value market-up">Retried</strong>
           <span class="metric-note">Missed scheduled checks resume after restart</span>
         </article>
       </section>
 
-      <section id="systemPulsePanel"
-               class="glass-panel dashboard-panel system-pulse-panel">
-        <div class="panel-heading">
-          <h2 class="panel-title">System pulse</h2>
-          <span class="panel-meta">Live</span>
-        </div>
-        <div class="system-stack">
-          <div class="system-item">
-            <div class="status-label">Scheduler</div>
-            <div class="status-value">Online &amp; polling</div>
-            <p class="system-copy">Scheduled candle checks continue in the background while the application is running.</p>
-          </div>
-          <div class="system-item">
-            <div class="status-label">Delivery recovery</div>
-            <div class="status-value">Protected</div>
-            <p class="system-copy">Eligible work missed during downtime is picked back up after the next start.</p>
-          </div>
-        </div>
-        <div class="quick-search-card">
-          <strong>Explore another market</strong>
-          <p>Search a company name, ticker, or index in the navigation bar to open its analysis workspace.</p>
-        </div>
-      </section>
+      <details id="systemPulsePanel" class="glass-panel dashboard-panel system-pulse-panel">
+        <summary>About monitoring</summary>
+        <p>Checks run in the background while StockWatch is running. Missed scheduled checks resume after a restart.</p>
+      </details>
     </aside>
   </div>
 </main>
@@ -714,7 +697,7 @@
     <p>Choose which technical rules to stop following for <strong id="unfollowCompanyName">this company</strong>.</p>
     <p>Select individual rules below, or delete every listed rule at once:</p>
     <ul id="unfollowCompanyRuleList" class="company-unfollow-rule-list"></ul>
-    <p class="company-unfollow-history-note">Existing signal history will remain available. Insider &amp; Congress Alerts are not affected.</p>
+    <p class="company-unfollow-history-note">Existing signal history will remain available. Ticker alerts are not affected.</p>
     <p id="unfollowCompanyStatus" class="unsaved-alert-dialog-status" role="status"></p>
     <div class="unsaved-alert-dialog-actions">
       <button id="cancelUnfollowCompany" type="button" class="btn-secondary">Keep following</button>

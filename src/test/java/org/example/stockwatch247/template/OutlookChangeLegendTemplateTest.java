@@ -31,7 +31,7 @@ class OutlookChangeLegendTemplateTest {
         assertThat(html).containsOnlyOnce("id=\"outlookChangeOverlayLegend\"")
                 .containsOnlyOnce("id=\"outlookChangePanelLegend\"")
                 .contains("src=\"/js/chart-legend.js\"", "nonce=\"test-nonce\"",
-                        "Visibility changes do not affect this saved outlook.");
+                        "This does not change the saved analysis.");
         assertThat(html.indexOf("src=\"/js/chart-legend.js\""))
                 .isLessThan(html.indexOf("StockWatchChartLegend.mount"));
     }

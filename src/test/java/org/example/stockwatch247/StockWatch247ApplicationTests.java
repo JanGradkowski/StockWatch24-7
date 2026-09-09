@@ -67,6 +67,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 
 @SpringBootTest(properties = "alerts.schedule.enabled=false")
+@org.springframework.context.annotation.Import(org.example.stockwatch247.support.DesignPreviewCapture.class)
 @AutoConfigureMockMvc
 class StockWatch247ApplicationTests {
     private final List<Long> sessionFixtureUsers = new ArrayList<>();
@@ -140,7 +141,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("technical-outlook"))
                 .andExpect(model().attribute("symbol", "AAPL"))
-                .andExpect(content().string(containsString("Full Technical Outlook")))
+                .andExpect(content().string(containsString("Technical Outlook")))
                 .andExpect(content().string(containsString("General outlook")))
                 .andExpect(content().string(containsString("Score report")))
                 .andExpect(content().string(containsString("Market comparison")));
@@ -254,7 +255,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("all-activity-signals"))
                 .andExpect(model().attributeExists("archive"))
-                .andExpect(content().string(containsString("All activity signals")))
+                .andExpect(content().string(containsString("All ticker alerts")))
                 .andExpect(content().string(containsString("Buyer / seller name")))
                 .andExpect(content().string(containsString("No activity signals have been received yet")));
     }
@@ -421,7 +422,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(model().attributeExists("signal"))
                 .andExpect(header().string("Content-Security-Policy",
                         containsString("style-src-attr 'unsafe-inline'")))
-                .andExpect(content().string(containsString("Graphical outlook")))
+                .andExpect(content().string(containsString("Chart")))
                 .andExpect(content().string(containsString("Technical analysis")))
                 .andExpect(content().string(containsString("Transaction details")))
                 .andExpect(content().string(containsString("id=\"signalChart\"")))
@@ -538,14 +539,14 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Authenticator app")))
                 .andExpect(content().string(containsString("Danger zone")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
-                        containsString("Personal analysis profile"))));
+                        containsString("Analysis settings"))));
 
         mockMvc.perform(get("/settings/appearance").with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("settings"))
                 .andExpect(content().string(containsString(
                         "<h1 id=\"settingsPageTitle\"><span>Appearance</span></h1>")))
-                .andExpect(content().string(containsString("Workspace appearance")))
+                .andExpect(content().string(containsString("Choose your theme and chart colours.")))
                 .andExpect(content().string(containsString("Motive I–V")))
                 .andExpect(content().string(containsString("Corrective A–B–C")))
                 .andExpect(content().string(containsString("Apply changes")));
@@ -555,10 +556,10 @@ class StockWatch247ApplicationTests {
                 .andExpect(view().name("settings"))
                 .andExpect(content().string(containsString(
                         "<h1 id=\"settingsPageTitle\"><span>Analysis &amp; Alerts</span></h1>")))
-                .andExpect(content().string(containsString("Personal analysis profile")))
+                .andExpect(content().string(containsString("Analysis settings")))
                 .andExpect(content().string(containsString("Elliott lifecycle tracking")))
                 .andExpect(content().string(containsString("RSI period")))
-                .andExpect(content().string(containsString("Restore all factory settings")));
+                .andExpect(content().string(containsString("Reset analysis and email settings")));
 
         mockMvc.perform(get("/settings/detection").with(user(email)))
                 .andExpect(status().isOk())
@@ -568,8 +569,8 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Candlestick trend detection")))
                 .andExpect(content().string(containsString("Minimum trend move (%)")))
                 .andExpect(content().string(containsString("Required directional confirmations")))
-                .andExpect(content().string(containsString("Adaptive trend structure plus an independently calculated original move/count rule")))
-                .andExpect(content().string(containsString("opposite directional results reject the trend")))
+                .andExpect(content().string(containsString("Price structure, minimum move and directional candles")))
+                .andExpect(content().string(containsString("opposite results reject it")))
                 .andExpect(content().string(containsString("value=\"3.0\"")))
                 .andExpect(content().string(containsString("Original-rule window candles")))
                 .andExpect(content().string(containsString("Restore detection defaults")));
@@ -637,8 +638,8 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(get("/about"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("about"))
-                .andExpect(content().string(containsString("Technical signals")))
-                .andExpect(content().string(containsString("CANDLE_V4_EXPERIMENTAL")))
+                .andExpect(content().string(containsString("Technical analysis")))
+                .andExpect(content().string(containsString("A pattern must meet its shape and prior-trend rules")))
                 .andExpect(content().string(containsString("ELLIOTT_V1")));
     }
 
@@ -822,12 +823,12 @@ class StockWatch247ApplicationTests {
                 .andExpect(view().name("stock"))
                 .andExpect(model().attribute("symbol", "^GSPC"))
                 .andExpect(content().string(containsString("class=\"price-header-demo-trading\"")))
-                .andExpect(content().string(containsString("aria-controls=\"historicalCandlestickViewDialog\"")))
+                .andExpect(content().string(containsString("aria-controls=\"historicalCandlestickLookbackDialog\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(containsString("Pattern research"))))
                 .andExpect(content().string(org.hamcrest.Matchers.not(containsString("showHistoricalCandlestickPatternsBtn"))))
                 .andExpect(content().string(containsString("class=\"alert-eye-input\"")))
                 .andExpect(content().string(containsString("class=\"alert-panel alert-star-panel\"")))
-                .andExpect(content().string(containsString("An outlined star is not followed; a filled star is followed.")))
+                .andExpect(content().string(containsString("Filled stars indicate alerts you follow.")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(containsString("check-alert-btn"))))
                 .andExpect(content().string(containsString("id=\"rsiOverlayToggle\"")))
                 .andExpect(content().string(containsString("id=\"volumeChartToggle\"")))
@@ -986,7 +987,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(model().attributeExists("archive", "companyArchive"))
                 .andExpect(content().string(containsString("Company signal archive")))
                 .andExpect(content().string(containsString(symbol + " signals")))
-                .andExpect(content().string(containsString("Group and sort by")))
+                .andExpect(content().string(containsString("Sort by")))
                 .andExpect(content().string(containsString("Select this page")))
                 .andExpect(content().string(containsString("Trade outcome")))
                 .andExpect(content().string(containsString("Sold at target")))
@@ -1005,8 +1006,8 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("all-signals"))
                 .andExpect(model().attributeExists("archive"))
-                .andExpect(content().string(containsString("Account signal archive")))
-                .andExpect(content().string(containsString("Group and sort by")))
+                .andExpect(content().string(containsString("Technical signals")))
+                .andExpect(content().string(containsString("Sort by")))
                 .andExpect(content().string(containsString("Signal status")))
                 .andExpect(content().string(containsString("Setup score")))
                 .andExpect(content().string(containsString("value=\"confidence\"")))
@@ -1032,14 +1033,14 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("signal-detail"))
                 .andExpect(model().attributeExists("signal"))
-                .andExpect(content().string(containsString("Graphical outlook")))
+                .andExpect(content().string(containsString("Chart")))
                 .andExpect(content().string(containsString("Score report")))
                 .andExpect(content().string(containsString("id=\"signalChart\"")))
                 .andExpect(content().string(containsString("data-chart-kind=\"technical\"")))
                 .andExpect(content().string(containsString("data-native-interval-notice")))
                 .andExpect(content().string(containsString("data-detail-interval=\"1mo\"")))
                 .andExpect(content().string(containsString("Required downtrend")))
-                .andExpect(content().string(containsString("Complete cached interval history")))
+                .andExpect(content().string(containsString("Available price history")))
                 .andExpect(content().string(containsString("Why this score")))
                 .andExpect(content().string(containsString("Signal lifecycle timeline")))
                 .andExpect(content().string(containsString("Close-based trade outcome")))
@@ -1048,7 +1049,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Terminal update")))
                 .andExpect(content().string(containsString("Confirmed")))
                 .andExpect(content().string(containsString("20\u201324 Jul 2026")))
-                .andExpect(content().string(containsString("Lifecycle processed")))
+                .andExpect(content().string(containsString("Outcome checked")))
                 .andExpect(content().string(containsString("Setup score 88 out of 100")))
                 .andExpect(content().string(containsString("Strict bullish candle-pattern geometry.")))
                 .andExpect(content().string(containsString("RSI is rising versus the previous candle")))

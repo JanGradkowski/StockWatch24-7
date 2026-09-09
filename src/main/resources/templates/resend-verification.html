@@ -6,6 +6,8 @@
   <title>Resend verification — StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body class="auth-page">
 <div class="bg-animation" aria-hidden="true">
@@ -21,12 +23,12 @@
     </a>
     <div class="auth-pitch">
       <div class="eyebrow">Account verification</div>
-      <h1>One last<br><span class="text-gradient">security check.</span></h1>
-      <p>Verify your email to protect the alerts and market activity connected to your account.</p>
+      <h1>Verify your<br><span class="text-gradient">email address.</span></h1>
+      <p>Request a new link if the first email did not arrive or has expired.</p>
     </div>
     <div class="auth-signal-card" aria-hidden="true">
       <span class="auth-signal-icon">✦</span>
-      <span class="auth-signal-copy"><strong>Privacy-preserving response</strong><span>Account eligibility is never disclosed</span></span>
+      <span class="auth-signal-copy"><strong>Check your inbox</strong><span>The link completes email verification</span></span>
       <span class="auth-signal-score">SECURE</span>
     </div>
   </section>
@@ -34,7 +36,7 @@
   <section class="auth-card">
     <div class="auth-kicker">Email verification</div>
     <h2>Request a new link</h2>
-    <p class="auth-description">Enter the account email and password. For privacy, the result is identical whether or not the account is eligible.</p>
+    <p class="auth-description">Enter your account email and password to request a new link.</p>
     <form th:action="@{/resend-verification}" method="post">
       <div class="form-group">
         <label for="resendEmail">Email address</label>

@@ -188,7 +188,7 @@
         alternateContainer.hidden = false;
 
         const colors = chartColors();
-        alternateChart = LightweightCharts.createChart(alternateContainer, {
+        alternateChart = StockWatchCharts.createChart(alternateContainer, {
             autoSize: true,
             layout: {
                 textColor: colors.text,
@@ -304,7 +304,7 @@
             alternateContainer.hidden = true;
             if (intervalError) intervalError.hidden = false;
             if (intervalErrorMessage) {
-                intervalErrorMessage.textContent = error.message || 'Completed candles could not be loaded for this interval.';
+                intervalErrorMessage.textContent = error.message || 'Price history is unavailable for this interval.';
             }
             if (status) status.textContent = `${intervalName(interval)} chart unavailable`;
             setSelectedButton(interval);

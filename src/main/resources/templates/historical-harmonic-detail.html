@@ -6,8 +6,11 @@
   <title th:text="${harmonic.symbol() + ' ' + harmonic.patternLabel() + ' — Historical signal'}">Historical harmonic signal</title>
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/chart-theme.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true">
@@ -19,7 +22,7 @@
 <main class="page-container signal-detail-page historical-harmonic-detail-page">
   <header class="signal-report-header">
     <div>
-      <div class="signal-report-eyebrow">Cached historical harmonic analysis</div>
+      <div class="signal-report-eyebrow">Historical harmonic signal</div>
       <h1 th:text="${harmonic.direction() + ' ' + harmonic.patternLabel()}">Bullish Gartley</h1>
       <p class="signal-report-identity">
         <strong th:text="${harmonic.symbol()}">MSFT</strong>
@@ -54,7 +57,7 @@
             aria-controls="graphicalOutlookPanel"
             data-signal-tab="graphical">
       <span class="signal-tab-icon" aria-hidden="true">&#9650;</span>
-      <span><strong>Graphical outlook</strong><small>See the complete formation on its chart</small></span>
+      <span><strong>Chart</strong><small>See the complete formation on its chart</small></span>
     </button>
     <button id="scoreReportTab"
             class="signal-view-tab"
@@ -75,7 +78,7 @@
             data-signal-tab="results"
             th:attr="data-results-available=${harmonic.result().available()}">
       <span class="signal-tab-icon results" aria-hidden="true">%</span>
-      <span><strong>Results</strong><small>Measure the cached forward outcome</small></span>
+      <span><strong>Results</strong><small>See price changes after the signal</small></span>
     </button>
   </nav>
 
@@ -86,7 +89,7 @@
   <section class="signal-score-layout" aria-labelledby="historical-harmonic-score-heading">
     <article class="signal-score-card"
              th:classappend="${' ' + displayScore.band()}">
-      <div class="signal-score-card-topline"><div><span class="signal-section-kicker">Geometry and cross-pattern confluence</span>
+      <div class="signal-score-card-topline"><div><span class="signal-section-kicker">Pattern score</span>
         <h2 id="historical-harmonic-score-heading">Setup score</h2></div>
         <span class="signal-confidence-pill" th:text="${displayScore.strengthLabel()}">High compliance</span>
       </div>
@@ -144,9 +147,9 @@
   <section class="signal-method-note harmonic-geometry-note" aria-labelledby="historical-harmonic-ratios-heading">
     <div class="method-note-index" aria-hidden="true">01</div>
     <div class="harmonic-geometry-content">
-      <div class="signal-section-kicker">Classifier snapshot</div>
+      <div class="signal-section-kicker">Saved pattern</div>
       <h2 id="historical-harmonic-ratios-heading">Formation geometry</h2>
-      <p>The detector reconstructed these terminal pivots and measured relationships from completed candles.</p>
+      <p>Turning points and price ratios calculated from completed candles.</p>
       <div class="harmonic-geometry-groups">
         <section class="harmonic-geometry-group" aria-labelledby="historical-harmonic-points-heading">
           <div class="harmonic-geometry-group-heading">
@@ -216,16 +219,16 @@
       </li>
     </ol>
     <p class="signal-lifecycle-note">
-      This reconstruction uses completed cached candles and does not imply that an alert was sent on the historical date.
+      This reconstruction uses completed candles and does not imply that an alert was sent on the historical date.
     </p>
   </section>
 
   <section class="signal-evidence-section" aria-labelledby="historical-harmonic-evidence-heading">
     <div class="signal-evidence-heading">
       <div>
-        <div class="signal-section-kicker">Reconstructed harmonic evidence</div>
+        <div class="signal-section-kicker">Score breakdown</div>
         <h2 id="historical-harmonic-evidence-heading">Why this score</h2>
-        <p>All hard rules passed; these cards show the accepted soft-ratio fit and deductions.</p>
+        <p>All required rules passed. The breakdown shows where deviations reduced the score.</p>
       </div>
       <span class="evidence-count"><span th:text="${displayScore.sections().size()}">3</span>&nbsp;categories</span>
     </div>
@@ -254,7 +257,7 @@
     <div class="method-note-index" aria-hidden="true">01</div>
     <div>
       <div class="signal-section-kicker">Reading this report</div>
-      <h2 id="historical-harmonic-method-heading">Hard validity first, soft fit second</h2>
+      <h2 id="historical-harmonic-method-heading">How the pattern is scored</h2>
       <p>A harmonic signal is rejected when any mandatory direction, pivot-order, or point-boundary rule fails. Valid formations begin at 100, and only tolerated deviations from non-hard Fibonacci targets, leg equality, and preferred completion ratios reduce the score. It is not a probability of profit or financial advice.</p>
     </div>
   </section>
@@ -274,27 +277,27 @@
                       data-best-action-label=${harmonic.result().bestActionLabel()}">
       <div class="signal-results-heading">
         <div>
-          <div class="signal-section-kicker">Historical completed-candle follow-through</div>
-          <h2>Direction-aware result after the harmonic signal</h2>
+          <div class="signal-section-kicker">Price history after the signal</div>
+          <h2>Price change after the harmonic signal</h2>
           <p>The line starts at the confirmation close and measures every subsequent completed close in the signal direction.</p>
         </div>
-        <span class="signal-chart-cache-badge">Cached candles only &middot; no additional API request</span>
+        <span class="signal-chart-cache-badge">Completed closing prices</span>
       </div>
       <div class="signal-results-metrics" aria-live="polite">
         <article><span id="resultHorizonLabel" th:text="${harmonic.result().outcomeLabel()}">Gain / loss</span><strong id="resultHorizonReturn">+0.00%</strong><small id="resultHorizonDifference">+0.0000 per share</small></article>
-        <article><span>Selected-window close</span><strong id="resultHorizonClose">0.0000</strong><small id="resultHorizonPeriod">Period unavailable</small></article>
+        <article><span>Closing price</span><strong id="resultHorizonClose">0.0000</strong><small id="resultHorizonPeriod">Period unavailable</small></article>
         <article class="best-result"><span id="resultBestActionLabel" th:text="${harmonic.result().bestActionLabel()}">Best sell close</span><strong id="resultBestClose">0.0000</strong><small id="resultBestPeriod">Period unavailable</small></article>
-        <article class="best-result"><span>Best direction-aware outcome</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference">+0.0000 per share</small></article>
+        <article class="best-result"><span>Best result in this period</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference">+0.0000 per share</small></article>
       </div>
       <div id="signalResultsChart"
            class="signal-results-chart"
            role="img"
-           th:attr="aria-label=${'Direction-aware historical result chart for the ' + (harmonic.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : harmonic.tradeSignal().name()) + ' harmonic signal on ' + harmonic.symbol()}"></div>
+           th:attr="aria-label=${'Historical return chart for the ' + (harmonic.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : harmonic.tradeSignal().name()) + ' harmonic signal on ' + harmonic.symbol()}"></div>
       <div class="signal-results-legend" aria-label="Results chart color legend">
         <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the signal direction</span>
         <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the signal</span>
         <span><i class="signal-results-key start" aria-hidden="true"></i>Signal start at the confirmation close</span>
-        <span><i class="signal-results-key best" aria-hidden="true"></i>Best exit or re-entry in the selected window</span>
+        <span><i class="signal-results-key best" aria-hidden="true"></i>Best price in this period</span>
       </div>
       <ol id="signalResultsData" hidden aria-hidden="true">
         <li th:each="point : ${harmonic.result().points()}"
@@ -306,7 +309,7 @@
                      data-directional-difference=${point.directionalPriceDifference()}"></li>
       </ol>
       <div class="signal-results-window-control">
-        <div class="signal-results-window-copy"><label for="resultWindowSlider">Forward evaluation window</label><p>Choose how many completed candles after this historical harmonic signal to include.</p></div>
+        <div class="signal-results-window-copy"><label for="resultWindowSlider">Results period</label><p>Choose how many completed candles after this historical harmonic signal to include.</p></div>
         <output id="resultWindowValue" for="resultWindowSlider" th:text="${harmonic.result().requiredForwardCandles() + ' candles'}">10 candles</output>
         <input id="resultWindowSlider"
                type="range"
@@ -318,8 +321,7 @@
         <div class="signal-results-range-labels" aria-hidden="true"><span th:text="${harmonic.result().requiredForwardCandles()}">10</span><span th:text="${harmonic.result().availableForwardCandles()}">42</span></div>
       </div>
       <p class="signal-results-disclaimer">
-        This is a hindsight-based close-to-close measurement, not a simulated trade or forecast. It excludes fees,
-        slippage, taxes, dividends, and position sizing.
+        Historical closing-price changes, excluding fees, slippage, taxes, dividends and position sizing. These are not actual trade returns.
       </p>
     </section>
   </div>
@@ -329,8 +331,8 @@
           class="unsaved-alert-dialog signal-results-unavailable-dialog"
           aria-labelledby="signalResultsUnavailableTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">Historical outcome window incomplete</span>
-      <h2 id="signalResultsUnavailableTitle">Results need more completed candles</h2>
+      <span class="unsaved-alert-kicker">More price history needed</span>
+      <h2 id="signalResultsUnavailableTitle">Not enough price history yet</h2>
       <p th:text="${harmonic.result().unavailableReason()}">At least 10 completed candles are required.</p>
       <div class="unsaved-alert-dialog-actions"><button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary">Understood</button></div>
     </div>
@@ -354,9 +356,10 @@
     const light = document.documentElement.dataset.theme === 'light';
     const bullish = container.dataset.direction === 'BULLISH';
     const color = /*[[${harmonicFormationColor}]]*/ '#22C55E';
+    StockWatchCharts.preserveColors([color]);
     document.querySelectorAll('.signal-chart-key.motive, .signal-chart-key.confirmation')
       .forEach(key => { key.style.backgroundColor = color; });
-    const chart = LightweightCharts.createChart(container, {
+    const chart = StockWatchCharts.createChart(container, {
       autoSize: true, layout: { textColor: light ? '#526158' : '#929b91', background: { type: 'solid', color: 'transparent' } },
       grid: { vertLines: { color: light ? 'rgba(31,48,37,.09)' : 'rgba(255,255,255,.045)' }, horzLines: { color: light ? 'rgba(31,48,37,.09)' : 'rgba(255,255,255,.045)' } },
       timeScale: { timeVisible: true, rightOffset: 6 }, crosshair: { mode: 0 }

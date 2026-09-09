@@ -6,6 +6,8 @@
   <title>Company signal board — StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true">
@@ -18,7 +20,7 @@
 <main class="page-container company-history-page">
   <header class="page-header company-history-header">
     <div>
-      <div class="eyebrow">Company signal intelligence</div>
+      <div class="eyebrow">Company alerts</div>
       <h1 class="title"><span th:text="${history.symbol()}">MARA</span> monitoring board</h1>
       <p class="subtitle" th:text="${history.companyName()}">MARA Holdings, Inc.</p>
       <div class="history-tags" aria-label="Company monitoring summary">
@@ -27,14 +29,14 @@
         <span class="history-tag live-tag">Monitoring active</span>
       </div>
     </div>
-    <a th:href="@{/stock/{symbol}(symbol=${history.symbol()})}" class="btn-primary">Open market workspace <span class="button-arrow" aria-hidden="true">→</span></a>
+    <a th:href="@{/stock/{symbol}(symbol=${history.symbol()})}" class="btn-primary">Open stock chart <span class="button-arrow" aria-hidden="true">→</span></a>
   </header>
 
   <section class="history-board-shell">
     <div class="panel-heading history-board-heading">
       <div>
-        <h2 class="panel-title">Followed combinations</h2>
-        <p class="panel-meta">Each column is one active method, direction, and interval combination.</p>
+        <h2 class="panel-title">Active alert rules</h2>
+        <p class="panel-meta">Each column shows one pattern, direction and interval.</p>
       </div>
       <span class="board-scroll-hint">Scroll horizontally to explore →</span>
     </div>
@@ -46,7 +48,7 @@
           <div class="history-column-title-row">
             <div>
               <h2 th:text="${column.alert().familyLabel()}">Candlestick</h2>
-              <p>Technical signal lane</p>
+              <p>Alert rule</p>
             </div>
             <span class="history-column-count" th:text="${column.events().size()}">3</span>
           </div>
@@ -65,7 +67,7 @@
         <div th:if="${#lists.isEmpty(column.events())}" class="history-column-empty">
           <div class="column-empty-icon" aria-hidden="true">⌁</div>
           <strong>Waiting for a match</strong>
-          <p>This combination is being followed, but it has not produced a validated pattern yet.</p>
+          <p>This rule has not found a matching pattern yet.</p>
         </div>
 
         <div th:if="${!#lists.isEmpty(column.events())}" class="history-event-list">
@@ -135,7 +137,7 @@
               <span th:text="${event.lifecycle().terminal() ? 'Detection and lifecycle recorded' : 'Detection email sent'}">Detection email sent</span>
               <time th:text="${event.sentAt() != null ? #temporals.format(event.sentAt(), 'yyyy-MM-dd HH:mm') : 'not available'}">2026-07-08 14:00</time>
             </div>
-            <div class="signal-event-open">Explore score report <span aria-hidden="true">&rarr;</span></div>
+            <div class="signal-event-open">View score details <span aria-hidden="true">&rarr;</span></div>
           </a>
         </div>
       </article>

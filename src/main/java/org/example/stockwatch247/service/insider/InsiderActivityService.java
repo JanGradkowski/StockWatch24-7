@@ -197,14 +197,11 @@ public class InsiderActivityService {
                 refreshStatus,
                 cachedAt,
                 trades,
-                "The archive keeps every observed open-market purchase and sale for the configured "
-                        + "history window. Each refresh merges the 10 latest API Ninjas rows without "
-                        + "duplicates. API Ninjas does not provide the transaction date on the free "
-                        + "response, so the SEC filing date is used as the effective date. Returns "
-                        + "use the filed price and latest completed daily close.",
-                "Following begins after the current latest-10 baseline. Daily and manual checks grow "
-                        + "the archive, but more than 10 new rows between checks can cause activity "
-                        + "to be missed.");
+                "Each check adds up to 10 recent filings to your chosen history period. "
+                        + "API Ninjas provides filing dates, not trade dates, on this plan. Returns "
+                        + "compare the reported price with the latest completed daily close.",
+                "Alerts cover new filings found after you start following. Checks can miss "
+                        + "activity if more than 10 filings arrive between checks.");
     }
 
     public void pollFollowedActivity() {

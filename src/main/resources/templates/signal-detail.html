@@ -6,10 +6,13 @@
   <title>Signal analysis &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/chart-theme.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true">
@@ -83,7 +86,7 @@
             aria-controls="graphicalOutlookPanel"
             data-signal-tab="graphical">
       <span class="signal-tab-icon" aria-hidden="true">&#9650;</span>
-      <span><strong>Graphical outlook</strong><small>See the setup on its chart</small></span>
+      <span><strong>Chart</strong><small>See the setup on its chart</small></span>
     </button>
     <button id="scoreReportTab"
             class="signal-view-tab"
@@ -104,7 +107,7 @@
             data-signal-tab="results"
             th:attr="data-results-available=${signal.results().available()}">
       <span class="signal-tab-icon results" aria-hidden="true">%</span>
-      <span><strong>Results</strong><small>Measure the cached forward outcome</small></span>
+      <span><strong>Results</strong><small>See price changes after the signal</small></span>
     </button>
   </nav>
 
@@ -116,7 +119,7 @@
     <article class="signal-score-card" th:classappend="${' ' + displayScore.band()}">
       <div class="signal-score-card-topline">
         <div>
-          <span class="signal-section-kicker">Heuristic confluence</span>
+          <span class="signal-section-kicker">Supporting indicators</span>
           <h2 id="setup-heading">Setup score</h2>
         </div>
         <span class="signal-confidence-pill" th:text="${displayScore.strengthLabel()}">Strong setup</span>
@@ -135,13 +138,12 @@
              class="signal-factory-score-note">
             Original recorded score:
             <strong th:text="${signal.setupScore() + '/100'}">84/100</strong>.
-            The headline score uses your current scoring weights; the saved detector score is unchanged.
+            Your scoring settings change the displayed score, not the original saved score.
           </p>
           <p th:if="${!displayScore.customApplied() and displayScore.profileNote() != null and #strings.contains(displayScore.profileNote(), 'does not contain')}"
              class="signal-factory-score-note" th:text="${displayScore.profileNote()}"></p>
           <p th:if="${#strings.contains(signal.scoreVersion(), 'EXPERIMENTAL')}">
-            Experimental means the inputs and arithmetic are implemented and tested, but the score has not earned a predictive accuracy claim.
-            It must not be read as a win probability or trade recommendation.
+            This experimental score measures supporting indicators, not the chance of a profitable trade.
           </p>
           <div class="signal-score-rail"
                role="meter"
@@ -153,9 +155,9 @@
                   th:classappend="${displayScore.score() >= segment * 5} ? ' active' : ''"></span>
           </div>
           <div class="signal-score-thresholds" aria-label="Setup score thresholds">
-            <span><i class="threshold-dot low" aria-hidden="true"></i>Low confluence &lt;75</span>
-            <span><i class="threshold-dot medium" aria-hidden="true"></i>Moderate confluence 75&ndash;84</span>
-            <span><i class="threshold-dot high" aria-hidden="true"></i>High confluence 85+</span>
+            <span><i class="threshold-dot low" aria-hidden="true"></i>Low support &lt;75</span>
+            <span><i class="threshold-dot medium" aria-hidden="true"></i>Moderate support 75&ndash;84</span>
+            <span><i class="threshold-dot high" aria-hidden="true"></i>High support 85+</span>
           </div>
         </div>
       </div>
@@ -207,7 +209,7 @@
         </p>
       </div>
       <div class="signal-chart-heading-actions">
-        <span class="signal-chart-cache-badge" data-detail-chart-status>Complete cached interval history &middot; no API request</span>
+        <span class="signal-chart-cache-badge" data-detail-chart-status>Available price history</span>
         <div class="signal-detail-interval-switcher"
              role="group"
              aria-label="Chart candle interval"
@@ -300,7 +302,7 @@
          th:attr="aria-label=${'Alternate interval price chart for ' + signal.symbol()}" role="group"></div>
     <div class="signal-chart-unavailable signal-detail-interval-error" data-detail-interval-error hidden>
       <span aria-hidden="true">!</span>
-      <div><h3>Chart interval is unavailable</h3><p data-detail-interval-error-message>Completed candles could not be loaded for this interval.</p></div>
+      <div><h3>Chart interval is unavailable</h3><p data-detail-interval-error-message>Price history is unavailable for this interval.</p></div>
     </div>
     <ol th:if="${signal.chart().available()}" id="signalChartData" hidden aria-hidden="true">
       <li th:each="candle : ${signal.chart().candles()}"
@@ -352,7 +354,7 @@
       <span aria-hidden="true">i</span>
       <div>
         <h3>Chart context is unavailable for this signal</h3>
-        <p th:text="${signal.chart().unavailableReason()}">The original candle is not in the local cache.</p>
+        <p th:text="${signal.chart().unavailableReason()}">Price data for the original candle is unavailable.</p>
       </div>
     </div>
   </section>
@@ -361,9 +363,9 @@
            class="elliott-projection-card" aria-labelledby="elliott-projection-heading">
     <div class="elliott-projection-heading">
       <div>
-        <div class="signal-section-kicker">Conditional Elliott map</div>
+        <div class="signal-section-kicker">Possible Elliott Wave paths</div>
         <h2 id="elliott-projection-heading">How the next wave could develop</h2>
-        <p>These are competing textbook paths, not exact price predictions. Price zones and completed-candle windows are evaluated; the dashed route between them is schematic.</p>
+        <p>These paths show possible wave developments. Dashed lines connect estimated price ranges and timing; they are not predictions.</p>
       </div>
       <span class="elliott-projection-stage"
             th:text="${#strings.replace(signal.elliottProjection().stage().name(), '_', ' ')}">WAVE II END</span>
@@ -407,14 +409,14 @@
     <div th:each="projection, projectionStat : ${signal.elliottProjectionHistory()}"
          th:if="${projectionStat.first}" class="elliott-projection-heading">
       <div>
-        <div class="signal-section-kicker">Conditional Elliott map · archive</div>
+        <div class="signal-section-kicker">Possible Elliott Wave paths · archive</div>
         <h2 id="elliott-projection-archive-heading">No projected path remains active</h2>
-        <p th:text="${projection.resolutionReason() != null ? projection.resolutionReason() : 'The historical paths no longer satisfy their stored structural conditions.'}">All paths are terminal.</p>
+        <p th:text="${projection.resolutionReason() != null ? projection.resolutionReason() : 'The historical paths no longer satisfy their stored structural conditions.'}">No paths remain active.</p>
       </div>
       <span class="elliott-projection-stage terminal"
             th:text="${#strings.replace(projection.status().name(), '_', ' ')}">INVALIDATED</span>
     </div>
-    <p class="elliott-projection-footnote">The dashed paths are intentionally removed when a wave ends, its endpoint is revised, or its structural rules fail. The discarded scenarios remain stored for auditability.</p>
+    <p class="elliott-projection-footnote">Completed, revised or invalidated paths are hidden from the chart and kept in the report history.</p>
   </section>
 
   <section th:if="${signal.patternFamily().name() == 'CANDLESTICK' and signal.lifecycle().entryPrice() != null}"
@@ -446,9 +448,9 @@
            aria-labelledby="elliott-trade-plan-heading">
     <div class="signal-trade-plan-heading">
       <div>
-        <div class="signal-section-kicker">Fibonacci possible-trade plan</div>
+        <div class="signal-section-kicker">Possible Elliott trade</div>
         <h2 id="elliott-trade-plan-heading">Risk, reward, and price zone</h2>
-        <p>This plan is calculated only after the existing Elliott detector validates a stage. It does not alter the wave count or create a signal.</p>
+        <p>A possible trade based on the confirmed wave stage.</p>
       </div>
       <span class="signal-lifecycle-pill"
             th:classappend="${signal.lifecycle().elliottTradeActionable() ? ' confirmed' : ' potential'}"
@@ -460,10 +462,10 @@
       <article class="reward"><span>Fibonacci target zone</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().elliottTargetZoneLow(), 1, 4) + ' – ' + #numbers.formatDecimal(signal.lifecycle().elliottTargetZoneHigh(), 1, 4)}">108.0000 – 111.0000</strong><small th:text="${'Conservative trigger ' + #numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}">Conservative trigger 108.0000</small></article>
       <article><span>Target basis</span><strong th:text="${signal.lifecycle().elliottTargetBasis()}">161.8% Wave I extension</strong><small th:text="${'Midpoint ' + #numbers.formatDecimal(signal.lifecycle().elliottTargetMidPrice(), 1, 4)}">Midpoint 109.5000</small></article>
       <article th:classappend="${signal.lifecycle().elliottTradeActionable() ? ' favorable' : ' time'}"><span>Risk to reward</span><strong th:text="${'1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 2)}">1:2.40</strong><small th:text="${'Required on this interval: 1:' + #numbers.formatDecimal(signal.lifecycle().elliottRequiredRewardRiskRatio(), 1, 0)}">Required 1:2</small></article>
-      <article th:if="${signal.lifecycle().invalidationPrice() != null}" class="risk"><span>Stored Elliott invalidation</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">90.0000</strong><small>Breaking the detector-owned boundary invalidates the stored Elliott count; hitting the buffered stop alone closes only this possible trade.</small></article>
+      <article th:if="${signal.lifecycle().invalidationPrice() != null}" class="risk"><span>Stored Elliott invalidation</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">90.0000</strong><small>Crossing this level invalidates the wave count. Reaching the buffered stop closes the possible trade without necessarily invalidating the wave.</small></article>
       <article th:if="${signal.lifecycle().elliottTradePlanStatus() != null}"><span>Plan status</span><strong th:text="${#strings.replace(signal.lifecycle().elliottTradePlanStatus(), '_', ' ')}">ACTIVE</strong><small th:text="${signal.lifecycle().elliottTradeResolutionReason() != null ? signal.lifecycle().elliottTradeResolutionReason() : 'Awaiting a completed-candle outcome'}">Awaiting outcome</small></article>
     </div>
-    <p class="signal-trade-plan-summary">Targets use a ±1.5% Fibonacci probability zone. The conservative near edge is used for the displayed R:R. Daily requires at least 1:2; weekly and monthly require at least 1:3. Anything below that is clearly marked projection only.</p>
+    <p class="signal-trade-plan-summary">Targets use a ±1.5% Fibonacci target range. The nearer edge determines the displayed risk-to-reward ratio. Daily requires at least 1:2; weekly and monthly require at least 1:3. Anything below that is clearly marked projection only.</p>
     <ol th:if="${!#lists.isEmpty(signal.elliottTradePlans())}" class="signal-lifecycle-timeline" aria-label="Elliott possible-trade plan history">
       <li th:each="plan : ${signal.elliottTradePlans()}" class="signal-lifecycle-step detected">
         <span class="lifecycle-step-marker" aria-hidden="true">•</span>
@@ -483,7 +485,7 @@
       <div>
         <div class="signal-section-kicker">Harmonic eight-candle outcome plan</div>
         <h2 id="harmonic-stop-plan-heading">Entry, invalidation, stop, and time exit</h2>
-        <p>The plan starts only after the harmonic detector validates and confirms the saved geometry. It does not alter formation detection or scoring.</p>
+        <p>The outcome is tracked from the candle that confirms the harmonic pattern.</p>
       </div>
       <span class="signal-lifecycle-pill"
             th:classappend="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? ' expired' : ' detected')}"
@@ -509,7 +511,7 @@
     <div class="harmonic-geometry-content">
       <div class="signal-section-kicker">Saved at detection</div>
       <h2 id="harmonic-geometry-heading">Harmonic formation geometry</h2>
-      <p>These points and ratios are the immutable snapshot used for this alert. The confirmation candle is later than D/C because a pivot needs right-side candles before it is knowable.</p>
+      <p>These points and ratios were saved with the alert. Confirmation comes after D/C, once later candles establish the turning point.</p>
       <div class="harmonic-geometry-groups">
         <section class="harmonic-geometry-group" aria-labelledby="harmonic-points-heading">
           <div class="harmonic-geometry-group-heading">
@@ -606,7 +608,7 @@
           <strong th:text="${signal.lifecycle().label()}">Confirmed</strong>
           <time th:text="${signal.lifecycle().resolutionPeriodLabel() != null ? signal.lifecycle().resolutionPeriodLabel() : 'Resolution period unavailable'}">20&ndash;24 Jul 2026</time>
           <small th:if="${signal.lifecycle().updatedAt() != null}">
-            Lifecycle processed
+            Outcome checked
             <time th:text="${#temporals.format(signal.lifecycle().updatedAt(), 'dd MMM yyyy, HH:mm')}">24 Jul 2026, 22:15</time>
           </small>
         </div>
@@ -690,7 +692,7 @@
     </p>
     <p class="signal-lifecycle-delivery"
        th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() == null}">
-      Lifecycle resolved; no follow-up delivery timestamp was recorded.
+      The outcome is known, but no follow-up email delivery was recorded.
     </p>
     <p class="signal-lifecycle-note"
        th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Candlestick trades use completed-candle closes only. CONFIRMED means the profit target closed successfully, INVALIDATED means the stop loss was hit, and EXPIRED means the trade closed at candle 8 close.' : (signal.lifecycle().immediateConfirmationRequired() ? 'The mandatory gate and later outcome rules use completed-candle closes, not intraday touches. A rejected candidate never becomes a signal; after detection, the first confirmed, invalidated, or expired outcome is terminal.' : 'Confirmation uses completed-candle closes, not intraday boundary touches. The first confirmed, invalidated, or expired outcome is terminal and does not replace the original detection.')}">
@@ -768,7 +770,7 @@
       <div class="legacy-signal-mark" aria-hidden="true">i</div>
       <div>
         <h3>Detailed evidence was not stored for this signal</h3>
-        <p>This signal predates reason storage. Its original evidence list cannot be safely reconstructed, so the report keeps the recorded score and market snapshot without guessing.</p>
+        <p>This older signal has a saved score but no detailed score breakdown.</p>
       </div>
     </div>
   </section>
@@ -780,7 +782,7 @@
     <div>
       <div class="signal-section-kicker">Backtest guidance</div>
       <h2 id="horizon-heading">Most useful research horizon: <span th:text="${signal.researchHorizonLabel()}">8&ndash;12 weeks</span></h2>
-      <p><span th:text="${signal.researchHorizonSummary()}">The score was most informative over this evaluation window.</span>
+      <p><span th:text="${signal.researchHorizonSummary()}">Historical results were measured over this period.</span>
         <strong th:text="${signal.researchHorizonDisclaimer()}">Historical evaluation window only.</strong>
       </p>
     </div>
@@ -792,10 +794,10 @@
     <div>
       <div class="signal-section-kicker">Reading the report</div>
       <h2 id="method-heading">How the setup score works</h2>
-      <p th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">A named candlestick pattern is emitted only after its mandatory geometry and prior-trend rules pass. V4 then allocates 25 points to pattern quality, 20 to EMA/SMA/MACD trend evidence, 5 to completed higher-timeframe trend, 15 to RSI/CCI momentum, 10 to Bollinger location, 15 to support/resistance, and 10 to relative volume, rolling VWAP, and an OHLCV volume-at-price approximation. Daily uses RSI 14, EMA 20/50, and SMA 200; weekly uses RSI 10, EMA 8/21, and SMA 40; monthly uses RSI 9, EMA 6/12, and SMA 24. The volume-profile values are approximations because an OHLCV candle does not reveal where inside its range each trade occurred. The score ranks heuristic confluence and cannot create or suppress an alert.</p>
-      <p th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE'}">The Elliott detector combines wave structure, proportional relationships, trend context, momentum, and available confirmation evidence. Its score measures technical confluence, not probability of profit or financial advice.</p>
-      <p th:if="${signal.patternFamily().name() == 'HARMONIC_FORMATION'}">The harmonic detector first enforces every hard direction, alternating-pivot, inside/outside completion, and point-boundary rule. The factory score awards 35 points for the primary B ratio, 45 for completion, and 20 for secondary ratios and leg relationships; your scoring settings can include or reweight those categories. Invalid hard geometry is rejected rather than given a lower score.</p>
-      <p>After the existing family score is calculated, signals from each of the other two pattern families are checked on the same ticker and interval during the preceding eight completed candles. The most recent same-direction signal from a family adds 10 points; the most recent opposite-direction signal subtracts 10. The final score remains capped between 0 and 100, and no future candle is used.</p>
+      <p th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">The pattern must meet its shape and prior-trend rules. Its score combines pattern quality, trend, momentum, Bollinger Bands, support/resistance and volume. Your scoring settings determine the weights. Volume-at-price estimates are approximate because candles do not show individual trades.</p>
+      <p th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE'}">The score combines wave structure, proportions, trend, momentum and confirmation. It measures supporting evidence, not the probability of profit.</p>
+      <p th:if="${signal.patternFamily().name() == 'HARMONIC_FORMATION'}">Required pattern rules must pass. The score then measures how closely the price ratios match the pattern. Your scoring settings determine the category weights.</p>
+      <p>Other pattern families can add or subtract points according to your scoring settings. Only the latest signal from each family, on the same ticker and interval in the preceding eight candles, is considered. The final score stays between 0 and 100.</p>
     </div>
   </section>
   </div>
@@ -814,14 +816,14 @@
                       data-best-action-label=${signal.results().bestActionLabel()}">
       <div class="signal-results-heading">
         <div>
-          <div class="signal-section-kicker" th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Completed-close trade path' : 'Completed-candle follow-through'}">Completed-close trade path</div>
-          <h2 th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Close-by-close movement after trade entry' : 'Direction-aware result from the measurement start'}">Close-by-close movement after trade entry</h2>
+          <div class="signal-section-kicker" th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Price history after entry' : 'Price changes after the transaction'}">Price history after entry</div>
+          <h2 th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Close-by-close movement after trade entry' : 'Price change after the signal'}">Close-by-close movement after trade entry</h2>
           <p>
             <span th:text="${signal.results().measurementStartLabel()}">From signal candle close</span>.
             Each subsequent completed close is measured in the signal&rsquo;s expected direction.
           </p>
         </div>
-        <span class="signal-chart-cache-badge">Cached candles only &middot; no API request</span>
+        <span class="signal-chart-cache-badge">Completed closing prices</span>
       </div>
 
       <div class="signal-results-metrics" aria-live="polite">
@@ -831,7 +833,7 @@
           <small id="resultHorizonDifference">+0.0000 per share</small>
         </article>
         <article>
-          <span>Selected-window close</span>
+          <span>Closing price</span>
           <strong id="resultHorizonClose">0.0000</strong>
           <small id="resultHorizonPeriod">Period unavailable</small>
         </article>
@@ -841,7 +843,7 @@
           <small id="resultBestPeriod">Period unavailable</small>
         </article>
         <article class="best-result">
-          <span>Best direction-aware outcome</span>
+          <span>Best result in this period</span>
           <strong id="resultBestReturn">+0.00%</strong>
           <small id="resultBestDifference">+0.0000 per share</small>
         </article>
@@ -850,12 +852,12 @@
       <div id="signalResultsChart"
            class="signal-results-chart"
            role="img"
-           th:attr="aria-label=${'Direction-aware result chart for the ' + (signal.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : signal.tradeSignal().name()) + ' signal on ' + signal.symbol()}"></div>
+           th:attr="aria-label=${'Return chart for the ' + (signal.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : signal.tradeSignal().name()) + ' signal on ' + signal.symbol()}"></div>
       <div class="signal-results-legend" aria-label="Results chart color legend">
         <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the signal direction</span>
         <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the signal</span>
-        <span><i class="signal-results-key start" aria-hidden="true"></i>Applicable measurement start</span>
-        <span><i class="signal-results-key best" aria-hidden="true"></i>Best exit or re-entry in the selected window</span>
+        <span><i class="signal-results-key start" aria-hidden="true"></i>Starting price</span>
+        <span><i class="signal-results-key best" aria-hidden="true"></i>Best price in this period</span>
       </div>
       <ol id="signalResultsData" hidden aria-hidden="true">
         <li th:each="point : ${signal.results().points()}"
@@ -869,7 +871,7 @@
 
       <div class="signal-results-window-control">
         <div class="signal-results-window-copy">
-          <label for="resultWindowSlider">Forward evaluation window</label>
+          <label for="resultWindowSlider">Results period</label>
           <p>Choose how many completed candles after the measurement start to include.</p>
         </div>
         <output id="resultWindowValue" for="resultWindowSlider"
@@ -890,9 +892,7 @@
       </div>
 
       <p class="signal-results-disclaimer">
-        This is a hindsight-based close-to-close measurement, not a simulated trade or forecast. It excludes
-        fees, slippage, taxes, dividends, and position sizing. The highlighted best close is only the best
-        completed-candle close visible inside the selected window.
+        Historical closing-price changes, excluding fees, slippage, taxes, dividends and position sizing. The highlighted best price is known only in hindsight.
       </p>
     </section>
   </div>
@@ -902,8 +902,8 @@
           class="unsaved-alert-dialog signal-results-unavailable-dialog"
           aria-labelledby="signalResultsUnavailableTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">Close-path history still forming</span>
-      <h2 id="signalResultsUnavailableTitle">Results need more completed candles</h2>
+      <span class="unsaved-alert-kicker">More price history needed</span>
+      <h2 id="signalResultsUnavailableTitle">Not enough price history yet</h2>
       <p th:text="${signal.results().unavailableReason()}">
         At least 10 completed candles after the signal are required before results can be displayed.
       </p>
@@ -920,9 +920,13 @@
     'use strict';
 
     const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
+    StockWatchCharts.preserveColors([ELLIOTT_MOTIVE_COLOR]);
     const ELLIOTT_CORRECTIVE_COLOR = /*[[${elliottCorrectiveColor}]]*/ '#A855F7';
+    StockWatchCharts.preserveColors([ELLIOTT_CORRECTIVE_COLOR]);
     const ELLIOTT_SUBWAVE_COLOR = /*[[${elliottSubwaveColor}]]*/ '#F59E0B';
+    StockWatchCharts.preserveColors([ELLIOTT_SUBWAVE_COLOR]);
     const HARMONIC_FORMATION_COLOR = /*[[${harmonicFormationColor}]]*/ '#22C55E';
+    StockWatchCharts.preserveColors([HARMONIC_FORMATION_COLOR]);
 
     const tabs = Array.from(document.querySelectorAll('[data-signal-tab]'));
     const panels = {
@@ -1065,7 +1069,7 @@
       if (!resultsContainer || !resultsData.length || typeof LightweightCharts === 'undefined') return;
       if (!resultsChart) {
         const colors = resultsChartColors();
-        resultsChart = LightweightCharts.createChart(resultsContainer, {
+        resultsChart = StockWatchCharts.createChart(resultsContainer, {
           autoSize: true,
           layout: {
             textColor: colors.text,
@@ -1154,7 +1158,7 @@
     }
 
     const initialColors = chartColors(document.documentElement.dataset.theme);
-    const chart = LightweightCharts.createChart(container, {
+    const chart = StockWatchCharts.createChart(container, {
       autoSize: true,
       layout: {
         textColor: initialColors.text,

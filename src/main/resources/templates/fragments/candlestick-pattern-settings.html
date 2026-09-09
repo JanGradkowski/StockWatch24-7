@@ -6,7 +6,7 @@
     <div class="settings-card-heading">
       <div><span class="settings-number">01</span><h2>Candlestick pattern definitions</h2></div>
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
-            th:text="${preferences.custom()} ? 'Custom definitions' : 'Factory definitions'">Factory definitions</span>
+            th:text="${preferences.custom()} ? 'Custom definitions' : 'Default settings'">Default settings</span>
     </div>
     <p class="analysis-settings-intro">Control the completed-candle measurements that define each formation and the close-based trade plan opened after detection. These settings apply to future alerts and newly generated historical scans.</p>
     <div class="analysis-safety-strip candlestick-definition-guide">
@@ -25,13 +25,13 @@
     <section class="settings-card candlestick-trade-plan-overview">
       <div class="settings-card-heading">
         <div><span class="settings-number">02</span><h2>Risk-to-reward by interval</h2></div>
-        <span class="analysis-profile-state" th:text="${preferences.custom()} ? 'Personalized trade plan' : 'Factory trade plan'">Factory trade plan</span>
+        <span class="analysis-profile-state" th:text="${preferences.custom()} ? 'Personalized trade plan' : 'Default trade plan'">Default trade plan</span>
       </div>
       <p class="analysis-settings-intro">Set the reward multiple independently for each interval. A value of 2 means the target is twice as far from entry as the configured stop loss. Every trade still expires at candle 8 if neither close boundary is reached.</p>
       <div class="candlestick-reward-risk-grid">
         <label class="candlestick-reward-risk-control" th:each="ratio : ${candlestickRewardRiskProfiles}">
           <span th:text="${ratio.label()}">Daily</span>
-          <small th:text="${'Factory: 1:' + #numbers.formatDecimal(ratio.factoryValue(), 1, 1)}">Factory: 1:2</small>
+          <small th:text="${'Default: 1:' + #numbers.formatDecimal(ratio.factoryValue(), 1, 1)}">Default: 1:2</small>
           <span class="candlestick-ratio-input"><b>1 :</b><input type="number" required inputmode="decimal" min="0.1" max="20" step="0.1" th:name="${'rewardRisk.' + ratio.key()}" th:value="${ratio.value()}"></span>
         </label>
       </div>
@@ -39,12 +39,12 @@
 
     <section class="settings-card candlestick-circuit-breaker-overview">
       <div class="settings-card-heading">
-        <div><span class="settings-number">03</span><h2>ATR target circuit breaker</h2></div>
-        <span class="analysis-profile-state" th:text="${preferences.custom()} ? 'Personalized safeguards' : 'Factory safeguards'">Factory safeguards</span>
+        <div><span class="settings-number">03</span><h2>ATR-based risk limit</h2></div>
+        <span class="analysis-profile-state" th:text="${preferences.custom()} ? 'Personalized safeguards' : 'Risk limits'">Risk limits</span>
       </div>
       <p class="analysis-settings-intro">When the normal structural/custom stop would produce a target move above the selected percentage, replace it with a frozen ATR-based risk distance. If that ATR distance would still exceed the limit, the percentage cap determines the final risk. Long stops are placed below entry and short stops above entry.</p>
       <div class="analysis-safety-strip candlestick-circuit-breaker-guide">
-        <strong>Close-based and frozen</strong>
+        <strong>Fixed at entry</strong>
         <span>ATR is calculated through the actual detection candle and never moves afterward.</span>
         <span>The configured 1:R ratio and candle-8 time stop remain unchanged.</span>
       </div>
@@ -55,23 +55,23 @@
             <input type="checkbox" class="candlestick-circuit-breaker-enabled"
                    th:name="${'circuitBreaker.' + profile.key() + '.enabled'}"
                    th:checked="${profile.enabled()}">
-            <span><strong>Enable circuit breaker</strong><small>Factory: enabled</small></span>
+            <span><strong>Enable circuit breaker</strong><small>Default: enabled</small></span>
           </label>
           <div class="candlestick-circuit-breaker-fields">
             <label class="candlestick-value-control">
-              <span>ATR period <small th:text="${'Factory: ' + profile.factory().atrPeriod()}">Factory: 14</small></span>
+              <span>ATR period <small th:text="${'Default: ' + profile.factory().atrPeriod()}">Default: 14</small></span>
               <span><input type="number" required inputmode="numeric" min="2" max="500" step="1"
                            th:name="${'circuitBreaker.' + profile.key() + '.atrPeriod'}"
                            th:value="${profile.atrPeriod()}"><b>bars</b></span>
             </label>
             <label class="candlestick-value-control">
-              <span>ATR stop multiplier <small th:text="${'Factory: ' + profile.factory().atrMultiplier() + '×'}">Factory: 1.5×</small></span>
+              <span>ATR stop multiplier <small th:text="${'Default: ' + profile.factory().atrMultiplier() + '×'}">Default: 1.5×</small></span>
               <span><input type="number" required inputmode="decimal" min="0.1" max="10" step="0.1"
                            th:name="${'circuitBreaker.' + profile.key() + '.atrMultiplier'}"
                            th:value="${profile.atrMultiplier()}"><b>×</b></span>
             </label>
             <label class="candlestick-value-control">
-              <span>Activate above <small th:text="${'Factory: ' + profile.factory().activationThresholdPercent() + '%'}">Factory: 25%</small></span>
+              <span>Activate above <small th:text="${'Default: ' + profile.factory().activationThresholdPercent() + '%'}">Default: 25%</small></span>
               <span><input type="number" required inputmode="decimal" min="1" max="95" step="0.5"
                            th:name="${'circuitBreaker.' + profile.key() + '.activationThresholdPercent'}"
                            th:value="${profile.activationThresholdPercent()}"><b>%</b></span>
@@ -90,7 +90,7 @@
           <div><p class="scoring-family-label" th:text="${profile.formation}">Two-candle bullish reversal</p><h2 th:text="${profile.label}">Bullish Engulfing</h2></div>
         </div>
         <div class="candlestick-pattern-heading-actions">
-          <span class="analysis-profile-state candlestick-pattern-state" th:classappend="${profile.factoryProfile} ? '' : ' custom'" th:text="${profile.factoryProfile} ? 'Factory' : 'Custom'">Factory</span>
+          <span class="analysis-profile-state candlestick-pattern-state" th:classappend="${profile.factoryProfile} ? '' : ' custom'" th:text="${profile.factoryProfile} ? 'Default' : 'Custom'">Default</span>
           <button class="danger-outline-button" type="submit" th:form="${profile.key + '-reset-form'}">Reset this pattern</button>
         </div>
       </div>
@@ -103,10 +103,10 @@
 
       <fieldset class="analysis-setting-group candlestick-stop-loss-group" th:if="${profile.directional()}">
         <legend>Stop-loss rule</legend>
-        <p>Choose the adverse close boundary for this pattern. The selected rule is calculated from the actual entry close and stored with each new signal.</p>
+        <p>Choose how the stop loss is calculated. Its price is fixed when a new signal opens.</p>
         <div class="candlestick-stop-loss-controls">
           <label class="candlestick-select-control" th:for="${profile.key + '-stop-loss-mode'}">
-            <span>Method<small th:text="${'Factory: ' + profile.factoryStopLossLabel()}">Factory: textbook structural price</small></span>
+            <span>Method<small th:text="${'Default: ' + profile.factoryStopLossLabel()}">Default: textbook structural price</small></span>
             <select th:id="${profile.key + '-stop-loss-mode'}" th:name="${profile.key + '.stopLossMode'}" required>
               <option th:each="mode : ${stopLossModes}" th:value="${mode.name()}" th:text="${mode.label()}" th:selected="${mode == profile.stopLossMode}">Textbook structural price + buffer</option>
             </select>
@@ -131,7 +131,7 @@
           <legend>Prior price action</legend>
           <p>Choose where this candle formation is allowed to qualify as this named pattern.</p>
           <label class="candlestick-select-control" th:for="${profile.key + '-trend'}">
-            <span>Required price action before the formation<small>Factory: <b th:text="${profile.factoryTrendRequirement.label()}">Required downtrend</b></small></span>
+            <span>Required price action before the formation<small>Default: <b th:text="${profile.factoryTrendRequirement.label()}">Required downtrend</b></small></span>
             <select th:id="${profile.key + '-trend'}" th:name="${profile.key + '.trendRequirement'}" required>
               <option th:each="requirement : ${trendRequirements}" th:value="${requirement.name()}" th:text="${requirement.label()}" th:selected="${requirement == profile.trendRequirement}">No prior trend required</option>
             </select>
@@ -140,7 +140,7 @@
 
         <fieldset class="analysis-setting-group candlestick-threshold-group">
           <legend>Adjustable measurements</legend>
-          <p>Every measurement shows exactly what it compares. The note below it explains how to make matching stricter.</p>
+          <p>Adjust the measurements used to recognise this pattern.</p>
           <div class="candlestick-threshold-list">
             <div class="candlestick-threshold-row" th:each="setting : ${profile.settings}">
               <label class="candlestick-threshold-copy" th:for="${profile.key + '-' + setting.key}">
@@ -149,7 +149,7 @@
                 <em th:text="${setting.effect}">Raising this value makes matching stricter.</em>
               </label>
               <label class="candlestick-value-control" th:for="${profile.key + '-' + setting.key}">
-                <span>Value <small>Factory: <b th:text="${setting.factoryValue + setting.unit}">1.0×</b></small></span>
+                <span>Value <small>Default: <b th:text="${setting.factoryValue + setting.unit}">1.0×</b></small></span>
                 <span><input type="number" required inputmode="decimal" th:id="${profile.key + '-' + setting.key}" th:name="${profile.key + '.' + setting.key}" th:min="${setting.min}" th:max="${setting.max}" th:step="${setting.step}" th:value="${setting.value}"><b th:text="${setting.unit}">%</b></span>
               </label>
             </div>
@@ -169,10 +169,10 @@
   <form th:each="profile : ${preferences.profiles}" th:id="${profile.key + '-reset-form'}" th:action="@{/settings/candlestick-patterns/reset}" method="post" class="hidden-reset-form"><input type="hidden" name="pattern" th:value="${profile.pattern.name()}"></form>
 
   <section class="settings-card analysis-factory-zone candlestick-pattern-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">19</span><h2>Factory restoration</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
+    <div class="settings-card-heading"><div><span class="settings-number">19</span><h2>Reset to defaults</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
     <form th:action="@{/settings/candlestick-patterns/reset}" method="post" class="settings-action-row">
       <input type="hidden" name="pattern" value="all">
-      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, interval risk-to-reward ratios, and ATR circuit breakers to factory values.</p></div>
+      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, interval risk-to-reward ratios, and ATR circuit breakers to default values.</p></div>
       <button class="danger-button" type="submit">Restore candlestick defaults</button>
     </form>
   </section>

@@ -182,8 +182,8 @@ class InsiderActivityServiceTest {
         var response = fixture.service().getHistory(user, "AAPL");
 
         assertThat(response.trades()).hasSize(12);
-        assertThat(response.returnMethodology()).contains("archive keeps every observed");
-        assertThat(response.alertBaselineNotice()).contains("more than 10 new rows");
+        assertThat(response.returnMethodology()).contains("Each check adds up to 10 recent filings");
+        assertThat(response.alertBaselineNotice()).contains("more than 10 filings");
         verify(fixture.provider(), never()).fetchTickerTrades("AAPL");
     }
 

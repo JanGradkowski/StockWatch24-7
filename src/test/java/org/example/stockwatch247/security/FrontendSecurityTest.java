@@ -34,9 +34,9 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("id=\"harmonicFormationHitTargets\""));
         assertTrue(stock.contains("function showHarmonicFormationCard"));
         assertTrue(stock.contains("/harmonic-formations/${encodeURIComponent(currentInterval)}"));
-        assertTrue(stock.contains("A signal is recorded only after the terminal D/C pivot"));
+        assertTrue(stock.contains("Confirmation requires candles after the final turning point"));
         assertTrue(historical.contains("Historical harmonic signal"));
-        assertTrue(historical.contains("Hard validity first, soft fit second"));
+        assertTrue(historical.contains("How the pattern is scored"));
         assertTrue(historical.contains("id=\"graphicalOutlookTab\""));
         assertTrue(historical.contains("id=\"scoreReportTab\""));
         assertTrue(historical.contains("id=\"resultsTab\""));
@@ -73,7 +73,7 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("id=\"deleteAllCompanyRules\""));
         assertTrue(dashboard.contains("Delete selected"));
         assertTrue(dashboard.contains("Delete all"));
-        assertTrue(dashboard.contains("Insider &amp; Congress Alerts are not affected"));
+        assertTrue(dashboard.contains("Ticker alerts are not affected"));
         assertTrue(dashboardScript.contains("payload.activeRules"));
         assertTrue(dashboardScript.contains("rule.id"));
         assertTrue(dashboardScript.contains("input[data-rule-id]:checked"));
@@ -202,8 +202,8 @@ class FrontendSecurityTest {
         assertTrue(settings.contains("settingsTab == 'scoring'"));
         assertTrue(scoring.contains("Included point total"));
         assertTrue(scoring.contains("Harmonic Formation"));
-        assertTrue(scoring.contains("All nine included totals"));
-        assertTrue(scoring.contains("Cross-pattern confluence"));
+        assertTrue(scoring.contains("Each scoring profile must total 100 points"));
+        assertTrue(scoring.contains("Support from other pattern families"));
         assertTrue(scoring.contains(".supportingPoints"));
         assertTrue(scoring.contains(".opposingPoints"));
         assertTrue(scoring.contains("scoring-confluence-include"));
@@ -226,7 +226,7 @@ class FrontendSecurityTest {
         assertTrue(settings.contains("settingsTab == 'harmonic-formations'"));
         assertTrue(analysis.contains("name=\"email.newHarmonic\""));
         assertTrue(harmonic.contains("Extra soft-rule allowance"));
-        assertTrue(harmonic.contains("hard-versus-soft"));
+        assertTrue(harmonic.contains("Set turning-point and Fibonacci rules"));
         assertTrue(harmonic.contains("@{/settings/harmonic-formations/reset}"));
         assertTrue(stock.contains("HARMONIC_FORMATION_COLOR"));
         assertFalse(harmonic.contains("innerHTML"));
@@ -259,7 +259,7 @@ class FrontendSecurityTest {
         assertTrue(settings.contains("@{/settings/candlestick-patterns}"));
         assertTrue(settings.contains("settingsTab == 'candlestick-patterns'"));
         assertTrue(definitions.contains("Rules that stay fixed"));
-        assertTrue(definitions.contains("Factory:"));
+        assertTrue(definitions.contains("Default:"));
         assertTrue(definitions.contains("setting.description"));
         assertTrue(definitions.contains("setting.effect"));
         assertTrue(definitions.contains("Risk-to-reward by interval"));
@@ -267,7 +267,7 @@ class FrontendSecurityTest {
         assertTrue(definitions.contains("Stop-loss rule"));
         assertTrue(definitions.contains(".stopLossMode"));
         assertTrue(definitions.contains(".stopLossValuePercent"));
-        assertTrue(definitions.contains("ATR target circuit breaker"));
+        assertTrue(definitions.contains("ATR-based risk limit"));
         assertTrue(definitions.contains("circuitBreaker."));
         assertTrue(definitions.contains(".atrPeriod"));
         assertTrue(definitions.contains(".atrMultiplier"));
@@ -492,7 +492,7 @@ class FrontendSecurityTest {
         assertTrue(historicalElliottDetail.contains("id=\"resultWindowSlider\""));
         assertTrue(historicalElliottDetail.contains("signal-detail :: signalDetailBehavior"));
         assertTrue(historicalElliottDetail.contains("Historical reconstruction")
-                || historicalElliottDetail.contains("Cached historical Elliott analysis"));
+                || historicalElliottDetail.contains("Historical Elliott Wave signal"));
         assertTrue(historicalCandlestickDetail.contains("id=\"graphicalOutlookTab\""));
         assertTrue(historicalCandlestickDetail.contains("id=\"scoreReportTab\""));
         assertTrue(historicalCandlestickDetail.contains("id=\"resultsTab\""));
@@ -544,7 +544,7 @@ class FrontendSecurityTest {
         assertTrue(about.contains("id=\"scoring\""));
         assertTrue(about.contains("id=\"elliott\""));
         assertTrue(about.contains("id=\"history\""));
-        assertTrue(about.contains("CANDLE_V4_EXPERIMENTAL"));
+        assertTrue(about.contains("A pattern must meet its shape and prior-trend rules"));
         assertTrue(about.contains("ELLIOTT_V1"));
         assertTrue(about.contains("Pattern quality"));
         assertTrue(about.contains("Support or resistance"));
@@ -572,7 +572,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("copy.textContent = 'Sell/Short'"));
         assertTrue(stock.contains("class=\"alert-eye-input\" type=\"checkbox\""));
         assertTrue(stock.contains("class=\"alert-panel alert-star-panel\""));
-        assertTrue(stock.contains("An outlined star is not followed; a filled star is followed."));
+        assertTrue(stock.contains("Filled stars indicate alerts you follow."));
         assertTrue(styles.contains(".alert-star-panel .alert-eye-graphic::before"));
         assertTrue(styles.contains(".alert-star-panel .alert-eye-input:checked + .alert-eye-graphic::before"));
         assertTrue(styles.contains("content: \"★\""));
@@ -615,7 +615,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("function rebuildElliottHitTargets()"));
         assertTrue(stock.contains("function elliottInteractivePoints(segment)"));
         assertTrue(stock.contains("function historicalElliottCard(segment)"));
-        assertTrue(stock.contains("Historical reconstruction · hypothetical hindsight"));
+        assertTrue(stock.contains("Historical results from the first 10 completed candles."));
         assertTrue(stock.contains("return segment.points;"));
         assertTrue(stock.contains("item.series.applyOptions({ lineWidth: item.groupId === segment?.groupId ? 4 : 2 })"));
         assertTrue(stock.contains("Open signal details"));
@@ -639,7 +639,7 @@ class FrontendSecurityTest {
         assertFalse(stock.contains("id=\"showHistoricalCandlestickPatternsBtn\""));
         assertFalse(stock.contains("Pattern research"));
         assertTrue(stock.contains("id=\"candlestickOverlayToggle\""));
-        assertTrue(stock.contains("aria-controls=\"historicalCandlestickViewDialog\""));
+        assertTrue(stock.contains("aria-controls=\"historicalCandlestickLookbackDialog\""));
         assertTrue(stock.indexOf("id=\"candlestickOverlayToggle\"")
                 < stock.indexOf("id=\"priceChartContainer\""));
         assertTrue(stock.indexOf("id=\"generalWorkspacePanel\"")
@@ -647,17 +647,17 @@ class FrontendSecurityTest {
         assertTrue(stock.indexOf("id=\"candlestickOverlayToggle\"")
                 < stock.indexOf("id=\"technicalAnalysisWorkspacePanel\""));
         assertTrue(stock.contains(".addEventListener('click', showHistoricalCandlestickViewPicker)"));
-        assertTrue(stock.contains("id=\"historicalCandlestickViewDialog\""));
-        assertTrue(stock.contains("data-historical-candlestick-view=\"graphical\""));
-        assertTrue(stock.contains("data-historical-candlestick-view=\"list\""));
-        assertTrue(stock.contains("id=\"historicalCandlestickIntervalDialog\""));
+        assertTrue(stock.contains("id=\"historicalCandlestickLookbackDialog\""));
+        assertTrue(stock.contains("value=\"graphical\""));
+        assertTrue(stock.contains("value=\"list\""));
+        assertTrue(stock.contains("id=\"historicalScanInterval\""));
         assertTrue(stock.contains("id=\"historicalCandlestickLookbackDialog\""));
         assertTrue(stock.contains("id=\"historicalCandlestickLookbackInput\""));
         assertTrue(stock.contains("id=\"historicalCandlestickLookbackDate\""));
         assertTrue(stock.contains("id=\"historicalCandlestickResultsDialog\""));
-        assertTrue(stock.contains("data-historical-candlestick-interval=\"1d\""));
-        assertTrue(stock.contains("data-historical-candlestick-interval=\"1wk\""));
-        assertTrue(stock.contains("data-historical-candlestick-interval=\"1mo\""));
+        assertTrue(stock.contains("value=\"1d\""));
+        assertTrue(stock.contains("value=\"1wk\""));
+        assertTrue(stock.contains("value=\"1mo\""));
         assertTrue(stock.contains("/candlestick-patterns/history?interval="));
         assertTrue(stock.contains("&fullHistory=true"));
         assertTrue(stock.contains("&lookbackCandles=${encodeURIComponent(lookbackCandles)}"));
@@ -907,7 +907,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("/api/congressional-activity/${encodedTicker}/state"));
         assertTrue(stock.contains("/api/congressional-activity/${encodedTicker}/history"));
         assertTrue(stock.contains("/api/congressional-activity/${encodedTicker}/subscription"));
-        assertTrue(stock.contains("Checking the database cache"));
+        assertTrue(stock.contains("Loading filings"));
         assertTrue(stock.contains("last 365 days"));
         assertTrue(stock.contains("never generates old email alerts"));
         assertTrue(stock.contains("rows.replaceChildren"));
@@ -949,9 +949,9 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("th:each=\"activity : ${insiderActivities}\""));
         assertTrue(dashboard.contains("th:each=\"stock : ${insiderFollowedStocks}\""));
         assertTrue(dashboard.contains("API Ninjas"));
-        assertTrue(stock.contains("Growing SEC insider archive"));
-        assertTrue(stock.contains("Loading the stored insider archive"));
-        assertTrue(stock.contains("API Ninjas free tier: SEC filing date fallback"));
+        assertTrue(stock.contains("Company insider filings"));
+        assertTrue(stock.contains("Loading insider filings"));
+        assertTrue(stock.contains("Filing date shown; trade date unavailable"));
         assertTrue(dashboard.contains("Directional return"));
     }
 
@@ -973,7 +973,7 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("id=\"insiderActivityDashboard\""));
         assertTrue(dashboard.contains("data-dashboard-view=\"technical\""));
         assertTrue(dashboard.contains("data-dashboard-view=\"alerts\""));
-        assertTrue(dashboard.contains("Congressional disclosures and corporate insider filings"));
+        assertTrue(dashboard.contains("Purchases and sales reported by company insiders"));
 
         int watchDesk = dashboard.indexOf("id=\"technicalWatchDesk\"");
         int latestSignals = dashboard.indexOf("id=\"latestTechnicalSignals\"");
@@ -1084,8 +1084,8 @@ class FrontendSecurityTest {
         assertTrue(archive.contains("signal.lifecycle().label()"));
         assertTrue(archive.contains("entry.outcome().valueLabel()"));
         assertTrue(archive.contains("entry.outcome().priceDetail()"));
-        assertTrue(archive.contains("eight-candle harmonic results"));
-        assertTrue(archive.contains("each stored Elliott stage result"));
+        assertTrue(archive.contains("Outcomes use each pattern family"));
+        assertTrue(archive.contains("stop, target and time-limit rules"));
         assertTrue(archive.contains("entry.stageOutcomes()"));
         assertFalse(archive.contains("entry.bestDirectionalMovePercent()"));
         assertFalse(archive.contains("entry.worstDirectionalMovePercent()"));
@@ -1135,7 +1135,7 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("signal.lifecycle().updatedAt()"));
         assertTrue(signalDetail.contains("Wave structure range"));
         assertTrue(signalDetail.contains("Alert recorded"));
-        assertTrue(signalDetail.contains("Lifecycle processed"));
+        assertTrue(signalDetail.contains("Outcome checked"));
         assertTrue(signalDetail.contains("#numbers.sequence(1, 20)"));
         assertTrue(signalDetail.contains("id=\"graphicalOutlookTab\""));
         assertTrue(signalDetail.contains("id=\"scoreReportTab\""));
@@ -1156,15 +1156,15 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("tradeSignal === 'SELL'"));
         assertTrue(signalDetail.contains("point.close < best.close"));
         assertTrue(signalDetail.contains("point.close > best.close"));
-        assertTrue(signalDetail.contains("Cached candles only &middot; no API request"));
-        assertTrue(signalDetail.contains("hindsight-based close-to-close measurement"));
+        assertTrue(signalDetail.contains("Completed closing prices"));
+        assertTrue(signalDetail.contains("The highlighted best price is known only in hindsight."));
         assertTrue(signalDetail.contains("Results chart color legend"));
         assertTrue(signalDetail.contains("Favorable move in the signal direction"));
         assertTrue(signalDetail.contains("Adverse move against the signal"));
-        assertTrue(signalDetail.contains("Applicable measurement start"));
+        assertTrue(signalDetail.contains("Starting price"));
         assertTrue(signalDetail.contains("text: `${tradeSignal === 'SELL' ? 'SELL/SHORT' : tradeSignal} measurement start`"));
         assertTrue(signalDetail.contains("color: colors.signalStart"));
-        assertTrue(signalDetail.contains("Best exit or re-entry in the selected window"));
+        assertTrue(signalDetail.contains("Best price in this period"));
         assertTrue(signalDetail.contains("id=\"signalChart\""));
         assertTrue(signalDetail.contains("data-chart-kind=\"technical\""));
         assertTrue(signalDetail.contains("data-signal-family=${signal.patternFamily().name()}"));
@@ -1184,7 +1184,7 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("const buyConfirmation = container.dataset.direction === 'BUY'"));
         assertTrue(signalDetail.contains("function renderElliottSegment"));
         assertTrue(signalDetail.contains("Motive I&ndash;V"));
-        assertTrue(signalDetail.contains("Complete cached interval history"));
+        assertTrue(signalDetail.contains("Available price history"));
         assertTrue(signalDetail.contains("signal-chart-trend-band"));
         assertTrue(signalDetail.contains("signal-pattern-callout"));
         assertTrue(signalDetail.contains("timeToCoordinate"));

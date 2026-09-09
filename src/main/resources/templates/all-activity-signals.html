@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>All activity signals &mdash; StockWatch 24/7</title>
+  <title>All ticker alerts &mdash; StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <script defer th:src="@{/js/signal-archive-selection.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true">
@@ -20,14 +22,14 @@
   <nav class="signal-breadcrumb" aria-label="Breadcrumb">
     <a th:href="@{/home}">Dashboard</a>
     <span aria-hidden="true">/</span>
-    <span>All activity signals</span>
+    <span>All ticker alerts</span>
   </nav>
 
   <header class="signal-archive-header">
     <div>
-      <div class="eyebrow">Account activity archive</div>
-      <h1 class="title">All activity signals</h1>
-      <p class="subtitle">Every congressional disclosure and corporate insider notification received by this account remains available here, including read signals and activity from stocks you no longer follow.</p>
+      <div class="eyebrow">Ticker alerts</div>
+      <h1 class="title">All ticker alerts</h1>
+      <p class="subtitle">Your insider and congressional alerts, including read alerts and stocks you no longer follow.</p>
     </div>
     <div class="signal-archive-total" aria-label="Total recorded activity signals">
       <strong th:text="${archive.totalSignals()}">0</strong>
@@ -39,11 +41,11 @@
     <div class="signal-archive-toolbar">
       <div>
         <h2 id="activity-signal-archive-heading" class="panel-title">Activity history</h2>
-        <p class="panel-meta">Marking a dashboard notification as read removes it from the live panels but never from this archive.</p>
+        <p class="panel-meta">Read alerts stay in this history.</p>
       </div>
       <form method="get" th:action="@{/activity-signals}" class="signal-archive-sort-form" aria-label="Sort all activity signals">
         <label>
-          <span>Group and sort by</span>
+          <span>Sort by</span>
           <select name="sort">
             <option value="date" th:selected="${archive.sort() == 'date'}">Transaction date</option>
             <option value="ticker" th:selected="${archive.sort() == 'ticker'}">Ticker</option>
@@ -73,7 +75,7 @@
       <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
       <div>
         <h3>No activity signals have been received yet</h3>
-        <p>New congressional disclosures and insider filings will be archived after they are observed for a followed stock.</p>
+        <p>New filings for stocks you follow will appear here.</p>
       </div>
     </div>
 
@@ -208,7 +210,7 @@
 
 <dialog class="unsaved-alert-dialog signal-delete-dialog" data-delete-dialog aria-labelledby="activity-signal-delete-dialog-title">
   <div class="unsaved-alert-dialog-content">
-    <span class="unsaved-alert-kicker">Permanent archive action</span>
+    <span class="unsaved-alert-kicker">Delete from history</span>
     <h2 id="activity-signal-delete-dialog-title" data-delete-dialog-title>Delete activity signal?</h2>
     <p data-delete-dialog-message>This removes the activity signal from your account archive and cannot be undone.</p>
     <div class="unsaved-alert-dialog-actions">

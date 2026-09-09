@@ -32,6 +32,7 @@ function render(snapshot, report = {}) {
         }
     }};
     context.window = context;
+    context.StockWatchCharts = {...context.LightweightCharts, color: value => value};
     vm.createContext(context);
     vm.runInContext(fs.readFileSync('src/main/resources/static/js/chart-legend.js', 'utf8'), context);
     const template = fs.readFileSync('src/main/resources/templates/technical-outlook-change.html', 'utf8');

@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Automate technical analysis, detect candlestick, harmonic, and Elliott Wave patterns, track signals, and test ideas with demo trades.">
-    <title>StockWatch 24/7 — Markets never sleep</title>
+    <title>StockWatch 24/7 — Stock charts and alerts</title>
     <script th:src="@{/js/theme.js}"></script>
     <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body class="landing-page">
 <div class="bg-animation" aria-hidden="true">
@@ -22,7 +24,7 @@
         </a>
         <div class="nav-links">
             <a href="#platform" class="btn-secondary">Platform</a>
-            <a th:href="@{/about}" class="btn-secondary">About &amp; functionalities</a>
+            <a th:href="@{/about}" class="btn-secondary">About</a>
             <a th:href="@{/login}" class="btn-primary">Sign in</a>
             <a th:href="@{/signup}" class="btn-accent">Start monitoring</a>
         </div>
@@ -31,8 +33,8 @@
     <main>
         <section class="landing-hero">
             <div class="hero-copy">
-                <div class="eyebrow">Automated market intelligence</div>
-                <h1>Markets move.<br><span class="text-gradient">You’ll know why.</span></h1>
+                <div class="eyebrow">Stock analysis and alerts</div>
+                <h1>Follow the market.<br><span class="text-gradient">Track the signals.</span></h1>
                 <p>Automate your technical analysis across candlestick, harmonic, and Elliott Wave patterns. Track every signal, test ideas with demo trades, and get the updates that matter straight to your inbox.</p>
                 <div class="hero-actions">
                     <a th:href="@{/signup}" class="btn-accent large">Build your watchlist <span class="button-arrow" aria-hidden="true">→</span></a>
@@ -56,7 +58,7 @@
                             <span class="window-dot"></span>
                             <span class="window-dot"></span>
                         </div>
-                        <span class="terminal-label">Market intelligence</span>
+                        <span class="terminal-label">Market overview</span>
                         <span class="terminal-live">Monitoring</span>
                     </div>
                     <div class="terminal-body">
@@ -124,9 +126,9 @@
 
         <section id="platform" class="landing-section">
             <div class="section-heading">
-                <div class="eyebrow">One market command center</div>
+                <div class="eyebrow">Charts, alerts and demo trading</div>
                 <h2>Less chart watching.<br>More signal clarity.</h2>
-                <p>StockWatch combines automated technical analysis, multi-family pattern detection, demo trading, outcome tracking, and alert delivery in one calm workspace built for investors who want to stay informed without staying glued to a screen.</p>
+                <p>View charts, find technical patterns, track outcomes and test ideas with demo trades. Get alerts for the stocks you follow.</p>
             </div>
 
             <div class="bento-grid">
@@ -134,7 +136,7 @@
                     <div class="feature-content">
                         <span class="feature-number">01 / TECHNICAL OUTLOOK</span>
                         <h3>Automated analysis, clearly explained</h3>
-                        <p>Bring trend, momentum, volatility, volume, market-relative strength, and recent signals together in one interval-aware technical outlook.</p>
+                        <p>Compare trend, momentum, volume and recent signals in one report.</p>
                     </div>
                     <div class="feature-visual signal-stack" aria-hidden="true">
                         <div class="signal-chip"><span>Trend</span><strong class="market-up">Bullish</strong></div>
@@ -176,7 +178,7 @@
                 <article class="feature-card third">
                     <div class="feature-content">
                         <span class="feature-number">05 / ALERTS &amp; HISTORY</span>
-                        <h3>Signals meet you where you are</h3>
+                        <h3>Receive email alerts</h3>
                         <p>Choose the market, interval, pattern family, and direction to monitor, receive matching emails, and review every alert later.</p>
                     </div>
                 </article>
@@ -185,8 +187,8 @@
 
         <section class="landing-section">
             <div class="cta-panel">
-                <div class="eyebrow">Your market, always on</div>
-                <h2>Make every candle<br><span class="text-gradient">work for you.</span></h2>
+                <div class="eyebrow">Get started</div>
+                <h2>Follow the stocks<br><span class="text-gradient">that matter to you.</span></h2>
                 <p>Create your account, run a full technical outlook, test an idea with a demo trade, or turn the setups you care about into automated monitoring.</p>
                 <div class="hero-actions">
                     <a th:href="@{/signup}" class="btn-accent large">Start monitoring <span class="button-arrow" aria-hidden="true">→</span></a>
@@ -201,7 +203,7 @@
             <span class="logo-word">StockWatch <span>24/7</span></span>
         </a>
         <span class="footer-tagline">Automated technical market monitoring.</span>
-        <a th:href="@{/about}">About &amp; functionalities</a>
+        <a th:href="@{/about}">About</a>
         <span>© 2026 StockWatch 24/7</span>
     </footer>
 </div>

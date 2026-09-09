@@ -4,6 +4,11 @@
   const stockPageLoader = document.getElementById('stockPageLoader');
   const stockLoaderStatus = document.getElementById('stockLoaderStatus');
   const stockWorkspace = document.querySelector('.stock-page');
+  const stockLoaderBackground = stockPageLoader
+    ? Array.from(document.body.children).filter(element => element !== stockPageLoader
+      && !['SCRIPT', 'STYLE', 'LINK'].includes(element.tagName) && !element.inert)
+    : [];
+  stockLoaderBackground.forEach(element => { element.inert = true; });
 
   function tradeSignalDisplayLabel(value, lowercase = false) {
     const normalized = String(value || '').toUpperCase();
@@ -21,7 +26,7 @@
   });
   let stockLoaderFinished = false;
   const stockLoaderSafetyTimer = window.setTimeout(() => {
-    finishStockPageLoading('Workspace opened. Some market data may still be arriving.');
+    finishStockPageLoading('Data is taking longer than usual. Opening the workspace…');
   }, 25000);
 
   function updateStockLoadingStatus(message) {
@@ -41,6 +46,7 @@
       stockWorkspace.setAttribute('aria-busy', 'false');
     }
     document.body.classList.remove('stock-is-loading');
+    stockLoaderBackground.forEach(element => { element.inert = false; });
     if (stockPageLoader) {
       stockPageLoader.classList.add('is-complete');
       window.setTimeout(() => stockPageLoader.remove(), 700);
@@ -288,9 +294,9 @@
   async function initCharts() {
     let completionMessage = 'Workspace ready';
     try {
-      updateStockLoadingStatus('Building the price and volume charts...');
-      priceChart = LightweightCharts.createChart(document.getElementById('priceChartContainer'), chartOptions);
-      volumeChart = LightweightCharts.createChart(document.getElementById('volumeChartContainer'), {
+      updateStockLoadingStatus('Preparing charts…');
+      priceChart = StockWatchCharts.createChart(document.getElementById('priceChartContainer'), chartOptions);
+      volumeChart = StockWatchCharts.createChart(document.getElementById('volumeChartContainer'), {
         ...chartOptions,
         timeScale: { visible: false }
       });
@@ -375,7 +381,7 @@
       }
 
       // Load currency metadata first
-      updateStockLoadingStatus('Resolving instrument and market details...');
+      updateStockLoadingStatus('Loading market details…');
       try {
         const micQuery = selectedMic ? `?micCode=${encodeURIComponent(selectedMic)}` : '';
         const metaRes = await fetch(`/api/stocks/${encodedTicker}/meta${micQuery}`);
@@ -401,18 +407,18 @@
         }
       } catch (e) { console.warn("Currency fallback to USD"); }
 
-      updateStockLoadingStatus('Loading completed daily candles and technical context...');
+      updateStockLoadingStatus('Loading price history…');
       await loadChartData('1d');
-      updateStockLoadingStatus('Loading monitoring preferences...');
+      updateStockLoadingStatus('Loading your alert settings…');
       await Promise.all([loadAlertState(), loadOutlookFollowState()]);
 
       setChartMode('candle');
-      updateStockLoadingStatus('Finalizing overlays and historical results...');
+      updateStockLoadingStatus('Preparing indicators…');
       await reopenHistoricalCandlestickResultsFromUrl();
 
     } catch (err) {
       console.error("Initialization error:", err);
-      completionMessage = 'Workspace opened with limited data';
+      completionMessage = 'Some chart data is unavailable';
     } finally {
       finishStockPageLoading(completionMessage);
     }
@@ -697,7 +703,7 @@
     const container = document.getElementById('rsiChartContainer');
     const options = chartThemeOptions();
     const theme = rsiSeriesThemeOptions();
-    rsiChart = LightweightCharts.createChart(container, {
+    rsiChart = StockWatchCharts.createChart(container, {
       ...options,
       // Keep the RSI pane aligned with the price chart, but give it its own
       // visible date axis so the crosshair date is readable in this pane too.
@@ -1049,7 +1055,7 @@
     let hash = 0;
     for (let index = 0; index < id.length; index++) hash = ((hash << 5) - hash + id.charCodeAt(index)) | 0;
     const colorIndex = (Math.abs(hash) + seriesIndex * 3) % CHART_INDICATOR_COLORS.length;
-    return CHART_INDICATOR_COLORS.at(colorIndex);
+    return StockWatchCharts.color(CHART_INDICATOR_COLORS.at(colorIndex));
   }
 
   function scheduleChartIndicatorRefresh(delay = 120) {
@@ -1148,7 +1154,7 @@
     actions.className = 'dynamic-indicator-panel-actions';
     const meta = document.createElement('span');
     meta.className = 'chart-panel-meta';
-    meta.textContent = 'Synchronized with price history';
+    meta.textContent = 'Uses the chart time range';
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'dynamic-indicator-panel-remove';
@@ -1162,7 +1168,7 @@
     document.getElementById('dynamicIndicatorPanels').append(panelElement);
 
     const options = chartThemeOptions();
-    const chart = LightweightCharts.createChart(container, {
+    const chart = StockWatchCharts.createChart(container, {
       ...options,
       timeScale: { ...options.timeScale, visible: true },
       handleScroll: false,
@@ -1799,7 +1805,7 @@
     document.getElementById('anchoredVolumeProfileVal').textContent = '—';
     const status = document.getElementById('anchoredVolumeProfileStatus');
     status.classList.remove('error', 'locked');
-    status.textContent = 'Using cached market data where available.';
+    status.textContent = 'Loading available price data…';
   }
 
   function updateAnchoredVolumeProfileSummary(profile) {
@@ -2413,7 +2419,7 @@
       link.textContent = tracked ? 'Open signal details' : 'Open historical signal details';
     }
     note.textContent = `${cardData.outcomeNote
-            || 'Hypothetical hindsight using completed cached candle closes.'} Measured from the confirmation candle close on ${cardData.signalPeriodLabel}.`;
+            || 'Historical results based on closing prices.'} Measured from the confirmation candle close on ${cardData.signalPeriodLabel}.`;
     if (cardData.outcomeAvailable) {
       outcome.hidden = false;
       message.hidden = true;
@@ -2484,7 +2490,7 @@
       outcomeLabel: tradeSignal === 'SELL'
               ? 'Largest close-based loss avoided'
               : 'Best close-based return',
-      outcomeNote: 'Historical reconstruction · hypothetical hindsight using the first 10 completed cached candle closes.',
+      outcomeNote: 'Historical results from the first 10 completed candles.',
       unavailableReason,
       detailUrl: historicalDetailUrl
     };
@@ -2779,7 +2785,7 @@
     setOutlookFollowInputsDisabled(true);
     updateTechnicalFollowAllButton();
     status.textContent = changedInput.checked
-            ? `Establishing ${changedInput.dataset.outlookFollowInterval.toLowerCase()} baseline…`
+            ? `Starting ${changedInput.dataset.outlookFollowInterval.toLowerCase()} alerts…`
             : 'Stopping this outlook interval…';
     try {
       const response = await fetch(`/api/stocks/${encodedTicker}/technical-outlook/subscriptions`, {
@@ -2794,7 +2800,7 @@
       if (!response.ok) throw new Error(state.error || 'Outlook follow could not be updated.');
       hydrateOutlookFollowState(state);
       status.textContent = changedInput.checked
-              ? 'Baseline saved. Future classification changes will be reported.'
+              ? 'Alerts enabled. You will be notified when the outlook changes.'
               : 'Outlook interval is no longer followed.';
     } catch (error) {
       changedInput.checked = previous;
@@ -2847,7 +2853,7 @@
             : 'Follow congressional activity';
     const status = document.getElementById('congressionalActivityStatus');
     status.textContent = state.baselinePending
-            ? 'Following is active · Preparing a no-alert historical baseline'
+            ? 'Preparing alerts; past filings will not trigger emails'
             : `${state.followedStocks}/${state.maximumFollowedStocks} congressional stocks followed`;
     if (state.relevanceNotice) {
       document.getElementById('congressionalRelevanceNotice').textContent = state.relevanceNotice;
@@ -2896,32 +2902,12 @@
             ? 'Stop following insider activity'
             : 'Follow insider activity';
     document.getElementById('insiderActivityStatus').textContent = state.baselinePending
-            ? 'Following is active · Preparing a no-alert filing baseline'
+            ? 'Preparing alerts; past filings will not trigger emails'
             : `${state.followedStocks}/${state.maximumFollowedStocks} insider stocks followed`;
   }
 
   function showHistoricalCandlestickViewPicker() {
-    const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
-    if (resultsDialog.open) resultsDialog.close();
-    const lookbackDialog = document.getElementById('historicalCandlestickLookbackDialog');
-    if (lookbackDialog.open) lookbackDialog.close();
-    const intervalDialog = document.getElementById('historicalCandlestickIntervalDialog');
-    if (intervalDialog.open) intervalDialog.close();
-    const viewDialog = document.getElementById('historicalCandlestickViewDialog');
-    if (!viewDialog.open) viewDialog.showModal();
-  }
-
-  function chooseHistoricalCandlestickView(view) {
-    const viewDialog = document.getElementById('historicalCandlestickViewDialog');
-    if (viewDialog.open) viewDialog.close();
-    if (view === 'list') {
-      disableHistoricalCandlestickOverlay();
-      showHistoricalCandlestickIntervalPicker();
-      return;
-    }
-    if (view === 'graphical') {
-      void enableHistoricalCandlestickOverlay();
-    }
+    showHistoricalCandlestickLookbackPicker(currentInterval);
   }
 
   async function enableHistoricalCandlestickOverlay() {
@@ -3151,7 +3137,7 @@
     document.getElementById('historicalCandlestickCardTrend').textContent =
             `${signal.trendLabel || (String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'Required downtrend' : 'Required uptrend')} before the ${signal.formationLabel || 'pattern formation'}.`;
     document.getElementById('historicalCandlestickCardNote').textContent =
-            signal.outcomeSummary || 'The trade outcome is calculated from completed cached candle closes.';
+            signal.outcomeSummary || 'The result uses completed closing prices.';
     document.getElementById('historicalCandlestickCardLink').href =
             historicalCandlestickDetailUrl(signal, null, true);
     const navigation = document.getElementById('historicalCandlestickCardClusterNavigation');
@@ -3217,14 +3203,14 @@
         label: 'Rejected candidate',
         value: 'No trade',
         valueClass: '',
-        detail: 'The mandatory next-candle gate failed, so no entry, stop, or return applies.'
+        detail: 'The next candle did not confirm the pattern, so no trade opened.'
       };
     }
     return {
       label: 'Potential candidate',
       value: 'Not opened',
       valueClass: '',
-      detail: `Awaiting the mandatory next-candle detection gate - ${Number(signal.setupScore || 0)}/100 setup score`
+      detail: `Waiting for next-candle confirmation - ${Number(signal.setupScore || 0)}/100 setup score`
     };
   }
 
@@ -3372,21 +3358,16 @@
   }
 
   function showHistoricalCandlestickIntervalPicker() {
-    const viewDialog = document.getElementById('historicalCandlestickViewDialog');
-    if (viewDialog.open) viewDialog.close();
-    const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
-    if (resultsDialog.open) resultsDialog.close();
-    const lookbackDialog = document.getElementById('historicalCandlestickLookbackDialog');
-    if (lookbackDialog.open) lookbackDialog.close();
-    const intervalDialog = document.getElementById('historicalCandlestickIntervalDialog');
-    if (!intervalDialog.open) intervalDialog.showModal();
+    showHistoricalCandlestickLookbackPicker(selectedHistoricalCandlestickInterval || currentInterval);
   }
 
   function showHistoricalCandlestickLookbackPicker(interval, initialLookback = null) {
     if (!Object.hasOwn(HISTORICAL_CANDLESTICK_DEFAULT_LOOKBACKS, interval)) return;
     selectedHistoricalCandlestickInterval = interval;
-    const intervalDialog = document.getElementById('historicalCandlestickIntervalDialog');
-    if (intervalDialog.open) intervalDialog.close();
+
+    const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
+    if (resultsDialog.open) resultsDialog.close();
+    document.getElementById('historicalScanInterval').value = interval;
     const labels = {'1d': 'Daily interval', '1wk': 'Weekly interval', '1mo': 'Monthly interval'};
     document.getElementById('historicalCandlestickLookbackInterval').textContent = labels[interval];
     const input = document.getElementById('historicalCandlestickLookbackInput');
@@ -3409,6 +3390,11 @@
   }
 
   function updateHistoricalCandlestickLookbackPreview() {
+    const graphical = document.getElementById('historicalScanView').value === 'graphical';
+    document.getElementById('historicalCandlestickLookbackInput').disabled = graphical;
+    document.getElementById('historicalCandlestickLookbackInput').closest('label').hidden = graphical;
+    document.getElementById('historicalScanPreview').hidden = graphical;
+    document.getElementById('historicalScanChartNote').hidden = !graphical;
     const input = document.getElementById('historicalCandlestickLookbackInput');
     const error = document.getElementById('historicalCandlestickLookbackError');
     const preview = document.getElementById('historicalCandlestickLookbackDate');
@@ -3454,10 +3440,17 @@
     updateHistoricalCandlestickLookbackPreview();
     const input = document.getElementById('historicalCandlestickLookbackInput');
     const lookback = selectedHistoricalCandlestickLookback();
-    if (!selectedHistoricalCandlestickInterval || lookback === null) {
+    if (!selectedHistoricalCandlestickInterval || (lookback === null && document.getElementById('historicalScanView').value !== 'graphical')) {
       input.reportValidity();
       return;
     }
+    if (document.getElementById('historicalScanView').value === 'graphical') {
+      document.getElementById('historicalCandlestickLookbackDialog').close();
+      await changeInterval(selectedHistoricalCandlestickInterval);
+      await enableHistoricalCandlestickOverlay();
+      return;
+    }
+    disableHistoricalCandlestickOverlay();
     await loadHistoricalCandlestickPatterns(selectedHistoricalCandlestickInterval, lookback);
   }
 
@@ -3472,8 +3465,7 @@
       );
       return;
     }
-    const intervalDialog = document.getElementById('historicalCandlestickIntervalDialog');
-    if (intervalDialog.open) intervalDialog.close();
+
     const lookbackDialog = document.getElementById('historicalCandlestickLookbackDialog');
     if (lookbackDialog.open) lookbackDialog.close();
     const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
@@ -3529,7 +3521,7 @@
             + `1:${history.interval === '1wk' || history.interval === '1mo' ? 3 : 2} R:R`;
     document.getElementById('historicalCandlestickResultsStatus').textContent =
             `${signals.length} signal${signals.length === 1 ? '' : 's'} calculated now · `
-            + 'No signal results were cached';
+            + 'No signal results are available';
   }
 
   function createHistoricalCandlestickRow(signal, lookbackCandles) {
@@ -3648,7 +3640,7 @@
     const status = document.getElementById('congressionalActivityStatus');
     setCongressionalControlsDisabled(true);
     status.textContent = desiredState
-            ? 'Preparing the historical baseline and enabling alerts…'
+            ? 'Enabling alerts for new filings…'
             : 'Stopping congressional activity alerts…';
     try {
       const response = await fetch(`/api/congressional-activity/${encodedTicker}/subscription`, {
@@ -3673,7 +3665,7 @@
     const status = document.getElementById('insiderActivityStatus');
     setInsiderControlsDisabled(true);
     status.textContent = desiredState
-            ? 'Preparing the filing baseline and enabling daily checks…'
+            ? 'Enabling daily alerts for new filings…'
             : 'Stopping insider activity alerts…';
     try {
       const response = await fetch(`/api/insider-activity/${encodedTicker}/subscription`, {
@@ -3706,7 +3698,7 @@
     const empty = document.getElementById('insiderHistoryEmpty');
     rows.replaceChildren();
     empty.hidden = true;
-    status.textContent = 'Loading the stored insider archive…';
+    status.textContent = 'Loading insider filings…';
     if (!dialog.open) dialog.showModal();
     setInsiderControlsDisabled(true);
     let hasCachedTrades = false;
@@ -3714,7 +3706,7 @@
       const cacheResponse = await fetch(`/api/insider-activity/${encodedTicker}/history`);
       const cachedHistory = await cacheResponse.json().catch(() => ({}));
       if (!cacheResponse.ok) {
-        throw new Error(cachedHistory.error || 'The stored insider archive could not be loaded');
+        throw new Error(cachedHistory.error || 'Insider filings could not be loaded');
       }
       renderInsiderHistory(cachedHistory);
       applyInsiderActivityState(cachedHistory);
@@ -3740,8 +3732,8 @@
       status.dataset.state = 'unavailable';
       if (!hasCachedTrades) {
         empty.hidden = false;
-        empty.textContent = 'No cached insider history is available. '
-                + 'Check the provider access message above.';
+        empty.textContent = 'No insider history is available. '
+                + 'See the data availability message above.';
       }
       console.warn('Insider activity history failed', error);
     } finally {
@@ -3761,9 +3753,9 @@
     const cacheLabels = {
       CACHE: 'Loaded the stored StockWatch insider archive',
       REFRESHED: 'Merged newly observed API Ninjas rows into the stored archive',
-      STALE: 'API Ninjas is temporarily unavailable · Showing the last successful cache'
+      STALE: 'Insider data is temporarily unavailable · Showing the last update'
     };
-    const cachedDate = history.cachedAt ? ` · Cached ${formatDateTime(history.cachedAt)}` : '';
+    const cachedDate = history.cachedAt ? ` · Updated ${formatDateTime(history.cachedAt)}` : '';
     document.getElementById('insiderHistoryStatus').textContent =
             (cacheLabels[history.refreshStatus] || 'Insider history loaded') + cachedDate;
     document.getElementById('insiderHistoryWindow').textContent =
@@ -3789,7 +3781,7 @@
             historyCell(
                     'Effective date*',
                     formatCongressionalDate(trade.transactionDate),
-                    'API Ninjas free tier: SEC filing date fallback'),
+                    'Filing date shown; trade date unavailable'),
             historyCell('Filed', formatCongressionalDate(trade.filingDate)),
             insiderReturnCell(trade),
             historySourceCell(trade, detailUrl)
@@ -3843,7 +3835,7 @@
     const empty = document.getElementById('congressionalHistoryEmpty');
     rows.replaceChildren();
     empty.hidden = true;
-    status.textContent = 'Checking the database cache…';
+    status.textContent = 'Loading filings…';
     if (!dialog.open) dialog.showModal();
     setCongressionalControlsDisabled(true);
     try {
@@ -3868,13 +3860,13 @@
     empty.hidden = trades.length > 0;
 
     const cacheLabels = {
-      CACHE: 'Loaded from the StockWatch database cache',
-      REFRESHED: 'Fetched from CongressInvests and cached in StockWatch',
-      REFRESHING: 'A shared refresh is running · Showing the current database cache',
-      COOLDOWN: 'This ticker was already refreshed today · Showing the database cache until midnight UTC',
-      STALE: 'CongressInvests is temporarily unavailable · Showing the last successful cache'
+      CACHE: 'Saved filings loaded',
+      REFRESHED: 'Filings updated',
+      REFRESHING: 'Showing saved filings while updates load',
+      COOLDOWN: 'Filings are up to date; the next refresh is after midnight UTC',
+      STALE: 'Congressional data is temporarily unavailable · Showing the last update'
     };
-    const cachedDate = history.cachedAt ? ` · Cached ${formatDateTime(history.cachedAt)}` : '';
+    const cachedDate = history.cachedAt ? ` · Updated ${formatDateTime(history.cachedAt)}` : '';
     document.getElementById('congressionalHistoryStatus').textContent =
             (cacheLabels[history.cacheStatus] || 'History loaded') + cachedDate;
     document.getElementById('congressionalHistoryWindow').textContent =
@@ -4153,7 +4145,7 @@
     for (const input of outlookFollowInputs()) {
       if ((input.dataset.persisted === 'true') === active) continue;
       status.textContent = active
-              ? `Establishing ${input.dataset.outlookFollowInterval.toLowerCase()} baseline...`
+              ? `Starting ${input.dataset.outlookFollowInterval.toLowerCase()} alerts…`
               : `Stopping ${input.dataset.outlookFollowInterval.toLowerCase()} outlook...`;
       const response = await fetch(`/api/stocks/${encodedTicker}/technical-outlook/subscriptions`, {
         method: 'PUT',
@@ -4529,11 +4521,11 @@
         sizeField.hidden = true;
         sizeInput.value = '';
         document.getElementById('stockDemoTradeDialogTitle').textContent =
-                pendingStockDemoTradeSide === 'BUY' ? `Virtual Buy ${ticker}` : `Virtual Sell ${ticker}`;
+                pendingStockDemoTradeSide === 'BUY' ? `Demo buy ${ticker}` : `Demo sell ${ticker}`;
         document.getElementById('stockDemoTradeExplanation').textContent = pendingStockDemoTradeSide === 'BUY'
                 ? 'This tracks the return from hypothetically buying at the captured current quote.'
                 : 'This tracks avoided loss if price falls and missed upside if it rises. It is not a short sale.';
-        status.textContent = `${intervalLabel(pendingStockDemoTradeInterval)} technical state will be frozen at entry.`;
+        status.textContent = `${intervalLabel(pendingStockDemoTradeInterval)} analysis will be saved when the trade opens.`;
         confirmButton.disabled = false;
         confirmButton.textContent = 'Create demo trade';
         dialog.showModal();
@@ -4626,6 +4618,7 @@
         handleScale: false
       });
     });
+    renderChartIndicatorOverlayLegend();
     scheduleAnchoredVolumeProfileRender();
   });
 
@@ -4685,19 +4678,13 @@
           .addEventListener('click', showInsiderHistory);
   document.getElementById('closeInsiderHistoryBtn')
           .addEventListener('click', () => document.getElementById('insiderHistoryDialog').close());
-  document.getElementById('closeHistoricalCandlestickViewBtn')
-          .addEventListener('click', () => document.getElementById('historicalCandlestickViewDialog').close());
-  document.querySelectorAll('[data-historical-candlestick-view]').forEach(button => {
-    button.addEventListener('click', () => chooseHistoricalCandlestickView(
-            button.dataset.historicalCandlestickView
-    ));
+  for (const id of ['closeHistoricalCandlestickLookbackBtn', 'cancelHistoricalScanBtn']) {
+    document.getElementById(id).addEventListener('click', () => document.getElementById('historicalCandlestickLookbackDialog').close());
+  }
+  document.getElementById('historicalScanInterval').addEventListener('change', event => {
+    showHistoricalCandlestickLookbackPicker(event.target.value);
   });
-  document.getElementById('closeHistoricalCandlestickIntervalBtn')
-          .addEventListener('click', () => document.getElementById('historicalCandlestickIntervalDialog').close());
-  document.getElementById('closeHistoricalCandlestickLookbackBtn')
-          .addEventListener('click', () => document.getElementById('historicalCandlestickLookbackDialog').close());
-  document.getElementById('backToHistoricalCandlestickIntervalBtn')
-          .addEventListener('click', showHistoricalCandlestickIntervalPicker);
+  document.getElementById('historicalScanView').addEventListener('change', updateHistoricalCandlestickLookbackPreview);
   document.getElementById('historicalCandlestickLookbackInput')
           .addEventListener('input', updateHistoricalCandlestickLookbackPreview);
   document.getElementById('historicalCandlestickLookbackForm')
@@ -4706,11 +4693,7 @@
           .addEventListener('click', () => document.getElementById('historicalCandlestickResultsDialog').close());
   document.getElementById('changeHistoricalCandlestickIntervalBtn')
           .addEventListener('click', showHistoricalCandlestickIntervalPicker);
-  document.querySelectorAll('[data-historical-candlestick-interval]').forEach(button => {
-    button.addEventListener('click', () => showHistoricalCandlestickLookbackPicker(
-            button.dataset.historicalCandlestickInterval
-    ));
-  });
+
   const historicalCandlestickCard = document.getElementById('historicalCandlestickHoverCard');
   historicalCandlestickCard.addEventListener('mouseenter', () => {
     historicalCandlestickCardHovered = true;

@@ -6,6 +6,8 @@
   <title>Create account — StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body class="auth-page">
 <div class="bg-animation" aria-hidden="true">
@@ -20,21 +22,21 @@
       <span class="logo-word">StockWatch <span>24/7</span></span>
     </a>
     <div class="auth-pitch">
-      <div class="eyebrow">Always-on intelligence</div>
-      <h1>Stop watching.<br><span class="text-gradient">Start monitoring.</span></h1>
-      <p>Create focused rules for the technical signals you care about. StockWatch handles the repetition while you keep the final decision.</p>
+      <div class="eyebrow">Stock charts and alerts</div>
+      <h1>Follow your stocks.<br><span class="text-gradient">Get alerts.</span></h1>
+      <p>Choose stocks and signals to follow, then receive matching alerts.</p>
     </div>
     <div class="auth-signal-card" aria-hidden="true">
       <span class="auth-signal-icon">✓</span>
-      <span class="auth-signal-copy"><strong>Monitoring survives restarts</strong><span>Missed scheduled work is recovered automatically</span></span>
+      <span class="auth-signal-copy"><strong>Keep track of your alerts</strong><span>Review signals and their results in your account</span></span>
       <span class="auth-signal-score">24/7</span>
     </div>
   </section>
 
   <section class="auth-card">
-    <div class="auth-kicker">Create your workspace</div>
-    <h2>Start monitoring markets</h2>
-    <p class="auth-description">Set up your private account in under a minute.</p>
+    <div class="auth-kicker">Create an account</div>
+    <h2>Sign up</h2>
+    <p class="auth-description">Enter your details to get started.</p>
 
     <div th:if="${error}" class="auth-message error-msg" th:text="${error}"></div>
 
@@ -58,21 +60,24 @@
         <input id="signupPassword" type="password" name="password" required minlength="15" maxlength="72" autocomplete="new-password" placeholder="Create a secure password">
       </div>
       <p class="form-hint">Use at least 15 characters. Longer, unique passwords are strongest.</p>
+      <details class="signup-colour-options">
+        <summary>Chart colours (optional)</summary>
       <fieldset class="signup-appearance-fieldset">
         <legend>Elliott Wave overlay colors</legend>
         <p>Keep chart overlays distinct from red and green candles. You can change these later in Appearance settings.</p>
         <div class="elliott-color-grid signup-elliott-colors">
           <label class="elliott-color-choice" for="signupElliottMotiveColor">
-            <span><strong>Motive I–V</strong><small>Default: electric blue</small></span>
+            <span><strong>Motive I–V</strong><small>Default: blue</small></span>
             <input id="signupElliottMotiveColor" type="color" name="elliottMotiveColor" value="#3B82F6" required>
           </label>
           <label class="elliott-color-choice" for="signupElliottCorrectiveColor">
-            <span><strong>Corrective A–B–C</strong><small>Default: vivid violet</small></span>
+            <span><strong>Corrective A–B–C</strong><small>Default: violet</small></span>
             <input id="signupElliottCorrectiveColor" type="color" name="elliottCorrectiveColor" value="#A855F7" required>
           </label>
         </div>
       </fieldset>
-      <button type="submit" class="btn-accent auth-btn">Create my workspace <span class="button-arrow" aria-hidden="true">→</span></button>
+      </details>
+      <button type="submit" class="btn-accent auth-btn">Create account <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
 
     <p class="auth-switch">Already have an account? <a th:href="@{/login}" class="text-link">Sign in</a></p>

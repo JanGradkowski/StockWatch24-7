@@ -29,7 +29,8 @@
                 swatch.setAttribute('aria-hidden', 'true');
                 const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                 path.setAttribute('d', item.marker ? 'M3 6h18m-5-4 5 4-5 4' : 'M2 6h20');
-                path.setAttribute('stroke', item.color);
+                path.setAttribute('stroke', window.StockWatchCharts?.color(item.color) || item.color);
+                path.dataset.originalColor = item.color;
                 if (item.dash) path.setAttribute('stroke-dasharray', item.dash);
                 swatch.append(path);
                 const text = document.createElement('span');

@@ -15439,3 +15439,18 @@ body:has(.app-sidebar) :is(.grid-layout, .stock-layout) > * { min-width: 0; }
     .chart-visibility-legend { margin-inline: .75rem; padding-inline: .65rem; }
     .chart-legend-note { margin-inline: .75rem; }
 }
+
+
+/* Optional explanations and signup preferences. */
+.about-rule-details > summary, .signup-colour-options > summary {
+    padding: .85rem 0;
+    color: var(--text-soft);
+    font-weight: 650;
+    cursor: pointer;
+}
+.about-rule-details > summary:focus-visible, .signup-colour-options > summary:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+}
+.about-rule-details[open] > summary { margin-bottom: 1rem; }
+.signup-colour-options { margin: .5rem 0 1rem; }

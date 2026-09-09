@@ -6,6 +6,8 @@
   <title>Sign in — StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body class="auth-page">
 <div class="bg-animation" aria-hidden="true">
@@ -21,8 +23,8 @@
     </a>
     <div class="auth-pitch">
       <div class="eyebrow">Welcome back</div>
-      <h1>Your market<br><span class="text-gradient">command center.</span></h1>
-      <p>Pick up where you left off. Your technical alerts keep monitoring the market between every visit.</p>
+      <h1>Your stocks,<br><span class="text-gradient">in one place.</span></h1>
+      <p>Sign in to view your watchlist, alerts and demo trades.</p>
     </div>
     <div class="auth-signal-card" aria-hidden="true">
       <span class="auth-signal-icon">↗</span>
@@ -34,12 +36,12 @@
   <section class="auth-card">
     <div class="auth-kicker">Secure access</div>
     <h2>Sign in to StockWatch</h2>
-    <p class="auth-description">Enter the email and password attached to your account.</p>
+    <p class="auth-description">Enter your email and password.</p>
 
     <div th:if="${param.error}" class="auth-message error-msg">The email or password is incorrect.</div>
     <div th:if="${param.registered}" class="auth-message success-msg">Account created. You can sign in now.</div>
     <div th:if="${param.verificationSent}" class="auth-message success-msg">If the address is eligible, a verification email has been sent.</div>
-    <div th:if="${param.verificationResendRequested}" class="auth-message success-msg">If the account and password were eligible, a verification email has been sent.</div>
+    <div th:if="${param.verificationResendRequested}" class="auth-message success-msg">If these details match an unverified account, a verification email has been sent.</div>
     <div th:if="${param.verified}" class="auth-message success-msg">Email verified. Your account is ready.</div>
     <div th:if="${param.verificationError}" class="auth-message error-msg">That verification link is invalid or has expired.</div>
     <div th:if="${param.expired}" class="auth-message error-msg">Your session expired. Please sign in again.</div>
@@ -57,7 +59,7 @@
         <label for="loginPassword">Password</label>
         <input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
       </div>
-      <button type="submit" class="btn-accent auth-btn">Enter dashboard <span class="button-arrow" aria-hidden="true">→</span></button>
+      <button type="submit" class="btn-accent auth-btn">Sign in <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
     <p class="auth-switch">New to StockWatch? <a th:href="@{/signup}" class="text-link">Create an account</a></p>
     <p class="auth-help"><a th:href="@{/forgot-password}" class="text-link">Forgot password?</a></p>
