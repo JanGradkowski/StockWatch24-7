@@ -598,7 +598,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Fixed percentage from entry")))
                 .andExpect(content().string(containsString("Minimum second body versus first body")))
                 .andExpect(content().string(containsString("Raise this to require the engulfing candle")))
-                .andExpect(content().string(containsString("Restore candlestick defaults")));
+                .andExpect(content().string(containsString("Restore candlestick defaults")))
+                .andExpect(content().string(containsString("Bullish Harami Cross")))
+                .andExpect(content().string(containsString("Bearish Harami Cross")));
 
         mockMvc.perform(post("/settings/appearance").with(user(email)).with(csrf())
                         .param("theme", "LIGHT")
@@ -971,7 +973,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("aria-pressed=\"true\"")))
                 .andExpect(content().string(containsString("Latest signals")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
-                .andExpect(content().string(containsString("CANDLE_V4_EXPERIMENTAL")))
+                .andExpect(content().string(containsString("CANDLE_V5_TEXTBOOK")))
                 .andExpect(content().string(containsString("13\u201317 Jul 2026")))
                 .andExpect(content().string(containsString("Lifecycle status")))
                 .andExpect(content().string(containsString("Confirmed")))

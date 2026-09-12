@@ -75,7 +75,7 @@ final class CandlestickSignalLifecyclePolicy {
             case HAMMER, HANGING_MAN, INVERTED_HAMMER, SHOOTING_STAR -> 1;
             case BULLISH_ENGULFING, BEARISH_ENGULFING,
                     PIERCING_LINE, DARK_CLOUD_COVER,
-                    BULLISH_HARAMI, BEARISH_HARAMI -> 2;
+                    BULLISH_HARAMI, BEARISH_HARAMI, BULLISH_HARAMI_CROSS, BEARISH_HARAMI_CROSS -> 2;
             case MORNING_STAR, EVENING_STAR,
                     THREE_WHITE_SOLDIERS, THREE_BLACK_CROWS -> 3;
             default -> 0;
@@ -161,8 +161,8 @@ final class CandlestickSignalLifecyclePolicy {
             case SHOOTING_STAR, HANGING_MAN -> signalCandle.getHighPrice();
             case PIERCING_LINE -> signalCandle.getLowPrice();
             case DARK_CLOUD_COVER -> signalCandle.getHighPrice();
-            case BULLISH_ENGULFING, BULLISH_HARAMI, MORNING_STAR, THREE_WHITE_SOLDIERS -> formationLow;
-            case BEARISH_ENGULFING, BEARISH_HARAMI, EVENING_STAR, THREE_BLACK_CROWS -> formationHigh;
+            case BULLISH_ENGULFING, BULLISH_HARAMI, BULLISH_HARAMI_CROSS, MORNING_STAR, THREE_WHITE_SOLDIERS -> formationLow;
+            case BEARISH_ENGULFING, BEARISH_HARAMI, BEARISH_HARAMI_CROSS, EVENING_STAR, THREE_BLACK_CROWS -> formationHigh;
             default -> throw new IllegalArgumentException("No candlestick trade plan exists for " + pattern + ".");
         };
     }

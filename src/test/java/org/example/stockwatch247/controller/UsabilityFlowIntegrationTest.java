@@ -52,7 +52,7 @@ class UsabilityFlowIntegrationTest {
 
     @Test void sharedNavigationRendersOnceAndHighlightsEachApplicationSection() throws Exception {
         String[][] pages = {{"/home", "home"}, {"/signals", "signals"}, {"/activity-signals", "alerts"},
-                {"/virtual-trades", "demo"}, {"/settings", "settings"}, {"/settings/appearance", "settings"}, {"/about", "help"}};
+                {"/technical-watchlist", "watchlist"}, {"/virtual-trades", "demo"}, {"/settings", "settings"}, {"/settings/appearance", "settings"}, {"/about", "help"}};
         for (String[] page : pages) {
             String html = mvc.perform(signedIn(get(page[0]))).andExpect(status().isOk())
                     .andExpect(model().attribute("navigationSection", page[1]))
@@ -66,7 +66,7 @@ class UsabilityFlowIntegrationTest {
                     .containsPattern("data-nav-section=\"" + page[1] + "\"[^>]*aria-current=\"page\"")
                     .contains("href=\"/home#ticker-alerts\"");
             org.assertj.core.api.Assertions.assertThat(java.util.regex.Pattern.compile("data-nav-section=")
-                    .matcher(sidebar).results().count()).isEqualTo(6);
+                    .matcher(sidebar).results().count()).isEqualTo(7);
 
         }
     }

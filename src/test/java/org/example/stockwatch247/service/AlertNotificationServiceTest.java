@@ -291,7 +291,7 @@ class AlertNotificationServiceTest {
         assertThat(message.getSubject()).contains("BULLISH_ENGULFING", "SAP.DE");
         assertThat(message.getText()).contains(
                 "Heuristic setup score: 91/100",
-                "Score model: CANDLE_V4_EXPERIMENTAL",
+                "Score model: CANDLE_V5_TEXTBOOK",
                 "has not demonstrated stable out-of-sample predictive ordering",
                 "Score breakdown\n- Evidence\n  - Observation: Bullish body engulfs",
                 "Research horizon: 10 trading sessions",

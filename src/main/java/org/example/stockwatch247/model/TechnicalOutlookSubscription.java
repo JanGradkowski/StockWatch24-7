@@ -49,6 +49,23 @@ public class TechnicalOutlookSubscription {
     @Column(name = "profile_fingerprint", length = 64)
     private String profileFingerprint;
 
+    @Column(name = "current_classification", length = 64)
+    private String currentClassification;
+    @Column(name = "current_score")
+    private Double currentScore;
+    @Column(name = "current_price")
+    private Double currentPrice;
+    @Column(name = "last_change_candle_timestamp")
+    private Long lastChangeCandleTimestamp;
+    @Column(name = "last_change_previous_classification", length = 64)
+    private String lastChangePreviousClassification;
+    @Column(name = "last_change_price")
+    private Double lastChangePrice;
+    @Column(name = "last_change_score")
+    private Double lastChangeScore;
+    @Column(name = "tracking_started_at")
+    private LocalDateTime trackingStartedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -63,6 +80,14 @@ public class TechnicalOutlookSubscription {
     public Long getLastCandleTimestamp() { return lastCandleTimestamp; }
     public String getBaselineSnapshot() { return baselineSnapshot; }
     public String getProfileFingerprint() { return profileFingerprint; }
+    public String getCurrentClassification() { return currentClassification; }
+    public Double getCurrentScore() { return currentScore; }
+    public Double getCurrentPrice() { return currentPrice; }
+    public Long getLastChangeCandleTimestamp() { return lastChangeCandleTimestamp; }
+    public String getLastChangePreviousClassification() { return lastChangePreviousClassification; }
+    public Double getLastChangePrice() { return lastChangePrice; }
+    public Double getLastChangeScore() { return lastChangeScore; }
+    public LocalDateTime getTrackingStartedAt() { return trackingStartedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 
@@ -74,7 +99,14 @@ public class TechnicalOutlookSubscription {
     public void setLastCandleTimestamp(Long value) { this.lastCandleTimestamp = value; }
     public void setBaselineSnapshot(String value) { this.baselineSnapshot = value; }
     public void setProfileFingerprint(String value) { this.profileFingerprint = value; }
+    public void setCurrentClassification(String value) { currentClassification = value; }
+    public void setCurrentScore(Double value) { currentScore = value; }
+    public void setCurrentPrice(Double value) { currentPrice = value; }
+    public void setLastChangeCandleTimestamp(Long value) { lastChangeCandleTimestamp = value; }
+    public void setLastChangePreviousClassification(String value) { lastChangePreviousClassification = value; }
+    public void setLastChangePrice(Double value) { lastChangePrice = value; }
+    public void setLastChangeScore(Double value) { lastChangeScore = value; }
+    public void setTrackingStartedAt(LocalDateTime value) { trackingStartedAt = value; }
     public void setCreatedAt(LocalDateTime value) { this.createdAt = value; }
     public void setUpdatedAt(LocalDateTime value) { this.updatedAt = value; }
 }
-

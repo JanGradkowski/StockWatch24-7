@@ -63,7 +63,8 @@ public class HistoricalSignalCacheService {
         Objects.requireNonNull(resultType, "resultType");
         Objects.requireNonNull(calculation, "calculation");
         String normalizedSymbol = symbol.toUpperCase(Locale.ROOT);
-        String settingsHash = fingerprint(effectiveSettings);
+        // Shared confluence changes can affect every family, even with unchanged detector settings.
+        String settingsHash = fingerprint(java.util.Arrays.asList(CrossPatternConfluenceService.VERSION, effectiveSettings));
         CacheIdentity identity = new CacheIdentity(normalizedSymbol, interval, family.name(),
                 "REV2:" + detectorVersion, settingsHash);
         CandleSnapshot snapshot = candleSnapshot(normalizedSymbol, interval);

@@ -1010,6 +1010,25 @@
     renderChartIndicatorOverlayLegend();
   }
 
+  function appendCandlestickOverlayControl(container, className) {
+    if (!historicalCandlestickOverlayEnabled) return;
+    const chip = document.createElement('span');
+    chip.className = className;
+    const label = document.createElement('span');
+    label.textContent = 'Candlestick signals';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '\u00d7';
+    remove.setAttribute('aria-label', 'Remove candlestick signals');
+    remove.addEventListener('click', event => {
+      event.stopPropagation();
+      disableHistoricalCandlestickOverlay();
+      document.getElementById('candlestickOverlayToggle').focus({ preventScroll: true });
+    });
+    chip.append(label, remove);
+    container.append(chip);
+  }
+
   function renderActiveChartIndicatorControls() {
     const container = document.getElementById('activeChartIndicatorList');
     container.replaceChildren();
@@ -1029,6 +1048,7 @@
       chip.append(copy, remove);
       container.append(chip);
     });
+    appendCandlestickOverlayControl(container, 'active-chart-indicator-chip');
   }
 
   function renderChartIndicatorOverlayLegend() {
@@ -1049,6 +1069,7 @@
       chip.append(label, remove);
       legend.append(chip);
     });
+    appendCandlestickOverlayControl(legend, 'chart-indicator-overlay-chip');
   }
 
   function indicatorColor(id, seriesIndex) {
@@ -2907,6 +2928,10 @@
   }
 
   function showHistoricalCandlestickViewPicker() {
+    if (historicalCandlestickOverlayEnabled) {
+      disableHistoricalCandlestickOverlay();
+      return;
+    }
     showHistoricalCandlestickLookbackPicker(currentInterval);
   }
 
@@ -2915,7 +2940,9 @@
     setChartMode('candle');
     updateHistoricalCandlestickOverlayToggle();
     await refreshHistoricalCandlestickOverlay(currentInterval);
-    document.getElementById('candlestickOverlayToggle').focus({ preventScroll: true });
+    if (historicalCandlestickOverlayEnabled) {
+      document.getElementById('candlestickOverlayToggle').focus({ preventScroll: true });
+    }
   }
 
   function disableHistoricalCandlestickOverlay() {
@@ -2935,6 +2962,8 @@
     button.textContent = historicalCandlestickOverlayEnabled
             ? 'Candlestick signals: on'
             : 'Candlestick signals';
+    renderActiveChartIndicatorControls();
+    renderChartIndicatorOverlayLegend();
   }
 
   async function refreshHistoricalCandlestickOverlay(interval) {

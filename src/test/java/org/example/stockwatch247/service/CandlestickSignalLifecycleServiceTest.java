@@ -366,6 +366,21 @@ class CandlestickSignalLifecycleServiceTest {
     }
 
     @Test
+    void invalidImmediateConfirmationBarCannotBeReplacedByALaterValidBar() {
+        Fixture fixture = oneCandleFixture(TradeSignal.SELL, 105.0, 95.0, 100.0);
+        when(fixture.repository().findTrackedLifecycleEvents(
+                "AAPL", TimeInterval.DAILY, SignalLifecycleStatus.POTENTIAL))
+                .thenReturn(List.of(fixture.event()));
+        Candle invalid = candle(200L, 100.0, 102.0, 97.0, 99.0);
+        invalid.setClosePrice(null);
+        var result = fixture.service().evaluatePending("AAPL", TimeInterval.DAILY, List.of(
+                candle(100L,99.0,105.0,95.0,100.0), invalid, candle(300L,100.0,102.0,97.0,99.0)));
+        assertThat(result.detected()).isZero();
+        assertThat(fixture.event().getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.POTENTIAL);
+        org.mockito.Mockito.verifyNoInteractions(fixture.notifications());
+    }
+
+    @Test
     void detectsOneCandleSellOnlyWhenImmediateNextCandleIsRedAndClosesLower() {
         Fixture fixture = oneCandleFixture(TradeSignal.SELL, 105.0, 95.0, 100.0);
         when(fixture.repository().findTrackedLifecycleEvents(

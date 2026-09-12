@@ -16,7 +16,8 @@ import java.util.*;
 
 @Service
 public class CandlestickPatternPreferencesService {
-    public static final String PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V4";
+    public static final String PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V5";
+    private static final String TEXTBOOK_MIGRATION_VERSION = "USER_CANDLESTICK_PATTERNS_V4";
     private static final String PREVIOUS_PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V3";
     private static final String REWARD_RISK_MIGRATION_VERSION = "USER_CANDLESTICK_PATTERNS_V2";
     private static final String LEGACY_PROFILE_VERSION = "USER_CANDLESTICK_PATTERNS_V1";
@@ -168,12 +169,13 @@ public class CandlestickPatternPreferencesService {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
             if (!PROFILE_VERSION.equals(stored.version())
+                    && !TEXTBOOK_MIGRATION_VERSION.equals(stored.version())
                     && !PREVIOUS_PROFILE_VERSION.equals(stored.version())
                     && !REWARD_RISK_MIGRATION_VERSION.equals(stored.version())
                     && !LEGACY_PROFILE_VERSION.equals(stored.version())) {
                 return factoryPreferences();
             }
-            List<StoredProfile> profiles = normalizeProfiles(stored.profiles());
+            List<StoredProfile> profiles = normalizeProfiles(stored.profiles(), stored.version());
             Map<TimeInterval, Double> ratios = migratedRewardRisk(stored.version(), stored.rewardRiskRatios());
             Map<TimeInterval, CircuitBreakerSettings> circuitBreakers =
                     normalizeCircuitBreakers(stored.circuitBreakers());
@@ -260,12 +262,30 @@ public class CandlestickPatternPreferencesService {
                 validateCircuitBreaker(interval, circuitBreakers.get(interval)));
     }
 
-    private static List<StoredProfile> normalizeProfiles(List<StoredProfile> profiles) {
+    private static List<StoredProfile> normalizeProfiles(List<StoredProfile> profiles, String version) {
         if (profiles == null) return List.of();
-        return profiles.stream().map(profile -> new StoredProfile(
-                profile.pattern(), profile.trendRequirement(), profile.values(),
-                profile.stopLossMode() == null ? StopLossMode.STRUCTURAL_BUFFER : profile.stopLossMode(),
-                profile.stopLossValuePercent() == null ? 0.0 : profile.stopLossValuePercent())).toList();
+        List<StoredProfile> normalized = new ArrayList<>();
+        for (StoredProfile profile : profiles) {
+            Map<String, Double> values = profile.values() == null ? null : new HashMap<>(profile.values());
+            if (!PROFILE_VERSION.equals(version) && values != null
+                    && (profile.pattern() == CandlePattern.BULLISH_ENGULFING
+                    || profile.pattern() == CandlePattern.BEARISH_ENGULFING)) {
+                // Migrate former defaults only; retain tighter user-selected filters.
+                if (Objects.equals(values.get("previousMinBodyPercent"), 20.0)) values.put("previousMinBodyPercent", 0.0);
+                if (Objects.equals(values.get("currentMinBodyPercent"), 45.0)) values.put("currentMinBodyPercent", 0.0);
+            }
+            normalized.add(new StoredProfile(profile.pattern(), profile.trendRequirement(), values,
+                    profile.stopLossMode() == null ? StopLossMode.STRUCTURAL_BUFFER : profile.stopLossMode(),
+                    profile.stopLossValuePercent() == null ? 0.0 : profile.stopLossValuePercent()));
+        }
+        if (!PROFILE_VERSION.equals(version)) {
+            for (CandlePattern cross : List.of(CandlePattern.BULLISH_HARAMI_CROSS, CandlePattern.BEARISH_HARAMI_CROSS)) {
+                if (normalized.stream().anyMatch(profile -> profile.pattern() == cross)) continue;
+                PatternDefinition definition = FACTORY.stream().filter(item -> item.pattern() == cross).findFirst().orElseThrow();
+                normalized.add(stored(definition));
+            }
+        }
+        return List.copyOf(normalized);
     }
 
     private static Map<TimeInterval, Double> normalizeRewardRisk(Map<TimeInterval, Double> ratios) {
@@ -392,9 +412,9 @@ public class CandlestickPatternPreferencesService {
     }
     private static List<NumericDefinition> engulfing() {
         return List.of(
-                percent("previousMinBodyPercent", "Minimum first-candle body", "The first candle's open-to-close body as a percentage of its full high-to-low range.", "Raise this to require a more decisive first candle.", 20),
+                percent("previousMinBodyPercent", "Minimum first-candle body", "The first candle's open-to-close body as a percentage of its full high-to-low range.", "Raise this to require a more decisive first candle.", 0),
                 multiple("currentMinPreviousBodyMultiple", "Minimum second body versus first body", "The second candle's real body must be at least this many times the first candle's real body.", "Raise this to require the engulfing candle to overpower the first candle by a larger margin.", 1),
-                percent("currentMinBodyPercent", "Minimum second-candle body", "The engulfing candle's open-to-close body as a percentage of its own full high-to-low range.", "Raise this to require a stronger directional engulfing candle.", 45));
+                percent("currentMinBodyPercent", "Minimum second-candle body", "The engulfing candle's open-to-close body as a percentage of its own full high-to-low range.", "Raise this to require a stronger directional engulfing candle.", 0));
     }
     private static List<NumericDefinition> reversalPair() {
         return List.of(
@@ -410,6 +430,11 @@ public class CandlestickPatternPreferencesService {
                 multiple("firstMinMedianMultiple", "Outside body versus recent median", "The first body must be at least this many times the median body of preceding candles.", "Raise this to make the required outside candle more exceptional.", 1.1),
                 percent("secondMaxFirstBodyPercent", "Maximum inside body versus outside body", "The inside candle's body may be no more than this percentage of the first candle's body.", "Lower this to demand a more compact inside candle.", 45),
                 multiple("secondMaxMedianMultiple", "Maximum inside body versus recent median", "The inside body may be no more than this many times the recent median body.", "Lower this to make the inside candle smaller relative to recent trading.", .75));
+    }
+    private static List<NumericDefinition> haramiCross() {
+        List<NumericDefinition> settings = new ArrayList<>(harami());
+        settings.add(percent("maxBodyPercent", "Maximum doji body", "The inside candle's body as a percentage of its full range.", "Lower this to require a thinner doji.", 10));
+        return List.copyOf(settings);
     }
     private static List<NumericDefinition> star() {
         return List.of(
@@ -436,14 +461,16 @@ public class CandlestickPatternPreferencesService {
                 p(CandlePattern.INVERTED_HAMMER, "Inverted Hammer", "One-candle bullish rejection", "A small body near the low with a long upper shadow after weakness.", "Body color is unrestricted; the upper shadow is the defining wick.", TrendRequirement.DOWN, wick(2,2,.5,30)),
                 p(CandlePattern.HANGING_MAN, "Hanging Man", "One-candle bearish warning", "A small body near the high with a long lower shadow after strength.", "Body color is unrestricted; the lower shadow is the defining wick.", TrendRequirement.UP, wick(2,2,.5,30)),
                 p(CandlePattern.SHOOTING_STAR, "Shooting Star", "One-candle bearish rejection", "A small body near the low with a long upper shadow after strength.", "Body color is unrestricted; the upper shadow is the defining wick.", TrendRequirement.UP, wick(2,2,.5,30)),
-                p(CandlePattern.BULLISH_ENGULFING, "Bullish Engulfing", "Two-candle bullish reversal", "A bullish second real body fully contains the prior bearish real body.", "The first candle must close below its open, the second above its open, and the second body must cross both first-body edges.", TrendRequirement.DOWN, engulfing()),
-                p(CandlePattern.BEARISH_ENGULFING, "Bearish Engulfing", "Two-candle bearish reversal", "A bearish second real body fully contains the prior bullish real body.", "The first candle must close above its open, the second below its open, and the second body must cross both first-body edges.", TrendRequirement.UP, engulfing()),
-                p(CandlePattern.PIERCING_LINE, "Piercing Line", "Two-candle bullish reversal", "A bullish candle opens below a long bearish candle and closes deeply inside its body.", "The first candle must be bearish; the second must be bullish and open below the first close without closing above the first open.", TrendRequirement.DOWN, reversalPair()),
-                p(CandlePattern.DARK_CLOUD_COVER, "Dark Cloud Cover", "Two-candle bearish reversal", "A bearish candle opens above a long bullish candle and closes deeply inside its body.", "The first candle must be bullish; the second must be bearish and open above the first close without closing below the first open.", TrendRequirement.UP, reversalPair()),
-                p(CandlePattern.BULLISH_HARAMI, "Bullish Harami", "Two-candle bullish reversal", "A small bullish body sits completely inside a long bearish real body.", "The first candle must be bearish, the second bullish, and both second-body edges must stay inside the first body.", TrendRequirement.DOWN, harami()),
-                p(CandlePattern.BEARISH_HARAMI, "Bearish Harami", "Two-candle bearish reversal", "A small bearish body sits completely inside a long bullish real body.", "The first candle must be bullish, the second bearish, and both second-body edges must stay inside the first body.", TrendRequirement.UP, harami()),
-                p(CandlePattern.MORNING_STAR, "Morning Star", "Three-candle bullish reversal", "A long bearish candle, a small star, then a strong bullish close into the first body.", "The first candle must be bearish and the final candle bullish.", TrendRequirement.DOWN, star()),
-                p(CandlePattern.EVENING_STAR, "Evening Star", "Three-candle bearish reversal", "A long bullish candle, a small star, then a strong bearish close into the first body.", "The first candle must be bullish and the final candle bearish.", TrendRequirement.UP, star()),
+                p(CandlePattern.BULLISH_ENGULFING, "Bullish Engulfing", "Two-candle bullish reversal", "A bullish second real body fully contains the prior bearish real body.", "The first candle must close below its open, the second above its open, and the second body must contain both first-body edges and be strictly larger.", TrendRequirement.DOWN, engulfing()),
+                p(CandlePattern.BEARISH_ENGULFING, "Bearish Engulfing", "Two-candle bearish reversal", "A bearish second real body fully contains the prior bullish real body.", "The first candle must close above its open, the second below its open, and the second body must contain both first-body edges and be strictly larger.", TrendRequirement.UP, engulfing()),
+                p(CandlePattern.PIERCING_LINE, "Piercing Line", "Two-candle bullish reversal", "A bullish candle opens below a long bearish candle and closes deeply inside its body.", "The first candle must be bearish; the second must be bullish and open below the first low and close past the body midpoint, but below the first open.", TrendRequirement.DOWN, reversalPair()),
+                p(CandlePattern.DARK_CLOUD_COVER, "Dark Cloud Cover", "Two-candle bearish reversal", "A bearish candle opens above a long bullish candle and closes deeply inside its body.", "The first candle must be bullish; the second must be bearish and open above the first high and close past the body midpoint, but above the first open.", TrendRequirement.UP, reversalPair()),
+                p(CandlePattern.BULLISH_HARAMI, "Bullish Harami", "Two-candle bullish reversal", "A small body sits completely inside a long real body after a decline.", "Either candle may have either body color; both second-body edges must stay inside the first body. A qualifying doji is classified as Harami Cross.", TrendRequirement.DOWN, harami()),
+                p(CandlePattern.BEARISH_HARAMI, "Bearish Harami", "Two-candle bearish reversal", "A small body sits completely inside a long real body after a rise.", "Either candle may have either body color; both second-body edges must stay inside the first body. A qualifying doji is classified as Harami Cross.", TrendRequirement.UP, harami()),
+                p(CandlePattern.BULLISH_HARAMI_CROSS, "Bullish Harami Cross", "Two-candle bullish reversal", "A doji body sits inside a long real body after a decline.", "Body colors are unrestricted; the doji body must lie strictly inside the first real body.", TrendRequirement.DOWN, haramiCross()),
+                p(CandlePattern.BEARISH_HARAMI_CROSS, "Bearish Harami Cross", "Two-candle bearish reversal", "A doji body sits inside a long real body after a rise.", "Body colors are unrestricted; the doji body must lie strictly inside the first real body.", TrendRequirement.UP, haramiCross()),
+                p(CandlePattern.MORNING_STAR, "Morning Star", "Three-candle bullish reversal", "A long bearish candle, a small star, then a strong bullish close into the first body.", "The first candle must be bearish and the final candle bullish; the middle real body must gap entirely below the first real body.", TrendRequirement.DOWN, star()),
+                p(CandlePattern.EVENING_STAR, "Evening Star", "Three-candle bearish reversal", "A long bullish candle, a small star, then a strong bearish close into the first body.", "The first candle must be bullish and the final candle bearish; the middle real body must gap entirely above the first real body.", TrendRequirement.UP, star()),
                 p(CandlePattern.THREE_WHITE_SOLDIERS, "Three White Soldiers", "Three-candle bullish sequence", "Three strong bullish candles with rising closes and compact upper shadows.", "All three candles must be bullish; closes must rise and each later open must remain inside the preceding real body.", TrendRequirement.DOWN_OR_BASE, threeCandleRun()),
                 p(CandlePattern.THREE_BLACK_CROWS, "Three Black Crows", "Three-candle bearish sequence", "Three strong bearish candles with falling closes and compact lower shadows.", "All three candles must be bearish; closes must fall and each later open must remain inside the preceding real body.", TrendRequirement.UP, threeCandleRun()));
     }

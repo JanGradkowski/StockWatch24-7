@@ -51,10 +51,12 @@ class HistoricalCandlestickServiceTest {
         candles.get(40).setHighPrice(102.0);
         candles.get(40).setLowPrice(98.0);
         candles.get(45).setClosePrice(95.0);
+        candles.get(45).setLowPrice(95.0);
         candles.get(60).setClosePrice(100.0);
         candles.get(60).setHighPrice(102.0);
         candles.get(60).setLowPrice(98.0);
         candles.get(65).setClosePrice(105.0);
+        candles.get(65).setHighPrice(105.0);
         candles.get(77).setHighPrice(candles.get(77).getClosePrice() + 2.0);
         List<EnrichedCandle> enriched = candles.stream().map(this::enriched).toList();
         long successfulSellTimestamp = candles.get(40).getTimestamp();

@@ -25,6 +25,7 @@ import java.util.Map;
  */
 @Service
 public class CrossPatternConfluenceService {
+    public static final String VERSION = "CONFLUENCE_V2_TEXTBOOK";
     public static final int LOOKBACK_CANDLES = 8;
     public static final int POINTS_PER_FAMILY = 10;
     public static final String REASON_PREFIX = "Cross-pattern confluence";
@@ -47,7 +48,7 @@ public class CrossPatternConfluenceService {
         List<Candle> candles = normalizeCandles(rawCandles);
         List<Observation> observations = new ArrayList<>();
         observations.addAll(candlestickObservations(
-                candles,
+                rawCandles,
                 candlestickCandles,
                 trendRules == null ? CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval) : trendRules,
                 candlestickDefinitions == null
@@ -99,15 +100,19 @@ public class CrossPatternConfluenceService {
             candleIndexes.put(timeline.candleTimestamps().get(index), index);
         }
 
-        Map<AlertPatternFamily, Observation> mostRecentByFamily = new EnumMap<>(AlertPatternFamily.class);
+        Map<AlertPatternFamily, List<Observation>> mostRecentByFamily = new EnumMap<>(AlertPatternFamily.class);
         for (Observation observation : timeline.observations()) {
             Integer observationIndex = candleIndexes.get(observation.timestamp());
             if (observation.family() == targetFamily || observationIndex == null
                     || !directional(observation.direction())) {
                 continue;
             }
-            mostRecentByFamily.merge(observation.family(), observation,
-                    (left, right) -> right.timestamp() > left.timestamp() ? right : left);
+            List<Observation> latest = mostRecentByFamily.get(observation.family());
+            if (latest == null || observation.timestamp() > latest.getFirst().timestamp()) {
+                mostRecentByFamily.put(observation.family(), new ArrayList<>(List.of(observation)));
+            } else if (observation.timestamp() == latest.getFirst().timestamp()) {
+                latest.add(observation);
+            }
         }
 
         List<Evidence> evidence = new ArrayList<>();
@@ -117,14 +122,17 @@ public class CrossPatternConfluenceService {
                 AlertPatternFamily.ELLIOTT_WAVE,
                 AlertPatternFamily.HARMONIC_FORMATION)) {
             if (family == targetFamily) continue;
-            Observation observation = mostRecentByFamily.get(family);
-            if (observation == null) continue;
+            List<Observation> latest = mostRecentByFamily.get(family);
+            if (latest == null) continue;
+            Observation observation = latest.stream().min(Comparator.comparing(
+                    item -> item.pattern() == null ? "" : item.pattern().name())).orElseThrow();
+            boolean mixed = latest.stream().anyMatch(item -> item.direction() != observation.direction());
             Weight weight = effectivePolicy.weight(family);
-            boolean supporting = observation.direction() == targetDirection;
-            int points = !weight.enabled() ? 0
+            boolean supporting = !mixed && observation.direction() == targetDirection;
+            int points = mixed || !weight.enabled() ? 0
                     : supporting ? weight.supportingPoints() : -weight.opposingPoints();
             int candlesAgo = targetIndex - candleIndexes.get(observation.timestamp());
-            evidence.add(new Evidence(family, observation.pattern(), observation.direction(),
+            evidence.add(new Evidence(family, mixed ? null : observation.pattern(), mixed ? TradeSignal.HOLD : observation.direction(),
                     observation.timestamp(), candlesAgo, points, weight.enabled(), supporting));
             adjustment += points;
         }
@@ -165,18 +173,21 @@ public class CrossPatternConfluenceService {
         if (enrichedCandles == null || enrichedCandles.size() < 2) return List.of();
         List<EnrichedCandle> enriched = enrichedCandles.stream()
                 .sorted(Comparator.comparing(EnrichedCandle::timestamp)).toList();
+        CandlestickFormationIntegrity integrity = new CandlestickFormationIntegrity(rawCandles);
+        rawCandles = normalizeCandles(rawCandles);
         Map<Long, Candle> rawByTimestamp = new LinkedHashMap<>();
         for (Candle candle : rawCandles) rawByTimestamp.put(candle.getTimestamp(), candle);
         List<Observation> result = new ArrayList<>();
         for (int index = 1; index < enriched.size(); index++) {
             int contextStart = Math.max(0, index - 99);
             List<DetectedSignal> signals = candlestickDetector.detectAlertSignals(
-                    enriched.subList(contextStart, index + 1), trendRules, definitions);
+                    integrity.context(enriched.subList(contextStart, index + 1)), trendRules, definitions);
             for (DetectedSignal signal : signals) {
                 long effectiveTimestamp = signal.candleTimestamp();
                 if (CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern())) {
                     int rawIndex = candleIndex(rawCandles, signal.candleTimestamp());
-                    if (rawIndex < 0 || rawIndex + 1 >= rawCandles.size()) continue;
+                    if (rawIndex < 0 || rawIndex + 1 >= rawCandles.size()
+                            || !integrity.adjacent(signal.candleTimestamp(), rawCandles.get(rawIndex + 1).getTimestamp())) continue;
                     CandlestickSignalLifecyclePolicy.LifecycleResolution gate =
                             CandlestickSignalLifecyclePolicy.resolveCandidateGate(
                                     signal.pattern(), signal.tradeSignal(), signal.closePrice(),
@@ -269,6 +280,13 @@ public class CrossPatternConfluenceService {
             detail.append("; no Elliott, harmonic, or candlestick signal from another family was detected during the preceding eight candles");
         } else {
             for (Evidence item : evidence) {
+                if (item.direction() == TradeSignal.HOLD) {
+                    detail.append("; ").append(familyLabel(item.family()))
+                            .append(" had mixed bullish and bearish signals ").append(item.candlesAgo())
+                            .append(item.candlesAgo() == 1 ? " candle" : " candles")
+                            .append(" earlier (0 points; conflicting evidence)");
+                    continue;
+                }
                 detail.append("; ").append(familyLabel(item.family())).append(' ')
                         .append(patternLabel(item.pattern())).append(" was ")
                         .append(item.direction() == TradeSignal.BUY ? "bullish" : "bearish")

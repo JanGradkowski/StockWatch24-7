@@ -63,7 +63,7 @@
         <span class="signal-report-tag"
               th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</span>
         <span class="signal-report-tag"
-              th:text="${'Score model ' + signal.scoreVersion()}">Score model CANDLE_V4_EXPERIMENTAL</span>
+              th:text="${'Score model ' + signal.scoreVersion()}">Score model CANDLE_V5_TEXTBOOK</span>
         <span th:if="${displayScore.customApplied()}" class="signal-report-tag">Custom scoring weights</span>
         <span th:if="${signal.analysisProfileVersion() != null}" class="signal-report-tag"
               th:text="${signal.analysisProfileLabel()}">Custom profile</span>

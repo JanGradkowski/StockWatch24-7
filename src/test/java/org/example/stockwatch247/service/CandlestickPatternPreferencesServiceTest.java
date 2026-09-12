@@ -38,6 +38,36 @@ class CandlestickPatternPreferencesServiceTest {
     }
 
     @Test
+    void migratesOldGeometryDefaultsAndAddsCrossWithoutDiscardingCustomSettings() {
+        var form = factoryForm();
+        form.set("bullish_engulfing.previousMinBodyPercent", "20");
+        form.set("bullish_engulfing.currentMinBodyPercent", "45");
+        form.set("bearish_engulfing.previousMinBodyPercent", "25");
+        form.set("bearish_engulfing.currentMinBodyPercent", "60");
+        form.set("hammer.stopLossValuePercent", "2");
+        form.set("rewardRisk.daily", "4");
+        service.save(user, form);
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var payload = (tools.jackson.databind.node.ObjectNode) mapper.readTree(stored.get().getPreferencesPayload());
+        payload.put("version", "USER_CANDLESTICK_PATTERNS_V4");
+        var profiles = (tools.jackson.databind.node.ArrayNode) payload.get("profiles");
+        for (int index = profiles.size()-1; index >= 0; index--) {
+            if (profiles.get(index).get("pattern").asString().endsWith("HARAMI_CROSS")) profiles.remove(index);
+        }
+        stored.get().setPreferencesPayload(mapper.writeValueAsString(payload));
+
+        var preferences = service.get(user);
+        assertThat(preferences.profiles()).hasSize(17);
+        assertThat(preferences.profile(CandlePattern.BULLISH_ENGULFING).value("previousMinBodyPercent")).isZero();
+        assertThat(preferences.profile(CandlePattern.BULLISH_ENGULFING).value("currentMinBodyPercent")).isZero();
+        assertThat(preferences.profile(CandlePattern.BEARISH_ENGULFING).value("previousMinBodyPercent")).isEqualTo(25);
+        assertThat(preferences.profile(CandlePattern.BEARISH_ENGULFING).value("currentMinBodyPercent")).isEqualTo(60);
+        assertThat(preferences.profile(CandlePattern.HAMMER).stopLossValuePercent()).isEqualTo(2);
+        assertThat(preferences.rewardRiskRatio(TimeInterval.DAILY)).isEqualTo(4);
+        assertThat(preferences.profile(CandlePattern.BULLISH_HARAMI_CROSS).factoryProfile()).isTrue();
+    }
+
+    @Test
     void factoryDefinitionsCoverEverySupportedPatternWithExplanatoryMetadata() {
         var preferences = service.get(user);
 
@@ -52,7 +82,7 @@ class CandlestickPatternPreferencesServiceTest {
                 .isEqualTo(50.0);
         assertThat(preferences.circuitBreaker(TimeInterval.MONTHLY).activationThresholdPercent())
                 .isEqualTo(50.0);
-        assertThat(preferences.profiles()).hasSize(15)
+        assertThat(preferences.profiles()).hasSize(17)
                 .allSatisfy(profile -> {
                     assertThat(profile.description()).isNotBlank();
                     assertThat(profile.fixedRules()).isNotBlank();
@@ -135,7 +165,7 @@ class CandlestickPatternPreferencesServiceTest {
         service.save(user, factoryForm());
         UserCandlestickPatternPreferences entity = stored.get();
         String previousPayload = entity.getPreferencesPayload()
-                .replace("USER_CANDLESTICK_PATTERNS_V4", "USER_CANDLESTICK_PATTERNS_V2")
+                .replace(CandlestickPatternPreferencesService.PROFILE_VERSION, "USER_CANDLESTICK_PATTERNS_V2")
                 .replace("\"MONTHLY\":3.0", "\"MONTHLY\":4.0");
         assertThat(previousPayload).contains("\"MONTHLY\":4.0");
         entity.setProfileVersion("USER_CANDLESTICK_PATTERNS_V2");

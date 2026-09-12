@@ -332,6 +332,7 @@ public class CandlestickSignalLifecycleService {
                 .filter(this::hasCompletePriceData)
                 .sorted(Comparator.comparing(Candle::getTimestamp))
                 .toList();
+        CandlestickFormationIntegrity integrity = new CandlestickFormationIntegrity(availableCandles);
         int detected = 0;
         int rejected = 0;
         int confirmed = 0;
@@ -344,6 +345,14 @@ public class CandlestickSignalLifecycleService {
                     enrichedCandles,
                     elliottWaveDetectionService
             );
+            if (event.getLifecycleStatus() == SignalLifecycleStatus.POTENTIAL
+                    && CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(event.getPattern())
+                    && event.getLifecycleEvaluationAnchorTimestamp() != null) {
+                long anchor = event.getLifecycleEvaluationAnchorTimestamp();
+                Candle next = candles.stream().filter(candle -> candle.getTimestamp() > anchor).findFirst().orElse(null);
+                // Missing/invalid immediate confirmation data must not promote a later candle.
+                if (next != null && !integrity.adjacent(anchor, next.getTimestamp())) continue;
+            }
             SignalLifecycleStatus outcome = evaluate(event, candles, enrichedCandles);
             if (outcome == null) {
                 if (revised) {

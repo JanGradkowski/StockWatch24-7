@@ -192,7 +192,7 @@ class TechnicalIndicatorEnrichmentServiceTest {
                 index * secondsPerBar,
                 close - 0.5,
                 close + 1.0,
-                close - 1.0,
+                Math.max(0.01, close - 1.0),
                 close,
                 1_000L
         );
@@ -206,7 +206,7 @@ class TechnicalIndicatorEnrichmentServiceTest {
                 index * 86_400L,
                 close - Math.sin(index * 0.17) * 0.4,
                 close + 1.0,
-                close - 1.0,
+                Math.max(0.01, close - 1.0),
                 close,
                 1_000L + (index % 11) * 100L
         );

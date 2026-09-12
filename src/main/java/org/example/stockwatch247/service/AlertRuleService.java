@@ -1612,7 +1612,7 @@ public class AlertRuleService {
         return switch (pattern) {
             case MORNING_STAR, EVENING_STAR, THREE_WHITE_SOLDIERS, THREE_BLACK_CROWS -> 3;
             case BULLISH_ENGULFING, BEARISH_ENGULFING, PIERCING_LINE, DARK_CLOUD_COVER,
-                    BULLISH_HARAMI, BEARISH_HARAMI -> 2;
+                    BULLISH_HARAMI, BEARISH_HARAMI, BULLISH_HARAMI_CROSS, BEARISH_HARAMI_CROSS -> 2;
             default -> 1;
         };
     }
@@ -2120,10 +2120,11 @@ public class AlertRuleService {
                                                AnalysisPreferencesService.IntervalProfile profile,
                                                User user) {
         if (family == AlertPatternFamily.CANDLESTICK) {
+            var context = new CandlestickFormationIntegrity(candles).latestContext(enrichedCandles);
             return preferencesService == null
-                    ? detectionService.detectAlertSignalsFactory(enrichedCandles, interval)
+                    ? detectionService.detectAlertSignalsFactory(context, interval)
                     : detectionService.detectAlertSignals(
-                    enrichedCandles,
+                    context,
                     preferencesService.trendDetectionRules(profile),
                     patternPreferencesService == null
                             ? CandlestickPatternPreferencesService.factoryPreferences()

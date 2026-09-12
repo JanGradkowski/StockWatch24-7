@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Technical Watchlist — StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/technical-watchlist.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
+  <script th:src="@{/js/technical-watchlist.js}" defer></script>
+  <meta name="_csrf" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:content="${_csrf.headerName}">
+</head>
+<body>
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+<main id="technicalWatchlist" class="page-container watchlist-page"
+      th:attr="data-endpoint=@{/api/technical-watchlist},data-stock-base=@{/stock/},data-change-base=@{/technical-outlook/changes/}">
+  <header class="watchlist-heading">
+    <div>
+      <span class="signal-report-eyebrow">Automated technical analysis</span>
+      <h1>Technical Watchlist</h1>
+      <p>Your followed outlooks. Every interval, every change, in one place.</p>
+    </div>
+    <div class="watchlist-heading-actions">
+      <span id="watchlistCount" class="watchlist-count">Loading tickers…</span>
+      <button id="watchlistRefresh" class="btn-secondary" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <div id="watchlistError" class="watchlist-error" role="alert" hidden></div>
+  <p id="watchlistAnnouncement" class="watchlist-sr" role="status" aria-live="polite"></p>
+  <noscript><p class="watchlist-error">Enable JavaScript to load and manage your technical watchlist.</p></noscript>
+
+  <section class="watchlist-overview" aria-labelledby="overviewTitle">
+    <div class="watchlist-section-heading">
+      <div><h2 id="overviewTitle">At a glance</h2><p id="rankingCaption">Strongest followed outlooks · Daily</p></div>
+      <div class="watchlist-tabs" role="group" aria-label="Ranking interval">
+        <button type="button" data-ranking-interval="1d" aria-pressed="true">Daily</button>
+        <button type="button" data-ranking-interval="1wk" aria-pressed="false">Weekly</button>
+        <button type="button" data-ranking-interval="1mo" aria-pressed="false">Monthly</button>
+      </div>
+    </div>
+    <div class="watchlist-summary-grid">
+      <article class="watchlist-summary-card watchlist-buys" aria-labelledby="buysTitle">
+        <header><h3 id="buysTitle"><span aria-hidden="true">↗</span> Strongest buys</h3><span class="watchlist-top-label">TOP 5</span></header>
+        <ol id="watchlistBuys" class="watchlist-ranking" aria-label="Strongest buy outlooks"><li class="watchlist-panel-message">Loading outlooks…</li></ol>
+      </article>
+      <article class="watchlist-summary-card watchlist-sells" aria-labelledby="sellsTitle">
+        <header><h3 id="sellsTitle"><span aria-hidden="true">↘</span> Strongest sells</h3><span class="watchlist-top-label">TOP 5</span></header>
+        <ol id="watchlistSells" class="watchlist-ranking" aria-label="Strongest sell outlooks"><li class="watchlist-panel-message">Loading outlooks…</li></ol>
+      </article>
+      <article class="watchlist-summary-card watchlist-changes" aria-labelledby="changesTitle">
+        <header><h3 id="changesTitle">Latest changes</h3>
+          <label class="watchlist-sr" for="changeInterval">Latest changes interval</label>
+          <select id="changeInterval"><option value="all">All intervals</option><option value="1d">Daily</option><option value="1wk">Weekly</option><option value="1mo">Monthly</option></select>
+        </header>
+        <ol id="watchlistChanges" class="watchlist-change-list" aria-label="Latest five outlook changes"><li class="watchlist-panel-message">Loading changes…</li></ol>
+      </article>
+    </div>
+    <p class="watchlist-footnote">Ranked by overall outlook score (−100 to +100). Missing and potentially stale outlooks are excluded.</p>
+  </section>
+
+  <section class="watchlist-board" aria-labelledby="followedTitle">
+    <div class="watchlist-section-heading">
+      <div><h2 id="followedTitle">Followed tickers</h2><p id="watchlistFreshness">Loading latest evaluated candles…</p></div>
+      <button id="unfollowAll" class="danger-outline-button" type="button" disabled>Unfollow all</button>
+    </div>
+    <div class="watchlist-toolbar">
+      <label class="watchlist-search">Search tickers<span class="watchlist-search-field"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="watchlistSearch" type="search" placeholder="Ticker or company name" autocomplete="off"></span></label>
+      <label>Followed interval<select id="watchlistInterval"><option value="all">All intervals</option><option value="1d">Daily</option><option value="1wk">Weekly</option><option value="1mo">Monthly</option></select></label>
+      <label>Outlook<select id="watchlistOutlook"><option value="all">All outlooks</option><option value="buy">Buy</option><option value="sell">Sell</option><option value="neutral">Neutral</option><option value="unavailable">Awaiting analysis</option><option value="stale">Potentially stale</option></select></label>
+      <label>Sort by<select id="watchlistSort"><option value="ticker">Ticker A–Z</option><option value="latest">Latest change</option><option value="score-high">Highest score</option><option value="score-low">Lowest score</option><option value="price-high">Largest price rise</option><option value="price-low">Largest price fall</option></select></label>
+    </div>
+    <div class="watchlist-table-meta"><span id="watchlistResults" role="status">Loading your watchlist…</span><span id="watchlistSortNote">Score and price sorting use Daily.</span></div>
+    <div id="watchlistLoading" class="watchlist-loading" role="status"><span></span><span></span><span></span><p>Loading your followed outlooks…</p></div>
+    <table id="watchlistTable" class="watchlist-table" hidden>
+      <caption class="watchlist-sr">Followed tickers with daily, weekly and monthly outlooks and price progress since the last classification change</caption>
+      <thead><tr><th scope="col">Ticker</th><th scope="col">Daily</th><th scope="col">Weekly</th><th scope="col">Monthly</th><th scope="col"><span class="watchlist-sr">Actions</span></th></tr></thead>
+      <tbody id="watchlistRows"></tbody>
+    </table>
+    <div id="watchlistEmpty" class="watchlist-empty" hidden><span aria-hidden="true">◇</span><h3>Your watchlist starts here</h3><p>Search for a ticker above, then enable Follow outlook for Daily, Weekly, or Monthly analysis on its stock page.</p></div>
+    <div id="watchlistNoMatches" class="watchlist-empty" hidden><h3>No tickers match these filters</h3><p>Try another company, interval, or outlook.</p><button id="watchlistClear" class="btn-secondary" type="button">Clear filters</button></div>
+    <footer class="watchlist-board-footer">Price progress compares the latest evaluated interval close with the close when its overall outlook last changed. Score movement is shown in points. Dates identify completed candles; these are not live quotes.</footer>
+  </section>
+
+  <dialog id="unfollowAllDialog" class="watchlist-dialog" aria-labelledby="unfollowAllTitle" aria-describedby="unfollowAllDescription">
+    <h2 id="unfollowAllTitle">Unfollow every ticker?</h2>
+    <p id="unfollowAllDescription"></p>
+    <p id="unfollowAllError" role="alert" hidden></p>
+    <div><button id="cancelUnfollowAll" class="btn-secondary" type="button" autofocus>Keep following</button><button id="confirmUnfollowAll" class="danger-button" type="button">Unfollow all</button></div>
+  </dialog>
+</main>
+</body>
+</html>

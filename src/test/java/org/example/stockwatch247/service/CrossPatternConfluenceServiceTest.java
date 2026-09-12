@@ -17,6 +17,36 @@ class CrossPatternConfluenceServiceTest {
     private final List<Long> candles = LongStream.rangeClosed(1, 20).boxed().toList();
 
     @Test
+    void simultaneousOppositeDirectionsAreNeutralRegardlessOfOrderOrWeights() {
+        var buy = observation(AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY, 19, CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+        var sell = observation(AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL, 19, CandlePattern.ELLIOTT_BEARISH_CORRECTION);
+        var policy = new CrossPatternConfluenceService.Policy(AlertPatternFamily.CANDLESTICK,
+                java.util.Map.of(AlertPatternFamily.ELLIOTT_WAVE, new CrossPatternConfluenceService.Weight(true,25,5)));
+        var first = service.assess(50, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY,20,timeline(buy,sell,buy),policy);
+        var reversed = service.assess(50, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY,20,timeline(sell,buy),policy);
+        assertThat(first).isEqualTo(reversed);
+        assertThat(first.adjustedScore()).isEqualTo(50);
+        assertThat(first.evidence()).singleElement().satisfies(item -> {
+            assertThat(item.direction()).isEqualTo(TradeSignal.HOLD);
+            assertThat(item.points()).isZero();
+        });
+        assertThat(first.reason()).contains("mixed bullish and bearish", "0 points");
+    }
+
+    @Test
+    void newerUnambiguousEvidenceReplacesEarlierConflictAndSameDirectionDuplicatesCountOnce() {
+        var olderBuy = observation(AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY, 18, CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+        var olderSell = observation(AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL, 18, CandlePattern.ELLIOTT_BEARISH_CORRECTION);
+        var buy = observation(AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY, 19, CandlePattern.ELLIOTT_BULLISH_CORRECTION);
+        var buyOther = observation(AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY, 19, CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
+        var first = service.assess(50, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY,20,timeline(olderBuy,olderSell,buy,buyOther,buy));
+        var reversed = service.assess(50, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY,20,timeline(buyOther,buy,olderSell,olderBuy));
+        assertThat(first).isEqualTo(reversed);
+        assertThat(first.adjustedScore()).isEqualTo(60);
+        assertThat(first.evidence()).hasSize(1);
+    }
+
+    @Test
     void addsTenForEachMatchingOtherFamilyAndCapsAtOneHundred() {
         var timeline = timeline(
                 observation(AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY, 14,

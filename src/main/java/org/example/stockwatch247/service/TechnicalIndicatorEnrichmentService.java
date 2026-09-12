@@ -537,12 +537,7 @@ public class TechnicalIndicatorEnrichmentService {
     }
 
     private boolean hasCompletePriceData(Candle candle) {
-        return candle != null
-                && candle.getTimestamp() != null
-                && candle.getOpenPrice() != null
-                && candle.getHighPrice() != null
-                && candle.getLowPrice() != null
-                && candle.getClosePrice() != null;
+        return CandlestickFormationIntegrity.valid(candle);
     }
 
     private record VolumeProfileSnapshot(double pointOfControl,

@@ -424,7 +424,7 @@ public class ScheduledAlertService {
                 }
                 continue;
             }
-            List<DetectedSignal> detectedSignals = detectSignals(enrichedCandles, elliottCandles, rule, interval);
+            List<DetectedSignal> detectedSignals = detectSignals(candles, enrichedCandles, elliottCandles, rule, interval);
             for (DetectedSignal signal : detectedSignals) {
                 if (rule.getTradeSignal() != signal.tradeSignal()
                         || rule.getPatternFamily() != signalFamily(signal)) {
@@ -1183,7 +1183,7 @@ public class ScheduledAlertService {
         return interval.analysisApiValue();
     }
 
-    private List<DetectedSignal> detectSignals(List<EnrichedCandle> candlestickCandles,
+    private List<DetectedSignal> detectSignals(List<Candle> rawCandles, List<EnrichedCandle> candlestickCandles,
             List<EnrichedCandle> elliottCandles, AlertRule rule, TimeInterval interval) {
         if (rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE) {
             if (elliottCandles.isEmpty()) return List.of();
@@ -1198,9 +1198,10 @@ public class ScheduledAlertService {
                 : preferencesService.trendDetectionRules(preferencesService.profile(rule.getUser(), interval));
         var definitions = patternPreferencesService == null ? CandlestickPatternPreferencesService.factoryPreferences()
                 : patternPreferencesService.get(rule.getUser());
+        var context = new CandlestickFormationIntegrity(rawCandles).latestContext(candlestickCandles);
         return AnalysisComputationScope.memo(java.util.List.of("candlestick-signals", trend, definitions),
-                () -> preferencesService == null ? detectionService.detectAlertSignalsFactory(candlestickCandles, interval)
-                        : detectionService.detectAlertSignals(candlestickCandles, trend, definitions));
+                () -> preferencesService == null ? detectionService.detectAlertSignalsFactory(context, interval)
+                        : detectionService.detectAlertSignals(context, trend, definitions));
     }
 
     private Object harmonicSettings(AlertRule rule) {

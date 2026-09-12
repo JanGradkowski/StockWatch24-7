@@ -3,6 +3,7 @@ package org.example.stockwatch247.repository;
 import org.example.stockwatch247.model.TechnicalOutlookNotification;
 import org.example.stockwatch247.model.TechnicalOutlookSubscription;
 import org.example.stockwatch247.model.User;
+import org.example.stockwatch247.model.enums.TimeInterval;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -28,6 +29,18 @@ public interface TechnicalOutlookNotificationRepository
             """)
     List<TechnicalOutlookNotification> findLatestUnreadForUser(
             @Param("user") User user, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"subscription", "subscription.stockAsset"})
+    @Query("""
+            select n from TechnicalOutlookNotification n
+            where n.subscription.user = :user and n.subscription.active = true
+              and (:interval is null or n.subscription.interval = :interval)
+              and (n.subscription.trackingStartedAt is null
+                   or n.createdAt >= n.subscription.trackingStartedAt)
+            order by n.currentCandleTimestamp desc, n.id desc
+            """)
+    List<TechnicalOutlookNotification> findLatestFollowedChanges(
+            @Param("user") User user, @Param("interval") TimeInterval interval, Pageable pageable);
 
     @EntityGraph(attributePaths = {"subscription", "subscription.user", "subscription.stockAsset"})
     @Query("""

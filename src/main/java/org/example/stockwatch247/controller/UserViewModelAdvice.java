@@ -31,6 +31,8 @@ public class UserViewModelAdvice {
     }
 
     static String navigationSection(String path) {
+        if (path.equals("/technical-watchlist") || path.startsWith("/technical-outlook/changes/")
+                || path.matches("/stock/[^/]+/technical-outlook")) return "watchlist";
         if (path.equals("/settings") || path.startsWith("/settings/")) return "settings";
         if (path.equals("/virtual-trades") || path.startsWith("/virtual-trades/")) return "demo";
         if (path.equals("/activity-signals") || path.startsWith("/activity-signals/")) return "alerts";

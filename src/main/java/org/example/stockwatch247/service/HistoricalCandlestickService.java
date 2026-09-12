@@ -145,6 +145,7 @@ public class HistoricalCandlestickService {
                 symbol,
                 companyName,
                 completedCandles,
+                storedCandles,
                 profile,
                 validatedLookbackCandles,
                 trendRules,
@@ -191,9 +192,9 @@ public class HistoricalCandlestickService {
     private HistoricalScan calculateAll(String symbol, String apiInterval,
             CandlePatternDetectionService.TrendDetectionRules trendRules, CandlestickPatternPreferencesService.PreferencesView definitions) {
         ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
-        List<Candle> completedCandles = candleRepository
-                .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, apiInterval)
-                .stream()
+        List<Candle> storedCandles = candleRepository
+                .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, apiInterval);
+        List<Candle> completedCandles = storedCandles.stream()
                 .filter(this::hasCompletePriceData)
                 .filter(candle -> completionService.isComplete(candle.getTimestamp(), profile.interval()))
                 .sorted(Comparator.comparing(Candle::getTimestamp))
@@ -203,6 +204,7 @@ public class HistoricalCandlestickService {
                 symbol,
                 companyName,
                 completedCandles,
+                storedCandles,
                 profile,
                 completedCandles.size(),
                 trendRules,
@@ -501,6 +503,7 @@ public class HistoricalCandlestickService {
     private List<HistoricalSignal> analyze(String symbol,
                                            String companyName,
                                            List<Candle> candles,
+                                           List<Candle> rawCandles,
                                            ScanProfile profile,
                                            int lookbackCandles,
                                            CandlePatternDetectionService.TrendDetectionRules trendRules,
@@ -517,16 +520,17 @@ public class HistoricalCandlestickService {
             return List.of();
         }
 
+        CandlestickFormationIntegrity integrity = new CandlestickFormationIntegrity(rawCandles);
         int firstVisibleIndex = Math.max(0, enriched.size() - lookbackCandles);
         List<EnrichedCandle> elliottEnriched = enrichmentService.enrichForElliott(
                 candles, candles.size(), profile.interval());
         CrossPatternConfluenceService.Timeline confluenceTimeline = crossPatternConfluenceService.buildTimeline(
-                candles, enriched, elliottEnriched, profile.interval(), trendRules, definitions,
+                rawCandles, enriched, elliottEnriched, profile.interval(), trendRules, definitions,
                 elliottWaveDetectionService, harmonicPatternDetectionService);
         List<HistoricalSignal> signals = new ArrayList<>();
         for (int signalIndex = firstVisibleIndex; signalIndex < enriched.size(); signalIndex++) {
             int firstContextIndex = Math.max(0, signalIndex - 99);
-            List<EnrichedCandle> context = enriched.subList(firstContextIndex, signalIndex + 1);
+            List<EnrichedCandle> context = integrity.context(enriched.subList(firstContextIndex, signalIndex + 1));
             long signalTimestamp = enriched.get(signalIndex).timestamp();
             List<DetectedSignal> detected = (definitions.custom()
                     ? detectionService.detectAlertSignals(context, trendRules, definitions)
@@ -534,6 +538,9 @@ public class HistoricalCandlestickService {
                     .filter(signal -> signal.candleTimestamp() == signalTimestamp)
                     .toList();
             for (DetectedSignal unadjustedSignal : detected) {
+                if (CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(unadjustedSignal.pattern())
+                        && signalIndex + 1 < candles.size()
+                        && !integrity.adjacent(unadjustedSignal.candleTimestamp(), candles.get(signalIndex + 1).getTimestamp())) continue;
                 DetectedSignal signal = crossPatternConfluenceService.apply(
                         unadjustedSignal, org.example.stockwatch247.model.enums.AlertPatternFamily.CANDLESTICK,
                         confluenceTimeline);
@@ -1087,12 +1094,7 @@ public class HistoricalCandlestickService {
     }
 
     private boolean hasCompletePriceData(Candle candle) {
-        return candle != null
-                && candle.getTimestamp() != null
-                && candle.getOpenPrice() != null
-                && candle.getHighPrice() != null
-                && candle.getLowPrice() != null
-                && candle.getClosePrice() != null;
+        return CandlestickFormationIntegrity.valid(candle);
     }
 
     public int defaultLookbackCandles(String apiInterval) {

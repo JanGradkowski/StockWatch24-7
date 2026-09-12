@@ -73,7 +73,8 @@ class TechnicalOutlookTrackingServiceTest {
         when(preferences.get(user)).thenReturn(AnalysisPreferencesService.factoryPreferences());
         TechnicalOutlookService.OutlookView slightBuy = outlook(1_000L, "Slight buy outlook", 0.20, 1);
         TechnicalOutlookService.OutlookView neutral = outlook(2_000L, "Neutral outlook", 0.0, 0);
-        when(outlooks.getSummaryOutlook(user, "AAPL", "1d")).thenReturn(slightBuy, neutral);
+        when(outlooks.getSummaryOutlook(user, "AAPL", "1d")).thenReturn(slightBuy, neutral, outlook(3_000L, "Neutral outlook", 0.1, 0),
+                        outlook(4_000L, "Neutral outlook", 0.1, 0));
         when(outlooks.getOutlook(user, "AAPL", "1d")).thenReturn(neutral);
         when(notifications.existsBySubscriptionAndCurrentCandleTimestamp(any(), anyLong())).thenReturn(false);
         when(notifications.save(any())).thenAnswer(invocation -> {
@@ -89,6 +90,7 @@ class TechnicalOutlookTrackingServiceTest {
         TechnicalOutlookTrackingService.EvaluationResult baseline =
                 service.evaluate("AAPL", TimeInterval.DAILY);
         assertThat(baseline.baselinesEstablished()).isEqualTo(1);
+        assertThat(subscription.getLastChangeCandleTimestamp()).isNull();
         verify(notifications, never()).save(any());
 
         TechnicalOutlookTrackingService.EvaluationResult changed =
@@ -97,6 +99,27 @@ class TechnicalOutlookTrackingServiceTest {
         verify(notifications).save(any(TechnicalOutlookNotification.class));
         assertThat(subscription.getLastCandleTimestamp()).isEqualTo(2_000L);
         assertThat(subscription.getBaselineSnapshot()).contains("Neutral outlook");
+        assertThat(subscription.getLastChangeCandleTimestamp()).isEqualTo(2_000L);
+        assertThat(subscription.getLastChangePreviousClassification()).isEqualTo("Slight buy outlook");
+        assertThat(subscription.getLastChangePrice()).isEqualTo(120.0);
+        assertThat(subscription.getLastChangeScore()).isEqualTo(0.0);
+
+        // An unchanged classification advances the current state, preserving the original anchor.
+        service.evaluate("AAPL", TimeInterval.DAILY);
+        assertThat(subscription.getLastCandleTimestamp()).isEqualTo(3_000L);
+        assertThat(subscription.getCurrentPrice()).isEqualTo(130.0);
+        assertThat(subscription.getCurrentScore()).isEqualTo(0.1);
+        assertThat(subscription.getLastChangeCandleTimestamp()).isEqualTo(2_000L);
+        assertThat(subscription.getLastChangePrice()).isEqualTo(120.0);
+        assertThat(subscription.getLastChangeScore()).isEqualTo(0.0);
+
+        // Changing analysis settings establishes a new quiet baseline instead of a market change.
+        subscription.setProfileFingerprint("edited-settings");
+        assertThat(service.evaluate("AAPL", TimeInterval.DAILY).baselinesEstablished()).isEqualTo(1);
+        assertThat(subscription.getLastChangeCandleTimestamp()).isNull();
+        assertThat(subscription.getLastChangePrice()).isNull();
+        assertThat(subscription.getCurrentPrice()).isEqualTo(140.0);
+        verify(notifications).save(any(TechnicalOutlookNotification.class));
     }
 
     private TechnicalOutlookService.OutlookView outlook(
@@ -118,7 +141,9 @@ class TechnicalOutlookTrackingServiceTest {
         return new TechnicalOutlookService.OutlookView(
                 "AAPL", "Apple Inc.", "1d", "Daily", true, timestamp,
                 "Current completed candle", score, score, List.of(category), List.of(indicator),
-                List.of(), List.of(), List.of(),
+                List.of(new TechnicalOutlookService.ChartCandleView(timestamp, 100, 150, 90,
+                        100 + timestamp / 100.0, 1000, null, null, null, null, null, null, null, null, null, null)),
+                List.of(), List.of(),
                 new TechnicalOutlookService.MarketComparisonView(
                         false, "^GSPC", "S&P 500", "UNAVAILABLE", 0, 0,
                         "UNAVAILABLE", List.of(), List.of()),

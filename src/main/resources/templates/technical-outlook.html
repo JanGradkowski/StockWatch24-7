@@ -1297,7 +1297,8 @@
     });
   });
   // Chart colours update in place through the shared chart theme adapter.
-  loadOutlook('1d');
+  const linkedInterval = new URLSearchParams(window.location.search).get('interval');
+  loadOutlook(['1d', '1wk', '1mo'].includes(linkedInterval) ? linkedInterval : '1d');
 })();
 </script>
 </body>

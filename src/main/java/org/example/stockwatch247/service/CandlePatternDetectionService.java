@@ -24,7 +24,7 @@ import java.util.Map;
 
 @Service
 public class CandlePatternDetectionService {
-    public static final String SETUP_SCORE_VERSION = "CANDLE_V4_EXPERIMENTAL";
+    public static final String SETUP_SCORE_VERSION = "CANDLE_V5_TEXTBOOK";
     private static final int MIN_SETUP_SCORE = 75;
     private static final int STRONG_SETUP_SCORE = 85;
     private static final int BODY_COMPARISON_LOOKBACK = 20;
@@ -80,10 +80,7 @@ public class CandlePatternDetectionService {
             return List.of();
         }
 
-        List<EnrichedCandle> candles = recentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = validContiguousSuffix(recentCandles);
         if (candles.size() < 2) {
             return List.of();
         }
@@ -168,19 +165,35 @@ public class CandlePatternDetectionService {
                     evaluateSetup(CandlePattern.DARK_CLOUD_COVER, candles, last, twoCandleStart,
                             TradeSignal.SELL, twoCandleSellTrend, twoCandleStatistics));
         }
+        PatternProfile bullishCross = definitions.profile(CandlePattern.BULLISH_HARAMI_CROSS);
+        boolean bullishHaramiCross = matchesTrend(bullishCross, twoCandleBuyTrend, twoCandleSellTrend)
+                && isGeometricHaramiCross(previous, current, twoCandleStatistics, bullishCross);
         PatternProfile bullishHarami = definitions.profile(CandlePattern.BULLISH_HARAMI);
-        if (matchesTrend(bullishHarami, twoCandleBuyTrend, twoCandleSellTrend)
+        if (!bullishHaramiCross && matchesTrend(bullishHarami, twoCandleBuyTrend, twoCandleSellTrend)
                 && isGeometricBullishHarami(previous, current, twoCandleStatistics, bullishHarami)) {
             addSignal(signals, CandlePattern.BULLISH_HARAMI, TradeSignal.BUY,
                     evaluateSetup(CandlePattern.BULLISH_HARAMI, candles, last, twoCandleStart,
                             TradeSignal.BUY, twoCandleBuyTrend, twoCandleStatistics));
         }
+        PatternProfile bearishCross = definitions.profile(CandlePattern.BEARISH_HARAMI_CROSS);
+        boolean bearishHaramiCross = matchesTrend(bearishCross, twoCandleBuyTrend, twoCandleSellTrend)
+                && isGeometricHaramiCross(previous, current, twoCandleStatistics, bearishCross);
         PatternProfile bearishHarami = definitions.profile(CandlePattern.BEARISH_HARAMI);
-        if (matchesTrend(bearishHarami, twoCandleBuyTrend, twoCandleSellTrend)
+        if (!bearishHaramiCross && matchesTrend(bearishHarami, twoCandleBuyTrend, twoCandleSellTrend)
                 && isGeometricBearishHarami(previous, current, twoCandleStatistics, bearishHarami)) {
             addSignal(signals, CandlePattern.BEARISH_HARAMI, TradeSignal.SELL,
                     evaluateSetup(CandlePattern.BEARISH_HARAMI, candles, last, twoCandleStart,
                             TradeSignal.SELL, twoCandleSellTrend, twoCandleStatistics));
+        }
+
+        for (CandlePattern cross : List.of(CandlePattern.BULLISH_HARAMI_CROSS, CandlePattern.BEARISH_HARAMI_CROSS)) {
+            PatternProfile profile = definitions.profile(cross);
+            TradeSignal direction = cross == CandlePattern.BULLISH_HARAMI_CROSS ? TradeSignal.BUY : TradeSignal.SELL;
+            if (matchesTrend(profile, twoCandleBuyTrend, twoCandleSellTrend)
+                    && isGeometricHaramiCross(previous, current, twoCandleStatistics, profile)) {
+                addSignal(signals, cross, direction, evaluateSetup(cross, candles, last, twoCandleStart,
+                        direction, direction == TradeSignal.BUY ? twoCandleBuyTrend : twoCandleSellTrend, twoCandleStatistics));
+            }
         }
 
         if (candles.size() >= 3) {
@@ -284,10 +297,7 @@ public class CandlePatternDetectionService {
             return PriorTrendAssessment.none();
         }
 
-        List<EnrichedCandle> candles = recentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = validContiguousSuffix(recentCandles);
         int patternStartIndex = candles.size() - patternCandleCount;
         if (patternStartIndex < 0) {
             return PriorTrendAssessment.none();
@@ -305,10 +315,7 @@ public class CandlePatternDetectionService {
         if (patternCandleCount < 1 || recentCandles == null || recentCandles.isEmpty()) {
             return PriorTrendAssessment.none();
         }
-        List<EnrichedCandle> candles = recentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = validContiguousSuffix(recentCandles);
         int patternStartIndex = candles.size() - patternCandleCount;
         if (patternStartIndex < 0) {
             return PriorTrendAssessment.none();
@@ -327,10 +334,7 @@ public class CandlePatternDetectionService {
                 || trendRules == null || direction == null) {
             return PriorTrendAssessment.none();
         }
-        List<EnrichedCandle> candles = recentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = validContiguousSuffix(recentCandles);
         int patternStartIndex = candles.size() - patternCandleCount;
         if (patternStartIndex < 0) return PriorTrendAssessment.none();
         return trendBefore(candles, patternStartIndex, trendRules, direction).asAssessment();
@@ -349,7 +353,8 @@ public class CandlePatternDetectionService {
         }
         EnrichedCandle current = candles.get(last);
         EnrichedCandle previous = candles.get(last - 1);
-        if (!hasCompleteData(current) || !hasCompleteData(previous)) {
+        if (!hasCompleteData(current) || !hasCompleteData(previous)
+                || current.timestamp() <= previous.timestamp()) {
             return List.of();
         }
 
@@ -381,17 +386,27 @@ public class CandlePatternDetectionService {
         if (isGeometricDarkCloudCover(previous, current, twoStatistics)) {
             candidates.add(candidate(CandlePattern.DARK_CLOUD_COVER, TradeSignal.SELL, TrendDirection.UP, 2));
         }
-        if (isGeometricBullishHarami(previous, current, twoStatistics)) {
+        if (isGeometricBullishHarami(previous, current, twoStatistics)
+                && !isGeometricHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BULLISH_HARAMI_CROSS))) {
             candidates.add(candidate(CandlePattern.BULLISH_HARAMI, TradeSignal.BUY, TrendDirection.DOWN, 2));
         }
-        if (isGeometricBearishHarami(previous, current, twoStatistics)) {
+        if (isGeometricBearishHarami(previous, current, twoStatistics)
+                && !isGeometricHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BEARISH_HARAMI_CROSS))) {
             candidates.add(candidate(CandlePattern.BEARISH_HARAMI, TradeSignal.SELL, TrendDirection.UP, 2));
+        }
+
+        if (isGeometricHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BULLISH_HARAMI_CROSS))) {
+            candidates.add(candidate(CandlePattern.BULLISH_HARAMI_CROSS, TradeSignal.BUY, TrendDirection.DOWN, 2));
+        }
+        if (isGeometricHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BEARISH_HARAMI_CROSS))) {
+            candidates.add(candidate(CandlePattern.BEARISH_HARAMI_CROSS, TradeSignal.SELL, TrendDirection.UP, 2));
         }
 
         if (last >= 2) {
             int threeCandleStart = last - 2;
             EnrichedCandle first = candles.get(threeCandleStart);
             EnrichedCandle middle = candles.get(last - 1);
+            if (!hasCompleteData(first) || first.timestamp() >= middle.timestamp()) return List.copyOf(candidates);
             CandleStatistics threeStatistics = statisticsBefore(candles, threeCandleStart);
             if (isGeometricMorningStar(first, middle, current, threeStatistics)) {
                 candidates.add(candidate(CandlePattern.MORNING_STAR, TradeSignal.BUY, TrendDirection.DOWN, 3));
@@ -1147,7 +1162,7 @@ public class CandlePatternDetectionService {
                     score += 2;
                 }
             }
-            case BULLISH_HARAMI, BEARISH_HARAMI -> {
+            case BULLISH_HARAMI, BEARISH_HARAMI, BULLISH_HARAMI_CROSS, BEARISH_HARAMI_CROSS -> {
                 if (statistics.hasEnoughData()
                         && body(first) >= statistics.medianBody() * 1.4) {
                     score += 3;
@@ -1235,7 +1250,8 @@ public class CandlePatternDetectionService {
                 && body(current) >= body(previous) * profile.value("currentMinPreviousBodyMultiple")
                 && body(current) >= range(current) * profile.fraction("currentMinBodyPercent")
                 && current.open() <= previous.close()
-                && current.close() >= previous.open();
+                && current.close() >= previous.open()
+                && body(current) > body(previous);
     }
 
     private boolean isGeometricBearishEngulfing(EnrichedCandle previous, EnrichedCandle current) {
@@ -1248,7 +1264,8 @@ public class CandlePatternDetectionService {
                 && body(current) >= body(previous) * profile.value("currentMinPreviousBodyMultiple")
                 && body(current) >= range(current) * profile.fraction("currentMinBodyPercent")
                 && current.open() >= previous.close()
-                && current.close() <= previous.open();
+                && current.close() <= previous.open()
+                && body(current) > body(previous);
     }
 
     private boolean isGeometricPiercingLine(EnrichedCandle previous,
@@ -1263,7 +1280,7 @@ public class CandlePatternDetectionService {
                 && isBullish(current)
                 && isLongBody(previous, statistics, profile, "previousMinBodyPercent", "previousMinMedianMultiple")
                 && isStrongBody(current, statistics, profile)
-                && current.open() < previous.close()
+                && current.open() < previous.low()
                 && current.close() > requiredClose
                 && current.close() < previous.open();
     }
@@ -1280,7 +1297,7 @@ public class CandlePatternDetectionService {
                 && isBearish(current)
                 && isLongBody(previous, statistics, profile, "previousMinBodyPercent", "previousMinMedianMultiple")
                 && isStrongBody(current, statistics, profile)
-                && current.open() > previous.close()
+                && current.open() > previous.high()
                 && current.close() < requiredClose
                 && current.close() > previous.open();
     }
@@ -1292,12 +1309,7 @@ public class CandlePatternDetectionService {
     }
     private boolean isGeometricBullishHarami(EnrichedCandle previous, EnrichedCandle current,
                                              CandleStatistics statistics, PatternProfile profile) {
-        return isBearish(previous)
-                && isBullish(current)
-                && isLongBody(previous, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
-                && current.open() >= previous.close()
-                && current.close() <= previous.open()
-                && isHaramiSmallBody(previous, current, statistics, profile);
+        return isGeometricHarami(previous, current, statistics, profile);
     }
 
     private boolean isGeometricBearishHarami(EnrichedCandle previous,
@@ -1307,12 +1319,22 @@ public class CandlePatternDetectionService {
     }
     private boolean isGeometricBearishHarami(EnrichedCandle previous, EnrichedCandle current,
                                              CandleStatistics statistics, PatternProfile profile) {
-        return isBullish(previous)
-                && isBearish(current)
-                && isLongBody(previous, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
-                && current.open() <= previous.close()
-                && current.close() >= previous.open()
-                && isHaramiSmallBody(previous, current, statistics, profile);
+        return isGeometricHarami(previous, current, statistics, profile);
+    }
+
+    private boolean isGeometricHarami(EnrichedCandle first, EnrichedCandle second,
+                                       CandleStatistics statistics, PatternProfile profile) {
+        return body(first) > 0
+                && isLongBody(first, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
+                && Math.min(second.open(), second.close()) > Math.min(first.open(), first.close())
+                && Math.max(second.open(), second.close()) < Math.max(first.open(), first.close())
+                && isHaramiSmallBody(first, second, statistics, profile);
+    }
+
+    private boolean isGeometricHaramiCross(EnrichedCandle first, EnrichedCandle second,
+                                            CandleStatistics statistics, PatternProfile profile) {
+        return isGeometricHarami(first, second, statistics, profile)
+                && isGeometricDoji(second, profile);
     }
 
     private boolean isGeometricMorningStar(EnrichedCandle first,
@@ -1327,6 +1349,7 @@ public class CandlePatternDetectionService {
                 && isBullish(current)
                 && isLongBody(first, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
                 && isSmallBody(middle, statistics, profile)
+                && Math.max(middle.open(), middle.close()) < Math.min(first.open(), first.close())
                 && isStrongBody(current, statistics, profile)
                 && current.close() > first.close() + body(first) * profile.fraction("penetrationPercent");
     }
@@ -1343,6 +1366,7 @@ public class CandlePatternDetectionService {
                 && isBearish(current)
                 && isLongBody(first, statistics, profile, "firstMinBodyPercent", "firstMinMedianMultiple")
                 && isSmallBody(middle, statistics, profile)
+                && Math.min(middle.open(), middle.close()) > Math.max(first.open(), first.close())
                 && isStrongBody(current, statistics, profile)
                 && current.close() < first.close() - body(first) * profile.fraction("penetrationPercent");
     }
@@ -1787,6 +1811,12 @@ public class CandlePatternDetectionService {
         List<Double> bodies = new ArrayList<>();
         List<Double> ranges = new ArrayList<>();
         for (int index = startIndex; index < patternStartIndex; index++) {
+            if (!hasCompleteData(candles.get(index))
+                    || (index > startIndex && hasCompleteData(candles.get(index - 1))
+                    && candles.get(index).timestamp() <= candles.get(index - 1).timestamp())) {
+                bodies.clear(); ranges.clear();
+                continue;
+            }
             bodies.add(body(candles.get(index)));
             ranges.add(range(candles.get(index)));
         }
@@ -1805,6 +1835,20 @@ public class CandlePatternDetectionService {
         return sorted.get(middle);
     }
 
+    /** Invalid/duplicate bars are boundaries, never removed to join unrelated candles. */
+    private List<EnrichedCandle> validContiguousSuffix(List<EnrichedCandle> input) {
+        if (input.stream().anyMatch(candle -> candle == null || candle.timestamp() == null)) return List.of();
+        List<EnrichedCandle> sorted = input.stream().sorted(Comparator.comparing(EnrichedCandle::timestamp)).toList();
+        int start = 0;
+        for (int index = 0; index < sorted.size(); index++) {
+            if (!hasCompleteData(sorted.get(index))
+                    || (index > 0 && sorted.get(index).timestamp().equals(sorted.get(index - 1).timestamp()))) {
+                start = index + 1;
+            }
+        }
+        return sorted.subList(start, sorted.size());
+    }
+
     private boolean hasCompleteData(EnrichedCandle candle) {
         return candle != null
                 && candle.timestamp() != null
@@ -1812,6 +1856,7 @@ public class CandlePatternDetectionService {
                 && isAvailable(candle.high())
                 && isAvailable(candle.low())
                 && isAvailable(candle.close())
+                && candle.open() > 0 && candle.low() > 0 && candle.close() > 0
                 && candle.high() >= Math.max(candle.open(), candle.close())
                 && candle.low() <= Math.min(candle.open(), candle.close())
                 && candle.high() >= candle.low();

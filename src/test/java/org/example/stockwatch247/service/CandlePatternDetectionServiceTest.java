@@ -373,14 +373,14 @@ class CandlePatternDetectionServiceTest {
                 plain(2, 109, 110, 105, 106),
                 plain(3, 106, 107, 102, 103),
                 plain(4, 104, 105, 96, 97),
-                plain(5, 96, 102, 95.5, 101)
+                plain(5, 95.9, 102, 95.5, 101)
         );
         List<EnrichedCandle> darkCloud = List.of(
                 plain(1, 100, 104, 99, 103),
                 plain(2, 103, 107, 102, 106),
                 plain(3, 106, 110, 105, 109),
                 plain(4, 108, 116, 107, 115),
-                plain(5, 116, 116.5, 110, 110.5)
+                plain(5, 116.1, 116.5, 110, 110.5)
         );
 
         assertThat(signal(CandlePattern.PIERCING_LINE, piercing).tradeSignal()).isEqualTo(TradeSignal.BUY);

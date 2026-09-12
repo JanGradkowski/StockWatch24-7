@@ -169,6 +169,7 @@ public class TechnicalOutlookTrackingService {
         if (subscription.getBaselineSnapshot() == null
                 || subscription.getLastCandleTimestamp() == null
                 || !Objects.equals(fingerprint, subscription.getProfileFingerprint())) {
+            resetBaseline(subscription);
             updateBaseline(subscription, current, fingerprint);
             return EvaluationStatus.BASELINE;
         }
@@ -198,6 +199,12 @@ public class TechnicalOutlookTrackingService {
             notification = notificationRepository.save(notification);
             sendEmail(notification, report);
         }
+        if (changed) {
+            subscription.setLastChangeCandleTimestamp(current.candleTimestamp());
+            subscription.setLastChangePreviousClassification(previousClass);
+            subscription.setLastChangePrice(completedPrice(current));
+            subscription.setLastChangeScore(current.headlineScore().normalizedScore());
+        }
         updateBaseline(subscription, current, fingerprint);
         return changed ? EvaluationStatus.CHANGE : EvaluationStatus.SKIPPED;
     }
@@ -220,6 +227,9 @@ public class TechnicalOutlookTrackingService {
         subscription.setBaselineSnapshot(write(outlook));
         subscription.setLastCandleTimestamp(outlook.candleTimestamp());
         subscription.setProfileFingerprint(fingerprint);
+        subscription.setCurrentClassification(outlook.headlineScore().classification());
+        subscription.setCurrentScore(outlook.headlineScore().normalizedScore());
+        subscription.setCurrentPrice(completedPrice(outlook));
         subscription.setUpdatedAt(LocalDateTime.now());
         subscriptionRepository.save(subscription);
     }
@@ -228,6 +238,22 @@ public class TechnicalOutlookTrackingService {
         subscription.setBaselineSnapshot(null);
         subscription.setLastCandleTimestamp(null);
         subscription.setProfileFingerprint(null);
+        subscription.setCurrentClassification(null);
+        subscription.setCurrentScore(null);
+        subscription.setCurrentPrice(null);
+        subscription.setLastChangeCandleTimestamp(null);
+        subscription.setLastChangePreviousClassification(null);
+        subscription.setLastChangePrice(null);
+        subscription.setLastChangeScore(null);
+        subscription.setTrackingStartedAt(LocalDateTime.now());
+    }
+
+    private static Double completedPrice(TechnicalOutlookService.OutlookView outlook) {
+        if (outlook.candles() == null || outlook.candleTimestamp() == null) return null;
+        return outlook.candles().stream()
+                .filter(candle -> candle.timestamp() == outlook.candleTimestamp()
+                        && Double.isFinite(candle.close()) && candle.close() > 0)
+                .map(TechnicalOutlookService.ChartCandleView::close).findFirst().orElse(null);
     }
 
     private ChangeReport compare(TechnicalOutlookService.OutlookView previous,
@@ -377,6 +403,20 @@ public class TechnicalOutlookTrackingService {
                 readOutlook(notification.getPreviousSnapshot()),
                 readOutlook(notification.getCurrentSnapshot()),
                 readReport(notification.getChangeReport()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<LatestOutlookChangeView> latestFollowed(User user, TimeInterval interval) {
+        if (interval != null) requireSupported(interval);
+        return notificationRepository.findLatestFollowedChanges(user, interval, PageRequest.of(0, 5))
+                .stream().map(this::latestView).toList();
+    }
+
+    Map<TimeInterval, String> profileFingerprints(User user) {
+        var preferences = preferencesService.get(user);
+        Map<TimeInterval, String> fingerprints = new java.util.EnumMap<>(TimeInterval.class);
+        SUPPORTED_INTERVALS.forEach(interval -> fingerprints.put(interval, sha256(write(preferences.profile(interval)))));
+        return fingerprints;
     }
 
     private LatestOutlookChangeView latestView(TechnicalOutlookNotification notification) {
