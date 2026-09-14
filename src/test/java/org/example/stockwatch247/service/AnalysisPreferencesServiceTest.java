@@ -68,16 +68,16 @@ class AnalysisPreferencesServiceTest {
     }
 
     @Test
-    void savesAndReadsPerIntervalIndicatorAndDeliveryPreferences() {
+    void savesAndReadsSharedIndicatorAndDeliveryPreferences() {
         UserAnalysisPreferencesRepository repository = mock(UserAnalysisPreferencesRepository.class);
         AnalysisPreferencesService service = new AnalysisPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
         User user = new User();
         user.setEmail("profile@example.com");
         when(repository.findByUser(user)).thenReturn(Optional.empty());
         MultiValueMap<String, String> form = factoryForm();
-        form.set("daily.rsiPeriod", "11");
-        form.set("daily.rsiBuyThreshold", "28");
-        form.set("daily.rsiSellThreshold", "74");
+        form.set("shared.rsiPeriod", "11");
+        form.set("shared.rsiBuyThreshold", "28");
+        form.set("shared.rsiSellThreshold", "74");
         form.remove("email.newElliott");
         form.remove("email.newHarmonic");
         form.remove("email.sell");
@@ -87,7 +87,7 @@ class AnalysisPreferencesServiceTest {
         assertThat(saved.custom()).isTrue();
         assertThat(saved.profile(TimeInterval.DAILY).rsiPeriod()).isEqualTo(11);
         assertThat(saved.profile(TimeInterval.DAILY).rsiBuyThreshold()).isEqualTo(28.0);
-        assertThat(saved.profile(TimeInterval.WEEKLY).rsiPeriod()).isEqualTo(10);
+        assertThat(saved.profile(TimeInterval.WEEKLY).rsiPeriod()).isEqualTo(11);
         assertThat(saved.email().newElliott()).isFalse();
         assertThat(saved.email().harmonicEnabled()).isFalse();
         assertThat(saved.email().sell()).isFalse();
@@ -116,8 +116,8 @@ class AnalysisPreferencesServiceTest {
         AnalysisPreferencesService service = new AnalysisPreferencesService(
                 mock(UserAnalysisPreferencesRepository.class), tools.jackson.databind.json.JsonMapper.builder().build());
         MultiValueMap<String, String> form = factoryForm();
-        form.set("daily.fastEmaPeriod", "60");
-        form.set("daily.slowEmaPeriod", "50");
+        form.set("shared.fastEmaPeriod", "60");
+        form.set("shared.slowEmaPeriod", "50");
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.save(new User(), form))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -125,7 +125,7 @@ class AnalysisPreferencesServiceTest {
     }
 
     @Test
-    void updatesOnlyTheSelectedIntervalsIndicatorPeriodsFromTheOutlookPage() {
+    void updatesSharedIndicatorPeriodsFromTheOutlookPage() {
         UserAnalysisPreferencesRepository repository = mock(UserAnalysisPreferencesRepository.class);
         AnalysisPreferencesService service = new AnalysisPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
         User user = new User();
@@ -144,19 +144,19 @@ class AnalysisPreferencesServiceTest {
         assertThat(updated.profile(TimeInterval.DAILY).longSmaPeriod()).isEqualTo(120);
         assertThat(updated.profile(TimeInterval.DAILY).supportResistancePeriod()).isEqualTo(30);
         assertThat(updated.profile(TimeInterval.WEEKLY))
-                .isEqualTo(AnalysisPreferencesService.factoryProfile(TimeInterval.WEEKLY));
+                .isEqualTo(updated.profile(TimeInterval.DAILY).forInterval(TimeInterval.WEEKLY));
         assertThat(updated.email()).isEqualTo(AnalysisPreferencesService.EmailPreferences.factory());
         verify(repository).save(any(UserAnalysisPreferences.class));
     }
 
     @Test
-    void updatesAndResetsOnlyPerIntervalCandlestickDetectionRules() {
+    void updatesAndResetsSharedCandlestickDetectionRules() {
         UserAnalysisPreferencesRepository repository = mock(UserAnalysisPreferencesRepository.class);
         AnalysisPreferencesService service = new AnalysisPreferencesService(repository, tools.jackson.databind.json.JsonMapper.builder().build());
         User user = new User();
         when(repository.findByUser(user)).thenReturn(Optional.empty());
         MultiValueMap<String, String> analysisForm = factoryForm();
-        analysisForm.set("daily.rsiPeriod", "11");
+        analysisForm.set("shared.rsiPeriod", "11");
         service.save(user, analysisForm);
 
         ArgumentCaptor<UserAnalysisPreferences> captor = ArgumentCaptor.forClass(UserAnalysisPreferences.class);
@@ -164,11 +164,11 @@ class AnalysisPreferencesServiceTest {
         when(repository.findByUser(user)).thenReturn(Optional.of(captor.getValue()));
 
         MultiValueMap<String, String> detectionForm = detectionForm();
-        detectionForm.set("daily.trendMinimumCandles", "4");
-        detectionForm.set("daily.trendLookbackCandles", "6");
-        detectionForm.set("daily.trendMinimumMovePercent", "2.4");
-        detectionForm.set("daily.trendTerminalMedianDistanceAtr", "0.55");
-        detectionForm.set("daily.trendDirectionalParticipationEnabled", "on");
+        detectionForm.set("shared.trendMinimumCandles", "4");
+        detectionForm.set("shared.trendLookbackCandles", "6");
+        detectionForm.set("shared.trendMinimumMovePercent", "2.4");
+        detectionForm.set("shared.trendTerminalMedianDistanceAtr", "0.55");
+        detectionForm.set("shared.trendDirectionalParticipationEnabled", "on");
         AnalysisPreferencesService.PreferencesView updated =
                 service.updateDetectionRules(user, detectionForm);
 
@@ -182,8 +182,8 @@ class AnalysisPreferencesServiceTest {
         assertThat(updated.profile(TimeInterval.DAILY).rsiPeriod()).isEqualTo(11);
         assertThat(updated.profile(TimeInterval.WEEKLY).trendMinimumCandles()).isEqualTo(4);
         assertThat(updated.profile(TimeInterval.WEEKLY).trendLookbackCandles()).isEqualTo(6);
-        assertThat(updated.profile(TimeInterval.WEEKLY).trendMinimumMovePercent()).isEqualTo(3.0);
-        assertThat(updated.profile(TimeInterval.WEEKLY).trendTerminalMedianDistanceAtr()).isZero();
+        assertThat(updated.profile(TimeInterval.WEEKLY).trendMinimumMovePercent()).isEqualTo(2.4);
+        assertThat(updated.profile(TimeInterval.WEEKLY).trendTerminalMedianDistanceAtr()).isEqualTo(0.55);
         assertThat(service.trendDetectionRules(updated.profile(TimeInterval.WEEKLY)).adaptiveFactory())
                 .isTrue();
         assertThat(service.trendDetectionRules(updated.profile(TimeInterval.WEEKLY))
@@ -193,7 +193,7 @@ class AnalysisPreferencesServiceTest {
         UserAnalysisPreferences updatedEntity = captor.getAllValues().getLast();
         when(repository.findByUser(user)).thenReturn(Optional.of(updatedEntity));
         AnalysisPreferencesService.PreferencesView reset =
-                service.resetDetectionRules(user, TimeInterval.DAILY);
+                service.resetDetectionRules(user);
 
         assertThat(reset.profile(TimeInterval.DAILY).trendMinimumCandles()).isEqualTo(4);
         assertThat(reset.profile(TimeInterval.DAILY).trendLookbackCandles()).isEqualTo(6);
@@ -205,13 +205,48 @@ class AnalysisPreferencesServiceTest {
         assertThat(reset.profile(TimeInterval.DAILY).rsiPeriod()).isEqualTo(11);
     }
 
+    @Test
+    void legacyDailySettingsBecomeSharedWhileHistoricalSnapshotsKeepTheirOriginalValues() throws Exception {
+        var repository = mock(UserAnalysisPreferencesRepository.class);
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var service = new AnalysisPreferencesService(repository, mapper);
+        User user = new User();
+        var daily = AnalysisPreferencesService.factoryProfile(TimeInterval.DAILY).withIndicatorPeriods(
+                new AnalysisPreferencesService.IndicatorPeriods(11, 14, 20, 50, 200, 12, 26, 9, 20, 20, 20, 20, 60, 20));
+        var weekly = AnalysisPreferencesService.factoryProfile(TimeInterval.WEEKLY);
+        var entity = new UserAnalysisPreferences();
+        entity.setPreferencesPayload(mapper.writeValueAsString(Map.of("version", "USER_ANALYSIS_V1",
+                "profiles", List.of(weekly, daily), "email", AnalysisPreferencesService.EmailPreferences.factory())));
+        when(repository.findByUser(user)).thenReturn(Optional.of(entity));
+
+        assertThat(service.get(user).profiles()).hasSize(1);
+        for (TimeInterval interval : List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY)) {
+            assertThat(service.profile(user, interval).rsiPeriod()).isEqualTo(11);
+            assertThat(service.profile(user, interval).interval()).isEqualTo(interval);
+            assertThat(service.technicalProfile(service.profile(user, interval)).rsiPeriod()).isEqualTo(11);
+        }
+        assertThat(service.profileFromSnapshot(mapper.writeValueAsString(weekly), TimeInterval.WEEKLY))
+                .isEqualTo(weekly);
+        var updated = service.updateIndicatorPeriods(user, TimeInterval.MONTHLY,
+                AnalysisPreferencesService.IndicatorPeriods.from(daily));
+        assertThat(updated.profiles()).hasSize(1);
+        assertThat(mapper.readTree(entity.getPreferencesPayload()).get("profiles").size()).isEqualTo(1);
+
+        var form = factoryForm();
+        form.remove("email.signals");
+        var disabled = service.save(user, form);
+        for (TimeInterval interval : List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY)) {
+            assertThat(disabled.email().intervalEnabled(interval)).isFalse();
+        }
+    }
+
     private MultiValueMap<String, String> factoryForm() {
         LinkedMultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         addProfile(form, AnalysisPreferencesService.factoryProfile(TimeInterval.DAILY));
         addProfile(form, AnalysisPreferencesService.factoryProfile(TimeInterval.WEEKLY));
         addProfile(form, AnalysisPreferencesService.factoryProfile(TimeInterval.MONTHLY));
         for (String name : new String[]{"newCandlestick", "newElliott", "newHarmonic", "confirmed", "invalidated",
-                "expired", "insider", "congressional", "daily", "weekly", "monthly", "buy", "sell"}) {
+                "expired", "insider", "congressional", "signals", "buy", "sell"}) {
             form.add("email." + name, "on");
         }
         return form;

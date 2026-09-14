@@ -8,7 +8,7 @@
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.custom()} ? 'Custom weights' : 'Factory weights'">Factory weights</span>
     </div>
-    <p class="analysis-settings-intro">Choose the evidence shown in setup scores and how much each included category is worth. Candlestick, Elliott Wave, and Harmonic Formation profiles are independent for daily, weekly, and monthly signals.</p>
+    <p class="analysis-settings-intro">Choose the evidence shown in setup scores and how much each included category is worth. Each signal family has one scoring profile shared across all intervals.</p>
     <div class="analysis-safety-strip scoring-safety-strip">
       <strong>Exactly 100 points</strong>
       <span>Every profile must total 100 before changes can be applied.</span>
@@ -24,7 +24,7 @@
       <div class="settings-card-heading scoring-profile-heading">
         <div>
           <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 2, 2)}">02</span>
-          <div><p class="scoring-family-label" th:text="${profile.familyLabel()}">Candlestick</p><h2 th:text="${profile.intervalLabel() + ' scoring'}">Daily scoring</h2></div>
+          <div><p class="scoring-family-label" th:text="${profile.familyLabel()}">Candlestick</p><h2 th:text="${profile.familyLabel() + ' scoring'}">Shared scoring</h2></div>
         </div>
         <button type="submit" class="danger-outline-button"
                 th:form="${'scoring-reset-' + stat.index}">Reset this profile</button>
@@ -90,11 +90,10 @@
         th:id="${'scoring-reset-' + stat.index}"
         th:action="@{/settings/scoring/reset}" method="post">
     <input type="hidden" name="family" th:value="${profile.family().name()}">
-    <input type="hidden" name="interval" th:value="${profile.interval().name()}">
   </form>
 
   <section class="settings-card analysis-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">11</span><h2>Reset to defaults</h2></div><p>Restore all nine scoring profiles without changing analysis, detection, email, or account settings.</p></div>
+    <div class="settings-card-heading"><div><span class="settings-number">05</span><h2>Reset to defaults</h2></div><p>Restore all three scoring profiles without changing analysis, detection, email, or account settings.</p></div>
     <form th:action="@{/settings/scoring/reset}" method="post" class="settings-action-row">
       <input type="hidden" name="family" value="all">
       <div><h3>Restore every scoring profile</h3><p>Candlestick, Elliott Wave, and Harmonic Formation weights return to detector defaults for daily, weekly, and monthly intervals.</p></div>

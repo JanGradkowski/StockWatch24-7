@@ -2853,7 +2853,7 @@ a:hover .button-arrow {
 
 .alert-list-head.company-alert-grid,
 .alert-row.company-alert-grid {
-    grid-template-columns: minmax(170px, 1.2fr) 90px minmax(120px, 0.8fr) minmax(185px, 1.15fr) 82px 92px;
+    grid-template-columns: minmax(170px, 1.2fr) 90px minmax(120px, 0.8fr) minmax(185px, 1.15fr) 82px 110px;
 }
 
 .dashboard-company-link {
@@ -2875,7 +2875,22 @@ a:hover .button-arrow {
 
 .company-unfollow-actions {
     display: flex;
-    justify-content: flex-end;
+    justify-content: flex-start;
+}
+
+.company-alert-list > .alert-list-head {
+    border-inline: 1px solid transparent;
+}
+
+@media (min-width: 901px) {
+    .company-alert-list > .alert-list-head > span:nth-last-child(-n + 2),
+    .company-alert-list > .alert-row > .event-count {
+        text-align: center;
+    }
+
+    .company-alert-list > .alert-row > .company-unfollow-actions {
+        justify-content: center;
+    }
 }
 
 .company-unfollow-button {
@@ -14958,7 +14973,7 @@ a.notification-filing-button:focus-visible {
 .candlestick-value-control > span:last-child > b { color: var(--primary-color); }
 .candlestick-reward-risk-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.75rem;
     margin-top: 1rem;
 }
@@ -14978,7 +14993,7 @@ a.notification-filing-button:focus-visible {
 .candlestick-reward-risk-control small { color: var(--muted-text); font-size: 0.64rem; }
 .candlestick-circuit-breaker-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.75rem;
     margin-top: 1rem;
 }
@@ -14986,7 +15001,7 @@ a.notification-filing-button:focus-visible {
 .candlestick-circuit-breaker-card.disabled { opacity: 0.62; }
 .candlestick-circuit-breaker-card.disabled .candlestick-circuit-breaker-fields { filter: saturate(0.45); }
 .candlestick-circuit-breaker-toggle { margin-bottom: 0.8rem; }
-.candlestick-circuit-breaker-fields { display: grid; gap: 0.65rem; }
+.candlestick-circuit-breaker-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.65rem; }
 .candlestick-circuit-breaker-fields .candlestick-value-control > span:last-child {
     grid-template-columns: minmax(0, 1fr) auto;
 }

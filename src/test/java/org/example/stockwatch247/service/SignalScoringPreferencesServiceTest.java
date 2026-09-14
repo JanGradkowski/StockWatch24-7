@@ -39,11 +39,11 @@ class SignalScoringPreferencesServiceTest {
     }
 
     @Test
-    void factoryProfilesAreSeparateByFamilyAndIntervalAndEachTotalOneHundred() {
+    void factoryProfilesAreSharedAcrossIntervalsAndEachTotalOneHundred() {
         SignalScoringPreferencesService.PreferencesView preferences = service.get(user);
 
         assertThat(preferences.custom()).isFalse();
-        assertThat(preferences.profiles()).hasSize(9)
+        assertThat(preferences.profiles()).hasSize(3)
                 .allSatisfy(profile -> assertThat(profile.totalPoints()).isEqualTo(100));
         assertThat(preferences.profile(AlertPatternFamily.CANDLESTICK, TimeInterval.DAILY).components())
                 .extracting(SignalScoringPreferencesService.ScoringComponent::points)
@@ -66,7 +66,7 @@ class SignalScoringPreferencesServiceTest {
     @Test
     void saveRejectsAnyIncludedProfileThatDoesNotTotalExactlyOneHundred() {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("candlestick.daily.patternQuality.points", "24");
+        form.set("candlestick.patternQuality.points", "24");
 
         assertThatThrownBy(() -> service.save(user, form))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -85,7 +85,7 @@ class SignalScoringPreferencesServiceTest {
             form.remove(prefix + ".included");
             form.set(prefix + ".points", component.key().equals("patternQuality") ? "100" : "0");
         });
-        form.set("candlestick.daily.patternQuality.included", "on");
+        form.set("candlestick.patternQuality.included", "on");
         SignalScoringPreferencesService.Profile profile = service.save(user, form)
                 .profile(AlertPatternFamily.CANDLESTICK, TimeInterval.DAILY);
 
@@ -103,8 +103,8 @@ class SignalScoringPreferencesServiceTest {
     @Test
     void legacyEvidenceWithoutCategoryTotalsKeepsTheRecordedScore() {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("elliott.weekly.structure.points", "35");
-        form.set("elliott.weekly.proportions.points", "15");
+        form.set("elliott.structure.points", "35");
+        form.set("elliott.proportions.points", "15");
         SignalScoringPreferencesService.Profile profile = service.save(user, form)
                 .profile(AlertPatternFamily.ELLIOTT_WAVE, TimeInterval.WEEKLY);
 
@@ -120,9 +120,9 @@ class SignalScoringPreferencesServiceTest {
     @Test
     void harmonicProfileReweightsOnlySoftGeometryCategories() {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("harmonic.daily.primaryB.points", "20");
-        form.set("harmonic.daily.completion.points", "60");
-        form.set("harmonic.daily.secondary.points", "20");
+        form.set("harmonic.primaryB.points", "20");
+        form.set("harmonic.completion.points", "60");
+        form.set("harmonic.secondary.points", "20");
         SignalScoringPreferencesService.Profile profile = service.save(user, form)
                 .profile(AlertPatternFamily.HARMONIC_FORMATION, TimeInterval.DAILY);
 
@@ -150,7 +150,7 @@ class SignalScoringPreferencesServiceTest {
             form.remove(prefix + ".included");
             form.set(prefix + ".points", component.key().equals("patternQuality") ? "100" : "0");
         });
-        form.set("candlestick.daily.patternQuality.included", "on");
+        form.set("candlestick.patternQuality.included", "on");
         SignalScoringPreferencesService.Profile profile = service.save(user, form)
                 .profile(AlertPatternFamily.CANDLESTICK, TimeInterval.DAILY);
 
@@ -167,11 +167,11 @@ class SignalScoringPreferencesServiceTest {
     }
 
     @Test
-    void confluenceSourcesCanBeWeightedAndDisabledPerTargetFamilyAndInterval() {
+    void confluenceSourcesCanBeWeightedAndDisabledPerTargetFamilyAcrossAllIntervals() {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("candlestick.daily.confluence.elliott.supportingPoints", "18");
-        form.set("candlestick.daily.confluence.elliott.opposingPoints", "7");
-        form.remove("candlestick.daily.confluence.harmonic.included");
+        form.set("candlestick.confluence.elliott.supportingPoints", "18");
+        form.set("candlestick.confluence.elliott.opposingPoints", "7");
+        form.remove("candlestick.confluence.harmonic.included");
         SignalScoringPreferencesService.Profile profile = service.save(user, form)
                 .profile(AlertPatternFamily.CANDLESTICK, TimeInterval.DAILY);
 
@@ -183,14 +183,14 @@ class SignalScoringPreferencesServiceTest {
                 });
         assertThat(profile.confluenceRule(AlertPatternFamily.HARMONIC_FORMATION).included()).isFalse();
         assertThat(service.get(user).profile(AlertPatternFamily.CANDLESTICK, TimeInterval.WEEKLY)
-                .confluenceRule(AlertPatternFamily.ELLIOTT_WAVE).supportingPoints()).isEqualTo(10);
+                .confluenceRule(AlertPatternFamily.ELLIOTT_WAVE).supportingPoints()).isEqualTo(18);
     }
 
     @Test
     void currentConfluenceSettingsRescoreStructuredSavedEvidence() {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("candlestick.daily.confluence.elliott.supportingPoints", "18");
-        form.remove("candlestick.daily.confluence.harmonic.included");
+        form.set("candlestick.confluence.elliott.supportingPoints", "18");
+        form.remove("candlestick.confluence.harmonic.included");
         SignalScoringPreferencesService.Profile profile = service.save(user, form)
                 .profile(AlertPatternFamily.CANDLESTICK, TimeInterval.DAILY);
 
@@ -220,8 +220,8 @@ class SignalScoringPreferencesServiceTest {
     @Test
     void legacyV1PayloadKeepsCategoryWeightsAndReceivesFactoryConfluenceDefaults() throws Exception {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("elliott.weekly.structure.points", "35");
-        form.set("elliott.weekly.proportions.points", "15");
+        form.set("elliott.structure.points", "35");
+        form.set("elliott.proportions.points", "15");
         service.save(user, form);
 
         ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
@@ -241,6 +241,38 @@ class SignalScoringPreferencesServiceTest {
             assertThat(rule.supportingPoints()).isEqualTo(10);
             assertThat(rule.opposingPoints()).isEqualTo(10);
         });
+    }
+
+    @Test
+    void legacyIntervalProfilesUseDailyWeightsAndFamilyResetAppliesAcrossIntervals() throws Exception {
+        var form = factoryForm();
+        form.set("candlestick.confluence.elliott.supportingPoints", "18");
+        form.set("harmonic.confluence.elliott.supportingPoints", "22");
+        service.save(user, form);
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var payload = (tools.jackson.databind.node.ObjectNode) mapper.readTree(stored.get().getPreferencesPayload());
+        payload.put("version", "USER_SIGNAL_SCORING_V2");
+        var profiles = (tools.jackson.databind.node.ArrayNode) payload.get("profiles");
+        var weekly = profiles.get(0).deepCopy();
+        ((tools.jackson.databind.node.ObjectNode) weekly).put("interval", "WEEKLY");
+        ((tools.jackson.databind.node.ObjectNode) weekly.get("confluenceRules").get(0)).put("supportingPoints", 5);
+        profiles.insert(0, weekly);
+        stored.get().setPreferencesPayload(mapper.writeValueAsString(payload));
+
+        assertThat(service.get(user).profiles()).hasSize(3);
+        for (TimeInterval interval : List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY)) {
+            assertThat(service.confluencePolicy(user, AlertPatternFamily.CANDLESTICK, interval))
+                    .isEqualTo(service.confluencePolicy(user, AlertPatternFamily.CANDLESTICK, TimeInterval.DAILY));
+            assertThat(service.profile(user, AlertPatternFamily.CANDLESTICK, interval)
+                    .confluenceRule(AlertPatternFamily.ELLIOTT_WAVE).supportingPoints()).isEqualTo(18);
+        }
+        var reset = service.reset(user, AlertPatternFamily.CANDLESTICK);
+        for (TimeInterval interval : List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY)) {
+            assertThat(reset.profile(AlertPatternFamily.CANDLESTICK, interval).factoryProfile()).isTrue();
+            assertThat(reset.profile(AlertPatternFamily.HARMONIC_FORMATION, interval)
+                    .confluenceRule(AlertPatternFamily.ELLIOTT_WAVE).supportingPoints()).isEqualTo(22);
+        }
+        assertThat(mapper.readTree(stored.get().getPreferencesPayload()).get("profiles").size()).isEqualTo(3);
     }
 
     private LinkedMultiValueMap<String, String> factoryForm() {

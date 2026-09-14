@@ -24,10 +24,10 @@
   <form id="candlestickPatternDefinitionsForm" th:action="@{/settings/candlestick-patterns}" method="post" class="candlestick-pattern-preferences-form">
     <section class="settings-card candlestick-trade-plan-overview">
       <div class="settings-card-heading">
-        <div><span class="settings-number">02</span><h2>Risk-to-reward by interval</h2></div>
+        <div><span class="settings-number">02</span><h2>Risk-to-reward</h2></div>
         <span class="analysis-profile-state" th:text="${preferences.custom()} ? 'Personalized trade plan' : 'Default trade plan'">Default trade plan</span>
       </div>
-      <p class="analysis-settings-intro">Set the reward multiple independently for each interval. A value of 2 means the target is twice as far from entry as the configured stop loss. Every trade still expires at candle 8 if neither close boundary is reached.</p>
+      <p class="analysis-settings-intro">Set one reward multiple for all intervals. A value of 2 means the target is twice as far from entry as the configured stop loss. Every trade still expires at candle 8 if neither close boundary is reached.</p>
       <div class="candlestick-reward-risk-grid">
         <label class="candlestick-reward-risk-control" th:each="ratio : ${candlestickRewardRiskProfiles}">
           <span th:text="${ratio.label()}">Daily</span>
@@ -172,7 +172,7 @@
     <div class="settings-card-heading"><div><span class="settings-number">19</span><h2>Reset to defaults</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
     <form th:action="@{/settings/candlestick-patterns/reset}" method="post" class="settings-action-row">
       <input type="hidden" name="pattern" value="all">
-      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, interval risk-to-reward ratios, and ATR circuit breakers to default values.</p></div>
+      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, the shared risk-to-reward ratio, and ATR circuit breakers to default values.</p></div>
       <button class="danger-button" type="submit">Restore candlestick defaults</button>
     </form>
   </section>

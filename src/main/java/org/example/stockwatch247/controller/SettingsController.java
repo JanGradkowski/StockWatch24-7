@@ -6,7 +6,6 @@ import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
-import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.AccountSession;
@@ -137,18 +136,13 @@ public class SettingsController {
     public String resetAnalysisAlerts(@RequestParam(defaultValue = "all") String scope,
                                       Principal principal,
                                       RedirectAttributes redirect) {
-        User user = current(principal);
-        try {
-            if ("all".equalsIgnoreCase(scope)) {
-                analysisPreferences.resetAll(user);
-                redirect.addFlashAttribute("success", "All analysis and alert preferences were restored to factory settings.");
-            } else {
-                TimeInterval interval = TimeInterval.valueOf(scope.trim().toUpperCase());
-                analysisPreferences.resetInterval(user, interval);
-                redirect.addFlashAttribute("success", scope.substring(0, 1).toUpperCase()
-                        + scope.substring(1).toLowerCase() + " settings were restored to factory values.");
-            }
-        } catch (IllegalArgumentException exception) {
+        if ("analysis".equalsIgnoreCase(scope)) {
+            analysisPreferences.resetAnalysis(current(principal));
+            redirect.addFlashAttribute("success", "Shared analysis settings were restored to factory values.");
+        } else if ("all".equalsIgnoreCase(scope)) {
+            analysisPreferences.resetAll(current(principal));
+            redirect.addFlashAttribute("success", "Analysis and alert preferences were restored to factory settings.");
+        } else {
             redirect.addFlashAttribute("error", "Choose a valid factory-reset scope.");
         }
         return "redirect:/settings/analysis-alerts";
@@ -168,22 +162,10 @@ public class SettingsController {
     }
 
     @PostMapping("/settings/detection/reset")
-    public String resetDetection(@RequestParam(defaultValue = "all") String scope,
-                                 Principal principal,
+    public String resetDetection(Principal principal,
                                  RedirectAttributes redirect) {
-        try {
-            TimeInterval interval = "all".equalsIgnoreCase(scope)
-                    ? null
-                    : TimeInterval.valueOf(scope.trim().toUpperCase());
-            analysisPreferences.resetDetectionRules(current(principal), interval);
-            redirect.addFlashAttribute("success", interval == null
-                    ? "All candlestick detection rules were restored to factory settings."
-                    : interval.name().substring(0, 1)
-                    + interval.name().substring(1).toLowerCase()
-                    + " candlestick detection rules were restored to factory settings.");
-        } catch (IllegalArgumentException exception) {
-            redirect.addFlashAttribute("error", "Choose a valid factory-reset scope.");
-        }
+        analysisPreferences.resetDetectionRules(current(principal));
+        redirect.addFlashAttribute("success", "Candlestick detection rules were restored to factory settings.");
         return "redirect:/settings/detection";
     }
 
@@ -202,15 +184,12 @@ public class SettingsController {
 
     @PostMapping("/settings/scoring/reset")
     public String resetScoring(@RequestParam(defaultValue = "all") String family,
-                               @RequestParam(required = false) String interval,
                                Principal principal,
                                RedirectAttributes redirect) {
         try {
             AlertPatternFamily selectedFamily = "all".equalsIgnoreCase(family)
                     ? null : AlertPatternFamily.valueOf(family.trim().toUpperCase());
-            TimeInterval selectedInterval = interval == null || interval.isBlank()
-                    ? null : TimeInterval.valueOf(interval.trim().toUpperCase());
-            scoringPreferences.reset(current(principal), selectedFamily, selectedInterval);
+            scoringPreferences.reset(current(principal), selectedFamily);
             redirect.addFlashAttribute("success", selectedFamily == null
                     ? "All scoring profiles were restored to factory settings."
                     : "The selected scoring profile was restored to factory settings.");
@@ -255,7 +234,7 @@ public class SettingsController {
         try {
             elliottWavePreferences.save(current(principal), form);
             redirect.addFlashAttribute("success",
-                    "Weekly and monthly Elliott Wave definitions applied to future detections.");
+                    "Shared Elliott Wave definitions applied to future detections.");
         } catch (IllegalArgumentException exception) {
             redirect.addFlashAttribute("error", exception.getMessage());
         }
@@ -263,21 +242,10 @@ public class SettingsController {
     }
 
     @PostMapping("/settings/elliott-waves/reset")
-    public String resetElliottWaves(@RequestParam(defaultValue = "all") String interval,
-                                    Principal principal,
+    public String resetElliottWaves(Principal principal,
                                     RedirectAttributes redirect) {
-        try {
-            TimeInterval selected = "all".equalsIgnoreCase(interval) ? null
-                    : TimeInterval.valueOf(interval.trim().toUpperCase());
-            elliottWavePreferences.reset(current(principal), selected);
-            redirect.addFlashAttribute("success", selected == null
-                    ? "All Elliott Wave definitions were restored to factory settings."
-                    : selected.name().substring(0, 1)
-                    + selected.name().substring(1).toLowerCase()
-                    + " Elliott Wave definitions were restored to factory settings.");
-        } catch (IllegalArgumentException exception) {
-            redirect.addFlashAttribute("error", "Choose a valid Elliott Wave interval to reset.");
-        }
+        elliottWavePreferences.reset(current(principal));
+        redirect.addFlashAttribute("success", "Elliott Wave definitions were restored to factory settings.");
         return "redirect:/settings/elliott-waves";
     }
 

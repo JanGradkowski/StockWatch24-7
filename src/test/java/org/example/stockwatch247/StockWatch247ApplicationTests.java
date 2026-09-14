@@ -593,7 +593,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString(
                         "<h1 id=\"settingsPageTitle\"><span>Candlestick Patterns</span></h1>")))
                 .andExpect(content().string(containsString("Candlestick pattern definitions")))
-                .andExpect(content().string(containsString("Risk-to-reward by interval")))
+                .andExpect(content().string(containsString("Set one reward multiple for all intervals.")))
                 .andExpect(content().string(containsString("Stop-loss rule")))
                 .andExpect(content().string(containsString("Fixed percentage from entry")))
                 .andExpect(content().string(containsString("Minimum second body versus first body")))

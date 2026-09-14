@@ -15,11 +15,9 @@ import java.util.*;
 
 @Service
 public class ElliottWavePreferencesService {
-    public static final String PROFILE_VERSION = "USER_ELLIOTT_DETECTION_V1";
+    public static final String PROFILE_VERSION = "USER_ELLIOTT_DETECTION_V2";
     private static final List<ProfileDefinition> FACTORY = List.of(
-            factory(TimeInterval.DAILY, "Daily", "One Elliott pivot represents completed daily price action."),
-            factory(TimeInterval.WEEKLY, "Weekly", "One Elliott pivot represents completed weekly price action."),
-            factory(TimeInterval.MONTHLY, "Monthly", "One Elliott pivot represents completed monthly price action."));
+            factory(TimeInterval.DAILY, "Shared", "These rules apply to completed candles on every analysis interval."));
     private static final PreferencesView FACTORY_VIEW = materialize(
             FACTORY.stream().map(ElliottWavePreferencesService::stored).toList(), null);
 
@@ -51,29 +49,16 @@ public class ElliottWavePreferencesService {
     }
 
     @Transactional
-    public PreferencesView reset(User user, TimeInterval interval) {
+    public PreferencesView reset(User user) {
         if (user == null) throw new IllegalArgumentException("An account is required.");
-        if (interval == null) {
-            repository.findByUser(user).ifPresent(repository::delete);
-            return factoryPreferences();
-        }
-        if (interval != TimeInterval.DAILY
-                && interval != TimeInterval.WEEKLY
-                && interval != TimeInterval.MONTHLY) {
-            throw new IllegalArgumentException("Elliott Wave rules are available for daily, weekly, and monthly intervals.");
-        }
-        PreferencesView current = get(user);
-        List<StoredProfile> profiles = current.profiles().stream()
-                .map(profile -> profile.interval() == interval
-                        ? stored(definition(interval)) : stored(profile))
-                .toList();
-        return persist(user, profiles);
+        repository.findByUser(user).ifPresent(repository::delete);
+        return factoryPreferences();
     }
 
     public static PreferencesView factoryPreferences() { return FACTORY_VIEW; }
 
     private StoredProfile parse(MultiValueMap<String, String> form, ProfileDefinition definition) {
-        String prefix = definition.interval().name().toLowerCase(Locale.ROOT) + ".";
+        String prefix = "shared.";
         Map<String, Double> numbers = new LinkedHashMap<>();
         for (NumericDefinition numeric : definition.numbers()) {
             String raw = required(form, prefix + numeric.key(), definition.label());
@@ -111,7 +96,7 @@ public class ElliottWavePreferencesService {
     private PreferencesView read(UserElliottWavePreferences entity) {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
-            if (!PROFILE_VERSION.equals(stored.version())) return factoryPreferences();
+            if (!PROFILE_VERSION.equals(stored.version()) && !"USER_ELLIOTT_DETECTION_V1".equals(stored.version())) return factoryPreferences();
             List<StoredProfile> normalized = normalizeStored(stored.profiles());
             validateStored(normalized);
             return materialize(normalized, entity.getUpdatedAt());
@@ -125,14 +110,14 @@ public class ElliottWavePreferencesService {
         return FACTORY.stream().map(definition -> {
             StoredProfile profile = profiles.stream()
                     .filter(item -> item.interval() == definition.interval())
-                    .findFirst().orElseGet(() -> stored(definition));
+                    .findFirst().orElseGet(() -> profiles.isEmpty() ? stored(definition) : profiles.getFirst());
             Map<String, Double> numbers = profile.numbers() == null
                     ? new LinkedHashMap<>() : new LinkedHashMap<>(profile.numbers());
             definition.numbers().forEach(setting -> numbers.putIfAbsent(setting.key(), setting.factoryValue()));
             Map<String, Boolean> switches = profile.switches() == null
                     ? new LinkedHashMap<>() : new LinkedHashMap<>(profile.switches());
             definition.switches().forEach(setting -> switches.putIfAbsent(setting.key(), setting.factoryValue()));
-            return new StoredProfile(profile.interval(), numbers, switches);
+            return new StoredProfile(TimeInterval.DAILY, numbers, switches);
         }).toList();
     }
 
@@ -165,11 +150,11 @@ public class ElliottWavePreferencesService {
 
     private static void validateStored(List<StoredProfile> profiles) {
         if (profiles == null || profiles.size() != FACTORY.size()) {
-            throw new IllegalArgumentException("Daily, weekly, and monthly Elliott Wave profiles are required.");
+            throw new IllegalArgumentException("A shared Elliott Wave profile is required.");
         }
         for (ProfileDefinition definition : FACTORY) {
             StoredProfile profile = profiles.stream().filter(item -> item.interval() == definition.interval())
-                    .findFirst().orElseThrow(() -> new IllegalArgumentException("An Elliott Wave interval is missing."));
+                    .findFirst().orElseThrow(() -> new IllegalArgumentException("The Elliott Wave profile is missing."));
             if (profile.numbers() == null || profile.switches() == null
                     || profile.numbers().size() != definition.numbers().size()
                     || profile.switches().size() != definition.switches().size()) {
@@ -303,7 +288,7 @@ public class ElliottWavePreferencesService {
         profile.numbers().forEach(setting -> numbers.put(setting.key(), setting.value()));
         Map<String, Boolean> switches = new LinkedHashMap<>();
         profile.switches().forEach(setting -> switches.put(setting.key(), setting.value()));
-        return new StoredProfile(profile.interval(), numbers, switches);
+        return new StoredProfile(TimeInterval.DAILY, numbers, switches);
     }
 
     private static ProfileDefinition factory(TimeInterval interval, String label, String description) {
@@ -360,7 +345,7 @@ public class ElliottWavePreferencesService {
                 toggle("allowRunningFlat", Section.CORRECTIVE, "Allow running flats", "Wave B passes Wave V but Wave C does not pass the Wave A extreme.", "Disable this to reject running-flat geometry.", true),
                 toggle("allowTriangles", Section.CORRECTIVE, "Allow A–B–C–D–E triangle subwaves", "Permits contracting triangle counts inside Wave IV, B, or equivalent corrective parent waves.", "Disable this to show only three-leg corrective subdivisions.", true),
                 toggle("limitWaveCToARatio", Section.CORRECTIVE, "Enforce the allowed Wave C versus Wave A range", "Turns the allowed C:A minimum and maximum into hard rejection rules instead of quality guidance.", "Enable this when you want disproportionate C legs rejected completely.", false));
-        return new ProfileDefinition(interval, interval.name().toLowerCase(Locale.ROOT), label, description, numbers, switches);
+        return new ProfileDefinition(interval, "shared", label, description, numbers, switches);
     }
 
     private static NumericDefinition whole(String key, Section section, String label, String description,
@@ -405,8 +390,12 @@ public class ElliottWavePreferencesService {
     }
     public record PreferencesView(String version, boolean custom, List<IntervalProfile> profiles, Instant updatedAt) {
         public IntervalProfile profile(TimeInterval interval) {
-            return profiles.stream().filter(item -> item.interval() == interval).findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("Elliott Wave detection supports daily, weekly, and monthly intervals."));
+            if (interval != TimeInterval.DAILY && interval != TimeInterval.WEEKLY && interval != TimeInterval.MONTHLY) {
+                throw new IllegalArgumentException("Elliott Wave detection supports daily, weekly, and monthly intervals.");
+            }
+            IntervalProfile shared = profiles.getFirst();
+            return new IntervalProfile(interval, shared.key(), shared.label(), shared.description(),
+                    shared.numbers(), shared.switches(), shared.factoryProfile(), shared.rules());
         }
     }
     private record NumericDefinition(String key, Section section, String label, String description, String effect,

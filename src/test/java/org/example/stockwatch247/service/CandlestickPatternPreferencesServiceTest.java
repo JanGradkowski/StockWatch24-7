@@ -45,7 +45,7 @@ class CandlestickPatternPreferencesServiceTest {
         form.set("bearish_engulfing.previousMinBodyPercent", "25");
         form.set("bearish_engulfing.currentMinBodyPercent", "60");
         form.set("hammer.stopLossValuePercent", "2");
-        form.set("rewardRisk.daily", "4");
+        form.set("rewardRisk.shared", "4");
         service.save(user, form);
         var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
         var payload = (tools.jackson.databind.node.ObjectNode) mapper.readTree(stored.get().getPreferencesPayload());
@@ -73,15 +73,15 @@ class CandlestickPatternPreferencesServiceTest {
 
         assertThat(preferences.custom()).isFalse();
         assertThat(preferences.rewardRiskRatio(TimeInterval.DAILY)).isEqualTo(2.0);
-        assertThat(preferences.rewardRiskRatio(TimeInterval.WEEKLY)).isEqualTo(3.0);
-        assertThat(preferences.rewardRiskRatio(TimeInterval.MONTHLY)).isEqualTo(3.0);
+        assertThat(preferences.rewardRiskRatio(TimeInterval.WEEKLY)).isEqualTo(2.0);
+        assertThat(preferences.rewardRiskRatio(TimeInterval.MONTHLY)).isEqualTo(2.0);
         assertThat(preferences.circuitBreaker(TimeInterval.DAILY))
                 .isEqualTo(new CandlestickPatternPreferencesService.CircuitBreakerSettings(
                         true, 14, 1.5, 25.0));
         assertThat(preferences.circuitBreaker(TimeInterval.WEEKLY).activationThresholdPercent())
-                .isEqualTo(50.0);
+                .isEqualTo(25.0);
         assertThat(preferences.circuitBreaker(TimeInterval.MONTHLY).activationThresholdPercent())
-                .isEqualTo(50.0);
+                .isEqualTo(25.0);
         assertThat(preferences.profiles()).hasSize(17)
                 .allSatisfy(profile -> {
                     assertThat(profile.description()).isNotBlank();
@@ -106,11 +106,11 @@ class CandlestickPatternPreferencesServiceTest {
         form.set("bullish_engulfing.currentMinPreviousBodyMultiple", "1.35");
         form.set("bullish_engulfing.stopLossMode", "FIXED_ENTRY_PERCENT");
         form.set("bullish_engulfing.stopLossValuePercent", "2.75");
-        form.set("rewardRisk.weekly", "4.5");
-        form.set("circuitBreaker.weekly.atrPeriod", "21");
-        form.set("circuitBreaker.weekly.atrMultiplier", "2.25");
-        form.set("circuitBreaker.weekly.activationThresholdPercent", "42.5");
-        form.remove("circuitBreaker.monthly.enabled");
+        form.set("rewardRisk.shared", "4.5");
+        form.set("circuitBreaker.shared.atrPeriod", "21");
+        form.set("circuitBreaker.shared.atrMultiplier", "2.25");
+        form.set("circuitBreaker.shared.activationThresholdPercent", "42.5");
+        form.remove("circuitBreaker.shared.enabled");
 
         var saved = service.save(user, form).profile(CandlePattern.BULLISH_ENGULFING);
         var reread = service.get(user).profile(CandlePattern.BULLISH_ENGULFING);
@@ -124,7 +124,7 @@ class CandlestickPatternPreferencesServiceTest {
         assertThat(service.get(user).rewardRiskRatio(TimeInterval.WEEKLY)).isEqualTo(4.5);
         assertThat(service.get(user).circuitBreaker(TimeInterval.WEEKLY))
                 .isEqualTo(new CandlestickPatternPreferencesService.CircuitBreakerSettings(
-                        true, 21, 2.25, 42.5));
+                        false, 21, 2.25, 42.5));
         assertThat(service.get(user).circuitBreaker(TimeInterval.MONTHLY).enabled()).isFalse();
     }
 
@@ -147,7 +147,7 @@ class CandlestickPatternPreferencesServiceTest {
         form.set("hammer.stopLossMode", "FIXED_ENTRY_PERCENT");
         form.set("hammer.stopLossValuePercent", "3");
         form.set("doji.maxBodyPercent", "7");
-        form.set("rewardRisk.daily", "2.5");
+        form.set("rewardRisk.shared", "2.5");
         service.save(user, form);
 
         var reset = service.reset(user, CandlePattern.HAMMER);
@@ -161,12 +161,12 @@ class CandlestickPatternPreferencesServiceTest {
     }
 
     @Test
-    void migratesThePreviousUntouchedFactoryRewardRiskProfileToTheNewMonthlyDefault() {
+    void migratesLegacyRewardRiskToOneSharedDefault() {
         service.save(user, factoryForm());
         UserCandlestickPatternPreferences entity = stored.get();
         String previousPayload = entity.getPreferencesPayload()
                 .replace(CandlestickPatternPreferencesService.PROFILE_VERSION, "USER_CANDLESTICK_PATTERNS_V2")
-                .replace("\"MONTHLY\":3.0", "\"MONTHLY\":4.0");
+                .replace("\"DAILY\":2.0", "\"DAILY\":2.0,\"WEEKLY\":3.0,\"MONTHLY\":4.0");
         assertThat(previousPayload).contains("\"MONTHLY\":4.0");
         entity.setProfileVersion("USER_CANDLESTICK_PATTERNS_V2");
         entity.setPreferencesPayload(previousPayload);
@@ -174,8 +174,8 @@ class CandlestickPatternPreferencesServiceTest {
         var migrated = service.get(user);
 
         assertThat(migrated.rewardRiskRatio(TimeInterval.DAILY)).isEqualTo(2.0);
-        assertThat(migrated.rewardRiskRatio(TimeInterval.WEEKLY)).isEqualTo(3.0);
-        assertThat(migrated.rewardRiskRatio(TimeInterval.MONTHLY)).isEqualTo(3.0);
+        assertThat(migrated.rewardRiskRatio(TimeInterval.WEEKLY)).isEqualTo(2.0);
+        assertThat(migrated.rewardRiskRatio(TimeInterval.MONTHLY)).isEqualTo(2.0);
         assertThat(migrated.custom()).isFalse();
     }
 
@@ -196,9 +196,9 @@ class CandlestickPatternPreferencesServiceTest {
         assertThat(migrated.circuitBreaker(TimeInterval.DAILY).activationThresholdPercent())
                 .isEqualTo(25.0);
         assertThat(migrated.circuitBreaker(TimeInterval.WEEKLY).activationThresholdPercent())
-                .isEqualTo(50.0);
+                .isEqualTo(25.0);
         assertThat(migrated.circuitBreaker(TimeInterval.MONTHLY).activationThresholdPercent())
-                .isEqualTo(50.0);
+                .isEqualTo(25.0);
         assertThat(migrated.custom()).isFalse();
     }
 
@@ -213,23 +213,21 @@ class CandlestickPatternPreferencesServiceTest {
                 .hasMessageContaining("Hammer stop-loss value");
 
         LinkedMultiValueMap<String, String> invalidRatioForm = factoryForm();
-        invalidRatioForm.set("rewardRisk.monthly", "25");
+        invalidRatioForm.set("rewardRisk.shared", "25");
         assertThatThrownBy(() -> service.save(user, invalidRatioForm))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Monthly risk-to-reward ratio");
+                .hasMessageContaining("Shared risk-to-reward ratio");
 
         LinkedMultiValueMap<String, String> invalidCircuitBreaker = factoryForm();
-        invalidCircuitBreaker.set("circuitBreaker.daily.activationThresholdPercent", "100");
+        invalidCircuitBreaker.set("circuitBreaker.shared.activationThresholdPercent", "100");
         assertThatThrownBy(() -> service.save(user, invalidCircuitBreaker))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Daily circuit-breaker activation threshold");
+                .hasMessageContaining("Shared circuit-breaker activation threshold");
     }
 
     private LinkedMultiValueMap<String, String> factoryForm() {
         LinkedMultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.set("rewardRisk.daily", Double.toString(service.get(user).rewardRiskRatio(TimeInterval.DAILY)));
-        form.set("rewardRisk.weekly", Double.toString(service.get(user).rewardRiskRatio(TimeInterval.WEEKLY)));
-        form.set("rewardRisk.monthly", Double.toString(service.get(user).rewardRiskRatio(TimeInterval.MONTHLY)));
+        form.set("rewardRisk.shared", Double.toString(service.get(user).rewardRiskRatio(TimeInterval.DAILY)));
         for (var profile : service.get(user).circuitBreakerProfiles()) {
             if (profile.enabled()) form.set("circuitBreaker." + profile.key() + ".enabled", "on");
             form.set("circuitBreaker." + profile.key() + ".atrPeriod",

@@ -8,10 +8,10 @@
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.profileLabel()}">Default profile</span>
     </div>
-    <p class="analysis-settings-intro">Changes apply to future technical outlook calculations, Elliott lifecycle tracking, and market email delivery. Candlestick stop losses and interval R:R targets now live under Candlestick Patterns.</p>
+    <p class="analysis-settings-intro">Changes apply to future technical outlook calculations, Elliott lifecycle tracking, and market email delivery. Candlestick stop losses and shared R:R targets now live under Candlestick Patterns.</p>
     <div class="analysis-safety-strip">
       <strong>Completed candles only</strong>
-      <span><a th:href="@{/settings/candlestick-patterns}">Open Candlestick Patterns</a> to configure every directional pattern's stop loss and each interval's R:R ratio.</span>
+      <span><a th:href="@{/settings/candlestick-patterns}">Open Candlestick Patterns</a> to configure every directional pattern's stop loss and the shared R:R ratio.</span>
       <span>Missing indicators do not count toward the overall score.</span>
     </div>
   </section>
@@ -35,10 +35,8 @@
           <label><input type="checkbox" name="email.invalidated" th:checked="${preferences.email().invalidated()}"><span><strong>Invalidated</strong><small>Stop loss reached or Elliott structure broke</small></span></label>
           <label><input type="checkbox" name="email.expired" th:checked="${preferences.email().expired()}"><span><strong>Rejected / expired</strong><small>The pattern was rejected or its time limit expired</small></span></label>
         </fieldset>
-        <fieldset><legend>Intervals</legend>
-          <label><input type="checkbox" name="email.daily" th:checked="${preferences.email().daily()}"><span><strong>Daily</strong><small>Daily signal emails</small></span></label>
-          <label><input type="checkbox" name="email.weekly" th:checked="${preferences.email().weekly()}"><span><strong>Weekly</strong><small>Weekly signal emails</small></span></label>
-          <label><input type="checkbox" name="email.monthly" th:checked="${preferences.email().monthly()}"><span><strong>Monthly</strong><small>Monthly signal emails</small></span></label>
+        <fieldset><legend>Signal delivery</legend>
+          <label><input type="checkbox" name="email.signals" th:checked="${preferences.email().signalsEnabled()}"><span><strong>Enable signal emails</strong><small>Apply the selected email choices to all intervals</small></span></label>
         </fieldset>
         <fieldset><legend>Directions</legend>
           <label><input type="checkbox" name="email.buy" th:checked="${preferences.email().buy()}"><span><strong>Buy</strong><small>Bullish signal emails</small></span></label>
@@ -52,9 +50,9 @@
              th:each="profile, stat : ${preferences.profiles()}"
              th:id="${'analysis-' + profile.key()}">
       <div class="settings-card-heading interval-profile-heading">
-        <div><span class="settings-number" th:text="${'0' + (stat.index + 3)}">03</span><div><h2 th:text="${profile.label() + ' analysis'}">Daily analysis</h2><p>Periods are measured in completed candles of the selected interval.</p></div></div>
+        <div><span class="settings-number" th:text="${'0' + (stat.index + 3)}">03</span><div><h2 th:text="${'Analysis settings'}">Analysis settings</h2><p>The same periods apply to completed candles on every analysis interval.</p></div></div>
         <button type="button" class="danger-outline-button analysis-reset-trigger"
-                th:attr="data-reset-scope=${profile.interval().name()},data-reset-label=${profile.label()}">Reset this interval</button>
+                data-reset-scope="analysis" data-reset-label="shared analysis">Reset settings</button>
       </div>
 
       <div class="analysis-setting-groups">

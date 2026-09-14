@@ -56,6 +56,34 @@ public interface TechnicalOutlookSubscriptionRepository
     int unfollow(@Param("user") User user, @Param("symbol") String symbol,
                  @Param("now") LocalDateTime now);
 
+    @Query("""
+            select s.id as id, s.stockAsset as stockAsset, s.interval as interval,
+                   (select count(n) from TechnicalOutlookNotification n
+                    where n.subscription = s and n.readAt is null) as unreadSignalCount
+            from TechnicalOutlookSubscription s
+            where s.user = :user and s.active = true
+              and (:symbol is null or upper(s.stockAsset.tickerSymbol) = :symbol)
+            order by s.stockAsset.tickerSymbol, s.interval
+            """)
+    List<DashboardSubscription> findDashboardSubscriptions(@Param("user") User user,
+                                                         @Param("symbol") String symbol);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update TechnicalOutlookSubscription s set s.active = false, s.updatedAt = :now
+            where s.user = :user and upper(s.stockAsset.tickerSymbol) = :symbol
+              and s.active = true and s.id in :ids
+            """)
+    int unfollowSelected(@Param("user") User user, @Param("symbol") String symbol,
+                         @Param("ids") java.util.Set<Long> ids, @Param("now") LocalDateTime now);
+
+    interface DashboardSubscription {
+        Long getId();
+        StockAsset getStockAsset();
+        TimeInterval getInterval();
+        long getUnreadSignalCount();
+    }
+
     interface WatchlistRow {
         String getSymbol();
         String getCompanyName();

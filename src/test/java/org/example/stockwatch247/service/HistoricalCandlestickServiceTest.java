@@ -218,13 +218,13 @@ class HistoricalCandlestickServiceTest {
             assertThat(scan.lookbackCandles()).isEqualTo(72);
             assertThat(scan.lookbackLabel()).isEqualTo("last 72 completed weekly candles");
             assertThat(scan.timeStopCandles()).isEqualTo(8);
-            assertThat(scan.rewardRiskRatio()).isEqualTo(3.0);
+            assertThat(scan.rewardRiskRatio()).isEqualTo(2.0);
         });
         assertThat(scanProfile("1mo", 144)).satisfies(scan -> {
             assertThat(scan.lookbackCandles()).isEqualTo(144);
             assertThat(scan.lookbackLabel()).isEqualTo("last 144 completed monthly candles");
             assertThat(scan.timeStopCandles()).isEqualTo(8);
-            assertThat(scan.rewardRiskRatio()).isEqualTo(3.0);
+            assertThat(scan.rewardRiskRatio()).isEqualTo(2.0);
         });
     }
 

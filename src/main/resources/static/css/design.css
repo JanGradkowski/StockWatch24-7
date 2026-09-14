@@ -98,7 +98,9 @@
 :root[data-theme] .alert-list-head { color: var(--muted-text); }
 :root[data-theme] .history-back-button { background: var(--surface); border-color: var(--glass-border); box-shadow: var(--shadow-sm); }
 :root[data-theme] .app-hero { margin-bottom: 1.25rem; align-items: center; gap: 1rem; }
+:root[data-theme] .dashboard-container { padding-top: 1rem; }
 :root[data-theme] .welcome-header .eyebrow { display: none; }
+:root[data-theme] .welcome-header .welcome-text { margin-top: 0; }
 :root[data-theme] .welcome-subtitle { margin-top: .5rem; }
 :root[data-theme] .hero-status { background: var(--surface); color: var(--muted-text); box-shadow: none; font-size: .75rem; }
 :root[data-theme] .dashboard-panel { padding: 1.25rem; }

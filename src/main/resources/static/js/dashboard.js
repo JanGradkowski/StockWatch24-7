@@ -249,8 +249,14 @@
                 .filter(Number.isSafeInteger);
         }
 
+        function selectedOutlookSubscriptionIds() {
+            return Array.from(ruleList.querySelectorAll("input[data-outlook-subscription-id]:checked"))
+                .map(input => Number(input.dataset.outlookSubscriptionId))
+                .filter(Number.isSafeInteger);
+        }
+
         function updateSelectionAction() {
-            const selectedCount = selectedRuleIds().length;
+            const selectedCount = selectedRuleIds().length + selectedOutlookSubscriptionIds().length;
             deleteSelectedButton.disabled = selectedCount === 0;
             deleteSelectedButton.textContent = selectedCount === 0
                 ? "Delete selected"
@@ -268,19 +274,20 @@
             deleteAllButton.textContent = "Delete all";
         }
 
-        function appendRuleOption(rule) {
+        function appendRuleOption(rule, automatedAnalysis = false) {
             const item = document.createElement("li");
             const label = document.createElement("label");
             label.className = "company-unfollow-rule-option";
             const input = document.createElement("input");
             input.type = "checkbox";
-            input.dataset.ruleId = String(rule.id);
+            if (automatedAnalysis) input.dataset.outlookSubscriptionId = String(rule.id);
+            else input.dataset.ruleId = String(rule.id);
             const tradeSignalLabel = rule.tradeSignal === "SELL" ? "SELL/SHORT" : rule.tradeSignal;
-            input.setAttribute("aria-label", `Select ${rule.familyLabel} ${rule.intervalLabel} ${tradeSignalLabel}`);
+            input.setAttribute("aria-label", `Select ${rule.familyLabel} ${rule.intervalLabel}${automatedAnalysis ? "" : ` ${tradeSignalLabel}`}`);
             const copy = document.createElement("span");
             copy.className = "company-unfollow-rule-copy";
             const title = document.createElement("strong");
-            title.textContent = `${rule.familyLabel} · ${tradeSignalLabel}`;
+            title.textContent = automatedAnalysis ? rule.familyLabel : `${rule.familyLabel} · ${tradeSignalLabel}`;
             const interval = document.createElement("small");
             interval.textContent = `${rule.intervalLabel} interval`;
             copy.append(title, interval);
@@ -306,9 +313,11 @@
                     resetDialog();
                     pendingSymbol = symbol;
                     companyName.textContent = button.dataset.companyName || symbol;
-                    activeRuleCount = activeRules.length;
-                    activeRules.forEach(appendRuleOption);
-                    if (activeRules.length === 0) {
+                    const outlooks = Array.isArray(payload.outlookSubscriptions) ? payload.outlookSubscriptions : [];
+                    activeRuleCount = activeRules.length + outlooks.length;
+                    activeRules.forEach(rule => appendRuleOption(rule));
+                    outlooks.forEach(subscription => appendRuleOption(subscription, true));
+                    if (activeRuleCount === 0) {
                         const item = document.createElement("li");
                         item.className = "company-unfollow-empty-rule";
                         item.textContent = "No active technical rules remain for this company.";
@@ -335,14 +344,16 @@
         });
 
         ruleList.addEventListener("change", event => {
-            if (event.target.matches("input[data-rule-id]")) {
+            if (event.target.matches("input[data-rule-id], input[data-outlook-subscription-id]")) {
                 updateSelectionAction();
             }
         });
 
         async function deleteRules(deleteAll) {
             const ruleIds = deleteAll ? [] : selectedRuleIds();
-            if (!pendingSymbol || !csrfToken || (!deleteAll && ruleIds.length === 0)) {
+            const outlookSubscriptionIds = deleteAll ? [] : selectedOutlookSubscriptionIds();
+            const selectedCount = ruleIds.length + outlookSubscriptionIds.length;
+            if (!pendingSymbol || !csrfToken || (!deleteAll && selectedCount === 0)) {
                 return;
             }
             deleteSelectedButton.disabled = true;
@@ -352,7 +363,7 @@
                 status.textContent = "Switching off every listed technical rule...";
             } else {
                 deleteSelectedButton.textContent = "Deleting selected...";
-                status.textContent = `Switching off ${ruleIds.length} selected rule${ruleIds.length === 1 ? "" : "s"}...`;
+                status.textContent = `Switching off ${selectedCount} selected rule${selectedCount === 1 ? "" : "s"}...`;
             }
             try {
                 const endpoint = deleteAll
@@ -365,7 +376,7 @@
                 };
                 if (!deleteAll) {
                     request.headers["Content-Type"] = "application/json";
-                    request.body = JSON.stringify({ruleIds});
+                    request.body = JSON.stringify({ruleIds, outlookSubscriptionIds});
                 }
                 const response = await fetch(endpoint, request);
                 if (!response.ok) {

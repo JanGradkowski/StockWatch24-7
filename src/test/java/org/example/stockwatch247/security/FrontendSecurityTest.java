@@ -77,7 +77,7 @@ class FrontendSecurityTest {
         assertTrue(dashboardScript.contains("payload.activeRules"));
         assertTrue(dashboardScript.contains("rule.id"));
         assertTrue(dashboardScript.contains("input[data-rule-id]:checked"));
-        assertTrue(dashboardScript.contains("JSON.stringify({ruleIds})"));
+        assertTrue(dashboardScript.contains("JSON.stringify({ruleIds, outlookSubscriptionIds})"));
         assertTrue(dashboardScript.contains("/rules`"));
         assertTrue(dashboardScript.contains("rule.familyLabel"));
         assertTrue(dashboardScript.contains("rule.intervalLabel"));
@@ -262,7 +262,7 @@ class FrontendSecurityTest {
         assertTrue(definitions.contains("Default:"));
         assertTrue(definitions.contains("setting.description"));
         assertTrue(definitions.contains("setting.effect"));
-        assertTrue(definitions.contains("Risk-to-reward by interval"));
+        assertTrue(definitions.contains("Set one reward multiple for all intervals."));
         assertTrue(definitions.contains("rewardRisk."));
         assertTrue(definitions.contains("Stop-loss rule"));
         assertTrue(definitions.contains(".stopLossMode"));

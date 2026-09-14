@@ -236,7 +236,7 @@
   <form id="indicatorPeriodForm" class="unsaved-alert-dialog-content">
     <span class="unsaved-alert-kicker">Saved analysis profile</span>
     <h2 id="indicatorPeriodDialogTitle">Indicator periods</h2>
-    <p>Change the periods used by the <strong id="indicatorPeriodIntervalLabel">Daily</strong> analysis. These values are shared with Settings and will also affect future signal scoring for this interval.</p>
+    <p>These periods are shared with Settings and apply to all analysis intervals.</p>
     <div class="indicator-period-groups">
       <fieldset>
         <legend>Momentum and volatility</legend>
@@ -580,7 +580,6 @@
     document.querySelectorAll('[data-period-field]').forEach(input => {
       input.value = settings[input.dataset.periodField];
     });
-    document.getElementById('indicatorPeriodIntervalLabel').textContent = outlook.intervalLabel;
     document.getElementById('editIndicatorPeriods').disabled = false;
   }
 

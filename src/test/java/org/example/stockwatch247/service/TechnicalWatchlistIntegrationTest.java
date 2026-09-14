@@ -35,6 +35,8 @@ class TechnicalWatchlistIntegrationTest {
     @Autowired TechnicalWatchlistService watchlist;
     @Autowired TechnicalOutlookTrackingService tracking;
     @Autowired MockMvc mvc;
+    @Autowired AlertRuleService alertRules;
+    @Autowired AlertRuleRepository rules;
     User owner, other;
     StockAsset asset;
     long now;
@@ -145,6 +147,98 @@ class TechnicalWatchlistIntegrationTest {
         assertThat(subscriptions.findByUserAndStockAssetAndInterval(owner, asset, TimeInterval.DAILY)).isPresent();
         assertThat(subscriptions.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndActiveTrue(
                 asset.getTickerSymbol(), TimeInterval.DAILY)).hasSize(1);
+    }
+
+    @Test void dashboardIncludesAutomatedAnalysisOnlyCompaniesAndTheirUnreadChanges() throws Exception {
+        var daily = subscription(owner, TimeInterval.DAILY);
+        subscription(owner, TimeInterval.WEEKLY);
+        subscription(other, TimeInterval.MONTHLY);
+        notification(daily, now);
+        var companies = alertRules.getActiveCompanyViews(owner);
+        assertThat(companies).singleElement().satisfies(company -> {
+            assertThat(company.familyLabels()).containsExactly("Automated Technical Analysis");
+            assertThat(company.intervalLabels()).containsExactly("Daily", "Weekly");
+            assertThat(company.ruleCount()).isEqualTo(2);
+            assertThat(company.unreadSignalCount()).isEqualTo(1);
+            assertThat(company.representativeAlertId()).isNull();
+        });
+        mvc.perform(signedIn(get("/home"))).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "href=\"/stock/" + asset.getTickerSymbol() + "/technical-outlook\"")));
+        mvc.perform(signedIn(get("/api/alerts/" + asset.getTickerSymbol())))
+                .andExpect(jsonPath("$.activeRules.length()").value(0))
+                .andExpect(jsonPath("$.outlookSubscriptions.length()").value(2))
+                .andExpect(jsonPath("$.outlookSubscriptions[0].familyLabel").value("Automated Technical Analysis"));
+    }
+
+    @Test void dashboardCanSelectivelyUnfollowAutomatedAnalysisWithoutTouchingPatternsOrOtherAccounts() throws Exception {
+        var daily = subscription(owner, TimeInterval.DAILY);
+        var weekly = subscription(owner, TimeInterval.WEEKLY);
+        var foreign = subscription(other, TimeInterval.DAILY);
+        Long historyId = notification(daily, now).getId();
+        var rule = patternRule();
+        assertThat(alertRules.getActiveCompanyViews(owner)).singleElement().satisfies(company -> {
+            assertThat(company.familyLabels()).containsExactly("Candlestick", "Automated Technical Analysis");
+            assertThat(company.ruleCount()).isEqualTo(3);
+            assertThat(company.representativeAlertId()).isEqualTo(rule.getId());
+        });
+        mvc.perform(signedIn(get("/home"))).andExpect(status().isOk());
+        String selection = "{\"ruleIds\":[],\"outlookSubscriptionIds\":[" + daily.getId() + "," + foreign.getId() + "]}";
+        mvc.perform(signedIn(delete("/api/alerts/" + asset.getTickerSymbol() + "/rules"))
+                        .contentType("application/json").content(selection))
+                .andExpect(status().isForbidden());
+        mvc.perform(signedIn(delete("/api/alerts/" + asset.getTickerSymbol() + "/rules")).with(csrf())
+                        .contentType("application/json").content(selection))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.unfollowedRules").value(1));
+        assertThat(subscriptions.findById(daily.getId()).orElseThrow().isActive()).isFalse();
+        assertThat(subscriptions.findById(weekly.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(subscriptions.findById(foreign.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(rules.findById(rule.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(notifications.existsById(historyId)).isTrue();
+    }
+
+    @Test void companyUnfollowAllIncludesBothKindsAndPreservesHistoryAndOtherStocks() throws Exception {
+        var daily = subscription(owner, TimeInterval.DAILY);
+        var foreign = subscription(other, TimeInterval.DAILY);
+        var rule = patternRule();
+        Long historyId = notification(daily, now).getId();
+        StockAsset second = new StockAsset(); second.setTickerSymbol("SECOND" + owner.getId());
+        second.setCompanyName("Other followed company"); second.setExchange("NASDAQ"); assets.saveAndFlush(second);
+        var otherStock = subscription(owner, TimeInterval.WEEKLY);
+        otherStock.setStockAsset(second); subscriptions.saveAndFlush(otherStock);
+        mvc.perform(signedIn(delete("/api/alerts/" + asset.getTickerSymbol())).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.unfollowedRules").value(2));
+        assertThat(subscriptions.findById(daily.getId()).orElseThrow().isActive()).isFalse();
+        assertThat(rules.findById(rule.getId()).orElseThrow().isActive()).isFalse();
+        assertThat(subscriptions.findById(foreign.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(subscriptions.findById(otherStock.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(notifications.existsById(historyId)).isTrue();
+        mvc.perform(signedIn(delete("/api/alerts")).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.unfollowedRules").value(1));
+        assertThat(subscriptions.findById(foreign.getId()).orElseThrow().isActive()).isTrue();
+    }
+
+    @Test void mixedSelectionValidatesBeforeMutatingAndRestrictsBothKindsToTheRequestedStock() throws Exception {
+        var daily = subscription(owner, TimeInterval.DAILY);
+        var rule = patternRule();
+        String endpoint = "/api/alerts/" + asset.getTickerSymbol() + "/rules";
+        mvc.perform(signedIn(delete(endpoint)).with(csrf()).contentType("application/json")
+                        .content("{\"ruleIds\":[" + rule.getId() + "],\"outlookSubscriptionIds\":[-1]}"))
+                .andExpect(status().isBadRequest());
+        assertThat(rules.findById(rule.getId()).orElseThrow().isActive()).isTrue();
+        mvc.perform(signedIn(delete("/api/alerts/OTHER/rules")).with(csrf()).contentType("application/json")
+                        .content("{\"ruleIds\":[" + rule.getId() + "],\"outlookSubscriptionIds\":[" + daily.getId() + "]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.unfollowedRules").value(0));
+        assertThat(subscriptions.findById(daily.getId()).orElseThrow().isActive()).isTrue();
+        mvc.perform(signedIn(delete(endpoint)).with(csrf()).contentType("application/json")
+                        .content("{\"ruleIds\":[" + rule.getId() + "],\"outlookSubscriptionIds\":[" + daily.getId() + "]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.unfollowedRules").value(2));
+        assertThat(alertRules.getActiveCompanyViews(owner)).isEmpty();
+    }
+
+    private AlertRule patternRule() {
+        var rule = new AlertRule(); rule.setUser(owner); rule.setStockAsset(asset); rule.setInterval(TimeInterval.DAILY);
+        return rules.saveAndFlush(rule);
     }
 
     private MockHttpServletRequestBuilder signedIn(MockHttpServletRequestBuilder request) {

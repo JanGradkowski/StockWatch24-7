@@ -21,6 +21,8 @@ import org.example.stockwatch247.repository.AlertEventRepository;
 import org.example.stockwatch247.repository.AlertRuleRepository;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.repository.StockAssetRepository;
+import org.example.stockwatch247.repository.TechnicalOutlookSubscriptionRepository;
+import org.example.stockwatch247.repository.TechnicalOutlookSubscriptionRepository.DashboardSubscription;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +50,18 @@ import java.util.stream.Collectors;
 
 @Service
 public class AlertRuleService {
+    private static final String AUTOMATED_ANALYSIS_LABEL = "Automated Technical Analysis";
+    private TechnicalOutlookSubscriptionRepository outlookSubscriptions;
+
+    @Autowired
+    void configureOutlookSubscriptions(TechnicalOutlookSubscriptionRepository repository) {
+        this.outlookSubscriptions = repository;
+    }
+
+    private List<DashboardSubscription> activeOutlookSubscriptions(User user, String symbol) {
+        return outlookSubscriptions == null ? List.of() : outlookSubscriptions.findDashboardSubscriptions(user, symbol);
+    }
+
     private SignalArchiveQuery archiveQuery;
     @Autowired
     void setArchiveQuery(SignalArchiveQuery archiveQuery) { this.archiveQuery = archiveQuery; }
@@ -200,8 +214,12 @@ public class AlertRuleService {
                     ignored -> new ArrayList<>()
             ).add(rule);
         }
-        return rulesBySymbol.values().stream()
-                .map(this::toTrackedCompanyView)
+        Map<String, List<DashboardSubscription>> outlooksBySymbol = activeOutlookSubscriptions(user, null).stream()
+                .collect(Collectors.groupingBy(subscription -> subscription.getStockAsset().getTickerSymbol()));
+        return java.util.stream.Stream.concat(rulesBySymbol.keySet().stream(), outlooksBySymbol.keySet().stream().sorted())
+                .distinct()
+                .map(symbol -> toTrackedCompanyView(rulesBySymbol.getOrDefault(symbol, List.of()),
+                        outlooksBySymbol.getOrDefault(symbol, List.of())))
                 .toList();
     }
 
@@ -210,7 +228,8 @@ public class AlertRuleService {
         if (user == null) {
             throw new IllegalArgumentException("User is required.");
         }
-        return alertRuleRepository.deactivateAllByUser(user);
+        int rules = alertRuleRepository.deactivateAllByUser(user);
+        return rules + (outlookSubscriptions == null ? 0 : outlookSubscriptions.unfollow(user, null, LocalDateTime.now()));
     }
 
     @Transactional
@@ -229,24 +248,27 @@ public class AlertRuleService {
         if (!activeRules.isEmpty()) {
             alertRuleRepository.saveAll(activeRules);
         }
-        return activeRules.size();
+        return activeRules.size() + (outlookSubscriptions == null ? 0
+                : outlookSubscriptions.unfollow(user, symbol, LocalDateTime.now()));
     }
 
     @Transactional
     public int unfollowSelectedTechnicalRules(User user, String rawSymbol, List<Long> rawRuleIds) {
-        if (user == null) {
-            throw new IllegalArgumentException("User is required.");
+        return unfollowSelectedTechnicalRules(user, rawSymbol, rawRuleIds, List.of());
+    }
+
+    @Transactional
+    public int unfollowSelectedTechnicalRules(User user, String rawSymbol, List<Long> rawRuleIds,
+                                              List<Long> rawOutlookSubscriptionIds) {
+        if (user == null) throw new IllegalArgumentException("User is required.");
+        List<Long> rules = rawRuleIds == null ? List.of() : rawRuleIds;
+        List<Long> outlooks = rawOutlookSubscriptionIds == null ? List.of() : rawOutlookSubscriptionIds;
+        int count = rules.size() + outlooks.size();
+        if (count == 0 || count > MAX_ALERT_CHANGES_PER_REQUEST + 3) {
+            throw new IllegalArgumentException("Select between 1 and 27 followed rules.");
         }
-        if (rawRuleIds == null || rawRuleIds.isEmpty() || rawRuleIds.size() > MAX_ALERT_CHANGES_PER_REQUEST) {
-            throw new IllegalArgumentException("Select between 1 and " + MAX_ALERT_CHANGES_PER_REQUEST + " rules.");
-        }
-        Set<Long> ruleIds = rawRuleIds.stream()
-                .peek(id -> {
-                    if (id == null || id <= 0) {
-                        throw new IllegalArgumentException("Every selected rule must have a valid identifier.");
-                    }
-                })
-                .collect(Collectors.toSet());
+        Set<Long> ruleIds = selectedIds(rules);
+        Set<Long> outlookIds = selectedIds(outlooks);
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         StockAsset stockAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
         if (stockAsset == null) {
@@ -261,7 +283,14 @@ public class AlertRuleService {
         if (!selectedRules.isEmpty()) {
             alertRuleRepository.saveAll(selectedRules);
         }
-        return selectedRules.size();
+        return selectedRules.size() + (outlookSubscriptions == null || outlookIds.isEmpty() ? 0
+                : outlookSubscriptions.unfollowSelected(user, symbol, outlookIds, LocalDateTime.now()));
+    }
+
+    private Set<Long> selectedIds(List<Long> ids) {
+        return ids.stream().peek(id -> {
+            if (id == null || id <= 0) throw new IllegalArgumentException("Every selection must have a valid identifier.");
+        }).collect(Collectors.toSet());
     }
 
     public List<LatestSignalView> getLatestSignalViews(User user) {
@@ -1626,39 +1655,22 @@ public class AlertRuleService {
         return new AlertRuleSignalHistory(alert, events);
     }
 
-    private TrackedCompanyView toTrackedCompanyView(List<AlertRule> rules) {
-        AlertRule representativeRule = rules.getFirst();
-        InstrumentType instrumentType = representativeRule.getStockAsset().getInstrumentType() == null
-                ? InstrumentType.EQUITY
-                : representativeRule.getStockAsset().getInstrumentType();
-        List<String> intervalLabels = rules.stream()
-                .map(rule -> intervalLabel(rule.getInterval()))
-                .distinct()
-                .toList();
-        List<String> familyLabels = rules.stream()
-                .map(rule -> familyLabel(rule.getPatternFamily()))
-                .distinct()
-                .toList();
-        List<TradeSignal> tradeSignals = rules.stream()
-                .map(AlertRule::getTradeSignal)
-                .distinct()
-                .toList();
-        long unreadSignalCount = rules.stream()
-                .mapToLong(alertEventRepository::countByAlertRuleAndReadAtIsNull)
-                .sum();
-        return new TrackedCompanyView(
-                representativeRule.getId(),
-                representativeRule.getStockAsset().getTickerSymbol(),
-                representativeRule.getStockAsset().getCompanyName(),
-                instrumentType,
-                instrumentTypeLabel(instrumentType),
-                instrumentGroup(instrumentType),
-                rules.size(),
-                intervalLabels,
-                familyLabels,
-                tradeSignals,
-                unreadSignalCount
-        );
+    private TrackedCompanyView toTrackedCompanyView(List<AlertRule> rules, List<DashboardSubscription> outlooks) {
+        StockAsset asset = rules.isEmpty() ? outlooks.getFirst().getStockAsset() : rules.getFirst().getStockAsset();
+        InstrumentType instrumentType = asset.getInstrumentType() == null ? InstrumentType.EQUITY : asset.getInstrumentType();
+        List<String> intervalLabels = java.util.stream.Stream.concat(
+                        rules.stream().map(AlertRule::getInterval), outlooks.stream().map(DashboardSubscription::getInterval))
+                .distinct().sorted().map(this::intervalLabel).toList();
+        List<String> familyLabels = new ArrayList<>(rules.stream()
+                .map(rule -> familyLabel(rule.getPatternFamily())).distinct().toList());
+        if (!outlooks.isEmpty()) familyLabels.add(AUTOMATED_ANALYSIS_LABEL);
+        List<TradeSignal> tradeSignals = rules.stream().map(AlertRule::getTradeSignal).distinct().toList();
+        long unreadSignalCount = rules.stream().mapToLong(alertEventRepository::countByAlertRuleAndReadAtIsNull).sum()
+                + outlooks.stream().mapToLong(DashboardSubscription::getUnreadSignalCount).sum();
+        return new TrackedCompanyView(rules.isEmpty() ? null : rules.getFirst().getId(),
+                asset.getTickerSymbol(), asset.getCompanyName(), instrumentType,
+                instrumentTypeLabel(instrumentType), instrumentGroup(instrumentType), rules.size() + outlooks.size(),
+                intervalLabels, List.copyOf(familyLabels), tradeSignals, unreadSignalCount);
     }
 
     private String instrumentTypeLabel(InstrumentType instrumentType) {
@@ -2071,6 +2083,10 @@ public class AlertRuleService {
                         rule.getInterval().name(),
                         intervalLabel(rule.getInterval()),
                         rule.getTradeSignal().name()))
+                .toList());
+        response.put("outlookSubscriptions", activeOutlookSubscriptions(user, symbol).stream()
+                .map(subscription -> new ActiveOutlookSummary(subscription.getId(), AUTOMATED_ANALYSIS_LABEL,
+                        subscription.getInterval().name(), intervalLabel(subscription.getInterval())))
                 .toList());
         response.put("trackedStocks", alertRuleRepository.countDistinctActiveStocksByUser(user));
         return response;
@@ -2747,6 +2763,8 @@ public class AlertRuleService {
             long eventCount
     ) {
     }
+
+    public record ActiveOutlookSummary(Long id, String familyLabel, String interval, String intervalLabel) { }
 
     public record TrackedCompanyView(
             Long representativeAlertId,

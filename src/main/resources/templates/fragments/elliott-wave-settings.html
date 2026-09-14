@@ -8,7 +8,7 @@
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.custom()} ? 'Custom definitions' : 'Default settings'">Default settings</span>
     </div>
-    <p class="analysis-settings-intro">Control how completed candles become swing pivots, how I–II–III–IV–V is validated, and which A–B–C corrections are accepted. Daily, weekly, and monthly definitions are stored separately.</p>
+    <p class="analysis-settings-intro">Control how completed candles become swing pivots, how I–II–III–IV–V is validated, and which A–B–C corrections are accepted. One shared definition applies across all intervals.</p>
     <div class="analysis-safety-strip elliott-definition-guide">
       <strong>How the values are measured</strong>
       <span><b>Retracement (%)</b> divides a corrective price distance by the actionary wave or complete impulse named in that option.</span>
@@ -28,12 +28,12 @@
       <div class="settings-card-heading candlestick-pattern-heading">
         <div>
           <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 2, 2)}">02</span>
-          <div><p class="scoring-family-label">Detection interval</p><h2 th:text="${profile.label + ' Elliott Waves'}">Weekly Elliott Waves</h2></div>
+          <div><p class="scoring-family-label">Shared detection rules</p><h2 th:text="${'Elliott Waves'}">Elliott Waves</h2></div>
         </div>
         <div class="candlestick-pattern-heading-actions">
           <span class="analysis-profile-state" th:classappend="${profile.factoryProfile} ? '' : ' custom'"
                 th:text="${profile.factoryProfile} ? 'Default' : 'Custom'">Default</span>
-          <button class="danger-outline-button" type="submit" th:form="${profile.key + '-elliott-reset-form'}">Reset this interval</button>
+          <button class="danger-outline-button" type="submit" th:form="${profile.key + '-elliott-reset-form'}">Reset settings</button>
         </div>
       </div>
       <p class="candlestick-pattern-description" th:text="${profile.description}">Completed weekly candles.</p>
@@ -132,14 +132,12 @@
 
   <form th:each="profile : ${preferences.profiles}" th:id="${profile.key + '-elliott-reset-form'}"
         th:action="@{/settings/elliott-waves/reset}" method="post" class="hidden-reset-form">
-    <input type="hidden" name="interval" th:value="${profile.interval.name()}">
   </form>
 
   <section class="settings-card analysis-factory-zone candlestick-pattern-factory-zone">
     <div class="settings-card-heading"><div><span class="settings-number">04</span><h2>Reset to defaults</h2></div><p>Candlestick, scoring, alert, and appearance settings remain unchanged.</p></div>
     <form th:action="@{/settings/elliott-waves/reset}" method="post" class="settings-action-row">
-      <input type="hidden" name="interval" value="all">
-      <div><h3>Restore every Elliott Wave definition</h3><p>Returns daily, weekly, and monthly pivot, motive, and corrective rules to the documented StockWatch defaults.</p></div>
+      <div><h3>Restore every Elliott Wave definition</h3><p>Returns shared pivot, motive, and corrective rules to the documented StockWatch defaults.</p></div>
       <button class="danger-button" type="submit">Restore defaults</button>
     </form>
   </section>

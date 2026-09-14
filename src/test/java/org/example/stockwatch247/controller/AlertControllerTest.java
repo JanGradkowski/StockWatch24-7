@@ -67,14 +67,14 @@ class AlertControllerTest {
         user.setEmail("selected-unfollow@example.com");
         Principal principal = user::getEmail;
         when(users.findByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
-        when(service.unfollowSelectedTechnicalRules(user, "NFLX", List.of(4L, 7L))).thenReturn(2);
+        when(service.unfollowSelectedTechnicalRules(user, "NFLX", List.of(4L, 7L), List.of())).thenReturn(2);
 
         var response = controller.unfollowSelectedTechnicalRules(
                 "NFLX", new AlertController.RuleSelectionRequest(List.of(4L, 7L)), principal);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).isEqualTo(Map.of("symbol", "NFLX", "unfollowedRules", 2));
-        verify(service).unfollowSelectedTechnicalRules(user, "NFLX", List.of(4L, 7L));
+        verify(service).unfollowSelectedTechnicalRules(user, "NFLX", List.of(4L, 7L), List.of());
     }
 
     @Test

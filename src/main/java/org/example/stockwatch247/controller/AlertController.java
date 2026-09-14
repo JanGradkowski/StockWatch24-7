@@ -152,13 +152,13 @@ public class AlertController {
                                                             @RequestBody RuleSelectionRequest request,
                                                             Principal principal) {
         try {
-            if (request == null || request.ruleIds() == null) {
+            if (request == null) {
                 throw new IllegalArgumentException("Selected rules are required.");
             }
             User user = currentUser(principal);
             String validatedSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
             int unfollowedRules = alertRuleService.unfollowSelectedTechnicalRules(
-                    user, validatedSymbol, request.ruleIds());
+                    user, validatedSymbol, request.ruleIds(), request.outlookSubscriptionIds());
             return ResponseEntity.ok(Map.of(
                     "symbol", validatedSymbol,
                     "unfollowedRules", unfollowedRules
@@ -221,7 +221,8 @@ public class AlertController {
     public record AlertBatchRequest(List<AlertToggleRequest> changes) {
     }
 
-    public record RuleSelectionRequest(List<Long> ruleIds) {
+    public record RuleSelectionRequest(List<Long> ruleIds, List<Long> outlookSubscriptionIds) {
+        public RuleSelectionRequest(List<Long> ruleIds) { this(ruleIds, List.of()); }
     }
 
     public record AlertCheckRequest(String interval, String signal, String patternFamily) {

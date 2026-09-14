@@ -153,7 +153,7 @@ class DemoPortfolioServiceIntegrationTest {
         assertThat(service.portfolio(account.getId(), "overall").currencies()).isEmpty();
         mvc.perform(get("/virtual-trades").with(user(account.getEmail()))
                         .sessionAttr(AccountSession.SECURITY_VERSION, account.getSecurityVersion()))
-                .andExpect(status().isOk()).andExpect(content().string(containsString("No funded demo buys yet")));
+                .andExpect(status().isOk()).andExpect(content().string(containsString("No sized buy trades yet")));
     }
 
     private DemoPortfolioService.PeriodView period(DemoPortfolioService.CurrencyView balance, String key) {

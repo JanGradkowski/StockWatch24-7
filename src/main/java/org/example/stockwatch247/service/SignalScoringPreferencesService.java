@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class SignalScoringPreferencesService {
-    public static final String PROFILE_VERSION = "USER_SIGNAL_SCORING_V2";
+    public static final String PROFILE_VERSION = "USER_SIGNAL_SCORING_V3";
     private static final String LEGACY_PROFILE_VERSION = "USER_SIGNAL_SCORING_V1";
     private static final Pattern SCORE_LABEL = Pattern.compile(
             "^\\s*([0-9]+(?:\\.[0-9]+)?)/([0-9]+(?:\\.[0-9]+)?)\\s*$");
@@ -96,26 +96,17 @@ public class SignalScoringPreferencesService {
     @Transactional
     public PreferencesView save(User user, MultiValueMap<String, String> form) {
         if (form == null) throw new IllegalArgumentException("Scoring preferences are required.");
-        List<Profile> profiles = new ArrayList<>();
-        for (AlertPatternFamily family : supportedFamilies()) {
-            for (TimeInterval interval : supportedIntervals()) {
-                profiles.add(parseProfile(form, family, interval));
-            }
-        }
-        return persist(user, profiles);
+        return persist(user, supportedFamilies().stream().map(family -> parseProfile(form, family)).toList());
     }
 
     @Transactional
-    public PreferencesView reset(User user, AlertPatternFamily family, TimeInterval interval) {
-        if (family == null && interval != null) {
-            throw new IllegalArgumentException("A signal type is required when resetting one interval.");
-        }
+    public PreferencesView reset(User user, AlertPatternFamily family) {
         PreferencesView current = get(user);
         List<Profile> profiles = current.profiles().stream()
-                .map(profile -> matches(profile, family, interval)
+                .map(profile -> family == null || profile.family() == family
                         ? factoryProfile(profile.family(), profile.interval()) : profile)
                 .toList();
-        if (family == null && interval == null) {
+        if (family == null) {
             repository.findByUser(user).ifPresent(repository::delete);
             return factoryPreferences();
         }
@@ -189,9 +180,8 @@ public class SignalScoringPreferencesService {
     }
 
     private Profile parseProfile(MultiValueMap<String, String> form,
-                                 AlertPatternFamily family,
-                                 TimeInterval interval) {
-        String prefix = familyKey(family) + "." + intervalKey(interval) + ".";
+                                 AlertPatternFamily family) {
+        String prefix = familyKey(family) + ".";
         List<ScoringComponent> components = definitions(family).stream().map(definition -> {
             boolean included = checked(form, prefix + definition.key() + ".included");
             int points = integer(form, prefix + definition.key() + ".points", definition.label());
@@ -211,8 +201,8 @@ public class SignalScoringPreferencesService {
             return new ConfluenceRule(sourceFamily, familyLabel(sourceFamily), included,
                     supportingPoints, opposingPoints);
         }).toList();
-        validateTotal(family, interval, components);
-        return new Profile(family, interval, familyLabel(family), intervalLabel(interval),
+        validateTotal(family, components);
+        return new Profile(family, TimeInterval.DAILY, familyLabel(family), "Shared",
                 components, confluenceRules, false);
     }
 
@@ -253,11 +243,8 @@ public class SignalScoringPreferencesService {
     }
 
     private PreferencesView factoryPreferences() {
-        List<Profile> profiles = new ArrayList<>();
-        for (AlertPatternFamily family : supportedFamilies()) {
-            for (TimeInterval interval : supportedIntervals()) profiles.add(factoryProfile(family, interval));
-        }
-        return new PreferencesView(PROFILE_VERSION, false, List.copyOf(profiles), null);
+        return new PreferencesView(PROFILE_VERSION, false, supportedFamilies().stream()
+                .map(family -> factoryProfile(family, TimeInterval.DAILY)).toList(), null);
     }
 
     private static Profile factoryProfile(AlertPatternFamily family, TimeInterval interval) {
@@ -269,38 +256,31 @@ public class SignalScoringPreferencesService {
                         CrossPatternConfluenceService.POINTS_PER_FAMILY,
                         CrossPatternConfluenceService.POINTS_PER_FAMILY))
                 .toList();
-        return new Profile(family, interval, familyLabel(family), intervalLabel(interval),
+        return new Profile(family, interval, familyLabel(family), "Shared",
                 components, confluenceRules, true);
     }
 
     private static void validateProfiles(List<Profile> profiles) {
-        int required = supportedFamilies().size() * supportedIntervals().size();
+        int required = supportedFamilies().size();
         if (profiles == null || profiles.size() != required) {
             throw new IllegalArgumentException("All " + required + " scoring profiles are required.");
         }
         for (AlertPatternFamily family : supportedFamilies()) {
-            for (TimeInterval interval : supportedIntervals()) {
-                Profile profile = profiles.stream()
-                        .filter(candidate -> candidate.family() == family && candidate.interval() == interval)
-                        .findFirst().orElseThrow(() -> new IllegalArgumentException("A scoring profile is missing."));
-                validateTotal(family, interval, profile.components());
-                validateConfluenceRules(family, profile.confluenceRules());
-            }
+            Profile profile = profiles.stream().filter(candidate -> candidate.family() == family)
+                    .findFirst().orElseThrow(() -> new IllegalArgumentException("A scoring profile is missing."));
+            validateTotal(family, profile.components());
+            validateConfluenceRules(family, profile.confluenceRules());
         }
     }
 
-    private static void validateTotal(AlertPatternFamily family,
-                                      TimeInterval interval,
-                                      List<ScoringComponent> components) {
+    private static void validateTotal(AlertPatternFamily family, List<ScoringComponent> components) {
         if (components == null || components.size() != definitions(family).size()) {
             throw new IllegalArgumentException("Every scoring parameter must be submitted.");
         }
         int total = components.stream().filter(ScoringComponent::included)
                 .mapToInt(ScoringComponent::points).sum();
         if (total != 100) {
-            throw new IllegalArgumentException(familyLabel(family) + " "
-                    + intervalLabel(interval).toLowerCase(Locale.ROOT)
-                    + " included points must total exactly 100 (currently " + total + ").");
+            throw new IllegalArgumentException(familyLabel(family) + " included points must total exactly 100 (currently " + total + ").");
         }
     }
 
@@ -328,11 +308,6 @@ public class SignalScoringPreferencesService {
             throw new IllegalArgumentException(familyLabel(sourceFamily)
                     + " confluence points must be between 0 and 100.");
         }
-    }
-
-    private static boolean matches(Profile profile, AlertPatternFamily family, TimeInterval interval) {
-        return (family == null || profile.family() == family)
-                && (interval == null || profile.interval() == interval);
     }
 
     private static boolean matchesFactory(Profile profile) {
@@ -494,9 +469,6 @@ public class SignalScoringPreferencesService {
     private static List<AlertPatternFamily> sourceFamilies(AlertPatternFamily targetFamily) {
         return supportedFamilies().stream().filter(family -> family != targetFamily).toList();
     }
-    private static List<TimeInterval> supportedIntervals() {
-        return List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY);
-    }
     private static String familyKey(AlertPatternFamily family) {
         return switch (family) {
             case ELLIOTT_WAVE -> "elliott";
@@ -519,15 +491,9 @@ public class SignalScoringPreferencesService {
         if (normalized.startsWith("harmonic")) return AlertPatternFamily.HARMONIC_FORMATION;
         return null;
     }
-    private static String intervalKey(TimeInterval interval) { return interval.name().toLowerCase(Locale.ROOT); }
-    private static String intervalLabel(TimeInterval interval) {
-        String value = intervalKey(interval);
-        return Character.toUpperCase(value.charAt(0)) + value.substring(1);
-    }
-
     private record StoredPreferences(String version, List<Profile> profiles) {
         private void validate() {
-            if ((!PROFILE_VERSION.equals(version) && !LEGACY_PROFILE_VERSION.equals(version))
+            if ((!PROFILE_VERSION.equals(version) && !"USER_SIGNAL_SCORING_V2".equals(version) && !LEGACY_PROFILE_VERSION.equals(version))
                     || profiles == null) {
                 throw new IllegalArgumentException("Unsupported scoring profile version.");
             }
@@ -535,17 +501,13 @@ public class SignalScoringPreferencesService {
     }
 
     private static List<Profile> completeProfiles(List<Profile> stored) {
-        List<Profile> complete = new ArrayList<>();
-        for (AlertPatternFamily family : supportedFamilies()) {
-            for (TimeInterval interval : supportedIntervals()) {
-                complete.add(stored.stream()
-                        .filter(profile -> profile.family() == family && profile.interval() == interval)
-                        .findFirst()
-                        .map(SignalScoringPreferencesService::completeProfile)
-                        .orElseGet(() -> factoryProfile(family, interval)));
-            }
-        }
-        return List.copyOf(complete);
+        // Collapse legacy interval profiles to daily, or the first available profile for the family.
+        return supportedFamilies().stream().map(family -> stored.stream()
+                .filter(profile -> profile.family() == family && profile.interval() == TimeInterval.DAILY)
+                .findFirst()
+                .or(() -> stored.stream().filter(profile -> profile.family() == family).findFirst())
+                .map(SignalScoringPreferencesService::completeProfile)
+                .orElseGet(() -> factoryProfile(family, TimeInterval.DAILY))).toList();
     }
 
     private static Profile completeProfile(Profile stored) {
@@ -557,8 +519,8 @@ public class SignalScoringPreferencesService {
                         .findFirst()
                         .orElseGet(() -> factory.confluenceRule(source)))
                 .toList();
-        return new Profile(stored.family(), stored.interval(), familyLabel(stored.family()),
-                intervalLabel(stored.interval()), stored.components(), rules, false);
+        return new Profile(stored.family(), TimeInterval.DAILY, familyLabel(stored.family()),
+                "Shared", stored.components(), rules, false);
     }
 
     private record ComponentDefinition(String key, String label, String description, int defaultPoints) { }
@@ -566,7 +528,7 @@ public class SignalScoringPreferencesService {
     public record PreferencesView(String version, boolean custom, List<Profile> profiles, Instant updatedAt) {
         public PreferencesView { profiles = profiles == null ? List.of() : List.copyOf(profiles); }
         public Profile profile(AlertPatternFamily family, TimeInterval interval) {
-            return profiles.stream().filter(item -> item.family() == family && item.interval() == interval)
+            return profiles.stream().filter(item -> item.family() == family)
                     .findFirst().orElseGet(() -> factoryProfile(family, interval));
         }
     }
@@ -578,7 +540,7 @@ public class SignalScoringPreferencesService {
             components = components == null ? List.of() : List.copyOf(components);
             confluenceRules = confluenceRules == null ? List.of() : List.copyOf(confluenceRules);
         }
-        public String key() { return familyKey(family) + "." + intervalKey(interval); }
+        public String key() { return familyKey(family); }
         public int totalPoints() { return components.stream().filter(ScoringComponent::included).mapToInt(ScoringComponent::points).sum(); }
         public ConfluenceRule confluenceRule(AlertPatternFamily sourceFamily) {
             return confluenceRules.stream().filter(rule -> rule.sourceFamily() == sourceFamily)

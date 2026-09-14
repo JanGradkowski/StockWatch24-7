@@ -42,7 +42,7 @@ class ElliottWavePreferencesServiceTest {
 
         assertThat(preferences.custom()).isFalse();
         assertThat(preferences.profiles()).extracting(ElliottWavePreferencesService.IntervalProfile::interval)
-                .containsExactly(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY);
+                .containsExactly(TimeInterval.DAILY);
         assertThat(preferences.profiles()).allSatisfy(profile -> {
             assertThat(profile.description()).isNotBlank();
             assertThat(profile.rules()).isEqualTo(ElliottWaveDetectionService.DetectionRules.factory());
@@ -61,22 +61,20 @@ class ElliottWavePreferencesServiceTest {
     }
 
     @Test
-    void savesDailyWeeklyAndMonthlyDefinitionsIndependentlyAndBuildsDetectorRules() {
+    void savesOneDefinitionAndBuildsTheSameRulesForEveryInterval() {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("daily.waveTwoMaximumPercent", "90");
-        form.set("weekly.waveTwoMaximumPercent", "92");
-        form.remove("weekly.allowTruncatedFifth");
-        form.set("weekly.requireWaveOneShortest", "true");
-        form.set("monthly.waveTwoMaximumPercent", "98");
+        form.set("shared.waveTwoMaximumPercent", "92");
+        form.remove("shared.allowTruncatedFifth");
+        form.set("shared.requireWaveOneShortest", "true");
 
         var saved = service.save(user, form);
 
-        assertThat(saved.profile(TimeInterval.DAILY).rules().waveTwoMaximumRetracement()).isEqualTo(.90);
+        assertThat(saved.profile(TimeInterval.DAILY).rules().waveTwoMaximumRetracement()).isEqualTo(.92);
         assertThat(saved.profile(TimeInterval.WEEKLY).rules().waveTwoMaximumRetracement()).isEqualTo(.92);
         assertThat(saved.profile(TimeInterval.WEEKLY).rules().allowTruncatedFifth()).isFalse();
         assertThat(saved.profile(TimeInterval.WEEKLY).rules().requireWaveOneShortest()).isTrue();
-        assertThat(saved.profile(TimeInterval.MONTHLY).rules().waveTwoMaximumRetracement()).isEqualTo(.98);
-        assertThat(saved.profile(TimeInterval.MONTHLY).rules().requireWaveOneShortest()).isFalse();
+        assertThat(saved.profile(TimeInterval.MONTHLY).rules().waveTwoMaximumRetracement()).isEqualTo(.92);
+        assertThat(saved.profile(TimeInterval.MONTHLY).rules().requireWaveOneShortest()).isTrue();
         assertThat(service.get(user).profile(TimeInterval.WEEKLY).factoryProfile()).isFalse();
     }
 
@@ -98,29 +96,30 @@ class ElliottWavePreferencesServiceTest {
     }
 
     @Test
-    void olderWeeklyMonthlyPayloadReceivesDailyFactoryRulesWithoutLosingCustomValues() throws Exception {
+    void olderWeeklyOnlyPayloadBecomesSharedWithoutLosingCustomValues() throws Exception {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("weekly.minimumSignalConfidence", "82");
+        form.set("shared.minimumSignalConfidence", "82");
         service.save(user, form);
         UserElliottWavePreferences entity = stored.get();
         ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
         var root = (tools.jackson.databind.node.ObjectNode) mapper.readTree(entity.getPreferencesPayload());
         var profiles = (tools.jackson.databind.node.ArrayNode) root.get("profiles");
-        profiles.remove(0);
+        root.put("version", "USER_ELLIOTT_DETECTION_V1");
+        ((tools.jackson.databind.node.ObjectNode) profiles.get(0)).put("interval", "WEEKLY");
         entity.setPreferencesPayload(mapper.writeValueAsString(root));
 
         var loaded = service.get(user);
 
-        assertThat(loaded.profile(TimeInterval.DAILY).factoryProfile()).isTrue();
+        assertThat(loaded.profile(TimeInterval.DAILY).rules().minimumSignalConfidence()).isEqualTo(82);
         assertThat(loaded.profile(TimeInterval.WEEKLY).rules().minimumSignalConfidence()).isEqualTo(82);
-        assertThat(loaded.profile(TimeInterval.MONTHLY).factoryProfile()).isTrue();
+        assertThat(loaded.profile(TimeInterval.MONTHLY).rules().minimumSignalConfidence()).isEqualTo(82);
     }
 
     @Test
     void rejectsContradictoryRangesBeforePersistence() {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("weekly.waveTwoPreferredMinPercent", "80");
-        form.set("weekly.waveTwoPreferredMaxPercent", "60");
+        form.set("shared.waveTwoPreferredMinPercent", "80");
+        form.set("shared.waveTwoPreferredMaxPercent", "60");
 
         assertThatThrownBy(() -> service.save(user, form))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -129,16 +128,40 @@ class ElliottWavePreferencesServiceTest {
     }
 
     @Test
-    void intervalResetPreservesTheOtherIntervalsCustomDefinition() {
+    void resetRestoresTheSharedDefinitionForEveryInterval() {
         LinkedMultiValueMap<String, String> form = factoryForm();
-        form.set("weekly.minimumSignalConfidence", "82");
-        form.set("monthly.minimumSignalConfidence", "88");
+        form.set("shared.minimumSignalConfidence", "82");
+        form.set("shared.minimumSignalConfidence", "88");
         service.save(user, form);
 
-        var reset = service.reset(user, TimeInterval.WEEKLY);
+        var reset = service.reset(user);
 
         assertThat(reset.profile(TimeInterval.WEEKLY).rules().minimumSignalConfidence()).isEqualTo(75);
-        assertThat(reset.profile(TimeInterval.MONTHLY).rules().minimumSignalConfidence()).isEqualTo(88);
+        assertThat(reset.profile(TimeInterval.MONTHLY).rules().minimumSignalConfidence()).isEqualTo(75);
+    }
+
+    @Test
+    void legacyDailyDefinitionWinsOverConflictingWeeklySettingsAndPersistsOnce() throws Exception {
+        var form = factoryForm();
+        form.set("shared.minimumSignalConfidence", "82");
+        service.save(user, form);
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        var payload = (tools.jackson.databind.node.ObjectNode) mapper.readTree(stored.get().getPreferencesPayload());
+        payload.put("version", "USER_ELLIOTT_DETECTION_V1");
+        var profiles = (tools.jackson.databind.node.ArrayNode) payload.get("profiles");
+        var weekly = profiles.get(0).deepCopy();
+        ((tools.jackson.databind.node.ObjectNode) weekly).put("interval", "WEEKLY");
+        ((tools.jackson.databind.node.ObjectNode) weekly.get("numbers")).put("minimumSignalConfidence", 91);
+        profiles.insert(0, weekly);
+        stored.get().setPreferencesPayload(mapper.writeValueAsString(payload));
+
+        assertThat(service.get(user).profiles()).hasSize(1);
+        for (TimeInterval interval : java.util.List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY)) {
+            assertThat(service.get(user).profile(interval).rules().minimumSignalConfidence()).isEqualTo(82);
+            assertThat(service.get(user).profile(interval).interval()).isEqualTo(interval);
+        }
+        service.save(user, factoryForm());
+        assertThat(mapper.readTree(stored.get().getPreferencesPayload()).get("profiles").size()).isEqualTo(1);
     }
 
     private LinkedMultiValueMap<String, String> factoryForm() {

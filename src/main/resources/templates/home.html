@@ -214,17 +214,17 @@
       </div>
 
       <div id="followedInstrumentList" th:if="${!#lists.isEmpty(trackedCompanies)}">
-        <div class="alert-list-head company-alert-grid" data-watch-list-head aria-hidden="true" th:hidden="${stockCompanyCount == 0}">
-          <span>Instrument</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>Unread</span><span>Actions</span>
-        </div>
-        <div class="alert-list">
+        <div class="alert-list company-alert-list">
+          <div class="alert-list-head company-alert-grid" data-watch-list-head aria-hidden="true" th:hidden="${stockCompanyCount == 0}">
+            <span>Instrument</span><span>Watched rules</span><span>Intervals</span><span>Coverage</span><span>Unread</span><span>Actions</span>
+          </div>
           <div th:each="company : ${trackedCompanies}"
              class="alert-row company-alert-grid"
              th:attr="data-instrument-group=${company.instrumentGroup()}"
              th:data-unread-signal-count="${company.unreadSignalCount()}"
              th:hidden="${company.instrumentGroup() != 'stocks'}">
             <a class="dashboard-company-link"
-               th:href="@{/alerts/{id}(id=${company.representativeAlertId()})}"
+               th:href="${company.representativeAlertId() != null} ? @{/alerts/{id}(id=${company.representativeAlertId()})} : @{/stock/{symbol}/technical-outlook(symbol=${company.symbol()})}"
                th:attr="aria-label=${'Open followed rules for ' + company.companyName()}">
               <div class="alert-symbol-line">
                 <div class="alert-symbol" th:text="${company.symbol()}">MARA</div>
@@ -694,7 +694,7 @@
   <div class="unsaved-alert-dialog-content">
     <span class="unsaved-alert-kicker">Manage technical monitoring</span>
     <h2 id="unfollowCompanyTitle">Manage followed rules</h2>
-    <p>Choose which technical rules to stop following for <strong id="unfollowCompanyName">this company</strong>.</p>
+    <p>Choose which pattern rules or Automated Technical Analysis subscriptions to stop following for <strong id="unfollowCompanyName">this company</strong>.</p>
     <p>Select individual rules below, or delete every listed rule at once:</p>
     <ul id="unfollowCompanyRuleList" class="company-unfollow-rule-list"></ul>
     <p class="company-unfollow-history-note">Existing signal history will remain available. Ticker alerts are not affected.</p>

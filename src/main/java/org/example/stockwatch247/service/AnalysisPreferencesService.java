@@ -19,7 +19,7 @@ import java.util.Locale;
 
 @Service
 public class AnalysisPreferencesService {
-    public static final String PROFILE_VERSION = "USER_ANALYSIS_V1";
+    public static final String PROFILE_VERSION = "USER_ANALYSIS_V2";
 
     private final UserAnalysisPreferencesRepository repository;
     private final ObjectMapper objectMapper;
@@ -55,11 +55,8 @@ public class AnalysisPreferencesService {
             throw new IllegalArgumentException("Analysis preferences are required.");
         }
         PreferencesView current = get(user);
-        List<IntervalProfile> profiles = List.of(
-                parseProfile(form, "daily", TimeInterval.DAILY, "Daily", current.profile(TimeInterval.DAILY)),
-                parseProfile(form, "weekly", TimeInterval.WEEKLY, "Weekly", current.profile(TimeInterval.WEEKLY)),
-                parseProfile(form, "monthly", TimeInterval.MONTHLY, "Monthly", current.profile(TimeInterval.MONTHLY))
-        );
+        List<IntervalProfile> profiles = List.of(parseProfile(form, "shared", TimeInterval.DAILY,
+                "Shared", current.profile(TimeInterval.DAILY)));
         EmailPreferences email = new EmailPreferences(
                 checked(form, "email.newCandlestick"),
                 checked(form, "email.newElliott"),
@@ -69,9 +66,9 @@ public class AnalysisPreferencesService {
                 checked(form, "email.expired"),
                 checked(form, "email.insider"),
                 checked(form, "email.congressional"),
-                checked(form, "email.daily"),
-                checked(form, "email.weekly"),
-                checked(form, "email.monthly"),
+                checked(form, "email.signals"),
+                checked(form, "email.signals"),
+                checked(form, "email.signals"),
                 checked(form, "email.buy"),
                 checked(form, "email.sell")
         );
@@ -89,33 +86,16 @@ public class AnalysisPreferencesService {
     @Transactional
     public PreferencesView resetAll(User user) {
         PreferencesView current = get(user);
-        List<IntervalProfile> profiles = List.of(
-                factoryProfile(TimeInterval.DAILY).withDetectionRules(
-                        DetectionRules.from(current.profile(TimeInterval.DAILY))),
-                factoryProfile(TimeInterval.WEEKLY).withDetectionRules(
-                        DetectionRules.from(current.profile(TimeInterval.WEEKLY))),
-                factoryProfile(TimeInterval.MONTHLY).withDetectionRules(
-                        DetectionRules.from(current.profile(TimeInterval.MONTHLY)))
-        );
+        List<IntervalProfile> profiles = List.of(factoryProfile(TimeInterval.DAILY).withDetectionRules(
+                DetectionRules.from(current.profile(TimeInterval.DAILY))));
         return persist(user, profiles, EmailPreferences.factory());
     }
 
     @Transactional
-    public PreferencesView resetInterval(User user, TimeInterval interval) {
+    public PreferencesView resetAnalysis(User user) {
         PreferencesView current = get(user);
-        IntervalProfile factory = factoryProfile(interval).withDetectionRules(
-                DetectionRules.from(current.profile(interval)));
-        List<IntervalProfile> profiles = current.profiles().stream()
-                .map(profile -> profile.interval() == interval ? factory : profile)
-                .toList();
-        StoredPreferences stored = new StoredPreferences(PROFILE_VERSION, profiles, current.email());
-        UserAnalysisPreferences entity = repository.findByUser(user).orElseGet(UserAnalysisPreferences::new);
-        entity.setUser(user);
-        entity.setProfileVersion(PROFILE_VERSION);
-        entity.setPreferencesPayload(write(stored));
-        entity.setUpdatedAt(Instant.now());
-        repository.save(entity);
-        return new PreferencesView(PROFILE_VERSION, true, profiles, current.email(), entity.getUpdatedAt());
+        return persist(user, List.of(factoryProfile(TimeInterval.DAILY).withDetectionRules(
+                DetectionRules.from(current.profile(TimeInterval.DAILY)))), current.email());
     }
 
     @Transactional
@@ -126,11 +106,9 @@ public class AnalysisPreferencesService {
             throw new IllegalArgumentException("An account, interval, and indicator periods are required.");
         }
         PreferencesView current = get(user);
-        IntervalProfile updated = current.profile(interval).withIndicatorPeriods(periods);
+        IntervalProfile updated = current.profile(TimeInterval.DAILY).withIndicatorPeriods(periods);
         updated.validate();
-        List<IntervalProfile> profiles = current.profiles().stream()
-                .map(profile -> profile.interval() == interval ? updated : profile)
-                .toList();
+        List<IntervalProfile> profiles = List.of(updated);
         StoredPreferences stored = new StoredPreferences(PROFILE_VERSION, profiles, current.email());
         UserAnalysisPreferences entity = repository.findByUser(user).orElseGet(UserAnalysisPreferences::new);
         entity.setUser(user);
@@ -155,15 +133,13 @@ public class AnalysisPreferencesService {
     }
 
     @Transactional
-    public PreferencesView resetDetectionRules(User user, TimeInterval interval) {
+    public PreferencesView resetDetectionRules(User user) {
         if (user == null) {
             throw new IllegalArgumentException("An account is required.");
         }
         PreferencesView current = get(user);
         List<IntervalProfile> profiles = current.profiles().stream()
-                .map(profile -> interval == null || profile.interval() == interval
-                        ? profile.withDetectionRules(DetectionRules.from(factoryProfile(profile.interval())))
-                        : profile)
+                .map(profile -> profile.withDetectionRules(DetectionRules.from(factoryProfile(TimeInterval.DAILY))))
                 .toList();
         return persist(user, profiles, current.email());
     }
@@ -269,25 +245,17 @@ public class AnalysisPreferencesService {
         return new PreferencesView(
                 PROFILE_VERSION,
                 false,
-                List.of(factoryProfile(TimeInterval.DAILY),
-                        factoryProfile(TimeInterval.WEEKLY),
-                        factoryProfile(TimeInterval.MONTHLY)),
+                List.of(factoryProfile(TimeInterval.DAILY)),
                 EmailPreferences.factory(),
                 null);
     }
 
     public static IntervalProfile factoryProfile(TimeInterval interval) {
-        return switch (interval) {
-            case DAILY -> profile("daily", interval, "Daily", 14, 14, 20, 50, 200,
-                    12, 26, 9, 20, 20, 2.0, 20, 20, 60);
-            case WEEKLY -> profile("weekly", interval, "Weekly", 10, 10, 8, 21, 40,
-                    8, 21, 5, 14, 13, 2.0, 13, 13, 26)
-                    .withDetectionRules(new DetectionRules(4, 6, 3.0, 0.0, true));
-            case MONTHLY -> profile("monthly", interval, "Monthly", 9, 9, 6, 12, 24,
-                    6, 12, 4, 12, 12, 2.0, 12, 12, 24)
-                    .withDetectionRules(new DetectionRules(4, 6, 3.0, 0.0, true));
-            default -> throw new IllegalArgumentException("Only daily, weekly, and monthly profiles are supported.");
-        };
+        if (interval != TimeInterval.DAILY && interval != TimeInterval.WEEKLY && interval != TimeInterval.MONTHLY) {
+            throw new IllegalArgumentException("Only daily, weekly, and monthly analysis is supported.");
+        }
+        return profile("shared", interval, "Shared", 14, 14, 20, 50, 200,
+                12, 26, 9, 20, 20, 2.0, 20, 20, 60);
     }
 
     private static IntervalProfile profile(String key, TimeInterval interval, String label,
@@ -429,7 +397,7 @@ public class AnalysisPreferencesService {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
             StoredPreferences normalized = stored.withLegacyDetectionDefaults();
             normalized.validate();
-            return new PreferencesView(normalized.version(), true, normalized.profiles(),
+            return new PreferencesView(PROFILE_VERSION, true, normalized.profiles(),
                     normalized.email(), entity.getUpdatedAt());
         } catch (JacksonException | IllegalArgumentException exception) {
             return factoryPreferences();
@@ -465,7 +433,8 @@ public class AnalysisPreferencesService {
         }
 
         private void validate() {
-            if (!PROFILE_VERSION.equals(version) || profiles == null || profiles.size() != 3 || email == null) {
+            if ((!PROFILE_VERSION.equals(version) && !"USER_ANALYSIS_V1".equals(version))
+                    || profiles == null || profiles.isEmpty() || email == null) {
                 throw new IllegalArgumentException("Stored analysis preferences are invalid.");
             }
             profiles.forEach(IntervalProfile::validate);
@@ -475,12 +444,14 @@ public class AnalysisPreferencesService {
     public record PreferencesView(String version, boolean custom, List<IntervalProfile> profiles,
                                   EmailPreferences email, Instant updatedAt) {
         public PreferencesView {
-            profiles = profiles == null ? List.of() : List.copyOf(profiles);
+            // Older accounts used separate intervals. Daily wins; otherwise use the first saved profile.
+            profiles = profiles == null || profiles.isEmpty() ? List.of(factoryProfile(TimeInterval.DAILY))
+                    : List.of(profiles.stream().filter(profile -> profile.interval() == TimeInterval.DAILY)
+                            .findFirst().orElse(profiles.getFirst()).forInterval(TimeInterval.DAILY));
         }
 
         public IntervalProfile profile(TimeInterval interval) {
-            return profiles.stream().filter(profile -> profile.interval() == interval).findFirst()
-                    .orElseGet(() -> factoryProfile(interval));
+            return profiles.getFirst().forInterval(interval);
         }
 
         public String profileLabel() { return custom ? "Custom profile" : "Factory profile"; }
@@ -493,6 +464,9 @@ public class AnalysisPreferencesService {
                                    boolean buy, boolean sell) {
         public EmailPreferences {
             newHarmonic = newHarmonic == null ? Boolean.TRUE : newHarmonic;
+            // Keep legacy JSON fields readable, with one delivery choice for all intervals.
+            weekly = daily;
+            monthly = daily;
         }
 
         public EmailPreferences(boolean newCandlestick, boolean newElliott,
@@ -509,14 +483,12 @@ public class AnalysisPreferencesService {
                     true, true, true, true, true);
         }
 
+        public boolean signalsEnabled() { return daily; }
+
         public boolean harmonicEnabled() { return Boolean.TRUE.equals(newHarmonic); }
 
         public boolean intervalEnabled(TimeInterval interval) {
-            return switch (interval) {
-                case WEEKLY -> weekly;
-                case MONTHLY -> monthly;
-                default -> daily;
-            };
+            return daily;
         }
 
         public boolean directionEnabled(TradeSignal direction) {
@@ -547,6 +519,25 @@ public class AnalysisPreferencesService {
             double neutralScorePercent, double moderateScorePercent, double strongScorePercent,
             boolean scoreCandlestickSignals, boolean scoreElliottSignals,
             boolean categoryBalancedHeadline) {
+        public IntervalProfile forInterval(TimeInterval target) {
+            if (target != TimeInterval.DAILY && target != TimeInterval.WEEKLY && target != TimeInterval.MONTHLY) {
+                throw new IllegalArgumentException("Only daily, weekly, and monthly analysis is supported.");
+            }
+            return new IntervalProfile(
+                    "shared", target, "Shared", candlestickResolutionCandles, elliottResolutionCandles,
+                    confirmationMovePercent, invalidationMovePercent, trendMinimumCandles, trendLookbackCandles, trendMinimumMovePercent,
+                    trendTerminalMedianDistanceAtr, trendDirectionalParticipationEnabled, rsiPeriod, rsiBuyThreshold, rsiSellThreshold,
+                    scoreRsi, atrPeriod, fastEmaPeriod, slowEmaPeriod, emaThresholdPercent,
+                    scoreEma, longSmaPeriod, longSmaThresholdPercent, scoreLongSma, macdFastPeriod,
+                    macdSlowPeriod, macdSignalPeriod, macdThresholdPercent, scoreMacd, cciPeriod,
+                    cciBuyThreshold, cciSellThreshold, scoreCci, bollingerPeriod, bollingerDeviation,
+                    scoreBollinger, volumePeriod, relativeVolumeThreshold, scoreRelativeVolume, vwapPeriod,
+                    vwapThresholdPercent, scoreVwap, volumeProfilePeriod, volumeProfileValueAreaFraction, scoreVolumeProfile,
+                    supportResistancePeriod, supportResistanceAtrDistance, scoreSupportResistance, marketRelativeThresholdPercent, scoreMarketRelative,
+                    neutralScorePercent, moderateScorePercent, strongScorePercent, scoreCandlestickSignals, scoreElliottSignals,
+                    categoryBalancedHeadline);
+        }
+
 
         public IntervalProfile withIndicatorPeriods(IndicatorPeriods periods) {
             return new IntervalProfile(
