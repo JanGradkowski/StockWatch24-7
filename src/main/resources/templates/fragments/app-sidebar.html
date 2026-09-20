@@ -21,8 +21,12 @@
       <a th:href="@{/signals}" data-nav-section="signals" th:attr="aria-current=${navigationSection == 'signals' ? 'page' : null}" title="Technical signals" aria-label="Technical signals">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v3m0 8v7M12 3v8m0 7v3M19 3v2m0 7v9"/><rect x="3" y="6" width="4" height="8" rx="1"/><rect x="10" y="11" width="4" height="7" rx="1"/><rect x="17" y="5" width="4" height="7" rx="1"/></svg><span>Technical signals</span>
       </a>
-      <a th:href="@{/technical-watchlist}" data-nav-section="watchlist" th:attr="aria-current=${navigationSection == 'watchlist' ? 'page' : null}" title="Technical Watchlist" aria-label="Technical Watchlist">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM7 15l3-4 4 2 3-6"/></svg><span>Technical Watchlist</span>
+      <a th:href="@{/watchlists}" data-nav-section="lists" th:attr="aria-current=${navigationSection == 'lists' ? 'page' : null}" title="Watchlists" aria-label="Watchlists">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/></svg><span>Watchlists</span>
+      </a>
+      <div th:if="${navigationSection == 'lists'}" class="wl-sidebar-shortcuts" data-watchlist-shortcuts></div>
+      <a th:href="@{/technical-watchlist}" data-nav-section="watchlist" th:attr="aria-current=${navigationSection == 'watchlist' ? 'page' : null}" title="Followed outlooks" aria-label="Followed outlooks">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM7 15l3-4 4 2 3-6"/></svg><span>Followed outlooks</span>
       </a>
       <a th:href="@{/home#ticker-alerts}" data-nav-section="alerts" th:attr="aria-current=${navigationSection == 'alerts' ? 'page' : null}" title="Ticker alerts — insider and congressional activity" aria-label="Ticker alerts">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M12 2V1"/></svg><span>Ticker alerts</span>

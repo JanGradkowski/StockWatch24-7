@@ -103,11 +103,12 @@ test('page renders safely, links each interval, and removes a ticker using CSRF 
   assert.equal(view.get('watchlistSearch').focused, true);
 });
 
-test('unfollow-all confirmation counts all tickers even when search hides them, and cancel never mutates', async () => {
+test('unfollow-all explains account-wide scope even when filters hide tickers, and cancel never mutates', async () => {
   const view = page([ticker('AAPL', 80), ticker('MSFT', 70)]); await view.settle();
   view.get('watchlistSearch').value = 'AAPL'; await view.get('watchlistSearch').dispatch('input');
   await view.get('unfollowAll').dispatch();
-  assert.match(view.get('unfollowAllDescription').textContent, /all 2 tickers/);
+  assert.match(view.get('unfollowAllDescription').textContent, /every ticker in your account/);
+  assert.match(view.get('unfollowAllDescription').textContent, /every watchlist/);
   await view.get('cancelUnfollowAll').dispatch();
   assert.equal(view.requests.filter(item => item.method === 'DELETE').length, 0);
   await view.get('unfollowAll').dispatch(); await view.get('confirmUnfollowAll').dispatch();

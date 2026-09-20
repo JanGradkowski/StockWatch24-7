@@ -532,11 +532,13 @@ class ScheduledAlertServiceTest {
         assertThat(event.getValue().getTradePlanVersion()).isEqualTo(HarmonicStopPlanPolicy.VERSION);
         assertThat(event.getValue().getTradeEntryPrice()).isEqualTo(130.0);
         assertThat(event.getValue().getStructuralStopPrice()).isEqualTo(100.0);
-        assertThat(event.getValue().getStopLossPrice()).isEqualTo(99.5);
+        assertThat(event.getValue().getStopLossPrice()).isEqualTo(99.87);
         assertThat(event.getValue().getHarmonicStopBasis()).isEqualTo("Point X / 1.0 XA");
-        assertThat(event.getValue().getHarmonicStopBufferPercent()).isEqualTo(.5);
-        assertThat(event.getValue().getProfitTargetPrice()).isNull();
-        assertThat(event.getValue().getRewardRiskRatio()).isNull();
+        assertThat(event.getValue().getHarmonicStopBufferPercent()).isEqualTo(.13);
+        assertThat(event.getValue().getProfitTargetPrice()).isCloseTo(151.4252, org.assertj.core.data.Offset.offset(.000001));
+        assertThat(event.getValue().getRewardRiskRatio()).isPositive();
+        assertThat(event.getValue().getTradeActionable()).isFalse();
+        assertThat(event.getValue().getTradeQualification()).contains("volatility");
         assertThat(event.getValue().getScoreVersion())
                 .isEqualTo(HarmonicPatternDetectionService.RULE_VERSION);
         assertThat(event.getValue().getInitialEmailSentAt()).isNotNull();

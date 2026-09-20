@@ -19,6 +19,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/alerts")
 public class AlertController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.service.WatchlistFollowService watchlistFollows;
     private final AlertRuleService alertRuleService;
     private final UserRepository userRepository;
 
@@ -29,17 +31,7 @@ public class AlertController {
 
     @PostMapping("/testing/top-us-200")
     public ResponseEntity<?> followTemporaryTopUsCompanies(Principal principal) {
-        try {
-            User user = currentUser(principal);
-            return ResponseEntity.ok(alertRuleService.followTemporaryTopUsCompanies(user));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "The temporary test universe is invalid."));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", e.getMessage() == null
-                            ? "The temporary test universe could not be followed."
-                            : e.getMessage()));
-        }
+        return ResponseEntity.status(HttpStatus.GONE).body(Map.of("error", "Use named watchlist index imports."));
     }
 
     @DeleteMapping
@@ -82,6 +74,8 @@ public class AlertController {
         try {
             User user = currentUser(principal);
             AlertRuleService.AlertRuleChange change = parseAlertChange(request);
+            if (watchlistFollows != null) return ResponseEntity.ok(watchlistFollows.apply(
+                    user, SecurityInputValidator.requireMarketSymbol(symbol), List.of(change), null, null));
             AlertRule rule = alertRuleService.setAlert(
                     user,
                     SecurityInputValidator.requireMarketSymbol(symbol),
@@ -118,6 +112,8 @@ public class AlertController {
             List<AlertRuleService.AlertRuleChange> changes = request.changes().stream()
                     .map(this::parseAlertChange)
                     .toList();
+            if (watchlistFollows != null) return ResponseEntity.ok(watchlistFollows.applyDraft(
+                    user, validatedSymbol, changes, request.outlookChanges(), request.watchlistIds(), request.newWatchlistName()));
             alertRuleService.applyAlertChanges(user, validatedSymbol, changes);
             return ResponseEntity.ok(alertRuleService.getAlertState(user, validatedSymbol));
         } catch (IllegalArgumentException e) {
@@ -218,7 +214,9 @@ public class AlertController {
     public record AlertToggleRequest(String interval, String signal, String patternFamily, boolean active) {
     }
 
-    public record AlertBatchRequest(List<AlertToggleRequest> changes) {
+    public record AlertBatchRequest(List<AlertToggleRequest> changes, List<Long> watchlistIds, String newWatchlistName,
+            List<org.example.stockwatch247.service.WatchlistFollowService.OutlookChange> outlookChanges) {
+        public AlertBatchRequest(List<AlertToggleRequest> changes) { this(changes, null, null, null); }
     }
 
     public record RuleSelectionRequest(List<Long> ruleIds, List<Long> outlookSubscriptionIds) {

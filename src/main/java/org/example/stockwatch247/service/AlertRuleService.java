@@ -205,8 +205,17 @@ public class AlertRuleService {
     }
 
     public List<TrackedCompanyView> getActiveCompanyViews(User user) {
-        List<AlertRule> activeRules = alertRuleRepository
-                .findByUserAndIsActiveTrueOrderByStockAsset_TickerSymbolAscIntervalAscPatternFamilyAscTradeSignalAsc(user);
+        return companyViews(alertRuleRepository.findByUserAndIsActiveTrueOrderByStockAsset_TickerSymbolAscIntervalAscPatternFamilyAscTradeSignalAsc(user),
+                activeOutlookSubscriptions(user, null));
+    }
+
+    public List<TrackedCompanyView> getActiveCompanyViews(User user, java.util.Set<String> symbols) {
+        if (symbols.isEmpty()) return List.of();
+        return companyViews(alertRuleRepository.findByUserAndIsActiveTrueAndStockAsset_TickerSymbolIn(user, symbols),
+                outlookSubscriptions == null ? List.of() : outlookSubscriptions.findDashboardSubscriptionsInSymbols(user, symbols));
+    }
+
+    private List<TrackedCompanyView> companyViews(List<AlertRule> activeRules, List<DashboardSubscription> outlooks) {
         Map<String, List<AlertRule>> rulesBySymbol = new LinkedHashMap<>();
         for (AlertRule rule : activeRules) {
             rulesBySymbol.computeIfAbsent(
@@ -214,7 +223,7 @@ public class AlertRuleService {
                     ignored -> new ArrayList<>()
             ).add(rule);
         }
-        Map<String, List<DashboardSubscription>> outlooksBySymbol = activeOutlookSubscriptions(user, null).stream()
+        Map<String, List<DashboardSubscription>> outlooksBySymbol = outlooks.stream()
                 .collect(Collectors.groupingBy(subscription -> subscription.getStockAsset().getTickerSymbol()));
         return java.util.stream.Stream.concat(rulesBySymbol.keySet().stream(), outlooksBySymbol.keySet().stream().sorted())
                 .distinct()
@@ -446,6 +455,11 @@ public class AlertRuleService {
                 : alertEventRepository.findOwnedArchiveIds(result.ids(), user).stream()
                     .collect(Collectors.toMap(AlertEvent::getId, event -> event));
         var entries = archiveEntries(result.ids().stream().map(byId::get).filter(java.util.Objects::nonNull).toList());
+        if (!result.rows().isEmpty()) {
+            var technical = entries.stream().collect(Collectors.toMap(entry -> entry.signal().id(), entry -> entry));
+            entries = result.rows().stream().map(row -> row.activity()==null ? technical.get(row.id())
+                    : new SignalArchiveEntry(null,null,List.of(),row.activity())).filter(java.util.Objects::nonNull).toList();
+        }
         return new SignalArchivePage(entries, result.page(), result.pages(), result.count(), sort, direction,
                 result.page() > 0, result.page() + 1 < result.pages());
     }
@@ -633,6 +647,7 @@ public class AlertRuleService {
         if (family == AlertPatternFamily.ELLIOTT_WAVE) {
             return elliottArchiveOutcome(event);
         }
+        if (Boolean.FALSE.equals(event.getTradeActionable())) return SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
         if (!event.hasCandlestickRiskRewardPlan()
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
@@ -653,19 +668,19 @@ public class AlertRuleService {
                     "Profit target reached");
             case INVALIDATED -> SignalArchiveOutcome.available(
                     "Stop loss reached",
-                    directionalReturnPercent(event.getTradeSignal(), entry, event.getStopLossPrice()),
-                    event.getStopLossPrice(),
-                    "Configured stop-loss price");
+                    directionalReturnPercent(event.getTradeSignal(), entry, event.getTradeResolutionPrice() == null ? event.getStopLossPrice() : event.getTradeResolutionPrice()),
+                    event.getTradeResolutionPrice() == null ? event.getStopLossPrice() : event.getTradeResolutionPrice(),
+                    "Modeled protective-stop exit");
             case EXPIRED -> {
                 Double exit = event.getResolutionClosePrice();
                 yield exit == null || !Double.isFinite(exit)
                         ? SignalArchiveOutcome.unavailable(
-                                "Candle 8 time stop", "The stored time-stop close is unavailable")
+                                "Time stop", "The stored time-stop close is unavailable")
                         : SignalArchiveOutcome.available(
-                                "Candle 8 time stop",
+                                "Time stop",
                                 directionalReturnPercent(event.getTradeSignal(), entry, exit),
                                 exit,
-                                "Trade closed at the candle 8 close");
+                                "Trade closed at the saved horizon close");
             }
             case DETECTED -> SignalArchiveOutcome.available(
                     "Potential at sell target",
@@ -680,7 +695,7 @@ public class AlertRuleService {
     }
 
     private SignalArchiveOutcome harmonicArchiveOutcome(AlertEvent event) {
-        if (!HarmonicStopPlanPolicy.VERSION.equals(event.getTradePlanVersion())
+        if (!("HARMONIC_STOP_V1".equals(event.getTradePlanVersion()) || HarmonicStopPlanPolicy.VERSION.equals(event.getTradePlanVersion()))
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
                 || event.getHarmonicStopStatus() == null) {
@@ -696,17 +711,20 @@ public class AlertRuleService {
                     "Outcome unavailable", "The stored harmonic outcome status is not recognized");
         }
         return switch (status) {
+            case PROJECTION_ONLY -> SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
+            case TARGET_REACHED -> terminalOutcome(entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
+                    "Harmonic target reached", "Modeled primary-target exit");
             case STOPPED -> SignalArchiveOutcome.available(
                     "Harmonic stop reached",
-                    directionalReturnPercent(event.getTradeSignal(), entry, event.getStopLossPrice()),
-                    event.getStopLossPrice(),
-                    "Trade closed at the stored structural stop");
+                    directionalReturnPercent(event.getTradeSignal(), entry, event.getHarmonicStopResolutionPrice()),
+                    event.getHarmonicStopResolutionPrice(),
+                    "Modeled protective-stop exit");
             case TIME_STOPPED -> terminalOutcome(
                     entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
-                    "Candle 8 time stop", "Trade closed at the candle 8 close");
+                    "Time stop", "Trade closed at the saved horizon close");
             case ACTIVE -> pendingOutcome(
                     event, event.getSignalCandleTimestamp(), entry, event.getTradeSignal(),
-                    "Pending harmonic outcome", "Current return before the candle 8 time stop");
+                    "Pending harmonic outcome", "Current return before the saved trade horizon");
         };
     }
 
@@ -742,13 +760,15 @@ public class AlertRuleService {
                     "Pending " + stage + " outcome", "Current return since the notification close");
             case TARGET_REACHED -> terminalOutcome(
                     notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
-                    stage + " target reached", "Resolved at the completed-candle close");
+                    stage + " target reached", "Resolved using the saved plan execution rules");
             case STOPPED -> terminalOutcome(
                     notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
-                    stage + " stop reached", "Resolved at the completed-candle close");
+                    stage + " stop reached", "Resolved using the saved plan execution rules");
             case STRUCTURE_INVALIDATED -> terminalOutcome(
                     notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
                     stage + " invalidated", "Elliott structure invalidated");
+            case TIME_STOPPED -> terminalOutcome(notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
+                    stage + " time stop", "Saved trade horizon completed");
             case STAGE_COMPLETED -> terminalOutcome(
                     notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
                     stage + " completed", "Measured through confirmation of the next Elliott stage");
@@ -1148,6 +1168,7 @@ public class AlertRuleService {
                     "The close-based risk/reward trade model applies to named candlestick patterns."
             );
         }
+        if (Boolean.FALSE.equals(event.getTradeActionable())) return ObservedPriceOutcomeView.unavailable(event.getTradeQualification());
         if (!event.hasCandlestickRiskRewardPlan()
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
@@ -1187,7 +1208,7 @@ public class AlertRuleService {
                     true, false, anchor.unavailableReason(),
                     event.getLifecycleStatus() == SignalLifecycleStatus.POTENTIAL
                             ? "Potential candidate" : lifecycleLabel(event.getLifecycleStatus()),
-                    "pending", anchor.unavailableReason(), "Candle 8 time stop",
+                    "pending", anchor.unavailableReason(), "Time stop",
                     patternHigh, patternLow, null, null, null, null, null, null,
                     "Trade not open");
         }
@@ -1204,7 +1225,7 @@ public class AlertRuleService {
         }
         int maximumEvaluationIndex = Math.min(
                 candles.size() - 1,
-                measurementIndex + CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES);
+                measurementIndex + (event.getTradeHorizonCandles() == null ? CandlestickSignalLifecyclePolicy.TIME_STOP_CANDLES : event.getTradeHorizonCandles()));
         int resolutionIndex = event.getResolutionCandleTimestamp() == null
                 ? -1
                 : indexOfChartTimestamp(candles, event.getResolutionCandleTimestamp());
@@ -1215,7 +1236,7 @@ public class AlertRuleService {
             return new ObservedPriceOutcomeView(
                     true, false, null, lifecycleLabel(event.getLifecycleStatus()), "pending",
                     "The trade is open and no completed outcome candle is available yet.",
-                    "Candle 8 time stop", patternHigh, patternLow,
+                    "Time stop", patternHigh, patternLow,
                     null, null, null, null, 0.0, 0.0, "Trade return pending");
         }
 
@@ -1223,7 +1244,8 @@ public class AlertRuleService {
         List<SignalChartCandleView> futureCandles = candles.subList(
                 measurementIndex + 1, evaluationIndex + 1);
         double entryClose = anchor.close();
-        double rawReturn = percentMove(entryClose, evaluationCandle.close());
+        double exitPrice = event.getTradeResolutionPrice() == null ? evaluationCandle.close() : event.getTradeResolutionPrice();
+        double rawReturn = percentMove(entryClose, exitPrice);
         double directionalReturn = event.getTradeSignal() == TradeSignal.SELL ? -rawReturn : rawReturn;
         double highestClose = futureCandles.stream().mapToDouble(SignalChartCandleView::close).max()
                 .orElse(evaluationCandle.close());
@@ -1255,12 +1277,12 @@ public class AlertRuleService {
                 statusLabel,
                 statusClass,
                 summary,
-                "Candle 8 time stop",
+                "Time stop",
                 patternHigh,
                 patternLow,
                 evaluationCandle.timestamp(),
                 signalPeriodLabel(rule.getInterval(), evaluationCandle.timestamp()),
-                evaluationCandle.close(),
+                exitPrice,
                 directionalReturn,
                 bestMove,
                 worstMove,
@@ -1290,7 +1312,7 @@ public class AlertRuleService {
                     favorableMove, directionalReturn);
             case EXPIRED -> String.format(
                     Locale.ROOT,
-                    "Candle 8 closed the trade at the time stop. The best completed-close move during the trade was %+.2f%%; entry-to-exit return was %+.2f%%.",
+                    "The saved horizon closed the trade at the time stop. The best completed-close move during the trade was %+.2f%%; entry-to-exit return was %+.2f%%.",
                     favorableMove, directionalReturn);
             case DETECTED -> String.format(
                     Locale.ROOT,
@@ -2454,6 +2476,10 @@ public class AlertRuleService {
                 );
             };
         }
+        if (event.getTradeQualification() != null) {
+            summary = event.getTradeQualification();
+            if (event.getTradeResolutionPrice() != null) summary += " Modeled exit: " + event.getTradeResolutionPrice() + ".";
+        }
         return new SignalLifecycleView(
                 status,
                 lifecycleLabel(status),
@@ -2516,7 +2542,10 @@ public class AlertRuleService {
                 developingElliottCycle,
                 event.getElliottCorrectionType(),
                 event.getElliottForecastLabel(),
-                elliottTransitionLabels(event.getElliottTransitionHistory())
+                elliottTransitionLabels(event.getElliottTransitionHistory()),
+                event.getTradeActionable(), event.getTradeQualification(), event.getTradeRiskAtr(),
+                event.getTradeRiskPercent(), event.getSecondaryTargetPrice(), event.getTradeHorizonCandles(),
+                event.getTradePlanVersion(), event.getTradeResolutionPrice()
         );
     }
 
@@ -2904,13 +2933,21 @@ public class AlertRuleService {
     public record SignalArchiveEntry(
             LatestSignalView signal,
             SignalArchiveOutcome outcome,
-            List<SignalArchiveOutcome> stageOutcomes
+            List<SignalArchiveOutcome> stageOutcomes,
+            SignalArchiveQuery.ActivitySignal activity
     ) {
+        public SignalArchiveEntry(LatestSignalView signal,SignalArchiveOutcome outcome,List<SignalArchiveOutcome> stageOutcomes) {
+            this(signal,outcome,stageOutcomes,null);
+        }
         public SignalArchiveEntry {
             stageOutcomes = stageOutcomes == null ? List.of() : List.copyOf(stageOutcomes);
         }
 
         private String groupKey(String sortKey) {
+            if (activity!=null) return switch(sortKey) {
+                case "ticker" -> activity.symbol(); case "interval" -> "activity"; case "confidence" -> "unrated";
+                case "status" -> "RECORDED"; case "trade-return" -> "unavailable"; default -> activity.received().toLocalDate().toString();
+            };
             return switch (sortKey) {
                 case "ticker" -> signal.symbol();
                 case "interval" -> signal.interval().name();
@@ -2922,6 +2959,11 @@ public class AlertRuleService {
         }
 
         private String groupLabel(String sortKey) {
+            if (activity!=null) return switch(sortKey) {
+                case "ticker" -> activity.symbol(); case "interval" -> "Filings"; case "confidence" -> "Score unavailable";
+                case "status" -> "Recorded activity"; case "trade-return" -> "Return unavailable";
+                default -> activity.received().format(DateTimeFormatter.ofPattern("dd MMMM yyyy",Locale.ENGLISH));
+            };
             return switch (sortKey) {
                 case "ticker" -> signal.symbol();
                 case "interval" -> signal.intervalLabel();
@@ -2938,6 +2980,7 @@ public class AlertRuleService {
         }
 
         private String groupDetail(String sortKey) {
+            if (activity!=null) return sortKey.equals("ticker")?activity.companyName():null;
             return switch (sortKey) {
                 case "ticker" -> signal.companyName();
                 case "interval" -> switch (signal.interval()) {
@@ -3318,7 +3361,9 @@ public class AlertRuleService {
             boolean developingElliottCycle,
             String elliottCorrectionType,
             String elliottForecastLabel,
-            List<String> elliottTransitionHistory
+            List<String> elliottTransitionHistory,
+            Boolean tradeActionable, String tradeQualification, Double tradeRiskAtr, Double tradeRiskPercent,
+            Double secondaryTargetPrice, Integer tradeHorizonCandles, String tradePlanVersion, Double tradeResolutionPrice
     ) {
         public SignalLifecycleView {
             elliottTransitionHistory = elliottTransitionHistory == null

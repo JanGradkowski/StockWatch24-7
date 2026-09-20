@@ -25,7 +25,7 @@
   <nav class="signal-breadcrumb" aria-label="Breadcrumb">
     <a th:href="@{/home}">Dashboard</a>
     <span aria-hidden="true">/</span>
-    <a th:href="@{/activity-signals}">All ticker alerts</a>
+    <a th:href="${archiveReturnUrl != null ? archiveReturnUrl : '/activity-signals'}" th:text="${archiveReturnUrl != null ? 'Back to signals' : 'All ticker alerts'}">All ticker alerts</a>
     <span aria-hidden="true">/</span>
     <span>Signal analysis</span>
   </nav>

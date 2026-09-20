@@ -3,6 +3,11 @@
 <body>
 <div th:fragment="navbar" th:classappend="${showAppNavigation == true} ? 'app-navigation' : ''">
   <th:block th:if="${showAppNavigation == true}">
+    <link rel="stylesheet" th:href="@{/css/watchlists.css}">
+    <script th:src="@{/js/watchlist-picker.js}" defer></script>
+    <script th:src="@{/js/watchlist-settings.js}" defer></script>
+    <script th:src="@{/js/watchlists.js}" defer></script>
+    <script th:src="@{/js/notifications-read.js}" defer></script>
     <th:block th:replace="~{fragments/app-sidebar :: sidebar}"></th:block>
   </th:block>
   <nav class="navbar" aria-label="Application navigation">

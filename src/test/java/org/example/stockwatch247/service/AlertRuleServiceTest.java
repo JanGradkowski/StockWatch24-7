@@ -796,10 +796,10 @@ class AlertRuleServiceTest {
                 .getSignalArchive(user, "date", "desc", 0)
                 .signals().getFirst().outcome();
 
-        assertThat(outcome.label()).isEqualTo("Candle 8 time stop");
+        assertThat(outcome.label()).isEqualTo("Time stop");
         assertThat(outcome.returnPercent()).isEqualTo(5.0);
         assertThat(outcome.price()).isEqualTo(95.0);
-        assertThat(outcome.priceDetail()).isEqualTo("Trade closed at the candle 8 close · 95.00");
+        assertThat(outcome.priceDetail()).isEqualTo("Trade closed at the saved horizon close · 95.00");
     }
 
     @Test
@@ -831,7 +831,7 @@ class AlertRuleServiceTest {
         AlertRuleService.SignalArchiveEntry entry = service
                 .getSignalArchive(user, "date", "desc", 0).signals().getFirst();
 
-        assertThat(entry.outcome().label()).isEqualTo("Candle 8 time stop");
+        assertThat(entry.outcome().label()).isEqualTo("Time stop");
         assertThat(entry.outcome().returnPercent()).isEqualTo(8.0);
         assertThat(entry.outcome().price()).isEqualTo(92.0);
         assertThat(entry.stageOutcomes()).isEmpty();
@@ -1208,7 +1208,7 @@ class AlertRuleServiceTest {
         assertThat(detail.observedOutcome().tracked()).isTrue();
         assertThat(detail.observedOutcome().outcomeAvailable()).isTrue();
         assertThat(detail.observedOutcome().statusLabel()).isEqualTo("Confirmed");
-        assertThat(detail.observedOutcome().timeStopLabel()).isEqualTo("Candle 8 time stop");
+        assertThat(detail.observedOutcome().timeStopLabel()).isEqualTo("Time stop");
         assertThat(detail.observedOutcome().bestDirectionalMovePercent()).isCloseTo(3.1579, within(0.0001));
         assertThat(detail.results().available()).isFalse();
         assertThat(detail.results().minimumForwardCandles()).isEqualTo(10);

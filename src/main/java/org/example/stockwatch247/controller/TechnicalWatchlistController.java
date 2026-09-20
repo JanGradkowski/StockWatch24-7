@@ -15,6 +15,8 @@ import java.util.List;
 
 @Controller
 public class TechnicalWatchlistController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.service.WatchlistService namedLists;
     private final UserRepository users;
     private final TechnicalWatchlistService watchlist;
     private final TechnicalOutlookTrackingService tracking;
@@ -34,14 +36,17 @@ public class TechnicalWatchlistController {
 
     @GetMapping("/api/technical-watchlist")
     @ResponseBody
-    public TechnicalWatchlistService.WatchlistView watchlist(Principal principal) {
-        return watchlist.watchlist(user(principal));
+    public TechnicalWatchlistService.WatchlistView watchlist(Principal principal, @RequestParam(required=false) Long watchlistId) {
+        User user = user(principal);
+        java.util.Set<String> symbols = watchlistId == null ? null : namedLists.symbols(user, watchlistId);
+        var view = watchlist.watchlist(user);
+        return symbols == null ? view : new TechnicalWatchlistService.WatchlistView(view.fetchedAt(), view.tickers().stream().filter(t -> symbols.contains(t.symbol())).toList());
     }
 
     @GetMapping("/api/technical-watchlist/changes")
     @ResponseBody
     public List<TechnicalOutlookTrackingService.LatestOutlookChangeView> changes(
-            Principal principal, @RequestParam(defaultValue = "all") String interval) {
+            Principal principal, @RequestParam(defaultValue = "all") String interval, @RequestParam(required=false) Long watchlistId) {
         TimeInterval selected = switch (interval) {
             case "all" -> null;
             case "1d" -> TimeInterval.DAILY;
@@ -49,7 +54,8 @@ public class TechnicalWatchlistController {
             case "1mo" -> TimeInterval.MONTHLY;
             default -> throw new IllegalArgumentException("Choose All, Daily, Weekly, or Monthly.");
         };
-        return tracking.latestFollowed(user(principal), selected);
+        User user = user(principal);
+        return tracking.latestFollowed(user, selected, watchlistId == null ? null : namedLists.symbols(user, watchlistId));
     }
 
     @DeleteMapping("/api/technical-watchlist/{symbol}")

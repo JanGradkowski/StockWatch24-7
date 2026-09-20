@@ -18,6 +18,8 @@ import java.util.UUID;
 @Service
 public class EmailOutboxService {
     @org.springframework.beans.factory.annotation.Autowired
+    private WatchlistEmailPolicy watchlistEmails;
+    @org.springframework.beans.factory.annotation.Autowired
     private org.example.stockwatch247.service.BackgroundJobDispatcher dispatcher;
 
     @org.springframework.beans.factory.annotation.Value("${email-outbox.worker-enabled:true}")
@@ -81,6 +83,10 @@ public class EmailOutboxService {
             if (claims.isEmpty()) break;
             Claim claim = claims.getFirst();
             try {
+                if (claim.eventId()!=null && watchlistEmails!=null && !watchlistEmails.allowsQueuedEvent(claim.eventId())) {
+                    jdbc.update("update email_outbox set expired_at=current_timestamp,ciphertext=null,iv=null,owner=null,lease_until=null where id=? and owner=?",claim.id(),owner);
+                    continue;
+                }
                 Payload payload = mapper.readValue(crypto.decrypt(claim.body(), claim.iv(),
                         "email-outbox:" + claim.id()), Payload.class);
                 var message = sender.createMimeMessage();

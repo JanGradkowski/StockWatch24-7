@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
 class HistoricalCandlestickServiceTest {
 
     @Test
-    void dailyScanEvaluatesRecentSignalsAndLeavesNewSignalsPendingWithoutCaching() {
+    void invalidOhlcHistoryLeavesDetectedPatternsProjectionOnlyWithoutCaching() {
         String symbol = "AAPL";
         CandleRepository candleRepository = mock(CandleRepository.class);
         StockAssetRepository stockAssetRepository = mock(StockAssetRepository.class);
@@ -135,36 +135,14 @@ class HistoricalCandlestickServiceTest {
         assertThat(first.signals()).hasSize(3);
         assertThat(first.signals())
                 .noneMatch(signal -> signal.signalTimestamp() == rejectedTimestamp);
-        assertThat(first.signals()).filteredOn(signal -> signal.signalTimestamp() == successfulSellTimestamp)
-                .singleElement()
-                .satisfies(signal -> {
-                    assertThat(signal.status())
-                            .isEqualTo(SignalLifecycleStatus.CONFIRMED);
-                    assertThat(signal.directionalReturnPercent()).isEqualTo(5.0);
-                    assertThat(signal.bestDirectionalMovePercent()).isEqualTo(4.0);
-                    assertThat(signal.impactLabel()).isEqualTo("Direction-adjusted entry-to-current/exit return");
-                    assertThat(signal.lifecycle().terminal()).isTrue();
-                });
-        assertThat(first.signals()).filteredOn(signal -> signal.signalTimestamp() == successfulTimestamp)
-                .singleElement()
-                .satisfies(signal -> {
-            assertThat(signal.status())
-                    .isEqualTo(SignalLifecycleStatus.CONFIRMED);
-            assertThat(signal.directionalReturnPercent()).isEqualTo(5.0);
-            assertThat(signal.bestDirectionalMovePercent()).isEqualTo(4.0);
-                    assertThat(signal.impactLabel()).isEqualTo("Entry-to-current/exit return");
-                    assertThat(signal.lifecycle().terminal()).isTrue();
-                    assertThat(signal.trendLabel()).isEqualTo("Required downtrend");
-                    assertThat(signal.trendStartTimestamp()).isLessThan(signal.patternStartTimestamp());
-        });
-        assertThat(first.signals()).filteredOn(signal -> signal.signalTimestamp() == pendingTimestamp)
-                .singleElement()
-                .satisfies(signal -> {
-            assertThat(signal.status())
-                    .isEqualTo(SignalLifecycleStatus.DETECTED);
-            assertThat(signal.directionalReturnPercent()).isNotNull();
-            assertThat(signal.bestDirectionalMovePercent()).isNotNull();
-            assertThat(signal.lifecycle().status()).isEqualTo(SignalLifecycleStatus.DETECTED);
+        // The supplied closes were changed without matching opens/highs/lows.
+        // Invalid volatility history must not manufacture successful trades.
+        assertThat(first.signals()).allSatisfy(signal -> {
+            assertThat(signal.status()).isEqualTo(SignalLifecycleStatus.DETECTED);
+            assertThat(signal.lifecycle().actionable()).isFalse();
+            assertThat(signal.directionalReturnPercent()).isNull();
+            assertThat(signal.bestDirectionalMovePercent()).isNull();
+            assertThat(signal.lifecycle().terminal()).isFalse();
         });
         assertThat(second.signals()).hasSize(3);
         verify(marketDataService, times(2)).syncCandles(symbol, "1d", null);
@@ -223,7 +201,7 @@ class HistoricalCandlestickServiceTest {
         assertThat(scanProfile("1mo", 144)).satisfies(scan -> {
             assertThat(scan.lookbackCandles()).isEqualTo(144);
             assertThat(scan.lookbackLabel()).isEqualTo("last 144 completed monthly candles");
-            assertThat(scan.timeStopCandles()).isEqualTo(8);
+            assertThat(scan.timeStopCandles()).isEqualTo(6);
             assertThat(scan.rewardRiskRatio()).isEqualTo(2.0);
         });
     }

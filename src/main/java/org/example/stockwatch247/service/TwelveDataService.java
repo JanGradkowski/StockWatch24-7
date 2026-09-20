@@ -397,9 +397,10 @@ public class TwelveDataService {
     }
 
     private Optional<StockAsset> findProviderAsset(String symbol, String selectedMic) {
+        var reference = providerReference(symbol, selectedMic);
         URI uri = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/symbol_search")
-                .queryParam("symbol", symbol)
+                .queryParam("symbol", reference.symbol())
                 .queryParam("apikey", apiKey)
                 .build()
                 .encode()
@@ -419,9 +420,9 @@ public class TwelveDataService {
         }
 
         return candidates.stream()
-                .filter(candidate -> selectedMic == null
-                        || selectedMic.equalsIgnoreCase(candidate.micCode()))
-                .min(Comparator.comparingInt(candidate -> candidateRank(symbol, selectedMic, candidate)))
+                .filter(candidate -> reference.micCode() == null
+                        || reference.micCode().equalsIgnoreCase(candidate.micCode()))
+                .min(Comparator.comparingInt(candidate -> candidateRank(reference.symbol(), reference.micCode(), candidate)))
                 .map(candidate -> upsertStockAsset(
                         symbol,
                         candidate.name(),
@@ -444,7 +445,7 @@ public class TwelveDataService {
 
     private Map<String, Object> toSuggestion(ProviderAssetCandidate candidate) {
         Map<String, Object> suggestion = new HashMap<>();
-        suggestion.put("symbol", candidate.symbol());
+        suggestion.put("symbol", org.example.stockwatch247.market.MarketListingSymbols.canonical(candidate.symbol(), candidate.micCode()));
         suggestion.put("name", candidate.name());
         suggestion.put("region", candidate.exchange());
         suggestion.put("micCode", defaultIfBlank(candidate.micCode(), ""));
@@ -746,7 +747,10 @@ public class TwelveDataService {
         if (mic == null && asset.isPresent()) {
             mic = normalizeMic(asset.get().getMicCode());
         }
-        return new ProviderSymbolRegistry.ProviderSymbolReference(canonicalSymbol, mic);
+        String listingMic = org.example.stockwatch247.market.MarketListingSymbols.mic(canonicalSymbol);
+        return new ProviderSymbolRegistry.ProviderSymbolReference(
+                listingMic == null ? canonicalSymbol : org.example.stockwatch247.market.MarketListingSymbols.localSymbol(canonicalSymbol),
+                mic == null ? listingMic : mic);
     }
 
     private void rememberProviderSymbol(String canonicalSymbol,

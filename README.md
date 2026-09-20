@@ -19,6 +19,7 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 ## Features
 
 - User signup, email verification, login, and session security
+- [Named watchlists](docs/named-watchlists.md) with shared monitoring, geographic index imports, and a watchlist picker when applying stock follows
 - Symbol search, historical candlestick charts, and live-price lookup
 - Persistent light and dark display themes available from every page
 - Twelve Data market data with Yahoo Finance fallback

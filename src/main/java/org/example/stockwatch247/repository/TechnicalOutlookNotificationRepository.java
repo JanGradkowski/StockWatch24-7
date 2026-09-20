@@ -42,6 +42,19 @@ public interface TechnicalOutlookNotificationRepository
     List<TechnicalOutlookNotification> findLatestFollowedChanges(
             @Param("user") User user, @Param("interval") TimeInterval interval, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"subscription", "subscription.stockAsset"})
+    @Query("""
+            select n from TechnicalOutlookNotification n
+            where n.subscription.user = :user and n.subscription.active = true
+              and n.subscription.stockAsset.tickerSymbol in :symbols
+              and (:interval is null or n.subscription.interval = :interval)
+              and (n.subscription.trackingStartedAt is null or n.createdAt >= n.subscription.trackingStartedAt)
+            order by n.currentCandleTimestamp desc, n.id desc
+            """)
+    List<TechnicalOutlookNotification> findLatestFollowedChangesInSymbols(
+            @Param("user") User user, @Param("interval") TimeInterval interval,
+            @Param("symbols") java.util.Collection<String> symbols, Pageable pageable);
+
     @EntityGraph(attributePaths = {"subscription", "subscription.user", "subscription.stockAsset"})
     @Query("""
             select notification from TechnicalOutlookNotification notification

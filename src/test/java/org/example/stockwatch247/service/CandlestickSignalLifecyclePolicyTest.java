@@ -76,14 +76,14 @@ class CandlestickSignalLifecyclePolicyTest {
                         CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY,
                         105.0, bullishEngulfing, TimeInterval.MONTHLY);
 
-        assertThat(daily.stopLossPrice()).isEqualTo(96.0);
-        assertThat(daily.profitTargetPrice()).isEqualTo(123.0);
+        assertThat(daily.stopLossPrice()).isEqualTo(95.89);
+        assertThat(daily.profitTargetPrice()).isCloseTo(123.22, within(1e-8));
         assertThat(daily.rewardRiskRatio()).isEqualTo(2.0);
-        assertThat(weekly.profitTargetPrice()).isEqualTo(132.0);
+        assertThat(weekly.profitTargetPrice()).isCloseTo(132.33, within(1e-8));
         assertThat(weekly.rewardRiskRatio()).isEqualTo(3.0);
-        assertThat(monthly.profitTargetPrice()).isEqualTo(132.0);
+        assertThat(monthly.profitTargetPrice()).isCloseTo(132.33, within(1e-8));
         assertThat(monthly.rewardRiskRatio()).isEqualTo(3.0);
-        assertThat(monthly.timeStopCandles()).isEqualTo(8);
+        assertThat(monthly.timeStopCandles()).isEqualTo(6);
     }
 
     @Test
@@ -103,64 +103,27 @@ class CandlestickSignalLifecyclePolicyTest {
                 CandlestickPatternPreferencesService.StopLossMode.FIXED_ENTRY_PERCENT,
                 4.0, 1.5);
 
-        assertThat(buffered.stopLossPrice()).isEqualTo(94.95);
-        assertThat(buffered.profitTargetPrice()).isEqualTo(130.125);
+        assertThat(buffered.stopLossPrice()).isEqualTo(94.84);
+        assertThat(buffered.profitTargetPrice()).isCloseTo(130.4, within(1e-8));
         assertThat(buffered.rewardRiskRatio()).isEqualTo(2.5);
-        assertThat(fixed.stopLossPrice()).isEqualTo(100.8);
-        assertThat(fixed.profitTargetPrice()).isCloseTo(111.3, within(0.0000001));
+        assertThat(fixed.stopLossPrice()).isEqualTo(95.89);
+        assertThat(fixed.profitTargetPrice()).isCloseTo(118.665, within(0.0000001));
         assertThat(fixed.rewardRiskRatio()).isEqualTo(1.5);
     }
 
     @Test
-    void circuitBreakerCapsAnExtremeLongPlanWithFrozenAtr() {
-        var settings = new CandlestickPatternPreferencesService.CircuitBreakerSettings(
-                true, 14, 1.5, 25.0);
-
-        var plan = CandlestickSignalLifecyclePolicy.tradePlan(
-                TradeSignal.BUY, 100.0, 70.0, TimeInterval.DAILY, 3.0, 4.0, settings);
-
-        assertThat(plan.atrCircuitBreakerApplied()).isTrue();
-        assertThat(plan.configuredStopLossPrice()).isEqualTo(70.0);
-        assertThat(plan.stopLossPrice()).isEqualTo(94.0);
-        assertThat(plan.profitTargetPrice()).isEqualTo(118.0);
-        assertThat(plan.atrValue()).isEqualTo(4.0);
+    void rejectsExtremeShortTargetInsteadOfMovingItsStop() {
+        var settings = new CandlestickPatternPreferencesService.CircuitBreakerSettings(true,14,2,50);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> CandlestickSignalLifecyclePolicy.tradePlan(
+                TradeSignal.SELL,20,100,TimeInterval.MONTHLY,3,30,settings)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void circuitBreakerCapsAnExtremeShortPlanAtTheConfiguredPercentageLimit() {
-        var settings = new CandlestickPatternPreferencesService.CircuitBreakerSettings(
-                true, 14, 2.0, 50.0);
-
-        var plan = CandlestickSignalLifecyclePolicy.tradePlan(
-                TradeSignal.SELL, 20.0, 100.0, TimeInterval.MONTHLY, 3.0, 30.0, settings);
-
-        assertThat(plan.atrCircuitBreakerApplied()).isTrue();
-        assertThat(plan.configuredStopLossPrice()).isEqualTo(100.0);
-        assertThat(plan.stopLossPrice()).isCloseTo(23.3333333333, within(0.0000001));
-        assertThat(plan.profitTargetPrice()).isEqualTo(10.0);
-        assertThat((plan.entryPrice() - plan.profitTargetPrice()) / plan.entryPrice() * 100.0)
-                .isEqualTo(50.0);
-    }
-
-    @Test
-    void circuitBreakerUsesPercentageRiskWhenAtrIsUnavailableAndDoesNotTouchNormalPlans() {
-        var settings = new CandlestickPatternPreferencesService.CircuitBreakerSettings(
-                true, 14, 1.5, 25.0);
-
-        var capped = CandlestickSignalLifecyclePolicy.tradePlan(
-                TradeSignal.SELL, 100.0, 150.0, TimeInterval.DAILY, 2.0,
-                Double.NaN, settings);
-        var normal = CandlestickSignalLifecyclePolicy.tradePlan(
-                TradeSignal.SELL, 100.0, 105.0, TimeInterval.DAILY, 2.0,
-                4.0, settings);
-
-        assertThat(capped.atrCircuitBreakerApplied()).isTrue();
-        assertThat(capped.atrValue()).isNull();
-        assertThat(capped.stopLossPrice()).isEqualTo(112.5);
-        assertThat(capped.profitTargetPrice()).isEqualTo(75.0);
-        assertThat(normal.atrCircuitBreakerApplied()).isFalse();
-        assertThat(normal.stopLossPrice()).isEqualTo(105.0);
-        assertThat(normal.profitTargetPrice()).isEqualTo(90.0);
+    void missingAtrProducesProjectionOnlyWithoutMovingStopInsideStructure() {
+        var plan=CandlestickSignalLifecyclePolicy.tradePlan(TradeSignal.SELL,100,105,TimeInterval.DAILY,2);
+        assertThat(plan.actionable()).isFalse();
+        assertThat(plan.qualification()).contains("volatility");
+        assertThat(plan.stopLossPrice()).isEqualTo(105.1);
     }
 
     @Test
@@ -173,7 +136,7 @@ class CandlestickSignalLifecyclePolicyTest {
 
         double atDetection = CandlestickSignalLifecyclePolicy.averageTrueRange(candles, 2, 3);
 
-        assertThat(atDetection).isEqualTo(10.0 / 3.0);
+        assertThat(atDetection).isCloseTo(10.0 / 3.0, within(1e-9));
     }
 
     @Test

@@ -2213,11 +2213,6 @@ public class ElliottWaveDetectionService {
         int confidence = (int) Math.round(subdivisions.stream()
                 .mapToInt(ElliottSubdivision::confidence).average().orElse(0.0));
         double atr = averageTrueRange(candles, wave0.index(), endpoint.index());
-        double buffer = Math.max(0.0, atr * 0.10);
-        double direction = bullish ? 1.0 : -1.0;
-        double waveOneLength = Math.abs(wave1.price() - wave0.price());
-        double stop;
-        double target;
         String forecast;
         TradeSignal expectedMove;
         CandlePattern pattern;
@@ -2226,8 +2221,6 @@ public class ElliottWaveDetectionService {
                 expectedMove = bullish ? TradeSignal.BUY : TradeSignal.SELL;
                 pattern = bullish ? CandlePattern.ELLIOTT_BULLISH_WAVE_II_END
                         : CandlePattern.ELLIOTT_BEARISH_WAVE_II_END;
-                stop = wave0.price() - direction * buffer;
-                target = wave2.price() + direction * waveOneLength * 1.618;
                 forecast = "Projected Wave III (1.618x Wave I from Wave II)";
             }
             case WAVE_III_END -> {
@@ -2235,8 +2228,6 @@ public class ElliottWaveDetectionService {
                 expectedMove = bullish ? TradeSignal.SELL : TradeSignal.BUY;
                 pattern = bullish ? CandlePattern.ELLIOTT_BULLISH_WAVE_III_END
                         : CandlePattern.ELLIOTT_BEARISH_WAVE_III_END;
-                stop = wave3.price() + direction * buffer;
-                target = wave3.price() - direction * Math.abs(wave3.price() - wave2.price()) * .382;
                 forecast = "Projected Wave IV (38.2% retracement of Wave III)";
             }
             case WAVE_IV_END -> {
@@ -2244,8 +2235,6 @@ public class ElliottWaveDetectionService {
                 expectedMove = bullish ? TradeSignal.BUY : TradeSignal.SELL;
                 pattern = bullish ? CandlePattern.ELLIOTT_BULLISH_WAVE_IV_END
                         : CandlePattern.ELLIOTT_BEARISH_WAVE_IV_END;
-                stop = wave1.price() - direction * buffer;
-                target = wave4.price() + direction * waveOneLength;
                 forecast = "Projected Wave V (Wave I equality from Wave IV)";
             }
             case WAVE_V_END -> {
@@ -2253,8 +2242,6 @@ public class ElliottWaveDetectionService {
                 expectedMove = bullish ? TradeSignal.SELL : TradeSignal.BUY;
                 pattern = bullish ? CandlePattern.ELLIOTT_BULLISH_WAVE_V_END
                         : CandlePattern.ELLIOTT_BEARISH_WAVE_V_END;
-                stop = wave5.price() + direction * buffer;
-                target = wave5.price() - direction * Math.abs(wave5.price() - wave0.price()) * .382;
                 forecast = "Projected correction (38.2% retracement of the impulse)";
             }
             case CORRECTION_END -> {
@@ -2266,8 +2253,6 @@ public class ElliottWaveDetectionService {
                 CorrectionMetrics correction = correctionMetrics(parent, bullish ? "BULLISH" : "BEARISH");
                 pattern = bullish ? bullishCorrectionPattern(correction.variant())
                         : bearishCorrectionPattern(correction.variant());
-                stop = waveC.price() - direction * buffer;
-                target = wave5.price();
                 double bRetracement = safeRatio(
                         Math.abs(waveB.price() - waveA.price()),
                         Math.abs(wave5.price() - waveA.price()));
@@ -2323,10 +2308,21 @@ public class ElliottWaveDetectionService {
             pattern = bullish ? CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END
                     : CandlePattern.ELLIOTT_BEARISH_TRUNCATED_WAVE_V_END;
         }
+        // Preview and persisted plans share structural/target rules. Actual interval risk qualification
+        // is repeated at publication using the completed candle cache for that interval.
+        var preview = ElliottTradePlanPolicy.calculate(stage, bullish ? "BULLISH" : "BEARISH", expectedMove,
+                candles.get(confirmationIndex).close(), points, TradeRiskPolicy.atr(
+                        candles.subList(0, confirmationIndex + 1).stream().map(c ->
+                                new org.example.stockwatch247.model.Candle("PREVIEW", "1d", c.timestamp(),
+                                        c.open(), c.high(), c.low(), c.close(), (long) c.volume())).toList(),
+                        confirmationIndex, 14),
+                org.example.stockwatch247.model.enums.TimeInterval.DAILY);
+        Double previewStop = preview.map(ElliottTradePlanPolicy.TradePlan::stopLossPrice).orElse(null);
+        Double previewTarget = preview.map(ElliottTradePlanPolicy.TradePlan::targetTriggerPrice).orElse(null);
         return java.util.Optional.of(new DevelopingImpulse(
                 developmentKey, bullish ? "BULLISH" : "BEARISH", stage, pattern, expectedMove,
                 candles.get(confirmationIndex).timestamp(), candles.get(confirmationIndex).close(),
-                endpoint.price(), stop, target, forecast,
+                endpoint.price(), previewStop, previewTarget, forecast,
                 correctionType.isBlank() ? null : correctionType,
                 confidence, points, List.copyOf(evidence), completedStructure));
     }
@@ -4222,8 +4218,8 @@ public class ElliottWaveDetectionService {
             long confirmationTimestamp,
             double confirmationClose,
             double endpointPrice,
-            double stopLossPrice,
-            double targetPrice,
+            Double stopLossPrice,
+            Double targetPrice,
             String forecastLabel,
             String correctionType,
             int confidenceScore,

@@ -365,7 +365,7 @@ public class TechnicalOutlookTrackingService {
                 .append("/technical-outlook/changes/").append(notification.getId());
         try {
             if (notificationService.sendTechnicalOutlookChangeEmail(
-                    subscription.getUser(), subscription.getInterval(), subject, body.toString())) {
+                    subscription.getUser(), symbol, subscription.getInterval(), subject, body.toString())) {
                 notification.setEmailSentAt(LocalDateTime.now());
                 notificationRepository.save(notification);
             }
@@ -409,6 +409,15 @@ public class TechnicalOutlookTrackingService {
     public List<LatestOutlookChangeView> latestFollowed(User user, TimeInterval interval) {
         if (interval != null) requireSupported(interval);
         return notificationRepository.findLatestFollowedChanges(user, interval, PageRequest.of(0, 5))
+                .stream().map(this::latestView).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<LatestOutlookChangeView> latestFollowed(User user, TimeInterval interval, java.util.Set<String> symbols) {
+        if (interval != null) requireSupported(interval);
+        if (symbols == null) return latestFollowed(user, interval);
+        if (symbols.isEmpty()) return List.of();
+        return notificationRepository.findLatestFollowedChangesInSymbols(user, interval, symbols, PageRequest.of(0, 5))
                 .stream().map(this::latestView).toList();
     }
 

@@ -64,7 +64,7 @@ class TwelveDataIndexSearchTest {
         List<Map<String, Object>> suggestions = service.searchSymbols("Dino");
 
         assertThat(suggestions).anySatisfy(suggestion -> assertThat(suggestion)
-                .containsEntry("symbol", "DNPW")
+                .containsEntry("symbol", "DNPW.WA")
                 .containsEntry("micCode", "XWAR")
                 .containsEntry("currency", "PLN"));
         verify(repository, never()).save(any());
@@ -112,6 +112,35 @@ class TwelveDataIndexSearchTest {
                 .containsEntry("micCode", "SNPX")
                 .containsEntry("instrumentType", "INDEX");
         verify(repository, never()).save(any());
+        server.verify();
+    }
+
+    @Test
+    void qualifiedListingMetadataUsesLocalSymbolAndKeepsItsExchangeDuringFallback() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        StockAssetRepository repository = mock(StockAssetRepository.class);
+        when(repository.findAll()).thenReturn(List.of());
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        server.expect(request -> {
+            assertThat(request.getURI().getPath()).endsWith("/time_series");
+            assertThat(request.getURI().getQuery()).contains("symbol=ASML", "mic_code=XAMS").doesNotContain("ASML.AS");
+        }).andRespond(withSuccess("{\"status\":\"error\",\"message\":\"No series metadata\"}", MediaType.APPLICATION_JSON));
+        server.expect(request -> {
+            assertThat(request.getURI().getPath()).endsWith("/symbol_search");
+            assertThat(request.getURI().getQuery()).contains("symbol=ASML").doesNotContain("ASML.AS");
+        }).andRespond(withSuccess("""
+                {"data":[
+                  {"symbol":"ASML","instrument_name":"US ADR","exchange":"NASDAQ","mic_code":"XNAS","currency":"USD","instrument_type":"Common Stock"},
+                  {"symbol":"ASML","instrument_name":"ASML Holding","exchange":"Euronext Amsterdam","mic_code":"XAMS","currency":"EUR","instrument_type":"Common Stock"}
+                ]}
+                """, MediaType.APPLICATION_JSON));
+        TwelveDataService service = new TwelveDataService(restTemplate,
+                tools.jackson.databind.json.JsonMapper.builder().build(), repository, "test-key", "https://api.twelvedata.com");
+        var listing = service.refreshStockAssetMetadata("ASML.AS");
+        assertThat(listing.getTickerSymbol()).isEqualTo("ASML.AS");
+        assertThat(listing.getCurrency()).isEqualTo("EUR");
+        assertThat(listing.getMicCode()).isEqualTo("XAMS");
         server.verify();
     }
 }

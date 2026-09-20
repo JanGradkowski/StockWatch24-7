@@ -575,6 +575,8 @@ public class ScheduledAlertService {
                 }
                 AlertEvent deliveryEvent = event;
                 deliveryTransaction.accept(() -> {
+                if (candidateChanged && preparedTradePlan.isEmpty() && elliottTradePlanService != null)
+                    elliottTradePlanService.retireOpenPlans(deliveryEvent, candidate.stage(), candidate.confirmationTimestamp(), candidate.confirmationClose());
                 if (preparedTradePlan.isPresent() || preparedProjection.isPresent()) {
                     alertEventRepository.saveAndFlush(deliveryEvent);
                     if (deliveryEvent.getId() != null && elliottTradePlanService != null
@@ -740,10 +742,10 @@ public class ScheduledAlertService {
         event.setTradeEntryPrice(candidate.confirmationClose());
         event.setStructuralStopPrice(candidate.stopLossPrice());
         event.setStopLossPrice(candidate.stopLossPrice());
-        boolean validRawTarget = Double.isFinite(candidate.targetPrice()) && candidate.targetPrice() > 0.0;
+        boolean validRawTarget = TradeRiskPolicy.positive(candidate.targetPrice());
         event.setConfirmationTriggerPrice(validRawTarget ? candidate.targetPrice() : null);
         event.setProfitTargetPrice(validRawTarget ? candidate.targetPrice() : null);
-        double risk = Math.abs(candidate.confirmationClose() - candidate.stopLossPrice());
+        double risk = candidate.stopLossPrice() == null ? 0 : Math.abs(candidate.confirmationClose() - candidate.stopLossPrice());
         event.setRewardRiskRatio(!validRawTarget || risk <= .000001 ? null
                 : Math.abs(candidate.targetPrice() - candidate.confirmationClose()) / risk);
         event.setTradePlanVersion(validRawTarget ? "ELLIOTT_NEXT_WAVE_V1" : null);
@@ -940,7 +942,7 @@ public class ScheduledAlertService {
         event.setHarmonicMeasurementsSnapshot(harmonicMeasurementsSnapshot(formation));
         if (harmonicStopPlanService != null) {
             harmonicStopPlanService.prepare(
-                    event, formation, formation.confirmationTimestamp(), confirmationCandle.getClosePrice());
+                    event, formation, formation.confirmationTimestamp(), confirmationCandle.getClosePrice(), candles, rule.getInterval());
         }
 
         deliveryTransaction.accept(() -> {

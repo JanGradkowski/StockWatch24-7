@@ -17,7 +17,9 @@ public class UserViewModelAdvice {
         if (request.getRequestURI().substring(request.getContextPath().length()).startsWith("/api/")) return;
         User user = principal == null ? null : org.example.stockwatch247.security.CurrentAccount.find(users, principal.getName()).orElse(null);
         model.addAttribute("showAppNavigation", user != null);
-        if (user != null) model.addAttribute("firstName", user.getFirstName());
+        if (user != null) {
+            model.addAttribute("firstName", user.getFirstName());
+        }
         model.addAttribute("navigationSection", navigationSection(request.getRequestURI().substring(request.getContextPath().length())));
         model.addAttribute("accountTheme", user == null ? null : user.getThemePreference().toLowerCase());
         model.addAttribute("elliottMotiveColor", user == null
@@ -31,6 +33,7 @@ public class UserViewModelAdvice {
     }
 
     static String navigationSection(String path) {
+        if (path.equals("/watchlists") || path.startsWith("/watchlists/")) return "lists";
         if (path.equals("/technical-watchlist") || path.startsWith("/technical-outlook/changes/")
                 || path.matches("/stock/[^/]+/technical-outlook")) return "watchlist";
         if (path.equals("/settings") || path.startsWith("/settings/")) return "settings";

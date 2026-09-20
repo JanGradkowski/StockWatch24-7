@@ -37,6 +37,25 @@ import static org.mockito.Mockito.when;
 class AlertNotificationServiceTest {
 
     @Test
+    void listEmailOptOutSuppressesNewSignalsLifecycleAndOutlookEmails() {
+        @SuppressWarnings("unchecked") ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        JavaMailSender sender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(sender);
+        var service = new AlertNotificationService(provider, true, "alerts@stockwatch.test", "Europe/Brussels");
+        var policy = mock(WatchlistEmailPolicy.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "watchlistEmails", policy);
+        AlertRule rule = dailyRule(TradeSignal.BUY);
+        var signal = new DetectedSignal(CandlePattern.HAMMER, TradeSignal.BUY, SignalStength.HIGH_CONFIDENCE, 80,
+                List.of(), Instant.parse("2026-07-20T00:00:00Z").getEpochSecond(), 100.0);
+        assertThat(service.sendSignalEmail(rule, signal)).isFalse();
+        assertThat(service.sendSignalLifecycleEmail(trackedEvent(rule, SignalLifecycleStatus.CONFIRMED))).isFalse();
+        assertThat(service.sendTechnicalOutlookChangeEmail(rule.getUser(), "AAPL", TimeInterval.DAILY, "Test", "Test")).isFalse();
+        org.mockito.Mockito.verifyNoInteractions(sender);
+        when(policy.allows(rule, TradeSignal.BUY)).thenReturn(true);
+        assertThat(service.isSignalEmailEnabled(rule, signal)).isTrue();
+    }
+
+    @Test
     void developingElliottEmailIncludesStageCorrectionStopAndNextWaveTarget() {
         @SuppressWarnings("unchecked")
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
@@ -184,7 +203,7 @@ class AlertNotificationServiceTest {
         event.setPattern(CandlePattern.HARMONIC_CRAB);
         event.setTradeSignal(TradeSignal.BUY);
         event.setSignalCandleTimestamp(100L);
-        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradePlanVersion("HARMONIC_STOP_V1");
         event.setTradeEntryPrice(85.0);
         event.setHarmonicEndpointPrice(83.0);
         event.setStructuralStopPrice(80.0);

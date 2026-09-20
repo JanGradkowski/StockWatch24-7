@@ -74,6 +74,49 @@ class ElliottTradePlanServiceTest {
         verifyNoInteractions(notificationService);
     }
 
+    @Test
+    void protectiveVersionPreservesStopDespiteCountBoundaryAndModelsGapFill() {
+        var plan = activeBuyPlan();
+        plan.setPlanVersion(ElliottTradePlanPolicy.VERSION);
+        plan.setHorizonCandles(3);
+        plan.setHardInvalidationPrice(96.0);
+        when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
+                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(new Candle("TEST", "1d", 101L, 100, 102, 95, 100.0, 100L)))).isZero();
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(new Candle("TEST", "1d", 102L, 90, 99, 89, 98.0, 100L)))).isEqualTo(1);
+        assertThat(plan.getStatus()).isEqualTo(ElliottTradePlanStatus.STOPPED);
+        assertThat(plan.getResolutionFillPrice()).isEqualTo(90);
+        assertThat(plan.getResolutionClosePrice()).isEqualTo(98);
+        assertThat(plan.getAlertEvent().getTradeResolutionPrice()).isEqualTo(90);
+    }
+
+    @Test
+    void protectiveVersionUsesSavedHorizon() {
+        var plan = activeBuyPlan();
+        plan.setPlanVersion(ElliottTradePlanPolicy.VERSION);
+        plan.setHorizonCandles(2);
+        when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
+                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(candle(101L, 105, 96, 102), candle(102L, 104, 97, 101)))).isEqualTo(1);
+        assertThat(plan.getStatus()).isEqualTo(ElliottTradePlanStatus.TIME_STOPPED);
+        assertThat(plan.getResolutionFillPrice()).isEqualTo(101);
+    }
+
+    @Test
+    void invalidOhlcCannotExpireProtectivePlan() {
+        var plan = activeBuyPlan();
+        plan.setPlanVersion(ElliottTradePlanPolicy.VERSION);
+        plan.setHorizonCandles(1);
+        when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
+                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(candle(101L, 99, 101, 100)))).isZero();
+        assertThat(plan.getStatus()).isEqualTo(ElliottTradePlanStatus.ACTIVE);
+    }
+
     private ElliottStageTradePlan activeBuyPlan() {
         AlertEvent event = new AlertEvent();
         event.setElliottSignalStage(ElliottSignalStage.WAVE_II_END);

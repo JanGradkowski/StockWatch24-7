@@ -37,6 +37,7 @@ class TechnicalWatchlistIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired AlertRuleService alertRules;
     @Autowired AlertRuleRepository rules;
+    @Autowired WatchlistService namedLists;
     User owner, other;
     StockAsset asset;
     long now;
@@ -130,6 +131,24 @@ class TechnicalWatchlistIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.subscriptionsRemoved").value(0));
     }
 
+    @Test void namedListChangesAreFilteredBeforeTheFiveNotificationLimit() throws Exception {
+        long list = namedLists.create(owner, "Focused outlooks", "");
+        namedLists.attach(owner, asset.getTickerSymbol(), java.util.List.of(list), null);
+        notification(subscription(owner, TimeInterval.DAILY), now - 100);
+        StockAsset outside = new StockAsset(); outside.setTickerSymbol("OTHER" + owner.getId());
+        outside.setCompanyName("Outside the selected list"); outside.setExchange("NASDAQ"); assets.saveAndFlush(outside);
+        var outsideSubscription = subscription(owner, TimeInterval.WEEKLY);
+        outsideSubscription.setStockAsset(outside); subscriptions.saveAndFlush(outsideSubscription);
+        for (int i = 0; i < 6; i++) notification(outsideSubscription, now - i);
+        assertThat(tracking.latestFollowed(owner, null)).hasSize(5).allMatch(change -> change.symbol().equals(outside.getTickerSymbol()));
+        mvc.perform(signedIn(get("/api/technical-watchlist/changes").param("watchlistId", Long.toString(list))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].symbol").value(asset.getTickerSymbol()));
+        mvc.perform(signedIn(get("/api/technical-watchlist").param("watchlistId", Long.toString(list))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.tickers.length()").value(1))
+                .andExpect(jsonPath("$.tickers[0].symbol").value(asset.getTickerSymbol()));
+    }
+
     @Test void unfollowAllLeavesOtherAccountsAndChangeHistoryIntact() throws Exception {
         var own = subscription(owner, TimeInterval.DAILY); subscription(owner, TimeInterval.MONTHLY);
         subscription(other, TimeInterval.WEEKLY);
@@ -150,6 +169,8 @@ class TechnicalWatchlistIntegrationTest {
     }
 
     @Test void dashboardIncludesAutomatedAnalysisOnlyCompaniesAndTheirUnreadChanges() throws Exception {
+        long listId = namedLists.create(owner, "Outlook research", "");
+        namedLists.attach(owner, asset.getTickerSymbol(), java.util.List.of(listId), null);
         var daily = subscription(owner, TimeInterval.DAILY);
         subscription(owner, TimeInterval.WEEKLY);
         subscription(other, TimeInterval.MONTHLY);
@@ -164,7 +185,11 @@ class TechnicalWatchlistIntegrationTest {
         });
         mvc.perform(signedIn(get("/home"))).andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString(
-                        "href=\"/stock/" + asset.getTickerSymbol() + "/technical-outlook\"")));
+                        "data-named-watchlists")));
+        mvc.perform(signedIn(get("/api/watchlists/" + listId + "/members"))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].symbol").value(asset.getTickerSymbol()))
+                .andExpect(jsonPath("$.items[0].monitoring.ruleCount").value(2))
+                .andExpect(jsonPath("$.items[0].monitoring.unreadSignalCount").value(1));
         mvc.perform(signedIn(get("/api/alerts/" + asset.getTickerSymbol())))
                 .andExpect(jsonPath("$.activeRules.length()").value(0))
                 .andExpect(jsonPath("$.outlookSubscriptions.length()").value(2))

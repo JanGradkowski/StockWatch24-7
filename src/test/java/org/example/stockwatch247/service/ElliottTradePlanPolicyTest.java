@@ -18,9 +18,9 @@ class ElliottTradePlanPolicyTest {
                 104.0, bullishCycle(), 2.0, TimeInterval.DAILY).orElseThrow();
 
         assertThat(plan.structuralStopPrice()).isEqualTo(100.0);
-        assertThat(plan.stopLossPrice()).isEqualTo(99.8);
+        assertThat(plan.stopLossPrice()).isEqualTo(99.6);
         assertThat(plan.targetMidpoint()).isEqualTo(120.18);
-        assertThat(plan.targetZoneLow()).isCloseTo(118.3773, within(.000001));
+        assertThat(plan.targetZoneLow()).isCloseTo(119.68, within(.000001));
         assertThat(plan.targetTriggerPrice()).isEqualTo(plan.targetZoneLow());
         assertThat(plan.requiredRewardRiskRatio()).isEqualTo(2.0);
         assertThat(plan.actualRewardRiskRatio()).isGreaterThan(2.0);
@@ -36,7 +36,7 @@ class ElliottTradePlanPolicyTest {
                 96.0, bearishCycle(), 2.0, TimeInterval.WEEKLY).orElseThrow();
 
         assertThat(plan.structuralStopPrice()).isEqualTo(100.0);
-        assertThat(plan.stopLossPrice()).isEqualTo(100.2);
+        assertThat(plan.stopLossPrice()).isEqualTo(100.4);
         assertThat(plan.targetMidpoint()).isEqualTo(79.82);
         assertThat(plan.targetTriggerPrice()).isEqualTo(plan.targetZoneHigh());
         assertThat(plan.requiredRewardRiskRatio()).isEqualTo(3.0);
@@ -58,11 +58,11 @@ class ElliottTradePlanPolicyTest {
         assertThat(12.32 - Math.abs(8.68 - 16.43) * 1.618).isLessThanOrEqualTo(0.0);
         assertThat(12.32 - Math.abs(8.68 - 16.43) * 2.618).isLessThanOrEqualTo(0.0);
         assertThat(plan.targetMidpoint()).isCloseTo(expectedMidpoint, within(.000001));
-        assertThat(plan.targetTriggerPrice()).isCloseTo(expectedMidpoint * 1.015, within(.000001));
+        assertThat(plan.targetTriggerPrice()).isCloseTo(expectedMidpoint + Math.min(expectedMidpoint * .015, .25), within(.000001));
         assertThat(plan.targetMidpoint()).isPositive();
         assertThat(plan.targetBasis()).contains("Logarithmic Wave III", "both arithmetic extensions");
         assertThat(plan.actionable()).isFalse();
-        assertThat(plan.qualification()).startsWith("Projection only:");
+        assertThat(plan.qualification()).contains("risk");
     }
 
     @Test
@@ -77,7 +77,7 @@ class ElliottTradePlanPolicyTest {
         assertThat(waveFive.structuralStopPrice()).isEqualTo(118.0);
         assertThat(waveFive.hardInvalidationPrice()).isEqualTo(110.0);
         assertThat(correction.structuralStopPrice()).isEqualTo(130.0);
-        assertThat(correction.targetBasis()).contains("previous Wave IV");
+        assertThat(correction.targetBasis()).contains("38.2% retracement");
         assertThat(nextCycle.structuralStopPrice()).isEqualTo(115.0);
         assertThat(nextCycle.targetBasis()).contains("prior Wave V");
     }
@@ -90,7 +90,7 @@ class ElliottTradePlanPolicyTest {
 
         assertThat(plan.actionable()).isFalse();
         assertThat(plan.actualRewardRiskRatio()).isLessThan(2.0);
-        assertThat(plan.qualification()).startsWith("Projection only:");
+        assertThat(plan.qualification()).contains("risk");
     }
 
     @Test

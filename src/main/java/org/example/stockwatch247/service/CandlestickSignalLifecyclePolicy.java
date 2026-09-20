@@ -16,7 +16,7 @@ import java.util.List;
  * semantics.</p>
  */
 final class CandlestickSignalLifecyclePolicy {
-    static final String RISK_REWARD_VERSION = "CANDLE_RR_V3";
+    static final String RISK_REWARD_VERSION = "CANDLE_RR_V4";
     static final int TIME_STOP_CANDLES = 8;
 
     private CandlestickSignalLifecyclePolicy() {
@@ -117,13 +117,13 @@ final class CandlestickSignalLifecyclePolicy {
                         && candle.getHighPrice() != null && Double.isFinite(candle.getHighPrice())
                         && candle.getLowPrice() != null && Double.isFinite(candle.getLowPrice()))
                 .toList();
-        if (formation.isEmpty()) {
+        if (formation.size() != formationCandles.size() || formation.stream().anyMatch(c -> !TradeRiskPolicy.valid(c))) {
             throw new IllegalArgumentException("The formation has no complete price range.");
         }
         double structuralStop = structuralStopPrice(pattern, formation);
         double stopLoss = configuredStopPrice(tradeSignal, entryPrice, structuralStop,
                 stopLossMode, stopLossValuePercent);
-        return tradePlan(tradeSignal, entryPrice, stopLoss, interval, rewardRiskRatio);
+        return tradePlan(tradeSignal, entryPrice, tradeSignal == TradeSignal.BUY ? Math.min(stopLoss, structuralStop) : Math.max(stopLoss, structuralStop), interval, rewardRiskRatio);
     }
 
     static double configuredStopPrice(
@@ -191,86 +191,50 @@ final class CandlestickSignalLifecyclePolicy {
                                double rewardRiskRatio,
                                double atr,
                                CandlestickPatternPreferencesService.CircuitBreakerSettings circuitBreaker) {
-        double risk = tradeSignal == TradeSignal.BUY
-                ? entryPrice - stopLoss
-                : stopLoss - entryPrice;
-        if (!Double.isFinite(risk) || risk <= 0) {
-            throw new IllegalStateException("The structural stop must be beyond the entry in the adverse direction.");
-        }
-        if (!Double.isFinite(rewardRiskRatio) || rewardRiskRatio <= 0) {
-            throw new IllegalArgumentException("A positive risk-to-reward ratio is required.");
-        }
-        double configuredStopLoss = stopLoss;
-        boolean circuitBreakerApplied = false;
-        Double frozenAtr = null;
-        if (circuitBreaker != null && circuitBreaker.enabled()) {
-            double targetMovePercent = risk * rewardRiskRatio / entryPrice * 100.0;
-            if (targetMovePercent > circuitBreaker.activationThresholdPercent()) {
-                double maximumRisk = entryPrice
-                        * circuitBreaker.activationThresholdPercent() / 100.0 / rewardRiskRatio;
-                double atrRisk = Double.isFinite(atr) && atr > 0.0
-                        ? atr * circuitBreaker.atrMultiplier()
-                        : maximumRisk;
-                risk = Math.min(atrRisk, maximumRisk);
-                if (!Double.isFinite(risk) || risk <= 0.0) {
-                    throw new IllegalStateException("The ATR circuit breaker could not calculate positive risk.");
-                }
-                stopLoss = tradeSignal == TradeSignal.BUY
-                        ? entryPrice - risk
-                        : entryPrice + risk;
-                circuitBreakerApplied = true;
-                frozenAtr = Double.isFinite(atr) && atr > 0.0 ? atr : null;
-            }
-        }
-        double profitTarget = tradeSignal == TradeSignal.BUY
-                ? entryPrice + risk * rewardRiskRatio
-                : entryPrice - risk * rewardRiskRatio;
-        if (!Double.isFinite(profitTarget) || profitTarget <= 0.0) {
-            throw new IllegalStateException("The profit target could not be calculated.");
-        }
-        return new TradePlan(
-                entryPrice,
-                stopLoss,
-                profitTarget,
-                rewardRiskRatio,
-                TIME_STOP_CANDLES,
-                configuredStopLoss,
-                circuitBreakerApplied,
-                frozenAtr,
-                circuitBreaker == null ? null : circuitBreaker.atrPeriod(),
-                circuitBreaker == null ? null : circuitBreaker.atrMultiplier(),
-                circuitBreaker == null ? null : circuitBreaker.activationThresholdPercent());
+        return tradePlan(tradeSignal, entryPrice, stopLoss, interval, rewardRiskRatio, atr, circuitBreaker, List.of(), -1);
     }
 
-    static double averageTrueRange(List<Candle> chronologicalCandles, int throughIndex, int period) {
-        if (chronologicalCandles == null || chronologicalCandles.isEmpty()
-                || throughIndex < 0 || throughIndex >= chronologicalCandles.size()
-                || period < 2 || throughIndex + 1 < period) {
-            return Double.NaN;
+    static TradePlan tradePlan(TradeSignal side, double entry, double configuredStop, TimeInterval interval,
+                               double requiredRr, double atr,
+                               CandlestickPatternPreferencesService.CircuitBreakerSettings settings,
+                               List<Candle> candles, int through) {
+        if ((side != TradeSignal.BUY && side != TradeSignal.SELL) || !TradeRiskPolicy.positive(entry)
+                || !TradeRiskPolicy.positive(configuredStop) || !TradeRiskPolicy.positive(requiredRr))
+            throw new IllegalArgumentException("Entry, stop and reward/risk must be finite and positive.");
+        double stop = TradeRiskPolicy.roundStop(side == TradeSignal.BUY
+                ? configuredStop - TradeRiskPolicy.buffer(entry, atr, interval)
+                : configuredStop + TradeRiskPolicy.buffer(entry, atr, interval), side, entry);
+        double risk = TradeRiskPolicy.risk(side, entry, stop);
+        if (!TradeRiskPolicy.positive(stop) || risk <= 0) throw new IllegalStateException("No valid adverse structural stop.");
+        double rrTarget = side == TradeSignal.BUY ? entry + risk * requiredRr : entry - risk * requiredRr;
+        double target = TradeRiskPolicy.nearestObjective(candles, through, side, entry, rrTarget);
+        // An impossible short target must not produce a negative price in a persisted plan.
+        if (!TradeRiskPolicy.positive(target)) throw new IllegalStateException("No positive primary target.");
+        var q = TradeRiskPolicy.qualify(side, entry, stop, target, atr, interval, requiredRr);
+        return new TradePlan(entry, stop, target, target == rrTarget ? requiredRr : TradeRiskPolicy.reward(side, entry, target) / risk,
+                TradeRiskPolicy.profile(interval).candleHorizon(), configuredStop, false,
+                TradeRiskPolicy.positive(atr) ? atr : null, settings == null ? 14 : settings.atrPeriod(),
+                null, null, q.actionable(), q.reason(), q.riskAtr(), q.riskPercent(),
+                target == rrTarget ? null : rrTarget);
+    }
+
+    static LifecycleResolution resolveProtective(TradeSignal side, double target, double stop,
+                                                 List<Candle> candles, int horizon) {
+        if (candles == null || horizon <= 0) return null;
+        for (int i = 0; i < Math.min(candles.size(), horizon); i++) {
+            if (!TradeRiskPolicy.valid(candles.get(i))) return null;
+            var outcome = TradeOutcomePolicy.evaluate(side, stop, target, candles.get(i));
+            if (outcome != null) return new LifecycleResolution(outcome.kind() == TradeOutcomePolicy.Kind.STOPPED
+                    ? SignalLifecycleStatus.INVALIDATED : SignalLifecycleStatus.CONFIRMED,
+                    candles.get(i), i + 1, outcome.price(), outcome.reason());
         }
-        int startIndex = throughIndex - period + 1;
-        double trueRangeTotal = 0.0;
-        Double previousClose = startIndex == 0
-                ? null : chronologicalCandles.get(startIndex - 1).getClosePrice();
-        for (int index = startIndex; index <= throughIndex; index++) {
-            Candle candle = chronologicalCandles.get(index);
-            if (candle == null || candle.getHighPrice() == null || candle.getLowPrice() == null
-                    || candle.getClosePrice() == null
-                    || !Double.isFinite(candle.getHighPrice())
-                    || !Double.isFinite(candle.getLowPrice())
-                    || !Double.isFinite(candle.getClosePrice())) {
-                return Double.NaN;
-            }
-            double trueRange = candle.getHighPrice() - candle.getLowPrice();
-            if (previousClose != null) {
-                trueRange = Math.max(trueRange, Math.abs(candle.getHighPrice() - previousClose));
-                trueRange = Math.max(trueRange, Math.abs(candle.getLowPrice() - previousClose));
-            }
-            trueRangeTotal += trueRange;
-            previousClose = candle.getClosePrice();
-        }
-        double atr = trueRangeTotal / period;
-        return Double.isFinite(atr) && atr > 0.0 ? atr : Double.NaN;
+        if (candles.size() >= horizon) return new LifecycleResolution(SignalLifecycleStatus.EXPIRED,
+                candles.get(horizon - 1), horizon, candles.get(horizon - 1).getClosePrice(), "Trade horizon ended at the completed close.");
+        return null;
+    }
+
+    static double averageTrueRange(List<Candle> candles, int throughIndex, int period) {
+        return TradeRiskPolicy.atr(candles, throughIndex, period);
     }
 
     static double rewardRiskRatio(TimeInterval interval) {
@@ -332,8 +296,11 @@ final class CandlestickSignalLifecyclePolicy {
     record LifecycleResolution(
             SignalLifecycleStatus status,
             Candle resolutionCandle,
-            int candleOffset
+            int candleOffset, Double fillPrice, String reason
     ) {
+        LifecycleResolution(SignalLifecycleStatus status, Candle candle, int offset) {
+            this(status, candle, offset, candle.getClosePrice(), null);
+        }
     }
 
     record TradePlan(double entryPrice,
@@ -346,6 +313,7 @@ final class CandlestickSignalLifecyclePolicy {
                      Double atrValue,
                      Integer atrPeriod,
                      Double atrMultiplier,
-                     Double activationThresholdPercent) {
+                     Double activationThresholdPercent, boolean actionable, String qualification,
+                     Double riskAtr, double riskPercent, Double secondaryTarget) {
     }
 }

@@ -85,6 +85,19 @@ public class ElliottStageTradePlan {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 
+    @Column(name = "secondary_target_price")
+    private Double secondaryTargetPrice;
+    @Column(name = "horizon_candles")
+    private Integer horizonCandles;
+    @Column(name = "resolution_fill_price")
+    private Double resolutionFillPrice;
+    public Double getSecondaryTargetPrice() { return secondaryTargetPrice; }
+    public void setSecondaryTargetPrice(Double value) { secondaryTargetPrice = value; }
+    public Integer getHorizonCandles() { return horizonCandles; }
+    public void setHorizonCandles(Integer value) { horizonCandles = value; }
+    public Double getResolutionFillPrice() { return resolutionFillPrice; }
+    public void setResolutionFillPrice(Double value) { resolutionFillPrice = value; }
+
     public Long getId() { return id; }
     public AlertEvent getAlertEvent() { return alertEvent; }
     public ElliottSignalStage getStage() { return stage; }

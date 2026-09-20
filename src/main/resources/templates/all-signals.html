@@ -22,6 +22,8 @@
   <nav class="signal-breadcrumb" aria-label="Breadcrumb">
     <a th:href="@{/home}">Dashboard</a>
     <span aria-hidden="true">/</span>
+    <a th:if="${watchlistName != null}" th:href="@{/watchlists/{id}(id=${archiveFilter.watchlistId()})}" th:text="${watchlistName}">Watchlist</a>
+    <span th:if="${watchlistName != null}" aria-hidden="true">/</span>
     <a th:if="${companyArchive != null}" th:href="@{/signals}">All signals</a>
     <span th:if="${companyArchive != null}" aria-hidden="true">/</span>
     <span th:text="${companyArchive != null ? companyArchive.symbol() : 'All signals'}">All signals</span>
@@ -29,9 +31,10 @@
 
   <header class="signal-archive-header technical-signal-archive-header">
     <div>
-      <div class="eyebrow" th:text="${companyArchive != null ? 'Company signal archive' : 'Technical signals'}">Technical signals</div>
+      <div class="eyebrow" th:text="${companyArchive != null ? 'Company signal archive' : (watchlistName != null ? 'Watchlist signals' : 'Technical signals')}">Technical signals</div>
       <h1 class="title" th:text="${companyArchive != null ? companyArchive.symbol() + ' signals' : 'All signals'}">All signals</h1>
-      <p class="subtitle" th:text="${companyArchive != null ? 'Every technical signal recorded for ' + companyArchive.companyName() + ', including signals from rules you no longer follow.' : 'Every technical signal received by this account remains available here, including signals from rules you no longer follow.'}">Your saved technical signals.</p>
+      <p th:if="${watchlistName != null}" class="panel-meta" th:text="${watchlistName + (archiveFilter.ticker().isEmpty() ? ' · All tickers' : ' · ' + archiveFilter.ticker())}">Watchlist signals</p>
+      <p class="subtitle" th:text="${watchlistName != null ? 'Technical signals, congressional activity and insider activity recorded for this watchlist. Saved history remains available after follows change.' : companyArchive != null ? 'Every technical signal recorded for ' + companyArchive.companyName() + ', including signals from rules you no longer follow.' : 'Every technical signal received by this account remains available here, including signals from rules you no longer follow.'}">Your saved technical signals.</p>
       <a th:if="${companyArchive != null}" class="btn-secondary company-signal-market-link" th:href="@{/stock/{symbol}(symbol=${companyArchive.symbol()})}">Open stock chart &rarr;</a>
     </div>
     <div class="signal-archive-total" aria-label="Total recorded signals">
@@ -44,15 +47,24 @@
   <section class="signal-archive-shell" aria-labelledby="signal-archive-heading">
     <div class="signal-archive-toolbar">
       <div>
-        <h2 id="signal-archive-heading" class="panel-title">Signal history</h2>
+        <div class="panel-heading">
+          <h2 id="signal-archive-heading" class="panel-title">Signal history</h2>
+          <div th:if="${companyArchive == null}" class="panel-heading-actions">
+            <button type="button" class="btn-secondary panel-action-button" data-notifications-read-all data-read-scope="ALL"
+                    th:attr="data-read-watchlist=${archiveFilter.watchlistId()}"
+                    th:title="${watchlistName != null ? 'Mark every notification in this watchlist as read, across all pages and filters' : 'Mark every notification in your account as read, across all pages and filters'}">Mark all as read</button>
+            <span data-notifications-read-status role="status" class="panel-meta"></span>
+          </div>
+        </div>
         <p class="panel-meta">Unread signals are highlighted. Opening one marks it as read.</p>
-        <p class="panel-meta">Active: pending setups and projections. Completed: resolved or rejected signals.</p>
+        <p class="panel-meta">Active: pending setups and projections. Completed: resolved or rejected signals and recorded activity.</p>
         <p class="panel-meta">Outcomes use each pattern family's stop, target and time-limit rules.</p>
       </div>
       <form method="get"
             th:action="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()})} : @{/signals}"
             class="signal-archive-sort-form archive-filter-form"
             th:attr="aria-label=${companyArchive != null ? 'Sort ' + companyArchive.symbol() + ' signals' : 'Sort all signals'}">
+        <input th:if="${archiveFilter.watchlistId() != null}" type="hidden" name="watchlistId" th:value="${archiveFilter.watchlistId()}">
         <fieldset class="archive-state-filter">
           <legend>Show signals</legend>
           <label><input type="radio" name="state" value="all" th:checked="${archiveFilter.state() == 'all'}"><span>All</span></label>
@@ -107,7 +119,7 @@
 
     <form th:if="${!#lists.isEmpty(archive.signals())}"
           method="post"
-          th:action="${companyArchive != null} ? @{/alerts/{id}/signals/delete(id=${companyArchive.representativeAlertId()})} : @{/signals/delete}"
+          th:action="${companyArchive != null} ? @{/alerts/{id}/signals/delete(id=${companyArchive.representativeAlertId()})} : (${watchlistName != null} ? @{/signals/mixed/delete} : @{/signals/delete})"
           class="signal-delete-form"
           data-signal-delete-form
           data-archive-kind="signal">
@@ -116,6 +128,7 @@
       <input type="hidden" name="page" th:value="${archive.page()}">
       <input type="hidden" name="state" th:value="${archiveFilter.state()}">
       <input type="hidden" name="ticker" th:value="${archiveFilter.ticker()}">
+      <input th:if="${archiveFilter.watchlistId() != null}" type="hidden" name="watchlistId" th:value="${archiveFilter.watchlistId()}">
 
       <div class="signal-delete-toolbar">
         <label class="signal-select-all-control">
@@ -146,7 +159,28 @@
               <strong th:text="${archive.groupLabel(entry)}">02 August 2026</strong>
               <span th:if="${archive.groupDetail(entry) != null}" th:text="${archive.groupDetail(entry)}">Sorted group</span>
             </div>
-            <div class="signal-archive-record">
+            <div th:if="${entry.activity() != null}" th:with="activity=${entry.activity()}" class="signal-archive-record">
+              <label class="signal-select-control">
+                <input type="checkbox" name="signalKeys" th:value="${activity.key()}" class="signal-select-checkbox" data-signal-checkbox th:aria-label="${'Select ' + activity.familyLabel() + ' for ' + activity.symbol()}">
+              </label>
+              <a th:href="@{${activity.detailUrl()}(returnTo=${archiveReturnUrl})}" class="signal-archive-row" th:classappend="${activity.hasBeenRead()} ? ' is-read' : ' is-unread'">
+                <div class="signal-archive-pattern">
+                  <strong th:text="${activity.actor()}">Reported trader</strong>
+                  <div class="latest-signal-tags"><span class="latest-family-tag" th:text="${activity.familyLabel()}">Activity</span><span class="latest-direction-tag" th:text="${activity.title()}">Purchase</span></div>
+                </div>
+                <div class="signal-archive-company"><strong th:text="${activity.symbol()}">AAPL</strong><span th:text="${activity.companyName()}">Apple Inc.</span></div>
+                <span class="latest-interval">Filing</span>
+                <div class="signal-archive-date"><time th:text="${#temporals.format(activity.received(), 'dd MMM yyyy, HH:mm')}"></time></div>
+                <span class="signal-read-pill" th:classappend="${activity.hasBeenRead()} ? ' read' : ' unread'" th:text="${activity.hasBeenRead()} ? 'Read' : 'Unread'">Unread</span>
+                <span class="signal-lifecycle-pill">Recorded activity</span>
+                <div class="latest-confidence"><strong>N/A</strong><span>Filing</span></div>
+                <div class="signal-archive-result"><strong>N/A</strong><span>No technical trade plan</span></div>
+                <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+              </a>
+              <button type="submit" name="singleSignalKey" th:value="${activity.key()}" class="signal-archive-delete-button" data-single-delete th:attr="data-signal-label=${activity.familyLabel() + ' for ' + activity.symbol()},aria-label=${'Delete ' + activity.familyLabel() + ' for ' + activity.symbol()}">Delete</button>
+              <details class="archive-row-details"><summary>Transaction details</summary><div class="archive-row-detail-content"><span th:text="${'Transaction date: ' + #temporals.format(activity.transactionDate(), 'dd MMM yyyy')}"></span></div></details>
+            </div>
+            <div th:if="${entry.activity() == null}" class="signal-archive-record">
               <label class="signal-select-control">
                 <input type="checkbox"
                        name="signalIds"
@@ -218,10 +252,11 @@
                 <summary>Candle and price details</summary>
                 <div class="archive-row-detail-content">
                   <span th:text="${signal.signalPeriodLabel() != null ? 'Candle ' + signal.signalPeriodLabel() : 'Candle period unavailable'}">Candle 27&ndash;31 Jul 2026</span>
+                  <span th:if="${signal.lifecycle().tradeQualification() != null}" th:text="${signal.lifecycle().tradeQualification()}"></span>
                   <span th:if="${signal.lifecycle().entryPrice() != null and signal.lifecycle().stopLossPrice() != null and signal.lifecycle().profitTargetPrice() != null}"
                         th:text="${'Entry ' + #numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 2) + ' · Stop ' + #numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 2) + ' · Target ' + #numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 2) + ' · 1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)}">Entry 100.00 · Stop 95.00 · Target 110.00 · 1:2</span>
                   <span th:if="${signal.lifecycle().harmonicStopStatus() != null}"
-                        th:text="${'Confirmation entry ' + #numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 2) + ' · Harmonic stop ' + #numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 2) + ' · ' + (signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'breached' : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? 'candle 8 complete' : 'active'))}">Confirmation entry 100.00 · Harmonic stop 95.00 · active</span>
+                        th:text="${'Confirmation entry ' + #numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 2) + ' · Harmonic stop ' + #numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 2) + ' · ' + (signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'breached' : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? 'time stop' : #strings.toLowerCase(#strings.replace(signal.lifecycle().harmonicStopStatus(), '_', ' '))))}">Confirmation entry 100.00 · Harmonic stop 95.00 · active</span>
                   <span th:if="${signal.lifecycle().atrCircuitBreakerApplied()}">ATR circuit breaker active</span>
 
                   <p th:if="${entry.stageOutcomes().isEmpty()}" th:text="${entry.outcome().priceDetail()}"></p>
@@ -236,11 +271,11 @@
 
     <nav th:if="${archive.totalPages() > 1}" class="signal-archive-pagination" aria-label="Signal archive pages">
       <a th:if="${archive.hasPrevious()}"
-         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()})}"
+         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()})}"
          class="btn-secondary">&larr; Previous</a>
       <span th:text="${'Page ' + archive.displayPage() + ' of ' + archive.totalPages()}">Page 1 of 3</span>
       <a th:if="${archive.hasNext()}"
-         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()})}"
+         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()})}"
          class="btn-secondary">Next &rarr;</a>
     </nav>
   </section>

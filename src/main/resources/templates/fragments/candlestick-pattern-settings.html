@@ -37,47 +37,17 @@
       </div>
     </section>
 
-    <section class="settings-card candlestick-circuit-breaker-overview">
-      <div class="settings-card-heading">
-        <div><span class="settings-number">03</span><h2>ATR-based risk limit</h2></div>
-        <span class="analysis-profile-state" th:text="${preferences.custom()} ? 'Personalized safeguards' : 'Risk limits'">Risk limits</span>
-      </div>
-      <p class="analysis-settings-intro">When the normal structural/custom stop would produce a target move above the selected percentage, replace it with a frozen ATR-based risk distance. If that ATR distance would still exceed the limit, the percentage cap determines the final risk. Long stops are placed below entry and short stops above entry.</p>
-      <div class="analysis-safety-strip candlestick-circuit-breaker-guide">
-        <strong>Fixed at entry</strong>
-        <span>ATR is calculated through the actual detection candle and never moves afterward.</span>
-        <span>The configured 1:R ratio and candle-8 time stop remain unchanged.</span>
-      </div>
-      <div class="candlestick-circuit-breaker-grid">
-        <fieldset class="analysis-setting-group candlestick-circuit-breaker-card" th:each="profile : ${candlestickCircuitBreakerProfiles}" th:classappend="${profile.enabled()} ? '' : ' disabled'">
-          <legend th:text="${profile.label()}">Daily</legend>
-          <label class="scoring-include-control candlestick-circuit-breaker-toggle">
-            <input type="checkbox" class="candlestick-circuit-breaker-enabled"
-                   th:name="${'circuitBreaker.' + profile.key() + '.enabled'}"
-                   th:checked="${profile.enabled()}">
-            <span><strong>Enable circuit breaker</strong><small>Default: enabled</small></span>
-          </label>
-          <div class="candlestick-circuit-breaker-fields">
-            <label class="candlestick-value-control">
-              <span>ATR period <small th:text="${'Default: ' + profile.factory().atrPeriod()}">Default: 14</small></span>
-              <span><input type="number" required inputmode="numeric" min="2" max="500" step="1"
-                           th:name="${'circuitBreaker.' + profile.key() + '.atrPeriod'}"
-                           th:value="${profile.atrPeriod()}"><b>bars</b></span>
-            </label>
-            <label class="candlestick-value-control">
-              <span>ATR stop multiplier <small th:text="${'Default: ' + profile.factory().atrMultiplier() + '×'}">Default: 1.5×</small></span>
-              <span><input type="number" required inputmode="decimal" min="0.1" max="10" step="0.1"
-                           th:name="${'circuitBreaker.' + profile.key() + '.atrMultiplier'}"
-                           th:value="${profile.atrMultiplier()}"><b>×</b></span>
-            </label>
-            <label class="candlestick-value-control">
-              <span>Activate above <small th:text="${'Default: ' + profile.factory().activationThresholdPercent() + '%'}">Default: 25%</small></span>
-              <span><input type="number" required inputmode="decimal" min="1" max="95" step="0.5"
-                           th:name="${'circuitBreaker.' + profile.key() + '.activationThresholdPercent'}"
-                           th:value="${profile.activationThresholdPercent()}"><b>%</b></span>
-            </label>
-          </div>
-        </fieldset>
+    <section class="settings-card">
+      <div class="settings-card-heading"><h2>Structural risk checks</h2></div>
+      <p>New plans keep the structural boundary and add a volatility buffer. A distant stop or insufficient reward to the nearest target makes the setup projection only. Stops are never pulled inside the structure to manufacture a reward/risk ratio.</p>
+      <p>Daily limits: 3 ATR / 12.5%. Weekly: 4 ATR / 20%. Monthly: 5 ATR / 30%. These are initial safeguards, not estimated success probabilities. Daily and weekly candlestick horizons are 8 bars; monthly is 6.</p>
+      <div th:each="profile : ${candlestickCircuitBreakerProfiles}">
+        <label>Volatility history (bars)
+          <input type="number" required min="2" max="500" step="1" th:name="${'circuitBreaker.' + profile.key() + '.atrPeriod'}" th:value="${profile.atrPeriod()}">
+        </label>
+        <input type="hidden" th:name="${'circuitBreaker.' + profile.key() + '.enabled'}" th:value="${profile.enabled()}">
+        <input type="hidden" th:name="${'circuitBreaker.' + profile.key() + '.atrMultiplier'}" th:value="${profile.atrMultiplier()}">
+        <input type="hidden" th:name="${'circuitBreaker.' + profile.key() + '.activationThresholdPercent'}" th:value="${profile.activationThresholdPercent()}">
       </div>
     </section>
 
@@ -172,7 +142,7 @@
     <div class="settings-card-heading"><div><span class="settings-number">19</span><h2>Reset to defaults</h2></div><p>Detection, scoring, appearance, and account settings remain unchanged.</p></div>
     <form th:action="@{/settings/candlestick-patterns/reset}" method="post" class="settings-action-row">
       <input type="hidden" name="pattern" value="all">
-      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, the shared risk-to-reward ratio, and ATR circuit breakers to default values.</p></div>
+      <div><h3>Restore every candlestick setting</h3><p>Returns candle measurements, prior-price-action requirements, stop-loss rules, the shared risk-to-reward ratio, and volatility history to default values.</p></div>
       <button class="danger-button" type="submit">Restore candlestick defaults</button>
     </form>
   </section>

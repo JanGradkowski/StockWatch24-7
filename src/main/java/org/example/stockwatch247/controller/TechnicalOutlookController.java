@@ -23,6 +23,8 @@ import java.security.Principal;
 @Controller
 @RequestMapping
 public class TechnicalOutlookController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.service.WatchlistFollowService watchlistFollows;
     private final UserRepository userRepository;
     private final TechnicalOutlookService outlookService;
     private final AnalysisPreferencesService preferencesService;
@@ -156,6 +158,8 @@ public class TechnicalOutlookController {
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("A Daily, Weekly, or Monthly interval is required.");
         }
+        if (watchlistFollows != null) return watchlistFollows.outlook(requireUser(principal),
+                SecurityInputValidator.requireMarketSymbol(symbol), interval, request.active(), request.watchlistIds(), request.newWatchlistName());
         return trackingService.setSubscription(
                 requireUser(principal), SecurityInputValidator.requireMarketSymbol(symbol),
                 interval, request.active());
@@ -215,5 +219,7 @@ public class TechnicalOutlookController {
         }
     }
 
-    public record OutlookSubscriptionRequest(String interval, boolean active) { }
+    public record OutlookSubscriptionRequest(String interval, boolean active, java.util.List<Long> watchlistIds, String newWatchlistName) {
+        public OutlookSubscriptionRequest(String interval, boolean active) { this(interval, active, null, null); }
+    }
 }

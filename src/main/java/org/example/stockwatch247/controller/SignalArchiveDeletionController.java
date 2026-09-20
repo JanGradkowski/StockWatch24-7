@@ -34,6 +34,7 @@ public class SignalArchiveDeletionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "all") String state,
             @RequestParam(defaultValue = "") String ticker,
+            @RequestParam(required = false) Long watchlistId,
             Principal principal,
             RedirectAttributes redirectAttributes) {
         User user = currentUser(principal);
@@ -51,6 +52,7 @@ public class SignalArchiveDeletionController {
         var filter = new org.example.stockwatch247.service.SignalArchiveFilter(state, ticker);
         redirectAttributes.addAttribute("state", filter.state());
         redirectAttributes.addAttribute("ticker", filter.ticker());
+        if (watchlistId != null) redirectAttributes.addAttribute("watchlistId", watchlistId);
         return "redirect:/signals";
     }
 
@@ -106,6 +108,30 @@ public class SignalArchiveDeletionController {
         }
         addArchiveLocation(redirectAttributes, sort, direction, page);
         return "redirect:/activity-signals";
+    }
+
+    @PostMapping("/signals/mixed/delete")
+    public String deleteMixedSignals(@RequestParam(required=false) List<Long> signalIds,
+            @RequestParam(required=false) List<String> signalKeys,
+            @RequestParam(required=false) Long singleSignalId,
+            @RequestParam(required=false) String singleSignalKey,
+            @RequestParam long watchlistId, @RequestParam(defaultValue="date") String sort,
+            @RequestParam(defaultValue="desc") String direction, @RequestParam(defaultValue="0") int page,
+            @RequestParam(defaultValue="all") String state, @RequestParam(defaultValue="") String ticker,
+            Principal principal, RedirectAttributes redirectAttributes) {
+        User user = currentUser(principal);
+        if (user == null) return "redirect:/login";
+        try {
+            var ids = singleSignalId != null ? List.of(singleSignalId) : singleSignalKey != null ? List.<Long>of() : signalIds;
+            var keys = singleSignalKey != null ? List.of(singleSignalKey) : singleSignalId != null ? List.<String>of() : signalKeys;
+            int deleted = deletionService.deleteMixedSignals(user,ids,keys);
+            redirectAttributes.addFlashAttribute("signalDeleteMessage",deletionMessage(deleted,false));
+        } catch (IllegalArgumentException error) { redirectAttributes.addFlashAttribute("signalDeleteError",error.getMessage()); }
+        addArchiveLocation(redirectAttributes,sort,direction,page);
+        var filter = new org.example.stockwatch247.service.SignalArchiveFilter(state,ticker,watchlistId);
+        redirectAttributes.addAttribute("watchlistId",watchlistId);
+        redirectAttributes.addAttribute("state",filter.state()); redirectAttributes.addAttribute("ticker",filter.ticker());
+        return "redirect:/signals";
     }
 
     private User currentUser(Principal principal) {

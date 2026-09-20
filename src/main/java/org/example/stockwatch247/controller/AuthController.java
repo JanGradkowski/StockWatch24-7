@@ -35,6 +35,8 @@ import java.util.stream.Stream;
 
 @Controller
 public class AuthController {
+    @Autowired
+    private org.example.stockwatch247.service.WatchlistService watchlists;
     private static final int ACTIVITY_ARCHIVE_PAGE_SIZE = 25;
     private final UserRepository userRepository;
     private final AlertRuleService alertRuleService;
@@ -180,7 +182,8 @@ public class AuthController {
         User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
 
         if (currentUser != null) {
-            var trackedCompanies = alertRuleService.getActiveCompanyViews(currentUser);
+            var trackedCompanies = watchlists == null ? alertRuleService.getActiveCompanyViews(currentUser)
+                    : java.util.List.<AlertRuleService.TrackedCompanyView>of();
             var latestSignals = alertRuleService.getLatestSignalViews(currentUser);
             var latestOutlookChanges = technicalOutlookTrackingService == null
                     ? java.util.List.<TechnicalOutlookTrackingService.LatestOutlookChangeView>of()
@@ -213,6 +216,13 @@ public class AuthController {
                             Comparator.nullsLast(Comparator.reverseOrder())))
                     .limit(10)
                     .toList();
+            if (watchlists != null) {
+                java.util.Set<String> keys = new java.util.HashSet<>();
+                latestSignalItems.forEach(item -> keys.add(item.technicalSignal() != null
+                        ? "TECHNICAL:" + item.technicalSignal().id() : "OUTLOOK:" + item.outlookChange().id()));
+                latestTickerNotifications.forEach(item -> keys.add(("INSIDER".equals(item.source()) ? "INSIDER:" : "CONGRESS:") + item.id()));
+                model.addAttribute("watchlistOrigins", watchlists.notificationOrigins(currentUser, keys));
+            }
             model.addAttribute("firstName", currentUser.getFirstName());
             model.addAttribute("trackedCompanies", trackedCompanies);
             model.addAttribute("latestSignals", latestSignals);
@@ -247,9 +257,17 @@ public class AuthController {
             model.addAttribute("activeRuleCount", trackedCompanies.stream()
                     .mapToInt(AlertRuleService.TrackedCompanyView::ruleCount)
                     .sum());
+            model.addAttribute("technicalInstrumentCount", trackedCompanies.size());
+            if (watchlists != null) {
+                var summary = watchlists.technicalSummary(currentUser);
+                model.addAttribute("technicalInstrumentCount", summary.get("instruments"));
+                model.addAttribute("activeRuleCount", summary.get("rules"));
+                model.addAttribute("trackedInstrumentCount", summary.get("tracked"));
+            }
         } else {
             model.addAttribute("firstName", "Trader");
             model.addAttribute("trackedCompanies", java.util.List.of());
+            model.addAttribute("technicalInstrumentCount", 0);
             model.addAttribute("latestSignals", java.util.List.of());
             model.addAttribute("latestSignalItems", java.util.List.of());
             model.addAttribute("congressionalActivities", java.util.List.of());
@@ -339,13 +357,18 @@ public class AuthController {
                                  @RequestParam(defaultValue = "0") int page,
                                  @RequestParam(defaultValue = "all") String state,
                                  @RequestParam(defaultValue = "") String ticker,
+                                 @RequestParam(required = false) Long watchlistId,
                                  Model model,
                                  Principal principal) {
         User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (currentUser == null) {
             return "redirect:/login";
         }
-        var filter = new SignalArchiveFilter(state, ticker);
+        if (watchlistId != null) {
+            watchlists.requireOwned(currentUser, watchlistId);
+            model.addAttribute("watchlistName", watchlists.name(currentUser, watchlistId));
+        }
+        var filter = new SignalArchiveFilter(state, ticker, watchlistId);
         model.addAttribute("firstName", currentUser.getFirstName());
         var archive = alertRuleService.getSignalArchive(currentUser, sort, direction, page, filter);
         model.addAttribute("archive", archive);
@@ -356,8 +379,10 @@ public class AuthController {
     private void archiveNavigation(Model model, AlertRuleService.SignalArchivePage archive,
                                    SignalArchiveFilter filter, String path) {
         model.addAttribute("archiveFilter", filter);
-        model.addAttribute("archiveClearUrl", path);
-        model.addAttribute("archiveReturnUrl", org.springframework.web.util.UriComponentsBuilder.fromPath(path)
+        var location = org.springframework.web.util.UriComponentsBuilder.fromPath(path);
+        if (filter.watchlistId() != null) location.queryParam("watchlistId", filter.watchlistId());
+        model.addAttribute("archiveClearUrl", location.build().encode().toUriString());
+        model.addAttribute("archiveReturnUrl", location
                 .queryParam("sort", archive.sort()).queryParam("direction", archive.direction())
                 .queryParam("page", archive.page()).queryParam("state", filter.state())
                 .queryParam("ticker", filter.ticker()).build().encode().toUriString());

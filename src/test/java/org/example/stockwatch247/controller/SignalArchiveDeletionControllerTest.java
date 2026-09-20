@@ -18,6 +18,22 @@ import static org.mockito.Mockito.when;
 class SignalArchiveDeletionControllerTest {
 
     @Test
+    void watchlistDeletionPreservesTheWatchlistAndTickerFilters() {
+        UserRepository users = mock(UserRepository.class);
+        SignalArchiveDeletionService deletion = mock(SignalArchiveDeletionService.class);
+        User user = new User(); user.setEmail("watchlist-delete@example.test");
+        when(users.findByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
+        when(deletion.deleteTechnicalSignals(user, List.of(17L))).thenReturn(1);
+        var redirect = new RedirectAttributesModelMap();
+        String view = new SignalArchiveDeletionController(users, deletion).deleteTechnicalSignals(
+                List.of(17L), null, "date", "desc", 1, "unread", "aapl", 42L, user::getEmail, redirect);
+        assertThat(view).isEqualTo("redirect:/signals");
+        assertThat(redirect.getAttribute("watchlistId")).isEqualTo("42");
+        assertThat(redirect.getAttribute("ticker")).isEqualTo("AAPL");
+        assertThat(redirect.getAttribute("state")).isEqualTo("unread");
+    }
+
+    @Test
     void companyArchiveDeletionReturnsToTheSameFilteredArchive() {
         UserRepository users = mock(UserRepository.class);
         SignalArchiveDeletionService deletionService = mock(SignalArchiveDeletionService.class);

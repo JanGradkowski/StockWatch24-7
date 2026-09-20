@@ -35,7 +35,7 @@ public class HistoricalCandlestickService {
     @Autowired
     void setHistoricalCache(HistoricalSignalCacheService historicalCache) { this.historicalCache = historicalCache; }
 
-    private static final int CANDLESTICK_TIME_STOP_CANDLES = 8;
+
     public static final String SCORE_VERSION = CandlePatternDetectionService.SETUP_SCORE_VERSION;
     public static final int MIN_LOOKBACK_CANDLES = 1;
     public static final int MAX_LOOKBACK_CANDLES = 750;
@@ -158,8 +158,8 @@ public class HistoricalCandlestickService {
                 profile.intervalLabel(),
                 validatedLookbackCandles,
                 lookbackLabel(profile.interval(), validatedLookbackCandles),
-                CANDLESTICK_TIME_STOP_CANDLES,
-                "Candle 8 time stop",
+                TradeRiskPolicy.profile(profile.interval()).candleHorizon(),
+                "Candle " + TradeRiskPolicy.profile(profile.interval()).candleHorizon() + " time stop",
                 definitions.rewardRiskRatio(profile.interval()),
                 completedCandles.size(),
                 signals
@@ -183,7 +183,7 @@ public class HistoricalCandlestickService {
         ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
         synchronizeCandles(symbol, apiInterval);
         if (historicalCache != null) return historicalCache.getOrCompute(HistoricalSignalCacheService.Family.CANDLESTICK,
-                symbol, apiInterval, SCORE_VERSION, List.of(trendRules, definitions,
+                symbol, apiInterval, SCORE_VERSION + "-risk-v4", List.of(trendRules, definitions,
                         completionService.firstIncompleteCandleTimestamp(profile.interval()), companyName(symbol)),
                 HistoricalScan.class, () -> calculateAll(symbol, apiInterval, trendRules, definitions));
         return calculateAll(symbol, apiInterval, trendRules, definitions);
@@ -218,8 +218,8 @@ public class HistoricalCandlestickService {
                 completedCandles.size(),
                 "All " + completedCandles.size() + " completed "
                         + profile.intervalLabel().toLowerCase(Locale.ROOT) + " candles in the local archive",
-                CANDLESTICK_TIME_STOP_CANDLES,
-                "Candle 8 time stop",
+                TradeRiskPolicy.profile(profile.interval()).candleHorizon(),
+                "Candle " + TradeRiskPolicy.profile(profile.interval()).candleHorizon() + " time stop",
                 definitions.rewardRiskRatio(profile.interval()),
                 completedCandles.size(),
                 signals
@@ -715,7 +715,7 @@ public class HistoricalCandlestickService {
         Double detectionClose = candidateGateRequired && gate != null
                 && gate.status() == SignalLifecycleStatus.DETECTED
                 ? gate.resolutionCandle().getClosePrice() : null;
-        int outcomeWindow = CANDLESTICK_TIME_STOP_CANDLES;
+        int outcomeWindow = TradeRiskPolicy.profile(profile.interval()).candleHorizon();
         Double entryPrice = candidateGateRequired
                 ? detectionClose
                 : candles.get(signalIndex).getClosePrice();
@@ -731,11 +731,14 @@ public class HistoricalCandlestickService {
                 ? Double.NaN
                 : CandlestickSignalLifecyclePolicy.averageTrueRange(
                         candles, entryIndex, circuitBreaker.atrPeriod());
-        CandlestickSignalLifecyclePolicy.TradePlan tradePlan = entryPrice == null
+        CandlestickSignalLifecyclePolicy.TradePlan tradePlan;
+        try {
+        tradePlan = entryPrice == null
                 ? null
                 : CandlestickSignalLifecyclePolicy.tradePlan(
-                        signal.tradeSignal(), entryPrice, stopLoss, profile.interval(), rewardRiskRatio,
-                        atr, circuitBreaker);
+                        signal.tradeSignal(), entryPrice, signal.tradeSignal() == TradeSignal.BUY ? Math.min(stopLoss, structuralStop) : Math.max(stopLoss, structuralStop), profile.interval(), rewardRiskRatio,
+                        atr, circuitBreaker, candles, entryIndex);
+        } catch (IllegalArgumentException | IllegalStateException invalid) { tradePlan = null; }
         if (tradePlan != null) stopLoss = tradePlan.stopLossPrice();
         Double profitTarget = tradePlan == null ? null : tradePlan.profitTargetPrice();
         CandlestickSignalLifecyclePolicy.LifecycleResolution resolution;
@@ -751,9 +754,9 @@ public class HistoricalCandlestickService {
             List<Candle> outcomeCandles = subsequentCandles.size() <= outcomeStartIndex
                     ? List.of()
                     : subsequentCandles.subList(outcomeStartIndex, subsequentCandles.size());
-            resolution = CandlestickSignalLifecyclePolicy.resolve(
+            resolution = tradePlan != null && tradePlan.actionable() ? CandlestickSignalLifecyclePolicy.resolveProtective(
                     signal.tradeSignal(), profitTarget, stopLoss,
-                    outcomeCandles, outcomeWindow);
+                    outcomeCandles, outcomeWindow) : null;
             status = resolution == null ? SignalLifecycleStatus.DETECTED : resolution.status();
         }
         String resolutionPeriod = resolution == null
@@ -804,7 +807,7 @@ public class HistoricalCandlestickService {
                             outcomeWindow) + circuitBreakerNote
                     : String.format(
                             Locale.ROOT,
-                            "Trade opened at %.4f. A completed close at %.4f reaches the target; a close at %.4f hits the stop; otherwise candle %d closes the trade.",
+                            "Reference entry %.4f. Protective target %.4f, stop %.4f; candle %d closes any remaining trade.",
                             entryPrice,
                             profitTarget,
                             stopLoss,
@@ -828,11 +831,15 @@ public class HistoricalCandlestickService {
             );
             case EXPIRED -> String.format(
                     Locale.ROOT,
-                    "Time stop reached after %d completed candles; the trade closed at candle 8's %.4f close.",
+                    "Time stop reached after %d completed candles; the trade closed at the horizon's %.4f close.",
                     outcomeWindow,
                     resolution.resolutionCandle().getClosePrice()
             );
         };
+        if (entryPrice != null && tradePlan == null) summary = "Projection only: no valid positive stop/target.";
+        if (tradePlan != null && !tradePlan.actionable()) summary = tradePlan.qualification();
+        else if (resolution != null && resolution.reason() != null)
+            summary = resolution.reason() + " Modeled exit " + resolution.fillPrice() + ".";
         return new HistoricalLifecycleView(
                 status,
                 lifecycleLabel(status),
@@ -864,7 +871,8 @@ public class HistoricalCandlestickService {
                 resolution == null ? null : resolution.resolutionCandle().getTimestamp(),
                 resolution == null ? null : resolution.candleOffset(),
                 resolutionPeriod,
-                resolution == null ? null : resolution.resolutionCandle().getClosePrice()
+                resolution == null ? null : resolution.fillPrice(),
+                tradePlan != null && tradePlan.actionable()
         );
     }
 
@@ -884,6 +892,10 @@ public class HistoricalCandlestickService {
                                               int signalIndex,
                                               ScanProfile profile,
                                               HistoricalLifecycleView lifecycle) {
+        if (!lifecycle.actionable() && lifecycle.status() == SignalLifecycleStatus.DETECTED) {
+            return new OutcomeEvaluation("Projection only", "potential", lifecycle.summary(),
+                    null, null, null, null, null, null);
+        }
         boolean confirmationRequired =
                 CandlestickSignalLifecyclePolicy.requiresNextCandleConfirmation(signal.pattern());
         if (confirmationRequired && lifecycle.status() == SignalLifecycleStatus.POTENTIAL) {
@@ -917,7 +929,7 @@ public class HistoricalCandlestickService {
             return pendingOutcome("The terminal trade record is missing its exit close.");
         }
         int maximumEvaluationIndex = Math.min(
-                candles.size() - 1, measurementIndex + CANDLESTICK_TIME_STOP_CANDLES);
+                candles.size() - 1, measurementIndex + lifecycle.confirmationWindowCandles());
         int resolutionIndex = lifecycle.terminal()
                 ? indexOfTimestamp(candles, lifecycle.resolutionCandleTimestamp())
                 : -1;
@@ -932,10 +944,11 @@ public class HistoricalCandlestickService {
         }
         Candle evaluationCandle = candles.get(evaluationIndex);
         List<Candle> futureCandles = candles.subList(measurementIndex + 1, evaluationIndex + 1);
+        double exitPrice = lifecycle.terminal() ? lifecycle.resolutionClosePrice() : evaluationCandle.getClosePrice();
         double directionalReturn = directionalReturnPercent(
                 signal.tradeSignal(),
                 measurementClose,
-                evaluationCandle.getClosePrice()
+                exitPrice
         );
         double highestClose = futureCandles.stream().mapToDouble(Candle::getClosePrice).max()
                 .orElse(evaluationCandle.getClosePrice());
@@ -959,13 +972,13 @@ public class HistoricalCandlestickService {
                 evaluationCandle.getTimestamp(), profile.interval(), signalTimeZone);
         if (!lifecycle.terminal()) {
             int observed = evaluationIndex - measurementIndex;
-            int remaining = Math.max(0, CANDLESTICK_TIME_STOP_CANDLES - observed);
+            int remaining = Math.max(0, lifecycle.confirmationWindowCandles() - observed);
             return new OutcomeEvaluation(
                     "Trade open",
                     "detected",
                     String.format(
                             Locale.ROOT,
-                            "The trade is open after %d completed trade candle%s. Best favorable completed-close move: %+.2f%%. %d candle%s remain before the candle 8 time stop.",
+                            "The trade is open after %d completed trade candle%s. Best favorable completed-close move: %+.2f%%. %d candle%s remain before the time stop.",
                             observed, observed == 1 ? "" : "s", bestMove,
                             remaining, remaining == 1 ? "" : "s"),
                     evaluationCandle.getTimestamp(),
@@ -983,7 +996,7 @@ public class HistoricalCandlestickService {
                         + String.format(Locale.ROOT, "%+.2f%%.", directionalReturn),
                 evaluationCandle.getTimestamp(),
                 evaluationPeriod,
-                evaluationCandle.getClosePrice(),
+                exitPrice,
                 directionalReturn,
                 bestMove,
                 worstMove
@@ -1285,7 +1298,8 @@ public class HistoricalCandlestickService {
             Long resolutionCandleTimestamp,
             Integer resolutionCandleOffset,
             String resolutionPeriodLabel,
-            Double resolutionClosePrice
+            Double resolutionClosePrice,
+            boolean actionable
     ) {
     }
 

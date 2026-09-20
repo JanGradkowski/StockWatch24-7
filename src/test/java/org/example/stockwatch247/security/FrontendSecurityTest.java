@@ -47,7 +47,7 @@ class FrontendSecurityTest {
     }
 
     @Test
-    void stockPageCreatesDemoTradesAndDashboardConfirmsEveryRuleBeforeBulkUnfollow() throws IOException {
+    void stockPageCreatesDemoTradesAndWatchlistRemovalExplainsMonitoringScope() throws IOException {
         String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
         String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
         String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
@@ -64,28 +64,15 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("`/api/virtual-trades/${encodedTicker}`"));
         assertTrue(stock.contains("method: 'POST'"));
 
-        assertTrue(dashboard.contains("<span>Actions</span>"));
-        assertTrue(dashboard.contains("data-unfollow-company"));
-        assertTrue(dashboard.contains("id=\"unfollowAllTickersButton\""));
-        assertTrue(dashboard.contains("id=\"unfollowCompanyDialog\""));
-        assertTrue(dashboard.contains("id=\"unfollowCompanyRuleList\""));
-        assertTrue(dashboard.contains("id=\"deleteSelectedCompanyRules\""));
-        assertTrue(dashboard.contains("id=\"deleteAllCompanyRules\""));
-        assertTrue(dashboard.contains("Delete selected"));
-        assertTrue(dashboard.contains("Delete all"));
-        assertTrue(dashboard.contains("Ticker alerts are not affected"));
-        assertTrue(dashboardScript.contains("payload.activeRules"));
-        assertTrue(dashboardScript.contains("rule.id"));
-        assertTrue(dashboardScript.contains("input[data-rule-id]:checked"));
-        assertTrue(dashboardScript.contains("JSON.stringify({ruleIds, outlookSubscriptionIds})"));
-        assertTrue(dashboardScript.contains("/rules`"));
-        assertTrue(dashboardScript.contains("rule.familyLabel"));
-        assertTrue(dashboardScript.contains("rule.intervalLabel"));
-        assertTrue(dashboardScript.contains("rule.tradeSignal"));
-        assertTrue(dashboardScript.contains("method: \"DELETE\""));
-        assertTrue(dashboardScript.contains("fetch(\"/api/alerts\""));
-        assertTrue(dashboardScript.contains("X-CSRF-TOKEN"));
-        assertFalse(dashboardScript.contains("innerHTML"));
+        String watchlists = Files.readString(Path.of("src/main/resources/static/js/watchlists.js"));
+        String picker = Files.readString(Path.of("src/main/resources/static/js/watchlist-picker.js"));
+        assertTrue(dashboard.contains("data-named-watchlists"));
+        assertTrue(watchlists.contains("Remove from this list"));
+        assertTrue(watchlists.contains("If this is its last list, new monitoring stops"));
+        assertTrue(watchlists.contains("Notification history is preserved"));
+        assertTrue(watchlists.contains("method: 'DELETE'"));
+        assertTrue(picker.contains("X-CSRF-TOKEN"));
+        assertFalse(watchlists.contains("innerHTML"));
         assertTrue(stylesheet.contains("scrollbar-gutter: stable"));
         assertTrue(stylesheet.contains("html[data-theme='light'] .alert-list::-webkit-scrollbar-thumb"));
     }
@@ -875,17 +862,17 @@ class FrontendSecurityTest {
 
         assertTrue(stock.contains("id=\"applyAlertChangesBtn\""));
         assertTrue(stock.contains("id=\"toggleAllTechnicalMonitoringBtn\""));
-        assertTrue(stock.contains("async function toggleAllTechnicalMonitoring()"));
+        assertTrue(stock.contains("function toggleAllTechnicalMonitoring()"));
         assertTrue(stock.contains("alertInputs().forEach(input =>"));
-        assertTrue(stock.contains("await setEveryOutlookSubscription(followEverything)"));
+        assertTrue(stock.contains("[...alertInputs(), ...outlookFollowInputs()].forEach"));
         assertTrue(stock.contains("anyFollowed ? 'Unfollow all' : 'Follow all'"));
-        assertTrue(stock.contains("await Promise.all([loadAlertState(), loadOutlookFollowState()])"));
+        assertFalse(stock.contains("async function updateOutlookFollow("));
         assertTrue(stock.contains("id=\"unsavedAlertDialog\""));
         assertTrue(stock.contains("id=\"saveAlertChangesBeforeLeaveBtn\""));
         assertTrue(stock.contains("id=\"discardAlertChangesBtn\""));
         assertTrue(stock.contains("id=\"keepEditingAlertsBtn\""));
         assertTrue(stock.contains("const persistedAlertState = new Map()"));
-        assertTrue(stock.contains("body: JSON.stringify({ changes: changedInputs.map(alertChangePayload) })"));
+        assertTrue(stock.contains("outlookChanges: outlookInputs.map(input =>"));
         assertTrue(stock.contains("method: 'PUT'"));
         assertTrue(stock.contains("if (alertSavePromise) return alertSavePromise"));
         assertTrue(stock.contains("window.addEventListener('beforeunload'"));
@@ -963,7 +950,7 @@ class FrontendSecurityTest {
 
         assertFalse(dashboard.contains("dashboard-view-navigation"));
         assertFalse(dashboard.contains("data-dashboard-view-button"));
-        assertFalse(dashboard.contains("th:href=\"@{/signals}\""));
+        assertTrue(dashboard.contains("th:href=\"@{/signals}\""));
         assertTrue(dashboard.contains("th:href=\"@{/signals(state='unread')}\""));
         assertTrue(dashboard.contains("th:href=\"@{/activity-signals}\""));
         assertTrue(dashboard.contains("id=\"technicalDashboardMetrics\""));
@@ -1024,9 +1011,12 @@ class FrontendSecurityTest {
         String detailChartIntervals = Files.readString(
                 Path.of("src/main/resources/static/js/detail-chart-intervals.js"));
 
-        assertTrue(dashboard.contains("th:each=\"company : ${trackedCompanies}\""));
-        assertTrue(dashboard.contains("company.representativeAlertId()"));
-        assertTrue(dashboard.contains("company.ruleCount()"));
+        String watchlists = Files.readString(Path.of("src/main/resources/static/js/watchlists.js"));
+        assertTrue(dashboard.contains("data-named-watchlists"));
+        assertTrue(watchlists.contains("/signals?${new URLSearchParams({ watchlistId: list.id, ticker: item.symbol })}"));
+        assertTrue(watchlists.contains("View all signals"));
+        assertTrue(watchlists.contains("item.signals"));
+        assertTrue(watchlists.contains("Unread signals"));
         assertFalse(dashboard.contains("th:each=\"alert : ${activeAlerts}\""));
         assertTrue(dashboard.contains("th:each=\"item : ${latestSignalItems}\""));
         assertTrue(dashboard.contains("item.technicalSignal()"));
@@ -1042,10 +1032,9 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("<span>Status</span>"));
         assertTrue(dashboard.contains("class=\"latest-lifecycle\""));
         assertTrue(dashboard.contains("signal.lifecycle().label()"));
-        assertTrue(dashboard.contains("data-watch-filter=\"stocks\""));
-        assertTrue(dashboard.contains("data-watch-filter=\"funds\""));
-        assertTrue(dashboard.contains("data-instrument-group=${company.instrumentGroup()}"));
-        assertTrue(dashboard.contains("th:hidden=\"${company.instrumentGroup() != 'stocks'}\""));
+        assertTrue(watchlists.contains("['stocks', 'Stocks']"));
+        assertTrue(watchlists.contains("['funds', 'Indexes / ETFs']"));
+        assertTrue(watchlists.contains("group: group.input.value"));
         assertTrue(dashboard.contains("@{/js/dashboard.js}"));
         assertTrue(dashboardScript.contains("activateFilter(\"stocks\")"));
         assertTrue(dashboardScript.contains("row.hidden = !visible"));

@@ -3,7 +3,7 @@
     function labelRows() {
         const families = [
             ['.alert-list-head.company-alert-grid', '.alert-row.company-alert-grid'],
-            ['.latest-signal-head', '.latest-signal-row'],
+            ['.latest-signal-head', '.latest-signal-grid.latest-signal-row'],
             ['.signal-archive-head', '.signal-archive-row'],
             ['.activity-signal-archive-head', '.activity-signal-archive-row'],
             ['.virtual-trade-archive-head', '.virtual-trade-archive-row']

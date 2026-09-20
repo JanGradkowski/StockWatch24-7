@@ -85,7 +85,7 @@ class HarmonicStopPlanServiceTest {
         assertThat(event.getHarmonicStopStatus()).isEqualTo(HarmonicStopStatus.TIME_STOPPED.name());
         assertThat(event.getHarmonicStopResolutionTimestamp()).isEqualTo(108L);
         assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(112.0);
-        assertThat(event.getHarmonicStopResolutionReason()).contains("candle 8");
+        assertThat(event.getHarmonicStopResolutionReason()).contains("horizon");
         verifyNoInteractions(notificationService);
         verify(eventRepository).save(event);
     }
@@ -107,11 +107,56 @@ class HarmonicStopPlanServiceTest {
         assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(102.0);
     }
 
+    @Test
+    void qualifiedPlanResolvesPrimaryTargetAndGapStopAtModeledPrices() {
+        var event = activeEvent(TradeSignal.BUY, 95.0);
+        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradeActionable(true);
+        event.setTradeHorizonCandles(5);
+        event.setDetectionCandleTimestamp(100L);
+        event.setProfitTargetPrice(110.0);
+        when(eventRepository.findActiveHarmonicStopPlans("TEST", TimeInterval.DAILY)).thenReturn(List.of(event));
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(new Candle("TEST", "1d", 101L, 100, 112, 98, 102.0, 100L)))).isEqualTo(1);
+        assertThat(event.getHarmonicStopStatus()).isEqualTo("TARGET_REACHED");
+        assertThat(event.getTradeResolutionPrice()).isEqualTo(110);
+        event.setHarmonicStopStatus("ACTIVE");
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(new Candle("TEST", "1d", 101L, 90, 99, 88, 98.0, 100L)))).isEqualTo(1);
+        assertThat(event.getHarmonicStopStatus()).isEqualTo("STOPPED");
+        assertThat(event.getTradeResolutionPrice()).isEqualTo(90);
+    }
+
+    @Test
+    void unqualifiedFormationDoesNotProduceTradeOutcome() {
+        var event = activeEvent(TradeSignal.BUY, 40.0);
+        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradeActionable(false);
+        when(eventRepository.findActiveHarmonicStopPlans("TEST", TimeInterval.DAILY)).thenReturn(List.of(event));
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(candle(101L, 110, 30, 100)))).isZero();
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void invalidOhlcCannotExpireQualifiedHarmonicPlan() {
+        var event = activeEvent(TradeSignal.BUY, 95.0);
+        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradeActionable(true);
+        event.setTradeHorizonCandles(1);
+        event.setDetectionCandleTimestamp(100L);
+        event.setProfitTargetPrice(110.0);
+        when(eventRepository.findActiveHarmonicStopPlans("TEST", TimeInterval.DAILY)).thenReturn(List.of(event));
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(candle(101L, 99, 101, 100)))).isZero();
+        assertThat(event.getHarmonicStopStatus()).isEqualTo("ACTIVE");
+    }
+
     private AlertEvent activeEvent(TradeSignal signal, double stop) {
         AlertEvent event = new AlertEvent();
         event.setTradeSignal(signal);
         event.setSignalCandleTimestamp(100L);
-        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradePlanVersion("HARMONIC_STOP_V1");
         event.setTradeEntryPrice(100.0);
         event.setStructuralStopPrice(signal == TradeSignal.BUY ? 96.0 : 104.0);
         event.setStopLossPrice(stop);

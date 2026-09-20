@@ -119,23 +119,11 @@ class AlertControllerTest {
     }
 
     @Test
-    void followsTemporaryTopUsUniverseForTheAuthenticatedUser() {
+    void retiredBulkEndpointDoesNotCreateUnassignedFollows() {
         AlertRuleService service = mock(AlertRuleService.class);
-        UserRepository users = mock(UserRepository.class);
-        AlertController controller = new AlertController(service, users);
-        User user = new User();
-        user.setEmail("bulk@example.com");
-        Principal principal = user::getEmail;
-        AlertRuleService.TemporaryBulkFollowResult result =
-                new AlertRuleService.TemporaryBulkFollowResult(
-                        200, 18, 3_600, 0, 0, 3_600, "test snapshot");
-        when(users.findByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
-        when(service.followTemporaryTopUsCompanies(user)).thenReturn(result);
-
-        var response = controller.followTemporaryTopUsCompanies(principal);
-
-        assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody()).isEqualTo(result);
-        verify(service).followTemporaryTopUsCompanies(user);
+        AlertController controller = new AlertController(service, mock(UserRepository.class));
+        assertThat(controller.followTemporaryTopUsCompanies(() -> "user@example.test").getStatusCode().value()).isEqualTo(410);
+        org.mockito.Mockito.verifyNoInteractions(service);
     }
+
 }

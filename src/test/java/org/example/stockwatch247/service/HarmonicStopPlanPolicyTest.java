@@ -59,9 +59,9 @@ class HarmonicStopPlanPolicyTest {
         HarmonicStopPlanPolicy.StopPlan plan = HarmonicStopPlanPolicy.calculate(
                 formation(pattern, TradeSignal.BUY), entry).orElseThrow();
         assertThat(plan.structuralInvalidationPrice()).isCloseTo(expectedStructural, within(1e-9));
-        assertThat(plan.bufferPercent()).isEqualTo(.5);
-        assertThat(plan.bufferAmount()).isCloseTo(expectedStructural * .005, within(1e-9));
-        assertThat(plan.stopLossPrice()).isCloseTo(expectedStructural * .995, within(1e-9));
+        assertThat(plan.bufferPercent()).isPositive();
+        assertThat(plan.bufferAmount()).isCloseTo(entry * .001, within(1e-9));
+        assertThat(plan.stopLossPrice()).isCloseTo(TradeRiskPolicy.roundStop(expectedStructural - entry * .001, TradeSignal.BUY, entry), within(1e-9));
         assertThat(plan.stopLossPrice()).isLessThan(plan.entryPrice());
     }
 
@@ -70,9 +70,9 @@ class HarmonicStopPlanPolicyTest {
         HarmonicStopPlanPolicy.StopPlan plan = HarmonicStopPlanPolicy.calculate(
                 formation(pattern, TradeSignal.SELL), entry).orElseThrow();
         assertThat(plan.structuralInvalidationPrice()).isCloseTo(expectedStructural, within(1e-9));
-        assertThat(plan.bufferPercent()).isEqualTo(.5);
-        assertThat(plan.bufferAmount()).isCloseTo(expectedStructural * .005, within(1e-9));
-        assertThat(plan.stopLossPrice()).isCloseTo(expectedStructural * 1.005, within(1e-9));
+        assertThat(plan.bufferPercent()).isPositive();
+        assertThat(plan.bufferAmount()).isCloseTo(entry * .001, within(1e-9));
+        assertThat(plan.stopLossPrice()).isCloseTo(TradeRiskPolicy.roundStop(expectedStructural + entry * .001, TradeSignal.SELL, entry), within(1e-9));
         assertThat(plan.stopLossPrice()).isGreaterThan(plan.entryPrice());
     }
 

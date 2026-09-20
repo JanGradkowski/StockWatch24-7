@@ -3,7 +3,8 @@ package org.example.stockwatch247.service;
 import java.util.Locale;
 
 /** Normalized, bounded URL filters shared by archive queries and navigation. */
-public record SignalArchiveFilter(String state, String ticker) {
+public record SignalArchiveFilter(String state, String ticker, Long watchlistId) {
+    public SignalArchiveFilter(String state, String ticker) { this(state, ticker, null); }
     public SignalArchiveFilter {
         state = state == null ? "all" : state.toLowerCase(Locale.ROOT);
         if (!java.util.Set.of("all", "unread", "active", "completed").contains(state)) state = "all";
@@ -11,5 +12,5 @@ public record SignalArchiveFilter(String state, String ticker) {
         if (ticker.length() > 32) ticker = ticker.substring(0, 32);
     }
 
-    public boolean applied() { return !"all".equals(state) || !ticker.isEmpty(); }
+    public boolean applied() { return watchlistId != null || !"all".equals(state) || !ticker.isEmpty(); }
 }

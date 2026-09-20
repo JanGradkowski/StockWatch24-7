@@ -184,7 +184,6 @@
   let alertSaveInProgress = false;
   let alertSavePromise = null;
   let outlookFollowStateLoaded = false;
-  let outlookFollowSaveInProgress = false;
   let technicalFollowAllBusy = false;
   let trackedAlertSummary = '';
   let pendingNavigationAction = null;
@@ -2773,12 +2772,12 @@
       input.checked = Boolean(state.intervals?.[input.dataset.outlookFollowInterval]);
       input.dataset.persisted = String(input.checked);
       if (!input.dataset.listenerBound) {
-        input.addEventListener('change', () => updateOutlookFollow(input));
+        input.addEventListener('change', updateAlertDraftUi);
         input.dataset.listenerBound = 'true';
       }
     });
     outlookFollowStateLoaded = true;
-    updateTechnicalFollowAllButton();
+    updateAlertDraftUi();
   }
 
   async function loadOutlookFollowState() {
@@ -2796,40 +2795,6 @@
       outlookFollowInputs().forEach(input => input.disabled = true);
       updateTechnicalFollowAllButton();
       console.warn('Outlook follow state failed', error);
-    }
-  }
-
-  async function updateOutlookFollow(changedInput) {
-    const status = document.getElementById('outlookFollowStatus');
-    const previous = changedInput.dataset.persisted === 'true';
-    outlookFollowSaveInProgress = true;
-    setOutlookFollowInputsDisabled(true);
-    updateTechnicalFollowAllButton();
-    status.textContent = changedInput.checked
-            ? `Starting ${changedInput.dataset.outlookFollowInterval.toLowerCase()} alerts…`
-            : 'Stopping this outlook interval…';
-    try {
-      const response = await fetch(`/api/stocks/${encodedTicker}/technical-outlook/subscriptions`, {
-        method: 'PUT',
-        headers: secureJsonHeaders(),
-        body: JSON.stringify({
-          interval: changedInput.dataset.outlookFollowInterval,
-          active: changedInput.checked
-        })
-      });
-      const state = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(state.error || 'Outlook follow could not be updated.');
-      hydrateOutlookFollowState(state);
-      status.textContent = changedInput.checked
-              ? 'Alerts enabled. You will be notified when the outlook changes.'
-              : 'Outlook interval is no longer followed.';
-    } catch (error) {
-      changedInput.checked = previous;
-      status.textContent = error.message || 'Outlook follow could not be updated.';
-    } finally {
-      outlookFollowSaveInProgress = false;
-      setOutlookFollowInputsDisabled(technicalFollowAllBusy || !outlookFollowStateLoaded);
-      updateTechnicalFollowAllButton();
     }
   }
 
@@ -3672,10 +3637,12 @@
             ? 'Enabling alerts for new filings…'
             : 'Stopping congressional activity alerts…';
     try {
+      const selection = desiredState ? await window.StockWatchLists.choose(decodeURIComponent(encodedTicker), { signalTypes: ['CONGRESS'] }) : {};
+      if (selection === null) { status.textContent = 'Follow cancelled.'; return; }
       const response = await fetch(`/api/congressional-activity/${encodedTicker}/subscription`, {
         method: 'PUT',
         headers: secureJsonHeaders(),
-        body: JSON.stringify({ active: desiredState })
+        body: JSON.stringify({ active: desiredState, ...selection })
       });
       const state = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(state.error || 'The follow setting could not be changed');
@@ -3697,10 +3664,12 @@
             ? 'Enabling daily alerts for new filings…'
             : 'Stopping insider activity alerts…';
     try {
+      const selection = desiredState ? await window.StockWatchLists.choose(decodeURIComponent(encodedTicker), { signalTypes: ['INSIDER'] }) : {};
+      if (selection === null) { status.textContent = 'Follow cancelled.'; return; }
       const response = await fetch(`/api/insider-activity/${encodedTicker}/subscription`, {
         method: 'PUT',
         headers: secureJsonHeaders(),
-        body: JSON.stringify({ active: desiredState })
+        body: JSON.stringify({ active: desiredState, ...selection })
       });
       const state = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(state.error || 'The follow setting could not be changed');
@@ -4061,15 +4030,22 @@
             persistedAlertState.get(alertControlKey(input)) !== input.checked);
   }
 
+  function changedOutlookInputs() {
+    if (!outlookFollowStateLoaded) return [];
+    return outlookFollowInputs().filter(input => (input.dataset.persisted === 'true') !== input.checked);
+  }
+
   function hasUnappliedAlertChanges() {
-    return changedAlertInputs().length > 0;
+    return changedAlertInputs().length + changedOutlookInputs().length > 0;
   }
 
   function updateAlertDraftUi() {
-    const changedCount = changedAlertInputs().length;
+    const changedCount = changedAlertInputs().length + changedOutlookInputs().length;
     const applyButton = document.getElementById('applyAlertChangesBtn');
     const draftStatus = document.getElementById('alertDraftStatus');
     const alertPanel = document.querySelector('.alert-panel');
+    if (outlookFollowStateLoaded) document.getElementById('outlookFollowStatus').textContent = changedOutlookInputs().length
+            ? 'Outlook selections changed. Click Apply changes to save.' : 'Outlook monitoring ready';
 
     applyButton.disabled = !alertStateLoaded || alertSaveInProgress
             || technicalFollowAllBusy || changedCount === 0;
@@ -4113,19 +4089,28 @@
 
   async function performAlertDraftSave() {
     const changedInputs = changedAlertInputs();
-    if (changedInputs.length === 0) return true;
+    const outlookInputs = changedOutlookInputs();
+    if (changedInputs.length === 0 && outlookInputs.length === 0) return true;
 
     const status = document.getElementById('alertStatus');
     alertSaveInProgress = true;
     setAlertInputsDisabled(true);
+    setOutlookFollowInputsDisabled(true);
     status.innerText = 'Applying alert changes...';
     updateAlertDraftUi();
 
     try {
+      const selection = [...changedInputs, ...outlookInputs].some(input => input.checked)
+              ? await window.StockWatchLists.choose(decodeURIComponent(encodedTicker), { signalTypes: [...new Set([
+                  ...changedInputs.filter(input => input.checked).map(input => input.dataset?.alertFamily || 'CANDLESTICK'),
+                  ...outlookInputs.filter(input => input.checked).map(() => 'OUTLOOK')])] }) : {};
+      if (selection === null) { status.textContent = 'Changes not applied. Your selections are still here.'; return false; }
       const response = await fetch(`/api/alerts/${encodedTicker}`, {
         method: 'PUT',
         headers: secureJsonHeaders(),
-        body: JSON.stringify({ changes: changedInputs.map(alertChangePayload) })
+        body: JSON.stringify({ changes: changedInputs.map(alertChangePayload),
+          outlookChanges: outlookInputs.map(input => ({ interval: input.dataset.outlookFollowInterval, active: input.checked })),
+          ...selection })
       });
 
       const payload = await response.json().catch(() => ({}));
@@ -4135,6 +4120,7 @@
       }
 
       hydrateAlertDraft(payload);
+      if (payload.outlookState) hydrateOutlookFollowState(payload.outlookState);
       status.innerText = `${trackedAlertSummary} · Changes applied`;
       return true;
     } catch (err) {
@@ -4144,14 +4130,14 @@
     } finally {
       alertSaveInProgress = false;
       setAlertInputsDisabled(technicalFollowAllBusy || !alertStateLoaded);
+      setOutlookFollowInputsDisabled(technicalFollowAllBusy || !outlookFollowStateLoaded);
       updateAlertDraftUi();
     }
   }
 
-  function hasAnyPersistedTechnicalFollow() {
-    const patternFollowed = Array.from(persistedAlertState.values()).some(Boolean);
-    const outlookFollowed = outlookFollowInputs()
-            .some(input => input.dataset.persisted === 'true');
+  function hasAnyTechnicalFollow() {
+    const patternFollowed = alertInputs().some(input => input.checked);
+    const outlookFollowed = outlookFollowInputs().some(input => input.checked);
     return patternFollowed || outlookFollowed;
   }
 
@@ -4159,9 +4145,9 @@
     const button = document.getElementById('toggleAllTechnicalMonitoringBtn');
     if (!button) return;
     const stateReady = alertStateLoaded && outlookFollowStateLoaded;
-    const anyFollowed = stateReady && hasAnyPersistedTechnicalFollow();
+    const anyFollowed = stateReady && hasAnyTechnicalFollow();
     button.disabled = !stateReady || alertSaveInProgress
-            || outlookFollowSaveInProgress || technicalFollowAllBusy;
+            || technicalFollowAllBusy;
     button.setAttribute('aria-pressed', String(anyFollowed));
     button.classList.toggle('following', anyFollowed);
     button.textContent = technicalFollowAllBusy
@@ -4169,69 +4155,11 @@
             : (!stateReady ? 'Loading follow state...' : (anyFollowed ? 'Unfollow all' : 'Follow all'));
   }
 
-  async function setEveryOutlookSubscription(active) {
-    const status = document.getElementById('outlookFollowStatus');
-    for (const input of outlookFollowInputs()) {
-      if ((input.dataset.persisted === 'true') === active) continue;
-      status.textContent = active
-              ? `Starting ${input.dataset.outlookFollowInterval.toLowerCase()} alerts…`
-              : `Stopping ${input.dataset.outlookFollowInterval.toLowerCase()} outlook...`;
-      const response = await fetch(`/api/stocks/${encodedTicker}/technical-outlook/subscriptions`, {
-        method: 'PUT',
-        headers: secureJsonHeaders(),
-        body: JSON.stringify({
-          interval: input.dataset.outlookFollowInterval,
-          active
-        })
-      });
-      const state = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(state.error || 'The Automated Technical Outlook follows could not be updated.');
-      }
-      hydrateOutlookFollowState(state);
-    }
-  }
-
-  async function toggleAllTechnicalMonitoring() {
-    if (technicalFollowAllBusy || !alertStateLoaded || !outlookFollowStateLoaded) return;
-    const followEverything = !hasAnyPersistedTechnicalFollow();
-    const status = document.getElementById('alertStatus');
-    let outcomeMessage = '';
-    technicalFollowAllBusy = true;
-    setAlertInputsDisabled(true);
-    setOutlookFollowInputsDisabled(true);
+  function toggleAllTechnicalMonitoring() {
+    if (alertSaveInProgress || !alertStateLoaded || !outlookFollowStateLoaded) return;
+    const followEverything = !hasAnyTechnicalFollow();
+    [...alertInputs(), ...outlookFollowInputs()].forEach(input => { input.checked = followEverything; });
     updateAlertDraftUi();
-    updateTechnicalFollowAllButton();
-    status.textContent = followEverything
-            ? 'Following every technical rule...'
-            : 'Unfollowing every technical rule...';
-
-    try {
-      alertInputs().forEach(input => {
-        input.checked = followEverything;
-      });
-      updateAlertDraftUi();
-      if (!await persistAlertDraft()) {
-        throw new Error('The pattern follows could not be updated.');
-      }
-      await setEveryOutlookSubscription(followEverything);
-      outcomeMessage = followEverything
-              ? 'All technical rules and outlook intervals are now followed.'
-              : 'All technical rules and outlook intervals are now unfollowed.';
-    } catch (error) {
-      outcomeMessage = error.message || 'All technical monitoring could not be updated.';
-      console.warn('Follow-all technical monitoring update failed', error);
-    } finally {
-      await Promise.all([loadAlertState(), loadOutlookFollowState()]);
-      technicalFollowAllBusy = false;
-      setAlertInputsDisabled(!alertStateLoaded);
-      setOutlookFollowInputsDisabled(!outlookFollowStateLoaded);
-      updateAlertDraftUi();
-      updateTechnicalFollowAllButton();
-      if (alertStateLoaded) {
-        status.textContent = `${trackedAlertSummary} · ${outcomeMessage}`;
-      }
-    }
   }
 
   function closeUnsavedAlertDialog() {
@@ -4337,6 +4265,8 @@
       });
     }, true);
 
+    // Let local form handlers (including the watchlist picker) prevent submission
+    // before deciding whether this form will actually navigate away from the page.
     document.addEventListener('submit', event => {
       if (pageExitAllowed || !hasUnappliedAlertChanges() || event.defaultPrevented) return;
       const form = event.target;
@@ -4350,7 +4280,7 @@
           HTMLFormElement.prototype.submit.call(form);
         }
       });
-    }, true);
+    });
 
   }
 

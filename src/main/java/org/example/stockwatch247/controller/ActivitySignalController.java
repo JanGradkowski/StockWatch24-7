@@ -26,6 +26,7 @@ public class ActivitySignalController {
     public String detail(
             @PathVariable String source,
             @PathVariable Long deliveryId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="") String returnTo,
             Model model,
             Principal principal) {
         User user = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
@@ -34,6 +35,7 @@ public class ActivitySignalController {
         }
         model.addAttribute("firstName", user.getFirstName());
         model.addAttribute("signal", detailService.getDetail(user, source, deliveryId));
+        if (returnTo.length() <= 1024 && returnTo.matches("^/signals(\\?[^\\r\\n#]*)?$")) model.addAttribute("archiveReturnUrl",returnTo);
         return "activity-signal-detail";
     }
 

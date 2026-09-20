@@ -269,13 +269,13 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getPatternLow()).isEqualTo(88.0);
         assertThat(event.getTradeEntryPrice()).isEqualTo(107.0);
         assertThat(event.getPreCircuitBreakerStopPrice()).isEqualTo(88.0);
-        assertThat(event.getStopLossPrice()).isEqualTo(93.625);
-        assertThat(event.getProfitTargetPrice()).isEqualTo(133.75);
-        assertThat(event.getAtrCircuitBreakerApplied()).isTrue();
+        assertThat(event.getStopLossPrice()).isEqualTo(87.89);
+        assertThat(event.getProfitTargetPrice()).isCloseTo(145.22, within(1e-8));
+        assertThat(event.getAtrCircuitBreakerApplied()).isFalse();
         assertThat(event.getAtrCircuitBreakerValue()).isNull();
         assertThat(event.getRewardRiskRatio()).isEqualTo(2.0);
-        assertThat(event.getConfirmationTriggerPrice()).isEqualTo(133.75);
-        assertThat(event.getInvalidationPrice()).isEqualTo(93.625);
+        assertThat(event.getConfirmationTriggerPrice()).isCloseTo(145.22, within(1e-8));
+        assertThat(event.getInvalidationPrice()).isEqualTo(88.0);
         assertThat(event.getConfirmationWindowCandles()).isEqualTo(8);
         assertThat(event.isLifecycleTracked()).isTrue();
     }
@@ -297,11 +297,12 @@ class CandlestickSignalLifecycleServiceTest {
 
         service.initializeTracking(event, signal, candles);
 
-        assertThat(event.getAtrCircuitBreakerApplied()).isTrue();
+        assertThat(event.getAtrCircuitBreakerApplied()).isFalse();
         assertThat(event.getAtrCircuitBreakerPeriod()).isEqualTo(14);
         assertThat(event.getAtrCircuitBreakerValue()).isCloseTo(64.0 / 14.0, within(0.0000001));
-        assertThat((event.getProfitTargetPrice() - event.getTradeEntryPrice())
-                / event.getTradeEntryPrice() * 100.0).isLessThanOrEqualTo(25.0);
+        assertThat(event.getTradeActionable()).isFalse();
+        assertThat(event.getTradeQualification()).contains("too wide");
+        assertThat(event.getStopLossPrice()).isLessThan(88);
     }
 
     @Test
@@ -335,10 +336,10 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getStructuralStopPrice()).isEqualTo(88.0);
         assertThat(event.getStopLossMode()).isEqualTo("FIXED_ENTRY_PERCENT");
         assertThat(event.getStopLossValuePercent()).isEqualTo(5.0);
-        assertThat(event.getStopLossPrice()).isEqualTo(101.65);
+        assertThat(event.getStopLossPrice()).isEqualTo(87.89);
         assertThat(event.getRewardRiskRatio()).isEqualTo(3.5);
-        assertThat(event.getProfitTargetPrice()).isCloseTo(125.725, within(0.0000001));
-        assertThat(event.getTradePlanVersion()).isEqualTo("CANDLE_RR_V3");
+        assertThat(event.getProfitTargetPrice()).isCloseTo(173.885, within(0.0000001));
+        assertThat(event.getTradePlanVersion()).isEqualTo("CANDLE_RR_V4");
         assertThat(event.getAtrCircuitBreakerApplied()).isFalse();
     }
 

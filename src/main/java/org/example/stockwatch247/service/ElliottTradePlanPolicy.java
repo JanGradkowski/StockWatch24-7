@@ -15,7 +15,7 @@ import java.util.Optional;
  * confidence scoring, or signal eligibility.
  */
 final class ElliottTradePlanPolicy {
-    static final String VERSION = "ELLIOTT_FIB_RR_V2";
+    static final String VERSION = "ELLIOTT_FIB_RR_V3";
     static final double TARGET_ZONE_PERCENT = 1.5;
     private static final double ATR_STOP_BUFFER_MULTIPLIER = 0.10;
     private static final double FALLBACK_STOP_BUFFER_PERCENT = 0.10;
@@ -73,7 +73,7 @@ final class ElliottTradePlanPolicy {
                 Double wave3 = price(points, "III");
                 if (wave3 == null) return Optional.empty();
                 structuralStop = wave3;
-                hardInvalidation = wave0;
+                hardInvalidation = wave1;
                 hardInvalidationSide = bullishCycle ? BoundarySide.BELOW : BoundarySide.ABOVE;
                 double waveThreeLength = Math.abs(wave3 - wave2);
                 targets.add(target(wave3 - cycleSign * waveThreeLength * .382,
@@ -125,12 +125,9 @@ final class ElliottTradePlanPolicy {
             }
         }
 
-        double stopBuffer = Double.isFinite(atr) && atr > 0.0
-                ? atr * ATR_STOP_BUFFER_MULTIPLIER
-                : entryPrice * FALLBACK_STOP_BUFFER_PERCENT / 100.0;
-        stopBuffer = Math.max(stopBuffer, entryPrice * 0.000001);
-        double stopLoss = expectedMove == TradeSignal.BUY
-                ? structuralStop - stopBuffer : structuralStop + stopBuffer;
+        double stopBuffer = TradeRiskPolicy.buffer(entryPrice, atr, interval);
+        double stopLoss = TradeRiskPolicy.roundStop(expectedMove == TradeSignal.BUY
+                ? structuralStop - stopBuffer : structuralStop + stopBuffer, expectedMove, entryPrice);
         double risk = expectedMove == TradeSignal.BUY
                 ? entryPrice - stopLoss : stopLoss - entryPrice;
         if (!Double.isFinite(risk) || risk <= 0.0 || stopLoss <= 0.0) {
@@ -141,37 +138,38 @@ final class ElliottTradePlanPolicy {
         List<QualifiedTarget> validTargets = targets.stream()
                 .filter(candidate -> candidate != null && Double.isFinite(candidate.midpoint())
                         && candidate.midpoint() > 0.0)
-                .map(candidate -> qualify(candidate, expectedMove, entryPrice, risk))
+                .map(candidate -> qualify(candidate, expectedMove, entryPrice, risk, atr))
                 .filter(java.util.Objects::nonNull)
+                .filter(candidate -> ElliottTargetRules.allowed(stage, bullishCycle, points, candidate.zoneLow(), candidate.zoneHigh()))
+                .sorted(java.util.Comparator.comparingDouble(QualifiedTarget::rewardRiskRatio))
                 .toList();
         if (validTargets.isEmpty()) return Optional.empty();
-        QualifiedTarget selected = validTargets.stream()
-                .filter(candidate -> candidate.rewardRiskRatio() + 0.000001 >= requiredRewardRisk)
-                .findFirst()
-                .orElse(validTargets.getFirst());
-        boolean actionable = selected.rewardRiskRatio() + 0.000001 >= requiredRewardRisk;
-        String qualification = actionable
-                ? "Meets the minimum 1:%.0f %s risk/reward requirement."
-                        .formatted(requiredRewardRisk, interval.name().toLowerCase(Locale.ROOT))
-                : "Projection only: the nearest valid Fibonacci target provides 1:%.2f, below the required 1:%.0f."
-                        .formatted(selected.rewardRiskRatio(), requiredRewardRisk);
+        QualifiedTarget selected = validTargets.getFirst();
+        TradeRiskPolicy.Qualification riskCheck = TradeRiskPolicy.qualify(expectedMove, entryPrice,
+                stopLoss, selected.triggerPrice(), atr, interval, requiredRewardRisk);
+        boolean actionable = riskCheck.actionable();
+        String qualification = riskCheck.reason();
+        Double secondaryTarget = validTargets.size() > 1 ? validTargets.get(1).triggerPrice() : null;
         return Optional.of(new TradePlan(
                 VERSION, stage, expectedMove, entryPrice,
                 structuralStop, stopLoss, stopBuffer,
                 hardInvalidation, hardInvalidationSide,
                 selected.candidate().midpoint(), selected.zoneLow(), selected.zoneHigh(),
                 selected.triggerPrice(), selected.candidate().basis(),
-                selected.candidate().fibonacciRatio(), TARGET_ZONE_PERCENT,
-                requiredRewardRisk, selected.rewardRiskRatio(), actionable, qualification));
+                selected.candidate().fibonacciRatio(), (selected.zoneHigh() - selected.zoneLow()) / selected.candidate().midpoint() * 50,
+                requiredRewardRisk, selected.rewardRiskRatio(), actionable, qualification,
+                secondaryTarget, riskCheck.riskAtr(), riskCheck.riskPercent(),
+                TradeRiskPolicy.profile(interval).elliottHorizon()));
     }
 
     private static QualifiedTarget qualify(
             TargetCandidate candidate,
             TradeSignal direction,
             double entry,
-            double risk) {
-        double zoneLow = candidate.midpoint() * (1.0 - TARGET_ZONE_PERCENT / 100.0);
-        double zoneHigh = candidate.midpoint() * (1.0 + TARGET_ZONE_PERCENT / 100.0);
+            double risk, double atr) {
+        double width = TradeRiskPolicy.zoneWidth(candidate.midpoint(), atr);
+        double zoneLow = candidate.midpoint() - width;
+        double zoneHigh = candidate.midpoint() + width;
         double trigger = direction == TradeSignal.BUY ? zoneLow : zoneHigh;
         double reward = direction == TradeSignal.BUY ? trigger - entry : entry - trigger;
         if (!Double.isFinite(reward) || reward <= 0.0) return null;
@@ -196,11 +194,7 @@ final class ElliottTradePlanPolicy {
     private static Double price(
             List<ElliottWaveDetectionService.ElliottWavePoint> points,
             String label) {
-        return points.stream()
-                .filter(point -> point != null && label.equalsIgnoreCase(point.label()))
-                .map(ElliottWaveDetectionService.ElliottWavePoint::price)
-                .filter(value -> Double.isFinite(value) && value > 0.0)
-                .findFirst().orElse(null);
+        return ElliottTargetRules.price(points, label);
     }
 
     enum BoundarySide {
@@ -228,7 +222,7 @@ final class ElliottTradePlanPolicy {
             double requiredRewardRiskRatio,
             double actualRewardRiskRatio,
             boolean actionable,
-            String qualification) {
+            String qualification, Double secondaryTarget, Double riskAtr, double riskPercent, int horizon) {
     }
 
     private record TargetCandidate(double midpoint, String basis, Double fibonacciRatio) {

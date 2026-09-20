@@ -19,6 +19,8 @@ import java.security.Principal;
 @RestController
 @RequestMapping("/api/insider-activity")
 public class InsiderActivityController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.service.WatchlistFollowService watchlistFollows;
     private final UserRepository userRepository;
     private final InsiderActivityService activityService;
 
@@ -58,6 +60,8 @@ public class InsiderActivityController {
         if (request == null || request.active() == null) {
             throw new IllegalArgumentException("An active state is required.");
         }
+        if (watchlistFollows != null) return watchlistFollows.insider(requireUser(principal),
+                SecurityInputValidator.requireMarketSymbol(symbol), request.active(), request.watchlistIds(), request.newWatchlistName());
         return activityService.setFollowing(
                 requireUser(principal),
                 SecurityInputValidator.requireMarketSymbol(symbol),
@@ -83,6 +87,7 @@ public class InsiderActivityController {
                         "The signed-in account no longer exists."));
     }
 
-    public record SubscriptionRequest(Boolean active) {
+    public record SubscriptionRequest(Boolean active, java.util.List<Long> watchlistIds, String newWatchlistName) {
+        public SubscriptionRequest(Boolean active) { this(active, null, null); }
     }
 }

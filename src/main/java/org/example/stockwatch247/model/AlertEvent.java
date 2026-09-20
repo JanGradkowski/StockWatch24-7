@@ -624,10 +624,41 @@ public class AlertEvent {
     public void setAtrCircuitBreakerMultiplier(Double value) { this.atrCircuitBreakerMultiplier = value; }
     public void setAtrCircuitBreakerThresholdPercent(Double value) { this.atrCircuitBreakerThresholdPercent = value; }
 
+    @Column(name = "trade_actionable")
+    private Boolean tradeActionable;
+    @Column(name = "trade_qualification")
+    private String tradeQualification;
+    @Column(name = "trade_risk_atr")
+    private Double tradeRiskAtr;
+    @Column(name = "trade_risk_percent")
+    private Double tradeRiskPercent;
+    @Column(name = "secondary_target_price")
+    private Double secondaryTargetPrice;
+    @Column(name = "trade_horizon_candles")
+    private Integer tradeHorizonCandles;
+    @Column(name = "trade_resolution_price")
+    private Double tradeResolutionPrice;
+
+    public Boolean getTradeActionable() { return tradeActionable; }
+    public void setTradeActionable(Boolean value) { tradeActionable = value; }
+    public String getTradeQualification() { return tradeQualification; }
+    public void setTradeQualification(String value) { tradeQualification = value; }
+    public Double getTradeRiskAtr() { return tradeRiskAtr; }
+    public void setTradeRiskAtr(Double value) { tradeRiskAtr = value; }
+    public Double getTradeRiskPercent() { return tradeRiskPercent; }
+    public void setTradeRiskPercent(Double value) { tradeRiskPercent = value; }
+    public Double getSecondaryTargetPrice() { return secondaryTargetPrice; }
+    public void setSecondaryTargetPrice(Double value) { secondaryTargetPrice = value; }
+    public Integer getTradeHorizonCandles() { return tradeHorizonCandles; }
+    public void setTradeHorizonCandles(Integer value) { tradeHorizonCandles = value; }
+    public Double getTradeResolutionPrice() { return tradeResolutionPrice; }
+    public void setTradeResolutionPrice(Double value) { tradeResolutionPrice = value; }
+
     public boolean hasCandlestickRiskRewardPlan() {
         return ("CANDLE_RR_V1".equals(tradePlanVersion)
                 || "CANDLE_RR_V2".equals(tradePlanVersion)
-                || "CANDLE_RR_V3".equals(tradePlanVersion))
+                || "CANDLE_RR_V3".equals(tradePlanVersion)
+                || "CANDLE_RR_V4".equals(tradePlanVersion))
                 && stopLossPrice != null
                 && rewardRiskRatio != null;
     }
@@ -747,7 +778,7 @@ public class AlertEvent {
     public void setHarmonicStopResolutionReason(String value) { this.harmonicStopResolutionReason = normalizedText(value, 255); }
 
     public boolean hasHarmonicStopPlan() {
-        return "HARMONIC_STOP_V1".equals(tradePlanVersion)
+        return ("HARMONIC_STOP_V1".equals(tradePlanVersion) || "HARMONIC_TRADE_V2".equals(tradePlanVersion))
                 && tradeEntryPrice != null && structuralStopPrice != null && stopLossPrice != null;
     }
 

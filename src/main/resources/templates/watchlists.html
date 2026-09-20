@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watchlists — StockWatch 24/7</title>
+  <script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/style.css}"><link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
+</head>
+<body>
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+<main class="dashboard-container">
+  <header class="app-hero"><div class="app-hero-copy"><div class="eyebrow">Your workspace</div>
+    <a th:if="${selectedWatchlistId != null}" th:href="@{/watchlists}" class="text-link">All watchlists</a>
+    <h1 th:text="${watchlistName != null ? watchlistName : 'Watchlists'}">Watchlists</h1><p class="welcome-subtitle" th:text="${selectedWatchlistId != null ? 'Followed tickers, signal types, intervals and unread signals.' : 'Organize instruments your way. Overlapping lists share monitoring and notifications.'}">Organize instruments your way.</p>
+  </div></header>
+  <section class="glass-panel dashboard-panel" aria-label="Manage watchlists">
+    <div class="panel-heading"><h2 class="panel-title" th:text="${selectedWatchlistId != null ? 'Watchlist overview' : 'Your watchlists'}">Your watchlists</h2><div class="wl-actions"><button type="button" class="btn-secondary" data-watchlist-imports>Recent imports</button><button type="button" class="btn-accent" data-create-watchlist>Create watchlist</button></div></div>
+    <label th:if="${selectedWatchlistId == null}" class="wl-field">Find a watchlist<input type="search" data-watchlist-search placeholder="Search by name or description"></label>
+    <div data-named-watchlists data-management="true" th:attr="data-selected-id=${selectedWatchlistId}"><p role="status">Loading watchlists…</p></div>
+  </section>
+</main>
+</body></html>

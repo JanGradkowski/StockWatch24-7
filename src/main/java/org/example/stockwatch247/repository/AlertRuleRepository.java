@@ -18,6 +18,9 @@ import java.util.Optional;
 @Repository
 public interface AlertRuleRepository extends JpaRepository<AlertRule, Long> {
     @EntityGraph(attributePaths = {"user", "stockAsset"})
+    List<AlertRule> findByUserAndIsActiveTrueAndStockAsset_TickerSymbolIn(User user, java.util.Collection<String> symbols);
+
+    @EntityGraph(attributePaths = {"user", "stockAsset"})
     @Query("""
             select ar from AlertRule ar
             where ar.user = :user

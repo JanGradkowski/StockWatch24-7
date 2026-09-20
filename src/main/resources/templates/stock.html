@@ -470,6 +470,7 @@
         </div>
         <div class="alert-apply-row">
           <span id="alertDraftStatus" class="alert-draft-status" aria-live="polite">No unapplied changes</span>
+          <button type="button" class="btn-secondary" data-stock-watchlists th:attr="data-symbol=${symbol}">In watchlists</button>
           <button id="applyAlertChangesBtn" type="button" class="btn-accent alert-apply-btn" disabled>Apply changes</button>
         </div>
       </div>
@@ -544,7 +545,7 @@
 
       <div class="alert-section outlook-alert-section">
         <div class="alert-section-title">Automated Technical Outlook</div>
-        <p class="alert-section-copy">Get alerts when an interval's overall outlook changes.</p>
+        <p class="alert-section-copy">Get alerts when an interval's overall outlook changes. Select intervals, then click Apply changes to save.</p>
         <div id="outlookFollowStatus" class="outlook-alert-status" role="status" aria-live="polite">Loading outlook follows…</div>
         <div class="alert-grid outlook-alert-grid" role="group" aria-label="Automated Technical Outlook intervals">
           <div class="alert-grid-label">Interval</div>

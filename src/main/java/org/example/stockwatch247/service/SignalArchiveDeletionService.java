@@ -34,6 +34,17 @@ public class SignalArchiveDeletionService {
     }
 
     @Transactional
+    public int deleteMixedSignals(User user, Collection<Long> signalIds, Collection<String> activityKeys) {
+        int technicalCount = signalIds == null ? 0 : signalIds.size();
+        int activityCount = activityKeys == null ? 0 : activityKeys.size();
+        if (technicalCount + activityCount == 0 || technicalCount + activityCount > MAX_DELETE_SELECTION)
+            throw new IllegalArgumentException("Select between 1 and 100 signals to delete.");
+        // One transaction: a foreign or invalid activity ID also rolls back technical deletions.
+        return (technicalCount == 0 ? 0 : deleteTechnicalSignals(user, signalIds))
+                + (activityCount == 0 ? 0 : deleteActivitySignals(user, activityKeys));
+    }
+
+    @Transactional
     public int deleteTechnicalSignals(User user, Collection<Long> requestedIds) {
         requireUser(user);
         List<Long> ids = normalizeIds(requestedIds);

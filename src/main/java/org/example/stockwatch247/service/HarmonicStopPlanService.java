@@ -16,6 +16,9 @@ import java.util.Optional;
 
 @Service
 public class HarmonicStopPlanService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private TradeExecutionService executionService;
+
     static final int OUTCOME_WINDOW_CANDLES = 8;
 
     private final AlertEventRepository eventRepository;
@@ -33,11 +36,22 @@ public class HarmonicStopPlanService {
             HarmonicPatternDetectionService.HarmonicFormation formation,
             long entryTimestamp,
             double entryPrice) {
+        return prepare(event, formation, entryTimestamp, entryPrice, List.of(), TimeInterval.DAILY);
+    }
+
+    Optional<HarmonicStopPlanPolicy.StopPlan> prepare(AlertEvent event,
+            HarmonicPatternDetectionService.HarmonicFormation formation,
+            long entryTimestamp, double entryPrice, List<Candle> candles, TimeInterval interval) {
         if (event == null) return Optional.empty();
-        return HarmonicStopPlanPolicy.calculate(formation, entryPrice)
+        double atr = ElliottTradePlanService.averageTrueRange(candles, entryTimestamp, 14);
+        return HarmonicStopPlanPolicy.calculate(formation, entryPrice, atr, interval)
                 .map(plan -> {
                     apply(event, entryTimestamp, plan);
                     return plan;
+                }).or(() -> {
+                    event.setTradeActionable(false);
+                    event.setTradeQualification("Projection only: no valid positive harmonic stop and target at this entry.");
+                    return Optional.empty();
                 });
     }
 
@@ -45,11 +59,18 @@ public class HarmonicStopPlanService {
             AlertEvent event,
             long entryTimestamp,
             HarmonicStopPlanPolicy.StopPlan plan) {
+        event.setTradeResolutionPrice(null);
         event.setTradeEntryPrice(plan.entryPrice());
         event.setStructuralStopPrice(plan.structuralInvalidationPrice());
         event.setStopLossPrice(plan.stopLossPrice());
-        event.setProfitTargetPrice(null);
-        event.setRewardRiskRatio(null);
+        event.setProfitTargetPrice(plan.primaryTarget());
+        event.setRewardRiskRatio(plan.rewardRisk());
+        event.setSecondaryTargetPrice(plan.secondaryTarget());
+        event.setTradeActionable(plan.actionable());
+        event.setTradeQualification(plan.qualification() + " " + plan.targetBasis());
+        event.setTradeRiskAtr(plan.riskAtr());
+        event.setTradeRiskPercent(plan.stopDistancePercent());
+        event.setTradeHorizonCandles(plan.horizon());
         event.setTradePlanVersion(plan.version());
         event.setStopLossMode("STRUCTURAL_BUFFER");
         event.setStopLossValuePercent(plan.bufferPercent());
@@ -67,7 +88,7 @@ public class HarmonicStopPlanService {
         event.setHarmonicStopBufferAmount(plan.bufferAmount());
         event.setHarmonicStopBufferPercent(plan.bufferPercent());
         event.setHarmonicStopDistancePercent(plan.stopDistancePercent());
-        event.setHarmonicStopStatus(HarmonicStopStatus.ACTIVE.name());
+        event.setHarmonicStopStatus(plan.actionable() ? HarmonicStopStatus.ACTIVE.name() : HarmonicStopStatus.PROJECTION_ONLY.name());
         event.setHarmonicStopResolutionTimestamp(null);
         event.setHarmonicStopResolutionPrice(null);
         event.setHarmonicStopResolutionReason(null);
@@ -89,6 +110,33 @@ public class HarmonicStopPlanService {
                 .toList();
         int resolved = 0;
         for (AlertEvent event : eventRepository.findActiveHarmonicStopPlans(symbol, interval)) {
+            if (HarmonicStopPlanPolicy.VERSION.equals(event.getTradePlanVersion())) {
+                if (!Boolean.TRUE.equals(event.getTradeActionable())) continue;
+                int horizon = event.getTradeHorizonCandles();
+                List<Candle> following = candles.stream().filter(c -> c.getTimestamp() > event.getDetectionCandleTimestamp())
+                        .limit(horizon).toList();
+                boolean done = false;
+                boolean invalidData = false;
+                for (Candle bar : following) {
+                    if (!TradeRiskPolicy.valid(bar)) { invalidData = true; break; }
+                    var outcome = executionService == null
+                            ? TradeOutcomePolicy.evaluate(event.getTradeSignal(), event.getStopLossPrice(), event.getProfitTargetPrice(), bar)
+                            : executionService.evaluate(symbol, interval, event.getTradeSignal(), event.getStopLossPrice(), event.getProfitTargetPrice(), bar);
+                    if (outcome == null) continue;
+                    event.setHarmonicStopStatus(outcome.kind() == TradeOutcomePolicy.Kind.STOPPED ? "STOPPED" : "TARGET_REACHED");
+                    event.setHarmonicStopResolutionTimestamp(bar.getTimestamp());
+                    event.setHarmonicStopResolutionPrice(outcome.price());
+                    event.setTradeResolutionPrice(outcome.price());
+                    event.setHarmonicStopResolutionReason(outcome.reason());
+                    markResolved(event);
+                    if (notificationService.sendHarmonicStopOutcomeEmail(event, bar)) event.setFollowUpSentAt(LocalDateTime.now());
+                    done = true;
+                    break;
+                }
+                if (!done && !invalidData && following.size() == horizon) { resolveTimeStop(event, following.getLast()); done = true; }
+                if (done) { eventRepository.save(event); resolved++; }
+                continue;
+            }
             List<Candle> outcomeCandles = candles.stream()
                     .filter(candle -> event.getSignalCandleTimestamp() != null
                             && candle.getTimestamp() > event.getSignalCandleTimestamp())
@@ -125,8 +173,9 @@ public class HarmonicStopPlanService {
         event.setHarmonicStopStatus(HarmonicStopStatus.TIME_STOPPED.name());
         event.setHarmonicStopResolutionTimestamp(eighthCandle.getTimestamp());
         event.setHarmonicStopResolutionPrice(eighthCandle.getClosePrice());
+        if (HarmonicStopPlanPolicy.VERSION.equals(event.getTradePlanVersion())) event.setTradeResolutionPrice(eighthCandle.getClosePrice());
         event.setHarmonicStopResolutionReason(
-                "The harmonic outcome window ended at candle 8's completed close.");
+                "The saved harmonic trade horizon ended at the completed close.");
         markResolved(event);
     }
 

@@ -2,6 +2,7 @@ package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.enums.HarmonicPatternType;
 import org.example.stockwatch247.model.enums.TradeSignal;
+import org.example.stockwatch247.model.enums.TimeInterval;
 
 import java.util.List;
 import java.util.Optional;
@@ -12,7 +13,7 @@ import java.util.Optional;
  * confluence, or signal eligibility.
  */
 final class HarmonicStopPlanPolicy {
-    static final String VERSION = "HARMONIC_STOP_V1";
+    static final String VERSION = "HARMONIC_TRADE_V2";
     static final double EQUITY_BUFFER_PERCENT = .50;
 
     private HarmonicStopPlanPolicy() {
@@ -21,6 +22,11 @@ final class HarmonicStopPlanPolicy {
     static Optional<StopPlan> calculate(
             HarmonicPatternDetectionService.HarmonicFormation formation,
             double confirmationEntryPrice) {
+        return calculate(formation, confirmationEntryPrice, Double.NaN, TimeInterval.DAILY);
+    }
+
+    static Optional<StopPlan> calculate(HarmonicPatternDetectionService.HarmonicFormation formation,
+                                        double confirmationEntryPrice, double atr, TimeInterval interval) {
         if (formation == null || formation.pattern() == null || formation.tradeSignal() == null
                 || formation.tradeSignal() != TradeSignal.BUY
                 && formation.tradeSignal() != TradeSignal.SELL
@@ -39,15 +45,31 @@ final class HarmonicStopPlanPolicy {
                 || !buy && level.price() <= confirmationEntryPrice) {
             return Optional.empty();
         }
-        double buffer = level.price() * EQUITY_BUFFER_PERCENT / 100.0;
-        double stop = buy ? level.price() - buffer : level.price() + buffer;
+        double buffer = TradeRiskPolicy.buffer(confirmationEntryPrice, atr, interval);
+        double stop = TradeRiskPolicy.roundStop(buy ? level.price() - buffer : level.price() + buffer,
+                formation.tradeSignal(), confirmationEntryPrice);
         if (!Double.isFinite(stop) || stop <= 0.0) return Optional.empty();
         double distance = Math.abs(confirmationEntryPrice - stop);
         double distancePercent = distance / confirmationEntryPrice * 100.0;
+        boolean shark = formation.pattern() == HarmonicPatternType.SHARK;
+        Double endpoint = price(points, shark ? "C" : "D");
+        Double anchor = price(points, shark ? "B" : formation.pattern() == HarmonicPatternType.CYPHER ? "C" : "A");
+        if (endpoint == null || anchor == null) return Optional.empty();
+        double primary = endpoint + (anchor - endpoint) * (shark ? .50 : .382);
+        Double secondary = shark ? null : endpoint + (anchor - endpoint) * .618;
+        double requiredRr = interval == TimeInterval.DAILY ? 2 : 3;
+        var qualification = TradeRiskPolicy.qualify(formation.tradeSignal(), confirmationEntryPrice,
+                stop, primary, atr, interval, requiredRr);
+        int horizon = shark ? switch (interval) { case DAILY -> 5; case WEEKLY -> 4; default -> 3; }
+                : TradeRiskPolicy.profile(interval).harmonicHorizon();
         return Optional.of(new StopPlan(
                 VERSION, formation.pattern(), formation.tradeSignal(), confirmationEntryPrice,
-                level.price(), buffer, EQUITY_BUFFER_PERCENT, stop,
-                distance, distancePercent, level.basis(), level.formula()));
+                level.price(), buffer, buffer / level.price() * 100, stop,
+                distance, distancePercent, level.basis(), level.formula(), primary, secondary,
+                TradeRiskPolicy.reward(formation.tradeSignal(), confirmationEntryPrice, primary) / distance,
+                qualification.actionable(), qualification.reason(), qualification.riskAtr(), horizon,
+                shark ? "50% BC reaction target" : formation.pattern() == HarmonicPatternType.CYPHER
+                        ? "38.2% CD primary / 61.8% CD secondary" : "38.2% AD primary / 61.8% AD secondary"));
     }
 
     private static Optional<StructuralLevel> structuralLevel(
@@ -120,7 +142,8 @@ final class HarmonicStopPlanPolicy {
             double stopDistance,
             double stopDistancePercent,
             String basis,
-            String formula) {
+            String formula, double primaryTarget, Double secondaryTarget, double rewardRisk,
+            boolean actionable, String qualification, Double riskAtr, int horizon, String targetBasis) {
     }
 
     private record StructuralLevel(double price, String basis, String formula) {

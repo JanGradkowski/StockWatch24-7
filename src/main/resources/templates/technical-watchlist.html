@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Technical Watchlist — StockWatch 24/7</title>
+  <title>Followed outlooks — StockWatch 24/7</title>
   <script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
@@ -20,7 +20,7 @@
   <header class="watchlist-heading">
     <div>
       <span class="signal-report-eyebrow">Automated technical analysis</span>
-      <h1>Technical Watchlist</h1>
+      <h1>Followed outlooks</h1>
       <p>Your followed outlooks. Every interval, every change, in one place.</p>
     </div>
     <div class="watchlist-heading-actions">
@@ -68,6 +68,7 @@
       <button id="unfollowAll" class="danger-outline-button" type="button" disabled>Unfollow all</button>
     </div>
     <div class="watchlist-toolbar">
+      <label>Watchlist<select id="namedWatchlistFilter"><option value="">All watchlists</option></select></label>
       <label class="watchlist-search">Search tickers<span class="watchlist-search-field"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="watchlistSearch" type="search" placeholder="Ticker or company name" autocomplete="off"></span></label>
       <label>Followed interval<select id="watchlistInterval"><option value="all">All intervals</option><option value="1d">Daily</option><option value="1wk">Weekly</option><option value="1mo">Monthly</option></select></label>
       <label>Outlook<select id="watchlistOutlook"><option value="all">All outlooks</option><option value="buy">Buy</option><option value="sell">Sell</option><option value="neutral">Neutral</option><option value="unavailable">Awaiting analysis</option><option value="stale">Potentially stale</option></select></label>

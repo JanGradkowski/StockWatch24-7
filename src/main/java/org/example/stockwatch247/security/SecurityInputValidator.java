@@ -8,7 +8,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 public final class SecurityInputValidator {
-    private static final Pattern MARKET_SYMBOL = Pattern.compile("[A-Z0-9^][A-Z0-9.^=_-]{0,19}");
+    private static final Pattern MARKET_SYMBOL = Pattern.compile("[A-Z0-9^][A-Z0-9.^=&_-]{0,19}");
     private static final Pattern SEARCH_QUERY = Pattern.compile("[\\p{L}\\p{N} .&'^_-]{1,64}");
     private static final Pattern MIC_CODE = Pattern.compile("[A-Z0-9]{4,12}");
     private static final Pattern PERSON_NAME = Pattern.compile("[\\p{L}\\p{M} .'-]{1,100}");

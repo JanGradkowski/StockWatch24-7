@@ -14,7 +14,7 @@ import java.util.List;
  * The paths are schematic; the price zones and candle windows are the testable parts.
  */
 final class ElliottProjectionPolicy {
-    static final String VERSION = "ELLIOTT_SCENARIOS_V1";
+    static final String VERSION = "ELLIOTT_SCENARIOS_V2";
     private static final double TARGET_ZONE_PERCENT = 1.5;
 
     private ElliottProjectionPolicy() {
@@ -58,13 +58,16 @@ final class ElliottProjectionPolicy {
         };
         if (seeds.isEmpty()) return List.of();
 
+        double atr = ElliottTradePlanService.averageTrueRange(candles, sourceTimestamp, 14);
         List<Scenario> scenarios = new ArrayList<>(Math.min(3, seeds.size()));
         for (int index = 0; index < seeds.size() && index < 3; index++) {
             ScenarioSeed seed = seeds.get(index);
             if (!Double.isFinite(seed.target()) || seed.target() <= 0.0) continue;
-            double zoneLow = seed.target() * (1.0 - TARGET_ZONE_PERCENT / 100.0);
-            double zoneHigh = seed.target() * (1.0 + TARGET_ZONE_PERCENT / 100.0);
-            if (zoneLow <= 0.0) continue;
+            double width = TradeRiskPolicy.zoneWidth(seed.target(), atr);
+            double zoneLow = seed.target() - width;
+            double zoneHigh = seed.target() + width;
+            if (!ElliottTargetRules.allowed(stage, bullish, points, zoneLow, zoneHigh)
+                    || TradeRiskPolicy.reward(expectedMove, sourcePrice, expectedMove == TradeSignal.BUY ? zoneLow : zoneHigh) <= 0) continue;
             List<ProjectedPoint> path = projectedPath(
                     sourceTimestamp, sourcePrice, seed.target(), spacing,
                     seed.maximumCandles(), seed.pathShape(), interval);
@@ -171,7 +174,7 @@ final class ElliottProjectionPolicy {
                         "The target is an objective zone, not an exact reversal price."),
                 motive("TRUNCATED_WAVE_V", "Alternate B · truncated / short Wave V",
                         "A weak final push using 61.8% of Wave I and allowing truncation.", 41,
-                        Math.max(.000001, wave4.price() + sign * waveOneLength * .618),
+                        wave4.price() + sign * waveOneLength * .618,
                         "Short Wave V at 61.8% of Wave I from Wave IV", reference, .5, 1.2,
                         wave4.price(), hardSide, source,
                         "Weak momentum can produce a short or truncated fifth.",

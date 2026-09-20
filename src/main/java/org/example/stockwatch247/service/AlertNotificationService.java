@@ -31,6 +31,12 @@ import java.util.Locale;
 
 @Service
 public class AlertNotificationService {
+    @Autowired
+    private WatchlistEmailPolicy watchlistEmails;
+
+    private boolean allowsWatchlistEmail(AlertRule rule, TradeSignal direction) {
+        return watchlistEmails==null || watchlistEmails.allows(rule,direction);
+    }
     private EmailOutboxService outbox;
     @Autowired
     void setOutbox(EmailOutboxService outbox) { this.outbox = outbox; }
@@ -340,8 +346,9 @@ public class AlertNotificationService {
     }
 
     private String elliottPossibleTradeSection(AlertEvent event) {
+        if (event.getTradeQualification() != null) return qualifiedTradeSection(event);
         if (event.getStopLossPrice() == null || event.getProfitTargetPrice() == null) {
-            return "Possible-trade plan: unavailable for this retained count.";
+            return event.getTradeQualification() == null ? "Possible-trade plan: unavailable for this retained count." : event.getTradeQualification();
         }
         if (event.getTradeEntryPrice() == null || event.getElliottTargetZoneLow() == null
                 || event.getElliottTargetZoneHigh() == null
@@ -382,6 +389,7 @@ public class AlertNotificationService {
             case TARGET_REACHED -> "TARGET REACHED";
             case STOPPED -> "STOP REACHED";
             case STRUCTURE_INVALIDATED -> "ELLIOTT COUNT INVALIDATED";
+            case TIME_STOPPED -> "TIME STOPPED";
             case STAGE_COMPLETED -> "STAGE COMPLETED";
             case REVISED -> "PLAN REVISED";
             case ACTIVE -> "ACTIVE";
@@ -402,7 +410,7 @@ public class AlertNotificationService {
                 Target basis: %s
                 Risk/reward: 1:%.2f (required 1:%.0f)
                 Resolution period: %s
-                Resolution close: %.4f
+                %s: %.4f
                 Reason: %s
 
                 A structural invalidation closes the Elliott count itself. A buffered-stop outcome closes only this possible-trade plan unless a hard Elliott rule was also broken. This is a rule-based projection, not financial advice.
@@ -423,12 +431,13 @@ public class AlertNotificationService {
                 plan.getRequiredRewardRiskRatio(),
                 plan.getResolutionTimestamp() == null ? "Unavailable" : SignalPeriodFormatter.format(
                         plan.getResolutionTimestamp(), rule.getInterval(), signalTimeZone),
-                plan.getResolutionClosePrice() == null ? plan.getEntryPrice() : plan.getResolutionClosePrice(),
+                plan.getResolutionFillPrice() == null ? "Resolution close" : "Modeled exit before costs",
+                plan.getResolutionFillPrice() != null ? plan.getResolutionFillPrice() : plan.getResolutionClosePrice() == null ? plan.getEntryPrice() : plan.getResolutionClosePrice(),
                 plan.getResolutionReason() == null ? outcome : plan.getResolutionReason());
         SignalLifecycleStatus preferenceStatus = plan.getStatus()
                 == org.example.stockwatch247.model.enums.ElliottTradePlanStatus.TARGET_REACHED
                 ? SignalLifecycleStatus.CONFIRMED : SignalLifecycleStatus.INVALIDATED;
-        if (!emailEnabled || preferencesService != null
+        if (!emailEnabled || !allowsWatchlistEmail(rule, plan.getExpectedMove()) || preferencesService != null
                 && !preferencesService.allowsLifecycleEmail(
                 rule.getUser(), preferenceStatus, rule.getInterval(), plan.getExpectedMove())) {
             System.out.println("[EMAIL DISABLED] Elliott trade outcome email suppressed for " + symbol + ".");
@@ -444,7 +453,7 @@ public class AlertNotificationService {
     }
 
     private boolean isDevelopingElliottEmailEnabled(AlertRule rule) {
-        return emailEnabled && (preferencesService == null || preferencesService.allowsNewSignalEmail(
+        return emailEnabled && allowsWatchlistEmail(rule,rule.getTradeSignal()) && (preferencesService == null || preferencesService.allowsNewSignalEmail(
                 rule.getUser(), AlertPatternFamily.ELLIOTT_WAVE,
                 rule.getInterval(), rule.getTradeSignal()));
     }
@@ -525,7 +534,20 @@ public class AlertNotificationService {
         return true;
     }
 
+    private String qualifiedTradeSection(AlertEvent event) {
+        return "Trade qualification: " + event.getTradeQualification()
+                + "\nReference entry: " + event.getTradeEntryPrice()
+                + "\nStructural boundary: " + event.getStructuralStopPrice()
+                + "\nProtective stop trigger: " + event.getStopLossPrice()
+                + "\nPrimary target: " + event.getProfitTargetPrice()
+                + "\nSecondary scenario: " + (event.getSecondaryTargetPrice() == null ? "None" : event.getSecondaryTargetPrice())
+                + "\nStop distance: " + event.getTradeRiskPercent() + "% / " + event.getTradeRiskAtr() + " ATR"
+                + "\nTrade horizon: " + event.getTradeHorizonCandles() + " candles"
+                + "\nProtective exits use candle ranges and opening gaps; ambiguous bars assume stop-first. Reference plans are not executed orders.\n";
+    }
+
     private String harmonicStopSection(AlertEvent event) {
+        if (event.getTradeQualification() != null) return qualifiedTradeSection(event);
         if (event == null || !event.hasHarmonicStopPlan()) {
             return "Structural stop plan: unavailable for this saved geometry.";
         }
@@ -559,7 +581,7 @@ public class AlertNotificationService {
         String patternLabel = event.getPattern().name()
                 .replace("HARMONIC_", "").replace('_', ' ');
         String body = """
-                A harmonic structural stop was breached for %s.
+                A harmonic trade outcome was recorded for %s.
 
                 Ticker: %s
                 Formation: %s
@@ -587,9 +609,9 @@ public class AlertNotificationService {
                         breachedCandle.getTimestamp(), rule.getInterval(), signalTimeZone),
                 breachedCandle.getHighPrice(), breachedCandle.getLowPrice(),
                 breachedCandle.getClosePrice(), event.getHarmonicStopResolutionReason());
-        if (!emailEnabled || preferencesService != null
+        if (!emailEnabled || !allowsWatchlistEmail(rule,event.getTradeSignal()) || preferencesService != null
                 && !preferencesService.allowsLifecycleEmail(
-                rule.getUser(), SignalLifecycleStatus.INVALIDATED,
+                rule.getUser(), "TARGET_REACHED".equals(event.getHarmonicStopStatus()) ? SignalLifecycleStatus.CONFIRMED : SignalLifecycleStatus.INVALIDATED,
                 rule.getInterval(), event.getTradeSignal())) {
             System.out.println("[EMAIL DISABLED] Harmonic stop outcome email suppressed for " + symbol + ".");
             return false;
@@ -597,7 +619,7 @@ public class AlertNotificationService {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
         message.setTo(rule.getUser().getEmail());
-        message.setSubject("StockWatch harmonic stop breached: "
+        message.setSubject("StockWatch harmonic " + ("HARMONIC_STOP_V1".equals(event.getTradePlanVersion()) ? "stop breached" : event.getHarmonicStopStatus().toLowerCase().replace('_', ' ')) + ": "
                 + patternLabel.toLowerCase() + " on " + symbol);
         message.setText(body);
         send(message);
@@ -683,6 +705,7 @@ public class AlertNotificationService {
         if (rule.getPatternFamily() != AlertPatternFamily.CANDLESTICK) {
             return "";
         }
+        if (lifecycleEvent.getTradeQualification() != null) return qualifiedTradeSection(lifecycleEvent);
         if (!lifecycleEvent.hasCandlestickRiskRewardPlan()) {
             return """
 
@@ -841,7 +864,7 @@ public class AlertNotificationService {
         String resolutionReason = event.getLifecycleResolutionReason() == null
                 ? ""
                 : "\nResolution reason: " + event.getLifecycleResolutionReason();
-        String tradePlanLine = event.hasCandlestickRiskRewardPlan()
+        String tradePlanLine = event.getTradeQualification() != null ? qualifiedTradeSection(event) : event.hasCandlestickRiskRewardPlan()
                 ? "Trade plan: entry %.4f | stop %.4f | target %.4f | risk-to-reward 1:%.0f"
                         .formatted(event.getTradeEntryPrice(), event.getStopLossPrice(),
                                 event.getProfitTargetPrice(), event.getRewardRiskRatio())
@@ -921,6 +944,21 @@ public class AlertNotificationService {
         }
         if (!completeCandlestickTradePlan(event)) {
             return sendLegacyCandlestickLifecycleNotice(event, rule, symbol);
+        }
+
+        if (event.getTradeQualification() != null) {
+            if (!isSignalLifecycleEmailEnabled(event)) return false;
+            double exit = event.getTradeResolutionPrice() == null ? event.getResolutionClosePrice() : event.getTradeResolutionPrice();
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromAddress);
+            message.setTo(rule.getUser().getEmail());
+            message.setSubject("StockWatch candlestick trade " + status.name().toLowerCase() + ": " + symbol);
+            message.setText(qualifiedTradeSection(event) + "\nTrade outcome: " + status
+                    + "\nModeled exit before costs: " + exit
+                    + "\nDirectional return before costs: " + directionalReturnPercent(event.getTradeSignal(), event.getTradeEntryPrice(), exit)
+                    + "%\n" + event.getLifecycleResolutionReason());
+            send(message);
+            return true;
         }
 
         double targetReturn = directionalReturnPercent(
@@ -1281,7 +1319,7 @@ public class AlertNotificationService {
                 assetLine,
                 sourceLine);
 
-        if (!emailEnabled || preferencesService != null
+        if (!emailEnabled || watchlistEmails!=null && !watchlistEmails.allows(delivery.userId(),delivery.ticker(),"CONGRESS","DAILY","ANY") || preferencesService != null
                 && !preferencesService.allowsCongressionalEmail(delivery.userId())) {
             System.out.println("[EMAIL DISABLED] Congressional activity email suppressed for "
                     + delivery.ticker() + ".");
@@ -1345,7 +1383,7 @@ public class AlertNotificationService {
                 trade.getFilingDate(),
                 source);
 
-        if (!emailEnabled || preferencesService != null
+        if (!emailEnabled || watchlistEmails!=null && !watchlistEmails.allows(delivery.getSubscription().getUser().getId(),symbol,"INSIDER","DAILY","ANY") || preferencesService != null
                 && !preferencesService.allowsInsiderEmail(delivery.getSubscription().getUser())) {
             System.out.println("[EMAIL DISABLED] Insider activity email suppressed for "
                     + symbol + ".");
@@ -1365,6 +1403,12 @@ public class AlertNotificationService {
         return emailEnabled;
     }
 
+    public boolean sendTechnicalOutlookChangeEmail(User user, String symbol,
+            org.example.stockwatch247.model.enums.TimeInterval interval, String subject, String body) {
+        if(watchlistEmails!=null && !watchlistEmails.allows(user.getId(),symbol,"OUTLOOK",interval.name(),"ANY")) return false;
+        return sendTechnicalOutlookChangeEmail(user,interval,subject,body);
+    }
+
     public boolean sendTechnicalOutlookChangeEmail(User user,
                                                    org.example.stockwatch247.model.enums.TimeInterval interval,
                                                    String subject,
@@ -1382,15 +1426,15 @@ public class AlertNotificationService {
     }
 
     public boolean isSignalEmailEnabled(AlertRule rule, DetectedSignal signal) {
-        return emailEnabled && (preferencesService == null || preferencesService.allowsNewSignalEmail(
+        return emailEnabled && allowsWatchlistEmail(rule,signal.tradeSignal()) && (preferencesService == null || preferencesService.allowsNewSignalEmail(
                 rule.getUser(), rule.getPatternFamily(), rule.getInterval(), signal.tradeSignal()));
     }
 
     public boolean isSignalLifecycleEmailEnabled(AlertEvent event) {
         if (!emailEnabled || event == null || event.getAlertRule() == null) return false;
         AlertRule rule = event.getAlertRule();
-        return preferencesService == null || preferencesService.allowsLifecycleEmail(
-                rule.getUser(), event.getLifecycleStatus(), rule.getInterval(), event.getTradeSignal());
+        return allowsWatchlistEmail(rule,event.getTradeSignal()) && (preferencesService == null || preferencesService.allowsLifecycleEmail(
+                rule.getUser(), event.getLifecycleStatus(), rule.getInterval(), event.getTradeSignal()));
     }
 
     private String setupStrengthLabel(SignalStength strength) {

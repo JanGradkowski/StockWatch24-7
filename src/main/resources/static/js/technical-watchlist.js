@@ -186,7 +186,7 @@
     const container = get('watchlistChanges');
     message(container, 'Loading changes…');
     try {
-      const changes = await request(`${endpoint}/changes?interval=${encodeURIComponent(get('changeInterval').value)}`);
+      const changes = await request(`${endpoint}/changes?interval=${encodeURIComponent(get('changeInterval').value)}&watchlistId=${encodeURIComponent(get('namedWatchlistFilter')?.value || '')}`);
       if (sequence !== changesSequence) return;
       if (!changes.length) { message(container, 'No recent outlook changes for your followed intervals. New changes will appear here.'); return; }
       container.replaceChildren(...changes.map(change => {
@@ -202,11 +202,12 @@
   async function load() {
     if (busy || loading) return;
     loading = true; get('watchlistRefresh').disabled = true;
+    if (get('namedWatchlistFilter')) get('namedWatchlistFilter').disabled = true;
     get('unfollowAll').disabled = true;
     document.querySelectorAll('.watchlist-unfollow').forEach(button => { button.disabled = true; });
     const changes = loadChanges();
     try {
-      const data = await request(endpoint);
+      const data = await request(`${endpoint}?watchlistId=${encodeURIComponent(get('namedWatchlistFilter')?.value || '')}`);
       tickers = data.tickers; loaded = true; showError('');
       renderRankings(); renderTable();
       const staleCount = tickers.flatMap(ticker => ticker.intervals).filter(item => item.stale).length;
@@ -224,6 +225,7 @@
       get('watchlistLoading').hidden = true;
       await changes;
       loading = false; get('watchlistRefresh').disabled = false;
+      if (get('namedWatchlistFilter')) get('namedWatchlistFilter').disabled = false;
       get('unfollowAll').disabled = !tickers.length;
       document.querySelectorAll('.watchlist-unfollow').forEach(button => { button.disabled = false; });
     }
@@ -263,12 +265,19 @@
   ['watchlistInterval', 'watchlistOutlook', 'watchlistSort'].forEach(id => get(id).addEventListener('change', () => { if (loaded) renderTable(); }));
   get('watchlistSearch').addEventListener('input', () => { if (loaded) renderTable(); });
   get('changeInterval').addEventListener('change', loadChanges);
+  const namedFilter = get('namedWatchlistFilter');
+  if (namedFilter) {
+    namedFilter.addEventListener('change', load);
+    request('/api/watchlists').then(lists => lists.forEach(list => {
+      const option = document.createElement('option'); option.value = list.id; option.textContent = list.name; namedFilter.append(option);
+    })).catch(error => showError(error.message));
+  }
   get('watchlistClear').addEventListener('click', () => {
     get('watchlistSearch').value = ''; get('watchlistInterval').value = 'all'; get('watchlistOutlook').value = 'all'; renderTable(); get('watchlistSearch').focus();
   });
   get('watchlistRefresh').addEventListener('click', load);
   get('unfollowAll').addEventListener('click', () => {
-    get('unfollowAllDescription').textContent = `Stop following automated technical analysis for all ${tickers.length} tickers, across every followed interval. This includes tickers hidden by your filters. You can follow them again from their stock pages.`;
+    get('unfollowAllDescription').textContent = `Stop following automated technical analysis for every ticker in your account, across every watchlist and followed interval. This includes tickers hidden by your filters. You can follow them again from their stock pages.`;
     get('unfollowAllError').hidden = true; dialog.showModal();
   });
   get('cancelUnfollowAll').addEventListener('click', () => dialog.close());
