@@ -36,6 +36,86 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class YahooFinanceServiceTest {
 
     @Test
+    void acceptsWarsawCompanyWhenProviderLongNameChangesButCompleteShortNameStillMatches() {
+        var fixture = warsawFixture("CDPROJEKT", "PLN");
+        var bars = fixture.service().getTimeSeries("CDR", "1d", 10);
+        assertThat(bars).singleElement().satisfies(bar -> assertThat(bar.providerSymbol()).isEqualTo("CDR.WA"));
+        verify(fixture.repository()).save(argThat(asset -> asset.getCompanyName().equals("CD Projekt Red S.A.")));
+        fixture.server().verify();
+    }
+
+    @Test
+    void alternateProviderNameCannotBypassCompanyOrCurrencyChecks() {
+        var unrelated = warsawFixture("CD PROJEKT OTHER", "PLN");
+        assertThatThrownBy(() -> unrelated.service().getTimeSeries("CDR", "1d", 10))
+                .hasMessageContaining("different company");
+        verify(unrelated.repository(), never()).save(any());
+        unrelated.server().verify();
+
+        var wrongCurrency = warsawFixture("CDPROJEKT", "USD");
+        assertThatThrownBy(() -> wrongCurrency.service().getTimeSeries("CDR", "1d", 10))
+                .hasMessageContaining("USD instead of PLN");
+        verify(wrongCurrency.repository(), never()).save(any());
+        wrongCurrency.server().verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"America/New_York", "Europe/Warsaw"})
+    void weeklyResponseRejectsLiveQuotesEvenWhenTheyFallOnMonday(String zoneName) {
+        RestTemplate rest = new RestTemplate();
+        var server = MockRestServiceServer.bindTo(rest).build();
+        var repository = mock(StockAssetRepository.class);
+        ZoneId zone = ZoneId.of(zoneName);
+        LocalDate monday = LocalDate.of(2026, 9, 14);
+        long weekly = monday.atStartOfDay(zone).toEpochSecond();
+        long mondayLive = monday.atTime(16, 0).atZone(zone).toEpochSecond();
+        long fridayLive = monday.plusDays(4).atTime(16, 0).atZone(zone).toEpochSecond();
+        server.expect(requestTo(containsString("/v8/finance/chart/TEST?"))).andRespond(withSuccess("""
+                {"chart":{"result":[{"meta":{"symbol":"TEST","currency":"USD",
+                 "exchangeTimezoneName":"%s","dataGranularity":"1wk"},
+                 "timestamp":[%d,%d,%d],"indicators":{"quote":[{
+                   "open":[100,110,120],"high":[130,111,121],"low":[90,109,119],
+                   "close":[125,110,120],"volume":[1000,10,20]}]}}],"error":null}}
+                """.formatted(zoneName, weekly, mondayLive, fridayLive), MediaType.APPLICATION_JSON));
+        var service = new YahooFinanceService(rest, new ObjectMapper(), repository, "https://query1.finance.yahoo.com", true);
+        assertThat(service.getTimeSeries("TEST", "1wk", 10)).singleElement().satisfies(bar -> {
+            assertThat(bar.timestamp()).isEqualTo(monday.atStartOfDay(ZoneOffset.UTC).toEpochSecond());
+            assertThat(bar.open()).isEqualTo(100);
+            assertThat(bar.high()).isEqualTo(130);
+            assertThat(bar.close()).isEqualTo(125);
+            assertThat(bar.volume()).isEqualTo(1000);
+        });
+        server.verify();
+    }
+
+    private WarsawFixture warsawFixture(String shortName, String currency) {
+        RestTemplate rest = new RestTemplate();
+        var server = MockRestServiceServer.bindTo(rest).ignoreExpectOrder(true).build();
+        var repository = mock(StockAssetRepository.class);
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("CDR"); asset.setCompanyName("CD Projekt S.A.");
+        asset.setExchange("GPW"); asset.setMicCode("XWAR"); asset.setCountry("Poland");
+        asset.setCurrency("PLN"); asset.setInstrumentType(InstrumentType.EQUITY);
+        when(repository.findByTickerSymbolIgnoreCase("CDR")).thenReturn(Optional.of(asset));
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        server.expect(org.springframework.test.web.client.ExpectedCount.between(1, 5),
+                requestTo(containsString("/v8/finance/chart/"))).andRespond(withSuccess("""
+                {"chart":{"result":[{"meta":{"symbol":"CDR.WA","currency":"%s",
+                 "longName":"CD Projekt Red S.A.","shortName":"%s","instrumentType":"EQUITY",
+                 "exchangeName":"WSE","fullExchangeName":"Warsaw","exchangeTimezoneName":"Europe/Warsaw",
+                 "dataGranularity":"1d"},"timestamp":[1790002800],"indicators":{"quote":[{
+                 "open":[240],"high":[250],"low":[239],"close":[248],"volume":[1000]}]}}],"error":null}}
+                """.formatted(currency, shortName), MediaType.APPLICATION_JSON));
+        server.expect(org.springframework.test.web.client.ExpectedCount.between(0, 5),
+                requestTo(containsString("/v1/finance/search")))
+                .andRespond(withSuccess("{\"quotes\":[]}", MediaType.APPLICATION_JSON));
+        return new WarsawFixture(new YahooFinanceService(rest, new ObjectMapper(), repository,
+                "https://query1.finance.yahoo.com", true), server, repository);
+    }
+
+    private record WarsawFixture(YahooFinanceService service, MockRestServiceServer server, StockAssetRepository repository) { }
+
+    @Test
     void exactUsTickerRepairsAConflictingEuropeanAliasAndCurrency() {
         RestTemplate restTemplate = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
@@ -448,7 +528,7 @@ class YahooFinanceServiceTest {
         when(stockAssetRepository.findByTickerSymbolIgnoreCase("^GSPC")).thenReturn(Optional.empty());
         when(stockAssetRepository.save(any(StockAsset.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        long timestamp = LocalDate.of(2026, 7, 10).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        long timestamp = LocalDate.of(2026, 7, 6).atStartOfDay(ZoneId.of("America/New_York")).toEpochSecond();
         String response = """
                 {
                   "chart": {
@@ -642,7 +722,7 @@ class YahooFinanceServiceTest {
         when(stockAssetRepository.findByTickerSymbolIgnoreCase("ZTS")).thenReturn(Optional.of(asset));
 
         long providerTimestamp = LocalDate.of(2026, 8, 3)
-                .atTime(16, 0)
+                .atStartOfDay()
                 .atZone(ZoneId.of("America/New_York"))
                 .toEpochSecond();
         long expectedTimestamp = LocalDate.of(2026, 8, 3)

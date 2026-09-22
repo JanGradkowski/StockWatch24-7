@@ -321,7 +321,7 @@ final class ElliottProjectionPolicy {
         return List.copyOf(path);
     }
 
-    private static long futureTimestamp(
+    static long futureTimestamp(
             long sourceTimestamp, int candleOffset, long spacing, TimeInterval interval) {
         if (candleOffset == 0) return sourceTimestamp;
         java.time.ZonedDateTime time = java.time.Instant.ofEpochSecond(sourceTimestamp)

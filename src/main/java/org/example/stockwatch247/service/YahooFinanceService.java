@@ -500,7 +500,8 @@ public class YahooFinanceService {
         );
         if (!authoritativeExactUsSymbol
                 && !returnedName.isBlank()
-                && !sameCompany(asset.getCompanyName(), returnedName)) {
+                && !sameCompany(asset.getCompanyName(), returnedName)
+                && !sameCompany(asset.getCompanyName(), meta.path("shortName").asText(""))) {
             throw new IllegalStateException("Yahoo candidate " + providerSymbol
                     + " belongs to a different company.");
         }
@@ -601,7 +602,9 @@ public class YahooFinanceService {
     private boolean sameCompany(String left, String right) {
         String leftKey = companyKey(left);
         String rightKey = companyKey(right);
-        return !leftKey.isBlank() && leftKey.equals(rightKey);
+        // Provider short names may join the same complete company words (CDPROJEKT).
+        // Do not use prefix/fuzzy matching: unrelated names and share classes must still fail.
+        return !leftKey.isBlank() && leftKey.replace(" ", "").equals(rightKey.replace(" ", ""));
     }
 
     private String companyKey(String rawName) {
@@ -832,10 +835,16 @@ public class YahooFinanceService {
     private boolean isCanonicalHigherIntervalTimestamp(long timestamp,
                                                        String interval,
                                                        ZoneId exchangeZone) {
-        if (!"1mo".equals(interval)) {
+        if (!"1mo".equals(interval) && !"1wk".equals(interval)) {
             return true;
         }
         ZonedDateTime exchangeDateTime = Instant.ofEpochSecond(timestamp).atZone(exchangeZone);
+        // Weekly responses also append a live daily quote, including on Mondays.
+        // Reject it before canonicalization so it cannot replace the genuine weekly aggregate.
+        if ("1wk".equals(interval)) {
+            return exchangeDateTime.getDayOfWeek() == java.time.DayOfWeek.MONDAY
+                    && exchangeDateTime.toLocalTime().equals(LocalTime.MIDNIGHT);
+        }
         // Yahoo can append a live, day-sized quote to an otherwise monthly response
         // while still reporting dataGranularity=1mo. It is not a monthly aggregate
         // and changes timestamp on every refresh, so accepting it creates several

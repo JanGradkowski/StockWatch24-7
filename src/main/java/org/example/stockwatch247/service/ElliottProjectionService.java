@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.ElliottProjectionScenario;
 import org.example.stockwatch247.model.ElliottProjectionSet;
+import org.example.stockwatch247.model.ElliottProjectionRevision;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.ElliottProjectionScenarioStatus;
 import org.example.stockwatch247.model.enums.ElliottProjectionSetStatus;
@@ -13,6 +14,7 @@ import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.ElliottProjectionScenarioRepository;
 import org.example.stockwatch247.repository.ElliottProjectionSetRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -20,18 +22,29 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Locale;
+import java.util.TreeMap;
 
 @Service
 public class ElliottProjectionService {
     static final int REQUIRED_CANDLE_HISTORY = 260;
     private final ElliottProjectionSetRepository setRepository;
     private final ElliottProjectionScenarioRepository scenarioRepository;
+    private final CandleCompletionService candleCompletionService;
 
     public ElliottProjectionService(
             ElliottProjectionSetRepository setRepository,
             ElliottProjectionScenarioRepository scenarioRepository) {
+        this(setRepository, scenarioRepository, new CandleCompletionService("Europe/Brussels"));
+    }
+
+    @Autowired
+    public ElliottProjectionService(ElliottProjectionSetRepository setRepository,
+                                    ElliottProjectionScenarioRepository scenarioRepository,
+                                    CandleCompletionService candleCompletionService) {
         this.setRepository = setRepository;
         this.scenarioRepository = scenarioRepository;
+        this.candleCompletionService = candleCompletionService;
     }
 
     Optional<PreparedProjection> prepare(
@@ -54,7 +67,8 @@ public class ElliottProjectionService {
                 points, candles, interval);
         return scenarios.isEmpty() ? Optional.empty()
                 : Optional.of(new PreparedProjection(
-                stage, projectionTimestamp, projectionPrice, scenarios));
+                stage, projectionTimestamp, projectionPrice, scenarios,
+                Math.max(sourceTimestamp, projectionTimestamp)));
     }
 
     @Transactional
@@ -91,7 +105,7 @@ public class ElliottProjectionService {
             boolean revised = previous.getStage() == prepared.stage();
             previous.setStatus(revised
                     ? ElliottProjectionSetStatus.SUPERSEDED : ElliottProjectionSetStatus.COMPLETED);
-            previous.setResolutionTimestamp(prepared.sourceTimestamp());
+            previous.setResolutionTimestamp(prepared.availableFromTimestamp());
             previous.setResolutionReason(revised
                     ? "The retained Elliott count revised this stage endpoint and replaced these paths."
                     : "The next validated Elliott stage ended the projected wave.");
@@ -103,7 +117,7 @@ public class ElliottProjectionService {
                 scenario.setStatus(revised
                         ? ElliottProjectionScenarioStatus.SUPERSEDED
                         : ElliottProjectionScenarioStatus.COMPLETED);
-                scenario.setResolutionTimestamp(prepared.sourceTimestamp());
+                scenario.setResolutionTimestamp(prepared.availableFromTimestamp());
                 scenario.setResolutionReason(previous.getResolutionReason());
                 scenario.setUpdatedAt(now);
             }
@@ -119,6 +133,7 @@ public class ElliottProjectionService {
         projectionSet.setDevelopmentKey(event.getElliottDevelopmentKey());
         projectionSet.setSourceTimestamp(prepared.sourceTimestamp());
         projectionSet.setSourcePrice(prepared.sourcePrice());
+        projectionSet.setAvailableFromTimestamp(prepared.availableFromTimestamp());
         projectionSet.setStatus(ElliottProjectionSetStatus.ACTIVE);
         projectionSet.setLastEvaluatedTimestamp(prepared.sourceTimestamp());
         projectionSet.setEvaluatedCandleCount(0);
@@ -145,6 +160,8 @@ public class ElliottProjectionService {
             scenario.setTargetBasis(preparedScenario.targetBasis());
             scenario.setMinimumCandles(preparedScenario.minimumCandles());
             scenario.setMaximumCandles(preparedScenario.maximumCandles());
+            scenario.setOriginalMaximumCandles(preparedScenario.maximumCandles());
+            scenario.setTargetHistoryChecked(true);
             scenario.setHardInvalidationPrice(preparedScenario.hardInvalidationPrice());
             scenario.setHardInvalidationSide(name(preparedScenario.hardInvalidationSide()));
             scenario.setScenarioInvalidationPrice(preparedScenario.scenarioInvalidationPrice());
@@ -153,6 +170,8 @@ public class ElliottProjectionService {
             scenario.setEvaluationNote("Awaiting the first completed candle after the projection.");
             scenario.setCreatedAt(now);
             scenario.setUpdatedAt(now);
+            scenario.getRevisions().add(new ElliottProjectionRevision(prepared.availableFromTimestamp(), scenario,
+                    "Initial conditional projection from the validated stage endpoint."));
             scenarios.add(scenario);
         }
         scenarioRepository.saveAll(scenarios);
@@ -167,130 +186,195 @@ public class ElliottProjectionService {
         JobLeaseGuard.requireOwnership();
         if (symbol == null || symbol.isBlank() || interval == null
                 || availableCandles == null || availableCandles.isEmpty()) return 0;
-        List<Candle> candles = availableCandles.stream()
-                .filter(candle -> candle != null && candle.getTimestamp() != null
-                        && candle.getHighPrice() != null && candle.getLowPrice() != null
-                        && candle.getClosePrice() != null)
-                .sorted(Comparator.comparing(Candle::getTimestamp))
-                .toList();
+        if (interval != TimeInterval.DAILY && interval != TimeInterval.WEEKLY
+                && interval != TimeInterval.MONTHLY) return 0;
+        long incomplete = candleCompletionService.firstIncompleteCandleTimestamp(interval);
+        // Duplicate provider rows must not count as independent evidence.
+        TreeMap<Long, Candle> unique = new TreeMap<>();
+        for (Candle candle : availableCandles) {
+            if (TradeRiskPolicy.valid(candle) && candle.getTimestamp() != null
+                    && candle.getTimestamp() < incomplete) unique.put(candle.getTimestamp(), candle);
+        }
+        List<Candle> candles = List.copyOf(unique.values());
         if (candles.isEmpty()) return 0;
         int changedSets = 0;
-        for (ElliottProjectionSet projectionSet : setRepository.findForEvaluation(
+        for (ElliottProjectionSet set : setRepository.findForEvaluation(
                 symbol, interval, ElliottProjectionSetStatus.ACTIVE)) {
-            List<Candle> completedAfterSource = candles.stream()
-                    .filter(candle -> candle.getTimestamp() > projectionSet.getSourceTimestamp())
-                    .toList();
-            if (completedAfterSource.isEmpty()) continue;
-            List<Candle> newCandles = completedAfterSource.stream()
-                    .filter(candle -> projectionSet.getLastEvaluatedTimestamp() == null
-                            || candle.getTimestamp() > projectionSet.getLastEvaluatedTimestamp())
-                    .toList();
-            if (newCandles.isEmpty()) continue;
+            if (set.getStatus() != ElliottProjectionSetStatus.ACTIVE) continue;
             List<ElliottProjectionScenario> scenarios =
-                    scenarioRepository.findByProjectionSetOrderByDisplayRankAscIdAsc(projectionSet);
+                    scenarioRepository.findByProjectionSetOrderByDisplayRankAscIdAsc(set);
             boolean changed = false;
-            Candle latest = completedAfterSource.getLast();
-            int evaluatedCandleCount = projectionSet.getEvaluatedCandleCount() + newCandles.size();
-            for (ElliottProjectionScenario scenario : scenarios) {
-                if (!isOpen(scenario.getStatus())) continue;
-                Evaluation evaluation = evaluate(
-                        projectionSet, scenario, newCandles, evaluatedCandleCount, latest);
-                if (evaluation == null) continue;
-                scenario.setStatus(evaluation.status());
-                scenario.setCurrentConfidence(evaluation.confidence());
-                scenario.setEvaluationNote(evaluation.note());
-                if (evaluation.status() == ElliottProjectionScenarioStatus.INVALIDATED) {
-                    scenario.setResolutionTimestamp(evaluation.timestamp());
-                    scenario.setResolutionReason(evaluation.note());
+            for (int index = 0; index < candles.size(); index++) {
+                Candle candle = candles.get(index);
+                if (candle.getTimestamp() <= set.getSourceTimestamp()
+                        || set.getLastEvaluatedTimestamp() != null
+                        && candle.getTimestamp() <= set.getLastEvaluatedTimestamp()) continue;
+                int elapsed = set.getEvaluatedCandleCount() + 1;
+                List<Candle> prefix = candles.subList(0, index + 1);
+                // Age includes the confirmation delay, but no decision can predate knowledge of the count.
+                if (candle.getTimestamp() >= set.getAvailableFromTimestamp()) {
+                    for (ElliottProjectionScenario scenario : scenarios) {
+                        if (isOpen(scenario.getStatus())) evaluate(set, scenario, prefix, elapsed, interval);
+                    }
+                    rerank(scenarios);
                 }
-                scenario.setUpdatedAt(LocalDateTime.now());
+                set.setLastEvaluatedTimestamp(candle.getTimestamp());
+                set.setEvaluatedCandleCount(elapsed);
                 changed = true;
+                if (scenarios.stream().noneMatch(scenario -> isOpen(scenario.getStatus()))) {
+                    set.setStatus(ElliottProjectionSetStatus.INVALIDATED);
+                    set.setResolutionTimestamp(candle.getTimestamp());
+                    set.setResolutionReason("Every conditional path was invalidated by completed price action.");
+                    break;
+                }
             }
-            if (!changed && projectionSet.getLastEvaluatedTimestamp() != null
-                    && projectionSet.getLastEvaluatedTimestamp() >= latest.getTimestamp()) continue;
-
-            rerank(scenarios);
-            projectionSet.setLastEvaluatedTimestamp(latest.getTimestamp());
-            projectionSet.setEvaluatedCandleCount(evaluatedCandleCount);
-            if (scenarios.stream().noneMatch(scenario -> isOpen(scenario.getStatus()))) {
-                projectionSet.setStatus(ElliottProjectionSetStatus.INVALIDATED);
-                projectionSet.setResolutionTimestamp(latest.getTimestamp());
-                projectionSet.setResolutionReason(
-                        "Every conditional path was invalidated by completed price action.");
-            }
-            projectionSet.setUpdatedAt(LocalDateTime.now());
+            if (!changed) continue;
+            set.setUpdatedAt(LocalDateTime.now());
             scenarioRepository.saveAll(scenarios);
-            setRepository.save(projectionSet);
+            setRepository.save(set);
             changedSets++;
         }
         return changedSets;
     }
 
-    private Evaluation evaluate(
-            ElliottProjectionSet projectionSet,
-            ElliottProjectionScenario scenario,
-            List<Candle> newCandles,
-            int elapsed,
-            Candle latest) {
-        for (Candle candle : newCandles) {
-            if (breached(candle, scenario.getHardInvalidationPrice(), scenario.getHardInvalidationSide())) {
-                return new Evaluation(ElliottProjectionScenarioStatus.INVALIDATED, 0,
-                        "A completed candle broke the Elliott count's hard structural boundary.",
-                        candle.getTimestamp());
-            }
-            if (breached(candle, scenario.getScenarioInvalidationPrice(),
-                    scenario.getScenarioInvalidationSide())) {
-                return new Evaluation(ElliottProjectionScenarioStatus.INVALIDATED, 0,
-                        "Price moved beyond this scenario's valid endpoint range while the wave remained open.",
-                        candle.getTimestamp());
-            }
+    private void evaluate(ElliottProjectionSet set, ElliottProjectionScenario scenario,
+                          List<Candle> history, int elapsed, TimeInterval interval) {
+        Candle latest = history.getLast();
+        if (scenario.getOriginalMaximumCandles() <= 0) {
+            scenario.setOriginalMaximumCandles(scenario.getMaximumCandles());
         }
+        if (scenario.getRevisions().isEmpty() && scenario.getProjectedPath() != null) {
+            scenario.getRevisions().add(new ElliottProjectionRevision(
+                    Math.max(set.getSourceTimestamp(), set.getAvailableFromTimestamp()), scenario,
+                    "Original stored projection, retained before adaptive monitoring."));
+        }
+        scenario.setUpdatedAt(LocalDateTime.now());
+        // Hard wave rules use the full completed candle, not a delayed close-only vote.
+        if (breached(latest, scenario.getHardInvalidationPrice(), scenario.getHardInvalidationSide())) {
+            invalidate(scenario, latest, "A completed candle broke the Elliott count's hard structural boundary.");
+            return;
+        }
+        double atr = ElliottProjectionAdaptationPolicy.recentAtr(history);
+        double buffer = Double.isFinite(atr) ? atr * .5 : 0;
+        double boundaryClose = latest.getClosePrice()
+                + ("ABOVE".equals(scenario.getScenarioInvalidationSide()) ? -buffer : buffer);
+        boolean beyondEndpoint = ElliottProjectionAdaptationPolicy.beyond(boundaryClose,
+                scenario.getScenarioInvalidationPrice(), scenario.getScenarioInvalidationSide());
+        scenario.setBoundaryStreak(beyondEndpoint ? scenario.getBoundaryStreak() + 1 : 0);
 
-        double expectedDistance = scenario.getTargetMidpoint() - projectionSet.getSourcePrice();
-        double progress = Math.abs(expectedDistance) <= .000001 ? 0.0
-                : (latest.getClosePrice() - projectionSet.getSourcePrice()) / expectedDistance;
-        double expectedProgress = Math.min(1.0, elapsed / (double) scenario.getMaximumCandles());
-        int adjustment = (int) Math.round(Math.max(-15.0, Math.min(15.0,
-                (progress - expectedProgress) * 18.0)));
-        int confidence = Math.max(5, Math.min(85, scenario.getInitialConfidence() + adjustment));
-
-        ElliottProjectionScenarioStatus status = scenario.getStatus();
-        String note;
-        if (elapsed > scenario.getMaximumCandles()) {
-            status = ElliottProjectionScenarioStatus.DISFAVORED;
+        // Existing rows may have passed their target before adaptive monitoring was deployed.
+        // Recover the contact from available history without pretending a redraw occurred in the past.
+        boolean recoveredContact = false;
+        if (!scenario.isTargetHistoryChecked()) {
+            if (scenario.getTargetReachedTimestamp() == null) {
+                Long contact = history.stream().filter(c -> c.getTimestamp() > set.getSourceTimestamp()
+                                && c.getTimestamp() >= set.getAvailableFromTimestamp() && touched(c, scenario))
+                        .map(Candle::getTimestamp).findFirst().orElse(null);
+                scenario.setTargetReachedTimestamp(contact);
+                recoveredContact = contact != null;
+            }
+            scenario.setTargetHistoryChecked(true);
+        }
+        boolean targetTouched = touched(latest, scenario);
+        if (scenario.getTargetReachedTimestamp() == null && targetTouched) {
+            scenario.setTargetReachedTimestamp(latest.getTimestamp());
+        }
+        if (scenario.getBoundaryStreak() >= ElliottProjectionAdaptationPolicy.REQUIRED_CLOSES) {
+            invalidate(scenario, latest,
+                    "Three completed closes exceeded this scenario's endpoint range; other counts remain independently evaluated.");
+            return;
+        }
+        var adaptation = ElliottProjectionAdaptationPolicy.assess(set, scenario, history, elapsed, interval);
+        scenario.setDeviationKind(adaptation.deviation());
+        scenario.setDeviationStreak(adaptation.streak());
+        boolean supportedReturn = !targetTouched && adaptation.revised() && adaptation.structuralSupport() > 0
+                && ElliottProjectionAdaptationPolicy.confirmedSwings(history, set.getSourceTimestamp()).stream()
+                .anyMatch(swing -> scenario.getTargetReachedTimestamp() != null
+                        && swing.timestamp() > scenario.getTargetReachedTimestamp());
+        if (targetTouched || recoveredContact || scenario.getStatus() == ElliottProjectionScenarioStatus.AWAITING_CONFIRMATION
+                && !supportedReturn) {
+            scenario.setStatus(ElliottProjectionScenarioStatus.AWAITING_CONFIRMATION);
+            scenario.setCurrentConfidence(Math.min(30, scenario.getInitialConfidence()));
+            scenario.setEvaluationNote("Target zone touched; awaiting a validated wave endpoint or a supported extension. Target contact alone does not complete the wave.");
+            if (targetTouched) {
+                scenario.setDeviationKind(null);
+                scenario.setDeviationStreak(0);
+            }
+            return;
+        }
+        double distance = scenario.getTargetMidpoint() - set.getSourcePrice();
+        double progress = Math.abs(distance) < .000001 ? 0 : (latest.getClosePrice() - set.getSourcePrice()) / distance;
+        double expectedProgress = Math.min(1.0, elapsed / (double) Math.max(1, scenario.getMaximumCandles()));
+        int adjustment = (int) Math.round(Math.clamp((progress - expectedProgress) * 18.0, -15.0, 15.0));
+        int confidence = Math.clamp(scenario.getInitialConfidence() + adjustment + adaptation.structuralSupport(), 5, 85);
+        boolean unresolved = scenario.getStatus() == ElliottProjectionScenarioStatus.UNRESOLVED;
+        scenario.setStatus(unresolved ? ElliottProjectionScenarioStatus.UNRESOLVED : ElliottProjectionScenarioStatus.ACTIVE);
+        if (adaptation.revised()) {
+            scenario.setProjectedPath(serializePath(adaptation.path()));
+            scenario.setMinimumCandles(adaptation.minimumCandles());
+            scenario.setMaximumCandles(adaptation.maximumCandles());
+            scenario.setLastRevisionCandleCount(elapsed);
+            scenario.setDeviationKind(null);
+            scenario.setDeviationStreak(0);
+            scenario.setStatus(ElliottProjectionScenarioStatus.ACTIVE);
+            scenario.setEvaluationNote(adaptation.reason());
+            scenario.getRevisions().add(new ElliottProjectionRevision(latest.getTimestamp(), scenario, adaptation.reason()));
+        } else if (adaptation.unresolved() || unresolved) {
+            scenario.setStatus(ElliottProjectionScenarioStatus.UNRESOLVED);
+            confidence = Math.min(confidence, 20);
+            scenario.setEvaluationNote(adaptation.unresolved() ? adaptation.reason()
+                    : "No supported remaining path; awaiting sufficient evidence or the next validated stage.");
+        } else if (elapsed > scenario.getMaximumCandles() || progress < -.20 || adaptation.structuralSupport() < 0) {
+            scenario.setStatus(ElliottProjectionScenarioStatus.DISFAVORED);
             confidence = Math.min(confidence, 24);
-            note = "The wave remains open beyond this scenario's textbook candle window.";
-        } else if (progress < -.20) {
-            status = ElliottProjectionScenarioStatus.DISFAVORED;
-            confidence = Math.min(confidence, 30);
-            note = "Completed closes are moving materially away from this projected path.";
-        } else if (elapsed < scenario.getMinimumCandles()) {
-            note = "Developing normally; the earliest projected endpoint is candle "
-                    + scenario.getMinimumCandles() + ".";
-        } else if (progress >= .80) {
-            note = "Price is approaching this target zone inside its projected candle window.";
+            scenario.setEvaluationNote("The original path is under review; sustained completed-candle evidence is required before replacement.");
         } else {
-            note = "This scenario remains structurally valid after " + elapsed
-                    + " completed candle" + (elapsed == 1 ? "." : "s.");
+            scenario.setEvaluationNote("Current path retained after " + elapsed + " completed candles; no decisive revision evidence.");
         }
-        return new Evaluation(status, confidence, note, latest.getTimestamp());
+        scenario.setCurrentConfidence(confidence);
+    }
+
+    private void invalidate(ElliottProjectionScenario scenario, Candle candle, String reason) {
+        scenario.setStatus(ElliottProjectionScenarioStatus.INVALIDATED);
+        scenario.setCurrentConfidence(0);
+        scenario.setResolutionTimestamp(candle.getTimestamp());
+        scenario.setResolutionReason(reason);
+        scenario.setEvaluationNote(reason);
     }
 
     private boolean breached(Candle candle, Double price, String side) {
-        if (price == null || side == null || !Double.isFinite(price)) return false;
-        return "BELOW".equals(side) ? candle.getLowPrice() <= price
-                : candle.getHighPrice() >= price;
+        return ElliottProjectionAdaptationPolicy.beyond("ABOVE".equals(side)
+                ? candle.getHighPrice() : candle.getLowPrice(), price, side);
+    }
+
+    private static boolean drawable(ElliottProjectionScenario scenario) {
+        return scenario.getStatus() == ElliottProjectionScenarioStatus.ACTIVE
+                || scenario.getStatus() == ElliottProjectionScenarioStatus.DISFAVORED;
     }
 
     private void rerank(List<ElliottProjectionScenario> scenarios) {
-        List<ElliottProjectionScenario> open = scenarios.stream()
+        List<ElliottProjectionScenario> open = new ArrayList<>(scenarios.stream()
                 .filter(scenario -> isOpen(scenario.getStatus()))
-                .sorted(Comparator.comparingInt(ElliottProjectionScenario::getCurrentConfidence).reversed()
-                        .thenComparing(ElliottProjectionScenario::getScenarioKey))
-                .toList();
-        for (int index = 0; index < open.size(); index++) {
-            open.get(index).setDisplayRank(index + 1);
+                .sorted(Comparator.comparingInt(ElliottProjectionScenario::getDisplayRank)
+                        .thenComparing(ElliottProjectionScenario::getScenarioKey)).toList());
+        if (open.isEmpty()) return;
+        ElliottProjectionScenario incumbent = open.getFirst();
+        var bySupport = Comparator.comparingInt((ElliottProjectionScenario s) -> drawable(s) ? 0 : 1)
+                .thenComparing(Comparator.comparingInt(ElliottProjectionScenario::getCurrentConfidence).reversed())
+                .thenComparing(ElliottProjectionScenario::getScenarioKey);
+        ElliottProjectionScenario best = open.stream().min(bySupport).orElseThrow();
+        for (ElliottProjectionScenario scenario : open) {
+            boolean challenger = scenario == best && scenario != incumbent && drawable(scenario)
+                    && scenario.getCurrentConfidence() >= incumbent.getCurrentConfidence()
+                    + ElliottProjectionAdaptationPolicy.PROMOTION_MARGIN;
+            scenario.setPromotionStreak(challenger ? scenario.getPromotionStreak() + 1 : 0);
         }
+        ElliottProjectionScenario preferred = !drawable(incumbent) && drawable(best)
+                || best.getPromotionStreak() >= ElliottProjectionAdaptationPolicy.REQUIRED_CLOSES ? best : incumbent;
+        open.sort(bySupport);
+        open.remove(preferred);
+        open.addFirst(preferred);
+        for (int i = 0; i < open.size(); i++) open.get(i).setDisplayRank(i + 1);
     }
 
     @Transactional(readOnly = true)
@@ -322,14 +406,24 @@ public class ElliottProjectionService {
     @Transactional(readOnly = true)
     public List<ProjectionSetView> history(Long eventId, User user) {
         if (eventId == null || user == null) return List.of();
-        return setRepository.findOwnedHistory(eventId, user).stream().map(this::view).toList();
+        return setRepository.findOwnedHistory(eventId, user).stream().map(set -> view(set, true)).toList();
     }
 
     private ProjectionSetView view(ElliottProjectionSet set) {
+        return view(set, false);
+    }
+
+    private boolean touched(Candle candle, ElliottProjectionScenario scenario) {
+        return scenario.getExpectedMove() == TradeSignal.BUY
+                ? candle.getHighPrice() >= scenario.getTargetZoneLow()
+                : candle.getLowPrice() <= scenario.getTargetZoneHigh();
+    }
+
+    private ProjectionSetView view(ElliottProjectionSet set, boolean includeArchived) {
         List<ElliottProjectionScenario> stored =
                 scenarioRepository.findByProjectionSetOrderByDisplayRankAscIdAsc(set);
         List<ScenarioView> visible = stored.stream()
-                .filter(scenario -> isOpen(scenario.getStatus()))
+                .filter(scenario -> includeArchived || isOpen(scenario.getStatus()))
                 .sorted(Comparator.comparingInt(ElliottProjectionScenario::getDisplayRank))
                 .map(this::view)
                 .toList();
@@ -343,7 +437,8 @@ public class ElliottProjectionService {
 
     private ScenarioView view(ElliottProjectionScenario scenario) {
         return new ScenarioView(
-                scenario.getScenarioKey(), scenario.getLabel(), scenario.getDescription(),
+                scenario.getScenarioKey(), scenario.getLabel() == null ? scenario.getScenarioKey()
+                        : scenario.getLabel().replaceFirst("^(Preferred|Alternate [AB])\\s*·\\s*", ""), scenario.getDescription(),
                 scenario.getDisplayRank(), scenario.getExpectedMove(), scenario.getStatus(),
                 scenario.getCurrentConfidence(), parsePath(scenario.getProjectedPath()),
                 scenario.getTargetZoneLow(), scenario.getTargetZoneHigh(),
@@ -352,22 +447,29 @@ public class ElliottProjectionService {
                 scenario.getHardInvalidationPrice(), scenario.getHardInvalidationSide(),
                 scenario.getEvidence() == null || scenario.getEvidence().isBlank()
                         ? List.of() : scenario.getEvidence().lines().toList(),
-                scenario.getEvaluationNote());
+                scenario.getEvaluationNote(), drawable(scenario), scenario.getTargetReachedTimestamp(),
+                scenario.getRevisions().stream().map(revision -> new RevisionView(
+                        revision.getDecisionTimestamp(), revision.getReason(),
+                        revision.getMinimumCandles(), revision.getMaximumCandles(),
+                        revision.getTargetZoneLow(), revision.getTargetZoneHigh(),
+                        parsePath(revision.getProjectedPath()))).toList());
     }
 
     private static boolean isOpen(ElliottProjectionScenarioStatus status) {
         return status == ElliottProjectionScenarioStatus.ACTIVE
-                || status == ElliottProjectionScenarioStatus.DISFAVORED;
+                || status == ElliottProjectionScenarioStatus.DISFAVORED
+                || status == ElliottProjectionScenarioStatus.AWAITING_CONFIRMATION
+                || status == ElliottProjectionScenarioStatus.UNRESOLVED;
     }
 
     private static String serializePath(List<ElliottProjectionPolicy.ProjectedPoint> path) {
         return path.stream()
-                .map(point -> "%d|%d|%.10f|%s".formatted(
+                .map(point -> String.format(Locale.ROOT, "%d|%d|%.10f|%s",
                         point.candleOffset(), point.timestamp(), point.price(), point.label()))
                 .collect(java.util.stream.Collectors.joining("\n"));
     }
 
-    private static List<ProjectedPointView> parsePath(String snapshot) {
+    static List<ProjectedPointView> parsePath(String snapshot) {
         if (snapshot == null || snapshot.isBlank()) return List.of();
         return snapshot.lines().map(line -> line.split("\\|", -1)).map(fields -> {
             if (fields.length != 4) return null;
@@ -388,13 +490,13 @@ public class ElliottProjectionService {
             ElliottSignalStage stage,
             long sourceTimestamp,
             double sourcePrice,
-            List<ElliottProjectionPolicy.Scenario> scenarios) { }
-
-    private record Evaluation(
-            ElliottProjectionScenarioStatus status,
-            int confidence,
-            String note,
-            long timestamp) { }
+            List<ElliottProjectionPolicy.Scenario> scenarios,
+            long availableFromTimestamp) {
+        PreparedProjection(ElliottSignalStage stage, long sourceTimestamp, double sourcePrice,
+                           List<ElliottProjectionPolicy.Scenario> scenarios) {
+            this(stage, sourceTimestamp, sourcePrice, scenarios, sourceTimestamp);
+        }
+    }
 
     public record ProjectionSetView(
             ElliottSignalStage stage,
@@ -431,12 +533,30 @@ public class ElliottProjectionService {
             Double hardInvalidationPrice,
             String hardInvalidationSide,
             List<String> evidence,
-            String evaluationNote) {
+            String evaluationNote,
+            boolean drawable,
+            Long targetReachedTimestamp,
+            List<RevisionView> revisions) {
         public ScenarioView {
             path = path == null ? List.of() : List.copyOf(path);
             evidence = evidence == null ? List.of() : List.copyOf(evidence);
+            revisions = revisions == null ? List.of() : List.copyOf(revisions);
         }
     }
 
-    public record ProjectedPointView(int candleOffset, long timestamp, double price, String label) { }
+    public record RevisionView(long decisionTimestamp, String reason, int minimumCandles, int maximumCandles,
+                               double targetZoneLow, double targetZoneHigh, List<ProjectedPointView> path) {
+        public String decisionDate() { return date(decisionTimestamp); }
+        public List<ProjectedPointView> turns() {
+            return path.stream().filter(p -> !p.label().isBlank() || p == path.getFirst() || p == path.getLast()).toList();
+        }
+    }
+
+    private static String date(long timestamp) {
+        return java.time.Instant.ofEpochSecond(timestamp).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString();
+    }
+
+    public record ProjectedPointView(int candleOffset, long timestamp, double price, String label) {
+        public String date() { return ElliottProjectionService.date(timestamp); }
+    }
 }

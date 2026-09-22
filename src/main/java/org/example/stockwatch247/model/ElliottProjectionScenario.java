@@ -5,6 +5,8 @@ import org.example.stockwatch247.model.enums.ElliottProjectionScenarioStatus;
 import org.example.stockwatch247.model.enums.TradeSignal;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "elliott_projection_scenarios", uniqueConstraints = @UniqueConstraint(
@@ -73,6 +75,46 @@ public class ElliottProjectionScenario {
     private LocalDateTime createdAt = LocalDateTime.now();
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
+
+    @Column(name = "original_maximum_candles", nullable = false)
+    private int originalMaximumCandles;
+    @Column(name = "deviation_kind", length = 24)
+    private String deviationKind;
+    @Column(name = "deviation_streak", nullable = false)
+    private int deviationStreak;
+    @Column(name = "boundary_streak", nullable = false)
+    private int boundaryStreak;
+    @Column(name = "promotion_streak", nullable = false)
+    private int promotionStreak;
+    @Column(name = "last_revision_candle_count", nullable = false)
+    private int lastRevisionCandleCount;
+    @Column(name = "target_reached_timestamp")
+    private Long targetReachedTimestamp;
+    @Column(name = "target_history_checked", nullable = false)
+    private boolean targetHistoryChecked;
+
+    @ElementCollection
+    @CollectionTable(name = "elliott_projection_revisions", joinColumns = @JoinColumn(name = "scenario_id"))
+    @OrderColumn(name = "revision_index")
+    private List<ElliottProjectionRevision> revisions = new ArrayList<>();
+
+    public int getOriginalMaximumCandles() { return originalMaximumCandles; }
+    public void setOriginalMaximumCandles(int value) { originalMaximumCandles = value; }
+    public String getDeviationKind() { return deviationKind; }
+    public void setDeviationKind(String value) { deviationKind = value; }
+    public int getDeviationStreak() { return deviationStreak; }
+    public void setDeviationStreak(int value) { deviationStreak = value; }
+    public int getBoundaryStreak() { return boundaryStreak; }
+    public void setBoundaryStreak(int value) { boundaryStreak = value; }
+    public int getPromotionStreak() { return promotionStreak; }
+    public void setPromotionStreak(int value) { promotionStreak = value; }
+    public int getLastRevisionCandleCount() { return lastRevisionCandleCount; }
+    public void setLastRevisionCandleCount(int value) { lastRevisionCandleCount = value; }
+    public Long getTargetReachedTimestamp() { return targetReachedTimestamp; }
+    public void setTargetReachedTimestamp(Long value) { targetReachedTimestamp = value; }
+    public boolean isTargetHistoryChecked() { return targetHistoryChecked; }
+    public void setTargetHistoryChecked(boolean value) { targetHistoryChecked = value; }
+    public List<ElliottProjectionRevision> getRevisions() { return revisions; }
 
     public Long getId() { return id; }
     public ElliottProjectionSet getProjectionSet() { return projectionSet; }

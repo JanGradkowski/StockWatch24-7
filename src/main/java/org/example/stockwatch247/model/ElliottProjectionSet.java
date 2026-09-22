@@ -45,6 +45,14 @@ public class ElliottProjectionSet {
     @Column(name = "evaluated_candle_count", nullable = false)
     private int evaluatedCandleCount;
 
+    @Column(name = "available_from_timestamp", nullable = false)
+    private long availableFromTimestamp;
+    @Version
+    private long version;
+
+    public long getAvailableFromTimestamp() { return availableFromTimestamp; }
+    public void setAvailableFromTimestamp(long value) { availableFromTimestamp = value; }
+
     @Column(name = "resolution_timestamp")
     private Long resolutionTimestamp;
 

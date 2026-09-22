@@ -322,12 +322,13 @@
       <li th:each="point : ${signal.chart().elliottWave().points()}"
           th:attr="data-label=${point.label()},data-time=${point.timestamp()},data-price=${point.price()},data-pivot-type=${point.pivotType()}"></li>
     </ol>
-    <ol th:if="${signal.elliottProjection() != null}"
+    <ol th:fragment="elliottProjectionData" th:if="${signal.elliottProjection() != null}"
         id="signalElliottProjectionData" hidden aria-hidden="true"
         th:attr="data-stage=${signal.elliottProjection().stage().name()},
                  data-source-time=${signal.elliottProjection().sourceTimestamp()},
                  data-source-price=${signal.elliottProjection().sourcePrice()}">
       <li th:each="scenario : ${signal.elliottProjection().scenarios()}"
+          th:if="${scenario.drawable()}"
           th:attr="data-key=${scenario.key()},data-label=${scenario.label()},
                    data-status=${scenario.status().name()},data-rank=${scenario.rank()},
                    data-confidence=${scenario.confidence()},
@@ -359,7 +360,7 @@
     </div>
   </section>
 
-  <section th:if="${signal.elliottProjection() != null and !#lists.isEmpty(signal.elliottProjection().scenarios())}"
+  <section th:fragment="elliottProjectionScenarios" th:if="${signal.elliottProjection() != null and !#lists.isEmpty(signal.elliottProjection().scenarios())}"
            class="elliott-projection-card" aria-labelledby="elliott-projection-heading">
     <div class="elliott-projection-heading">
       <div>
@@ -373,9 +374,9 @@
     <div class="elliott-projection-grid">
       <article th:each="scenario : ${signal.elliottProjection().scenarios()}"
                class="elliott-projection-scenario"
-               th:classappend="${scenario.status().name() == 'DISFAVORED' ? ' disfavored' : (scenario.rank() == 1 ? ' preferred' : '')}">
+               th:classappend="${!scenario.drawable() or scenario.status().name() == 'DISFAVORED' ? ' disfavored' : (scenario.rank() == 1 ? ' preferred' : '')}">
         <header>
-          <span class="elliott-projection-rank" th:text="${scenario.rank() == 1 ? 'Preferred' : 'Alternate ' + (scenario.rank() - 1)}">Preferred</span>
+          <span class="elliott-projection-rank" th:text="${!scenario.drawable() ? 'Monitoring' : (scenario.rank() == 1 ? 'Preferred' : 'Alternate ' + (scenario.rank() - 1))}">Preferred</span>
           <span class="elliott-projection-confidence" th:text="${scenario.confidence() + '/100 confidence'}">62/100 confidence</span>
         </header>
         <h3 th:text="${scenario.label()}">Standard Wave III</h3>
@@ -386,21 +387,55 @@
           <div><dt>Textbook basis</dt><dd th:text="${scenario.targetBasis()}">161.8% extension</dd></div>
           <div th:if="${scenario.hardInvalidationPrice() != null}"><dt>Hard invalidation</dt><dd th:text="${scenario.hardInvalidationSide() + ' ' + #numbers.formatDecimal(scenario.hardInvalidationPrice(), 1, 4)}">BELOW 95</dd></div>
         </dl>
-        <div class="elliott-projection-state" th:classappend="${scenario.status().name() == 'DISFAVORED' ? ' warning' : ''}">
+        <div class="elliott-projection-state" th:classappend="${!scenario.drawable() or scenario.status().name() == 'DISFAVORED' ? ' warning' : ''}">
           <span th:text="${#strings.replace(scenario.status().name(), '_', ' ')}">ACTIVE</span>
           <p th:text="${scenario.evaluationNote()}">Awaiting the next candle.</p>
         </div>
+        <p th:if="${#lists.size(scenario.revisions()) > 1}"
+           th:text="${'Revised ' + scenario.revisions().getLast().decisionDate() + ': ' + scenario.revisions().getLast().reason()}"></p>
+        <p th:if="${scenario.drawable() and #lists.size(scenario.revisions()) > 1}">The path starts at a completed close as a provisional anchor; its remaining turns are conditional.</p>
         <ul>
           <li th:each="evidence : ${scenario.evidence()}" th:text="${evidence}">Evidence</li>
         </ul>
       </article>
     </div>
     <p class="elliott-projection-footnote">
-      Only completed candles update these scenarios. A hard rule breach invalidates a path; a guideline or timing mismatch merely disfavors it.
+      Only completed candles update these scenarios. Hard rule breaches invalidate a count immediately.
+      Material deviations require three consecutive closes before a revision, with at least five candles between redraws.
+      Timing is measured from the original wave endpoint. Target contact awaits wave confirmation; unsupported paths are hidden.
       <span th:if="${signal.elliottProjection().hiddenScenarioCount() > 0}"
             th:text="${signal.elliottProjection().hiddenScenarioCount() + ' invalidated or finished path(s) are hidden from the chart but retained for audit history.'}">Hidden paths retained.</span>
       <span th:if="${!signal.alertRuleActive()}">This existing map remains monitored after unfollowing, but no new ticker notifications are created.</span>
     </p>
+  </section>
+
+  <section th:fragment="elliottProjectionHistory" th:if="${!#lists.isEmpty(signal.elliottProjectionHistory())}"
+           class="elliott-projection-card" aria-label="Projection revision history">
+    <details>
+      <summary>Projection history — original paths and revisions</summary>
+      <p>Each version shows the forecast retained at that decision candle. Later observations do not rewrite earlier versions.</p>
+      <div th:each="projection : ${signal.elliottProjectionHistory()}">
+        <h3 th:text="${#strings.replace(projection.stage().name(), '_', ' ') + ' · stage revision ' + projection.revision()}"></h3>
+        <p th:if="${projection.resolutionReason() != null}" th:text="${projection.resolutionReason()}"></p>
+        <details th:each="scenario : ${projection.scenarios()}">
+          <summary th:text="${scenario.label() + ' · ' + #strings.replace(scenario.status().name(), '_', ' ')}"></summary>
+          <p th:text="${scenario.evaluationNote()}"></p>
+          <details th:each="revision, revisionStat : ${scenario.revisions()}">
+            <summary th:text="${(revisionStat.first ? 'Original path' : 'Path revision ' + revisionStat.index) + ' · known on ' + revision.decisionDate()}"></summary>
+            <p th:text="${revision.reason()}"></p>
+            <p th:text="${'Target ' + #numbers.formatDecimal(revision.targetZoneLow(), 1, 4) + '–' + #numbers.formatDecimal(revision.targetZoneHigh(), 1, 4) + '; candles ' + revision.minimumCandles() + '–' + revision.maximumCandles() + ' from the original endpoint.'}"></p>
+            <table>
+              <thead><tr><th scope="col">Date</th><th scope="col">Point</th><th scope="col">Projected price</th></tr></thead>
+              <tbody><tr th:each="point : ${revision.turns()}">
+                <td th:text="${point.date()}"></td>
+                <td th:text="${#strings.isEmpty(point.label()) ? 'Anchor' : point.label()}"></td>
+                <td th:text="${#numbers.formatDecimal(point.price(), 1, 4)}"></td>
+              </tr></tbody>
+            </table>
+          </details>
+        </details>
+      </div>
+    </details>
   </section>
 
   <section th:if="${signal.elliottProjection() == null and !#lists.isEmpty(signal.elliottProjectionHistory())}"
