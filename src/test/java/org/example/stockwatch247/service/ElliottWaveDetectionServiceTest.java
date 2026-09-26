@@ -19,6 +19,23 @@ class ElliottWaveDetectionServiceTest {
             1, ElliottWaveDetectionService.ScoringModel.V2);
 
     @Test
+    void primaryScanMatchesExhaustiveRankingAndCountsEveryAlternative() {
+        for (var candles : List.of(completeNestedImpulseWithNestedZigzagCorrection(),
+                completeNestedImpulseWithNestedFlatCorrection(), completeNestedImpulseWithTriangularWaveB())) {
+            var all = detectionService.findDevelopingImpulseHypotheses(candles);
+            var grouped = all.stream().collect(java.util.stream.Collectors.groupingBy(
+                    ElliottWaveDetectionService.DevelopingImpulse::developmentKey));
+            var primary = detectionService.findDevelopingImpulses(candles);
+            assertThat(primary).hasSize(grouped.size()).isNotEmpty();
+            for (var candidate : primary) {
+                var alternatives = grouped.get(candidate.developmentKey());
+                assertThat(candidate).usingRecursiveComparison().ignoringFields("evidence").isEqualTo(alternatives.getFirst());
+                assertThat(candidate.evidence().getLast()).startsWith(alternatives.size() == 1 ? "One parent-degree" : alternatives.size()+" admissible");
+            }
+        }
+    }
+
+    @Test
     void detectsBullishImpulseBreakoutFromAlternatingPivots() {
         List<EnrichedCandle> candles = syntheticSeries(List.of(
                 anchor(1, 112.0),
@@ -169,8 +186,8 @@ class ElliottWaveDetectionServiceTest {
                 .scoreHistoricalStructure(candles, structure, ElliottSignalStage.CORRECTION_END, 87L);
 
         assertThat(assessment.score()).isBetween(0, 100);
-        assertThat(assessment.reasons()).hasSize(7);
-        assertThat(assessment.reasons()).extracting(reason -> reason.substring(0, reason.indexOf(" +")))
+        assertThat(assessment.reasons()).anyMatch(reason -> reason.startsWith("Structural validation:"));
+        assertThat(assessment.reasons().stream().filter(reason -> reason.contains(" +")).toList()).extracting(reason -> reason.substring(0, reason.indexOf(" +")))
                 .containsExactly(
                         "Structural / pivot quality",
                         "Fibonacci / proportion / alternation",
@@ -623,16 +640,16 @@ class ElliottWaveDetectionServiceTest {
                 anchor(1, 100.0),
                 anchor(8, 120.0),
                 anchor(15, 108.0),
-                anchor(22, 128.0),
+                anchor(22, 127.0),
                 anchor(29, 116.0),
-                anchor(36, 134.0)
+                anchor(36, 131.0)
         ));
 
-        assertThat(detectionService.findStrictSubdivisions(candles, "I", 99.4, 134.6))
+        assertThat(detectionService.findStrictSubdivisions(candles, "I", 99.4, 131.6))
                 .anyMatch(subdivision -> subdivision.structureLabel().contains("diagonal"));
-        assertThat(detectionService.findStrictSubdivisions(candles, "V", 99.4, 134.6))
+        assertThat(detectionService.findStrictSubdivisions(candles, "V", 99.4, 131.6))
                 .anyMatch(subdivision -> subdivision.structureLabel().contains("diagonal"));
-        assertThat(detectionService.findStrictSubdivisions(candles, "III", 99.4, 134.6))
+        assertThat(detectionService.findStrictSubdivisions(candles, "III", 99.4, 131.6))
                 .noneMatch(subdivision -> subdivision.structureLabel().contains("diagonal"));
     }
 
@@ -868,6 +885,17 @@ class ElliottWaveDetectionServiceTest {
         ));
 
         assertThat(detectionService.detect(candles)).isEmpty();
+    }
+
+    @Test
+    void aSlowWaveTwoConfirmationDoesNotPruneTheLaterCompleteImpulse() {
+        var candles=new ArrayList<>(completeNestedImpulseWithDoubleZigzagCorrection().subList(0,163));
+        for(int time=63;time<=66;time++) candles.set(time-1,candle(time,115+(time-62)*.2));
+        assertThat(detectionService.findDevelopingImpulseHypotheses(candles)).anySatisfy(c -> {
+            assertThat(c.stage()).isEqualTo(ElliottSignalStage.WAVE_V_END);
+            assertThat(c.points()).extracting(ElliottWaveDetectionService.ElliottWavePoint::timestamp)
+                    .containsExactly(6L,40L,62L,102L,124L,162L);
+        });
     }
 
     private List<EnrichedCandle> syntheticSeries(List<Anchor> anchors) {

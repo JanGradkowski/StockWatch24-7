@@ -29,8 +29,8 @@ public class SignalArchiveQuery {
              else coalesce(e.lifecycle_status, 'DETECTED') in ('POTENTIAL', 'DETECTED') end)
             """;
         String where = "r.user_id = ? and e.deleted_at is null and (cast(? as bigint) is null or r.stock_asset_id = ?)"
-                + (filter.watchlistId() != null && !filter.ticker().isEmpty()
-                    ? " and upper(a.ticker_symbol) = ?" : " and position(? in upper(a.ticker_symbol)) > 0")
+                + ((filter.watchlistId() != null && !filter.ticker().isEmpty()) || filter.ticker().contains(",")
+                    ? " and upper(a.ticker_symbol) = any(string_to_array(?, ','))" : " and position(? in upper(a.ticker_symbol)) > 0")
                 + switch (filter.state()) {
                     case "unread" -> " and e.read_at is null";
                     case "active" -> " and " + open;
@@ -133,7 +133,7 @@ public class SignalArchiveQuery {
     }
 
     private String activityRows(String kind, String prefix, String actor, SignalArchiveFilter filter) {
-        String where = "s.user_id=? and d.deleted_at is null and (cast(? as bigint) is null or s.stock_asset_id=?) and (?='' or upper(a.ticker_symbol)=?)"
+        String where = "s.user_id=? and d.deleted_at is null and (cast(? as bigint) is null or s.stock_asset_id=?) and (?='' or upper(a.ticker_symbol)=any(string_to_array(?, ',')))"
                 + " and exists(select 1 from watchlists w where w.id=" + filter.watchlistId() + " and w.user_id=s.user_id) and "
                 + WatchlistSignalScope.matches(kind,"d.id","s.stock_asset_id","'"+kind+"'","'DAILY'","'ANY'",filter.watchlistId().toString());
         if (filter.state().equals("unread")) where += " and d.read_at is null";

@@ -80,20 +80,27 @@ public class ElliottWaveDrilldownService {
 
         MarketDataService.CandlePage page = marketDataService.loadCandlePage(
                 symbol, lowerInterval, rangeEndExclusive, MAX_LOWER_INTERVAL_CANDLES);
+        if (page.candles().stream().anyMatch(c -> c == null || c.getTimestamp() == null)) {
+            return unavailable(symbol, parentInterval, lowerInterval, parentLabel, parentStart,
+                    parentEnd, asOfExclusive, "Child candle timestamps are missing.");
+        }
         List<Candle> candles = page.candles().stream()
-                .filter(this::validCandle)
                 .filter(candle -> candle.getTimestamp() >= parentStart
                         && lowerCandleEndExclusive(candle.getTimestamp(), lowerInterval)
                         <= rangeEndExclusive)
                 .sorted(Comparator.comparing(Candle::getTimestamp))
                 .toList();
+        if (!PatternCandleIntegrity.inspect(candles, null).issues().isEmpty()) {
+            return unavailable(symbol, parentInterval, lowerInterval, parentLabel, parentStart,
+                    parentEnd, asOfExclusive, "Child history contains malformed or duplicate candles.");
+        }
         if (candles.size() < 6) {
             return unavailableWithCandles(symbol, parentInterval, lowerInterval, parentLabel,
                     parentStart, parentEnd, parentStartPrice, parentEndPrice, asOfExclusive, candles,
                     "Not enough completed " + intervalLabel(lowerInterval)
                             + " candles are available inside this parent wave.");
         }
-        List<EnrichedCandle> enriched = enrichmentService.enrich(
+        List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
                 candles, candles.size(), lowerTimeInterval);
         ElliottWaveDetectionService detector = rules == null
                 ? detectionService
@@ -115,7 +122,7 @@ public class ElliottWaveDrilldownService {
                         subdivision.confidence(),
                         subdivision.validated(),
                         subdivision.validated()
-                                ? "One validated lower degree"
+                                ? "Observed lower-degree geometry; see unresolved-leg evidence"
                                 : "One provisional lower degree",
                         subdivision.evidence(),
                         candles.stream().map(this::toCandleView).toList(),

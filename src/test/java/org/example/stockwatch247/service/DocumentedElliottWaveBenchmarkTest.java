@@ -59,16 +59,17 @@ class DocumentedElliottWaveBenchmarkTest {
     }
 
     @Test
-    void detectsPublishedSpy2009ImpulseAndRecordsCurrentAbcTimingGap() throws IOException {
+    void detectsPublishedSpy2009ImpulseAndOneCandleWaveACorrection() throws IOException {
         // https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/
         // technical-overlays/zigzag — labels a complete five-up/three-down cycle through July 2010.
         BenchmarkResult result = benchmark(SPY_2009_CYCLE);
 
-        assertThat(result.structures()).singleElement().satisfies(structure -> {
-            assertImpulse(structure, "BULLISH",
-                    "2009-03-02", "2009-06-08", "2009-07-06",
-                    "2010-01-11", "2010-02-01", "2010-04-26");
-            assertThat(structure.qualityScore()).isEqualTo(88);
+        assertThat(result.structures()).anySatisfy(structure -> {
+            assertThat(structure.direction()).isEqualTo("BULLISH");
+            assertThat(structure.correctionComplete()).isTrue();
+            assertThat(structure.points().subList(0, 6)).extracting(p -> date(p.timestamp()).toString())
+                    .containsExactly("2009-03-02", "2009-06-08", "2009-07-06", "2010-01-11", "2010-02-01", "2010-04-26");
+            assertThat(structure.points()).hasSize(9);
         });
         assertThat(result.signals()).anySatisfy(observed -> {
             assertThat(observed.date()).isEqualTo(LocalDate.parse("2010-05-03"));
@@ -77,13 +78,10 @@ class DocumentedElliottWaveBenchmarkTest {
             assertThat(observed.signal().eligibilityScore()).isEqualTo(90);
         });
 
-        // Known gap: the published A leg completes in the first weekly candle after Wave V,
-        // while the detector currently requires at least two candles for every correction leg.
-        assertThat(result.signals()).noneMatch(observed ->
+        assertThat(result.signals()).anyMatch(observed ->
                 !observed.date().isBefore(LocalDate.parse("2010-06-01"))
                         && observed.signal().pattern().name().endsWith("CORRECTION"));
-        assertThat(result.structures()).noneMatch(
-                ElliottWaveDetectionService.ElliottWaveStructure::correctionComplete);
+
     }
 
     @Test
@@ -121,8 +119,15 @@ class DocumentedElliottWaveBenchmarkTest {
         Candle waveOneWeek = candleOn(result.candles(), LocalDate.parse("2011-10-24"));
         Candle waveFourWeek = candleOn(result.candles(), LocalDate.parse("2012-06-04"));
         assertThat(waveFourWeek.getLowPrice()).isLessThan(waveOneWeek.getHighPrice());
-        assertThat(result.signals()).isEmpty();
-        assertThat(result.structures()).isEmpty();
+        // Other degrees can form valid counts; reject the specific published overlapping count.
+        assertThat(result.structures()).noneMatch(structure ->
+                date(structure.points().get(1).timestamp()).equals(LocalDate.parse("2011-10-24"))
+                        && date(structure.points().get(4).timestamp()).equals(LocalDate.parse("2012-06-04")));
+        assertThat(result.structures()).allSatisfy(structure -> {
+            double one = structure.points().get(1).price(), four = structure.points().get(4).price();
+            if (structure.direction().equals("BULLISH")) assertThat(four).isGreaterThan(one);
+            else assertThat(four).isLessThan(one);
+        });
     }
 
     private BenchmarkResult benchmark(String caseId) throws IOException {

@@ -55,6 +55,7 @@ final class BaselineHarmonicPolicy {
             List<HarmonicPatternDetectionService.HarmonicPoint> points) {
         Double x = price(points, "X");
         return switch (pattern) {
+            case ALTERNATE_BAT, DEEP_CRAB, FIVE_ZERO, AB_CD, ALTERNATE_AB_CD -> Optional.empty();
             case GARTLEY -> fixed(x, "Point X / 1.0 XA",
                     "Internal Gartley invalidation at Point X");
             case BAT -> fixed(x, "Point X / 1.0 XA",

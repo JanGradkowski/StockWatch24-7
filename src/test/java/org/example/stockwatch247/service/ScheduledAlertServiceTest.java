@@ -43,6 +43,45 @@ import static org.mockito.Mockito.when;
 class ScheduledAlertServiceTest {
 
     @Test
+    void startsAtNewlyAvailableWaveThreeButDoesNotRedeliverAnOldCount() {
+        for (boolean alreadyKnown : List.of(false, true)) {
+            String symbol = "SAP.DE";
+            var rules = mock(AlertRuleRepository.class);
+            var events = mock(AlertEventRepository.class);
+            var candles = mock(CandleRepository.class);
+            var market = mock(MarketDataService.class);
+            var notifications = mock(AlertNotificationService.class);
+            var detector = mock(ElliottWaveDetectionService.class);
+            var rule = rule(symbol, TimeInterval.DAILY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+            var parents = List.of(enriched(1, 100), enriched(2, 120), enriched(3, 106),
+                    enriched(4, 130), enriched(5, 140), enriched(6, 139), enriched(7, 138));
+            var latest = candle(symbol, "1d", 7, 139, 140, 137, 138);
+            var observed = developingCandidate(ElliottSignalStage.WAVE_III_END,
+                    CandlePattern.ELLIOTT_BULLISH_WAVE_III_END, TradeSignal.SELL, 6 * 86_400L, 139,
+                    List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"),
+                            point("II", 3, 106, "LOW"), point("III", 5, 140, "HIGH")));
+            when(detector.minimumSignalConfidence()).thenReturn(75);
+            when(detector.findDevelopingImpulses(parents)).thenReturn(List.of(observed));
+            when(detector.findDevelopingImpulses(parents.subList(0, 6)))
+                    .thenReturn(alreadyKnown ? List.of(observed) : List.of());
+            var service = service(rules, events, candles, market, notifications, detector);
+
+            service.processDevelopingElliott(symbol, TimeInterval.DAILY, List.of(rule),
+                    List.of(latest), parents, latest.getTimestamp());
+
+            if (alreadyKnown) {
+                verify(events, never()).save(any(AlertEvent.class));
+                verify(events, never()).saveAndFlush(any(AlertEvent.class));
+            } else {
+                var saved = ArgumentCaptor.forClass(AlertEvent.class);
+                verify(events).save(saved.capture());
+                assertThat(saved.getValue().getElliottSignalStage()).isEqualTo(ElliottSignalStage.WAVE_III_END);
+                assertThat(saved.getValue().getSignalCandleTimestamp()).isEqualTo(latest.getTimestamp());
+            }
+        }
+    }
+
+    @Test
     void dailyElliottLoadsPersistedHourlyChildrenThroughTheAnalysisCache() {
         String symbol = "AAPL";
         AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
@@ -63,7 +102,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1d", PageRequest.of(0, 299))).thenReturn(parent.reversed());
+                symbol, "1d", PageRequest.of(0, 1199))).thenReturn(parent.reversed());
         when(candleRepository
                 .findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
                         symbol, "60min", parent.getFirst().getTimestamp()))
@@ -491,7 +530,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1d", PageRequest.of(0, 299)))
+                symbol, "1d", PageRequest.of(0, 1199)))
                 .thenReturn(List.of(
                         candle(symbol, "1d", 7, 130, 131, 129, 130),
                         candle(symbol, "1d", 6, 122, 123, 121.4, 122),
@@ -519,29 +558,33 @@ class ScheduledAlertServiceTest {
 
         verify(marketDataService).syncCandlesForAnalysis(eq(symbol), eq("1d"), anyInt());
         verify(detectionService, never()).detectAlertSignalsFactory(any(), any());
-        verify(notificationService).sendSignalEmail(eq(rule), any(DetectedSignal.class), any(AlertEvent.class));
+        verify(notificationService, org.mockito.Mockito.times(2)).sendSignalEmail(eq(rule), any(DetectedSignal.class), any(AlertEvent.class));
         ArgumentCaptor<AlertEvent> event = ArgumentCaptor.forClass(AlertEvent.class);
-        verify(alertEventRepository).save(event.capture());
-        assertThat(event.getValue().getPattern()).isEqualTo(CandlePattern.HARMONIC_GARTLEY);
-        assertThat(event.getValue().getSignalCandleTimestamp()).isEqualTo(7 * 86_400L);
-        assertThat(event.getValue().getClosePrice()).isEqualTo(130.0);
-        assertThat(event.getValue().getHarmonicEndpointTimestamp()).isEqualTo(6 * 86_400L);
-        assertThat(event.getValue().getHarmonicEndpointPrice()).isEqualTo(121.4);
-        assertThat(event.getValue().getHarmonicPointsSnapshot()).contains("X|", "D|");
-        assertThat(event.getValue().getHarmonicMeasurementsSnapshot()).contains("B_XA|");
-        assertThat(event.getValue().getTradePlanVersion()).isEqualTo(HarmonicStopPlanPolicy.VERSION);
-        assertThat(event.getValue().getTradeEntryPrice()).isEqualTo(130.0);
-        assertThat(event.getValue().getStructuralStopPrice()).isEqualTo(100.0);
-        assertThat(event.getValue().getStopLossPrice()).isEqualTo(99.87);
-        assertThat(event.getValue().getHarmonicStopBasis()).isEqualTo("Point X / 1.0 XA");
-        assertThat(event.getValue().getHarmonicStopBufferPercent()).isEqualTo(.13);
-        assertThat(event.getValue().getProfitTargetPrice()).isCloseTo(151.4252, org.assertj.core.data.Offset.offset(.000001));
-        assertThat(event.getValue().getRewardRiskRatio()).isPositive();
-        assertThat(event.getValue().getTradeActionable()).isFalse();
-        assertThat(event.getValue().getTradeQualification()).contains("volatility");
-        assertThat(event.getValue().getScoreVersion())
+        verify(alertEventRepository, org.mockito.Mockito.times(2)).save(event.capture());
+        assertThat(event.getAllValues()).extracting(AlertEvent::getPattern)
+                .containsExactlyInAnyOrder(CandlePattern.HARMONIC_GARTLEY, CandlePattern.HARMONIC_AB_CD);
+        AlertEvent gartley = event.getAllValues().stream()
+                .filter(e -> e.getPattern() == CandlePattern.HARMONIC_GARTLEY).findFirst().orElseThrow();
+        assertThat(gartley.getPattern()).isEqualTo(CandlePattern.HARMONIC_GARTLEY);
+        assertThat(gartley.getSignalCandleTimestamp()).isEqualTo(7 * 86_400L);
+        assertThat(gartley.getClosePrice()).isEqualTo(130.0);
+        assertThat(gartley.getHarmonicEndpointTimestamp()).isEqualTo(6 * 86_400L);
+        assertThat(gartley.getHarmonicEndpointPrice()).isEqualTo(121.4);
+        assertThat(gartley.getHarmonicPointsSnapshot()).contains("X|", "D|");
+        assertThat(gartley.getHarmonicMeasurementsSnapshot()).contains("B_XA|");
+        assertThat(gartley.getTradePlanVersion()).isEqualTo(HarmonicStopPlanPolicy.VERSION);
+        assertThat(gartley.getTradeEntryPrice()).isEqualTo(130.0);
+        assertThat(gartley.getStructuralStopPrice()).isEqualTo(100.0);
+        assertThat(gartley.getStopLossPrice()).isEqualTo(99.87);
+        assertThat(gartley.getHarmonicStopBasis()).isEqualTo("Point X / 1.0 XA");
+        assertThat(gartley.getHarmonicStopBufferPercent()).isEqualTo(.13);
+        assertThat(gartley.getProfitTargetPrice()).isCloseTo(151.4252, org.assertj.core.data.Offset.offset(.000001));
+        assertThat(gartley.getRewardRiskRatio()).isPositive();
+        assertThat(gartley.getTradeActionable()).isFalse();
+        assertThat(gartley.getTradeQualification()).contains("volatility");
+        assertThat(gartley.getScoreVersion())
                 .isEqualTo(HarmonicPatternDetectionService.RULE_VERSION);
-        assertThat(event.getValue().getInitialEmailSentAt()).isNotNull();
+        assertThat(gartley.getInitialEmailSentAt()).isNotNull();
     }
 
     @Test
@@ -585,7 +628,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.YAHOO_FINANCE, 5, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1d", PageRequest.of(0, 299)))
+                symbol, "1d", PageRequest.of(0, 1199)))
                 .thenReturn(List.of(
                         candle(symbol, "1d", 5, 98, 105, 97, 104),
                         candle(symbol, "1d", 4, 103, 104, 98, 99),
@@ -644,7 +687,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.YAHOO_FINANCE, 3, null));
         when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                symbol, "1d", scheduledFor.getEpochSecond(), PageRequest.of(0, 299)))
+                symbol, "1d", scheduledFor.getEpochSecond(), PageRequest.of(0, 1199)))
                 .thenReturn(List.of(
                         candle(symbol, "1d", 2, 89, 103, 87, 101),
                         candle(symbol, "1d", 1, 100, 105, 88, 90)
@@ -663,9 +706,9 @@ class ScheduledAlertServiceTest {
         service.processSymbolInterval(symbol, TimeInterval.DAILY, scheduledFor);
 
         verify(candleRepository).findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                symbol, "1d", scheduledFor.getEpochSecond(), PageRequest.of(0, 299));
+                symbol, "1d", scheduledFor.getEpochSecond(), PageRequest.of(0, 1199));
         verify(candleRepository, never()).findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1d", PageRequest.of(0, 299));
+                symbol, "1d", PageRequest.of(0, 1199));
         verify(detectionService).detectAlertSignalsFactory(any(), eq(TimeInterval.DAILY));
         verify(notificationService).sendSignalEmail(eq(rule), eq(qualifiedSignal), any(AlertEvent.class));
         verify(alertEventRepository).save(any());
@@ -686,7 +729,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.TWELVE_DATA, 2, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1d", PageRequest.of(0, 299)))
+                symbol, "1d", PageRequest.of(0, 1199)))
                 .thenReturn(List.of(
                         candle(symbol, "1d", 2, 100, 103, 99, 102),
                         candle(symbol, "1d", 1, 98, 101, 97, 100)
@@ -742,7 +785,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.YAHOO_FINANCE, 76, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1mo", PageRequest.of(0, 299)))
+                symbol, "1mo", PageRequest.of(0, 1199)))
                 .thenReturn(syntheticElliottCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.MONTHLY)).thenReturn(List.of(rule));
@@ -775,7 +818,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1wk", PageRequest.of(0, 299)))
+                symbol, "1wk", PageRequest.of(0, 1199)))
                 .thenReturn(syntheticElliottCandles(symbol, "1wk").reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.WEEKLY)).thenReturn(List.of(rule));
@@ -810,7 +853,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1d", PageRequest.of(0, 299)))
+                symbol, "1d", PageRequest.of(0, 1199)))
                 .thenReturn(syntheticElliottCandles(symbol, "1d").reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.DAILY)).thenReturn(List.of(rule));
@@ -839,7 +882,7 @@ class ScheduledAlertServiceTest {
         when(marketDataService.syncCandles(symbol, "1mo", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1mo", PageRequest.of(0, 299)))
+                symbol, "1mo", PageRequest.of(0, 1199)))
                 .thenReturn(syntheticWaveVEndCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.MONTHLY)).thenReturn(List.of(rule));
@@ -874,7 +917,7 @@ class ScheduledAlertServiceTest {
         when(marketDataService.syncCandles(symbol, "1wk", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1wk", PageRequest.of(0, 299)))
+                symbol, "1wk", PageRequest.of(0, 1199)))
                 .thenReturn(syntheticElliottCandles(symbol, "1wk").reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.WEEKLY)).thenReturn(List.of(rule));
@@ -915,7 +958,7 @@ class ScheduledAlertServiceTest {
         when(marketDataService.syncCandles(symbol, "1mo", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1mo", PageRequest.of(0, 299)))
+                symbol, "1mo", PageRequest.of(0, 1199)))
                 .thenReturn(syntheticWaveVEndCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.MONTHLY)).thenReturn(List.of(rule));
@@ -969,7 +1012,7 @@ class ScheduledAlertServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
-                symbol, "1mo", PageRequest.of(0, 299)))
+                symbol, "1mo", PageRequest.of(0, 1199)))
                 .thenReturn(syntheticWaveVEndCandles(symbol).reversed());
         when(alertRuleRepository.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(
                 symbol, TimeInterval.MONTHLY)).thenReturn(List.of(rule));

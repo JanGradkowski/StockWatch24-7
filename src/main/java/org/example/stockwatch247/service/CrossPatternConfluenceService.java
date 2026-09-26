@@ -25,7 +25,7 @@ import java.util.Map;
  */
 @Service
 public class CrossPatternConfluenceService {
-    public static final String VERSION = "CONFLUENCE_V2_TEXTBOOK";
+    public static final String VERSION = "CONFLUENCE_V3_CAUSAL";
     public static final int LOOKBACK_CANDLES = 8;
     public static final int POINTS_PER_FAMILY = 10;
     public static final String REASON_PREFIX = "Cross-pattern confluence";
@@ -53,21 +53,55 @@ public class CrossPatternConfluenceService {
                 trendRules == null ? CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval) : trendRules,
                 candlestickDefinitions == null
                         ? CandlestickPatternPreferencesService.factoryPreferences() : candlestickDefinitions));
-        observations.addAll(elliottObservations(
-                candles,
-                elliottCandles,
-                elliottDetector == null ? new ElliottWaveDetectionService() : elliottDetector));
-        observations.addAll(harmonicObservations(
-                candles,
-                harmonicDetector == null ? new HarmonicPatternDetectionService() : harmonicDetector));
-        Map<String, Observation> unique = new LinkedHashMap<>();
-        observations.stream()
-                .sorted(Comparator.comparingLong(Observation::timestamp)
-                        .thenComparing(item -> item.family().name())
-                        .thenComparing(item -> item.pattern().name()))
-                .forEach(item -> unique.putIfAbsent(item.key(), item));
-        return new Timeline(candles.stream().map(Candle::getTimestamp).toList(),
-                List.copyOf(unique.values()));
+        ElliottWaveDetectionService waves = elliottDetector == null
+                ? new ElliottWaveDetectionService() : elliottDetector;
+        HarmonicPatternDetectionService harmonics = harmonicDetector == null
+                ? new HarmonicPatternDetectionService() : harmonicDetector;
+        List<EnrichedCandle> enriched = elliottCandles == null
+                || elliottCandles.stream().anyMatch(c -> c == null || c.timestamp() == null) ? List.of()
+                : elliottCandles.stream()
+                .sorted(Comparator.comparing(EnrichedCandle::timestamp)).toList();
+        // Prefixes are evaluated lazily: a live score needs only the previous eight bars.
+        // The cached keys describe everything observable at a prefix, not a final chart layout.
+        Map<Integer, Map<String, Observation>> prefixCache = new java.util.HashMap<>();
+        return new Timeline(candles.stream().map(Candle::getTimestamp).toList(), observations, index -> {
+            Map<String, Observation> current = prefixCache.computeIfAbsent(index,
+                    i -> prefixObservations(candles, enriched, i, waves, harmonics));
+            Map<String, Observation> previous = index == 0 ? Map.of()
+                    : prefixCache.computeIfAbsent(index - 1,
+                    i -> prefixObservations(candles, enriched, i, waves, harmonics));
+            long availableAt = candles.get(index).getTimestamp();
+            return current.entrySet().stream().filter(entry -> !previous.containsKey(entry.getKey()))
+                    .map(entry -> new Observation(entry.getValue().family(), entry.getValue().direction(),
+                            availableAt, entry.getValue().pattern())).distinct().toList();
+        });
+    }
+
+    private Map<String, Observation> prefixObservations(List<Candle> raw, List<EnrichedCandle> enriched,
+                                                       int index, ElliottWaveDetectionService waves,
+                                                       HarmonicPatternDetectionService harmonics) {
+        long timestamp = raw.get(index).getTimestamp();
+        List<Candle> prefix = raw.subList(0, index + 1);
+        List<EnrichedCandle> wavePrefix = enriched.stream().filter(c -> c.timestamp() <= timestamp).toList();
+        Map<String, Observation> observations = new LinkedHashMap<>();
+        for (var signal : waves.detect(wavePrefix)) {
+            if (signal.candleTimestamp() != timestamp) continue;
+            observations.put("signal:" + signal.pattern() + ':' + signal.tradeSignal() + ':'
+                            + signal.trendStartTimestamp(),
+                    new Observation(AlertPatternFamily.ELLIOTT_WAVE, signal.tradeSignal(), timestamp, signal.pattern()));
+        }
+        for (var candidate : waves.findDevelopingImpulseHypotheses(wavePrefix)) {
+            String key = candidate.pattern() + ":" + candidate.points();
+            observations.put(key, new Observation(AlertPatternFamily.ELLIOTT_WAVE,
+                    candidate.expectedMove(), candidate.confirmationTimestamp(), candidate.pattern()));
+        }
+        for (var formation : harmonics.detectAll(prefix)) {
+            String key = formation.pattern() + ":" + formation.points();
+            observations.put(key, new Observation(AlertPatternFamily.HARMONIC_FORMATION,
+                    formation.tradeSignal(), formation.confirmationTimestamp(),
+                    HarmonicPatternDetectionService.signalPattern(formation.pattern())));
+        }
+        return observations;
     }
 
     public Assessment assess(int baseScore,
@@ -101,7 +135,7 @@ public class CrossPatternConfluenceService {
         }
 
         Map<AlertPatternFamily, List<Observation>> mostRecentByFamily = new EnumMap<>(AlertPatternFamily.class);
-        for (Observation observation : timeline.observations()) {
+        for (Observation observation : timeline.observationsBetween(firstIndex, targetIndex)) {
             Integer observationIndex = candleIndexes.get(observation.timestamp());
             if (observation.family() == targetFamily || observationIndex == null
                     || !directional(observation.direction())) {
@@ -205,73 +239,6 @@ public class CrossPatternConfluenceService {
         return List.copyOf(result);
     }
 
-    private List<Observation> elliottObservations(
-            List<Candle> candles,
-            List<EnrichedCandle> enrichedCandles,
-            ElliottWaveDetectionService detector) {
-        if (enrichedCandles == null || enrichedCandles.isEmpty()) return List.of();
-        List<Observation> result = new ArrayList<>();
-        for (ElliottWaveDetectionService.ElliottWaveStructure structure
-                : detector.findHistoricalWaveStructures(enrichedCandles)) {
-            addElliottStage(result, candles, structure, ElliottSignalStage.WAVE_V_END);
-            if (structure.correctionComplete()) {
-                addElliottStage(result, candles, structure, ElliottSignalStage.CORRECTION_END);
-            }
-        }
-        return List.copyOf(result);
-    }
-
-    private void addElliottStage(List<Observation> result,
-                                 List<Candle> candles,
-                                 ElliottWaveDetectionService.ElliottWaveStructure structure,
-                                 ElliottSignalStage stage) {
-        ElliottWaveDetectionService.ElliottWavePoint endpoint = stage == ElliottSignalStage.CORRECTION_END
-                && structure.correctionComplete() && !structure.points().isEmpty()
-                ? structure.points().getLast()
-                : structure.points().stream()
-                .filter(point -> "V".equalsIgnoreCase(point.label())).findFirst().orElse(null);
-        if (endpoint == null) return;
-        boolean bullishStructure = "BULLISH".equalsIgnoreCase(structure.direction());
-        TradeSignal direction = stage == ElliottSignalStage.CORRECTION_END
-                ? (bullishStructure ? TradeSignal.BUY : TradeSignal.SELL)
-                : (bullishStructure ? TradeSignal.SELL : TradeSignal.BUY);
-        Long confirmation = confirmationTimestamp(candles, endpoint.timestamp(), direction);
-        if (confirmation == null) return;
-        CandlePattern pattern = stage == ElliottSignalStage.CORRECTION_END
-                ? (direction == TradeSignal.BUY ? CandlePattern.ELLIOTT_BULLISH_CORRECTION
-                : CandlePattern.ELLIOTT_BEARISH_CORRECTION)
-                : (direction == TradeSignal.BUY ? CandlePattern.ELLIOTT_BULLISH_WAVE_V_END
-                : CandlePattern.ELLIOTT_BEARISH_WAVE_V_END);
-        result.add(new Observation(AlertPatternFamily.ELLIOTT_WAVE, direction, confirmation, pattern));
-    }
-
-    private List<Observation> harmonicObservations(
-            List<Candle> candles,
-            HarmonicPatternDetectionService detector) {
-        return detector.detectHistorical(candles).stream()
-                .map(formation -> new Observation(
-                        AlertPatternFamily.HARMONIC_FORMATION,
-                        formation.tradeSignal(),
-                        formation.confirmationTimestamp(),
-                        HarmonicPatternDetectionService.signalPattern(formation.pattern())))
-                .toList();
-    }
-
-    private Long confirmationTimestamp(List<Candle> candles, long endpointTimestamp, TradeSignal direction) {
-        int endpointIndex = candleIndex(candles, endpointTimestamp);
-        if (endpointIndex < 0) return null;
-        int lastCandidate = Math.min(candles.size() - 1, endpointIndex + 3);
-        for (int index = endpointIndex + 1; index <= lastCandidate; index++) {
-            Candle current = candles.get(index);
-            Candle previous = candles.get(index - 1);
-            boolean confirmed = direction == TradeSignal.BUY
-                    ? current.getClosePrice() > previous.getHighPrice()
-                    : current.getClosePrice() < previous.getLowPrice();
-            if (confirmed) return current.getTimestamp();
-        }
-        return null;
-    }
-
     private String reason(int baseScore, int adjustment, int adjustedScore, List<Evidence> evidence) {
         StringBuilder detail = new StringBuilder(REASON_PREFIX).append(' ')
                 .append(String.format(Locale.ROOT, "%+d", adjustment)).append(": base score ")
@@ -329,8 +296,8 @@ public class CrossPatternConfluenceService {
     }
 
     private static List<Candle> normalizeCandles(List<Candle> candles) {
-        return candles == null ? List.of() : candles.stream()
-                .filter(candle -> candle != null && candle.getTimestamp() != null)
+        return candles == null || candles.stream().anyMatch(c -> c == null || c.getTimestamp() == null)
+                ? List.of() : candles.stream()
                 .sorted(Comparator.comparing(Candle::getTimestamp)).toList();
     }
 
@@ -345,10 +312,36 @@ public class CrossPatternConfluenceService {
         return org.example.stockwatch247.model.enums.SignalStength.WEAK_IGNORE;
     }
 
-    public record Timeline(List<Long> candleTimestamps, List<Observation> observations) {
-        public Timeline {
-            candleTimestamps = candleTimestamps == null ? List.of() : List.copyOf(candleTimestamps);
-            observations = observations == null ? List.of() : List.copyOf(observations);
+    public static final class Timeline {
+        private final List<Long> candleTimestamps;
+        private final List<Observation> supplied;
+        private final java.util.function.IntFunction<List<Observation>> replay;
+        private final Map<Integer, List<Observation>> cache = new java.util.HashMap<>();
+
+        public Timeline(List<Long> timestamps, List<Observation> observations) {
+            this(timestamps, observations, null);
+        }
+
+        private Timeline(List<Long> timestamps, List<Observation> observations,
+                         java.util.function.IntFunction<List<Observation>> replay) {
+            candleTimestamps = timestamps == null ? List.of() : List.copyOf(timestamps);
+            supplied = observations == null ? List.of() : List.copyOf(observations);
+            this.replay = replay;
+        }
+
+        public List<Long> candleTimestamps() { return candleTimestamps; }
+
+        public List<Observation> observations() {
+            return observationsBetween(0, candleTimestamps.size());
+        }
+
+        private synchronized List<Observation> observationsBetween(int from, int to) {
+            List<Observation> result = new ArrayList<>(supplied);
+            if (replay != null) for (int i = from; i < to; i++) {
+                result.addAll(cache.computeIfAbsent(i, replay::apply));
+            }
+            return result.stream().distinct().sorted(Comparator.comparingLong(Observation::timestamp)
+                    .thenComparing(item -> item.pattern().name())).toList();
         }
     }
 

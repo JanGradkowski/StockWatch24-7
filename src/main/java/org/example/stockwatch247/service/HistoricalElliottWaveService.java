@@ -17,7 +17,6 @@ import java.util.List;
 @Service
 public class HistoricalElliottWaveService {
     private static final int RESULT_CANDLES = 10;
-    private static final int CONFIRMATION_LAG_CANDLES = 3;
 
     private final CandleRepository candleRepository;
     private final CandleCompletionService candleCompletionService;
@@ -85,23 +84,22 @@ public class HistoricalElliottWaveService {
         }
 
         long firstIncompleteTimestamp = candleCompletionService.firstIncompleteCandleTimestamp(timeInterval);
-        List<Candle> candles = candleRepository
+        List<Candle> completedCandles = candleRepository
                 .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
                 .stream()
-                .filter(this::validCandle)
-                .filter(candle -> candle.getTimestamp() < firstIncompleteTimestamp)
-                .sorted(Comparator.comparing(Candle::getTimestamp))
+                .filter(candle -> candle == null || candle.getTimestamp() == null
+                        || candle.getTimestamp() < firstIncompleteTimestamp)
                 .toList();
         List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
-                candles,
-                candles.size(),
+                completedCandles,
+                completedCandles.size(),
                 timeInterval
         );
         ElliottWaveDetectionService detector = rules == null
                 ? detectionService
                 : detectionService.configured(rules);
         ElliottWaveDetectionService.ElliottWaveStructure structure = detector
-                .findHistoricalWaveStructures(enriched)
+                .findAllWaveStructures(enriched)
                 .stream()
                 .filter(candidate -> requestedCycleKey == null || requestedCycleKey.isBlank()
                         || detector.lifecycleCycleKey(candidate)
@@ -112,9 +110,13 @@ public class HistoricalElliottWaveService {
                 .max(Comparator.comparingInt(ElliottWaveDetectionService.ElliottWaveStructure::qualityScore))
                 .orElseThrow(() -> new IllegalArgumentException("The historical Elliott wave is no longer available in the completed candle cache."));
 
+        // Do not join prices across corrupt bars for confirmation, charts or subsequent outcomes.
+        List<Candle> candles = PatternCandleIntegrity.rawSegments(completedCandles).stream()
+                .filter(segment -> candleIndex(segment, structure.points().getFirst().timestamp()) >= 0)
+                .findFirst().orElse(List.of());
         ElliottWaveDetectionService.ElliottWavePoint endpoint = endpoint(structure, stage);
         TradeSignal tradeSignal = tradeSignal(structure.direction(), stage);
-        Long confirmationTimestamp = confirmationTimestamp(structure, stage, endpoint, tradeSignal, candles);
+        Long confirmationTimestamp = confirmationTimestamp(structure, stage, endpoint, tradeSignal, candles, detector.maximumConfirmationLagCandles());
         ElliottWaveDetectionService.ElliottScoreAssessment score = java.util.Optional.ofNullable(
                         detector.scoreHistoricalStructure(enriched, structure, stage, confirmationTimestamp))
                 .orElseGet(() -> new ElliottWaveDetectionService.ElliottScoreAssessment(
@@ -224,7 +226,7 @@ public class HistoricalElliottWaveService {
             ElliottSignalStage stage,
             ElliottWaveDetectionService.ElliottWavePoint endpoint,
             TradeSignal tradeSignal,
-            List<Candle> candles) {
+            List<Candle> candles, int confirmationLag) {
         boolean structureEndsAtRequestedStage = structure.correctionComplete()
                 == (stage == ElliottSignalStage.CORRECTION_END);
         if (structureEndsAtRequestedStage && structure.confirmationTimestamp() != null) {
@@ -234,7 +236,7 @@ public class HistoricalElliottWaveService {
         if (endpointIndex < 0) {
             return null;
         }
-        int lastCandidate = Math.min(candles.size() - 1, endpointIndex + CONFIRMATION_LAG_CANDLES);
+        int lastCandidate = Math.min(candles.size() - 1, endpointIndex + confirmationLag);
         for (int index = endpointIndex + 1; index <= lastCandidate; index++) {
             Candle current = candles.get(index);
             Candle previous = candles.get(index - 1);

@@ -85,7 +85,7 @@ class HistoricalElliottWaveServiceTest {
                 .thenReturn(candles);
         when(enrichmentService.enrichForElliott(candles, candles.size(), timeInterval))
                 .thenReturn(enriched);
-        when(detectionService.findHistoricalWaveStructures(enriched)).thenReturn(List.of(structure));
+        when(detectionService.findAllWaveStructures(enriched)).thenReturn(List.of(structure));
         when(detectionService.lifecycleCycleKey(structure)).thenReturn(Optional.of(cycleKey));
 
         HistoricalElliottWaveService.HistoricalElliottWaveDetail detail = service.findDetail(

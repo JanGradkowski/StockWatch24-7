@@ -6,7 +6,12 @@ public enum HarmonicPatternType {
     BUTTERFLY("Butterfly"),
     CRAB("Crab"),
     SHARK("Shark"),
-    CYPHER("Cypher");
+    CYPHER("Cypher"),
+    ALTERNATE_BAT("Alternate Bat"),
+    DEEP_CRAB("Deep Crab"),
+    FIVE_ZERO("5-0"),
+    AB_CD("AB=CD"),
+    ALTERNATE_AB_CD("Alternate AB=CD");
 
     private final String displayName;
 

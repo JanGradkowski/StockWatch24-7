@@ -33,6 +33,29 @@ import java.time.Instant;
 
 @Service
 public class ScheduledAlertService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ScheduledAlertService.class);
+    private final java.util.concurrent.ConcurrentMap<Long, CheckProgress> runningChecks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final ThreadLocal<CheckProgress> currentCheck = new ThreadLocal<>();
+    private static final class CheckProgress {
+        final AlertCheckJobStore.AlertCheckJob job;
+        final long started = System.nanoTime();
+        volatile String stage = "loading rules and candles";
+        CheckProgress(AlertCheckJobStore.AlertCheckJob job) { this.job = job; }
+        long elapsedMs() { return (System.nanoTime() - started) / 1_000_000; }
+    }
+
+    @Scheduled(fixedDelayString = "${alerts.schedule.progress-delay-ms:30000}")
+    public void reportRunningChecks() {
+        runningChecks.values().forEach(check -> log.info(
+                "Technical signal check running: {} {} stage={} elapsedMs={} scheduledFor={}",
+                check.job.symbol(), check.job.interval(), check.stage, check.elapsedMs(), check.job.scheduledFor()));
+    }
+
+    private void technicalStage(String symbol, TimeInterval interval, String stage) {
+        var check = currentCheck.get();
+        if (check != null) check.stage = stage;
+        log.info("Technical signal check: {} {} stage={}", symbol, interval, stage);
+    }
     @org.springframework.beans.factory.annotation.Autowired
     private org.example.stockwatch247.service.BackgroundJobDispatcher dispatcher;
 
@@ -42,7 +65,7 @@ public class ScheduledAlertService {
 
     private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int HIGHER_INTERVAL_SIGNAL_CANDLES = 100;
-    private static final int DEVELOPING_WEEKLY_PARENT_CANDLES = 200;
+    private static final int ELLIOTT_PARENT_CANDLES = 1000;
     private static final int LOWER_DEGREE_ELLIOTT_CACHE_CANDLES = 1_000;
 
     private final AlertRuleRepository alertRuleRepository;
@@ -238,20 +261,27 @@ public class ScheduledAlertService {
             return;
         }
         AlertCheckJobStore.AlertCheckJob job = claimedJob.get();
+        var progress = new CheckProgress(job);
+        runningChecks.put(job.id(), progress);
+        currentCheck.set(progress);
+        log.info("Technical signal check started: {} {} scheduledFor={} attempt={}",
+                job.symbol(), job.interval(), job.scheduledFor(), job.attempts());
         try (var claim = leaseGuard == null ? null : leaseGuard.protect(() -> jobStore.renew(job, jobLease), jobLease)) {
             processSymbolInterval(job.symbol(), job.interval(), job.scheduledFor());
             if (!jobStore.complete(job)) throw new IllegalStateException("Job ownership changed before acknowledgement.");
+            log.info("Technical signal check completed: {} {} elapsedMs={}", job.symbol(), job.interval(), progress.elapsedMs());
         } catch (RuntimeException e) {
             jobStore.retryOrFail(job, e.getMessage(), maximumAttempts, retryDelay);
-            System.err.println("Alert check failed for " + job.symbol() + " " + job.interval() + ": " + e.getMessage());
+            log.error("Technical signal check failed: {} {} stage={} elapsedMs={} attempt={}: {}",
+                    job.symbol(), job.interval(), progress.stage, progress.elapsedMs(), job.attempts(), e.getMessage(), e);
         } finally {
+            runningChecks.remove(job.id());
+            currentCheck.remove();
             int remainingJobs = jobStore.pendingCount();
             if (remainingJobs == 0) {
-                System.out.println("All queued alert checks completed.");
+                log.info("Technical signal queue drained; no pending or processing checks remain.");
             } else {
-                System.out.println("Alert check completed for " + job.symbol() + " " + job.interval()
-                        + " scheduled for " + job.scheduledFor()
-                        + ". Pending jobs: " + remainingJobs);
+                log.info("Technical signal queue: {} pending or processing checks remain.", remainingJobs);
             }
         }
     }
@@ -288,6 +318,8 @@ public class ScheduledAlertService {
         int signalCandleCount = signalCandleCount(interval);
         List<AlertRule> rules = alertRuleRepository
                 .findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue(symbol, interval);
+        technicalStage(symbol, interval, "loading candles; " + rules.size() + " active rules; families="
+                + rules.stream().map(AlertRule::getPatternFamily).distinct().toList());
         int requiredHistory = enrichmentService.requiredInputCandles(signalCandleCount, interval);
         int configuredAtrHistory = rules.stream()
                 .filter(rule -> rule.getPatternFamily() == AlertPatternFamily.CANDLESTICK)
@@ -305,7 +337,7 @@ public class ScheduledAlertService {
         if (isElliottEnabled(interval)) {
             requiredHistory = Math.max(
                     requiredHistory,
-                    enrichmentService.requiredElliottInputCandles(signalCandleCount, interval)
+                    enrichmentService.requiredElliottInputCandles(ELLIOTT_PARENT_CANDLES, interval)
             );
         }
         MarketDataService.CandleSyncResult syncResult = marketDataService
@@ -335,13 +367,16 @@ public class ScheduledAlertService {
             return;
         }
 
+        technicalStage(symbol, interval, "enriching " + candles.size() + " candles and evaluating existing signal lifecycles");
         List<EnrichedCandle> elliottCandles = isElliottEnabled(interval)
-                ? enrichmentService.enrichForElliott(candles, signalCandleCount, interval)
+                ? enrichmentService.enrichForElliott(candles, ELLIOTT_PARENT_CANDLES, interval)
                 : List.of();
+        elliottCandles = new CandlestickFormationIntegrity(candles).latestContext(elliottCandles);
         List<EnrichedCandle> developingElliottCandles = isElliottEnabled(interval)
                 ? enrichmentService.enrichForElliott(
                 candles, developingElliottParentCandleCount(interval), interval)
                 : List.of();
+        developingElliottCandles = new CandlestickFormationIntegrity(candles).latestContext(developingElliottCandles);
         if (!elliottCandles.isEmpty()) {
             int initialized = lifecycleService.initializeUntrackedElliott(
                     symbol,
@@ -401,22 +436,24 @@ public class ScheduledAlertService {
         long latestCompletedTimestamp = candles.getLast().getTimestamp();
         List<EnrichedCandle> lowerDegreeElliottCandles = loadLowerDegreeElliottCandles(
                 symbol, interval, rules, developingElliottCandles, scheduledFor);
+        technicalStage(symbol, interval, "detecting developing Elliott waves");
         processDevelopingElliott(
                 symbol, interval, rules, candles, developingElliottCandles,
                 lowerDegreeElliottCandles, latestCompletedTimestamp);
         Map<Long, CrossPatternConfluenceService.Timeline> confluenceTimelines = new java.util.HashMap<>();
         for (AlertRule rule : rules) {
+            technicalStage(symbol, interval, "detecting " + rule.getPatternFamily() + " " + rule.getTradeSignal());
             if (rule.getPatternFamily() == AlertPatternFamily.HARMONIC_FORMATION) {
                 List<HarmonicPatternDetectionService.HarmonicFormation> harmonicFormations =
                         AnalysisComputationScope.memo(java.util.List.of("harmonic-history", harmonicSettings(rule)),
-                                () -> harmonicDetector(rule).detectHistorical(candles)).stream()
-                                .filter(formation -> formation.confirmationTimestamp() == latestCompletedTimestamp)
-                                .toList();
+                                () -> harmonicDetector(rule).detectNewlyAvailable(candles));
                 for (HarmonicPatternDetectionService.HarmonicFormation formation : harmonicFormations) {
                     if (rule.getTradeSignal() != formation.tradeSignal()) continue;
                     CandlePattern pattern = HarmonicPatternDetectionService.signalPattern(formation.pattern());
                     if (!alertEventRepository.existsByAlertRuleAndPatternAndSignalCandleTimestamp(
-                            rule, pattern, formation.confirmationTimestamp())) {
+                            rule, pattern, formation.confirmationTimestamp())
+                            && !alertEventRepository.existsByAlertRuleAndPatternAndHarmonicEndpointTimestamp(
+                                    rule, pattern, formation.points().getLast().timestamp())) {
                         sendAndRecordHarmonic(rule, formation, candles,
                                 confluenceTimeline(rule, candles, enrichedCandles, elliottCandles,
                                         interval, confluenceTimelines));
@@ -466,6 +503,7 @@ public class ScheduledAlertService {
 
     private void evaluateTrackedOutlook(String symbol, TimeInterval interval) {
         if (technicalOutlookTrackingService == null) return;
+        technicalStage(symbol, interval, "evaluating automated outlook");
         TechnicalOutlookTrackingService.EvaluationResult result =
                 technicalOutlookTrackingService.evaluate(symbol, interval);
         if (result.baselinesEstablished() > 0 || result.changesCreated() > 0) {
@@ -499,12 +537,16 @@ public class ScheduledAlertService {
             if (rule.getPatternFamily() != AlertPatternFamily.ELLIOTT_WAVE) continue;
             ElliottWaveDetectionService detector = elliottDetector(rule);
             int minimumConfidence = detector.minimumSignalConfidence();
-            for (ElliottWaveDetectionService.DevelopingImpulse candidate
-                    : lowerDegreeElliottCandles == null || lowerDegreeElliottCandles.isEmpty()
-                    ? detector.findDevelopingImpulses(elliottCandles)
-                    : detector.findDevelopingImpulses(
-                    elliottCandles, lowerDegreeElliottCandles)) {
-                if (candidate.confirmationTimestamp() != latestCompletedTimestamp) continue;
+            Object settings = elliottWavePreferencesService == null ? "factory"
+                    : elliottWavePreferencesService.get(rule.getUser()).profile(interval).rules();
+            for (ElliottWaveDetectionService.DevelopingImpulse observed
+                    : AnalysisComputationScope.memo(java.util.List.of("developing-elliott", settings),
+                    () -> lowerDegreeElliottCandles == null || lowerDegreeElliottCandles.isEmpty()
+                            ? detector.findDevelopingImpulses(elliottCandles)
+                            : detector.findDevelopingImpulses(elliottCandles, lowerDegreeElliottCandles))) {
+                ElliottWaveDetectionService.DevelopingImpulse candidate = newlyAvailableDeveloping(
+                        observed, detector, elliottCandles, lowerDegreeElliottCandles, candles.getLast());
+                if (candidate == null) continue;
                 if (candidate.confidenceScore() < minimumConfidence) continue;
                 AlertEvent event = alertEventRepository
                         .findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
@@ -520,8 +562,7 @@ public class ScheduledAlertService {
                     }
                 }
                 if (event == null) {
-                    if (candidate.stage() != ElliottSignalStage.WAVE_II_END
-                            || rule.getTradeSignal() != candidate.expectedMove()) continue;
+                    if (rule.getTradeSignal() != candidate.expectedMove()) continue;
                     event = new AlertEvent();
                     event.setAlertRule(rule);
                     event.setElliottDevelopmentKey(candidate.developmentKey());
@@ -603,6 +644,30 @@ public class ScheduledAlertService {
             }
         }
         invalidateBrokenDevelopingElliott(symbol, interval, elliottCandles, candles.getLast());
+    }
+
+    private ElliottWaveDetectionService.DevelopingImpulse newlyAvailableDeveloping(
+            ElliottWaveDetectionService.DevelopingImpulse observed, ElliottWaveDetectionService detector,
+            List<EnrichedCandle> parents, List<EnrichedCandle> children, Candle latest) {
+        if (observed.confirmationTimestamp() == latest.getTimestamp()) return observed;
+        if (observed.confirmationTimestamp() > latest.getTimestamp() || parents.size() < 2) return null;
+        List<EnrichedCandle> previous = parents.subList(0, parents.size()-1);
+        long cutoff = parents.getLast().timestamp();
+        List<EnrichedCandle> previousChildren = children == null ? List.of() : children.stream()
+                .filter(c -> c.timestamp() < cutoff).toList();
+        var before = AnalysisComputationScope.memo(java.util.List.of("previous-developing-elliott", detector),
+                () -> previousChildren.isEmpty() ? detector.findDevelopingImpulses(previous)
+                        : detector.findDevelopingImpulses(previous, previousChildren));
+        if (before.stream().anyMatch(c -> c.pattern() == observed.pattern()
+                && c.points().equals(observed.points()))) return null;
+        List<String> evidence = new java.util.ArrayList<>(observed.evidence());
+        evidence.add("First available on this completed candle; structural confirmation was "
+                + observed.confirmationTimestamp() + ".");
+        return new ElliottWaveDetectionService.DevelopingImpulse(observed.developmentKey(), observed.direction(),
+                observed.stage(), observed.pattern(), observed.expectedMove(), latest.getTimestamp(),
+                latest.getClosePrice(), observed.endpointPrice(), observed.stopLossPrice(), observed.targetPrice(),
+                observed.forecastLabel(), observed.correctionType(), observed.confidenceScore(),
+                observed.points(), evidence, observed.completedStructure());
     }
 
     private boolean hasElliottCycleStageForUser(
@@ -1225,8 +1290,7 @@ public class ScheduledAlertService {
     }
 
     private int developingElliottParentCandleCount(TimeInterval interval) {
-        return interval == TimeInterval.WEEKLY
-                ? DEVELOPING_WEEKLY_PARENT_CANDLES : signalCandleCount(interval);
+        return ELLIOTT_PARENT_CANDLES;
     }
 
     private boolean isHigherInterval(TimeInterval interval) {

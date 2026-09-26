@@ -36,6 +36,30 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class YahooFinanceServiceTest {
 
     @Test
+    void berkshireShareClassesUseYahooDashWithoutChangingCanonicalTicker() {
+        for (String symbol : List.of("BRK.A", "BRK.B")) {
+            var rest = new RestTemplate();
+            var server = MockRestServiceServer.bindTo(rest).build();
+            var repository = mock(StockAssetRepository.class);
+            var asset = new StockAsset(); asset.setTickerSymbol(symbol); asset.setCompanyName("Berkshire Hathaway Inc.");
+            asset.setExchange("NYSE"); asset.setCountry("United States"); asset.setCurrency("USD");
+            when(repository.findByTickerSymbolIgnoreCase(symbol)).thenReturn(Optional.of(asset));
+            when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            server.expect(requestTo(containsString("/v8/finance/chart/"+symbol.replace('.','-')+"?")))
+                    .andRespond(withSuccess("""
+                    {"chart":{"result":[{"meta":{"symbol":"%s","currency":"USD",
+                      "longName":"Berkshire Hathaway Inc.","exchangeName":"NYSE","instrumentType":"EQUITY",
+                      "exchangeTimezoneName":"America/New_York","dataGranularity":"1d"},
+                      "timestamp":[1790002800],"indicators":{"quote":[{"open":[100],"high":[105],"low":[99],"close":[104],"volume":[1000]}]}}],"error":null}}
+                    """.formatted(symbol.replace('.','-')),MediaType.APPLICATION_JSON));
+            var service = new YahooFinanceService(rest,new ObjectMapper(),repository,"https://query1.finance.yahoo.com",true);
+            assertThat(service.getTimeSeries(symbol,"1d",10)).hasSize(1);
+            assertThat(asset.getTickerSymbol()).isEqualTo(symbol);
+            server.verify();
+        }
+    }
+
+    @Test
     void acceptsWarsawCompanyWhenProviderLongNameChangesButCompleteShortNameStillMatches() {
         var fixture = warsawFixture("CDPROJEKT", "PLN");
         var bars = fixture.service().getTimeSeries("CDR", "1d", 10);

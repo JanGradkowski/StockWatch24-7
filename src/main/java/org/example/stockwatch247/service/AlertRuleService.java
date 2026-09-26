@@ -1451,7 +1451,7 @@ public class AlertRuleService {
                 })
                 .filter(java.util.Objects::nonNull)
                 .toList();
-        if (points.size() != 5) return null;
+        if (points.size() != 4 && points.size() != 5) return null;
         Map<String, Double> measurements = new LinkedHashMap<>();
         if (event.getHarmonicMeasurementsSnapshot() != null) {
             event.getHarmonicMeasurementsSnapshot().lines().forEach(line -> {

@@ -14,6 +14,8 @@ import java.util.Map;
 @Controller
 public class WatchlistController {
     @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.service.WatchlistBulkService bulk;
+    @org.springframework.beans.factory.annotation.Autowired
     private org.example.stockwatch247.service.WatchlistSignalSettingsService settings;
     @org.springframework.beans.factory.annotation.Autowired
     private org.example.stockwatch247.service.WatchlistEditorService editor;
@@ -60,6 +62,18 @@ public class WatchlistController {
     }
     @DeleteMapping("/api/watchlists/{id}/members/{symbol}") @ResponseBody
     public void remove(Principal principal,@PathVariable long id,@PathVariable String symbol) { lists.remove(user(principal),id,symbol); }
+    @PostMapping("/api/watchlists/{id}/members/follows/preview") @ResponseBody
+    public org.example.stockwatch247.service.WatchlistBulkService.View previewFollows(Principal principal, @PathVariable long id, @RequestBody Bulk request) {
+        return bulk.preview(user(principal), id, request.symbols());
+    }
+    @PostMapping("/api/watchlists/{id}/members/follows") @ResponseBody
+    public void applyFollows(Principal principal, @PathVariable long id, @RequestBody Bulk request) {
+        bulk.apply(user(principal), id, request.symbols(), request.changes());
+    }
+    @PostMapping("/api/watchlists/{id}/members/remove") @ResponseBody
+    public void removeMembers(Principal principal, @PathVariable long id, @RequestBody Bulk request) {
+        bulk.remove(user(principal), id, request.symbols());
+    }
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<?> invalid(IllegalArgumentException error) { return ResponseEntity.badRequest().body(Map.of("error",error.getMessage())); }
     private User user(Principal principal) {
@@ -67,4 +81,5 @@ public class WatchlistController {
     }
     public record Edit(String name,String description,boolean pinned) {}
     public record Selection(List<Long> watchlistIds,String newWatchlistName) {}
+    public record Bulk(List<String> symbols, List<org.example.stockwatch247.service.WatchlistSignalSettingsService.Selection> changes) {}
 }

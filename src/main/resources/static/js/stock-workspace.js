@@ -1307,7 +1307,7 @@
       const hierarchyPromise = subwavesEnabled
               ? elliottHierarchyOverlay?.showInterval(interval) || Promise.resolve(0)
               : Promise.resolve(0);
-      const [response, cardResponse, subwaveCount] = await Promise.all([
+      const [response, cardResponse, subwaveCount, candidateResponse] = await Promise.all([
         nativeEnabled
                 ? fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(interval)}${fromQuery}`)
                 : Promise.resolve(null),
@@ -1315,11 +1315,15 @@
                 ? fetch(`/api/alerts/${encodedTicker}/elliott-cards?interval=${encodeURIComponent(cardInterval)}`)
                         .catch(() => null)
                 : Promise.resolve(null),
-        hierarchyPromise
+        hierarchyPromise,
+        nativeEnabled
+                ? fetch(`/api/stocks/${encodedTicker}/elliott-waves/candidates?interval=${encodeURIComponent(interval)}`).catch(() => null)
+                : Promise.resolve(null)
       ]);
       if (response && !response.ok) throw new Error('Independent Elliott structure request failed');
       const history = response ? await response.json() : { structures: [] };
       const cards = cardResponse?.ok ? await cardResponse.json() : [];
+      const candidates = candidateResponse?.ok ? await candidateResponse.json() : [];
       if (requestId !== elliottRequestSequence || currentInterval !== interval) return;
 
       elliottSignalCards = new Map((Array.isArray(cards) ? cards : []).map(card => [
@@ -1332,10 +1336,17 @@
         structure
       ])).values());
       uniqueStructures.forEach(structure => renderHistoricalElliottStructure(structure));
+      const standalone = (Array.isArray(candidates) ? candidates : []).filter(candidate =>
+              candidate.structureLabel !== 'Motive 1-2-3-4-5' && candidate.points?.length >= 4
+              && (!oldestTimestamp || candidate.points[0].timestamp >= oldestTimestamp));
+      standalone.slice(-20).forEach(renderStandaloneElliottCandidate);
+      const candidateNotice = standalone.length
+              ? ` Showing ${Math.min(20, standalone.length)} of ${standalone.length} standalone pattern candidates; parent position and finer waves remain unverified.` : '';
       setElliottConfirmationMarkers(uniqueStructures);
       rebuildElliottHitTargets();
 
       if (uniqueStructures.length === 0) {
+        if (standalone.length) { status.textContent = candidateNotice.trim(); return; }
         if (Number(subwaveCount) > 0) {
           status.textContent = `Showing ${subwaveCount} validated ${interval === '1d' ? 'Daily' : 'Weekly'} fractal subwaves derived from the Monthly hierarchy${nativeEnabled ? '; no independent structure was detected on this interval' : ''}.`;
           return;
@@ -1368,6 +1379,7 @@
               ? ` Plus ${subwaveCount} validated ${interval === '1d' ? 'Daily' : 'Weekly'} fractal subwaves from the Monthly hierarchy.`
               : '';
       status.textContent = `Showing ${uniqueStructures.length} independent Elliott Wave structure${uniqueStructures.length === 1 ? '' : 's'} in ${globalCandleData.length} loaded candles.${subwaveNotice}${qualityNotice}${warningNotice}`;
+      status.textContent += candidateNotice;
     } catch (error) {
       if (requestId === elliottRequestSequence && currentInterval === interval) {
         status.classList.add('error');
@@ -1528,7 +1540,7 @@
 
   function renderHarmonicFormation(formation) {
     const points = Array.isArray(formation.points) ? formation.points : [];
-    if (points.length !== 5) return;
+    if (points.length !== 4 && points.length !== 5) return;
     const colors = harmonicOverlayColors(formation.direction);
     const series = priceChart.addLineSeries({
       color: colors.line,
@@ -2101,6 +2113,20 @@
     if (!canvas) return;
     const context = canvas.getContext('2d');
     context.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function renderStandaloneElliottCandidate(candidate) {
+    const points = candidate.points;
+    const series = priceChart.addLineSeries({
+      color: '#94a3b8', lineWidth: 1, lineStyle: 2,
+      crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false
+    });
+    series.setData(points.map(point => ({ time: timestampToChartDate(point.timestamp), value: point.price })));
+    const endpoint = points[points.length - 1];
+    series.setMarkers([{ time: timestampToChartDate(endpoint.timestamp),
+      position: endpoint.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar', color: '#94a3b8', shape: 'circle',
+      text: `Candidate: ${candidate.structureLabel}` }]);
+    historicalElliottSeries.push(series);
   }
 
   function renderHistoricalElliottStructure(structure) {

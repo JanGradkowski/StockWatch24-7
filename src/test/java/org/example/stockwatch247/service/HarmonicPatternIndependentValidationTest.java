@@ -42,7 +42,8 @@ class HarmonicPatternIndependentValidationTest {
         Random random = new Random(RANDOM_SEED);
         int evaluated = 0;
 
-        for (HarmonicPatternType expected : HarmonicPatternType.values()) {
+        for (HarmonicPatternType expected : List.of(HarmonicPatternType.GARTLEY, HarmonicPatternType.BAT,
+                HarmonicPatternType.BUTTERFLY, HarmonicPatternType.CRAB, HarmonicPatternType.SHARK, HarmonicPatternType.CYPHER)) {
             List<double[]> generated = generateUniqueValidGeometries(expected, random);
             assertThat(generated)
                     .as("independent valid geometries for %s", expected)

@@ -45,7 +45,7 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
       const pathname = url.pathname;
       const json = body => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
       if (url.hostname !== 'watchlist.test') return route.abort();
-      if (pathname.startsWith('/api/')) {
+        if (pathname.startsWith('/api/')) {
         if (request.method() !== 'GET') mutations.push({ pathname, query: url.search, method: request.method(), body: request.postDataJSON() });
         if (pathname === '/api/notifications/read-all') {
           if (url.searchParams.get('watchlistId') === '1') {
@@ -57,6 +57,13 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
         if (pathname === '/api/watchlists/indexes') return json(catalog);
         if (pathname === '/api/stocks/search') return json([{ symbol: '^GSPC', name: 'S&P 500', region: 'United States' }]);
         if (pathname.startsWith('/api/watchlists/memberships/')) return json([1]);
+        if (pathname.endsWith('/members/follows/preview')) return json({ selections: [], mixedKeys: ['CANDLESTICK:DAILY:BUY'], nonStocks: 0 });
+        if (pathname.endsWith('/members/follows')) return json({});
+        if (pathname.endsWith('/members/remove')) {
+          const selected = request.postDataJSON().symbols;
+          for (let i = instruments.length - 1; i >= 0; i--) if (selected.includes(instruments[i].symbol)) instruments.splice(i, 1);
+          return json({});
+        }
         if (pathname.endsWith('/members')) return json({ items: instruments, total: 2, page: 0, pageSize: 50 });
         if (pathname.endsWith('/settings')) return json({ selections: settings.get(Number(pathname.split('/')[3])) || [], allowedTypes: allowedTypes.get(Number(pathname.split('/')[3])), followCounts: { CANDLESTICK: 1 }, configured: true, mixed: false });
         if (pathname === '/api/watchlists/save') {
@@ -310,6 +317,36 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     }
     assert.deepEqual(errors, [], 'No browser JavaScript errors');
+    lists = [{ id: 1, name: 'US growth', instruments: 2, monitored: 2, unread: 0 }];
+    await page.goto('http://watchlist.test/watchlists/1');
+    await page.getByRole('checkbox', { name: 'Select AAPL', exact: true }).check();
+    await page.getByRole('checkbox', { name: 'Select MSFT', exact: true }).check();
+    const bulk = page.locator('.wl-bulk-actions');
+    assert.equal(await bulk.locator('[role="status"]').textContent(), '2 selected');
+    assert.equal(await bulk.getByRole('link', { name: 'View signals', exact: true }).getAttribute('href'), '/signals?watchlistId=1&ticker=AAPL%2CMSFT');
+    await page.screenshot({ path: path.join(output, 'bulk-selection-mobile.png'), fullPage: true });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Bulk selection fits mobile width');
+    await bulk.getByRole('button', { name: 'Manage follows', exact: true }).click();
+    await dialog.locator('.wl-signal-settings:not([disabled])').waitFor();
+    assert.ok(await dialog.getByLabel('Watch Candlestick buy daily', { exact: true }).evaluate(e => e.indeterminate));
+    assert.ok(await dialog.getByRole('button', { name: 'Apply to selected' }).isDisabled());
+    await dialog.getByLabel('Watch Candlestick buy daily', { exact: true }).check();
+    await page.screenshot({ path: path.join(output, 'bulk-follows-mobile.png'), fullPage: true });
+    await dialog.getByRole('button', { name: 'Apply to selected' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    assert.deepEqual(mutations.at(-1).body.symbols, ['AAPL', 'MSFT']);
+    assert.equal(mutations.at(-1).body.changes.length, 1);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({ path: path.join(output, 'bulk-selection-desktop.png'), fullPage: true });
+    await bulk.getByRole('button', { name: 'Remove', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await page.locator('[data-select-symbol]:checked').count(), 2);
+    await bulk.getByRole('button', { name: 'Remove', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Remove selected' }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.wl-table tbody tr').length === 0);
+    assert.deepEqual(mutations.at(-1).body.symbols, ['AAPL', 'MSFT']);
+    assert.equal(errors.length, 0, errors.join('\n'));
     console.log(`Watchlist browser checks passed. Screenshots: ${output}`);
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

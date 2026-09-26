@@ -3,6 +3,7 @@
   const { api, node: n } = window.StockWatchLists;
   const root = document.querySelector('[data-named-watchlists]');
   let lists = [];
+  const selections = new Map();
   const button = (text, handler, style = 'btn-secondary') => {
     const b = n('button', text, style); b.type = 'button'; b.addEventListener('click', handler); return b;
   };
@@ -80,6 +81,8 @@
     }
   }
   function memberTable(list, body) {
+    if (!selections.has(list.id)) selections.set(list.id, new Set());
+    const selected = selections.get(list.id);
     const actions = n('div', null, 'wl-actions');
     if (!root.dataset.selectedId) actions.append(link('Open watchlist', `/watchlists/${list.id}`));
     const markRead = n('button', 'Mark all as read', 'btn-secondary'); markRead.type = 'button';
@@ -99,7 +102,39 @@
     const status = n('p', '', 'wl-status'); status.setAttribute('role', 'status');
     const tableArea = n('div', null, 'wl-table-wrap'), pages = n('div', null, 'wl-actions');
     tableArea.tabIndex = 0; tableArea.setAttribute('role', 'region'); tableArea.setAttribute('aria-label', `Instruments in ${list.name}`);
-    body.append(actions, toolbar, status, tableArea, pages);
+    const bulk = n('div', null, 'wl-actions wl-bulk-actions'); bulk.setAttribute('aria-label', 'Selected instrument actions');
+    const selectedCount = n('span', '', 'wl-muted'); selectedCount.setAttribute('role', 'status');
+    const viewSelected = link('View signals', '#'); viewSelected.className = 'btn-accent';
+    viewSelected.addEventListener('click', event => { if (!selected.size) event.preventDefault(); });
+    const manageSelected = button('Manage follows', () => manageFollows(list, [...selected]));
+    const removeSelected = button('Remove', () => removeMembers(list, [...selected]), 'danger-outline-button');
+    const clear = button('Clear selection', () => { selected.clear(); updateSelection(); });
+    const selectPage = n('input'); selectPage.type = 'checkbox'; selectPage.setAttribute('aria-label', 'Select all instruments on this page');
+    const pageLabel = n('label', null, 'wl-check'); pageLabel.append(selectPage, n('span', 'Select page'));
+    let visibleSymbols = [];
+    selectPage.addEventListener('change', () => {
+      visibleSymbols.forEach(symbol => selectPage.checked ? selected.add(symbol) : selected.delete(symbol)); updateSelection();
+    });
+    function updateSelection() {
+      selectedCount.textContent = `${selected.size} selected`;
+      viewSelected.href = `/signals?${new URLSearchParams({ watchlistId: list.id, ticker: [...selected].join(',') })}`;
+      viewSelected.setAttribute('aria-disabled', String(!selected.size)); viewSelected.tabIndex = selected.size ? 0 : -1;
+      manageSelected.disabled = removeSelected.disabled = clear.disabled = !selected.size;
+      const checked = visibleSymbols.filter(symbol => selected.has(symbol)).length;
+      selectPage.checked = visibleSymbols.length > 0 && checked === visibleSymbols.length;
+      selectPage.indeterminate = checked > 0 && checked < visibleSymbols.length;
+      selectPage.disabled = !visibleSymbols.length;
+      tableArea.querySelectorAll('[data-select-symbol]').forEach(input => {
+        input.checked = selected.has(input.dataset.selectSymbol);
+        const row = input.closest('tr'); row.classList.toggle('wl-selected', input.checked);
+        const view = row.querySelector('.wl-view-action');
+        view.href = selected.size ? viewSelected.href : `/signals?${new URLSearchParams({ watchlistId: list.id, ticker: input.dataset.selectSymbol })}`;
+        row.querySelector('.wl-row-actions').setAttribute('aria-label', selected.size
+          ? `Actions for ${selected.size} selected instruments` : `Actions for ${input.dataset.selectSymbol}`);
+      });
+    }
+    bulk.append(pageLabel, selectedCount, viewSelected, manageSelected, removeSelected, clear);
+    body.append(actions, toolbar, bulk, status, tableArea, pages); updateSelection();
     let page = 0, sequence = 0, timer;
     async function load() {
       const request = ++sequence; status.textContent = 'Loading instruments…';
@@ -108,11 +143,17 @@
         if (request !== sequence || !body.isConnected) return;
         tableArea.replaceChildren(); pages.replaceChildren();
         status.textContent = data.total ? `${data.total} instruments · Page ${page + 1} of ${Math.ceil(data.total / data.pageSize)}` : 'No instruments in this view.';
+        visibleSymbols = data.items.map(item => item.symbol);
         const table = n('table', null, 'wl-table'), head = n('thead'), row = n('tr'), tbody = n('tbody');
         for (const text of ['Instrument', 'Following', 'Unread signals', 'Actions']) { const th = n('th', text); th.scope = 'col'; row.append(th); }
         head.append(row); table.append(head, tbody);
         for (const item of data.items) {
           const tr = n('tr'), instrument = n('td', null, 'wl-instrument-cell');
+          const check = n('input'); check.type = 'checkbox'; check.dataset.selectSymbol = item.symbol;
+          check.setAttribute('aria-label', `Select ${item.symbol}`);
+          check.addEventListener('change', () => { check.checked ? selected.add(item.symbol) : selected.delete(item.symbol); updateSelection(); });
+          const selectionLabel = n('label', null, 'wl-member-select'); selectionLabel.append(check, n('span', 'Select'));
+          instrument.append(selectionLabel);
           const signalsUrl = `/signals?${new URLSearchParams({ watchlistId: list.id, ticker: item.symbol })}`;
           instrument.append(link(item.symbol, signalsUrl), n('small', item.companyName), n('small', `${item.exchange} · ${item.currency}`)); tr.append(instrument);
           const follows = item.signals || [];
@@ -145,8 +186,9 @@
           const action = n('td', null, 'wl-actions-cell'), actionGroup = n('div', null, 'wl-row-actions');
           actionGroup.setAttribute('role', 'group'); actionGroup.setAttribute('aria-label', `Actions for ${item.symbol}`);
           const view = link('View signals', signalsUrl); view.className = 'wl-row-action wl-view-action'; view.prepend(actionIcon('signals'));
-          const manage = link('Manage follows', `/stock/${encodeURIComponent(item.symbol)}`); manage.className = 'wl-row-action'; manage.prepend(actionIcon('manage'));
+          const manage = button('Manage follows', () => manageFollows(list, selected.size ? [...selected] : [item.symbol]), 'wl-row-action'); manage.prepend(actionIcon('manage'));
           const remove = button('Remove', async () => {
+            if (selected.size) { removeMembers(list, [...selected]); return; }
             const d = modal(`Remove ${item.symbol}?`);
             d.append(n('p', 'Other watchlists keep this instrument. If this is its last list, new monitoring stops; signal history remains.', 'wl-muted'));
             const errorText = n('p', '', 'wl-status'), buttons = n('div', null, 'wl-actions');
@@ -160,12 +202,48 @@
           actionGroup.append(view, manage, remove); action.append(actionGroup); tr.append(action); tbody.append(tr);
         }
         if (data.items.length) tableArea.append(table);
+        updateSelection();
         const previous = button('Previous', () => { page--; load(); }), next = button('Next', () => { page++; load(); });
         previous.disabled = page === 0; next.disabled = (page + 1) * data.pageSize >= data.total; pages.append(previous, next);
       } catch (error) { if (request === sequence) { status.textContent = error.message; pages.replaceChildren(button('Retry', load)); } }
     }
     search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { page = 0; load(); }, 250); });
     group.input.addEventListener('change', () => { page = 0; load(); }); load();
+  }
+  async function manageFollows(list, symbols) {
+    const d = modal(`Manage follows · ${symbols.length} selected`);
+    d.append(n('p', symbols.join(', '), 'wl-selected-symbols'));
+    const status = n('p', 'Loading follows…', 'wl-status'); status.setAttribute('role', 'status');
+    const settings = window.StockWatchListSettings.create(() => { save.disabled = !settings.readChanges().length; }, { members: true });
+    settings.root.disabled = true;
+    const actions = n('div', null, 'wl-actions');
+    const save = button('Apply to selected', async () => {
+      save.disabled = true; settings.root.disabled = true;
+      try {
+        await api(`/api/watchlists/${list.id}/members/follows`, { method: 'POST', body: JSON.stringify({ symbols, changes: settings.readChanges() }) });
+        d.close(); await refresh();
+      } catch (error) { status.textContent = error.message; save.disabled = false; settings.root.disabled = false; }
+    }, 'btn-accent'); save.disabled = true;
+    actions.append(button('Cancel', () => d.close()), save); d.append(settings.root, status, actions);
+    try {
+      const view = await api(`/api/watchlists/${list.id}/members/follows/preview`, { method: 'POST', body: JSON.stringify({ symbols }) });
+      if (!d.isConnected) return;
+      settings.set(view); settings.root.disabled = false;
+      status.textContent = view.nonStocks ? `${view.nonStocks} indexes or ETFs will be skipped for insider and congressional follows.` : '';
+    } catch (error) { status.textContent = error.message; }
+  }
+  function removeMembers(list, symbols) {
+    const d = modal(`Remove ${symbols.length} selected instruments?`);
+    d.append(n('p', symbols.join(', '), 'wl-selected-symbols'), n('p', 'Remove these instruments from this watchlist. Other watchlists and signal history are preserved.', 'wl-muted'));
+    const status = n('p', '', 'wl-status'), actions = n('div', null, 'wl-actions'); status.setAttribute('role', 'status');
+    const confirm = button('Remove selected', async () => {
+      confirm.disabled = true;
+      try {
+        await api(`/api/watchlists/${list.id}/members/remove`, { method: 'POST', body: JSON.stringify({ symbols }) });
+        symbols.forEach(symbol => selections.get(list.id)?.delete(symbol)); d.close(); await refresh();
+      } catch (error) { status.textContent = error.message; confirm.disabled = false; }
+    }, 'danger-outline-button');
+    actions.append(button('Cancel', () => d.close()), confirm); d.append(status, actions);
   }
   function confirmDelete(list) {
     const d = modal(`Delete “${list.name}”?`);

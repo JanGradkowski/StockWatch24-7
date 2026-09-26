@@ -17,6 +17,7 @@ import java.util.Map;
 @Service
 public class ElliottWaveDetectionService {
     public static final String SETUP_SCORE_VERSION = "ELLIOTT_V1";
+    public static final String DETECTION_RULE_VERSION = "ELLIOTT_RULES_V2";
     private static final int MIN_CANDLES = 34;
     private static final int MIN_CONFIDENCE = 75;
     private static final int HIGH_CONFIDENCE = 85;
@@ -24,7 +25,7 @@ public class ElliottWaveDetectionService {
     private static final int DEFAULT_PRESENT_SIGNAL_LOOKBACK_CANDLES = 1;
     private static final int MAX_CONFIRMATION_LAG_CANDLES = 3;
     private static final int MIN_IMPULSE_SPAN_CANDLES = 15;
-    private static final int MIN_LEG_SPAN_CANDLES = 2;
+    private static final int MIN_LEG_SPAN_CANDLES = 1;
     private static final int MIN_STRUCTURE_QUALITY = 68;
     private static final double NORMAL_WAVE_TWO_MIN_RETRACEMENT = 0.236;
     private static final double COMMON_WAVE_TWO_MIN_RETRACEMENT = 0.382;
@@ -51,6 +52,47 @@ public class ElliottWaveDetectionService {
     private static final int EXPANDED_FLAT_PENALTY = 4;
     private static final int RUNNING_FLAT_PENALTY = 14;
     private static final double[] PIVOT_SENSITIVITIES = {0.75, 1.25, 2.0, 3.0};
+    private final ThreadLocal<Integer> grammarDepth = ThreadLocal.withInitial(() -> 0);
+    private final ThreadLocal<Map<SubdivisionMemoKey, List<ElliottSubdivision>>> subdivisionMemo = new ThreadLocal<>();
+    private final ThreadLocal<java.util.IdentityHashMap<List<EnrichedCandle>, GrammarInput>> grammarInputs = new ThreadLocal<>();
+    private record SubdivisionMemoKey(List<EnrichedCandle> candles, String label, double start, double end, int depth) {}
+    private record GrammarLegKey(ElliottWavePoint from, ElliottWavePoint to, String requested, int depth) {}
+    private record GrammarInput(List<EnrichedCandle> candles, Map<GrammarLegKey, List<ElliottSubdivision>> options,
+                                Map<Integer, Double> previewAtr) {}
+    private static final class DevelopingHypotheses {
+        final boolean primaryOnly;
+        final Map<String, RankedDevelopingImpulse> paths = new LinkedHashMap<>();
+        RankedDevelopingImpulse best;
+        List<Pivot> bestParent;
+        DevelopingHypotheses(boolean primaryOnly) { this.primaryOnly = primaryOnly; }
+    }
+
+    private GrammarInput grammarInput(List<EnrichedCandle> input) {
+        var memo = grammarInputs.get();
+        if (memo != null && memo.containsKey(input)) return memo.get(input);
+        Map<GrammarLegKey, List<ElliottSubdivision>> options = new LinkedHashMap<>(32, .75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<GrammarLegKey, List<ElliottSubdivision>> entry) {
+                return size() > 8192;
+            }
+        };
+        var result = new GrammarInput(PatternCandleIntegrity.enriched(input), options, new java.util.HashMap<>());
+        if (memo != null && memo.size() < 2048) memo.put(input, result);
+        return result;
+    }
+
+    private <T> T withSubdivisionMemo(java.util.function.Supplier<T> work) {
+        if (subdivisionMemo.get() != null) return work.get();
+        // Eviction only causes recomputation; it never excludes a count. Full candle values
+        // and grammar depth keep corrected data and different observed depths independent.
+        subdivisionMemo.set(new LinkedHashMap<>(256, .75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<SubdivisionMemoKey, List<ElliottSubdivision>> entry) {
+                return size() > 16_384;
+            }
+        });
+        grammarInputs.set(new java.util.IdentityHashMap<>());
+        try { return work.get(); } finally { subdivisionMemo.remove(); grammarInputs.remove(); }
+    }
+
     private final int presentSignalLookbackCandles;
     private final ScoringModel scoringModel;
     private final DetectionRules detectionRules;
@@ -79,6 +121,8 @@ public class ElliottWaveDetectionService {
         return new ElliottWaveDetectionService(presentSignalLookbackCandles, scoringModel, rules);
     }
 
+    public int maximumConfirmationLagCandles() { return detectionRules.maximumConfirmationLagCandles(); }
+
     public int minimumSignalConfidence() {
         return detectionRules.minimumSignalConfidence();
     }
@@ -88,10 +132,7 @@ public class ElliottWaveDetectionService {
             return List.of();
         }
 
-        List<EnrichedCandle> candles = recentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(recentCandles);
         if (candles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
@@ -134,10 +175,7 @@ public class ElliottWaveDetectionService {
         if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return java.util.Optional.empty();
         }
-        List<EnrichedCandle> candles = recentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(recentCandles);
         if (candles.size() < detectionRules.minimumCandles()) {
             return java.util.Optional.empty();
         }
@@ -158,7 +196,22 @@ public class ElliottWaveDetectionService {
     }
 
     public List<ElliottWaveStructure> findHistoricalWaveStructures(List<EnrichedCandle> historicalCandles) {
-        return selectNonOverlappingStructures(collectHistoricalWaveStructures(historicalCandles));
+        return selectNonOverlappingStructures(PatternCandleIntegrity.enrichedSegments(historicalCandles).stream()
+                .flatMap(segment -> collectHistoricalWaveStructures(segment).stream()).toList());
+    }
+
+    /** All confirmed endpoint counts; scoring and display overlap limits are not recognition rules. */
+    public List<ElliottWaveStructure> findAllWaveStructures(List<EnrichedCandle> input) {
+        return PatternCandleIntegrity.enrichedSegments(input).stream()
+                .flatMap(segment -> findAllSegmentStructures(segment).stream()).toList();
+    }
+
+    private List<ElliottWaveStructure> findAllSegmentStructures(List<EnrichedCandle> input) {
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(input);
+        if (candles.size() < 6) return List.of();
+        List<StructureCandidate> candidates = new ArrayList<>();
+        for (List<Pivot> pivots : findPivotSets(candles)) addConfirmedStructures(candles, pivots, candidates, false);
+        return candidates.stream().map(StructureCandidate::structure).distinct().toList();
     }
 
     /**
@@ -178,10 +231,7 @@ public class ElliottWaveDetectionService {
                 || confirmationTimestamp == null) {
             return new ElliottScoreAssessment(0, List.of());
         }
-        List<EnrichedCandle> candles = historicalCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(historicalCandles);
         int confirmationIndex = indexAtTimestamp(candles, confirmationTimestamp);
         if (confirmationIndex < 1) {
             return new ElliottScoreAssessment(0, List.of());
@@ -275,10 +325,7 @@ public class ElliottWaveDetectionService {
         if (historicalCandles == null || historicalCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
-        List<EnrichedCandle> candles = historicalCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(historicalCandles);
         if (candles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
@@ -314,12 +361,11 @@ public class ElliottWaveDetectionService {
                 || !pattern.name().startsWith("ELLIOTT_")) {
             return java.util.Optional.empty();
         }
-        List<EnrichedCandle> detectionHistory = historicalCandles.stream()
-                .filter(this::hasCompleteData)
+        List<EnrichedCandle> detectionHistory = PatternCandleIntegrity.enriched(historicalCandles).stream()
                 .filter(candle -> candle.timestamp() <= signalTimestamp)
                 .sorted(Comparator.comparing(EnrichedCandle::timestamp))
                 .toList();
-        return findHistoricalWaveStructures(detectionHistory).stream()
+        return findAllWaveStructures(detectionHistory).stream()
                 .filter(structure -> matchesRecordedPattern(pattern, structure))
                 .filter(structure -> structure.confirmationTimestamp() != null
                         && structure.confirmationTimestamp() <= signalTimestamp)
@@ -367,19 +413,24 @@ public class ElliottWaveDetectionService {
     private void addConfirmedStructures(List<EnrichedCandle> candles,
                                         List<Pivot> pivots,
                                         List<StructureCandidate> structures) {
+        addConfirmedStructures(candles, pivots, structures, true);
+    }
+
+    private void addConfirmedStructures(List<EnrichedCandle> candles, List<Pivot> pivots,
+                                         List<StructureCandidate> structures, boolean requireTimely) {
         for (int start = 0; start + 8 < pivots.size(); start++) {
             List<Pivot> sequence = List.copyOf(pivots.subList(start, start + 9));
             if (matchesTypes(sequence, PivotType.LOW, PivotType.HIGH, PivotType.LOW, PivotType.HIGH,
                     PivotType.LOW, PivotType.HIGH, PivotType.LOW, PivotType.HIGH, PivotType.LOW)
                     && isBullishCorrectionComplete(sequence)) {
                 addConfirmedStructure(candles, sequence, "BULLISH", true,
-                        firstBullishReboundIndex(candles, sequence.get(8)), structures);
+                        firstBullishReboundIndex(candles, sequence.get(8)), structures, requireTimely);
             }
             if (matchesTypes(sequence, PivotType.HIGH, PivotType.LOW, PivotType.HIGH, PivotType.LOW,
                     PivotType.HIGH, PivotType.LOW, PivotType.HIGH, PivotType.LOW, PivotType.HIGH)
                     && isBearishCorrectionComplete(sequence)) {
                 addConfirmedStructure(candles, sequence, "BEARISH", true,
-                        firstBearishRejectionIndex(candles, sequence.get(8)), structures);
+                        firstBearishRejectionIndex(candles, sequence.get(8)), structures, requireTimely);
             }
         }
         for (int start = 0; start + 5 < pivots.size(); start++) {
@@ -389,14 +440,14 @@ public class ElliottWaveDetectionService {
                     && isBullishImpulseComplete(sequence.get(0), sequence.get(1), sequence.get(2),
                     sequence.get(3), sequence.get(4), sequence.get(5))) {
                 addConfirmedStructure(candles, sequence, "BULLISH", false,
-                        firstBearishRejectionIndex(candles, sequence.get(5)), structures);
+                        firstBearishRejectionIndex(candles, sequence.get(5)), structures, requireTimely);
             }
             if (matchesTypes(sequence, PivotType.HIGH, PivotType.LOW, PivotType.HIGH,
                     PivotType.LOW, PivotType.HIGH, PivotType.LOW)
                     && isBearishImpulseComplete(sequence.get(0), sequence.get(1), sequence.get(2),
                     sequence.get(3), sequence.get(4), sequence.get(5))) {
                 addConfirmedStructure(candles, sequence, "BEARISH", false,
-                        firstBullishReboundIndex(candles, sequence.get(5)), structures);
+                        firstBullishReboundIndex(candles, sequence.get(5)), structures, requireTimely);
             }
         }
     }
@@ -406,11 +457,12 @@ public class ElliottWaveDetectionService {
                                        String direction,
                                        boolean correctionComplete,
                                        int confirmationIndex,
-                                       List<StructureCandidate> structures) {
+                                       List<StructureCandidate> structures, boolean requireTimely) {
         Pivot endpoint = sequence.getLast();
-        if (!isTimelyConfirmation(endpoint, confirmationIndex)) {
+        if (confirmationIndex < 0 || requireTimely && !isTimelyConfirmation(endpoint, confirmationIndex)) {
             return;
         }
+        if (!assessCycleGrammar(candles, sequence).compatible()) return;
         int quality = structureQuality(candles, sequence, direction, correctionComplete);
         structures.add(new StructureCandidate(confirmationIndex,
                 toStructure(direction, correctionComplete, candles, sequence, confirmationIndex, quality)));
@@ -445,7 +497,7 @@ public class ElliottWaveDetectionService {
         if (previous.close() > breakoutLevel) {
             evidence.reasons().add("breakout remains active on the latest candle with bullish follow-through");
         }
-        return java.util.Optional.of(signal(
+        return java.util.Optional.ofNullable(signal(
                 CandlePattern.ELLIOTT_BULLISH_IMPULSE,
                 TradeSignal.BUY,
                 current,
@@ -485,7 +537,7 @@ public class ElliottWaveDetectionService {
         if (previous.close() < breakdownLevel) {
             evidence.reasons().add("breakdown remains active on the latest candle with bearish follow-through");
         }
-        return java.util.Optional.of(signal(
+        return java.util.Optional.ofNullable(signal(
                 CandlePattern.ELLIOTT_BEARISH_IMPULSE,
                 TradeSignal.SELL,
                 current,
@@ -517,7 +569,7 @@ public class ElliottWaveDetectionService {
         evidence.reasons().add(truncated
                 ? "truncated bullish wave V ended below wave III with a current bearish reversal"
                 : "bullish wave V ended with a current bearish reversal below the previous candle low");
-        return java.util.Optional.of(signal(
+        return java.util.Optional.ofNullable(signal(
                 truncated ? CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END
                         : CandlePattern.ELLIOTT_BULLISH_WAVE_V_END,
                 TradeSignal.SELL,
@@ -550,7 +602,7 @@ public class ElliottWaveDetectionService {
         evidence.reasons().add(truncated
                 ? "truncated bearish wave V ended above wave III with a current bullish reversal"
                 : "bearish wave V ended with a current bullish reversal above the previous candle high");
-        return java.util.Optional.of(signal(
+        return java.util.Optional.ofNullable(signal(
                 truncated ? CandlePattern.ELLIOTT_BEARISH_TRUNCATED_WAVE_V_END
                         : CandlePattern.ELLIOTT_BEARISH_WAVE_V_END,
                 TradeSignal.BUY,
@@ -596,7 +648,7 @@ public class ElliottWaveDetectionService {
         addCompletedImpulseCautions(evidence, wave0, wave1, wave2, wave3, wave4, wave5);
         evidence.reasons().add("bullish five-wave structure completed before distinct A, B and C correction legs");
         evidence.reasons().add("wave C ended with a current close back above the previous candle high");
-        return java.util.Optional.of(signal(
+        return java.util.Optional.ofNullable(signal(
                 bullishCorrectionPattern(correction.variant()),
                 TradeSignal.BUY,
                 current,
@@ -641,7 +693,7 @@ public class ElliottWaveDetectionService {
         addCompletedImpulseCautions(evidence, wave0, wave1, wave2, wave3, wave4, wave5);
         evidence.reasons().add("bearish five-wave structure completed before distinct A, B and C correction legs");
         evidence.reasons().add("wave C ended with a current close back below the previous candle low");
-        return java.util.Optional.of(signal(
+        return java.util.Optional.ofNullable(signal(
                 bearishCorrectionPattern(correction.variant()),
                 TradeSignal.SELL,
                 current,
@@ -685,6 +737,7 @@ public class ElliottWaveDetectionService {
     private boolean isCurrentBullishRebound(List<EnrichedCandle> candles, Pivot correctionLow) {
         int currentIndex = candles.size() - 1;
         int reboundIndex = firstBullishReboundIndex(candles, correctionLow);
+        if (!isTimelyConfirmation(correctionLow, reboundIndex)) return false;
         if (!isPresentSignalIndex(currentIndex, reboundIndex)) {
             return false;
         }
@@ -699,6 +752,7 @@ public class ElliottWaveDetectionService {
     private boolean isCurrentBearishRejection(List<EnrichedCandle> candles, Pivot correctionHigh) {
         int currentIndex = candles.size() - 1;
         int rejectionIndex = firstBearishRejectionIndex(candles, correctionHigh);
+        if (!isTimelyConfirmation(correctionHigh, rejectionIndex)) return false;
         if (!isPresentSignalIndex(currentIndex, rejectionIndex)) {
             return false;
         }
@@ -1178,7 +1232,8 @@ public class ElliottWaveDetectionService {
         double impulseLength = Math.abs(wave5.price() - wave0.price());
         double waveALength = Math.abs(wave5.price() - waveA.price());
         double waveCLength = Math.abs(waveB.price() - waveC.price());
-        double retracement = safeRatio(Math.abs(wave5.price() - waveC.price()), impulseLength);
+        double retracement = safeRatio("BULLISH".equals(direction)
+                ? wave5.price() - waveC.price() : waveC.price() - wave5.price(), impulseLength);
         double waveCToARatio = safeRatio(waveCLength, waveALength);
         boolean bullish = "BULLISH".equals(direction);
         boolean waveBBeyondOrigin = bullish
@@ -1506,12 +1561,12 @@ public class ElliottWaveDetectionService {
         CorrectionMetrics correction = correctionComplete
                 ? correctionMetrics(pivots, direction)
                 : new CorrectionMetrics(0.0, 0.0, CorrectionVariant.NONE);
-        List<String> qualityWarnings = structureQualityWarnings(
-                pivots, waveTwoRetracement, waveThreeToOneRatio, waveFourRetracement, correction);
+        List<String> qualityWarnings = new ArrayList<>(structureQualityWarnings(
+                pivots, waveTwoRetracement, waveThreeToOneRatio, waveFourRetracement, correction));
         return new ElliottWaveStructure(direction, correctionComplete, List.copyOf(points),
                 confirmationTimestamp, qualityScore, waveTwoRetracement, isDeepWaveTwo(waveTwoRetracement),
                 waveThreeToOneRatio, waveFourRetracement, impulseVariant, correction.variant(),
-                correction.retracement(), correction.waveCToARatio(), qualityWarnings);
+                correction.retracement(), correction.waveCToARatio(), qualityWarnings, assessCycleGrammar(candles, pivots));
     }
 
     private List<String> structureQualityWarnings(List<Pivot> pivots,
@@ -1666,10 +1721,7 @@ public class ElliottWaveDetectionService {
                 || Double.compare(parentStartPrice, parentEndPrice) == 0) {
             return java.util.Optional.empty();
         }
-        List<EnrichedCandle> candles = parentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(parentCandles);
         if (candles.size() < 6) {
             return java.util.Optional.empty();
         }
@@ -1679,60 +1731,15 @@ public class ElliottWaveDetectionService {
                 .contains(normalizedLabel);
         boolean correctionExpected = java.util.Set.of("II", "IV", "2", "4", "A", "B", "C", "D", "E")
                 .contains(normalizedLabel);
-        List<SubdivisionCandidate> candidates = new ArrayList<>();
-        for (double sensitivity : detectionRules.pivotSensitivities()) {
-            List<Pivot> pivots = findPivots(candles, sensitivity);
-            if (motiveExpected) {
-                collectMotiveSubdivisionCandidates(
-                        candles, pivots, parentStartPrice, parentEndPrice,
-                        diagonalAllowedAt(normalizedLabel), candidates);
-            }
-            if (correctionExpected) {
-                collectCorrectionSubdivisionCandidates(
-                        candles, pivots, parentStartPrice, parentEndPrice, candidates);
-                collectComplexCorrectionSubdivisionCandidates(
-                        candles, pivots, parentStartPrice, parentEndPrice, candidates);
-                if (detectionRules.allowTriangles()
-                        && java.util.Set.of("IV", "4", "B").contains(normalizedLabel)) {
-                    collectTriangleSubdivisionCandidates(
-                            candles, pivots, parentStartPrice, parentEndPrice, candidates);
-                }
-            }
-        }
-        if (candidates.isEmpty()) {
-            return bestEffortSubdivision(candles, normalizedLabel,
-                    motiveExpected, correctionExpected, parentStartPrice, parentEndPrice);
-        }
-
-        List<SubdivisionCandidate> ranked = candidates.stream()
-                .sorted(Comparator.comparingInt(SubdivisionCandidate::confidence).reversed()
-                        .thenComparing(Comparator.comparingInt(
-                                (SubdivisionCandidate candidate) -> candidate.pivots().getLast().index()
-                                        - candidate.pivots().getFirst().index()).reversed()))
-                .toList();
-        SubdivisionCandidate best = ranked.getFirst();
-        if (best.confidence() < 60) {
-            return bestEffortSubdivision(candles, normalizedLabel,
-                    motiveExpected, correctionExpected, parentStartPrice, parentEndPrice);
-        }
-        List<ElliottSubdivisionAlternative> alternatives = ranked.stream()
-                .skip(1)
-                .filter(candidate -> candidate.kind() != best.kind()
-                        || !subdivisionKey(candidate).equals(subdivisionKey(best)))
-                .filter(candidate -> candidate.confidence() >= best.confidence() - 8)
-                .limit(1)
-                .map(candidate -> new ElliottSubdivisionAlternative(
-                        candidate.kind().displayName,
-                        candidate.confidence(),
-                        subdivisionPoints(candles, candidate)))
-                .toList();
-        return java.util.Optional.of(new ElliottSubdivision(
-                best.kind().displayName,
-                best.confidence(),
-                true,
-                subdivisionPoints(candles, best),
-                best.evidence(),
-                alternatives));
+        List<ElliottSubdivision> options = findStrictSubdivisions(candles, normalizedLabel,
+                parentStartPrice, parentEndPrice);
+        if (options.isEmpty()) return bestEffortSubdivision(candles, normalizedLabel,
+                motiveExpected, correctionExpected, parentStartPrice, parentEndPrice);
+        ElliottSubdivision best = options.getFirst();
+        List<ElliottSubdivisionAlternative> alternatives = options.stream().skip(1).limit(1)
+                .map(o -> new ElliottSubdivisionAlternative(o.structureLabel(), o.confidence(), o.points())).toList();
+        return java.util.Optional.of(new ElliottSubdivision(best.structureLabel(), best.confidence(), best.validated(),
+                best.points(), best.evidence(), alternatives, best.observedDepth(), best.unresolvedLegs()));
     }
 
     /**
@@ -1750,10 +1757,21 @@ public class ElliottWaveDetectionService {
                 || Double.compare(parentStartPrice, parentEndPrice) == 0) {
             return List.of();
         }
-        List<EnrichedCandle> candles = parentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        return withSubdivisionMemo(() -> {
+            var key = new SubdivisionMemoKey(new ArrayList<>(parentCandles), grammarLabel(parentLabel),
+                    parentStartPrice, parentEndPrice, grammarDepth.get());
+            var memo = subdivisionMemo.get();
+            var saved = memo.get(key);
+            if (saved != null) return saved;
+            var result = computeStrictSubdivisions(parentCandles, parentLabel, parentStartPrice, parentEndPrice);
+            memo.put(key, result);
+            return result;
+        });
+    }
+
+    private List<ElliottSubdivision> computeStrictSubdivisions(List<EnrichedCandle> parentCandles,
+            String parentLabel, double parentStartPrice, double parentEndPrice) {
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(parentCandles);
         String label = grammarLabel(parentLabel);
         boolean motive = java.util.Set.of("I", "III", "V", "1", "3", "5", "A", "C")
                 .contains(label);
@@ -1790,15 +1808,159 @@ public class ElliottWaveDetectionService {
                                 (SubdivisionCandidate candidate) -> candidate.pivots().getLast().index()
                                         - candidate.pivots().getFirst().index()).reversed()))
                 .forEach(candidate -> distinct.putIfAbsent(subdivisionKey(candidate), candidate));
-        return distinct.values().stream().limit(24)
-                .map(candidate -> new ElliottSubdivision(
-                        candidate.kind().displayName,
-                        candidate.confidence(),
-                        true,
-                        subdivisionPoints(candles, candidate),
-                        candidate.evidence(),
-                        List.of()))
+        return distinct.values().stream()
+                .map(candidate -> validatedSubdivision(candles, candidate, label))
+                .filter(java.util.Objects::nonNull)
                 .toList();
+    }
+
+    private ElliottSubdivision validatedSubdivision(List<EnrichedCandle> candles,
+                                                      SubdivisionCandidate candidate, String parentLabel) {
+        String label = subdivisionLabel(candidate, parentLabel);
+        List<ElliottWavePoint> points = subdivisionPoints(candles, candidate);
+        GrammarAssessment assessment = assessGrammar(candles, label, points);
+        if (!assessment.compatible()) return null;
+        List<String> evidence = new ArrayList<>(candidate.evidence());
+        evidence.add(assessment.description());
+        return new ElliottSubdivision(label, candidate.confidence(), true, points,
+                List.copyOf(evidence), List.of(), assessment.observedDepth(), assessment.unresolvedLegs());
+    }
+
+    /** Same bounded child-grammar check used for strict, historical and emitted counts. */
+    public GrammarAssessment assessGrammar(List<EnrichedCandle> input, String structureLabel,
+                                           List<ElliottWavePoint> points) {
+        if (points == null || points.size() < 2) return new GrammarAssessment(false, 0, List.of("structure"));
+        var grammarInput = grammarInput(input);
+        List<EnrichedCandle> candles = grammarInput.candles();
+        int depth = grammarDepth.get();
+        if (depth >= 2) return new GrammarAssessment(true, 1,
+                points.stream().skip(1).map(ElliottWavePoint::label).toList());
+        String kind = structureLabel.toLowerCase(java.util.Locale.ROOT);
+        List<String> unresolved = new ArrayList<>();
+        int observed = 1;
+        boolean leadingMotive = true, leadingCorrective = true;
+        grammarDepth.set(depth + 1);
+        try {
+            for (int i = 1; i < points.size(); i++) {
+                ElliottWavePoint from = points.get(i-1), to = points.get(i);
+                if (from.timestamp() >= to.timestamp()) return new GrammarAssessment(false, observed, List.of(to.label()));
+                String component = grammarLabel(to.label());
+                boolean motive = java.util.Set.of("I", "III", "V", "1", "3", "5", "A", "C").contains(component);
+                if (kind.contains("triangle") || kind.contains("ending diagonal")
+                        || kind.contains("flat") && component.equals("A")) motive = false;
+                String requested = motive ? (component.equals("III") || component.equals("3") ? "III" : "A")
+                        : (component.equals("II") || component.equals("2") ? "II" : "B");
+                var legKey = new GrammarLegKey(from, to, requested, depth);
+                List<ElliottSubdivision> options = grammarInput.options().get(legKey);
+                if (options == null) {
+                    List<EnrichedCandle> leg = candles.stream().filter(c -> c.timestamp() >= from.timestamp()
+                            && c.timestamp() <= to.timestamp()).toList();
+                    if (leg.isEmpty() || leg.getFirst().timestamp() != from.timestamp()
+                            || leg.getLast().timestamp() != to.timestamp()) {
+                        return new GrammarAssessment(false, observed, List.of(to.label() + ": missing boundary candles"));
+                    }
+                    options = findStrictSubdivisions(leg, requested, from.price(), to.price());
+                    grammarInput.options().put(legKey, options);
+                }
+                final boolean expectedMotive = motive;
+                var matching = options.stream().filter(o -> expectedMotive == o.structureLabel().startsWith("Motive"))
+                        .findFirst();
+                if (kind.contains("leading diagonal") && motive) {
+                    boolean hasMotive = options.stream().anyMatch(o -> o.structureLabel().startsWith("Motive"));
+                    boolean hasCorrective = options.stream().anyMatch(o -> !o.structureLabel().startsWith("Motive"));
+                    if (!options.isEmpty()) { leadingMotive &= hasMotive; leadingCorrective &= hasCorrective; }
+                    if (matching.isEmpty() && hasCorrective) matching = options.stream()
+                            .filter(o -> !o.structureLabel().startsWith("Motive")).findFirst();
+                }
+                if (matching.isEmpty()) {
+                    // A different count at an inferred degree does not prove the requested child impossible.
+                    // Keep the parent hypothesis, but never claim that this leg's grammar was established.
+                    unresolved.add(to.label() + (options.isEmpty() ? "" : ": child degree/grammar unresolved"));
+                } else {
+                    ElliottSubdivision child = matching.get();
+                    observed = Math.max(observed, 1 + child.observedDepth());
+                    for (String path : child.unresolvedLegs()) unresolved.add(to.label() + "." + path);
+                }
+            }
+        } finally {
+            if (depth == 0) grammarDepth.remove(); else grammarDepth.set(depth);
+        }
+        return new GrammarAssessment(leadingMotive || leadingCorrective, observed, List.copyOf(unresolved));
+    }
+
+    public record GrammarAssessment(boolean compatible, int observedDepth, List<String> unresolvedLegs) {
+        public String description() {
+            return "Structural validation: " + (compatible ? "compatible observed geometry" : "incompatible child grammar")
+                    + "; observed depth " + observedDepth + "; unresolved child legs: "
+                    + (unresolvedLegs.isEmpty() ? "none" : String.join(", ", unresolvedLegs)) + ".";
+        }
+    }
+
+    /**
+     * Standalone counts, including corrections that do not follow a detected impulse.
+     * Legal parent positions remain explicit: endpoint geometry alone cannot establish context.
+     */
+    public List<ElliottPatternCandidate> findPatternCandidates(List<EnrichedCandle> input) {
+        return PatternCandleIntegrity.enrichedSegments(input).stream()
+                .flatMap(segment -> findSegmentPatternCandidates(segment).stream()).toList();
+    }
+
+    private List<ElliottPatternCandidate> findSegmentPatternCandidates(List<EnrichedCandle> input) {
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(input);
+        if (candles.size() < 4) return List.of();
+        Map<String, ElliottPatternCandidate> result = new LinkedHashMap<>();
+        for (double sensitivity : detectionRules.pivotSensitivities()) {
+            List<Pivot> pivots = findPivots(candles, sensitivity);
+            for (int size : new int[]{4, 6, 8, 10, 12, 14}) {
+                for (int start = 0; start + size <= pivots.size(); start++) {
+                    List<Pivot> sequence = pivots.subList(start, start + size);
+                    Pivot first = sequence.getFirst(), last = sequence.getLast();
+                    int confirmation = last.type() == PivotType.LOW
+                            ? firstBullishReboundIndex(candles, last) : firstBearishRejectionIndex(candles, last);
+                    if (confirmation < 0) continue;
+                    List<EnrichedCandle> segment = candles.subList(first.index(), last.index() + 1);
+                    List<Pivot> local = sequence.stream().map(p ->
+                            new Pivot(p.index() - first.index(), p.type(), p.price())).toList();
+                    List<SubdivisionCandidate> candidates = new ArrayList<>();
+                    if (size == 4) collectCorrectionSubdivisionCandidates(segment, local,
+                            first.price(), last.price(), candidates);
+                    if (size == 6) {
+                        collectStrictMotiveSubdivisionCandidates(segment, local, first.price(), last.price(), true, candidates);
+                        if (detectionRules.allowTriangles()) collectTriangleSubdivisionCandidates(segment, local,
+                                first.price(), last.price(), candidates);
+                    }
+                    if (size >= 8) collectComplexCorrectionSubdivisionCandidates(segment, local,
+                            first.price(), last.price(), candidates);
+                    for (SubdivisionCandidate c : candidates) {
+                        List<ElliottWavePoint> points = subdivisionPoints(segment, c);
+                        List<String> positions = switch(c.kind()) {
+                            case DIAGONAL -> List.of("I or zigzag A: leading", "V or C: ending");
+                            case TRIANGLE, BARRIER_TRIANGLE, EXPANDING_TRIANGLE -> List.of("IV", "B", "terminal combination component");
+                            case MOTIVE -> List.of("I", "III", "V", "A", "C");
+                            default -> List.of("II", "IV", "B", "corrective component");
+                        };
+                        ElliottPatternCandidate candidate = new ElliottPatternCandidate(c.kind().displayName,
+                                last.price() > first.price() ? "RISING" : "FALLING", points,
+                                candles.get(confirmation).timestamp(), c.confidence(), positions,
+                                "OBSERVED_DEGREE_GEOMETRY", 1, points.stream().skip(1).map(ElliottWavePoint::label).toList());
+                        result.putIfAbsent(c.kind() + ":" + points, candidate);
+                    }
+                }
+            }
+        }
+        return result.values().stream().sorted(Comparator.comparingLong(ElliottPatternCandidate::confirmationTimestamp)).toList();
+    }
+
+    public record ElliottPatternCandidate(String structureLabel, String direction,
+            List<ElliottWavePoint> points, long confirmationTimestamp, int qualityScore,
+            List<String> legalParentPositions, String validationScope, int observedDepth,
+            List<String> unresolvedLegs) { }
+
+    private String subdivisionLabel(SubdivisionCandidate candidate, String parentLabel) {
+        if (candidate.kind() != SubdivisionKind.DIAGONAL) return candidate.kind().displayName;
+        return java.util.Set.of("I", "1", "A").contains(parentLabel)
+                ? "Motive leading diagonal 1-2-3-4-5"
+                : "Motive ending diagonal 1-2-3-4-5";
     }
 
     private String grammarLabel(String parentLabel) {
@@ -1842,14 +2004,8 @@ public class ElliottWaveDetectionService {
             List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles,
             DevelopingScanContext scanContext) {
-        Map<String, List<DevelopingImpulse>> byDevelopment = new LinkedHashMap<>();
-        for (DevelopingImpulse hypothesis : findDevelopingImpulseHypotheses(
-                recentCandles, lowerDegreeCandles, scanContext)) {
-            byDevelopment.computeIfAbsent(hypothesis.developmentKey(), ignored -> new ArrayList<>())
-                    .add(hypothesis);
-        }
-        return byDevelopment.values().stream()
-                .map(hypotheses -> withHypothesisEvidence(hypotheses.getFirst(), hypotheses.size()))
+        return withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
+                recentCandles, lowerDegreeCandles, scanContext, true)).stream()
                 .sorted(Comparator.comparingLong(DevelopingImpulse::confirmationTimestamp)
                         .thenComparingInt(candidate -> candidate.stage().progressionOrder()))
                 .toList();
@@ -1858,7 +2014,7 @@ public class ElliottWaveDetectionService {
     private DevelopingImpulse withHypothesisEvidence(DevelopingImpulse primary, int hypothesisCount) {
         List<String> evidence = new ArrayList<>(primary.evidence());
         evidence.add(hypothesisCount == 1
-                ? "One parent-degree count currently satisfies every Elliott rule."
+                ? "One parent-degree hypothesis satisfies the implemented observed-geometry rules; unresolved child legs remain explicit."
                 : hypothesisCount + " admissible parent-degree counts remain; this is the highest-ranked scale-coherent count.");
         return new DevelopingImpulse(
                 primary.developmentKey(), primary.direction(), primary.stage(), primary.pattern(),
@@ -1872,7 +2028,7 @@ public class ElliottWaveDetectionService {
      * Returns the admissible parent-degree counts retained for each developing
      * cycle, ordered with the primary count first. Keeping alternatives is
      * essential while corrective structures are still unfolding: several
-     * counts can satisfy every Elliott rule until later price action resolves
+     * counts can satisfy the observed-degree rules until later price action resolves
      * their degree.
      */
     public List<DevelopingImpulse> findDevelopingImpulseHypotheses(List<EnrichedCandle> recentCandles) {
@@ -1890,24 +2046,27 @@ public class ElliottWaveDetectionService {
             List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles,
             DevelopingScanContext scanContext) {
+        return withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(recentCandles, lowerDegreeCandles, scanContext, false));
+    }
+
+    private List<DevelopingImpulse> computeDevelopingImpulseHypotheses(
+            List<EnrichedCandle> recentCandles, List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext,
+            boolean primaryOnly) {
         if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
         DevelopingScanContext context = scanContext == null
                 ? new DevelopingScanContext() : scanContext;
-        List<EnrichedCandle> candles = recentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(recentCandles);
         if (candles.size() < detectionRules.minimumCandles()) return List.of();
+        // Reserve the shared parent input before recursive child inputs fill the memo.
+        grammarInput(candles);
         List<EnrichedCandle> childCandles = lowerDegreeCandles == null
                 ? List.of()
-                : lowerDegreeCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp))
-                .toList();
+                : PatternCandleIntegrity.enriched(lowerDegreeCandles);
 
-        Map<String, List<RankedDevelopingImpulse>> hypothesesByDevelopment = new LinkedHashMap<>();
+        context.prepare(candles, childCandles, detectionRules);
+        Map<String, DevelopingHypotheses> hypothesesByDevelopment = new LinkedHashMap<>();
         List<DevelopmentPivotSet> pivotSets = findDevelopmentPivotSets(candles);
         Map<String, PivotSupport> supportByPivot = new LinkedHashMap<>();
         for (DevelopmentPivotSet pivotSet : pivotSets) {
@@ -1931,11 +2090,15 @@ public class ElliottWaveDetectionService {
                 String pairKey = origin.type() + ":" + origin.index() + ':' + waveOne.index();
                 if (!seededPairs.add(pairKey)) continue;
                 extendDevelopingImpulse(candles, List.of(origin, waveOne), allPivots,
-                        supportByPivot, hypothesesByDevelopment, childCandles, subdivisionCache);
+                        supportByPivot, hypothesesByDevelopment, childCandles, subdivisionCache, primaryOnly);
             }
         }
+        if (primaryOnly) return hypothesesByDevelopment.values().stream()
+                .sorted((left, right) -> rankedDevelopingComparator().compare(left.best, right.best))
+                .map(group -> withHypothesisEvidence(developingImpulse(candles, group.bestParent, 0,
+                        childCandles, subdivisionCache, false, true).orElseThrow(), group.paths.size())).toList();
         return hypothesesByDevelopment.values().stream()
-                .flatMap(List::stream)
+                .flatMap(group -> group.paths.values().stream())
                 .sorted(rankedDevelopingComparator())
                 .map(RankedDevelopingImpulse::candidate)
                 .toList();
@@ -1946,25 +2109,52 @@ public class ElliottWaveDetectionService {
             List<Pivot> prefix,
             List<Pivot> allPivots,
             Map<String, PivotSupport> supportByPivot,
-            Map<String, List<RankedDevelopingImpulse>> hypothesesByDevelopment,
+            Map<String, DevelopingHypotheses> hypothesesByDevelopment,
             List<EnrichedCandle> lowerDegreeCandles,
-            Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache) {
+            Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache, boolean primaryOnly) {
         if (prefix.size() >= 3 && prefix.size() <= 6) {
             DevelopingImpulse candidate = developingImpulse(
-                    candles, prefix, 0, lowerDegreeCandles, subdivisionCache).orElse(null);
+                    candles, prefix, 0, lowerDegreeCandles, subdivisionCache, false, !primaryOnly).orElse(null);
             if (candidate == null || candidate.stage().progressionOrder() != prefix.size() - 1) return;
-            retainDevelopingHypothesis(candidate, prefix, supportByPivot, hypothesesByDevelopment);
+            Pivot endpoint = prefix.getLast();
+            int confirmation = endpoint.type() == PivotType.LOW
+                    ? firstBullishReboundIndex(candles, endpoint) : firstBearishRejectionIndex(candles, endpoint);
+            if (isTimelyConfirmation(endpoint, confirmation)) {
+                retainDevelopingHypothesis(candidate, prefix, supportByPivot, hypothesesByDevelopment, primaryOnly);
+            }
         } else if (prefix.size() > 6) {
-            DevelopingImpulse waveV = developingImpulse(
-                    candles, List.copyOf(prefix.subList(0, 6)), 0,
-                    lowerDegreeCandles, subdivisionCache).orElse(null);
-            if (waveV == null || waveV.stage() != ElliottSignalStage.WAVE_V_END) return;
+            // Reaching here already required a valid Wave V at prefix size six.
+            // Check each finished correction leg before expanding the remaining ones.
+            boolean bullish = prefix.getFirst().type() == PivotType.LOW;
+            Pivot origin = prefix.getFirst(), five = prefix.get(5), a = prefix.get(6);
+            double aLength = bullish ? five.price() - a.price() : a.price() - five.price();
+            if (aLength <= 0 || a.index() - five.index() < detectionRules.minimumLegSpanCandles()
+                    || detectionRules.requireWaveAWithinOrigin()
+                    && (bullish ? a.price() <= origin.price() : a.price() >= origin.price())) return;
+            if (prefix.size() == 7
+                    && cachedMotiveSubdivision(candles, lowerDegreeCandles, five, a, "A", subdivisionCache) == null
+                    && cachedCorrectiveSubdivision(candles, lowerDegreeCandles, five, a, "A", false, subdivisionCache) == null) return;
+            if (prefix.size() >= 8) {
+                Pivot b = prefix.get(7);
+                double recovery = bullish ? b.price() - a.price() : a.price() - b.price();
+                if (recovery <= 0 || safeRatio(recovery, aLength) > detectionRules.waveBMaximumRecovery()
+                        || b.index() - a.index() < detectionRules.minimumLegSpanCandles()) return;
+                if (prefix.size() == 8) {
+                    var first = safeRatio(recovery, aLength) >= .90
+                            ? cachedCorrectiveSubdivision(candles, lowerDegreeCandles, five, a, "A", false, subdivisionCache)
+                            : cachedMotiveSubdivision(candles, lowerDegreeCandles, five, a, "A", subdivisionCache);
+                    if (first == null || cachedCorrectiveSubdivision(candles, lowerDegreeCandles, a, b,
+                            "B", true, subdivisionCache) == null) return;
+                }
+            }
+            // A missed earlier trade trigger must not invalidate a later structural stage.
             if (prefix.size() == 9) {
+                if (!(bullish ? isBullishCorrectionComplete(prefix) : isBearishCorrectionComplete(prefix))) return;
                 DevelopingImpulse correction = developingImpulse(
-                        candles, prefix, 0, lowerDegreeCandles, subdivisionCache).orElse(null);
+                        candles, prefix, 0, lowerDegreeCandles, subdivisionCache, true, !primaryOnly).orElse(null);
                 if (correction != null && correction.stage() == ElliottSignalStage.CORRECTION_END) {
                     retainDevelopingHypothesis(
-                            correction, prefix, supportByPivot, hypothesesByDevelopment);
+                            correction, prefix, supportByPivot, hypothesesByDevelopment, primaryOnly);
                 }
                 return;
             }
@@ -1982,7 +2172,7 @@ public class ElliottWaveDetectionService {
             List<Pivot> extended = new ArrayList<>(prefix);
             extended.add(next);
             extendDevelopingImpulse(candles, List.copyOf(extended), allPivots,
-                    supportByPivot, hypothesesByDevelopment, lowerDegreeCandles, subdivisionCache);
+                    supportByPivot, hypothesesByDevelopment, lowerDegreeCandles, subdivisionCache, primaryOnly);
         }
     }
 
@@ -2024,22 +2214,24 @@ public class ElliottWaveDetectionService {
             DevelopingImpulse candidate,
             List<Pivot> parent,
             Map<String, PivotSupport> supportByPivot,
-            Map<String, List<RankedDevelopingImpulse>> hypothesesByDevelopment) {
+            Map<String, DevelopingHypotheses> hypothesesByDevelopment, boolean primaryOnly) {
         RankedDevelopingImpulse ranked = new RankedDevelopingImpulse(
                 candidate, degreeCoherence(parent, supportByPivot), parentPath(parent));
-        List<RankedDevelopingImpulse> retained = hypothesesByDevelopment.computeIfAbsent(
-                candidate.developmentKey(), ignored -> new ArrayList<>());
-        for (int index = 0; index < retained.size(); index++) {
-            if (!retained.get(index).parentPath().equals(ranked.parentPath())) continue;
-            if (rankedDevelopingComparator().compare(ranked, retained.get(index)) < 0) {
-                retained.set(index, ranked);
+        DevelopingHypotheses group = hypothesesByDevelopment.computeIfAbsent(
+                candidate.developmentKey(), ignored -> new DevelopingHypotheses(primaryOnly));
+        if (group.primaryOnly) {
+            // The primary API only returns the best path and the number of alternatives.
+            // Count every path without retaining every fully materialized alternative.
+            group.paths.put(ranked.parentPath(), null);
+            if (group.best == null || rankedDevelopingComparator().compare(ranked, group.best) < 0) {
+                group.best = ranked;
+                group.bestParent = parent;
             }
-            retained.sort(rankedDevelopingComparator());
             return;
         }
-        retained.add(ranked);
-        retained.sort(rankedDevelopingComparator());
-        if (retained.size() > 24) retained.subList(24, retained.size()).clear();
+        group.paths.merge(ranked.parentPath(), ranked,
+                (old, replacement) -> rankedDevelopingComparator().compare(replacement, old) < 0 ? replacement : old);
+        // Preserve structurally different hypotheses; presentation chooses its own limit.
     }
 
     private Comparator<RankedDevelopingImpulse> rankedDevelopingComparator() {
@@ -2103,6 +2295,23 @@ public class ElliottWaveDetectionService {
             int start,
             List<EnrichedCandle> lowerDegreeCandles,
             Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache) {
+        return developingImpulse(candles, pivots, start, lowerDegreeCandles, subdivisionCache, true);
+    }
+
+    private java.util.Optional<DevelopingImpulse> developingImpulse(
+            List<EnrichedCandle> candles, List<Pivot> pivots, int start,
+            List<EnrichedCandle> lowerDegreeCandles,
+            Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache,
+            boolean requireConfirmation) {
+        return developingImpulse(candles, pivots, start, lowerDegreeCandles, subdivisionCache,
+                requireConfirmation, true);
+    }
+
+    private java.util.Optional<DevelopingImpulse> developingImpulse(
+            List<EnrichedCandle> candles, List<Pivot> pivots, int start,
+            List<EnrichedCandle> lowerDegreeCandles,
+            Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache,
+            boolean requireConfirmation, boolean materialize) {
         Pivot wave0 = pivots.get(start);
         Pivot wave1 = pivots.get(start + 1);
         Pivot wave2 = pivots.get(start + 2);
@@ -2203,16 +2412,19 @@ public class ElliottWaveDetectionService {
             }
         }
 
+        // Enumeration only consumes the requested stage. Do not construct and validate
+        // an earlier-stage result that its caller will immediately discard.
+        if (endpointOffset != pivots.size() - start - 1) return java.util.Optional.empty();
         Pivot endpoint = pivots.get(start + endpointOffset);
         int confirmationIndex = endpoint.type() == PivotType.LOW
                 ? firstBullishReboundIndex(candles, endpoint)
                 : firstBearishRejectionIndex(candles, endpoint);
-        if (!isTimelyConfirmation(endpoint, confirmationIndex)) return java.util.Optional.empty();
+        if (requireConfirmation && !isTimelyConfirmation(endpoint, confirmationIndex)) return java.util.Optional.empty();
+        if (confirmationIndex < 0) confirmationIndex = endpoint.index();
 
         List<Pivot> parent = List.copyOf(pivots.subList(start, start + endpointOffset + 1));
         int confidence = (int) Math.round(subdivisions.stream()
                 .mapToInt(ElliottSubdivision::confidence).average().orElse(0.0));
-        double atr = averageTrueRange(candles, wave0.index(), endpoint.index());
         String forecast;
         TradeSignal expectedMove;
         CandlePattern pattern;
@@ -2295,8 +2507,10 @@ public class ElliottWaveDetectionService {
                     + subdivisions.get(index).structureLabel() + " ("
                     + subdivisions.get(index).confidence() + "/100).");
         }
-        ElliottWaveStructure completedStructure = stage == ElliottSignalStage.WAVE_V_END
-                || stage == ElliottSignalStage.CORRECTION_END
+        // Ranking uses stage, guideline evidence, confidence and confirmation time.
+        // Build the expensive structure and trade preview only for the winning path.
+        ElliottWaveStructure completedStructure = materialize && (stage == ElliottSignalStage.WAVE_V_END
+                || stage == ElliottSignalStage.CORRECTION_END)
                 ? toStructure(bullish ? "BULLISH" : "BEARISH",
                         stage == ElliottSignalStage.CORRECTION_END, candles, parent,
                         confirmationIndex, structureQuality(
@@ -2310,12 +2524,9 @@ public class ElliottWaveDetectionService {
         }
         // Preview and persisted plans share structural/target rules. Actual interval risk qualification
         // is repeated at publication using the completed candle cache for that interval.
-        var preview = ElliottTradePlanPolicy.calculate(stage, bullish ? "BULLISH" : "BEARISH", expectedMove,
-                candles.get(confirmationIndex).close(), points, TradeRiskPolicy.atr(
-                        candles.subList(0, confirmationIndex + 1).stream().map(c ->
-                                new org.example.stockwatch247.model.Candle("PREVIEW", "1d", c.timestamp(),
-                                        c.open(), c.high(), c.low(), c.close(), (long) c.volume())).toList(),
-                        confirmationIndex, 14),
+        var preview = !materialize ? java.util.Optional.<ElliottTradePlanPolicy.TradePlan>empty()
+                : ElliottTradePlanPolicy.calculate(stage, bullish ? "BULLISH" : "BEARISH", expectedMove,
+                candles.get(confirmationIndex).close(), points, developingPreviewAtr(candles, confirmationIndex),
                 org.example.stockwatch247.model.enums.TimeInterval.DAILY);
         Double previewStop = preview.map(ElliottTradePlanPolicy.TradePlan::stopLossPrice).orElse(null);
         Double previewTarget = preview.map(ElliottTradePlanPolicy.TradePlan::targetTriggerPrice).orElse(null);
@@ -2325,6 +2536,13 @@ public class ElliottWaveDetectionService {
                 endpoint.price(), previewStop, previewTarget, forecast,
                 correctionType.isBlank() ? null : correctionType,
                 confidence, points, List.copyOf(evidence), completedStructure));
+    }
+
+    private double developingPreviewAtr(List<EnrichedCandle> candles, int index) {
+        return grammarInput(candles).previewAtr().computeIfAbsent(index, end -> TradeRiskPolicy.atr(
+                candles.subList(0, end + 1).stream().map(c -> new org.example.stockwatch247.model.Candle(
+                        "PREVIEW", "1d", c.timestamp(), c.open(), c.high(), c.low(), c.close(), (long) c.volume())).toList(),
+                end, 14));
     }
 
     private ElliottSubdivision cachedStrictSubdivision(
@@ -2456,7 +2674,7 @@ public class ElliottWaveDetectionService {
         evidence.add("Wave II/Wave IV alternation supports this corrective form (guideline, not a hard rule)." );
         return new ElliottSubdivision(
                 best.structureLabel(), Math.min(100, best.confidence() + bonus), best.validated(),
-                best.points(), List.copyOf(evidence), best.alternatives());
+                best.points(), List.copyOf(evidence), best.alternatives(), best.observedDepth(), best.unresolvedLegs());
     }
 
     private List<EnrichedCandle> subdivisionCandles(
@@ -2499,9 +2717,7 @@ public class ElliottWaveDetectionService {
                 && currentStage != ElliottSignalStage.WAVE_IV_END) {
             return java.util.Optional.empty();
         }
-        List<EnrichedCandle> candles = recentCandles.stream()
-                .filter(this::hasCompleteData)
-                .sorted(Comparator.comparing(EnrichedCandle::timestamp)).toList();
+        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(recentCandles);
         ElliottWavePoint startPoint = parentPoints.getLast();
         int startIndex = indexAtTimestamp(candles, startPoint.timestamp());
         if (startIndex < 0) return java.util.Optional.empty();
@@ -2772,45 +2988,6 @@ public class ElliottWaveDetectionService {
                 : -2.0 + signedMove / normalizer * 3.0;
     }
 
-    private void collectMotiveSubdivisionCandidates(List<EnrichedCandle> candles,
-                                                     List<Pivot> detected,
-                                                     double startPrice,
-                                                     double endPrice,
-                                                     boolean diagonalAllowed,
-                                                     List<SubdivisionCandidate> candidates) {
-        boolean rising = endPrice > startPrice;
-        PivotType startType = rising ? PivotType.LOW : PivotType.HIGH;
-        PivotType[] interiorTypes = rising
-                ? new PivotType[]{PivotType.HIGH, PivotType.LOW, PivotType.HIGH, PivotType.LOW}
-                : new PivotType[]{PivotType.LOW, PivotType.HIGH, PivotType.LOW, PivotType.HIGH};
-        Pivot start = closestBoundaryPivot(candles, startPrice, startType, true);
-        Pivot end = closestBoundaryPivot(candles, endPrice, opposite(startType), false);
-        if (start == null || end == null || start.index() >= end.index()) return;
-        List<Pivot> interior = pivotsStrictlyBetween(detected, start, end);
-        if (interior.size() != 4 || !matchesTypes(interior, interiorTypes)) return;
-        List<Pivot> sequence = List.of(start, interior.get(0), interior.get(1),
-                interior.get(2), interior.get(3), end);
-        boolean standard = rising
-                ? isBullishImpulseComplete(sequence.get(0), sequence.get(1), sequence.get(2),
-                sequence.get(3), sequence.get(4), sequence.get(5))
-                : isBearishImpulseComplete(sequence.get(0), sequence.get(1), sequence.get(2),
-                sequence.get(3), sequence.get(4), sequence.get(5));
-        boolean diagonal = !standard && diagonalAllowed && isDiagonalSubdivision(sequence, rising);
-        if (!standard && !diagonal) return;
-        int confidence = motiveSubdivisionConfidence(sequence, rising, diagonal);
-        List<String> evidence = new ArrayList<>();
-        evidence.add(standard
-                ? "Five alternating lower-degree legs satisfy the impulse hard rules."
-                : "Five alternating legs fit a diagonal candidate; Wave IV overlap prevents a standard impulse count.");
-        evidence.add("Wave III is not the shortest actionary leg.");
-        evidence.add("Every pivot at the selected degree is consumed inside the parent boundary.");
-        candidates.add(new SubdivisionCandidate(
-                diagonal ? SubdivisionKind.DIAGONAL : SubdivisionKind.MOTIVE,
-                confidence,
-                sequence,
-                List.copyOf(evidence)));
-    }
-
     private void collectStrictMotiveSubdivisionCandidates(List<EnrichedCandle> candles,
                                                             List<Pivot> detected,
                                                             double startPrice,
@@ -2827,7 +3004,7 @@ public class ElliottWaveDetectionService {
         if (start == null || end == null || start.index() >= end.index()) return;
         List<Pivot> interior = pivotsStrictlyBetween(detected, start, end);
         for (List<Pivot> selected : selectDegreePivots(
-                interior, interiorTypes, start, end, 256)) {
+                interior, interiorTypes, start, end, Integer.MAX_VALUE)) {
             List<Pivot> sequence = List.of(start, selected.get(0), selected.get(1),
                     selected.get(2), selected.get(3), end);
             if (!isScaleCoherentGrouping(interior, sequence)) continue;
@@ -2894,7 +3071,8 @@ public class ElliottWaveDetectionService {
         int position = selected.size();
         if (position == expectedTypes.length) {
             if (end.index() - selected.getLast().index()
-                    >= detectionRules.minimumLegSpanCandles()) {
+                    >= detectionRules.minimumLegSpanCandles()
+                    && isScaleCoherentLeg(interior, selected.getLast(), end)) {
                 selections.add(List.copyOf(selected));
             }
             return;
@@ -2905,13 +3083,29 @@ public class ElliottWaveDetectionService {
             Pivot candidate = interior.get(index);
             if (candidate.type() != expectedTypes[position]
                     || candidate.index() - previous.index()
-                    < detectionRules.minimumLegSpanCandles()) continue;
+                    < detectionRules.minimumLegSpanCandles()
+                    || !isScaleCoherentLeg(interior, previous, candidate)) continue;
             selected.add(candidate);
             selectDegreePivots(interior, expectedTypes, start, end, index + 1,
                     selected, selections, maximumSelections);
             selected.removeLast();
             if (selections.size() >= maximumSelections) return;
         }
+    }
+
+    // A completed leg cannot be repaired by later pivots. Reject it during enumeration
+    // rather than allocating every combination and rejecting the same leg afterwards.
+    // This is exactly the containment rule in isScaleCoherentGrouping, without a cap.
+    private boolean isScaleCoherentLeg(List<Pivot> interior, Pivot from, Pivot to) {
+        double tolerance = Math.max(Math.abs(from.price()), Math.abs(to.price())) * 1.0e-9;
+        double low = Math.min(from.price(), to.price()) - tolerance;
+        double high = Math.max(from.price(), to.price()) + tolerance;
+        for (Pivot pivot : interior) {
+            if (pivot.index() <= from.index()) continue;
+            if (pivot.index() >= to.index()) break;
+            if (pivot.price() < low || pivot.price() > high) return false;
+        }
+        return true;
     }
 
     private boolean isScaleCoherentGrouping(List<Pivot> detectedInterior, List<Pivot> sequence) {
@@ -2983,7 +3177,7 @@ public class ElliottWaveDetectionService {
         List<Pivot> interior = pivotsStrictlyBetween(detected, start, end);
         if (isCompleteMotiveAtThisDegree(interior, start, end, rising)) return;
         for (List<Pivot> selected : selectDegreePivots(
-                interior, interiorTypes, start, end, 256)) {
+                interior, interiorTypes, start, end, Integer.MAX_VALUE)) {
             List<Pivot> sequence = List.of(start, selected.get(0), selected.get(1), end);
             if (!isScaleCoherentGrouping(interior, sequence)) continue;
             double waveA = Math.abs(sequence.get(1).price() - sequence.get(0).price());
@@ -3010,6 +3204,8 @@ public class ElliottWaveDetectionService {
                 confidence += 5;
             }
             boolean flat = bRetracement >= .90;
+            if (!flat && !(rising ? end.price() > sequence.get(1).price()
+                    : end.price() < sequence.get(1).price())) continue;
             int groupedPivots = interior.size() - selected.size();
             confidence = Math.max(60, confidence - Math.min(18, groupedPivots * 2));
             SubdivisionKind correctionKind = flat
@@ -3021,8 +3217,8 @@ public class ElliottWaveDetectionService {
                     "Wave B retraces " + formatPercentage(bRetracement) + " of Wave A.",
                     "Wave C is " + roundRatio(cToA) + "x the length of Wave A.",
                     flat
-                            ? "The flat uses the textbook 3-3-5 child-wave mode above the terminal observable degree."
-                            : "The zigzag uses the textbook 5-3-5 child-wave mode above the terminal observable degree."));
+                            ? "The flat requires 3-3-5 children; finer child counts are not established by these endpoints."
+                            : "The zigzag requires 5-3-5 children; finer child counts are not established by these endpoints."));
             evidence.add(groupedPivots > 0
                     ? groupedPivots + " smaller pivots remain bounded inside their enclosing A/B/C legs."
                     : "Every detected pivot at this sensitivity is consumed by the A-B-C count.");
@@ -3101,7 +3297,7 @@ public class ElliottWaveDetectionService {
                     || triple && second == CorrectionComponentType.NONE
                     || zigzags > 1 || !connectors
                     || !directedMove(sequence.getFirst(), sequence.getLast(), rising)
-                    || !isContractingTriangleSequence(triangle, rising)) return;
+                    || !isTriangleSequence(triangle, rising)) return;
 
             SubdivisionKind kind = triple ? SubdivisionKind.TRIPLE_THREE : SubdivisionKind.DOUBLE_THREE;
             candidates.add(new SubdivisionCandidate(
@@ -3195,6 +3391,7 @@ public class ElliottWaveDetectionService {
                 && cRatio >= .25 && cRatio <= 3.0
                 && waveCToARatioAllowed(cRatio);
         if (!valid) return CorrectionComponentType.NONE;
+        if (bRatio < .90 && !directedMove(a, c, rising)) return CorrectionComponentType.NONE;
         return bRatio >= .90 ? CorrectionComponentType.FLAT : CorrectionComponentType.ZIGZAG;
     }
 
@@ -3214,6 +3411,13 @@ public class ElliottWaveDetectionService {
             EnrichedCandle candle = candles.get(index);
             double candidatePrice = type == PivotType.HIGH ? candle.high() : candle.low();
             if (!Double.isFinite(candidatePrice)) continue;
+            // A crossing of the requested price in the middle of another leg is not a boundary pivot.
+            if (index > 0 && (type == PivotType.HIGH
+                    ? candidatePrice < candles.get(index - 1).high()
+                    : candidatePrice > candles.get(index - 1).low())) continue;
+            if (index + 1 < candles.size() && (type == PivotType.HIGH
+                    ? candidatePrice < candles.get(index + 1).high()
+                    : candidatePrice > candles.get(index + 1).low())) continue;
             double distance = Math.abs(candidatePrice - parentPrice);
             double tolerance = Math.max(1.0, Math.max(Math.abs(parentPrice), Math.abs(candidatePrice))) * 1.0e-10;
             boolean closer = distance + tolerance < bestDistance;
@@ -3226,7 +3430,10 @@ public class ElliottWaveDetectionService {
                 bestDistance = distance;
             }
         }
-        return bestIndex < 0 ? null : new Pivot(bestIndex, type, bestPrice);
+        // Small feed rounding differences are acceptable; unrelated extrema are not.
+        double boundaryTolerance = Math.max(1e-8, Math.abs(parentPrice) * .0075);
+        return bestIndex < 0 || bestDistance > boundaryTolerance
+                ? null : new Pivot(bestIndex, type, bestPrice);
     }
 
     private void collectTriangleSubdivisionCandidates(List<EnrichedCandle> candles,
@@ -3239,25 +3446,42 @@ public class ElliottWaveDetectionService {
         PivotType[] interiorTypes = rising
                 ? new PivotType[]{PivotType.HIGH, PivotType.LOW, PivotType.HIGH, PivotType.LOW}
                 : new PivotType[]{PivotType.LOW, PivotType.HIGH, PivotType.LOW, PivotType.HIGH};
-        Pivot start = new Pivot(0, startType, startPrice);
-        Pivot end = new Pivot(candles.size() - 1, opposite(startType), endPrice);
+        Pivot start = closestBoundaryPivot(candles, startPrice, startType, true);
+        Pivot end = closestBoundaryPivot(candles, endPrice, opposite(startType), false);
+        if (start == null || end == null || start.index() >= end.index()) return;
         List<Pivot> interior = pivotsStrictlyBetween(detected, start, end);
         if (interior.size() != 4 || !matchesTypes(interior, interiorTypes)) return;
             List<Pivot> sequence = List.of(start, interior.get(0), interior.get(1),
                     interior.get(2), interior.get(3), end);
-            if (!isContractingTriangleSequence(sequence, rising)) return;
+            SubdivisionKind triangle = triangleKind(sequence, rising);
+            if (triangle == null) return;
             candidates.add(new SubdivisionCandidate(
-                    SubdivisionKind.TRIANGLE,
+                    triangle,
                     82,
                     sequence,
                     List.of(
-                            "Five overlapping lower-degree legs form a contracting A-B-C-D-E candidate.",
-                            "Successive highs and lows contract inside the opening swing.",
+                            "Five overlapping lower-degree legs form an A-B-C-D-E candidate.",
+                            triangle.displayName + " boundary geometry is satisfied.",
                             "Every child pivot occurs inside the selected parent-wave boundary.")));
     }
 
-    private boolean isContractingTriangleSequence(List<Pivot> sequence, boolean rising) {
-        if (sequence.size() != 6) return false;
+    private boolean isTriangleSequence(List<Pivot> sequence, boolean rising) {
+        return triangleKind(sequence, rising) != null;
+    }
+
+    private SubdivisionKind triangleKind(List<Pivot> sequence, boolean rising) {
+        if (sequence.size() != 6) return null;
+        if (minimumLegSpan(sequence, 5) < detectionRules.minimumLegSpanCandles()) return null;
+        double sign = rising ? 1 : -1;
+        double a = sequence.get(1).price() * sign, b = sequence.get(2).price() * sign;
+        double c = sequence.get(3).price() * sign, d = sequence.get(4).price() * sign;
+        double e = sequence.get(5).price() * sign;
+        if (!(a > b && c > b && c > d && e > d)) return null;
+        double tolerance = Math.abs(a - b) * .01;
+        if (c > a + tolerance && d < b - tolerance && e > c + tolerance)
+            return SubdivisionKind.EXPANDING_TRIANGLE;
+        if (e < c && ((Math.abs(a - c) <= tolerance && d > b)
+                || (c < a && Math.abs(d - b) <= tolerance))) return SubdivisionKind.BARRIER_TRIANGLE;
         boolean contracting = rising
                 ? sequence.get(1).price() > sequence.get(3).price()
                 && sequence.get(3).price() > sequence.get(5).price()
@@ -3265,16 +3489,11 @@ public class ElliottWaveDetectionService {
                 : sequence.get(1).price() < sequence.get(3).price()
                 && sequence.get(3).price() < sequence.get(5).price()
                 && sequence.get(2).price() > sequence.get(4).price();
-        boolean staysInsideOpeningSwing = rising
-                ? sequence.get(5).price() < sequence.get(1).price()
-                && sequence.get(4).price() > sequence.get(0).price()
-                : sequence.get(5).price() > sequence.get(1).price()
-                && sequence.get(4).price() < sequence.get(0).price();
-        return contracting && staysInsideOpeningSwing
+        return contracting
                 && hasValidImpulseTiming(sequence.get(0), sequence.get(1), sequence.get(2),
                 sequence.get(3), sequence.get(4))
                 && sequence.get(5).index() - sequence.get(4).index()
-                >= detectionRules.minimumLegSpanCandles();
+                >= detectionRules.minimumLegSpanCandles() ? SubdivisionKind.TRIANGLE : null;
     }
 
     private boolean isDiagonalSubdivision(List<Pivot> sequence, boolean rising) {
@@ -3296,9 +3515,31 @@ public class ElliottWaveDetectionService {
                 ? w4.price() <= w1.price() : w4.price() >= w1.price();
         return directional
                 && waveFourOverlapsWaveOne
+                && diagonalShape(sequence)
                 && hasValidImpulseTiming(w0, w1, w2, w3, w4)
                 && actionaryWaveLengthsAllowed(one, three, five)
                 && w5.index() - w4.index() >= detectionRules.minimumLegSpanCandles();
+    }
+
+    private boolean diagonalShape(List<Pivot> p) {
+        double one = Math.abs(p.get(1).price() - p.get(0).price());
+        double two = Math.abs(p.get(2).price() - p.get(1).price());
+        double three = Math.abs(p.get(3).price() - p.get(2).price());
+        double four = Math.abs(p.get(4).price() - p.get(3).price());
+        double five = Math.abs(p.get(5).price() - p.get(4).price());
+        double epsilon = Math.max(one, Math.max(three, five)) * 1e-9;
+        boolean contracting = three <= one + epsilon && five < three - epsilon
+                && four <= two + epsilon;
+        boolean expanding = three > one + epsilon && five > three + epsilon && four > two + epsilon;
+        double sign = p.get(1).type() == PivotType.HIGH ? 1 : -1;
+        double upperSlope = sign * (p.get(3).price()-p.get(1).price()) / (p.get(3).index()-p.get(1).index());
+        double lowerSlope = sign * (p.get(4).price()-p.get(2).price()) / (p.get(4).index()-p.get(2).index());
+        double widthAtTwo = sign * (p.get(1).price()-p.get(2).price())
+                + upperSlope*(p.get(2).index()-p.get(1).index());
+        double widthAtFour = sign * (p.get(3).price()-p.get(4).price())
+                + upperSlope*(p.get(4).index()-p.get(3).index());
+        return widthAtTwo > 0 && widthAtFour > 0
+                && (contracting && upperSlope < lowerSlope || expanding && upperSlope > lowerSlope);
     }
 
     private int motiveSubdivisionConfidence(List<Pivot> sequence, boolean rising, boolean diagonal) {
@@ -3326,7 +3567,7 @@ public class ElliottWaveDetectionService {
     }
 
     private String subdivisionKey(SubdivisionCandidate candidate) {
-        return candidate.pivots().stream()
+        return candidate.kind().name() + ':' + candidate.pivots().stream()
                 .map(pivot -> pivot.type().name().charAt(0) + Integer.toString(pivot.index()))
                 .collect(java.util.stream.Collectors.joining("-"));
     }
@@ -3347,7 +3588,7 @@ public class ElliottWaveDetectionService {
                     "z.a", "z.b", "z.c", "z.d", "z.e"}
                     : new String[]{"", "w.a", "w.b", "w.c", "x1",
                     "y.a", "y.b", "y.c", "x2", "z.a", "z.b", "z.c"};
-            case TRIANGLE -> new String[]{"", "a", "b", "c", "d", "e"};
+            case TRIANGLE, BARRIER_TRIANGLE, EXPANDING_TRIANGLE -> new String[]{"", "a", "b", "c", "d", "e"};
             default -> new String[]{"", "i", "ii", "iii", "iv", "v"};
         };
         List<ElliottWavePoint> points = new ArrayList<>();
@@ -3532,6 +3773,18 @@ public class ElliottWaveDetectionService {
         return List.of();
     }
 
+    private GrammarAssessment assessCycleGrammar(List<EnrichedCandle> candles, List<Pivot> pivots) {
+        String[] labels = {"", "I", "II", "III", "IV", "V", "A", "B", "C"};
+        List<ElliottWavePoint> points = new ArrayList<>();
+        for(int i=0;i<pivots.size();i++) {
+            Pivot p = pivots.get(i);
+            points.add(new ElliottWavePoint(labels[i], candles.get(p.index()).timestamp(), p.price(), p.type().name()));
+        }
+        boolean flat = pivots.size() == 9 && Math.abs(pivots.get(7).price()-pivots.get(6).price())
+                >= .9 * Math.abs(pivots.get(6).price()-pivots.get(5).price());
+        return assessGrammar(candles, flat ? "Impulse with flat" : "Impulse with zigzag", points);
+    }
+
     private DetectedSignal signal(CandlePattern pattern,
                                   TradeSignal tradeSignal,
                                   EnrichedCandle current,
@@ -3539,6 +3792,8 @@ public class ElliottWaveDetectionService {
                                   List<EnrichedCandle> candles,
                                   List<Pivot> pivots,
                                   CorrectionMetrics correction) {
+        GrammarAssessment grammar = assessCycleGrammar(candles, pivots);
+        if (!grammar.compatible()) return null;
         int eligibilityScore = clampScore(evidence.score());
         boolean actionableEnding = pattern.name().endsWith("WAVE_V_END")
                 || pattern.name().endsWith("CORRECTION");
@@ -3549,6 +3804,7 @@ public class ElliottWaveDetectionService {
                 ? categoryBreakdown
                 : new V2Score(eligibilityScore, List.copyOf(evidence.reasons()));
         List<String> reasons = new ArrayList<>(v2.reasons());
+        reasons.add(grammar.description());
         if (scoringModel == ScoringModel.V2) {
             reasons.add("V1 detection eligibility: " + eligibilityScore
                     + "/100 (audit only; it selected and qualified the wave but is not part of the V2 total)");
@@ -3566,7 +3822,8 @@ public class ElliottWaveDetectionService {
                 reasons,
                 current.timestamp(),
                 current.close(),
-                eligibilityScore
+                eligibilityScore,
+                candles.get(pivots.getFirst().index()).timestamp()
         );
     }
 
@@ -3613,7 +3870,7 @@ public class ElliottWaveDetectionService {
                                        int eligibilityScore) {
         int points = correctionEnd ? 6 : 18;
         List<String> details = new ArrayList<>();
-        details.add("all mandatory Elliott rules passed (+" + (correctionEnd ? 6 : 18)
+        details.add("all mandatory endpoint rules passed (+" + (correctionEnd ? 6 : 18)
                 + "/" + (correctionEnd ? 6 : 18) + ")");
         double wave1 = Math.abs(pivots.get(1).price() - pivots.get(0).price());
         double wave3 = Math.abs(pivots.get(3).price() - pivots.get(2).price());
@@ -4024,7 +4281,9 @@ public class ElliottWaveDetectionService {
         DOUBLE_THREE("Double-three combination W-X-Y"),
         TRIPLE_ZIGZAG("Triple zigzag W-X-Y-X-Z"),
         TRIPLE_THREE("Triple-three combination W-X-Y-X-Z"),
-        TRIANGLE("Contracting triangle A-B-C-D-E");
+        TRIANGLE("Contracting triangle A-B-C-D-E"),
+        BARRIER_TRIANGLE("Barrier triangle A-B-C-D-E"),
+        EXPANDING_TRIANGLE("Expanding triangle A-B-C-D-E");
 
         private final String displayName;
 
@@ -4190,12 +4449,15 @@ public class ElliottWaveDetectionService {
     public record ElliottWavePoint(String label, Long timestamp, double price, String pivotType) {
     }
 
-    public record ElliottSubdivision(String structureLabel,
-                                     int confidence,
-                                     boolean validated,
-                                     List<ElliottWavePoint> points,
-                                     List<String> evidence,
-                                     List<ElliottSubdivisionAlternative> alternatives) {
+    public record ElliottSubdivision(String structureLabel, int confidence, boolean validated,
+            List<ElliottWavePoint> points, List<String> evidence,
+            List<ElliottSubdivisionAlternative> alternatives, int observedDepth, List<String> unresolvedLegs) {
+        public ElliottSubdivision(String structureLabel, int confidence, boolean validated,
+                List<ElliottWavePoint> points, List<String> evidence, List<ElliottSubdivisionAlternative> alternatives) {
+            this(structureLabel, confidence, validated, points, evidence, alternatives, validated ? 1 : 0,
+                    points.stream().skip(1).map(ElliottWavePoint::label).toList());
+        }
+        public String validationScope() { return validated ? "OBSERVED_DEGREE_GEOMETRY" : "PROVISIONAL"; }
     }
 
     public record ElliottSubdivisionAlternative(String structureLabel,
@@ -4236,6 +4498,16 @@ public class ElliottWaveDetectionService {
     }
 
     public static final class DevelopingScanContext {
+        private List<EnrichedCandle> parents = List.of(), children = List.of();
+        private DetectionRules rules;
+        private void prepare(List<EnrichedCandle> parentInput, List<EnrichedCandle> childInput, DetectionRules currentRules) {
+            if (!parents.equals(parentInput) || !children.equals(childInput) || !java.util.Objects.equals(rules, currentRules)) {
+                subdivisionCache.clear();
+                parents = List.copyOf(parentInput);
+                children = List.copyOf(childInput);
+                rules = currentRules;
+            }
+        }
         private final Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache =
                 new java.util.HashMap<>();
 
@@ -4261,7 +4533,18 @@ public class ElliottWaveDetectionService {
                                        CorrectionVariant correctionVariant,
                                        double correctionRetracement,
                                        double waveCToARatio,
-                                       List<String> qualityWarnings) {
+                                       List<String> qualityWarnings,
+                                       GrammarAssessment validation) {
+        public ElliottWaveStructure(String direction, boolean correctionComplete, List<ElliottWavePoint> points,
+                Long confirmationTimestamp, int qualityScore, double waveTwoRetracement, boolean deepWaveTwo,
+                double waveThreeToOneRatio, double waveFourRetracement, ImpulseVariant impulseVariant,
+                CorrectionVariant correctionVariant, double correctionRetracement, double waveCToARatio,
+                List<String> qualityWarnings) {
+            this(direction, correctionComplete, points, confirmationTimestamp, qualityScore, waveTwoRetracement,
+                    deepWaveTwo, waveThreeToOneRatio, waveFourRetracement, impulseVariant, correctionVariant,
+                    correctionRetracement, waveCToARatio, qualityWarnings, new GrammarAssessment(true, 1,
+                    points.stream().skip(1).map(ElliottWavePoint::label).toList()));
+        }
     }
 
     private record StructureCandidate(int completionIndex, ElliottWaveStructure structure) {

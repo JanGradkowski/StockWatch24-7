@@ -64,7 +64,7 @@ public class ElliottWaveHierarchyService {
         }
         ElliottWaveDetectionService monthlyDetector = detector(monthlyRules);
         List<ElliottWaveDetectionService.ElliottWaveStructure> detectedBaselines = monthlyDetector
-                .findHistoricalWaveStructures(enrich(monthlyCandles, TimeInterval.MONTHLY))
+                .findAllWaveStructures(enrich(monthlyCandles, TimeInterval.MONTHLY))
                 .stream()
                 .filter(this::passesMonthlyHardRules)
                 .sorted(Comparator.comparingLong(this::structureEndTime).reversed()
@@ -221,7 +221,7 @@ public class ElliottWaveHierarchyService {
         String normalized = normalizeDegreeLabel(label);
         String component = normalized.contains(".")
                 ? normalized.substring(normalized.lastIndexOf('.') + 1) : normalized;
-        if (structure.contains("triangle")) return WaveNature.CORRECTIVE;
+        if (structure.contains("triangle") || structure.contains("ending diagonal")) return WaveNature.CORRECTIVE;
         if (component.equals("X") || component.matches("X[0-9]+")
                 || component.equals("B") || component.equals("D") || component.equals("E")) {
             return WaveNature.CORRECTIVE;
@@ -266,24 +266,25 @@ public class ElliottWaveHierarchyService {
     }
 
     private List<Candle> loadRange(String symbol, String interval, Long fromInclusive, long toExclusive) {
-        Map<Long, Candle> candles = new LinkedHashMap<>();
+        List<Candle> candles = new ArrayList<>();
         Long cursor = toExclusive;
         for (int pageNumber = 0; pageNumber < MAX_PAGES_PER_INTERVAL; pageNumber++) {
             MarketDataService.CandlePage page = marketDataService.loadCandlePage(
                     symbol, interval, cursor, PAGE_SIZE);
-            page.candles().stream().filter(this::validCandle)
+            if (page.candles().stream().anyMatch(c -> c == null || c.getTimestamp() == null)) return List.of();
+            page.candles().stream()
                     .filter(candle -> candle.getTimestamp() < toExclusive)
                     .filter(candle -> periodEndExclusive(
                             candle.getTimestamp(), timeframe(interval)) <= toExclusive)
                     .filter(candle -> fromInclusive == null || candle.getTimestamp() >= fromInclusive)
-                    .forEach(candle -> candles.put(candle.getTimestamp(), candle));
+                    .forEach(candles::add);
             if (fromInclusive == null) break;
             Long next = page.nextCursor();
             if (!page.hasMore() || next == null || next >= cursor
                     || fromInclusive != null && next <= fromInclusive) break;
             cursor = next;
         }
-        return candles.values().stream().sorted(Comparator.comparing(Candle::getTimestamp)).toList();
+        return candles.stream().sorted(Comparator.comparing(Candle::getTimestamp)).toList();
     }
 
     private List<Candle> slice(List<Candle> candles, Wave parent) {

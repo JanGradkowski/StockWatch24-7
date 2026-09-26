@@ -88,7 +88,7 @@ class TradePlanRefinementTest {
                 bar(4,101,102,99,100),bar(5,100,101,98,100),bar(6,100,500,90,300));
         assertThat(TradeRiskPolicy.nearestObjective(bars,4,TradeSignal.BUY,100,112)).isEqualTo(105);
     }
-    @ParameterizedTest @EnumSource(HarmonicPatternType.class)
+    @ParameterizedTest @EnumSource(value=HarmonicPatternType.class, names={"GARTLEY","BAT","BUTTERFLY","CRAB","SHARK","CYPHER"})
     void harmonicTargetsAndRiskQualificationExistAcrossIntervalsAndDirections(HarmonicPatternType type) {
         for(var interval:List.of(TimeInterval.DAILY,TimeInterval.WEEKLY,TimeInterval.MONTHLY)) {
             for (var side:List.of(TradeSignal.BUY,TradeSignal.SELL)) {

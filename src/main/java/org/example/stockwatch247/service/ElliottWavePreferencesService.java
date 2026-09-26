@@ -15,7 +15,7 @@ import java.util.*;
 
 @Service
 public class ElliottWavePreferencesService {
-    public static final String PROFILE_VERSION = "USER_ELLIOTT_DETECTION_V2";
+    public static final String PROFILE_VERSION = "USER_ELLIOTT_DETECTION_V3";
     private static final List<ProfileDefinition> FACTORY = List.of(
             factory(TimeInterval.DAILY, "Shared", "These rules apply to completed candles on every analysis interval."));
     private static final PreferencesView FACTORY_VIEW = materialize(
@@ -96,8 +96,13 @@ public class ElliottWavePreferencesService {
     private PreferencesView read(UserElliottWavePreferences entity) {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
-            if (!PROFILE_VERSION.equals(stored.version()) && !"USER_ELLIOTT_DETECTION_V1".equals(stored.version())) return factoryPreferences();
+            if (!PROFILE_VERSION.equals(stored.version()) && !"USER_ELLIOTT_DETECTION_V1".equals(stored.version()) && !"USER_ELLIOTT_DETECTION_V2".equals(stored.version())) return factoryPreferences();
             List<StoredProfile> normalized = normalizeStored(stored.profiles());
+            if (!PROFILE_VERSION.equals(stored.version())) normalized = normalized.stream().map(profile -> {
+                Map<String, Double> numbers = new LinkedHashMap<>(profile.numbers());
+                if (numbers.getOrDefault("minimumLegSpanCandles", 1.0) == 2.0) numbers.put("minimumLegSpanCandles", 1.0);
+                return new StoredProfile(profile.interval(), numbers, profile.switches());
+            }).toList();
             validateStored(normalized);
             return materialize(normalized, entity.getUpdatedAt());
         } catch (JacksonException | IllegalArgumentException exception) {
@@ -298,7 +303,7 @@ public class ElliottWavePreferencesService {
                 whole("minimumSignalConfidence", Section.PIVOTS, "Minimum alert confidence", "The minimum confidence required before a detected Elliott turning point can produce an alert.", "Raise this to reduce alerts without removing lower-quality chart overlays.", 0, 100, 1, 75),
                 whole("maximumConfirmationLagCandles", Section.PIVOTS, "Maximum confirmation delay", "How many completed candles may pass after Wave V or C ends before its reversal confirmation becomes too late.", "Lower this to require a faster reversal after the endpoint.", 1, 12, 1, 3),
                 whole("minimumImpulseSpanCandles", Section.PIVOTS, "Minimum complete I–V duration", "The minimum number of interval candles from the impulse origin through Wave V.", "Raise this to reject compressed five-wave counts.", 5, 100, 1, 15),
-                whole("minimumLegSpanCandles", Section.PIVOTS, "Minimum candles in each wave leg", "The minimum number of interval candles between two consecutive Elliott pivots.", "Raise this to prevent very short price swings from becoming separate waves.", 1, 20, 1, 2),
+                whole("minimumLegSpanCandles", Section.PIVOTS, "Minimum candles in each wave leg", "The minimum number of interval candles between two consecutive Elliott pivots.", "Raise this to prevent very short price swings from becoming separate waves.", 1, 20, 1, 1),
                 percent("breakoutBufferPercent", Section.PIVOTS, "Wave V breakout buffer", "How far price must close beyond Wave III before a developing Wave V breakout is confirmed.", "Raise this to require a more decisive break beyond Wave III.", 0, 10, .05, .3),
                 percent("reversalFloorPercent", Section.PIVOTS, "Minimum pivot reversal floor", "The percentage of price used as the minimum reversal distance when ATR is smaller.", "Raise this to create fewer, larger swing pivots.", .1, 10, .05, 1.25),
                 multiple("pivotSensitivity1", Section.PIVOTS, "Pivot sensitivity — finest", "ATR and reversal-floor multiplier for the most detailed pivot count.", "Raise this to ignore more small price swings.", .1, 10, .05, .75),

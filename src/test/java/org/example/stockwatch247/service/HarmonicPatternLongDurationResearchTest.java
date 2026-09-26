@@ -43,7 +43,7 @@ class HarmonicPatternLongDurationResearchTest {
     private static final Map<HarmonicPatternType, double[]> SEEDS = seedGeometries();
 
     private final HarmonicPatternDetectionService detector = new HarmonicPatternDetectionService(
-            new Rules(.03, .03, .10, .005, 2, 250, 55, .34, 0));
+            Rules.defaults());
 
     @Test
     void auditsOneThousandLongDurationNoisyFormationsThroughTheFullPipeline() throws Exception {
@@ -54,8 +54,9 @@ class HarmonicPatternLongDurationResearchTest {
             writer.write("case_id,pattern,direction,span_candles,duration_bucket,noise_percent,noise_bucket,"
                     + "base_pivots,detected,detected_patterns\n");
             for (int caseId = 0; caseId < COHORT_SIZE; caseId++) {
-                HarmonicPatternType expected = HarmonicPatternType.values()[caseId % HarmonicPatternType.values().length];
-                boolean bearish = (caseId / HarmonicPatternType.values().length) % 2 == 1;
+                HarmonicPatternType expected = List.of(HarmonicPatternType.GARTLEY, HarmonicPatternType.BAT, HarmonicPatternType.BUTTERFLY,
+                        HarmonicPatternType.CRAB, HarmonicPatternType.SHARK, HarmonicPatternType.CYPHER).get(caseId % SEEDS.size());
+                boolean bearish = (caseId / SEEDS.size()) % 2 == 1;
                 DurationBucket durationBucket = DurationBucket.forCase(caseId);
                 double[] bullishGeometry = generateValidGeometry(expected, random);
                 double priceScale = Math.exp(-2.5 + random.nextDouble() * 6.0);
@@ -70,6 +71,13 @@ class HarmonicPatternLongDurationResearchTest {
                         formation.pattern() == expected
                                 && formation.direction() == (bearish ? Direction.BEARISH : Direction.BULLISH)
                                 && formation.points().getLast().timestamp() == series.terminalTimestamp());
+                if (!detected) {
+                    List<String> diagnostic = new ArrayList<>();
+                    diagnostic.add("# " + expected + " " + java.util.Arrays.toString(prices));
+                    for (Candle candle : series.candles()) diagnostic.add(candle.getTimestamp() + "," + candle.getOpenPrice()
+                            + "," + candle.getHighPrice() + "," + candle.getLowPrice() + "," + candle.getClosePrice());
+                    Files.write(Path.of("target/expanded-backtest-data/harmonic-miss-" + caseId + ".csv"), diagnostic);
+                }
                 int basePivots = detector.confirmedPivots(series.candles()).size();
                 NoiseBucket noiseBucket = NoiseBucket.of(noiseFraction);
                 audit.add(expected, durationBucket, noiseBucket, detected, basePivots);
@@ -237,6 +245,7 @@ class HarmonicPatternLongDurationResearchTest {
                 .append("| Pattern | Cases | Matched | Missed | Recall |\n")
                 .append("|---|---:|---:|---:|---:|\n");
         for (HarmonicPatternType pattern : HarmonicPatternType.values()) {
+            if (!SEEDS.containsKey(pattern)) continue;
             Count count = audit.patterns.get(pattern);
             text.append(String.format(Locale.ROOT, "| %s | %,d | %,d | %,d | %.2f%% |%n",
                     pattern, count.total, count.matched, count.total - count.matched,

@@ -207,6 +207,22 @@ public class ChartController {
         return getElliottWaves(symbol, interval, null);
     }
 
+    @Autowired
+    private org.example.stockwatch247.service.CandleCompletionService candidateCandleCompletion;
+
+    @GetMapping("/{symbol}/elliott-waves/candidates")
+    public List<ElliottWaveDetectionService.ElliottPatternCandidate> getElliottCandidates(
+            @PathVariable String symbol, @RequestParam String interval, Principal principal) {
+        String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String validInterval = SecurityInputValidator.requireInterval(interval);
+        TimeInterval timeframe = elliottInterval(validInterval);
+        long cutoff = candidateCandleCompletion.firstIncompleteCandleTimestamp(timeframe);
+        List<Candle> candles = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(validSymbol, validInterval)
+                .stream().filter(c -> c == null || c.getTimestamp() == null || c.getTimestamp() < cutoff).toList();
+        return detector(principal, timeframe).findPatternCandidates(
+                enrichmentService.enrichForElliott(candles, candles.size(), timeframe));
+    }
+
     @GetMapping("/{symbol}/elliott-waves/history")
     public ElliottWaveHistoryOverlay getHistoricalElliottWaves(@PathVariable String symbol,
                                                                @RequestParam String interval,
@@ -227,7 +243,7 @@ public class ChartController {
                 HistoricalSignalCacheService.Family.ELLIOTT_WAVE,
                 symbol,
                 validatedInterval,
-                ElliottWaveDetectionService.SETUP_SCORE_VERSION,
+                ElliottWaveDetectionService.DETECTION_RULE_VERSION,
                 settings,
                 ElliottWaveHistoryOverlay.class,
                 () -> calculateHistoricalElliottWaves(

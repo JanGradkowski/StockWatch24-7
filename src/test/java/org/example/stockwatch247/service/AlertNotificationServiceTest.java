@@ -185,7 +185,7 @@ class AlertNotificationServiceTest {
                 "Setup score: 94/100",
                 "hard structural rules passed",
                 "- B/XA: 0.6180",
-                "Score model: HARMONIC_V3");
+                "Score model: " + HarmonicPatternDetectionService.RULE_VERSION);
     }
 
     @Test

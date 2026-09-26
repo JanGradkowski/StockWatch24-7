@@ -21,7 +21,7 @@ import java.util.Map;
 
 @Service
 public class HarmonicPatternPreferencesService {
-    public static final String PROFILE_VERSION = "USER_HARMONIC_RULES_V3";
+    public static final String PROFILE_VERSION = "USER_HARMONIC_RULES_V4";
     private static final String LEGACY_PROFILE_VERSION_V1 = "USER_HARMONIC_RULES_V1";
     private static final String LEGACY_PROFILE_VERSION_V2 = "USER_HARMONIC_RULES_V2";
 
@@ -34,7 +34,7 @@ public class HarmonicPatternPreferencesService {
             number("maximumFormations", "Maximum overlay formations", "Newest formations retained in one historical overlay response.", "formations", 1, 250, 1, 250),
             number("maximumPivotWindow", "Largest structural pivot window", "Longest left/right candle window used to retain broad structural extrema.", "candles", 2, 89, 1, 55),
             number("maximumSwingPercent", "Largest swing hierarchy", "Maximum price reversal scale used to suppress counter-swings inside long formations.", "%", 5, 50, .5, 34),
-            number("maximumSkippedPivots", "Internal pivots allowed", "Advanced override for lower-level pivots XABCD may skip. The textbook-strict default requires consecutive pivots at one hierarchy level.", "pivots", 0, 8, 1, 0)
+            number("maximumSkippedPivots", "Internal pivots allowed", "Smaller pivots may be grouped only when they remain inside the enclosing leg endpoints. This search limit is not a Fibonacci rule.", "pivots", 0, 8, 1, 4)
     );
 
     private static final Map<HarmonicPatternType, PatternDefinition> PATTERNS = definitions();
@@ -121,7 +121,8 @@ public class HarmonicPatternPreferencesService {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
             if (LEGACY_PROFILE_VERSION_V1.equals(stored.version())) stored = migrateLegacy(stored, true);
-            else if (LEGACY_PROFILE_VERSION_V2.equals(stored.version())) stored = migrateLegacy(stored, false);
+            else if (LEGACY_PROFILE_VERSION_V2.equals(stored.version()) || "USER_HARMONIC_RULES_V3".equals(stored.version()))
+                stored = migrateLegacy(stored, false);
             stored.validate();
             return view(stored, entity.getUpdatedAt());
         } catch (JacksonException | IllegalArgumentException exception) {
@@ -136,6 +137,7 @@ public class HarmonicPatternPreferencesService {
         if (globals.getOrDefault("maximumFormations", 40.0) == 40.0) {
             globals.put("maximumFormations", 250.0);
         }
+        if (globals.getOrDefault("maximumSkippedPivots", 0.0) == 0.0) globals.put("maximumSkippedPivots", 4.0);
         List<StoredPattern> patterns = new ArrayList<>();
         for (PatternDefinition definition : PATTERNS.values()) {
             StoredPattern old = legacy.patterns().stream()
@@ -148,6 +150,10 @@ public class HarmonicPatternPreferencesService {
             Map<String, Double> ratios = new LinkedHashMap<>();
             for (NumericDefinition ratio : definition.ratios()) {
                 double value = old.ratios().getOrDefault(ratio.key(), ratio.factoryValue());
+                if (definition.pattern() == HarmonicPatternType.BAT && ratio.key().equals("bMin") && value == 38.2
+                        || definition.pattern() == HarmonicPatternType.BAT && ratio.key().equals("bMax") && value == 50
+                        || definition.pattern() == HarmonicPatternType.BUTTERFLY
+                        && ratio.key().equals("extensionMax") && value == 224) value = ratio.factoryValue();
                 if (correctV1Ratios && correctedLegacyKey(definition.pattern(), ratio.key())) {
                     value = ratio.factoryValue();
                 }
@@ -277,8 +283,8 @@ public class HarmonicPatternPreferencesService {
                         ratio("extensionMin", "CD extension minimum of BC", 113), ratio("extensionMax", "CD extension maximum of BC", 161.8),
                         ratio("legPrimary", "AB=CD target", 100), ratio("legAlternate", "Alternate AB=CD target", 127)), true));
         result.put(HarmonicPatternType.BAT, pattern(HarmonicPatternType.BAT,
-                "0.382-0.50 B and 0.886 XA completion with AB=CD or its typical 1.27 alternate.", List.of(
-                        ratio("bMin", "B retracement minimum of XA", 38.2), ratio("bMax", "B retracement maximum of XA", 50),
+                "B below 0.618 (0.382-0.50 preferred), 0.886 XA completion, and at least AB=CD.", List.of(
+                        ratio("bMin", "B retracement minimum of XA", 0), ratio("bMax", "B retracement maximum of XA", 61.8),
                         ratio("completion", "D completion of XA", 88.6),
                         ratio("cMin", "C retracement minimum of AB", 38.2), ratio("cMax", "C retracement maximum of AB", 88.6),
                         ratio("cdBcMin", "CD/BC minimum", 161.8), ratio("cdBcMax", "CD/BC maximum", 261.8),
@@ -288,7 +294,7 @@ public class HarmonicPatternPreferencesService {
                         ratio("bTarget", "B retracement of XA", 78.6), ratio("completion", "D completion of XA", 127),
                         ratio("cMin", "C retracement minimum of AB", 38.2),
                         ratio("cMax", "C retracement maximum of AB", 88.6), ratio("extensionMin", "CD extension minimum of BC", 161.8),
-                        ratio("extensionMax", "CD extension maximum of BC", 224),
+                        ratio("extensionMax", "CD extension maximum of BC", 261.8),
                         ratio("legPrimary", "AB=CD target", 100), ratio("legAlternate", "Alternate AB=CD target", 127)), true));
         result.put(HarmonicPatternType.CRAB, pattern(HarmonicPatternType.CRAB,
                 "Outside 1.618 completion with a visibly unequal AB/CD relationship.", List.of(
@@ -307,6 +313,20 @@ public class HarmonicPatternPreferencesService {
                         ratio("bMin", "B retracement minimum of XA", 38.2), ratio("bMax", "B retracement maximum of XA", 61.8),
                         ratio("extensionMin", "C extension minimum of XA", 127.2), ratio("extensionMax", "C extension maximum of XA", 141.4),
                         ratio("completion", "D retracement of XC", 78.6)), false));
+        result.put(HarmonicPatternType.ALTERNATE_BAT, pattern(HarmonicPatternType.ALTERNATE_BAT,
+                "B at 0.382 or less; extended CD completes at 1.13 XA.", List.of(
+                ratio("bMax", "B retracement maximum of XA", 38.2), ratio("completion", "XA completion", 113),
+                ratio("extensionMin", "Minimum BC extension", 200)), true));
+        result.put(HarmonicPatternType.DEEP_CRAB, pattern(HarmonicPatternType.DEEP_CRAB,
+                "Deep 0.886 B retracement and 1.618 XA completion.", List.of(
+                ratio("bTarget", "B retracement of XA", 88.6), ratio("completion", "XA completion", 161.8)), true));
+        result.put(HarmonicPatternType.FIVE_ZERO, pattern(HarmonicPatternType.FIVE_ZERO,
+                "Failed impulse, 1.618-2.24 BC extension, and 50% BC retracement.",
+                List.of(ratio("completion", "BC retracement", 50)), true));
+        result.put(HarmonicPatternType.AB_CD, pattern(HarmonicPatternType.AB_CD,
+                "Four-point equal AB and CD legs with a retracing BC.", List.of(), true));
+        result.put(HarmonicPatternType.ALTERNATE_AB_CD, pattern(HarmonicPatternType.ALTERNATE_AB_CD,
+                "Four-point AB=CD extension at 1.27 or 1.618.", List.of(), true));
         return Collections.unmodifiableMap(result);
     }
 

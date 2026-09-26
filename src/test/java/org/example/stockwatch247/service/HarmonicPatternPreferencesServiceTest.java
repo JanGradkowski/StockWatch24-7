@@ -47,7 +47,7 @@ class HarmonicPatternPreferencesServiceTest {
         assertThat(preferences.rules().pivotWindow()).isEqualTo(2);
         assertThat(preferences.rules().maximumPivotWindow()).isEqualTo(55);
         assertThat(preferences.rules().maximumSwingFraction()).isEqualTo(.34);
-        assertThat(preferences.rules().maximumSkippedPivots()).isZero();
+        assertThat(preferences.rules().maximumSkippedPivots()).isEqualTo(4);
         assertThat(preferences.rules().maximumFormations()).isEqualTo(250);
         assertThat(preferences.patternRules().profile(HarmonicPatternType.GARTLEY).enabled()).isTrue();
         assertThat(preferences.patternRules().profile(HarmonicPatternType.GARTLEY).ratios())
@@ -61,11 +61,13 @@ class HarmonicPatternPreferencesServiceTest {
         form.remove("pattern.gartley.hard.SECONDARY_RATIOS");
         form.set("pattern.gartley.softViolationPercent", "8.5");
         form.set("pattern.gartley.bTarget", "62.0");
+        form.set("global.maximumSkippedPivots", "0");
 
         var saved = service.save(user, form);
         var gartley = saved.patternRules().profile(HarmonicPatternType.GARTLEY);
 
         assertThat(saved.custom()).isTrue();
+        assertThat(saved.rules().maximumSkippedPivots()).isZero();
         assertThat(gartley.hardRules().get(HarmonicPatternDetectionService.RuleGroup.SECONDARY_RATIOS))
                 .isFalse();
         assertThat(gartley.softViolationTolerance()).isEqualTo(.085);
@@ -104,10 +106,10 @@ class HarmonicPatternPreferencesServiceTest {
 
         var migrated = service.get(user);
 
-        assertThat(migrated.version()).isEqualTo("USER_HARMONIC_RULES_V3");
+        assertThat(migrated.version()).isEqualTo("USER_HARMONIC_RULES_V4");
         assertThat(migrated.rules().maximumPivotWindow()).isEqualTo(55);
         assertThat(migrated.rules().maximumSwingFraction()).isEqualTo(.34);
-        assertThat(migrated.rules().maximumSkippedPivots()).isZero();
+        assertThat(migrated.rules().maximumSkippedPivots()).isEqualTo(4);
         assertThat(migrated.rules().maximumFormations()).isEqualTo(250);
         assertThat(migrated.patternRules().profile(HarmonicPatternType.BUTTERFLY).ratios())
                 .containsEntry("completion", 1.27);

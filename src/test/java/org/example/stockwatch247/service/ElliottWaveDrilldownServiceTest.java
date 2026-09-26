@@ -31,6 +31,24 @@ class ElliottWaveDrilldownServiceTest {
             marketDataService, completionService, enrichmentService, detectionService);
 
     @Test
+    void doesNotStitchAChildCountAcrossAMalformedBar() {
+        long start = timestamp(2024, 1, 1), end = timestamp(2024, 1, 15), cutoff = timestamp(2024, 1, 22);
+        var candles = new ArrayList<Candle>();
+        for (int day=1;day<22;day++) candles.add(candle(timestamp(2024,1,day),100+day));
+        candles.set(8,new Candle("TEST","1d",timestamp(2024,1,9),108,110,107,null,1000L));
+        when(completionService.firstIncompleteCandleTimestamp(TimeInterval.DAILY))
+                .thenReturn(timestamp(2026,1,1));
+        when(marketDataService.loadCandlePage("TEST","1d",cutoff,1000))
+                .thenReturn(new MarketDataService.CandlePage(candles,null,false,MarketDataService.CandleSource.CACHE,null));
+
+        var result=service.drillDown("TEST","1wk","III",start,end,101,115,cutoff);
+
+        assertThat(result.available()).isFalse();
+        assertThat(result.unavailableReason()).contains("malformed");
+        org.mockito.Mockito.verifyNoInteractions(detectionService);
+    }
+
+    @Test
     void mapsWeeklyParentsToDailyCandlesAndKeepsTheHistoricalAsOfCutoff() {
         long parentStart = timestamp(2024, 1, 1);
         long parentEnd = timestamp(2024, 1, 15);
@@ -49,7 +67,7 @@ class ElliottWaveDrilldownServiceTest {
         when(marketDataService.loadCandlePage("TEST", "1d", asOfExclusive, 1_000))
                 .thenReturn(new MarketDataService.CandlePage(
                         pageCandles, null, false, MarketDataService.CandleSource.CACHE, null));
-        when(enrichmentService.enrich(anyList(), eq(enriched.size()), eq(TimeInterval.DAILY)))
+        when(enrichmentService.enrichForElliott(anyList(), eq(enriched.size()), eq(TimeInterval.DAILY)))
                 .thenReturn(enriched);
         when(detectionService.findSubdivision(anyList(), eq("III"), eq(101.0), eq(115.0)))
                 .thenReturn(Optional.of(new ElliottWaveDetectionService.ElliottSubdivision(
@@ -74,7 +92,7 @@ class ElliottWaveDrilldownServiceTest {
         assertThat(view.candles()).allMatch(candle -> candle.timestamp() < asOfExclusive);
         assertThat(view.candles()).noneMatch(candle -> candle.timestamp() == timestamp(2024, 1, 23));
         ArgumentCaptor<List<Candle>> candleCaptor = ArgumentCaptor.forClass(List.class);
-        verify(enrichmentService).enrich(candleCaptor.capture(), eq(enriched.size()), eq(TimeInterval.DAILY));
+        verify(enrichmentService).enrichForElliott(candleCaptor.capture(), eq(enriched.size()), eq(TimeInterval.DAILY));
         assertThat(candleCaptor.getValue()).allMatch(candle -> candle.getTimestamp() < asOfExclusive);
     }
 

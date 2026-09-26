@@ -34,7 +34,7 @@ final class HarmonicStopPlanPolicy {
             return Optional.empty();
         }
         List<HarmonicPatternDetectionService.HarmonicPoint> points = formation.points();
-        if (points == null || points.size() != 5) return Optional.empty();
+        if (points == null || points.size() < 4 || points.size() > 5) return Optional.empty();
 
         StructuralLevel level = structuralLevel(formation.pattern(), points).orElse(null);
         if (level == null || !Double.isFinite(level.price()) || level.price() <= 0.0) {
@@ -53,7 +53,7 @@ final class HarmonicStopPlanPolicy {
         double distancePercent = distance / confirmationEntryPrice * 100.0;
         boolean shark = formation.pattern() == HarmonicPatternType.SHARK;
         Double endpoint = price(points, shark ? "C" : "D");
-        Double anchor = price(points, shark ? "B" : formation.pattern() == HarmonicPatternType.CYPHER ? "C" : "A");
+        Double anchor = price(points, shark ? "B" : (formation.pattern() == HarmonicPatternType.CYPHER || formation.pattern() == HarmonicPatternType.FIVE_ZERO) ? "C" : "A");
         if (endpoint == null || anchor == null) return Optional.empty();
         double primary = endpoint + (anchor - endpoint) * (shark ? .50 : .382);
         Double secondary = shark ? null : endpoint + (anchor - endpoint) * .618;
@@ -68,7 +68,7 @@ final class HarmonicStopPlanPolicy {
                 distance, distancePercent, level.basis(), level.formula(), primary, secondary,
                 TradeRiskPolicy.reward(formation.tradeSignal(), confirmationEntryPrice, primary) / distance,
                 qualification.actionable(), qualification.reason(), qualification.riskAtr(), horizon,
-                shark ? "50% BC reaction target" : formation.pattern() == HarmonicPatternType.CYPHER
+                shark ? "50% BC reaction target" : (formation.pattern() == HarmonicPatternType.CYPHER || formation.pattern() == HarmonicPatternType.FIVE_ZERO)
                         ? "38.2% CD primary / 61.8% CD secondary" : "38.2% AD primary / 61.8% AD secondary"));
     }
 
@@ -85,8 +85,11 @@ final class HarmonicStopPlanPolicy {
                     "Cypher invalidation at Point X beyond the 0.786 XC completion");
             case BUTTERFLY -> xaExtension(points, 1.414,
                     "1.414 XA extension", "A + (X - A) × 1.414");
-            case CRAB -> xaExtension(points, 2.0,
+            case CRAB, DEEP_CRAB -> xaExtension(points, 2.0,
                     "2.0 XA extension", "A + (X - A) × 2.0");
+            case ALTERNATE_BAT -> xaExtension(points, 1.27, "1.27 XA extension", "A + (X - A) x 1.27");
+            case FIVE_ZERO -> fixed(price(points, "B"), "Point B", "5-0 origin of BC");
+            case AB_CD, ALTERNATE_AB_CD -> fixed(price(points, "D"), "Point D", "Terminal D plus volatility buffer");
             case SHARK -> oxExtension(points, 1.27,
                     "1.27 OX extension", "X + (0 - X) × 1.27");
         };

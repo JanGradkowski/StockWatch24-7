@@ -23,6 +23,25 @@ import static org.mockito.Mockito.when;
 class ElliottWaveHierarchyServiceTest {
 
     @Test
+    void preservesMalformedMonthlyBarsForTheSegmentAwareEnricher() {
+        var market = mock(MarketDataService.class);
+        var completion = mock(CandleCompletionService.class);
+        var enrichment = mock(TechnicalIndicatorEnrichmentService.class);
+        var detector = mock(ElliottWaveDetectionService.class);
+        long cutoff=LocalDate.of(2025,1,1).atStartOfDay().toEpochSecond(ZoneOffset.UTC);
+        var candles=new java.util.ArrayList<Candle>();
+        for(int month=0;month<36;month++) {
+            long time=LocalDate.of(2020,1,1).plusMonths(month).atStartOfDay().toEpochSecond(ZoneOffset.UTC);
+            candles.add(new Candle("TEST","1mo",time,100,110,90,month==12?null:105.0,1000L));
+        }
+        when(completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY)).thenReturn(cutoff);
+        when(market.loadCandlePage("TEST","1mo",cutoff,1000))
+                .thenReturn(new MarketDataService.CandlePage(candles,null,false,MarketDataService.CandleSource.CACHE,null));
+        new ElliottWaveHierarchyService(market,completion,enrichment,detector).build("TEST",cutoff,null,null);
+        org.mockito.Mockito.verify(enrichment).enrichForElliott(candles,36,TimeInterval.MONTHLY);
+    }
+
+    @Test
     void buildsMonthlyParentsWithWeeklyChildrenAndDailyGrandchildren() {
         ElliottWaveHierarchyService.HierarchyView hierarchy = buildHierarchy(false);
 
@@ -172,7 +191,7 @@ class ElliottWaveHierarchyServiceTest {
         List<ElliottWaveDetectionService.ElliottWaveStructure> baselines = includeSecondCycle
                 ? List.of(baseline(LocalDate.of(2021, 1, 1)), baseline())
                 : List.of(baseline());
-        when(detector.findHistoricalWaveStructures(anyList())).thenReturn(baselines);
+        when(detector.findAllWaveStructures(anyList())).thenReturn(baselines);
         when(detector.findStrictSubdivisions(anyList(), anyString(),
                 org.mockito.ArgumentMatchers.anyDouble(), org.mockito.ArgumentMatchers.anyDouble()))
                 .thenAnswer(invocation -> {

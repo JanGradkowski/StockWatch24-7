@@ -8,10 +8,10 @@
     ['HARMONIC_FORMATION', 'BUY', 'Harmonic buy'], ['HARMONIC_FORMATION', 'SELL', 'Harmonic sell'],
     ['OUTLOOK', 'ANY', 'Automated technical outlook'],
   ];
-  function create(onChange) {
+  function create(onChange, { members = false } = {}) {
     const root = n('fieldset', null, 'wl-signal-settings');
     root.append(n('legend', 'Signals to follow'));
-    root.append(n('p', 'Choose signal types and intervals for this list. Followed signals always appear on the website, whether email is enabled or disabled.', 'wl-muted'));
+    root.append(n('p', members ? 'Change follows for the selected instruments in this watchlist. A dash means only some follow that signal. Untouched choices keep their current follows.' : 'Choose signal types and intervals for this list. Followed signals always appear on the website, whether email is enabled or disabled.', 'wl-muted'));
     const controls = [], initial = new Map();
     const typeNames = { CANDLESTICK: 'Candlestick', ELLIOTT_WAVE: 'Elliott Wave', HARMONIC_FORMATION: 'Harmonic', OUTLOOK: 'Automated technical outlook', CONGRESS: 'Congressional activity', INSIDER: 'Insider activity' };
     const permissions = new Map(), initialPermissions = new Map();
@@ -24,7 +24,7 @@
       input.addEventListener('change', () => { updateAllowedControls(); changed(); });
       permissions.set(type, input); label.append(input, n('span', title)); allowed.append(label);
     }
-    root.append(allowed);
+    if (!members) root.append(allowed);
     function updateAllowedControls() {
       controls.forEach(value => { value.watch.disabled = !permissions.get(value.type).checked; });
     }
@@ -33,7 +33,7 @@
     email.setAttribute('aria-label', 'Enable email notifications');
     const emailLabel = n('label', null, 'wl-check');
     emailLabel.append(email, n('span', 'Enable email notifications'));
-    root.append(emailLabel);
+    if (!members) root.append(emailLabel);
     const key = value => `${value.type}:${value.interval}:${value.direction}`;
     const changed = () => { onChange(); };
     email.addEventListener('change', changed);
@@ -50,12 +50,12 @@
     }
     function watchGroup(predicate) {
       const targets = controls.filter(value => !value.watch.disabled && predicate(value)), enabled = !targets.every(value => value.watch.checked);
-      targets.forEach(value => { value.watch.checked = enabled; }); changed();
+      targets.forEach(value => { value.watch.checked = enabled; value.watch.indeterminate = false; }); changed();
     }
     const technical = value => !value.watch.disabled && !['CONGRESS', 'INSIDER'].includes(value.type);
     const actions = n('div', null, 'wl-actions');
-    actions.append(button('Watch all technical signals', () => { controls.filter(technical).forEach(value => { value.watch.checked = true; }); changed(); }),
-      button('Clear technical signals', () => { controls.filter(technical).forEach(value => { value.watch.checked = false; }); changed(); }));
+    actions.append(button('Watch all technical signals', () => { controls.filter(technical).forEach(value => { value.watch.checked = true; value.watch.indeterminate = false; }); changed(); }),
+      button('Clear technical signals', () => { controls.filter(technical).forEach(value => { value.watch.checked = false; value.watch.indeterminate = false; }); changed(); }));
     root.append(actions, n('h3', 'Technical signals'));
     const wrap = n('div', null, 'wl-settings-table-wrap'), table = n('table', null, 'wl-settings-table');
     wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', 'Technical signal settings by type and interval');
@@ -80,7 +80,7 @@
     for (const [type, title] of [['CONGRESS', 'Congressional trades'], ['INSIDER', 'Corporate insider trades']]) {
       const item = n('div'); item.append(n('strong', title), followControl(type, 'DAILY', 'ANY', title)); activity.append(item);
     }
-    root.append(activity, n('p', 'Email notifications cover followed signals and their follow-up outcomes. Overlapping watchlists send one email if any matching list enables email. Your account email preferences still apply.', 'wl-muted'));
+    root.append(activity, n('p', members ? 'Email settings are managed in the watchlist editor.' : 'Email notifications cover followed signals and their follow-up outcomes. Overlapping watchlists send one email if any matching list enables email. Your account email preferences still apply.', 'wl-muted'));
     const mixed = n('p', '', 'wl-status'); mixed.hidden = true; root.append(mixed);
     function read() { return controls.map(value => ({ type: value.type, interval: value.interval, direction: value.direction, watch: permissions.get(value.type).checked && value.watch.checked, email: email.checked })); }
     function set(view) {
@@ -91,7 +91,8 @@
       permissions.forEach((input, type) => { input.checked = !view?.allowedTypes || view.allowedTypes.includes(type); initialPermissions.set(type, input.checked); });
       controls.forEach(value => {
         const saved = byKey.get(key(value)); value.watch.checked = !!saved?.watch;
-        initial.set(key(value), { watch: value.watch.checked });
+        value.watch.indeterminate = !!view?.mixedKeys?.includes(key(value));
+        initial.set(key(value), { watch: value.watch.checked, mixed: value.watch.indeterminate });
       });
       mixed.hidden = !view?.mixed;
       mixed.textContent = 'Some instruments have individual follows. Changing signal selections applies them to every instrument in this list. Changing email notifications preserves those individual follows.';
@@ -106,7 +107,12 @@
       const total = removed.reduce((sum, [type]) => sum + (followCounts[type] || 0), 0);
       return removed.length ? `Disallow ${removed.map(([type]) => typeNames[type]).join(', ')}. Remove ${total} existing follows from this watchlist. Saved history and other watchlists are preserved.` : 'Allow the selected signal types. Existing follows stay unchanged.';
     };
-    return { root, read, set, monitoringChanged, restrictionsChanged, allowedTypes, restrictionSummary,
+    const readChanges = () => read().filter(value => {
+      const control = controls.find(control => key(control) === key(value));
+      return !control.watch.disabled && !control.watch.indeterminate
+        && (initial.get(key(value)).mixed || value.watch !== initial.get(key(value)).watch);
+    });
+    return { root, read, readChanges, set, monitoringChanged, restrictionsChanged, allowedTypes, restrictionSummary,
       changed: () => email.checked !== initialEmail || monitoringChanged() || restrictionsChanged() };
   }
   window.StockWatchListSettings = { create };

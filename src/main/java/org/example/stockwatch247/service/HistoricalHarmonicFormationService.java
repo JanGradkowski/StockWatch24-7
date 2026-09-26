@@ -71,16 +71,15 @@ public class HistoricalHarmonicFormationService {
             throw new IllegalArgumentException("A valid harmonic pattern and endpoint are required.");
         }
         long firstIncomplete = candleCompletionService.firstIncompleteCandleTimestamp(timeInterval);
-        List<Candle> candles = candleRepository
+        List<Candle> completedCandles = candleRepository
                 .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
                 .stream()
-                .filter(this::validCandle)
-                .filter(candle -> candle.getTimestamp() < firstIncomplete)
-                .sorted(Comparator.comparing(Candle::getTimestamp))
+                .filter(candle -> candle == null || candle.getTimestamp() == null
+                        || candle.getTimestamp() < firstIncomplete)
                 .toList();
         HarmonicPatternDetectionService.HarmonicFormation formation = (configuredDetector == null
                 ? detectionService : configuredDetector)
-                .detectHistorical(candles)
+                .detectAll(completedCandles)
                 .stream()
                 .filter(candidate -> candidate.pattern() == pattern)
                 .filter(candidate -> candidate.points().getLast().timestamp() == endpointTimestamp)
@@ -89,6 +88,10 @@ public class HistoricalHarmonicFormationService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "The historical harmonic formation is no longer available in the completed candle cache."));
 
+        // Keep malformed bars as detection boundaries and limit chart/outcome data to this segment.
+        List<Candle> candles = PatternCandleIntegrity.rawSegments(completedCandles).stream()
+                .filter(segment -> candleIndex(segment, formation.points().getFirst().timestamp()) >= 0)
+                .findFirst().orElse(List.of());
         int confirmationIndex = candleIndex(candles, formation.confirmationTimestamp());
         if (confirmationIndex < 0) {
             throw new IllegalArgumentException("The harmonic confirmation candle is unavailable.");

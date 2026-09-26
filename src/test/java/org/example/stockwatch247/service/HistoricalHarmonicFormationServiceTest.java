@@ -17,6 +17,27 @@ import static org.mockito.Mockito.when;
 class HistoricalHarmonicFormationServiceTest {
 
     @Test
+    void preservesMalformedBoundariesForDetectionAndForwardOutcomes() {
+        var candles = mock(CandleRepository.class);
+        var completion = mock(CandleCompletionService.class);
+        var detector = new HarmonicPatternDetectionService(
+                new HarmonicPatternDetectionService.Rules(.04, .08, .10, 0.0, 1, 40));
+        var service = new HistoricalHarmonicFormationService(candles, completion, detector);
+        var history = new ArrayList<>(history());
+        when(completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY)).thenReturn(Long.MAX_VALUE);
+        when(candles.findBySymbolAndTimeIntervalOrderByTimestampAsc("MSFT", "1d")).thenReturn(history);
+        history.set(9, new Candle("MSFT", "1d", 10 * 86_400L, 135, 140, 130, null, 1_000L));
+
+        var detail = service.findDetail("MSFT", "1d", HarmonicPatternType.GARTLEY, 6 * 86_400L);
+        assertThat(detail.result().availableForwardCandles()).isEqualTo(2);
+
+        history.set(3, new Candle("MSFT", "1d", 4 * 86_400L, 135, 140, 130, null, 1_000L));
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> service.findDetail("MSFT", "1d", HarmonicPatternType.GARTLEY, 6 * 86_400L))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("no longer available");
+    }
+
+    @Test
     void reconstructsHistoricalDetailFromConfirmedGeometryAndMeasuresForwardOutcome() {
         CandleRepository candles = mock(CandleRepository.class);
         CandleCompletionService completion = mock(CandleCompletionService.class);

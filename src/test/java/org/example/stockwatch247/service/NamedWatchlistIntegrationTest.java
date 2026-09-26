@@ -170,6 +170,8 @@ class NamedWatchlistIntegrationTest {
         db.update("update congressional_trade_deliveries set created_at=timestamp '2026-09-16 11:00:00' where id=?",congress);
         db.update("update insider_trade_deliveries set created_at=timestamp '2026-09-16 12:00:00' where id=?",insider);
         var filter=new SignalArchiveFilter("all",asset.getTickerSymbol(),watching.id());
+        assertThat(archiveQuery.page(owner.getId(),null,"date",false,0,50,
+                new SignalArchiveFilter("all",asset.getTickerSymbol()+",UNSELECTED",watching.id())).count()).isEqualTo(3);
         assertThat(archiveQuery.page(owner.getId(),null,"date",false,0,50,filter).rows()).extracting(SignalArchiveQuery.ArchiveRow::kind).containsExactly("INSIDER","CONGRESS","TECHNICAL");
         for(String sort:List.of("date","ticker","interval","confidence","status","trade-return")) for(boolean ascending:List.of(true,false)) {
             var page=archiveQuery.page(owner.getId(),null,sort,ascending,0,50,filter);

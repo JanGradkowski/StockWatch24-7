@@ -142,6 +142,10 @@ class DevelopingElliottSyntheticRecallBenchmarkTest {
         double waveFourDepth = waveThreeLength * between(random, .24, .34);
         double waveFiveLength = waveOneLength * between(random, .72, 1.24);
 
+        // Keep the mirrored stock-price path positive. The old bearish generator crossed zero
+        // in 228/1,000 cases, which is invalid OHLC input, not a valid missed Elliott count.
+        if (!bullish) origin += waveOneLength + waveThreeLength + waveFiveLength;
+
         double waveOne = origin + direction * waveOneLength;
         double waveTwo = waveOne - direction * waveTwoDepth;
         double waveThree = waveTwo + direction * waveThreeLength;

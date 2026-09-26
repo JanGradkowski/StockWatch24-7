@@ -312,6 +312,8 @@ public class YahooFinanceService {
 
     private Set<String> initialCandidates(String symbol, Optional<StockAsset> asset) {
         LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        // Berkshire's class separator is a dash on Yahoo, not an exchange suffix.
+        if (symbol.equals("BRK.A") || symbol.equals("BRK.B")) candidates.add(symbol.replace('.', '-'));
         if (!hasExchangeSuffix(symbol) && asset.map(this::hasUsListingIdentity).orElse(false)) {
             candidates.add(symbol);
         }

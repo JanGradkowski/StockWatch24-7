@@ -1538,7 +1538,7 @@
       elliottProjectionSeries.push({ series, scenario, colorIndex: index });
     });
 
-    if (harmonicFormation && harmonicFormation.points.length === 5) {
+    if (harmonicFormation && [4, 5].includes(harmonicFormation.points.length)) {
       const harmonicColor = HARMONIC_FORMATION_COLOR;
       const harmonicSeries = chart.addLineSeries({
         color: harmonicColor,

@@ -41,7 +41,7 @@ class ChartControllerHarmonicPatternTest {
         assertThat(overlay.interval()).isEqualTo("1d");
         assertThat(overlay.fromTimestamp()).isEqualTo(start);
         assertThat(overlay.ruleVersion()).isEqualTo(HarmonicPatternDetectionService.RULE_VERSION);
-        assertThat(overlay.formations()).singleElement().satisfies(formation -> {
+        assertThat(overlay.formations()).filteredOn(f -> f.pattern() == HarmonicPatternType.GARTLEY).singleElement().satisfies(formation -> {
             assertThat(formation.pattern()).isEqualTo(HarmonicPatternType.GARTLEY);
             assertThat(formation.tradeSignal()).isEqualTo(TradeSignal.BUY);
             assertThat(formation.points()).extracting(point -> point.label())
@@ -82,7 +82,7 @@ class ChartControllerHarmonicPatternTest {
         ChartController.HarmonicHistoryOverlay overlay =
                 controller.getHistoricalHarmonicFormations("MSFT", "1d", boundary);
 
-        assertThat(overlay.formations()).singleElement().satisfies(formation -> {
+        assertThat(overlay.formations()).filteredOn(f -> f.pattern() == HarmonicPatternType.GARTLEY).singleElement().satisfies(formation -> {
             assertThat(formation.pattern()).isEqualTo(HarmonicPatternType.GARTLEY);
             assertThat(formation.points().getFirst().timestamp()).isLessThan(boundary);
             assertThat(formation.points().getLast().timestamp()).isGreaterThanOrEqualTo(boundary);

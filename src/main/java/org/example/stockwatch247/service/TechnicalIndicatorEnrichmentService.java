@@ -108,12 +108,20 @@ public class TechnicalIndicatorEnrichmentService {
     public List<EnrichedCandle> enrichForElliott(List<Candle> rawCandles,
                                                  int latestCount,
                                                  TimeInterval interval) {
-        return enrich(
-                rawCandles,
-                latestCount,
-                interval,
-                TechnicalIndicatorProfile.forElliott(interval)
-        );
+        if (rawCandles == null || latestCount <= 0 || rawCandles.stream()
+                .anyMatch(c -> c == null || c.getTimestamp() == null)) return List.of();
+        List<EnrichedCandle> result = new ArrayList<>();
+        java.util.Set<Long> validTimestamps = new java.util.HashSet<>();
+        for (List<Candle> segment : PatternCandleIntegrity.rawSegments(rawCandles)) {
+            result.addAll(enrich(segment, segment.size(), interval, TechnicalIndicatorProfile.forElliott(interval)));
+            segment.forEach(c -> validTimestamps.add(c.getTimestamp()));
+        }
+        // Keep a boundary marker so a later malformed bar cannot erase earlier, valid as-of history.
+        rawCandles.stream().map(Candle::getTimestamp).distinct().filter(t -> !validTimestamps.contains(t))
+                .forEach(t -> result.add(new EnrichedCandle(t, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+                        0, 0, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN)));
+        result.sort(Comparator.comparing(EnrichedCandle::timestamp));
+        return List.copyOf(result.subList(Math.max(0, result.size()-latestCount),result.size()));
     }
 
     private List<EnrichedCandle> enrich(List<Candle> rawCandles,

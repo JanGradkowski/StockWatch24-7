@@ -45,7 +45,7 @@ class HarmonicPatternDetectionServiceTest {
         HarmonicFormation formation = detector.classify(bullish(100, 200, 150, 174.9, 111.4)).orElseThrow();
 
         assertThat(formation.pattern()).isEqualTo(HarmonicPatternType.BAT);
-        assertThat(formation.reasons()).anySatisfy(reason -> assertThat(reason).contains("1.27 alternate"));
+        assertThat(formation.reasons()).anySatisfy(reason -> assertThat(reason).contains("AB=CD minimum"));
     }
 
     @Test
@@ -105,7 +105,8 @@ class HarmonicPatternDetectionServiceTest {
         List<Candle> confirmed = pivotCandles(start, 86_400L);
 
         assertThat(detector.detectHistorical(incomplete)).isEmpty();
-        HarmonicFormation formation = detector.detectHistorical(confirmed).getFirst();
+        HarmonicFormation formation = detector.detectHistorical(confirmed).stream()
+                .filter(f -> f.pattern() == HarmonicPatternType.GARTLEY).findFirst().orElseThrow();
         assertThat(formation.pattern()).isEqualTo(HarmonicPatternType.GARTLEY);
         assertThat(formation.points().getLast().timestamp()).isEqualTo(start + 5 * 86_400L);
         assertThat(formation.confirmationTimestamp()).isEqualTo(start + 6 * 86_400L);
