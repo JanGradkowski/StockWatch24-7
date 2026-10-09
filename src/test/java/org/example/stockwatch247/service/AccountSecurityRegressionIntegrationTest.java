@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -51,6 +52,43 @@ class AccountSecurityRegressionIntegrationTest {
         assertThat(users.findById(account.getId()).orElseThrow().getSecurityVersion()).isZero();
     }
 
+    @Test void aWrongCodeWithTheCurrentPasswordGetsTheGenericAnswerAndDoesNotRevealThePassword() {
+        PasswordSecurityCode challenge = resetCode("12345678");
+
+        assertThat(security.resetPassword(account.getId(), "00000000", "Old-password-for-review42!", codes).successful()).isFalse();
+
+        assertThat(challenges.findById(challenge.getId()).orElseThrow().getFailedAttempts()).isEqualTo(1);
+    }
+
+    @Test void reusingTheCurrentPasswordWithAValidCodeExplainsWhyAndKeepsTheCodeForAnotherTry() {
+        PasswordSecurityCode challenge = resetCode("12345678");
+
+        assertThatThrownBy(() -> security.resetPassword(account.getId(), "12345678", "Old-password-for-review42!", codes))
+                .isInstanceOf(UserInputException.class)
+                .hasMessageContaining("different from your current password");
+        assertThat(challenges.findById(challenge.getId())).isPresent();
+
+        assertThat(security.resetPassword(account.getId(), "12345678", "New-password-for-review42!", codes).successful()).isTrue();
+        assertThat(challenges.findById(challenge.getId())).isEmpty();
+        assertThat(security.resetPassword(account.getId(), "12345678", "Another-password-for-review42!", codes).successful()).isFalse();
+    }
+
+    @Test void aPasswordThatBreaksThePolicyIsReportedBeforeTheCodeIsTouched() {
+        PasswordSecurityCode challenge = resetCode("12345678");
+
+        assertThatThrownBy(() -> security.resetPassword(account.getId(), "12345678", "short", codes))
+                .isInstanceOf(UserInputException.class)
+                .hasMessageContaining("at least 15 characters");
+        assertThat(challenges.findById(challenge.getId()).orElseThrow().getFailedAttempts()).isZero();
+    }
+
+    private PasswordSecurityCode resetCode(String rawCode) {
+        PasswordSecurityCode challenge = new PasswordSecurityCode(); challenge.setUser(account);
+        challenge.setPurpose(PasswordSecurityCodeService.RESET); challenge.setCodeHash(encoder.encode(rawCode));
+        challenge.setExpiresAt(LocalDateTime.now().plusMinutes(5)); challenge.setLastSentAt(LocalDateTime.now());
+        return challenges.saveAndFlush(challenge);
+    }
+
     @Test void pendingMfaIsBoundToAccountVersionAndStatusAndAnAcceptedStepCannotReplay() {
         long now = Instant.now().getEpochSecond();
         var protectedSecret = crypto.encrypt("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", "stockwatch-mfa-user:" + account.getId());
@@ -68,5 +106,25 @@ class AccountSecurityRegressionIntegrationTest {
         account.setVerified(true); users.saveAndFlush(account);
         assertThat(security.verifyLoginFactor(account.getId(), 4, now, "123456")).isPresent();
         assertThat(security.verifyLoginFactor(account.getId(), 4, now, "123456")).isEmpty();
+    }
+
+    @Test void twentyWrongCodesInADayPauseCodeEntryRecordTheEventAndTellTheOwner() {
+        long now = Instant.now().getEpochSecond();
+        var protectedSecret = crypto.encrypt("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", "stockwatch-mfa-user:" + account.getId());
+        account.setMfaEnabled(true); account.setMfaSecretCiphertext(protectedSecret.ciphertext()); account.setMfaSecretIv(protectedSecret.iv());
+        users.saveAndFlush(account);
+        when(totp.matchingStep(anyString(), eq("000000"), anyLong())).thenReturn(null);
+        when(totp.matchingStep(anyString(), eq("123456"), anyLong())).thenReturn(now / 30);
+
+        for (int attempt = 1; attempt < AccountSecurityService.MFA_FAILURES_BEFORE_PAUSE; attempt++) {
+            assertThat(security.verifyLoginFactor(account.getId(), 0, now, "000000")).isEmpty();
+        }
+        assertThat(security.loginFactorPaused(account.getId())).isFalse();
+        assertThat(security.verifyLoginFactor(account.getId(), 0, now, "000000")).isEmpty();
+
+        assertThat(security.loginFactorPaused(account.getId())).isTrue();
+        assertThat(security.verifyLoginFactor(account.getId(), 0, now, "123456")).isEmpty();
+        assertThat(security.recentEvents(account.getId())).anyMatch(event -> "MFA_PAUSED".equals(event.getEventType()));
+        verify(notifications).sendSecurityNotice(any(User.class), eq("Repeated wrong authenticator codes"), anyString());
     }
 }

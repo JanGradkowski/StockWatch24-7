@@ -88,7 +88,7 @@ public class HistoricalSignalCacheService {
                 while (!claim(lockKey, owner)) {
                     Optional<T> available = read(identity, candleSnapshot(normalizedSymbol, interval), resultType);
                     if (available.isPresent()) return available.get();
-                    if (System.nanoTime() > deadline) throw new IllegalStateException("Historical calculation is busy; retry shortly.");
+                    if (System.nanoTime() > deadline) throw new ConflictException("Historical calculation is busy; retry shortly.");
                     try { Thread.sleep(250); }
                     catch (InterruptedException e) {
                         Thread.currentThread().interrupt();

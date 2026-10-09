@@ -35,7 +35,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+                new CandlestickSignalLifecycleService(repository, notifications, 10);
         AlertEvent event = new AlertEvent();
         event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
         event.setTradeSignal(TradeSignal.SELL);
@@ -82,7 +82,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+                new CandlestickSignalLifecycleService(repository, notifications, 10);
         AlertEvent event = new AlertEvent();
         event.setPattern(CandlePattern.ELLIOTT_BULLISH_CORRECTION);
         event.setTradeSignal(TradeSignal.BUY);
@@ -133,7 +133,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+                new CandlestickSignalLifecycleService(repository, notifications, 10);
         AlertEvent event = new AlertEvent();
         event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
         event.setTradeSignal(TradeSignal.SELL);
@@ -175,7 +175,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+                new CandlestickSignalLifecycleService(repository, notifications, 10);
         AlertEvent event = new AlertEvent();
         event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
         event.setTradeSignal(TradeSignal.SELL);
@@ -203,7 +203,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+                new CandlestickSignalLifecycleService(repository, notifications, 10);
         AlertEvent event = new AlertEvent();
         event.setPattern(CandlePattern.ELLIOTT_BULLISH_CORRECTION);
         event.setTradeSignal(TradeSignal.BUY);
@@ -226,7 +226,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         ElliottWaveDetectionService elliottWaveDetectionService = mock(ElliottWaveDetectionService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3, 10);
+                new CandlestickSignalLifecycleService(repository, notifications, 10);
         AlertEvent event = new AlertEvent();
         event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_V_END);
         event.setTradeSignal(TradeSignal.SELL);
@@ -255,7 +255,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3);
+                new CandlestickSignalLifecycleService(repository, notifications);
         AlertEvent event = new AlertEvent();
         DetectedSignal signal = signal(CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY, 200L, 107.0);
 
@@ -269,12 +269,15 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getPatternLow()).isEqualTo(88.0);
         assertThat(event.getTradeEntryPrice()).isEqualTo(107.0);
         assertThat(event.getPreCircuitBreakerStopPrice()).isEqualTo(88.0);
-        assertThat(event.getStopLossPrice()).isEqualTo(87.89);
-        assertThat(event.getProfitTargetPrice()).isCloseTo(145.22, within(1e-8));
+        assertThat(event.getStopLossPrice()).isEqualTo(88.0);
+        assertThat(event.getProfitTargetPrice()).isCloseTo(145.0, within(1e-8));
         assertThat(event.getAtrCircuitBreakerApplied()).isFalse();
         assertThat(event.getAtrCircuitBreakerValue()).isNull();
         assertThat(event.getRewardRiskRatio()).isEqualTo(2.0);
-        assertThat(event.getConfirmationTriggerPrice()).isCloseTo(145.22, within(1e-8));
+        assertThat(event.getConfirmationTriggerPrice()).isCloseTo(145.0, within(1e-8));
+        // The plan is provisional at the signal close; the trade enters at the next candle's open.
+        assertThat(event.getTradeFillStatus()).isEqualTo("AWAITING_FILL");
+        assertThat(event.getTradeEntryTimestamp()).isNull();
         assertThat(event.getInvalidationPrice()).isEqualTo(88.0);
         assertThat(event.getConfirmationWindowCandles()).isEqualTo(8);
         assertThat(event.isLifecycleTracked()).isTrue();
@@ -285,7 +288,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3);
+                new CandlestickSignalLifecycleService(repository, notifications);
         AlertEvent event = new AlertEvent();
         DetectedSignal signal = signal(
                 CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY, 1_400L, 107.0);
@@ -302,7 +305,7 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getAtrCircuitBreakerValue()).isCloseTo(64.0 / 14.0, within(0.0000001));
         assertThat(event.getTradeActionable()).isFalse();
         assertThat(event.getTradeQualification()).contains("too wide");
-        assertThat(event.getStopLossPrice()).isLessThan(88);
+        assertThat(event.getStopLossPrice()).isEqualTo(88.0);
     }
 
     @Test
@@ -310,7 +313,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3);
+                new CandlestickSignalLifecycleService(repository, notifications);
         AlertEvent event = new AlertEvent();
         DetectedSignal signal = signal(CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY, 200L, 107.0);
         var factory = CandlestickPatternPreferencesService.factoryPreferences();
@@ -336,10 +339,11 @@ class CandlestickSignalLifecycleServiceTest {
         assertThat(event.getStructuralStopPrice()).isEqualTo(88.0);
         assertThat(event.getStopLossMode()).isEqualTo("FIXED_ENTRY_PERCENT");
         assertThat(event.getStopLossValuePercent()).isEqualTo(5.0);
-        assertThat(event.getStopLossPrice()).isEqualTo(87.89);
+        // Exactly 5% below the 107 entry; the wider structural low no longer replaces the user's choice.
+        assertThat(event.getStopLossPrice()).isEqualTo(101.65);
         assertThat(event.getRewardRiskRatio()).isEqualTo(3.5);
-        assertThat(event.getProfitTargetPrice()).isCloseTo(173.885, within(0.0000001));
-        assertThat(event.getTradePlanVersion()).isEqualTo("CANDLE_RR_V4");
+        assertThat(event.getProfitTargetPrice()).isCloseTo(125.725, within(0.0000001));
+        assertThat(event.getTradePlanVersion()).isEqualTo("CANDLE_RR_V5");
         assertThat(event.getAtrCircuitBreakerApplied()).isFalse();
     }
 
@@ -348,7 +352,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3);
+                new CandlestickSignalLifecycleService(repository, notifications);
         AlertEvent event = new AlertEvent();
         DetectedSignal signal = signal(CandlePattern.HANGING_MAN, TradeSignal.SELL, 200L, 101.0);
 
@@ -610,7 +614,7 @@ class CandlestickSignalLifecycleServiceTest {
         AlertEventRepository repository = mock(AlertEventRepository.class);
         AlertNotificationService notifications = mock(AlertNotificationService.class);
         CandlestickSignalLifecycleService service =
-                new CandlestickSignalLifecycleService(repository, notifications, 3);
+                new CandlestickSignalLifecycleService(repository, notifications);
         AlertEvent event = new AlertEvent();
         event.setAlertRule(rule(direction));
         event.setPattern(direction == TradeSignal.BUY

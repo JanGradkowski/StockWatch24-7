@@ -110,7 +110,7 @@ public class InsiderActivityService {
         if (following) {
             if (subscription == null || !subscription.isActive()) {
                 if (subscriptionRepository.countByUserAndActiveTrue(user) >= maximumFollows) {
-                    throw new IllegalStateException(
+                    throw new org.example.stockwatch247.service.ConflictException(
                             "The maximum number of insider activity follows has been reached.");
                 }
                 if (subscription == null) {
@@ -242,7 +242,13 @@ public class InsiderActivityService {
         }
 
         log.info("Insider activity check started for {}.", asset.getTickerSymbol());
-        marketDataService.syncCandles(asset.getTickerSymbol(), "1d", null);
+        MarketDataService.CandleSyncResult priceRefresh = marketDataService.syncCandles(asset.getTickerSymbol(), "1d", null);
+        if (priceRefresh != null && !priceRefresh.successful()) {
+            // Disclosures are independent of price enrichment. Keep delivering them,
+            // but do not imply that the failed price refresh succeeded.
+            log.warn("Insider activity price refresh unavailable for {}; continuing disclosure check: {}",
+                    asset.getTickerSymbol(), priceRefresh.failureMessage());
+        }
         refreshAsset(asset, true);
         log.info("Insider activity check completed for {}.", asset.getTickerSymbol());
         return true;
@@ -428,7 +434,7 @@ public class InsiderActivityService {
 
     private StockAsset requireEligibleStock(String symbol) {
         if (!enabled) {
-            throw new IllegalStateException("Insider activity tracking is disabled.");
+            throw new org.example.stockwatch247.service.ConflictException("Insider activity tracking is disabled.");
         }
         String normalized = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
         StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(normalized)
@@ -510,14 +516,11 @@ public class InsiderActivityService {
             InsiderTradeDelivery delivery,
             Map<String, Optional<Candle>> latestCandles) {
         InsiderTrade trade = delivery.getTrade();
-        BigDecimal transactionPrice = trade.getTransactionPrice();
-        ReturnSnapshot snapshot = transactionPrice == null || transactionPrice.signum() <= 0
-                ? ReturnSnapshot.unavailable()
-                : calculateReturn(
-                        trade,
-                        latestCandles.computeIfAbsent(
-                                trade.getTickerSymbol(),
-                                this::latestCompletedCandle).orElse(null));
+        ReturnSnapshot snapshot = calculateReturn(
+                trade,
+                latestCandles.computeIfAbsent(
+                        trade.getTickerSymbol(),
+                        this::latestCompletedCandle).orElse(null));
         BigDecimal transactionValue = trade.getShares() != null && trade.getTransactionPrice() != null
                 ? trade.getShares().multiply(trade.getTransactionPrice())
                 : null;
@@ -543,11 +546,19 @@ public class InsiderActivityService {
     }
 
     private ReturnSnapshot calculateReturn(InsiderTrade trade) {
-        BigDecimal price = trade.getTransactionPrice();
-        if (price == null || price.signum() <= 0) {
-            return ReturnSnapshot.unavailable();
-        }
         return calculateReturn(trade, latestCompletedCandle(trade.getTickerSymbol()).orElse(null));
+    }
+
+    /** The first completed daily close after the filing became public. */
+    private Candle firstCompletedCloseAfter(String symbol, LocalDate filingDate) {
+        long afterFilingDay = filingDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toEpochSecond() - 1;
+        return candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                        symbol, "1d", afterFilingDay, Long.MAX_VALUE, PageRequest.of(0, 5))
+                .stream()
+                .filter(candle -> candle.getClosePrice() != null && candle.getClosePrice() > 0)
+                .filter(candle -> candleCompletionService.isComplete(candle.getTimestamp(), TimeInterval.DAILY))
+                .findFirst()
+                .orElse(null);
     }
 
     private Optional<Candle> latestCompletedCandle(String symbol) {
@@ -561,17 +572,22 @@ public class InsiderActivityService {
                 .findFirst();
     }
 
+    /**
+     * Followers can act only once the filing is public, so the return is measured from the first
+     * completed close after the filing date rather than from the insider's own transaction price.
+     */
     private ReturnSnapshot calculateReturn(InsiderTrade trade, Candle latest) {
-        BigDecimal price = trade.getTransactionPrice();
-        if (price == null || price.signum() <= 0 || latest == null) {
+        if (latest == null || trade.getFilingDate() == null) {
+            return ReturnSnapshot.unavailable();
+        }
+        Candle entry = firstCompletedCloseAfter(trade.getTickerSymbol(), trade.getFilingDate());
+        if (entry == null || latest.getTimestamp() < entry.getTimestamp()) {
             return ReturnSnapshot.unavailable();
         }
         LocalDate asOf = Instant.ofEpochSecond(latest.getTimestamp())
                 .atZone(ZoneOffset.UTC)
                 .toLocalDate();
-        if (asOf.isBefore(trade.getTransactionDate())) {
-            return ReturnSnapshot.unavailable();
-        }
+        BigDecimal price = BigDecimal.valueOf(entry.getClosePrice());
         BigDecimal latestClose = BigDecimal.valueOf(latest.getClosePrice());
         BigDecimal rawReturn = latestClose.subtract(price)
                 .divide(price, 8, RoundingMode.HALF_UP)

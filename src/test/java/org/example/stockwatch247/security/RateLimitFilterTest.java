@@ -31,8 +31,60 @@ class RateLimitFilterTest {
         filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
 
         verify(limiter).tryAcquire(eq("login:ip:203.0.113.8"), eq(10), eq(java.time.Duration.ofMinutes(1)));
-        verify(limiter).tryAcquire(eq("login-account:account:user@example.com"), eq(30),
+        verify(limiter).tryAcquire(eq("login-account-client:account:user@example.com:ip:203.0.113.8"), eq(10),
                 eq(java.time.Duration.ofMinutes(15)));
+        verify(limiter).tryAcquire(eq("login-account:account:user@example.com"), eq(200),
+                eq(java.time.Duration.ofHours(1)));
+    }
+
+    @Test
+    void floodFromOtherAddressesCannotLockOutABrowserThatSignedInBefore() throws Exception {
+        RequestRateLimiter limiter = mock(RequestRateLimiter.class);
+        when(limiter.tryAcquire(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+        when(limiter.tryAcquire(eq("login-account:account:user@example.com"), eq(200),
+                eq(java.time.Duration.ofHours(1)))).thenReturn(false);
+        var crypto = new org.example.stockwatch247.service.SecurityCryptoService(
+                "a-test-key-that-is-long-and-unique-for-tests");
+        KnownDeviceCookies devices = new KnownDeviceCookies(crypto);
+        java.util.List<String> notified = new java.util.ArrayList<>();
+        RateLimitFilter filter = new RateLimitFilter(limiter, devices, notified::add);
+
+        MockHttpServletResponse signedIn = new MockHttpServletResponse();
+        devices.remember(new MockHttpServletRequest(), signedIn, "User@Example.com");
+        String cookie = signedIn.getHeader("Set-Cookie").split(";")[0].split("=", 2)[1];
+
+        MockHttpServletRequest owner = login("user@example.com");
+        owner.setCookies(new jakarta.servlet.http.Cookie("sw_known_device", cookie));
+        MockFilterChain ownerChain = new MockFilterChain();
+        filter.doFilter(owner, new MockHttpServletResponse(), ownerChain);
+        assertThat(ownerChain.getRequest()).isNotNull();
+
+        MockHttpServletRequest stranger = login("user@example.com");
+        stranger.addHeader("Accept", "text/html");
+        MockHttpServletResponse rejected = new MockHttpServletResponse();
+        filter.doFilter(stranger, rejected, new MockFilterChain());
+        assertThat(rejected.getStatus()).isEqualTo(303);
+        assertThat(rejected.getHeader("Location")).isEqualTo("/login?locked=true");
+        assertThat(notified).containsExactly("user@example.com");
+
+        MockHttpServletRequest otherAccount = login("someone@example.com");
+        otherAccount.setCookies(new jakarta.servlet.http.Cookie("sw_known_device", cookie));
+        when(limiter.tryAcquire(eq("login-account:account:someone@example.com"), eq(200),
+                eq(java.time.Duration.ofHours(1)))).thenReturn(false);
+        MockHttpServletResponse notThisAccount = new MockHttpServletResponse();
+        filter.doFilter(otherAccount, notThisAccount, new MockFilterChain());
+        assertThat(notThisAccount.getStatus()).isEqualTo(429);
+    }
+
+    private static MockHttpServletRequest login(String email) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("POST");
+        request.setRequestURI("/login");
+        request.setRemoteAddr("198.51.100.20");
+        request.addParameter("email", email);
+        return request;
     }
 
     @Test
@@ -40,7 +92,7 @@ class RateLimitFilterTest {
         RequestRateLimiter limiter = mock(RequestRateLimiter.class);
         when(limiter.tryAcquire(eq("login:ip:203.0.113.8"), eq(10), eq(java.time.Duration.ofMinutes(1))))
                 .thenReturn(true);
-        when(limiter.tryAcquire(eq("login-account:account:user@example.com"), eq(30),
+        when(limiter.tryAcquire(eq("login-account-client:account:user@example.com:ip:203.0.113.8"), eq(10),
                 eq(java.time.Duration.ofMinutes(15))))
                 .thenReturn(false);
         RateLimitFilter filter = new RateLimitFilter(limiter);

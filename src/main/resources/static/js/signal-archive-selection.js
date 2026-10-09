@@ -1,4 +1,5 @@
 (() => {
+    const i18n = window.StockWatchI18n;
     const forms = document.querySelectorAll("[data-signal-delete-form]");
     const dialog = document.querySelector("[data-delete-dialog]");
     if (forms.length === 0 || !dialog) {
@@ -22,11 +23,14 @@
         const rowCheckboxes = [...form.querySelectorAll("[data-signal-checkbox]")];
         const selectAll = form.querySelector("[data-select-all]");
         const selectedCount = form.querySelector("[data-selected-count]");
+        const selectedWord = form.querySelector("[data-selected-word]");
+        const kind = form.dataset.archiveKind === "activity signal" ? "activity" : "signal";
         const bulkDelete = form.querySelector("[data-bulk-delete]");
 
         const refreshSelection = () => {
             const count = rowCheckboxes.filter((checkbox) => checkbox.checked).length;
             selectedCount.textContent = String(count);
+            if (selectedWord) selectedWord.textContent = i18n.plural(`archive.selectedWord.${kind}`, count);
             bulkDelete.disabled = count === 0;
             selectAll.checked = count > 0 && count === rowCheckboxes.length;
             selectAll.indeterminate = count > 0 && count < rowCheckboxes.length;
@@ -58,14 +62,13 @@
             }
 
             event.preventDefault();
-            const archiveKind = form.dataset.archiveKind || "signal";
             const singleLabel = submitter?.dataset.signalLabel;
             dialogTitle.textContent = singleDelete
-                ? `Delete ${archiveKind}?`
-                : `Delete ${count} ${archiveKind}${count === 1 ? "" : "s"}?`;
+                ? i18n.t(`archive.deleteSingle.${kind}`)
+                : i18n.plural(`archive.deleteCount.${kind}`, count, count);
             dialogMessage.textContent = singleDelete && singleLabel
-                ? `“${singleLabel}” will be permanently removed from your account archive. This cannot be undone.`
-                : `The selected ${archiveKind}${count === 1 ? "" : "s"} will be permanently removed from your account archive. This cannot be undone.`;
+                ? i18n.t("archive.deleteLabelled", singleLabel)
+                : i18n.plural(`archive.deleteSelected.${kind}`, count);
             pendingSubmission = {form, submitter};
             dialog.showModal();
             confirmButton.focus();

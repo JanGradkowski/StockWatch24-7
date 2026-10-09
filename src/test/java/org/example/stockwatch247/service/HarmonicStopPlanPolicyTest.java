@@ -79,9 +79,7 @@ class HarmonicStopPlanPolicyTest {
     private HarmonicPatternDetectionService.HarmonicFormation formation(
             HarmonicPatternType pattern, TradeSignal signal) {
         boolean buy = signal == TradeSignal.BUY;
-        String[] labels = pattern == HarmonicPatternType.SHARK
-                ? new String[]{"0", "X", "A", "B", "C"}
-                : new String[]{"X", "A", "B", "C", "D"};
+        String[] labels = {"X", "A", "B", "C", "D"};
         double[] prices;
         if (pattern == HarmonicPatternType.SHARK) {
             prices = buy

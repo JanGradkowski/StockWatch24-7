@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title th:text="${symbol} + ' — Market workspace'"></title>
-  <script th:src="@{/js/theme.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <title th:text="#{stock.pageTitle(${symbol})}"></title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <!-- TradingView Lightweight Charts (Industry Standard) -->
@@ -62,17 +62,15 @@
     </div>
 
     <div class="stock-loader-copy">
-      <span class="stock-loader-kicker">Loading chart</span>
-      <h1 id="stockLoaderTitle">
-        Opening <span th:text="${symbol}">AAPL</span> workspace
-      </h1>
-      <p id="stockLoaderStatus">Loading prices…</p>
+      <span class="stock-loader-kicker" th:text="#{stock.loaderKicker}">Loading chart</span>
+      <h1 id="stockLoaderTitle" th:text="#{stock.loaderTitle(${symbol})}">Opening AAPL workspace</h1>
+      <p id="stockLoaderStatus" th:text="#{stock.loadingPrices}">Loading prices…</p>
     </div>
 
     <div class="stock-loader-progress" aria-hidden="true">
       <span></span>
     </div>
-    <p class="stock-loader-note">Price, volume and indicators</p>
+    <p class="stock-loader-note" th:text="#{stock.loaderNote}">Price, volume and indicators</p>
   </div>
 </div>
 
@@ -84,34 +82,32 @@
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
 <main class="stock-page" aria-busy="true">
+  <!-- One compact row: ticker and price on the left, practice-trade actions on the right. -->
   <header class="price-header">
     <div class="market-identity">
-      <div class="stock-eyebrow">Stock chart</div>
-      <div class="ticker-name"><span th:text="${symbol}">AAPL</span><span id="instrumentTypeDisplay" class="instrument-type-badge" data-instrument-type="EQUITY">Stock</span></div>
-      <div class="interval-label">Daily Interval</div>
+      <h1 class="ticker-name"><span th:text="${symbol}">AAPL</span><span id="instrumentTypeDisplay" class="instrument-type-badge" data-instrument-type="EQUITY" th:text="#{stock.instrumentStock}">Stock</span></h1>
+      <div class="interval-label" th:text="#{stock.intervalLabel.DAILY}">Daily Interval</div>
     </div>
     <section class="price-header-demo-trading" aria-labelledby="stockDemoTradeTitle">
-      <div>
-        <span class="stock-workspace-action-kicker">Demo trading &middot; no real order</span>
-        <h2 id="stockDemoTradeTitle">Record a demo trade at the current quote</h2>
-        <p>Save the current price and analysis to track a demo trade.</p>
-      </div>
+      <h2 id="stockDemoTradeTitle" class="visually-hidden" th:text="#{stock.demoTradeHeading}">Demo trade at the current quote, no real order</h2>
       <div class="virtual-trade-launch-actions">
-        <button type="button" class="btn-accent virtual-buy-button" data-stock-demo-trade="BUY">Demo buy</button>
-        <button type="button" class="btn-secondary virtual-sell-button" data-stock-demo-trade="SELL">Demo sell</button>
+        <button type="button" class="btn-secondary virtual-buy-button" data-stock-demo-trade="BUY"
+                title="Record a practice buy at the current quote. No real order is placed." th:text="#{js.virtualTrade.marker.buy}" th:title="#{stock.demoBuyTitle}">Demo buy</button>
+        <button type="button" class="btn-secondary virtual-sell-button" data-stock-demo-trade="SELL"
+                title="Record a practice sell at the current quote. No real order is placed." th:text="#{js.virtualTrade.marker.sell}" th:title="#{stock.demoSellTitle}">Demo sell</button>
       </div>
     </section>
     <div class="quote-block">
-      <div class="quote-label">Latest market quote</div>
-      <div>
-        <span id="livePriceDisplay" class="live-price">Loading...</span>
+      <div class="quote-label" th:text="#{stock.latestQuote}">Latest quote</div>
+      <div class="quote-value">
+        <span id="livePriceDisplay" class="live-price" th:text="#{stock.loadingQuote}">Loading...</span>
         <span id="liveChangeDisplay" class="price-change"></span>
       </div>
     </div>
   </header>
 
-  <nav class="stock-workspace-navigation" aria-label="Stock workspace sections">
-    <div class="stock-workspace-tabs" role="tablist" aria-label="Choose a stock workspace section">
+  <nav class="stock-workspace-navigation" aria-label="Stock workspace sections" th:aria-label="#{stock.sectionsAria}">
+    <div class="stock-workspace-tabs" role="tablist" aria-label="Choose a stock workspace section" th:aria-label="#{stock.chooseSectionAria}">
       <button id="generalWorkspaceTab"
               type="button"
               class="stock-workspace-tab active"
@@ -120,8 +116,8 @@
               aria-controls="generalWorkspacePanel"
               tabindex="0"
               data-stock-workspace-tab="general">
-        <span>Chart</span>
-        <small>Charts and market history</small>
+        <span th:text="#{outlookChange.tab.chart}">Chart</span>
+        <small th:text="#{stock.tab.chartHelp}">Charts and market history</small>
       </button>
       <button id="technicalAnalysisWorkspaceTab"
               type="button"
@@ -131,8 +127,8 @@
               aria-controls="technicalAnalysisWorkspacePanel"
               tabindex="-1"
               data-stock-workspace-tab="technical-analysis">
-        <span>Technical analysis</span>
-        <small>Automated signal monitoring</small>
+        <span th:text="#{activityDetail.tab.technical}">Technical analysis</span>
+        <small th:text="#{stock.tab.technicalHelp}">Signal alerts and outlook</small>
       </button>
       <button id="tickerAlertsWorkspaceTab"
               type="button"
@@ -142,8 +138,8 @@
               aria-controls="tickerAlertsWorkspacePanel"
               tabindex="-1"
               data-stock-workspace-tab="ticker-alerts">
-        <span>Ticker alerts</span>
-        <small>Congressional and insider activity</small>
+        <span th:text="#{activitySignals.eyebrow}">Ticker alerts</span>
+        <small th:text="#{stock.tab.tickerHelp}">Congressional and insider activity</small>
       </button>
     </div>
   </nav>
@@ -154,18 +150,18 @@
        aria-labelledby="generalWorkspaceTab"
        data-stock-workspace-panel="general">
 
-  <section class="chart-toolbar" aria-label="Chart controls">
+  <section class="chart-toolbar" aria-label="Chart controls" th:aria-label="#{stock.chartControlsAria}">
     <div class="toolbar-cluster toolbar-view-cluster">
-      <span class="toolbar-label">View</span>
+      <span class="toolbar-label" th:text="#{stock.view}">View</span>
       <div class="toolbar-controls-row">
         <div class="button-group toolbar-direct-controls">
-          <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line">Line</button>
-          <button id="candleBtn" type="button" class="view-toggle active" data-chart-mode="candle">Candles</button>
+          <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line" th:text="#{stock.line}">Line</button>
+          <button id="candleBtn" type="button" class="view-toggle active" data-chart-mode="candle" th:text="#{stock.candles}">Candles</button>
           <button id="volumeChartToggle"
                   type="button"
                   class="view-toggle active"
                   aria-controls="volumeChartPanel"
-                  aria-pressed="true">
+                  aria-pressed="true" th:text="#{stock.volumeOn}">
             Volume: on
           </button>
         </div>
@@ -173,69 +169,75 @@
         <div class="toolbar-menu-group">
           <details class="chart-control-menu">
             <summary class="view-toggle chart-control-menu-trigger">
-              <span>Buy/Short signals</span>
+              <span th:text="#{stock.buyShortSignals}">Buy/Short signals</span>
               <span class="chart-control-menu-chevron" aria-hidden="true"></span>
             </summary>
-            <div class="chart-control-menu-panel" role="group" aria-label="Buy and short signal overlays">
+            <div class="chart-control-menu-panel" role="group" aria-label="Buy and short signal overlays" th:aria-label="#{stock.signalOverlaysAria}">
               <button id="candlestickOverlayToggle"
                       type="button"
                       class="view-toggle chart-control-menu-item"
                       aria-haspopup="dialog"
                       aria-controls="historicalCandlestickLookbackDialog"
-                      aria-pressed="false">Candlestick signals</button>
+                      aria-pressed="false" th:text="#{analysis.email.candlestick}">Candlestick signals</button>
               <button id="elliottOverlayToggle"
                       type="button"
                       class="view-toggle chart-control-menu-item"
                       aria-pressed="false"
-                      disabled>Independent Elliott structures</button>
+                      disabled th:text="#{outlook.overlayElliott}">Independent Elliott structures</button>
               <button id="elliottSubwaveToggle"
                       type="button"
                       class="view-toggle chart-control-menu-item"
                       aria-pressed="false"
-                      disabled>Fractal subwaves</button>
+                      disabled th:text="#{stock.fractalSubwaves}">Fractal subwaves</button>
               <button id="harmonicOverlayToggle"
                       type="button"
                       class="view-toggle chart-control-menu-item"
-                      aria-pressed="false">Harmonic formations overlay</button>
+                      aria-pressed="false" th:text="#{stock.harmonicOverlay}">Harmonic formations overlay</button>
             </div>
           </details>
 
           <details class="chart-control-menu">
             <summary class="view-toggle chart-control-menu-trigger">
-              <span>Technical indicators</span>
+              <span th:text="#{stock.technicalIndicators}">Technical indicators</span>
               <span class="chart-control-menu-chevron" aria-hidden="true"></span>
             </summary>
-            <div class="chart-control-menu-panel technical-indicator-menu-panel" role="group" aria-label="Technical indicator overlays">
-              <span class="chart-control-menu-section-label">Price overlays</span>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="EMA">Add EMA…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="SMA">Add SMA…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="BOLLINGER">Add Bollinger Bands…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="VWAP">Add rolling VWAP…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="SUPPORT_RESISTANCE">Add support / resistance…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="DONCHIAN">Add Donchian Channel…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="KELTNER">Add Keltner Channel…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="VOLUME_PROFILE">Add rolling volume profile…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="KDE_VOLUME_PROFILE">Add KDE profile mode…</button>
-              <span class="chart-control-menu-section-label">Indicator panels</span>
+            <div id="technicalIndicatorMenuPanel" class="chart-control-menu-panel technical-indicator-menu-panel" role="group" aria-label="Technical indicator overlays" th:aria-label="#{stock.indicatorOverlaysAria}">
+              <label class="chart-menu-search">
+                <span class="visually-hidden" th:text="#{stock.findIndicator}">Find an indicator</span>
+                <input type="search" placeholder="Find an indicator…" autocomplete="off"
+                       data-filter-target="technicalIndicatorMenuPanel" th:placeholder="#{stock.findIndicatorPlaceholder}">
+              </label>
+              <p class="chart-menu-search-empty" data-filter-empty hidden th:text="#{stock.noIndicators}">No indicators match.</p>
+              <span class="chart-control-menu-section-label" th:text="#{outlook.overlaysAria}">Price overlays</span>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="EMA" th:text="#{stock.add.ema}">Add EMA…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="SMA" th:text="#{stock.add.sma}">Add SMA…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="BOLLINGER" th:text="#{stock.add.bollinger}">Add Bollinger Bands…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="VWAP" th:text="#{stock.add.vwap}">Add rolling VWAP…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="SUPPORT_RESISTANCE" th:text="#{stock.add.levels}">Add support / resistance…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="DONCHIAN" th:text="#{stock.add.donchian}">Add Donchian Channel…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="KELTNER" th:text="#{stock.add.keltner}">Add Keltner Channel…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="VOLUME_PROFILE" th:text="#{stock.add.volumeProfile}">Add rolling volume profile…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="KDE_VOLUME_PROFILE" th:text="#{stock.add.kde}">Add KDE profile mode…</button>
+              <span class="chart-control-menu-section-label" th:text="#{outlookChange.panelsTitle}">Indicator panels</span>
               <button id="rsiOverlayToggle"
                       type="button"
                       class="view-toggle chart-control-menu-item"
-                      aria-pressed="false">RSI overlay</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="MACD">Add MACD…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="CCI">Add CCI…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="ATR">Add ATR…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="RELATIVE_VOLUME">Add relative volume…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="ADX_DMI">Add ADX / DMI…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="STOCHASTIC">Add Stochastic…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="STOCHASTIC_RSI">Add Stochastic RSI…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="OBV">Add OBV</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="MFI">Add Money Flow Index…</button>
-              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="TREND">Add trend state…</button>
-              <span class="chart-control-menu-section-label">Interactive tools</span>
+                      aria-pressed="false" th:text="#{stock.rsiOverlay}">RSI overlay</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="MACD" th:text="#{stock.add.macd}">Add MACD…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="CCI" th:text="#{stock.add.cci}">Add CCI…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="ATR" th:text="#{stock.add.atr}">Add ATR…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="RELATIVE_VOLUME" th:text="#{stock.add.relativeVolume}">Add relative volume…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="ADX_DMI" th:text="#{stock.add.adx}">Add ADX / DMI…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="STOCHASTIC" th:text="#{stock.add.stochastic}">Add Stochastic…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="STOCHASTIC_RSI" th:text="#{stock.add.stochasticRsi}">Add Stochastic RSI…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="OBV" th:text="#{stock.add.obv}">Add OBV</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="MFI" th:text="#{stock.add.mfi}">Add Money Flow Index…</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-add-chart-indicator="TREND" th:text="#{stock.add.trendState}">Add trend state…</button>
+              <span class="chart-control-menu-section-label" th:text="#{stock.interactiveTools}">Interactive tools</span>
               <button id="anchoredVolumeProfileToggle"
                       type="button"
                       class="view-toggle chart-control-menu-item"
-                      aria-pressed="false">Anchored volume profile</button>
+                      aria-pressed="false" th:text="#{stock.anchoredProfile}">Anchored volume profile</button>
               <div id="activeChartIndicatorList" class="active-chart-indicator-list" aria-live="polite"></div>
             </div>
           </details>
@@ -243,11 +245,11 @@
       </div>
     </div>
     <div class="toolbar-cluster toolbar-interval-cluster">
-      <span class="toolbar-label">Interval</span>
+      <span class="toolbar-label" th:text="#{signals.column.interval}">Interval</span>
       <div class="button-group interval-button-group">
-        <button id="int-1d" type="button" class="view-toggle active" data-chart-interval="1d">Daily</button>
-        <button id="int-1wk" type="button" class="view-toggle" data-chart-interval="1wk">Weekly</button>
-        <button id="int-1mo" type="button" class="view-toggle" data-chart-interval="1mo">Monthly</button>
+        <button id="int-1d" type="button" class="view-toggle active" data-chart-interval="1d" th:text="#{common.interval.DAILY}">Daily</button>
+        <button id="int-1wk" type="button" class="view-toggle" data-chart-interval="1wk" th:text="#{common.interval.WEEKLY}">Weekly</button>
+        <button id="int-1mo" type="button" class="view-toggle" data-chart-interval="1mo" th:text="#{common.interval.MONTHLY}">Monthly</button>
       </div>
     </div>
   </section>
@@ -255,29 +257,29 @@
   <!-- Price Chart Canvas -->
   <section id="priceChartPanel" class="chart-wrapper resizable-chart-panel">
     <div class="chart-panel-head">
-      <h2 class="chart-panel-title">Price action</h2>
-      <span class="chart-panel-meta">Scroll horizontally to explore history</span>
+      <h2 class="chart-panel-title" th:text="#{stock.priceAction}">Price action</h2>
+      <span class="chart-panel-meta" th:text="#{stock.scrollHistory}">Scroll horizontally to explore history</span>
     </div>
-    <div id="candlestickOverlayStatus" class="elliott-overlay-status candlestick-overlay-status" aria-live="polite"></div>
-    <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite"></div>
-    <div id="harmonicOverlayStatus" class="elliott-overlay-status harmonic-overlay-status" aria-live="polite"></div>
+    <div id="candlestickOverlayStatus" class="elliott-overlay-status candlestick-overlay-status" aria-live="polite" data-expandable-status></div>
+    <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite" data-expandable-status></div>
+    <div id="harmonicOverlayStatus" class="elliott-overlay-status harmonic-overlay-status" aria-live="polite" data-expandable-status></div>
     <div id="chartIndicatorOverlayLegend" class="chart-indicator-overlay-legend" aria-live="polite"></div>
     <div id="anchoredVolumeProfileSummary" class="anchored-volume-profile-summary">
       <div class="anchored-volume-profile-range">
-        <span class="anchored-volume-profile-kicker">Anchored range</span>
-        <span id="anchoredVolumeProfileRange">Select a candle</span>
+        <span class="anchored-volume-profile-kicker" th:text="#{stock.anchoredRange}">Anchored range</span>
+        <span id="anchoredVolumeProfileRange" th:text="#{stock.selectCandle}">Select a candle</span>
       </div>
-      <div class="anchored-volume-profile-metrics" aria-label="Volume profile levels">
+      <div class="anchored-volume-profile-metrics" aria-label="Volume profile levels" th:aria-label="#{stock.profileLevelsAria}">
         <div class="anchored-volume-profile-metric poc">
-          <span>POC</span>
+          <span>POC <span th:replace="~{fragments/term-help :: termHelp('help-poc', 'POC', #{stock.help.poc})}"></span></span>
           <strong id="anchoredVolumeProfilePoc">—</strong>
         </div>
         <div class="anchored-volume-profile-metric">
-          <span>VAH</span>
+          <span>VAH <span th:replace="~{fragments/term-help :: termHelp('help-vah', 'VAH', #{stock.help.vah})}"></span></span>
           <strong id="anchoredVolumeProfileVah">—</strong>
         </div>
         <div class="anchored-volume-profile-metric">
-          <span>VAL</span>
+          <span>VAL <span th:replace="~{fragments/term-help :: termHelp('help-val', 'VAL', #{stock.help.val})}"></span></span>
           <strong id="anchoredVolumeProfileVal">—</strong>
         </div>
       </div>
@@ -292,13 +294,13 @@
               aria-hidden="true"></canvas>
       <div id="elliottWaveHitTargets"
            class="elliott-wave-hit-targets"
-           aria-label="Interactive Elliott Wave signals"></div>
+           aria-label="Interactive Elliott Wave signals" th:aria-label="#{stock.elliottSignalsAria}"></div>
       <div id="historicalCandlestickHitTargets"
            class="elliott-wave-hit-targets historical-candlestick-hit-targets"
-           aria-label="Interactive historical candlestick signals"></div>
+           aria-label="Interactive historical candlestick signals" th:aria-label="#{stock.candleSignalsAria}"></div>
       <div id="harmonicFormationHitTargets"
            class="elliott-wave-hit-targets harmonic-formation-hit-targets"
-           aria-label="Interactive harmonic formation signals"></div>
+           aria-label="Interactive harmonic formation signals" th:aria-label="#{stock.harmonicSignalsAria}"></div>
       <aside id="elliottWaveHoverCard"
              class="elliott-wave-hover-card"
              role="dialog"
@@ -307,7 +309,7 @@
         <button id="elliottWaveCardClose"
                 class="elliott-wave-card-close"
                 type="button"
-                aria-label="Close Elliott Wave details">&times;</button>
+                aria-label="Close Elliott Wave details" th:aria-label="#{stock.closeElliottAria}">&times;</button>
         <p id="elliottWaveCardEyebrow" class="elliott-wave-card-eyebrow"></p>
         <h3 id="elliottWaveCardTitle"></h3>
         <p id="elliottWaveCardStage" class="elliott-wave-card-stage"></p>
@@ -319,7 +321,7 @@
         </div>
         <p id="elliottWaveCardMessage" class="elliott-wave-card-message"></p>
         <p id="elliottWaveCardNote" class="elliott-wave-card-note"></p>
-        <a id="elliottWaveCardLink" class="elliott-wave-card-link" href="#">Open signal details</a>
+        <a id="elliottWaveCardLink" class="elliott-wave-card-link" href="#" th:text="#{stock.openSignalDetails}">Open signal details</a>
       </aside>
       <aside id="historicalCandlestickHoverCard"
              class="elliott-wave-hover-card historical-candlestick-hover-card"
@@ -329,8 +331,8 @@
         <button id="historicalCandlestickCardClose"
                 class="elliott-wave-card-close"
                 type="button"
-                aria-label="Close candlestick signal details">&times;</button>
-        <p class="elliott-wave-card-eyebrow">HISTORICAL CANDLESTICK SIGNAL</p>
+                aria-label="Close candlestick signal details" th:aria-label="#{stock.closeCandleAria}">&times;</button>
+        <p class="elliott-wave-card-eyebrow" th:text="#{stock.historicalCandleKicker}">HISTORICAL CANDLESTICK SIGNAL</p>
         <h3 id="historicalCandlestickCardTitle"></h3>
         <p id="historicalCandlestickCardStage" class="elliott-wave-card-stage"></p>
         <span id="historicalCandlestickCardStatus" class="elliott-wave-card-status"></span>
@@ -344,13 +346,13 @@
         <div id="historicalCandlestickCardClusterNavigation"
              class="historical-candlestick-card-navigation"
              hidden>
-          <button id="previousHistoricalCandlestickSignal" type="button" aria-label="Previous nearby signal">&larr;</button>
+          <button id="previousHistoricalCandlestickSignal" type="button" aria-label="Previous nearby signal" th:aria-label="#{stock.previousSignalAria}">&larr;</button>
           <span id="historicalCandlestickCardClusterPosition"></span>
-          <button id="nextHistoricalCandlestickSignal" type="button" aria-label="Next nearby signal">&rarr;</button>
+          <button id="nextHistoricalCandlestickSignal" type="button" aria-label="Next nearby signal" th:aria-label="#{stock.nextSignalAria}">&rarr;</button>
         </div>
         <a id="historicalCandlestickCardLink"
            class="elliott-wave-card-link historical-candlestick-card-link"
-           href="#">Open historical signal details</a>
+           href="#" th:text="#{stock.openHistoricalDetails}">Open historical signal details</a>
       </aside>
       <aside id="harmonicFormationHoverCard"
              class="elliott-wave-hover-card harmonic-formation-hover-card"
@@ -358,11 +360,11 @@
              aria-labelledby="harmonicFormationCardTitle"
              hidden>
         <button id="harmonicFormationCardClose" class="elliott-wave-card-close" type="button"
-                aria-label="Close harmonic formation details">&times;</button>
-        <p class="elliott-wave-card-eyebrow">HISTORICAL HARMONIC SIGNAL</p>
+                aria-label="Close harmonic formation details" th:aria-label="#{stock.closeHarmonicAria}">&times;</button>
+        <p class="elliott-wave-card-eyebrow" th:text="#{stock.historicalHarmonicKicker}">HISTORICAL HARMONIC SIGNAL</p>
         <h3 id="harmonicFormationCardTitle"></h3>
         <p id="harmonicFormationCardStage" class="elliott-wave-card-stage"></p>
-        <span id="harmonicFormationCardStatus" class="elliott-wave-card-status confirmed">Confirmed</span>
+        <span id="harmonicFormationCardStatus" class="elliott-wave-card-status confirmed" th:text="#{detail.confirmed}">Confirmed</span>
         <div id="harmonicFormationCardOutcome" class="elliott-wave-card-outcome">
           <span id="harmonicFormationCardOutcomeLabel"></span>
           <strong id="harmonicFormationCardOutcomeValue"></strong>
@@ -370,7 +372,7 @@
         </div>
         <p id="harmonicFormationCardMessage" class="elliott-wave-card-message"></p>
         <p id="harmonicFormationCardNote" class="elliott-wave-card-note"></p>
-        <a id="harmonicFormationCardLink" class="elliott-wave-card-link" href="#">Open historical signal details</a>
+        <a id="harmonicFormationCardLink" class="elliott-wave-card-link" href="#" th:text="#{stock.openHistoricalDetails}">Open historical signal details</a>
       </aside>
     </div>
     <div class="chart-resize-handle"
@@ -384,15 +386,15 @@
          aria-valuemin="260"
          aria-valuemax="1200"
          aria-valuenow="490"
-         tabindex="0"><span aria-hidden="true"></span><small>Drag to resize</small></div>
+         tabindex="0" th:aria-label="#{stock.resizePriceAria}"><span aria-hidden="true"></span><small th:text="#{stock.dragResize}">Drag to resize</small></div>
   </section>
 
   <div id="dynamicIndicatorPanels" class="dynamic-indicator-panels"></div>
 
   <section id="rsiChartPanel" class="chart-wrapper rsi-chart-wrapper resizable-chart-panel" hidden>
     <div class="chart-panel-head">
-      <h2 id="rsiChartTitle" class="chart-panel-title">RSI (14)</h2>
-      <span id="rsiChartMeta" class="chart-panel-meta">Wilder RSI · 70 / 30 reference levels</span>
+      <h2 id="rsiChartTitle" class="chart-panel-title" th:text="#{stock.rsiTitle}">RSI (14)</h2>
+      <span id="rsiChartMeta" class="chart-panel-meta" th:text="#{stock.rsiSubtitle}">Wilder RSI · 70 / 30 reference levels</span>
     </div>
     <div id="rsiChartStatus" class="rsi-chart-status" aria-live="polite"></div>
     <div id="rsiChartContainer" class="rsi-chart-container"></div>
@@ -407,14 +409,14 @@
          aria-valuemin="120"
          aria-valuemax="800"
          aria-valuenow="210"
-         tabindex="0"><span aria-hidden="true"></span><small>Drag to resize</small></div>
+         tabindex="0" th:aria-label="#{stock.resizeRsiAria}"><span aria-hidden="true"></span><small th:text="#{stock.dragResize}">Drag to resize</small></div>
   </section>
 
   <!-- Volume Chart Canvas -->
   <section id="volumeChartPanel" class="chart-wrapper resizable-chart-panel">
     <div class="chart-panel-head">
-      <h2 class="volume-title">Trading volume</h2>
-      <span class="chart-panel-meta">Uses the chart's time range</span>
+      <h2 class="volume-title" th:text="#{stock.tradingVolume}">Trading volume</h2>
+      <span class="chart-panel-meta" th:text="#{stock.volumeHelp}">Uses the chart's time range</span>
     </div>
     <div id="volumeChartContainer" class="volume-chart-container"></div>
     <div class="chart-resize-handle"
@@ -428,7 +430,7 @@
          aria-valuemin="100"
          aria-valuemax="800"
          aria-valuenow="180"
-         tabindex="0"><span aria-hidden="true"></span><small>Drag to resize</small></div>
+         tabindex="0" th:aria-label="#{stock.resizeVolumeAria}"><span aria-hidden="true"></span><small th:text="#{stock.dragResize}">Drag to resize</small></div>
   </section>
 
   </div>
@@ -443,12 +445,12 @@
   <section class="stock-workspace-action-card technical-outlook-launcher"
            aria-labelledby="fullTechnicalOutlookTitle">
     <div>
-      <span class="stock-workspace-action-kicker">Technical analysis</span>
-      <h2 id="fullTechnicalOutlookTitle">Technical Outlook</h2>
-      <p>See the overall outlook, individual indicators and recent signals.</p>
+      <span class="stock-workspace-action-kicker" th:text="#{activityDetail.tab.technical}">Technical analysis</span>
+      <h2 id="fullTechnicalOutlookTitle" th:text="#{stock.technicalOutlook}">Technical Outlook</h2>
+      <p th:text="#{stock.outlookHelp}">See the overall outlook, individual indicators and recent signals.</p>
     </div>
     <a class="btn-accent full-technical-outlook-button"
-       th:href="@{/stock/{symbol}/technical-outlook(symbol=${symbol})}">
+       th:href="@{/stock/{symbol}/technical-outlook(symbol=${symbol})}" th:text="#{virtualTrade.openOutlook}">
       Open Technical Outlook
     </a>
   </section>
@@ -456,8 +458,8 @@
   <section class="alert-panel alert-star-panel">
     <div class="alert-header">
       <div>
-        <h2 class="alert-title">Automated technical monitoring</h2>
-        <p class="alert-description">Filled stars indicate alerts you follow. Click Apply changes to save pattern alerts. Outlook alerts save immediately.</p>
+        <h2 class="alert-title" th:text="#{stock.alertsHeading}">Signal alerts for this stock</h2>
+        <p class="alert-description" th:text="#{stock.alertsHelp}">Switch on the signals you want to follow, then click Apply changes. You'll choose which watchlists they belong to before anything is saved.</p>
       </div>
       <div class="alert-header-actions">
         <div class="alert-overall-follow-row">
@@ -466,101 +468,101 @@
                   type="button"
                   class="btn-secondary alert-follow-all-btn"
                   aria-pressed="false"
-                  disabled>Loading follow state...</button>
+                  disabled th:text="#{stock.loadingAlertState}">Loading follow state...</button>
         </div>
         <div class="alert-apply-row">
-          <span id="alertDraftStatus" class="alert-draft-status" aria-live="polite">No unapplied changes</span>
-          <button type="button" class="btn-secondary" data-stock-watchlists th:attr="data-symbol=${symbol}">In watchlists</button>
-          <button id="applyAlertChangesBtn" type="button" class="btn-accent alert-apply-btn" disabled>Apply changes</button>
+          <span id="alertDraftStatus" class="alert-draft-status" aria-live="polite" th:text="#{stock.noUnapplied}">No unapplied changes</span>
+          <button type="button" class="btn-secondary" data-stock-watchlists th:attr="data-symbol=${symbol}" th:text="#{stock.addToWatchlist}">Add to watchlist</button>
+          <button id="applyAlertChangesBtn" type="button" class="btn-accent alert-apply-btn" disabled th:text="#{js.watchlistPicker.apply}">Apply changes</button>
         </div>
       </div>
     </div>
 
     <div class="alert-sections-layout">
       <div class="alert-section">
-        <div class="alert-section-title">Candlestick Patterns</div>
-        <p class="alert-section-copy">Alerts when a candlestick pattern meets your detection rules.</p>
+        <div class="alert-section-title" th:text="#{stock.candleHeading}">Candlestick Patterns</div>
+        <p class="alert-section-copy" th:text="#{stock.candleHelp}">Alerts when a candlestick pattern meets your detection rules.</p>
         <div class="alert-grid">
-          <div class="alert-grid-label">Interval</div>
-          <div class="alert-grid-label">Buy</div>
-          <div class="alert-grid-label">Sell/Short</div>
+          <div class="alert-grid-label" th:text="#{signals.column.interval}">Interval</div>
+          <div class="alert-grid-label" th:text="#{technicalWatchlist.filter.buy}">Buy</div>
+          <div class="alert-grid-label" th:text="#{analysis.email.sell}">Sell/Short</div>
 
-          <div class="alert-row-label">Daily</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily candlestick buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily candlestick sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.DAILY}">Daily</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily candlestick buy signals" th:aria-label="#{stock.followAria.candle.buy.daily}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.buy}">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily candlestick sell signals" th:aria-label="#{stock.followAria.candle.sell.daily}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.sell}">Sell</span></label></div>
 
-          <div class="alert-row-label">Weekly</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly candlestick buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly candlestick sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.WEEKLY}">Weekly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly candlestick buy signals" th:aria-label="#{stock.followAria.candle.buy.weekly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.buy}">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly candlestick sell signals" th:aria-label="#{stock.followAria.candle.sell.weekly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.sell}">Sell</span></label></div>
 
-          <div class="alert-row-label">Monthly</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly candlestick buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly candlestick sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.MONTHLY}">Monthly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly candlestick buy signals" th:aria-label="#{stock.followAria.candle.buy.monthly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.buy}">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly candlestick sell signals" th:aria-label="#{stock.followAria.candle.sell.monthly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.sell}">Sell</span></label></div>
         </div>
       </div>
 
       <div class="alert-section">
-        <div class="alert-section-title">Elliott Wave Patterns</div>
-        <p class="alert-section-copy">Alerts for Elliott Wave patterns on daily, weekly and monthly charts. Hover-only subwaves do not trigger alerts.</p>
+        <div class="alert-section-title" th:text="#{stock.elliottHeading}">Elliott Wave Patterns</div>
+        <p class="alert-section-copy" th:text="#{stock.elliottHelp}">Alerts for Elliott Wave patterns on daily, weekly and monthly charts. Hover-only subwaves do not trigger alerts.</p>
         <div class="alert-grid">
-          <div class="alert-grid-label">Interval</div>
-          <div class="alert-grid-label">Buy</div>
-          <div class="alert-grid-label">Sell/Short</div>
+          <div class="alert-grid-label" th:text="#{signals.column.interval}">Interval</div>
+          <div class="alert-grid-label" th:text="#{technicalWatchlist.filter.buy}">Buy</div>
+          <div class="alert-grid-label" th:text="#{analysis.email.sell}">Sell/Short</div>
 
-          <div class="alert-row-label">Daily</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily Elliott Wave buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily Elliott Wave sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.DAILY}">Daily</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily Elliott Wave buy signals" th:aria-label="#{stock.followAria.elliott.buy.daily}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.buy}">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily Elliott Wave sell signals" th:aria-label="#{stock.followAria.elliott.sell.daily}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.sell}">Sell</span></label></div>
 
-          <div class="alert-row-label">Weekly</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly Elliott Wave buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly Elliott Wave sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.WEEKLY}">Weekly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly Elliott Wave buy signals" th:aria-label="#{stock.followAria.elliott.buy.weekly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.buy}">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly Elliott Wave sell signals" th:aria-label="#{stock.followAria.elliott.sell.weekly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.sell}">Sell</span></label></div>
 
-          <div class="alert-row-label">Monthly</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly Elliott Wave buy signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Buy</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly Elliott Wave sell signals"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Sell</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.MONTHLY}">Monthly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly Elliott Wave buy signals" th:aria-label="#{stock.followAria.elliott.buy.monthly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.buy}">Buy</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="ELLIOTT_WAVE" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly Elliott Wave sell signals" th:aria-label="#{stock.followAria.elliott.sell.monthly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{technicalWatchlist.filter.sell}">Sell</span></label></div>
         </div>
       </div>
 
       <div class="alert-section harmonic-alert-section">
-        <div class="alert-section-title">Harmonic Formations</div>
-        <p class="alert-section-copy">Alerts for confirmed harmonic patterns. Confirmation requires candles after the final turning point.</p>
+        <div class="alert-section-title" th:text="#{stock.harmonicHeading}">Harmonic Formations</div>
+        <p class="alert-section-copy" th:text="#{stock.harmonicHelp}">Alerts for confirmed harmonic patterns. Confirmation requires candles after the final turning point.</p>
         <div class="alert-grid">
-          <div class="alert-grid-label">Interval</div>
-          <div class="alert-grid-label">Bullish</div>
-          <div class="alert-grid-label">Bearish</div>
+          <div class="alert-grid-label" th:text="#{signals.column.interval}">Interval</div>
+          <div class="alert-grid-label" th:text="#{stock.bullish}">Bullish</div>
+          <div class="alert-grid-label" th:text="#{stock.bearish}">Bearish</div>
 
-          <div class="alert-row-label">Daily</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily bullish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bullish</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily bearish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bearish</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.DAILY}">Daily</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="DAILY" data-alert-signal="BUY" aria-label="Follow daily bullish harmonic formations" th:aria-label="#{stock.followAria.harmonic.bullish.daily}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{stock.bullish}">Bullish</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="DAILY" data-alert-signal="SELL" aria-label="Follow daily bearish harmonic formations" th:aria-label="#{stock.followAria.harmonic.bearish.daily}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{stock.bearish}">Bearish</span></label></div>
 
-          <div class="alert-row-label">Weekly</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly bullish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bullish</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly bearish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bearish</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.WEEKLY}">Weekly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="WEEKLY" data-alert-signal="BUY" aria-label="Follow weekly bullish harmonic formations" th:aria-label="#{stock.followAria.harmonic.bullish.weekly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{stock.bullish}">Bullish</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="WEEKLY" data-alert-signal="SELL" aria-label="Follow weekly bearish harmonic formations" th:aria-label="#{stock.followAria.harmonic.bearish.weekly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{stock.bearish}">Bearish</span></label></div>
 
-          <div class="alert-row-label">Monthly</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly bullish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0-55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bullish</span></label></div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly bearish harmonic formations"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label">Bearish</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.MONTHLY}">Monthly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="MONTHLY" data-alert-signal="BUY" aria-label="Follow monthly bullish harmonic formations" th:aria-label="#{stock.followAria.harmonic.bullish.monthly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0-55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{stock.bullish}">Bullish</span></label></div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input" type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="MONTHLY" data-alert-signal="SELL" aria-label="Follow monthly bearish harmonic formations" th:aria-label="#{stock.followAria.harmonic.bearish.monthly}"><span class="alert-eye-graphic" aria-hidden="true"><svg class="alert-eye-outline" viewBox="0 0 24 24"><path d="M2.25 12s3.5-6.75 9.75-6.75S21.75 12 21.75 12 18.25 18.75 12 18.75 2.25 12 2.25 12Z"/><circle cx="12" cy="12" r="2.75"/></svg><svg class="alert-eye-filled" viewBox="0 0 448 384"><path d="M224 32C135.6 32 50.7 80.6 7.2 159.4a56.2 56.2 0 0 0 0 55.2C50.7 293.4 135.6 342 224 342s173.3-48.6 216.8-127.4a56.2 56.2 0 0 0 0-55.2C397.3 80.6 312.4 32 224 32Zm0 240a80 80 0 1 1 0-160 80 80 0 1 1 0 160Zm0-128a48 48 0 1 0 0 96 48 48 0 1 0 0-96Z"/></svg></span><span class="alert-eye-label" th:text="#{stock.bearish}">Bearish</span></label></div>
         </div>
       </div>
 
       <div class="alert-section outlook-alert-section">
-        <div class="alert-section-title">Automated Technical Outlook</div>
-        <p class="alert-section-copy">Get alerts when an interval's overall outlook changes. Select intervals, then click Apply changes to save.</p>
-        <div id="outlookFollowStatus" class="outlook-alert-status" role="status" aria-live="polite">Loading outlook follows…</div>
-        <div class="alert-grid outlook-alert-grid" role="group" aria-label="Automated Technical Outlook intervals">
-          <div class="alert-grid-label">Interval</div>
-          <div class="alert-grid-label">Follow outlook</div>
+        <div class="alert-section-title" th:text="#{home.automatedOutlook}">Automated Technical Outlook</div>
+        <p class="alert-section-copy" th:text="#{stock.outlookAlertHelp}">Get an alert when the overall outlook for an interval changes.</p>
+        <div id="outlookFollowStatus" class="outlook-alert-status" role="status" aria-live="polite" th:text="#{stock.loadingOutlookFollows}">Loading outlook follows…</div>
+        <div class="alert-grid outlook-alert-grid" role="group" aria-label="Automated Technical Outlook intervals" th:aria-label="#{stock.outlookIntervalsAria}">
+          <div class="alert-grid-label" th:text="#{signals.column.interval}">Interval</div>
+          <div class="alert-grid-label" th:text="#{stock.followOutlook}">Follow outlook</div>
 
-          <div class="alert-row-label">Daily</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="DAILY" aria-label="Follow daily Automated Technical Outlook"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label">Follow</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.DAILY}">Daily</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="DAILY" aria-label="Follow daily Automated Technical Outlook" th:aria-label="#{stock.followAria.outlook.daily}"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label" th:text="#{js.watchlistSettings.follow}">Follow</span></label></div>
 
-          <div class="alert-row-label">Weekly</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="WEEKLY" aria-label="Follow weekly Automated Technical Outlook"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label">Follow</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.WEEKLY}">Weekly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="WEEKLY" aria-label="Follow weekly Automated Technical Outlook" th:aria-label="#{stock.followAria.outlook.weekly}"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label" th:text="#{js.watchlistSettings.follow}">Follow</span></label></div>
 
-          <div class="alert-row-label">Monthly</div>
-          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="MONTHLY" aria-label="Follow monthly Automated Technical Outlook"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label">Follow</span></label></div>
+          <div class="alert-row-label" th:text="#{common.interval.MONTHLY}">Monthly</div>
+          <div class="alert-signal-cell"><label class="alert-eye-toggle"><input class="alert-eye-input outlook-follow-input" type="checkbox" data-outlook-follow-interval="MONTHLY" aria-label="Follow monthly Automated Technical Outlook" th:aria-label="#{stock.followAria.outlook.monthly}"><span class="alert-eye-graphic" aria-hidden="true"></span><span class="alert-eye-label" th:text="#{js.watchlistSettings.follow}">Follow</span></label></div>
         </div>
-        <p class="outlook-alert-note">The first check records the current outlook. Later changes appear in Latest signals and may trigger emails. These stars save immediately.</p>
+        <p class="outlook-alert-note" th:text="#{stock.outlookFollowNote}">The first check records the current outlook. Later changes appear in Latest signals and are emailed if email alerts are on.</p>
       </div>
     </div>
   </section>
@@ -578,9 +580,9 @@
            class="ticker-alerts-eligibility-notice"
            aria-labelledby="tickerAlertsEligibilityTitle"
            hidden>
-    <span class="stock-workspace-action-kicker">Stock-specific data</span>
-    <h2 id="tickerAlertsEligibilityTitle">Ticker alerts are not available for this instrument</h2>
-    <p>Congressional and corporate-insider disclosures are filed against individual companies. They are therefore available for stocks, but not for indexes or ETFs.</p>
+    <span class="stock-workspace-action-kicker" th:text="#{stock.stockSpecific}">Stock-specific data</span>
+    <h2 id="tickerAlertsEligibilityTitle" th:text="#{stock.tickerUnavailable}">Ticker alerts are not available for this instrument</h2>
+    <p th:text="#{stock.tickerUnavailableHelp}">Congressional and corporate-insider disclosures are filed against individual companies. They are therefore available for stocks, but not for indexes or ETFs.</p>
   </section>
 
   <section id="congressionalActivityPanel"
@@ -589,38 +591,41 @@
            hidden>
     <div class="congressional-panel-header">
       <div>
-        <div class="congressional-panel-kicker">Stocks only · public disclosures</div>
-        <h2 id="congressionalActivityTitle">Congressional trading activity</h2>
-        <p>Follow newly observed purchase and sale disclosures for this stock. New filings appear in Ticker alerts. Emails follow your notification settings.</p>
+        <div class="congressional-panel-kicker" th:text="#{stock.congressKicker}">Stocks only · public disclosures</div>
+        <h2 id="congressionalActivityTitle" th:text="#{stock.congressTitle}">Congressional trading activity</h2>
+        <p th:text="#{stock.congressHelp}">Follow newly observed purchase and sale disclosures for this stock. New filings appear in Ticker alerts. Emails follow your notification settings.</p>
       </div>
       <div class="congressional-panel-actions">
         <button id="followCongressionalActivityBtn"
                 type="button"
                 class="btn-accent congressional-follow-button"
                 aria-pressed="false"
-                disabled>Follow congressional activity</button>
+                disabled th:text="#{stock.followCongress}">Follow congressional activity</button>
         <button id="showCongressionalHistoryBtn"
                 type="button"
                 class="btn-secondary congressional-history-button"
-                disabled>Show historical congressional activity</button>
+                disabled th:text="#{stock.showCongressHistory}">Show historical congressional activity</button>
       </div>
     </div>
     <div class="congressional-panel-meta">
-      <div id="congressionalActivityStatus" class="congressional-activity-status" aria-live="polite">
+      <div id="congressionalActivityStatus" class="congressional-activity-status" aria-live="polite" th:text="#{stock.loadingFollowState}">
         Loading follow state…
       </div>
-      <p id="congressionalRelevanceNotice">
-        Only purchases and sales with transaction dates in the last 365 days are shown.
-      </p>
-      <p id="congressionalBaselineNotice">
-        Following starts when you switch it on. Existing history is used only as a baseline and never generates old email alerts.
-      </p>
-      <p>
-        Data via
-        <a href="https://congressinvests.com/" target="_blank" rel="noopener noreferrer">CongressInvests</a>
-        from public U.S. House and Senate filings. Disclosures can arrive up to 45 days after a trade.
-        Informational only, not financial advice.
-      </p>
+      <details class="how-it-works">
+        <summary th:text="#{signals.howItWorks}">How this works</summary>
+        <p id="congressionalRelevanceNotice" th:text="#{stock.congressHow1}">
+          Only purchases and sales with transaction dates in the last 365 days are shown.
+        </p>
+        <p id="congressionalBaselineNotice" th:text="#{stock.congressHow2}">
+          Following starts when you switch it on. Existing history is used only as a baseline and never generates old email alerts.
+        </p>
+        <p>
+          <span th:text="#{stock.dataVia}">Data via</span>
+          <a href="https://congressinvests.com/" target="_blank" rel="noopener noreferrer" th:text="#{home.congressInvests}">CongressInvests</a>
+          <span th:text="#{stock.congressSource}">from public U.S. House and Senate filings. Disclosures can arrive up to 45 days after a trade.
+          Informational only, not financial advice.</span>
+        </p>
+      </details>
     </div>
   </section>
 
@@ -630,42 +635,45 @@
            hidden>
     <div class="congressional-panel-header">
       <div>
-        <div class="congressional-panel-kicker">Company insider filings</div>
-        <h2 id="insiderActivityTitle">Corporate insider activity</h2>
-        <p>Follow newly filed open-market purchases and sales by company officers, directors, and other reporting insiders.</p>
+        <div class="congressional-panel-kicker" th:text="#{stock.insiderKicker}">Company insider filings</div>
+        <h2 id="insiderActivityTitle" th:text="#{home.insiderTitle}">Corporate insider activity</h2>
+        <p th:text="#{stock.insiderHelp}">Follow newly filed open-market purchases and sales by company officers, directors, and other reporting insiders.</p>
       </div>
       <div class="congressional-panel-actions">
         <button id="followInsiderActivityBtn"
                 type="button"
                 class="btn-accent congressional-follow-button insider-follow-button"
                 aria-pressed="false"
-                disabled>Follow insider activity</button>
+                disabled th:text="#{stock.followInsider}">Follow insider activity</button>
         <button id="showInsiderHistoryBtn"
                 type="button"
                 class="btn-secondary congressional-history-button"
-                disabled>Show insider history</button>
+                disabled th:text="#{stock.showInsiderHistory}">Show insider history</button>
       </div>
     </div>
     <div class="congressional-panel-meta">
-      <div id="insiderActivityStatus" class="congressional-activity-status" aria-live="polite">
+      <div id="insiderActivityStatus" class="congressional-activity-status" aria-live="polite" th:text="#{stock.loadingFollowState}">
         Loading follow state…
       </div>
-      <p id="insiderReturnNotice">
-        Directional return compares the filed transaction price with the latest completed daily close.
-      </p>
-      <p id="insiderBaselineNotice">
-        Past filings remain in history. Alerts start with new filings found after you follow the stock.
-      </p>
-      <p>
-        Data provided by
-        <a href="https://api-ninjas.com/api/insidertrading"
-           target="_blank"
-           rel="noopener noreferrer">API Ninjas</a>
-        from public SEC insider filings.
-        Coverage is limited to 10 filings per check, so some filings may be missed.
-        Awards, gifts, option exercises, and zero-price grants are excluded.
-        Informational only, not financial advice.
-      </p>
+      <details class="how-it-works">
+        <summary th:text="#{signals.howItWorks}">How this works</summary>
+        <p id="insiderReturnNotice" th:text="#{stock.insiderHow1}">
+          Directional return compares the filed transaction price with the latest completed daily close.
+        </p>
+        <p id="insiderBaselineNotice" th:text="#{stock.insiderHow2}">
+          Past filings remain in history. Alerts start with new filings found after you follow the stock.
+        </p>
+        <p>
+          <span th:text="#{stock.dataProvidedBy}">Data provided by</span>
+          <a href="https://api-ninjas.com/api/insidertrading"
+             target="_blank"
+             rel="noopener noreferrer" th:text="#{home.apiNinjas}">API Ninjas</a>
+          <span th:text="#{stock.insiderSource}">from public SEC insider filings.
+          Coverage is limited to 10 filings per check, so some filings may be missed.
+          Awards, gifts, option exercises, and zero-price grants are excluded.
+          Informational only, not financial advice.</span>
+        </p>
+      </details>
     </div>
   </section>
 
@@ -677,37 +685,37 @@
     <div class="congressional-history-dialog-content">
       <div class="congressional-history-heading">
         <div>
-          <span class="congressional-panel-kicker">Past filings</span>
-          <h2 id="congressionalHistoryTitle">Congressional trading history</h2>
-          <p id="congressionalHistoryWindow">Relevant purchase and sale disclosures from the last 365 days.</p>
+          <span class="congressional-panel-kicker" th:text="#{stock.pastFilings}">Past filings</span>
+          <h2 id="congressionalHistoryTitle" th:text="#{stock.congressHistory}">Congressional trading history</h2>
+          <p id="congressionalHistoryWindow" th:text="#{stock.congressHistoryHelp}">Relevant purchase and sale disclosures from the last 365 days.</p>
         </div>
         <button id="closeCongressionalHistoryBtn"
                 type="button"
                 class="congressional-dialog-close"
-                aria-label="Close congressional trading history">×</button>
+                aria-label="Close congressional trading history" th:aria-label="#{stock.closeCongressAria}">×</button>
       </div>
       <div id="congressionalHistoryStatus"
            class="congressional-history-status"
-           aria-live="polite">Loading history…</div>
+           aria-live="polite" th:text="#{stock.loadingHistory}">Loading history…</div>
       <div class="congressional-history-table-wrap">
         <table class="congressional-history-table">
           <thead>
           <tr>
-            <th scope="col">Member</th>
-            <th scope="col">Activity</th>
-            <th scope="col">Reported value</th>
-            <th scope="col">Transaction date</th>
-            <th scope="col">Disclosure date</th>
-            <th scope="col">Filing</th>
+            <th scope="col" th:text="#{stock.member}">Member</th>
+            <th scope="col" th:text="#{stock.activity}">Activity</th>
+            <th scope="col" th:text="#{home.reportedValue}">Reported value</th>
+            <th scope="col" th:text="#{activitySignals.sort.date}">Transaction date</th>
+            <th scope="col" th:text="#{stock.disclosureDate}">Disclosure date</th>
+            <th scope="col" th:text="#{signals.filing}">Filing</th>
           </tr>
           </thead>
           <tbody id="congressionalHistoryRows"></tbody>
         </table>
       </div>
-      <div id="congressionalHistoryEmpty" class="congressional-history-empty" hidden>
+      <div id="congressionalHistoryEmpty" class="congressional-history-empty" hidden th:text="#{stock.noCongressHistory}">
         No relevant purchase or sale disclosures were found for this stock in the current window.
       </div>
-      <p id="congressionalHistoryDisclaimer" class="congressional-history-disclaimer">
+      <p id="congressionalHistoryDisclaimer" class="congressional-history-disclaimer" th:text="#{stock.dataDisclaimer}">
         Data is for informational and research purposes only and is not financial advice.
       </p>
     </div>
@@ -719,39 +727,39 @@
     <div class="congressional-history-dialog-content insider-history-dialog-content">
       <div class="congressional-history-heading">
         <div>
-          <span class="congressional-panel-kicker">Past filings</span>
-          <h2 id="insiderHistoryTitle">Corporate insider trading history</h2>
-          <p id="insiderHistoryWindow">Loading insider filings…</p>
+          <span class="congressional-panel-kicker" th:text="#{stock.pastFilings}">Past filings</span>
+          <h2 id="insiderHistoryTitle" th:text="#{stock.insiderHistory}">Corporate insider trading history</h2>
+          <p id="insiderHistoryWindow" th:text="#{stock.loadingInsiderFilings}">Loading insider filings…</p>
         </div>
         <button id="closeInsiderHistoryBtn"
                 type="button"
                 class="congressional-dialog-close"
-                aria-label="Close insider trading history">&times;</button>
+                aria-label="Close insider trading history" th:aria-label="#{stock.closeInsiderAria}">&times;</button>
       </div>
       <div id="insiderHistoryStatus"
            class="congressional-history-status"
-           aria-live="polite">Loading history…</div>
+           aria-live="polite" th:text="#{stock.loadingHistory}">Loading history…</div>
       <div class="congressional-history-table-wrap insider-history-table-wrap">
         <table class="congressional-history-table insider-history-table">
           <thead>
           <tr>
-            <th scope="col">Insider</th>
-            <th scope="col">Activity</th>
-            <th scope="col">Shares / price</th>
-            <th scope="col">Trade value</th>
-            <th scope="col">Effective date*</th>
-            <th scope="col">Filed</th>
-            <th scope="col">Directional return</th>
-            <th scope="col">Filing</th>
+            <th scope="col" th:text="#{stock.insider}">Insider</th>
+            <th scope="col" th:text="#{stock.activity}">Activity</th>
+            <th scope="col" th:text="#{stock.sharesPrice}">Shares / price</th>
+            <th scope="col" th:text="#{stock.tradeValue}">Trade value</th>
+            <th scope="col" th:text="#{stock.effectiveDate}">Effective date*</th>
+            <th scope="col" th:text="#{stock.filedColumn}">Filed</th>
+            <th scope="col" th:text="#{activitySignals.directionalReturn}">Directional return</th>
+            <th scope="col" th:text="#{signals.filing}">Filing</th>
           </tr>
           </thead>
           <tbody id="insiderHistoryRows"></tbody>
         </table>
       </div>
-      <div id="insiderHistoryEmpty" class="congressional-history-empty" hidden>
+      <div id="insiderHistoryEmpty" class="congressional-history-empty" hidden th:text="#{stock.noInsiderHistory}">
         No open-market purchases or sales were found in the latest API response.
       </div>
-      <p id="insiderHistoryDisclaimer" class="congressional-history-disclaimer">
+      <p id="insiderHistoryDisclaimer" class="congressional-history-disclaimer" th:text="#{stock.returnsDisclaimer}">
         Returns are mark-to-market research measurements, not realized portfolio returns.
       </p>
     </div>
@@ -765,23 +773,23 @@
       <div class="congressional-history-heading">
         <div>
           <span id="historicalCandlestickLookbackInterval"
-                class="congressional-panel-kicker">Selected interval</span>
-          <h2 id="historicalCandlestickLookbackTitle">Find historical patterns</h2>
-          <p>Choose the interval and how to display the patterns.</p>
+                class="congressional-panel-kicker" th:text="#{stock.selectedInterval}">Selected interval</span>
+          <h2 id="historicalCandlestickLookbackTitle" th:text="#{stock.findHistorical}">Find historical patterns</h2>
+          <p th:text="#{stock.findHistoricalHelp}">Choose the interval and how to display the patterns.</p>
         </div>
         <button id="closeHistoricalCandlestickLookbackBtn"
                 type="button"
                 class="congressional-dialog-close"
-                aria-label="Close historical candlestick lookback picker">&times;</button>
+                aria-label="Close historical candlestick lookback picker" th:aria-label="#{stock.closeLookbackAria}">&times;</button>
       </div>
       <div class="historical-scan-options">
-        <label for="historicalScanInterval">Interval<select id="historicalScanInterval"><option value="1d">Daily</option><option value="1wk">Weekly</option><option value="1mo">Monthly</option></select></label>
-        <label for="historicalScanView">Display<select id="historicalScanView"><option value="list">Results table</option><option value="graphical">On the chart</option></select></label>
+        <label for="historicalScanInterval"><span th:text="#{signals.column.interval}">Interval</span><select id="historicalScanInterval"><option value="1d" th:text="#{common.interval.DAILY}">Daily</option><option value="1wk" th:text="#{common.interval.WEEKLY}">Weekly</option><option value="1mo" th:text="#{common.interval.MONTHLY}">Monthly</option></select></label>
+        <label for="historicalScanView"><span th:text="#{stock.display}">Display</span><select id="historicalScanView"><option value="list" th:text="#{stock.resultsTable}">Results table</option><option value="graphical" th:text="#{stock.onChart}">On the chart</option></select></label>
       </div>
-      <p id="historicalScanChartNote" class="form-hint" hidden>The chart shows patterns across all available history. Use the results table to scan a specific number of candles.</p>
+      <p id="historicalScanChartNote" class="form-hint" hidden th:text="#{stock.onChartHelp}">The chart shows patterns across all available history. Use the results table to scan a specific number of candles.</p>
       <label class="historical-candlestick-lookback-field"
              for="historicalCandlestickLookbackInput">
-        <span>Number of candles</span>
+        <span th:text="#{stock.numberOfCandles}">Number of candles</span>
         <input id="historicalCandlestickLookbackInput"
                name="lookbackCandles"
                type="number"
@@ -791,14 +799,14 @@
                step="1"
                required
                aria-describedby="historicalCandlestickLookbackHelp historicalCandlestickLookbackError">
-        <small id="historicalCandlestickLookbackHelp">
+        <small id="historicalCandlestickLookbackHelp" th:text="#{stock.candlesRange}">
           Enter a whole number from 1 to 750.
         </small>
       </label>
       <div class="historical-candlestick-lookback-preview" id="historicalScanPreview" aria-live="polite">
-        <span>Estimated earliest candle</span>
-        <strong id="historicalCandlestickLookbackDate">Enter a candle count</strong>
-        <small id="historicalCandlestickLookbackDateHelp">
+        <span th:text="#{stock.earliestCandle}">Estimated earliest candle</span>
+        <strong id="historicalCandlestickLookbackDate" th:text="#{stock.enterCandleCount}">Enter a candle count</strong>
+        <small id="historicalCandlestickLookbackDateHelp" th:text="#{stock.estimateNote}">
           This is an estimate; market holidays and incomplete periods can shift the actual date.
         </small>
       </div>
@@ -806,10 +814,10 @@
          class="historical-candlestick-lookback-error"
          role="alert"></p>
       <div class="historical-candlestick-lookback-actions">
-        <button id="cancelHistoricalScanBtn" type="button" class="btn-secondary">Cancel</button>
-        <button type="submit" class="btn-primary">Show historical patterns</button>
+        <button id="cancelHistoricalScanBtn" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+        <button type="submit" class="btn-primary" th:text="#{stock.showHistorical}">Show historical patterns</button>
       </div>
-      <p class="congressional-history-disclaimer">
+      <p class="congressional-history-disclaimer" th:text="#{stock.historicalNote}">
         Historical results reflect the available price data and your current settings. They exclude trading costs.
       </p>
     </form>
@@ -821,34 +829,34 @@
     <div class="congressional-history-dialog-content">
       <div class="congressional-history-heading">
         <div>
-          <span class="congressional-panel-kicker">Historical patterns</span>
-          <h2 id="historicalCandlestickResultsTitle">Historical candle patterns</h2>
-          <p id="historicalCandlestickResultsWindow">Select an interval to calculate historical signals.</p>
+          <span class="congressional-panel-kicker" th:text="#{stock.historicalPatterns}">Historical patterns</span>
+          <h2 id="historicalCandlestickResultsTitle" th:text="#{stock.historicalCandlePatterns}">Historical candle patterns</h2>
+          <p id="historicalCandlestickResultsWindow" th:text="#{stock.selectIntervalHistorical}">Select an interval to calculate historical signals.</p>
         </div>
         <div class="historical-candlestick-dialog-actions">
           <button id="changeHistoricalCandlestickIntervalBtn"
                   type="button"
-                  class="btn-secondary">Change search</button>
+                  class="btn-secondary" th:text="#{stock.changeSearch}">Change search</button>
           <button id="closeHistoricalCandlestickResultsBtn"
                   type="button"
                   class="congressional-dialog-close"
-                  aria-label="Close historical candlestick results">&times;</button>
+                  aria-label="Close historical candlestick results" th:aria-label="#{stock.closeHistoricalAria}">&times;</button>
         </div>
       </div>
       <div id="historicalCandlestickResultsStatus"
            class="congressional-history-status"
-           aria-live="polite">Choose an interval to begin.</div>
+           aria-live="polite" th:text="#{stock.chooseInterval}">Choose an interval to begin.</div>
       <div class="congressional-history-table-wrap historical-candlestick-table-wrap">
         <table class="congressional-history-table historical-candlestick-table">
           <thead>
           <tr>
-            <th scope="col">Signal date</th>
-            <th scope="col">Type</th>
-            <th scope="col">Status</th>
-            <th scope="col">Confidence</th>
-            <th scope="col">Formation</th>
-            <th scope="col">Historical impact</th>
-            <th scope="col">Details</th>
+            <th scope="col" th:text="#{stock.signalDate}">Signal date</th>
+            <th scope="col" th:text="#{detail.type}">Type</th>
+            <th scope="col" th:text="#{virtualTrades.column.status}">Status</th>
+            <th scope="col" th:text="#{stock.confidence}">Confidence</th>
+            <th scope="col" th:text="#{candleHistory.formation}">Formation</th>
+            <th scope="col" th:text="#{stock.historicalImpact}">Historical impact</th>
+            <th scope="col" th:text="#{stock.details}">Details</th>
           </tr>
           </thead>
           <tbody id="historicalCandlestickResultsRows"></tbody>
@@ -856,10 +864,10 @@
       </div>
       <div id="historicalCandlestickResultsEmpty"
            class="congressional-history-empty"
-           hidden>
+           hidden th:text="#{stock.noHistoricalSignals}">
         No valid candlestick signals were found in this interval's current history window.
       </div>
-      <p id="historicalCandlestickResultsDisclaimer" class="congressional-history-disclaimer">
+      <p id="historicalCandlestickResultsDisclaimer" class="congressional-history-disclaimer" th:text="#{stock.historicalResultsNote}">
         These results use completed closing prices, not actual executions. They are separate from demo-trading performance.
       </p>
     </div>
@@ -871,18 +879,18 @@
     <form id="rsiPeriodForm" class="congressional-history-dialog-content rsi-period-dialog-content">
       <div class="congressional-history-heading rsi-period-dialog-heading">
         <div>
-          <span class="congressional-panel-kicker">Indicator settings</span>
-          <h2 id="rsiPeriodTitle">Choose the RSI period</h2>
-          <p>RSI 14 with 70/30 boundaries is the classic default. Adjust all three values for your preferred interpretation.</p>
+          <span class="congressional-panel-kicker" th:text="#{stock.indicatorSettings}">Indicator settings</span>
+          <h2 id="rsiPeriodTitle" th:text="#{stock.chooseRsi}">Choose the RSI period</h2>
+          <p th:text="#{stock.rsiHelp}">RSI 14 with 70/30 boundaries is the classic default. Adjust all three values for your preferred interpretation.</p>
         </div>
         <button id="closeRsiPeriodDialogBtn"
                 type="button"
                 class="congressional-dialog-close"
-                aria-label="Close RSI period picker">&times;</button>
+                aria-label="Close RSI period picker" th:aria-label="#{stock.closeRsiAria}">&times;</button>
       </div>
       <div class="rsi-settings-grid">
         <label class="rsi-period-field" for="rsiPeriodInput">
-          <span>RSI period</span>
+          <span th:text="#{outlook.period.rsi}">RSI period</span>
           <input id="rsiPeriodInput"
                  name="rsiPeriod"
                  type="number"
@@ -892,10 +900,10 @@
                  inputmode="numeric"
                  required
                  aria-describedby="rsiPeriodHelp rsiPeriodError">
-          <small id="rsiPeriodHelp">Positive whole number.</small>
+          <small id="rsiPeriodHelp" th:text="#{stock.positiveWhole}">Positive whole number.</small>
         </label>
         <label class="rsi-period-field" for="rsiOverboughtInput">
-          <span>Upper boundary</span>
+          <span th:text="#{stock.upperBoundary}">Upper boundary</span>
           <input id="rsiOverboughtInput"
                  name="rsiOverbought"
                  type="number"
@@ -906,10 +914,10 @@
                  inputmode="decimal"
                  required
                  aria-describedby="rsiBoundaryHelp rsiPeriodError">
-          <small>Line turns red above this level.</small>
+          <small th:text="#{stock.upperHelp}">Line turns red above this level.</small>
         </label>
         <label class="rsi-period-field" for="rsiOversoldInput">
-          <span>Lower boundary</span>
+          <span th:text="#{stock.lowerBoundary}">Lower boundary</span>
           <input id="rsiOversoldInput"
                  name="rsiOversold"
                  type="number"
@@ -920,14 +928,14 @@
                  inputmode="decimal"
                  required
                  aria-describedby="rsiBoundaryHelp rsiPeriodError">
-          <small>Line turns green below this level.</small>
+          <small th:text="#{stock.lowerHelp}">Line turns green below this level.</small>
         </label>
       </div>
-      <p id="rsiBoundaryHelp" class="rsi-boundary-help">Boundaries must remain inside 0–100, with the upper boundary greater than the lower boundary. The indicator uses candles already loaded on this chart.</p>
+      <p id="rsiBoundaryHelp" class="rsi-boundary-help" th:text="#{stock.boundariesHelp}">Boundaries must remain inside 0–100, with the upper boundary greater than the lower boundary. The indicator uses candles already loaded on this chart.</p>
       <p id="rsiPeriodError" class="rsi-period-error" role="alert"></p>
       <div class="rsi-period-actions">
-        <button id="cancelRsiPeriodBtn" type="button" class="btn-secondary">Cancel</button>
-        <button type="submit" class="btn-primary">Show RSI</button>
+        <button id="cancelRsiPeriodBtn" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+        <button type="submit" class="btn-primary" th:text="#{stock.showRsi}">Show RSI</button>
       </div>
     </form>
   </dialog>
@@ -938,34 +946,34 @@
     <form id="chartIndicatorForm" class="congressional-history-dialog-content chart-indicator-dialog-content">
       <div class="congressional-history-heading">
         <div>
-          <span class="congressional-history-kicker">Configurable indicator</span>
-          <h2 id="chartIndicatorDialogTitle">Add indicator</h2>
-          <p id="chartIndicatorDialogDescription">Choose the calculation parameters for this chart.</p>
+          <span class="congressional-history-kicker" th:text="#{stock.configurableIndicator}">Configurable indicator</span>
+          <h2 id="chartIndicatorDialogTitle" th:text="#{stock.addIndicator}">Add indicator</h2>
+          <p id="chartIndicatorDialogDescription" th:text="#{stock.indicatorParamsHelp}">Choose the calculation parameters for this chart.</p>
         </div>
         <button id="closeChartIndicatorDialogBtn"
                 type="button"
                 class="congressional-dialog-close"
-                aria-label="Close indicator settings">&times;</button>
+                aria-label="Close indicator settings" th:aria-label="#{stock.closeIndicatorAria}">&times;</button>
       </div>
       <div id="chartIndicatorFields" class="chart-indicator-fields"></div>
       <p id="chartIndicatorError" class="rsi-period-error" role="alert"></p>
       <div class="rsi-period-actions">
-        <button id="cancelChartIndicatorBtn" type="button" class="btn-secondary">Cancel</button>
-        <button type="submit" class="btn-primary">Add to chart</button>
+        <button id="cancelChartIndicatorBtn" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+        <button type="submit" class="btn-primary" th:text="#{stock.addToChart}">Add to chart</button>
       </div>
     </form>
   </dialog>
 
   <dialog id="unsavedAlertDialog" class="unsaved-alert-dialog" aria-labelledby="unsavedAlertTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">Unsaved changes</span>
-      <h2 id="unsavedAlertTitle">Save your alert changes before leaving?</h2>
-      <p>Save your alert changes, discard them, or keep editing.</p>
+      <span class="unsaved-alert-kicker" th:text="#{stock.unsavedKicker}">Unsaved changes</span>
+      <h2 id="unsavedAlertTitle" th:text="#{stock.unsavedTitle}">Save your alert changes before leaving?</h2>
+      <p th:text="#{stock.unsavedText}">Save your alert changes, discard them, or keep editing.</p>
       <div id="unsavedAlertDialogStatus" class="unsaved-alert-dialog-status" aria-live="polite"></div>
       <div class="unsaved-alert-dialog-actions">
-        <button id="keepEditingAlertsBtn" type="button" class="btn-secondary">Keep editing</button>
-        <button id="discardAlertChangesBtn" type="button" class="unsaved-alert-discard-btn">Discard changes</button>
-        <button id="saveAlertChangesBeforeLeaveBtn" type="button" class="btn-accent">Save and leave</button>
+        <button id="keepEditingAlertsBtn" type="button" class="btn-secondary" th:text="#{stock.keepEditing}">Keep editing</button>
+        <button id="discardAlertChangesBtn" type="button" class="unsaved-alert-discard-btn" th:text="#{stock.discardChanges}">Discard changes</button>
+        <button id="saveAlertChangesBeforeLeaveBtn" type="button" class="btn-accent" th:text="#{stock.saveAndLeave}">Save and leave</button>
       </div>
     </div>
   </dialog>
@@ -974,23 +982,23 @@
           class="unsaved-alert-dialog virtual-trade-create-dialog"
           aria-labelledby="stockDemoTradeDialogTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">Demo trading &middot; no real order</span>
-      <h2 id="stockDemoTradeDialogTitle">Create demo trade</h2>
-      <p id="stockDemoTradeExplanation">Confirm to save the current price and analysis for the selected interval.</p>
-      <div class="virtual-trade-size-mode" role="group" aria-label="Demo trade sizing">
-        <button type="button" class="active" data-stock-demo-size-mode="none">Percentage only</button>
-        <button type="button" data-stock-demo-size-mode="quantity">Quantity</button>
-        <button type="button" data-stock-demo-size-mode="notional">Virtual amount</button>
+      <span class="unsaved-alert-kicker" th:text="#{outlook.createKicker}">Demo trading &middot; no real order</span>
+      <h2 id="stockDemoTradeDialogTitle" th:text="#{js.outlook.createDemoTrade}">Create demo trade</h2>
+      <p id="stockDemoTradeExplanation" th:text="#{stock.createHelp}">Confirm to save the current price and analysis for the selected interval.</p>
+      <div class="virtual-trade-size-mode" role="group" aria-label="Demo trade sizing" th:aria-label="#{outlook.sizingAria}">
+        <button type="button" class="active" data-stock-demo-size-mode="none" th:text="#{virtualTrades.percentageOnly}">Percentage only</button>
+        <button type="button" data-stock-demo-size-mode="quantity" th:text="#{outlook.sizeQuantity}">Quantity</button>
+        <button type="button" data-stock-demo-size-mode="notional" th:text="#{outlook.sizeAmount}">Virtual amount</button>
       </div>
       <label id="stockDemoTradeSizeField" class="virtual-trade-size-field" hidden>
-        <span id="stockDemoTradeSizeLabel">Quantity</span>
+        <span id="stockDemoTradeSizeLabel" th:text="#{outlook.sizeQuantity}">Quantity</span>
         <input id="stockDemoTradeSizeInput" type="number" min="0.00000001" max="1000000000000" step="any" inputmode="decimal">
-        <small id="stockDemoTradeSizeHelp">Enter a positive virtual size.</small>
+        <small id="stockDemoTradeSizeHelp" th:text="#{js.outlook.positiveSize}">Enter a positive virtual size.</small>
       </label>
       <div id="stockDemoTradeStatus" class="technical-outlook-freshness" role="status"></div>
       <div class="unsaved-alert-dialog-actions">
-        <button id="cancelStockDemoTrade" type="button" class="btn-secondary">Cancel</button>
-        <button id="confirmStockDemoTrade" type="button" class="btn-accent">Create demo trade</button>
+        <button id="cancelStockDemoTrade" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+        <button id="confirmStockDemoTrade" type="button" class="btn-accent" th:text="#{js.outlook.createDemoTrade}">Create demo trade</button>
       </div>
     </div>
   </dialog>
@@ -1008,6 +1016,7 @@
   const HARMONIC_FORMATION_COLOR = /*[[${harmonicFormationColor}]]*/ '#22C55E';
     StockWatchCharts.preserveColors([HARMONIC_FORMATION_COLOR]);
 </script>
+<script th:src="@{/js/pattern-range-loader.js}"></script>
 <script th:src="@{/js/stock-workspace.js}"></script>
 </body>
 </html>

@@ -91,6 +91,10 @@ public class ElliottStageTradePlan {
     private Integer horizonCandles;
     @Column(name = "resolution_fill_price")
     private Double resolutionFillPrice;
+    @Column(name = "fill_status", length = 16)
+    private String fillStatus;
+    public String getFillStatus() { return fillStatus; }
+    public void setFillStatus(String value) { fillStatus = value; }
     public Double getSecondaryTargetPrice() { return secondaryTargetPrice; }
     public void setSecondaryTargetPrice(Double value) { secondaryTargetPrice = value; }
     public Integer getHorizonCandles() { return horizonCandles; }

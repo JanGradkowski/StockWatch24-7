@@ -21,7 +21,11 @@ public class MfaAuthenticationSuccessHandler implements AuthenticationSuccessHan
     void setClock(java.time.Clock clock) { this.clock = clock; }
 
     private final UserRepository users;
+    private KnownDeviceCookies knownDevices;
     public MfaAuthenticationSuccessHandler(UserRepository users) { this.users = users; }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setKnownDevices(KnownDeviceCookies knownDevices) { this.knownDevices = knownDevices; }
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
@@ -44,6 +48,7 @@ public class MfaAuthenticationSuccessHandler implements AuthenticationSuccessHan
             return;
         }
         request.getSession().setAttribute(AccountSession.SECURITY_VERSION, user.getSecurityVersion());
+        if (knownDevices != null) knownDevices.remember(request, response, user.getEmail());
         response.sendRedirect(request.getContextPath() + "/home");
     }
 }

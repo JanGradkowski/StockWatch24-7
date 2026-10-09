@@ -93,8 +93,9 @@ final class BaselineHarmonicPolicy {
             double ratio,
             String basis,
             String formula) {
-        Double origin = price(points, "0");
-        Double x = price(points, "X");
+        // Formations are now labelled X-A-B-C-D; the frozen baseline's 0X leg is today's XA.
+        Double origin = price(points, "X");
+        Double x = price(points, "A");
         if (origin == null || x == null) return Optional.empty();
         return Optional.of(new StructuralLevel(x + (origin - x) * ratio, basis, formula));
     }

@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  const i18n = window.StockWatchI18n;
   const node = (tag, text, className) => {
     const e = document.createElement(tag); if (text != null) e.textContent = text;
     if (className) e.className = className; return e;
@@ -12,9 +13,9 @@
   };
   async function api(url, options = {}) {
     const response = await fetch(url, { ...options, headers: { ...headers(), ...options.headers } });
-    if (response.redirected && response.url.includes('/login')) throw new Error('Your session expired. Please sign in again.');
+    if (response.redirected && response.url.includes('/login')) throw new Error(i18n.t('common.sessionExpired'));
     const value = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(value.error || value.detail || 'The change could not be saved. Please try again.');
+    if (!response.ok) throw new Error(value.error || value.detail || i18n.t('common.saveFailed'));
     return value;
   }
   let pending = null;
@@ -25,19 +26,17 @@
       const dialog = node('dialog', null, 'wl-dialog wl-picker');
       const form = node('form');
       const applyingSignals = mode === 'signals';
-      const title = node('h2', applyingSignals ? `Apply ${symbol}’s signal changes to watchlists` : `Add ${symbol} to watchlists`); title.id = 'wl-picker-title';
+      const title = node('h2', i18n.t(applyingSignals ? 'watchlistPicker.applyTitle' : 'watchlistPicker.addTitle', symbol)); title.id = 'wl-picker-title';
       dialog.setAttribute('aria-labelledby', title.id);
-      const intro = node('p', applyingSignals
-        ? 'Choose which watchlists receive the new follows. You can select a list even if this ticker is already in it.'
-        : 'Choose one or more watchlists for this ticker. Existing memberships are preselected.', 'wl-muted');
-      const options = node('fieldset', null, 'wl-picker-options'); options.append(node('legend', 'Your watchlists'));
-      const status = node('p', 'Loading your watchlists…', 'wl-status'); status.setAttribute('role', 'status');
-      const label = node('label', 'Or create a watchlist', 'wl-field');
-      const name = node('input'); name.type = 'text'; name.maxLength = 100; name.placeholder = 'Watchlist name';
+      const intro = node('p', i18n.t(applyingSignals ? 'watchlistPicker.applyIntro' : 'watchlistPicker.addIntro'), 'wl-muted');
+      const options = node('fieldset', null, 'wl-picker-options'); options.append(node('legend', i18n.t('watchlistPicker.yourWatchlists')));
+      const status = node('p', i18n.t('watchlistPicker.loading'), 'wl-status'); status.setAttribute('role', 'status');
+      const label = node('label', i18n.t('watchlistPicker.orCreate'), 'wl-field');
+      const name = node('input'); name.type = 'text'; name.maxLength = 100; name.placeholder = i18n.t('watchlistPicker.namePlaceholder');
       label.append(name);
       const actions = node('div', null, 'wl-actions');
-      const cancel = node('button', 'Cancel', 'btn-secondary'); cancel.type = 'button';
-      const save = node('button', applyingSignals ? 'Apply changes' : 'Add to watchlists', 'btn-accent'); save.type = 'submit'; save.disabled = true;
+      const cancel = node('button', i18n.t('common.cancel'), 'btn-secondary'); cancel.type = 'button';
+      const save = node('button', i18n.t(applyingSignals ? 'watchlistPicker.apply' : 'watchlistPicker.add'), 'btn-accent'); save.type = 'submit'; save.disabled = true;
       actions.append(cancel, save); form.append(title, intro, options, label, status, actions); dialog.append(form);
       let finished = false;
       function finish(value) {
@@ -51,7 +50,7 @@
         event.preventDefault();
         if (save.disabled) return;
         const ids = Array.from(options.querySelectorAll('input:checked'), input => Number(input.value));
-        if (!ids.length && !name.value.trim()) { status.textContent = 'Select a watchlist or enter a name to create one.'; name.focus(); return; }
+        if (!ids.length && !name.value.trim()) { status.textContent = i18n.t('watchlistPicker.chooseOrName'); name.focus(); return; }
         finish({ watchlistIds: ids, newWatchlistName: name.value.trim() || null });
       });
       document.body.append(dialog); dialog.showModal();
@@ -61,21 +60,22 @@
           for (const list of lists) {
             const row = node('label', null, 'wl-check'); const input = node('input');
             input.type = 'checkbox'; input.value = list.id; input.checked = selected.includes(list.id);
-            const text = node('span', `${list.name} · ${list.instruments} instruments`);
-            if (input.checked) text.append(node('small', 'Already in this watchlist', 'wl-picker-membership'));
+            const text = node('span', `${list.name} · ${i18n.plural('watchlists.instruments', list.instruments, list.instruments)}`);
+            if (input.checked) text.append(node('small', i18n.t('watchlistPicker.alreadyIn'), 'wl-picker-membership'));
             const blocked = applyingSignals && list.allowedTypes ? signalTypes.filter(type => !list.allowedTypes.includes(type)) : [];
             if (blocked.length) {
               input.checked = false; input.disabled = true;
-              const names = { CANDLESTICK: 'Candlestick', ELLIOTT_WAVE: 'Elliott Wave', HARMONIC_FORMATION: 'Harmonic', OUTLOOK: 'Automated outlook', CONGRESS: 'Congressional activity', INSIDER: 'Insider activity' };
-              text.append(node('small', `Not allowed here: ${blocked.map(type => names[type] || type).join(', ')}. Edit this watchlist or choose another.`, 'wl-picker-membership'));
+              const known = ['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION', 'OUTLOOK', 'CONGRESS', 'INSIDER'];
+              const names = blocked.map(type => known.includes(type) ? i18n.t(`followType.${type}`) : type).join(', ');
+              text.append(node('small', i18n.t('watchlistPicker.notAllowed', names), 'wl-picker-membership'));
             }
             row.append(input, text); options.append(row);
           }
           status.textContent = lists.length
             ? applyingSignals
-              ? 'Unchecking a list skips these new follows. It does not remove the ticker or its existing follows from that list.'
-              : 'Unchecking a list does not remove an existing membership. Remove memberships from Manage watchlists.'
-            : 'You have no watchlists yet. Name your first one below.';
+              ? i18n.t('watchlistPicker.applyStatus')
+              : i18n.t('watchlistPicker.addStatus')
+            : i18n.t('watchlistPicker.none');
           save.disabled = false; if (!lists.length) name.focus();
         }).catch(error => { if (!finished) status.textContent = error.message; });
     }).finally(() => { pending = null; });

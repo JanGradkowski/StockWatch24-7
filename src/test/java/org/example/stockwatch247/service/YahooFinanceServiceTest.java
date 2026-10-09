@@ -36,6 +36,38 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class YahooFinanceServiceTest {
 
     @Test
+    void transportOutageStopsAliasSearchAndOtherTickersUntilCooldownExpires() {
+        var rest = new RestTemplate();
+        var server = MockRestServiceServer.bindTo(rest).build();
+        var repository = mock(StockAssetRepository.class);
+        server.expect(requestTo(containsString("/v8/finance/chart/CDR?")))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withException(
+                        new javax.net.ssl.SSLHandshakeException("Remote host terminated the handshake")));
+        var service = new YahooFinanceService(rest, new ObjectMapper(), repository,
+                "https://query1.finance.yahoo.com", true);
+        assertThatThrownBy(() -> service.getTimeSeries("CDR", "1d", 10))
+                .isInstanceOf(YahooFinanceService.ProviderUnavailableException.class)
+                .hasMessageContaining("connection failed").hasMessageNotContaining("has no candle data");
+        assertThatThrownBy(() -> service.getTimeSeries("NFLX", "1d", 10))
+                .hasMessageContaining("waiting before retrying");
+        server.verify();
+    }
+
+    @Test
+    void rateLimitDoesNotTriggerMoreSymbolSearches() {
+        var rest = new RestTemplate();
+        var server = MockRestServiceServer.bindTo(rest).build();
+        server.expect(requestTo(containsString("/v8/finance/chart/TEST?")))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withStatus(
+                        org.springframework.http.HttpStatus.TOO_MANY_REQUESTS));
+        var service = new YahooFinanceService(rest, new ObjectMapper(), mock(StockAssetRepository.class),
+                "https://query1.finance.yahoo.com", true);
+        assertThatThrownBy(() -> service.getTimeSeries("TEST", "1d", 10))
+                .isInstanceOf(YahooFinanceService.ProviderUnavailableException.class).hasMessageContaining("429");
+        server.verify();
+    }
+
+    @Test
     void berkshireShareClassesUseYahooDashWithoutChangingCanonicalTicker() {
         for (String symbol : List.of("BRK.A", "BRK.B")) {
             var rest = new RestTemplate();

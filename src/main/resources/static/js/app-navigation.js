@@ -5,19 +5,25 @@
     if (!sidebar || !menu || sidebar.dataset.initialized) return;
     sidebar.dataset.initialized = 'true';
     const root = document.documentElement;
-    const mobile = window.matchMedia('(max-width: 1100px)');
+    const mobile = window.matchMedia('(max-width: 1024px)');
+    // Between the drawer and full desktop widths the sidebar starts as an icon rail,
+    // so page content keeps its width, unless the user has chosen a state.
+    const compact = window.matchMedia('(max-width: 1279px)');
     const collapse = sidebar.querySelector('.app-sidebar-collapse');
     const close = sidebar.querySelector('.app-sidebar-close');
     const links = [...sidebar.querySelectorAll('[data-nav-section]')];
     const storageKey = 'stockwatch-sidebar-collapsed';
-    let collapsed = false;
-    try { collapsed = localStorage.getItem(storageKey) === 'true'; } catch (_) { /* Storage is optional. */ }
+    let storedPreference = null;
+    try { storedPreference = localStorage.getItem(storageKey); } catch (_) { /* Storage is optional. */ }
+    const hasStoredPreference = () => storedPreference === 'true' || storedPreference === 'false';
+    let collapsed = hasStoredPreference() ? storedPreference === 'true' : compact.matches;
 
     function updateCollapse() {
         root.dataset.sidebarCollapsed = String(collapsed);
         collapse.setAttribute('aria-expanded', String(!collapsed));
-        collapse.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
-        collapse.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+        const collapseLabel = window.StockWatchI18n.t(collapsed ? 'sidebar.expand' : 'sidebar.collapse');
+        collapse.setAttribute('aria-label', collapseLabel);
+        collapse.title = collapseLabel;
         // Existing charts listen for resize; dispatch after the new content width is laid out.
         requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
     }
@@ -57,7 +63,13 @@
 
     collapse.addEventListener('click', () => {
         collapsed = !collapsed;
-        try { localStorage.setItem(storageKey, String(collapsed)); } catch (_) { /* Storage is optional. */ }
+        storedPreference = String(collapsed);
+        try { localStorage.setItem(storageKey, storedPreference); } catch (_) { /* Storage is optional. */ }
+        updateCollapse();
+    });
+    compact.addEventListener('change', () => {
+        if (hasStoredPreference() || compact.matches === collapsed) return;
+        collapsed = compact.matches;
         updateCollapse();
     });
     menu.addEventListener('click', () => {

@@ -16,6 +16,15 @@ import static org.mockito.Mockito.when;
 
 class MarketDataAnalysisRefreshTest {
 
+    @Test void successfulPartialBootstrapDoesNotBypassTheRefreshCooldownAgain() {
+        Fixture fixture = fixture(100);
+        when(fixture.twelve().getTimeSeries("AAPL", "1day", 519)).thenReturn(List.of(bar()));
+        fixture.service().syncCandlesForAnalysis("AAPL", "1d", 519);
+        assertThat(fixture.service().syncCandlesForAnalysis("AAPL", "1d", 519).source())
+                .isEqualTo(MarketDataService.CandleSource.CACHE);
+        org.mockito.Mockito.verify(fixture.twelve(), org.mockito.Mockito.times(1)).getTimeSeries("AAPL", "1day", 519);
+    }
+
     @Test
     void coldAnalysisRequestsOnlyItsRequiredWarmupHistory() {
         Fixture fixture = fixture(0);

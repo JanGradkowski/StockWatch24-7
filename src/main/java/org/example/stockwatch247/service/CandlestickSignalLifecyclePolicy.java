@@ -16,7 +16,16 @@ import java.util.List;
  * semantics.</p>
  */
 final class CandlestickSignalLifecyclePolicy {
-    static final String RISK_REWARD_VERSION = "CANDLE_RR_V4";
+    /**
+     * V5 enters at the next candle's open and applies the configured stop exactly. V4 entered at the
+     * signal close and added a volatility buffer beyond the configured stop; stored V4 plans keep that.
+     */
+    static final String RISK_REWARD_VERSION = "CANDLE_RR_V5";
+    static final String PREVIOUS_RISK_REWARD_VERSION = "CANDLE_RR_V4";
+
+    static boolean protectivePlan(String version) {
+        return RISK_REWARD_VERSION.equals(version) || PREVIOUS_RISK_REWARD_VERSION.equals(version);
+    }
     static final int TIME_STOP_CANDLES = 8;
 
     private CandlestickSignalLifecyclePolicy() {
@@ -121,9 +130,32 @@ final class CandlestickSignalLifecyclePolicy {
             throw new IllegalArgumentException("The formation has no complete price range.");
         }
         double structuralStop = structuralStopPrice(pattern, formation);
-        double stopLoss = configuredStopPrice(tradeSignal, entryPrice, structuralStop,
+        double stopLoss = finalStopPrice(tradeSignal, entryPrice, structuralStop,
                 stopLossMode, stopLossValuePercent);
-        return tradePlan(tradeSignal, entryPrice, tradeSignal == TradeSignal.BUY ? Math.min(stopLoss, structuralStop) : Math.max(stopLoss, structuralStop), interval, rewardRiskRatio);
+        return planAtStop(tradeSignal, entryPrice, stopLoss, interval, rewardRiskRatio, Double.NaN,
+                new CandlestickPatternPreferencesService.CircuitBreakerSettings(
+                        false, 14, 1.5, interval == TimeInterval.DAILY ? 25.0 : 50.0), List.of(), -1);
+    }
+
+    /**
+     * The stop the user configured, exactly: the pattern's structural price moved out by the chosen
+     * buffer percent (the factory 0% means the textbook price itself), or a fixed percent from the
+     * entry. Nothing else is added and a fixed stop is never swapped for the structural one.
+     */
+    static double finalStopPrice(TradeSignal tradeSignal, double entryPrice, double structuralStopPrice,
+                                 CandlestickPatternPreferencesService.StopLossMode mode, double valuePercent) {
+        return TradeRiskPolicy.roundStop(
+                configuredStopPrice(tradeSignal, entryPrice, structuralStopPrice, mode, valuePercent),
+                tradeSignal, entryPrice);
+    }
+
+    /** The reward/risk multiple a stored plan was built for, recovered from its unscaled R:R target. */
+    static Double requiredRewardRisk(TradeSignal side, Double entry, Double stop, Double target, Double rrTarget) {
+        Double objective = rrTarget != null ? rrTarget : target;
+        if (entry == null || stop == null || objective == null) return null;
+        double risk = TradeRiskPolicy.risk(side, entry, stop);
+        double reward = TradeRiskPolicy.reward(side, entry, objective);
+        return risk > 0 && reward > 0 ? reward / risk : null;
     }
 
     static double configuredStopPrice(
@@ -204,6 +236,24 @@ final class CandlestickSignalLifecyclePolicy {
         double stop = TradeRiskPolicy.roundStop(side == TradeSignal.BUY
                 ? configuredStop - TradeRiskPolicy.buffer(entry, atr, interval)
                 : configuredStop + TradeRiskPolicy.buffer(entry, atr, interval), side, entry);
+        return build(side, entry, stop, configuredStop, interval, requiredRr, atr, settings, candles, through);
+    }
+
+    /** Builds the plan around a final stop; the target is set by the required reward/risk. */
+    static TradePlan planAtStop(TradeSignal side, double entry, double stop, TimeInterval interval,
+                                double requiredRr, double atr,
+                                CandlestickPatternPreferencesService.CircuitBreakerSettings settings,
+                                List<Candle> candles, int through) {
+        if ((side != TradeSignal.BUY && side != TradeSignal.SELL) || !TradeRiskPolicy.positive(entry)
+                || !TradeRiskPolicy.positive(stop) || !TradeRiskPolicy.positive(requiredRr))
+            throw new IllegalArgumentException("Entry, stop and reward/risk must be finite and positive.");
+        return build(side, entry, stop, stop, interval, requiredRr, atr, settings, candles, through);
+    }
+
+    private static TradePlan build(TradeSignal side, double entry, double stop, double configuredStop,
+                                   TimeInterval interval, double requiredRr, double atr,
+                                   CandlestickPatternPreferencesService.CircuitBreakerSettings settings,
+                                   List<Candle> candles, int through) {
         double risk = TradeRiskPolicy.risk(side, entry, stop);
         if (!TradeRiskPolicy.positive(stop) || risk <= 0) throw new IllegalStateException("No valid adverse structural stop.");
         double rrTarget = side == TradeSignal.BUY ? entry + risk * requiredRr : entry - risk * requiredRr;

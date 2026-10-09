@@ -1,6 +1,8 @@
 (() => {
     'use strict';
 
+    const i18n = window.StockWatchI18n;
+    const apiIntervals = { '1d': 'DAILY', '1wk': 'WEEKLY', '1mo': 'MONTHLY' };
     const controls = document.querySelector('[data-detail-interval-controls]');
     const alternateContainer = document.querySelector('[data-alternate-detail-chart]');
     if (!controls || !alternateContainer || typeof LightweightCharts === 'undefined') {
@@ -14,12 +16,12 @@
     const intervalNotice = document.querySelector('[data-native-interval-notice]');
     const returnNativeButton = document.querySelector('[data-return-native-interval]');
     const intervalLabel = document.querySelector('[data-detail-chart-interval-label]');
+    const heading = document.querySelector('[data-detail-chart-heading]');
     const summary = document.querySelector('[data-detail-chart-summary]');
     const status = document.querySelector('[data-detail-chart-status]');
     const intervalError = document.querySelector('[data-detail-interval-error]');
     const intervalErrorMessage = document.querySelector('[data-detail-interval-error-message]');
     const nativeInterval = controls.dataset.nativeInterval || '1d';
-    const nativeLabel = controls.dataset.nativeLabel || intervalName(nativeInterval);
     const chartKind = controls.dataset.chartKind || 'technical';
     const symbol = controls.dataset.symbol || '';
     const initialSummary = summary?.textContent || '';
@@ -35,7 +37,12 @@
     let alternateElliottOverlay = null;
 
     function intervalName(interval) {
-        return { '1d': 'Daily', '1wk': 'Weekly', '1mo': 'Monthly' }[interval] || 'Selected';
+        return apiIntervals[interval] ? i18n.t(`interval.${apiIntervals[interval]}`) : i18n.t('detailChart.selected');
+    }
+
+    // Per-interval messages carry the interval in the grammatical form each language needs.
+    function intervalText(prefix, interval, ...args) {
+        return i18n.t(`${prefix}.${apiIntervals[interval] || 'DAILY'}`, ...args);
     }
 
     function chartColors(theme = document.documentElement.dataset.theme) {
@@ -62,9 +69,13 @@
     }
 
     function setIntervalCopy(interval, native) {
-        const label = intervalName(interval);
-        if (intervalLabel) {
-            intervalLabel.textContent = label.toLowerCase();
+        if (heading?.dataset.headingSubject) {
+            const symbolText = heading.dataset.headingSymbol;
+            heading.textContent = symbolText
+                ? intervalText('detailChart.headingWithSymbol', interval, heading.dataset.headingSubject, symbolText)
+                : intervalText('detailChart.heading', interval, heading.dataset.headingSubject);
+        } else if (intervalLabel) {
+            intervalLabel.textContent = intervalName(interval).toLowerCase();
         }
         if (native) {
             if (summary) summary.textContent = initialSummary;
@@ -73,14 +84,15 @@
         }
         if (chartKind === 'activity') {
             if (summary) {
-                summary.textContent = `The transaction remains marked on the completed ${label.toLowerCase()} candle that contains its reported date.`;
+                summary.textContent = intervalText('detailChart.activitySummary', interval);
             }
         } else if (summary) {
             summary.textContent = controls.dataset.signalFamily === 'ELLIOTT_WAVE'
-                ? `${label} candles show the validated ${label.toLowerCase()} branch of the top-down Elliott hierarchy.`
-                : `${controls.dataset.signalLabel || 'This signal'} was detected on ${nativeLabel}. Price is shown on ${label.toLowerCase()} candles without signal annotations.`;
+                ? intervalText('detailChart.elliottSummary', interval)
+                : intervalText('detailChart.otherSummary', interval, controls.dataset.signalLabel || i18n.t('detailChart.thisSignal'),
+                    intervalText('interval.locative', nativeInterval));
         }
-        if (status) status.textContent = `Completed ${label.toLowerCase()} candles`;
+        if (status) status.textContent = intervalText('detailChart.status', interval);
     }
 
     function showNativeChart() {
@@ -113,16 +125,16 @@
             const elliott = controls.dataset.signalFamily === 'ELLIOTT_WAVE';
             if (title) {
                 title.textContent = elliott
-                    ? 'Top-down Elliott degree'
-                    : 'Signal annotations are interval-specific';
+                    ? i18n.t('detailChart.noticeTitle.elliott')
+                    : i18n.t('detailChart.noticeTitle.other');
             }
             if (message) {
                 message.textContent = elliott
-                    ? `${intervalName(interval)} displays its matching validated level: monthly parents, weekly children, or daily grandchildren.`
-                    : `This signal was detected on ${nativeLabel}. Its pattern, required trend, and detection marker are hidden on ${intervalName(interval).toLowerCase()} candles.`;
+                    ? intervalText('detailChart.elliottLevel', interval)
+                    : intervalText('detailChart.hiddenOn', interval, intervalText('interval.locative', nativeInterval));
             }
             if (returnNativeButton) {
-                returnNativeButton.textContent = `Return to ${nativeLabel}`;
+                returnNativeButton.textContent = intervalText('detailChart.returnTo', nativeInterval);
             }
         }
         setIntervalCopy(interval, false);
@@ -214,7 +226,7 @@
         const contextCandle = markerCandle(candles, interval);
         if (chartKind === 'activity' && contextCandle) {
             const direction = controls.dataset.direction || 'BUY';
-            const actionLabel = controls.dataset.actionLabel || 'Transaction';
+            const actionLabel = controls.dataset.actionLabel || i18n.t('detailChart.transaction');
             const rawEntryPrice = controls.dataset.entryPrice;
             const entryPrice = rawEntryPrice && rawEntryPrice.trim() !== ''
                 ? Number(rawEntryPrice)
@@ -224,7 +236,7 @@
                 position: direction === 'SELL' ? 'aboveBar' : 'belowBar',
                 color: colors.signal,
                 shape: direction === 'SELL' ? 'arrowDown' : 'arrowUp',
-                text: Number.isFinite(entryPrice) ? `${actionLabel} · ${entryPrice.toFixed(2)}` : actionLabel
+                text: Number.isFinite(entryPrice) ? `${actionLabel} · ${i18n.number(entryPrice, 2)}` : actionLabel
             }]);
             if (Number.isFinite(entryPrice)) {
                 alternatePriceLine = alternateSeries.createPriceLine({
@@ -233,7 +245,7 @@
                     lineWidth: 2,
                     lineStyle: LightweightCharts.LineStyle.Dashed,
                     axisLabelVisible: true,
-                    title: 'Entry'
+                    title: i18n.t('chart.entry')
                 });
             }
         }
@@ -288,11 +300,11 @@
                     `/api/stocks/${encodeURIComponent(symbol)}/candles?interval=${encodeURIComponent(interval)}&limit=1000`,
                     { signal: requestController.signal, headers: { Accept: 'application/json' } }
                 );
-                if (!response.ok) throw new Error(`Chart request failed (${response.status})`);
+                if (!response.ok) throw new Error(i18n.t('detailChart.requestFailed', response.status));
                 const payload = await response.json();
                 candles = normalizeCandles(payload);
                 if (candles.length === 0) {
-                    throw new Error(payload.failureMessage || `No completed ${intervalName(interval).toLowerCase()} candles are available.`);
+                    throw new Error(payload.failureMessage || intervalText('detailChart.noCandles', interval));
                 }
                 candleCache.set(interval, candles);
             }
@@ -304,9 +316,9 @@
             alternateContainer.hidden = true;
             if (intervalError) intervalError.hidden = false;
             if (intervalErrorMessage) {
-                intervalErrorMessage.textContent = error.message || 'Price history is unavailable for this interval.';
+                intervalErrorMessage.textContent = error.message || i18n.t('detailChart.historyUnavailable');
             }
-            if (status) status.textContent = `${intervalName(interval)} chart unavailable`;
+            if (status) status.textContent = intervalText('detailChart.chartUnavailable', interval);
             setSelectedButton(interval);
         } finally {
             if (requestId === requestSequence) requestController = null;

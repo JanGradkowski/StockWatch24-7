@@ -1,18 +1,19 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signal analysis &mdash; StockWatch 24/7</title>
-  <script th:src="@{/js/theme.js}"></script>
+  <title th:text="#{signalDetail.pageTitle}">Signal analysis &mdash; StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
+  <script th:src="@{/js/mark-read-on-view.js}" defer></script>
 </head>
 <body>
 <div class="bg-animation" aria-hidden="true">
@@ -22,62 +23,52 @@
 
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
-<main class="page-container signal-detail-page">
-  <nav class="signal-breadcrumb" aria-label="Breadcrumb">
-    <a th:href="@{/home}">Dashboard</a>
+<main class="page-container signal-detail-page" th:attr="data-mark-read-endpoint=${'/api/alerts/signals/' + signal.id() + '/read'}">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
+    <a th:href="@{/home}" th:text="#{common.dashboard}">Dashboard</a>
     <span aria-hidden="true">/</span>
     <a th:if="${signal.alertRuleActive()}"
        th:href="@{/alerts/{id}(id=${signal.alertRuleId()})}" th:text="${signal.symbol()}">MARA</a>
-    <a th:unless="${signal.alertRuleActive()}" th:href="@{/signals}">All signals</a>
+    <a th:unless="${signal.alertRuleActive()}" th:href="@{/signals}" th:text="#{signals.all}">All signals</a>
     <span aria-hidden="true">/</span>
-    <span>Signal analysis</span>
+    <span th:text="#{activityDetail.breadcrumb}">Signal analysis</span>
   </nav>
 
-  <a th:if="${archiveReturnUrl != null}" th:href="${archiveReturnUrl}" class="text-link archive-return-link">&larr; Back to filtered signals</a>
+  <a th:if="${archiveReturnUrl != null}" th:href="${archiveReturnUrl}" class="text-link archive-return-link" th:text="#{signalDetail.backToFiltered}">&larr; Back to filtered signals</a>
 
   <header class="signal-report-header">
     <div class="signal-report-copy">
-      <div class="eyebrow">Signal analysis</div>
+      <div class="eyebrow" th:text="#{signalDetail.familySignal(${#tr.text(signal.familyLabel())})}">Candlestick signal</div>
       <div class="signal-report-title-row">
-        <h1 class="title" th:text="${signal.patternLabel()}">Bullish Engulfing</h1>
-        <span class="signal-report-id" th:text="${'SIGNAL #' + signal.id()}">SIGNAL #142</span>
+        <h1 class="title" th:text="${#tr.text(signal.patternLabel())}">Bullish Engulfing</h1>
+        <span class="signal-report-id" th:text="${'#' + signal.id()}">#142</span>
       </div>
       <p class="subtitle">
         <strong th:text="${signal.symbol()}">MARA</strong>
         <span aria-hidden="true">&middot;</span>
         <span th:text="${signal.companyName()}">MARA Holdings, Inc.</span>
       </p>
-      <div class="signal-report-tags" aria-label="Signal classification">
-        <span class="signal-report-tag" th:text="${signal.familyLabel()}">Candlestick</span>
+      <!-- Only what a reader needs to place the signal; scoring-model details live in the score card. -->
+      <div class="signal-report-tags" aria-label="Signal classification" th:aria-label="#{detail.classificationAria}">
         <span class="signal-report-tag direction"
               th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-              th:text="${signal.directionLabel()}">Potential buy</span>
-        <span class="signal-report-tag interval" th:text="${signal.intervalLabel()}">Weekly</span>
-        <span th:if="${signal.lifecycle().tracked()}"
+              th:text="${#tr.text(signal.directionLabel())}">Potential buy</span>
+        <span class="signal-report-tag interval" th:text="${#tr.text(signal.intervalLabel())}">Weekly</span>
+        <span class="signal-report-tag"
+              th:text="${signal.signalPeriodLabel() != null ? #tr.text(signal.signalPeriodLabel()) : #messages.msg('alertHistory.periodUnavailable')}">13&ndash;17 Jul 2026</span>
+        <span th:if="${signal.lifecycle().tracked() and !#strings.containsIgnoreCase(signal.directionLabel(), signal.lifecycle().label())}"
               class="signal-report-tag signal-lifecycle-pill"
               th:classappend="${' ' + signal.lifecycle().cssClass()}"
-              th:text="${signal.lifecycle().label()}">Detected</span>
-        <span th:if="${signal.researchHorizonLabel() != null}"
-              class="signal-report-tag"
-              th:text="${'Research horizon ' + signal.researchHorizonLabel()}">Research horizon 8&ndash;12 weeks</span>
-        <span class="signal-report-tag"
-              th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</span>
-        <span class="signal-report-tag"
-              th:text="${'Score model ' + signal.scoreVersion()}">Score model CANDLE_V5_TEXTBOOK</span>
-        <span th:if="${displayScore.customApplied()}" class="signal-report-tag">Custom scoring weights</span>
-        <span th:if="${signal.analysisProfileVersion() != null}" class="signal-report-tag"
-              th:text="${signal.analysisProfileLabel()}">Custom profile</span>
-        <span th:if="${signal.scoreVersion() == 'ELLIOTT_V2' and signal.elliottV1EligibilityScore() != null}"
-              class="signal-report-tag"
-              th:text="${'V1 eligibility ' + signal.elliottV1EligibilityScore() + '/100'}">V1 eligibility 88/100</span>
+              th:title="${#tr.text(signal.lifecycle().summary())}"
+              th:text="#{signalDetail.status(${#tr.text(signal.lifecycle().label())})}">Status: Detected</span>
       </div>
     </div>
     <div class="signal-report-actions">
-      <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary">Open workspace <span class="button-arrow" aria-hidden="true">&rarr;</span></a>
+      <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary"><span th:text="#{detail.openWorkspace}">Open workspace</span> <span class="button-arrow" aria-hidden="true">&rarr;</span></a>
     </div>
   </header>
 
-  <nav class="signal-view-tabs signal-three-view-tabs" aria-label="Signal detail views" role="tablist">
+  <nav class="signal-view-tabs signal-three-view-tabs" aria-label="Signal detail views" role="tablist" th:aria-label="#{detail.viewsAria}">
     <button id="graphicalOutlookTab"
             class="signal-view-tab active"
             type="button"
@@ -86,7 +77,7 @@
             aria-controls="graphicalOutlookPanel"
             data-signal-tab="graphical">
       <span class="signal-tab-icon" aria-hidden="true">&#9650;</span>
-      <span><strong>Chart</strong><small>See the setup on its chart</small></span>
+      <span><strong th:text="#{outlookChange.tab.chart}">Chart</strong><small th:text="#{signalDetail.tab.chartHelp}">See the setup on its chart</small></span>
     </button>
     <button id="scoreReportTab"
             class="signal-view-tab"
@@ -96,7 +87,7 @@
             aria-controls="scoreReportPanel"
             data-signal-tab="score">
       <span class="signal-tab-icon score" aria-hidden="true">&#35;</span>
-      <span><strong>Score report</strong><small>Review follow-through and evidence</small></span>
+      <span><strong th:text="#{detail.tab.score}">Score report</strong><small th:text="#{signalDetail.tab.scoreHelp}">Review follow-through and evidence</small></span>
     </button>
     <button id="resultsTab"
             class="signal-view-tab"
@@ -107,7 +98,7 @@
             data-signal-tab="results"
             th:attr="data-results-available=${signal.results().available()}">
       <span class="signal-tab-icon results" aria-hidden="true">%</span>
-      <span><strong>Results</strong><small>See price changes after the signal</small></span>
+      <span><strong th:text="#{virtualTrade.tab.results}">Results</strong><small th:text="#{detail.tab.resultsHelp}">See price changes after the signal</small></span>
     </button>
   </nav>
 
@@ -119,10 +110,10 @@
     <article class="signal-score-card" th:classappend="${' ' + displayScore.band()}">
       <div class="signal-score-card-topline">
         <div>
-          <span class="signal-section-kicker">Supporting indicators</span>
-          <h2 id="setup-heading">Setup score</h2>
+          <span class="signal-section-kicker" th:text="#{signalDetail.supportingIndicators}">Supporting indicators</span>
+          <h2 id="setup-heading"><span th:text="#{signals.column.setupScore}">Setup score</span> <span th:replace="~{fragments/term-help :: termHelp('help-setup-score', #{signalDetail.help.setupScoreTerm}, #{signalDetail.help.setupScore})}"></span></h2>
         </div>
-        <span class="signal-confidence-pill" th:text="${displayScore.strengthLabel()}">Strong setup</span>
+        <span class="signal-confidence-pill" th:text="${#tr.text(displayScore.strengthLabel())}">Strong setup</span>
       </div>
 
       <div class="signal-score-visual">
@@ -133,64 +124,76 @@
           </div>
         </div>
         <div class="signal-score-summary">
-          <p th:text="${displayScore.explanation()}">Strong setup: broad confluence across the selected technical evidence.</p>
+          <p th:text="${#tr.text(displayScore.explanation())}">Strong setup: broad confluence across the selected technical evidence.</p>
           <p th:if="${displayScore.customApplied() and signal.setupScore() != displayScore.score()}"
              class="signal-factory-score-note">
-            Original recorded score:
-            <strong th:text="${signal.setupScore() + '/100'}">84/100</strong>.
-            Your scoring settings change the displayed score, not the original saved score.
+            <span th:text="#{signalDetail.originalRecorded}">Original recorded score:</span>
+            <strong th:text="${signal.setupScore() + '/100'}">84/100</strong><span th:text="#{signalDetail.settingsChangeDisplay}">.
+            Your scoring settings change the displayed score, not the original saved score.</span>
           </p>
           <p th:if="${!displayScore.customApplied() and displayScore.profileNote() != null and #strings.contains(displayScore.profileNote(), 'does not contain')}"
-             class="signal-factory-score-note" th:text="${displayScore.profileNote()}"></p>
-          <p th:if="${#strings.contains(signal.scoreVersion(), 'EXPERIMENTAL')}">
+             class="signal-factory-score-note" th:text="${#tr.text(displayScore.profileNote())}"></p>
+          <p th:if="${#strings.contains(signal.scoreVersion(), 'EXPERIMENTAL')}" th:text="#{signalDetail.experimentalNote}">
             This experimental score measures supporting indicators, not the chance of a profitable trade.
           </p>
           <div class="signal-score-rail"
                role="meter"
                aria-valuemin="0"
                aria-valuemax="100"
-               th:attr="aria-valuenow=${displayScore.score()},aria-label=${'Setup score ' + displayScore.score() + ' out of 100'}">
+               th:attr="aria-valuenow=${displayScore.score()}" th:aria-label="#{signals.setupScoreAria(${displayScore.score()})}">
             <span th:each="segment : ${#numbers.sequence(1, 20)}"
                   class="signal-score-segment"
                   th:classappend="${displayScore.score() >= segment * 5} ? ' active' : ''"></span>
           </div>
-          <div class="signal-score-thresholds" aria-label="Setup score thresholds">
-            <span><i class="threshold-dot low" aria-hidden="true"></i>Low support &lt;75</span>
-            <span><i class="threshold-dot medium" aria-hidden="true"></i>Moderate support 75&ndash;84</span>
-            <span><i class="threshold-dot high" aria-hidden="true"></i>High support 85+</span>
+          <div class="signal-score-thresholds" aria-label="Setup score thresholds" th:aria-label="#{signalDetail.thresholdsAria}">
+            <span><i class="threshold-dot low" aria-hidden="true"></i><span th:text="#{signalDetail.threshold.low}">Low support &lt;75</span></span>
+            <span><i class="threshold-dot medium" aria-hidden="true"></i><span th:text="#{signalDetail.threshold.moderate}">Moderate support 75&ndash;84</span></span>
+            <span><i class="threshold-dot high" aria-hidden="true"></i><span th:text="#{signalDetail.threshold.high}">High support 85+</span></span>
           </div>
+          <details class="how-it-works signal-score-model">
+            <summary th:text="#{signalDetail.scoringDetails}">Scoring details</summary>
+            <ul>
+              <li th:text="#{alertHistory.scoreModel(${signal.scoreVersion()})}">Score model: CANDLE_V5_TEXTBOOK</li>
+              <li th:if="${displayScore.customApplied()}" th:text="#{signalDetail.customWeightsApplied}">Your custom scoring weights are applied.</li>
+              <li th:if="${signal.analysisProfileVersion() != null}" th:text="#{signalDetail.detectionProfile(${#tr.text(signal.analysisProfileLabel())})}">Detection profile: Custom profile</li>
+              <li th:if="${signal.researchHorizonLabel() != null}"
+                  th:text="#{signalDetail.researchHorizonNote(${#tr.text(signal.researchHorizonLabel())})}">Research horizon: 8&ndash;12 weeks.</li>
+              <li th:if="${signal.scoreVersion() == 'ELLIOTT_V2' and signal.elliottV1EligibilityScore() != null}"
+                  th:text="#{signalDetail.v1Eligibility(${signal.elliottV1EligibilityScore()})}">V1 eligibility: 88/100</li>
+            </ul>
+          </details>
         </div>
       </div>
     </article>
 
     <aside class="signal-snapshot-card" aria-labelledby="snapshot-heading">
-      <div class="signal-section-kicker">At detection</div>
-      <h2 id="snapshot-heading">Market snapshot</h2>
+      <div class="signal-section-kicker" th:text="#{signalDetail.atDetection}">At detection</div>
+      <h2 id="snapshot-heading" th:text="#{signalDetail.marketSnapshot}">Market snapshot</h2>
       <div class="signal-snapshot-grid">
         <div class="signal-snapshot-item">
-          <span>Direction</span>
+          <span th:text="#{detail.direction}">Direction</span>
           <strong class="snapshot-direction"
                   th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-                  th:text="${signal.directionLabel()}">Potential buy</strong>
+                  th:text="${#tr.text(signal.directionLabel())}">Potential buy</strong>
         </div>
         <div class="signal-snapshot-item">
-          <span>Interval</span>
-          <strong th:text="${signal.intervalLabel()}">Weekly</strong>
+          <span th:text="#{signals.column.interval}">Interval</span>
+          <strong th:text="${#tr.text(signal.intervalLabel())}">Weekly</strong>
         </div>
         <div class="signal-snapshot-item">
-          <span>Signal period</span>
-          <strong th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Not available'}">13&ndash;17 Jul 2026</strong>
+          <span th:text="#{detail.signalPeriod}">Signal period</span>
+          <strong th:text="${signal.signalPeriodLabel() != null ? #tr.text(signal.signalPeriodLabel()) : #messages.msg('signalDetail.notAvailable')}">13&ndash;17 Jul 2026</strong>
         </div>
         <div class="signal-snapshot-item">
-          <span>Recorded close</span>
-          <strong th:text="${signal.closePrice() != null ? #numbers.formatDecimal(signal.closePrice(), 1, 2) : 'Not available'}">19.42</strong>
+          <span th:text="#{signalDetail.recordedClose}">Recorded close</span>
+          <strong th:text="${signal.closePrice() != null ? #numbers.formatDecimal(signal.closePrice(), 1, 2) : #messages.msg('signalDetail.notAvailable')}">19.42</strong>
         </div>
       </div>
       <div class="signal-email-status" th:classappend="${signal.initialEmailSentAt() == null} ? ' website-only' : ''">
         <span class="email-status-icon" aria-hidden="true">&#10003;</span>
         <div>
-          <strong th:text="${signal.initialEmailSentAt() != null ? 'Alert email delivered' : 'Website notification only'}">Alert email delivered</strong>
-          <time th:text="${signal.initialEmailSentAt() != null ? #temporals.format(signal.initialEmailSentAt(), 'dd MMM yyyy, HH:mm') : 'Email was disabled by market-delivery preferences'}">08 Jul 2026, 08:15</time>
+          <strong th:text="${signal.initialEmailSentAt() != null ? #messages.msg('signalDetail.emailDelivered') : #messages.msg('signalDetail.websiteOnly')}">Alert email delivered</strong>
+          <time th:text="${signal.initialEmailSentAt() != null ? #temporals.format(signal.initialEmailSentAt(), 'dd MMM yyyy, HH:mm') : #messages.msg('signalDetail.emailDisabled')}">08 Jul 2026, 08:15</time>
         </div>
       </div>
     </aside>
@@ -199,17 +202,15 @@
   <section class="signal-chart-card" aria-labelledby="signal-chart-heading">
     <div class="signal-chart-heading">
       <div>
-        <div class="signal-section-kicker">Pattern on price</div>
-        <h2 id="signal-chart-heading" data-detail-chart-heading>
-          <span th:text="${signal.patternLabel()}">Bullish Harami</span>
-          on the <span data-detail-chart-interval-label th:text="${signal.intervalLabel()}">weekly</span> chart
-        </h2>
-        <p th:if="${signal.chart().available()}" data-detail-chart-summary th:text="${signal.chart().summary()}">
+        <div class="signal-section-kicker" th:text="#{detail.patternOnPrice}">Pattern on price</div>
+        <h2 id="signal-chart-heading" data-detail-chart-heading th:data-heading-subject="${#tr.text(signal.patternLabel())}"
+            th:text="${#messages.msgOrNull('js.detailChart.heading.' + signal.interval().name(), #tr.text(signal.patternLabel())) ?: #tr.text(signal.patternLabel())}">Bullish Harami on the weekly chart</h2>
+        <p th:if="${signal.chart().available()}" data-detail-chart-summary th:text="${#tr.text(signal.chart().summary())}">
           The prior trend and pattern candles are marked on the chart.
         </p>
       </div>
       <div class="signal-chart-heading-actions">
-        <span class="signal-chart-cache-badge" data-detail-chart-status>Available price history</span>
+        <span class="signal-chart-cache-badge" data-detail-chart-status th:text="#{candleHistory.chartStatus}">Available price history</span>
         <div class="signal-detail-interval-switcher"
              role="group"
              aria-label="Chart candle interval"
@@ -217,59 +218,59 @@
              data-chart-kind="technical"
              th:attr="data-symbol=${signal.symbol()},
                       data-native-interval=${signal.interval().name() == 'DAILY' ? '1d' : (signal.interval().name() == 'WEEKLY' ? '1wk' : '1mo')},
-                      data-native-label=${signal.intervalLabel()},
-                      data-signal-label=${signal.patternLabel()},
+                      data-native-label=${#tr.text(signal.intervalLabel())},
+                      data-signal-label=${#tr.text(signal.patternLabel())},
                       data-signal-family=${signal.patternFamily().name()},
-                      data-elliott-subwave-color=${elliottSubwaveColor}">
+                      data-elliott-subwave-color=${elliottSubwaveColor}" th:aria-label="#{detail.chartIntervalAria}">
           <button type="button" class="signal-detail-interval-button"
                   th:classappend="${signal.interval().name() == 'DAILY'} ? ' active' : ''"
                   data-detail-interval="1d"
-                  th:attr="aria-pressed=${signal.interval().name() == 'DAILY'}"><span>Daily</span><small th:if="${signal.interval().name() == 'DAILY'}">Signal interval</small></button>
+                  th:attr="aria-pressed=${signal.interval().name() == 'DAILY'}"><span th:text="#{common.interval.DAILY}">Daily</span><small th:if="${signal.interval().name() == 'DAILY'}" th:text="#{signalDetail.signalInterval}">Signal interval</small></button>
           <button type="button" class="signal-detail-interval-button"
                   th:classappend="${signal.interval().name() == 'WEEKLY'} ? ' active' : ''"
                   data-detail-interval="1wk"
-                  th:attr="aria-pressed=${signal.interval().name() == 'WEEKLY'}"><span>Weekly</span><small th:if="${signal.interval().name() == 'WEEKLY'}">Signal interval</small></button>
+                  th:attr="aria-pressed=${signal.interval().name() == 'WEEKLY'}"><span th:text="#{common.interval.WEEKLY}">Weekly</span><small th:if="${signal.interval().name() == 'WEEKLY'}" th:text="#{signalDetail.signalInterval}">Signal interval</small></button>
           <button type="button" class="signal-detail-interval-button"
                   th:classappend="${signal.interval().name() == 'MONTHLY'} ? ' active' : ''"
                   data-detail-interval="1mo"
-                  th:attr="aria-pressed=${signal.interval().name() == 'MONTHLY'}"><span>Monthly</span><small th:if="${signal.interval().name() == 'MONTHLY'}">Signal interval</small></button>
+                  th:attr="aria-pressed=${signal.interval().name() == 'MONTHLY'}"><span th:text="#{common.interval.MONTHLY}">Monthly</span><small th:if="${signal.interval().name() == 'MONTHLY'}" th:text="#{signalDetail.signalInterval}">Signal interval</small></button>
         </div>
       </div>
     </div>
 
-    <div th:if="${signal.chart().available()}" class="signal-chart-legend" aria-label="Chart annotation legend" data-native-signal-legend>
+    <div th:if="${signal.chart().available()}" class="signal-chart-legend" aria-label="Chart annotation legend" data-native-signal-legend th:aria-label="#{detail.annotationLegendAria}">
       <th:block th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">
-        <span><i class="signal-chart-key trend" aria-hidden="true"></i><span th:text="${signal.chart().trendLabel()}">Required downtrend</span></span>
-        <span><i class="signal-chart-key pattern" aria-hidden="true"></i>Pattern candles</span>
-        <span><i class="signal-chart-key detection" aria-hidden="true"></i>Detection candle</span>
-        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-entry" aria-hidden="true"></i>Trade entry</span>
-        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-target" aria-hidden="true"></i><th:block th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? 'Fibonacci target trigger' : 'Sell target / reward'}">Target / reward</th:block></span>
-        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-stop" aria-hidden="true"></i>Stop loss / risk</span>
-        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key time-stop" aria-hidden="true"></i>Time stop</span>
+        <span><i class="signal-chart-key trend" aria-hidden="true"></i><span th:text="${#tr.text(signal.chart().trendLabel())}">Required downtrend</span></span>
+        <span><i class="signal-chart-key pattern" aria-hidden="true"></i><span th:text="#{detail.legend.patternCandles}">Pattern candles</span></span>
+        <span><i class="signal-chart-key detection" aria-hidden="true"></i><span th:text="#{detail.legend.detectionCandle}">Detection candle</span></span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-entry" aria-hidden="true"></i><span th:text="#{alertHistory.entry}">Trade entry</span></span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-target" aria-hidden="true"></i><th:block th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? #messages.msg('signalDetail.fibonacciTrigger') : #messages.msg('detail.legend.target')}">Target / reward</th:block></span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-stop" aria-hidden="true"></i><span th:text="#{detail.legend.stop}">Stop loss / risk</span></span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key time-stop" aria-hidden="true"></i><span th:text="#{detail.timeStop}">Time stop</span></span>
       </th:block>
       <th:block th:if="${signal.chart().elliottWave() != null}">
-        <span><i class="signal-chart-key motive" aria-hidden="true"></i>Motive I&ndash;V</span>
-        <span th:if="${signal.chart().elliottWave().correctionComplete()}"><i class="signal-chart-key corrective" aria-hidden="true"></i>Corrective A&ndash;B&ndash;C</span>
-        <span><i class="signal-chart-key subwave" aria-hidden="true"></i>Subwaves on hover</span>
-        <span><i class="signal-chart-key confirmation" aria-hidden="true"></i>Recorded confirmation</span>
-        <span th:if="${signal.elliottProjection() != null}"><i class="signal-chart-key projection" aria-hidden="true"></i>Conditional projection</span>
-        <span th:if="${signal.elliottProjection() != null}"><i class="signal-chart-key projection-zone" aria-hidden="true"></i>Target and candle window</span>
+        <span><i class="signal-chart-key motive" aria-hidden="true"></i><span th:text="#{detail.legend.motive}">Motive I&ndash;V</span></span>
+        <span th:if="${signal.chart().elliottWave().correctionComplete()}"><i class="signal-chart-key corrective" aria-hidden="true"></i><span th:text="#{detail.legend.corrective}">Corrective A&ndash;B&ndash;C</span></span>
+        <span><i class="signal-chart-key subwave" aria-hidden="true"></i><span th:text="#{detail.legend.subwaves}">Subwaves on hover</span></span>
+        <span><i class="signal-chart-key confirmation" aria-hidden="true"></i><span th:text="#{signalDetail.legend.confirmation}">Recorded confirmation</span></span>
+        <span th:if="${signal.elliottProjection() != null}"><i class="signal-chart-key projection" aria-hidden="true"></i><span th:text="#{signalDetail.legend.projection}">Conditional projection</span></span>
+        <span th:if="${signal.elliottProjection() != null}"><i class="signal-chart-key projection-zone" aria-hidden="true"></i><span th:text="#{signalDetail.legend.projectionZone}">Target and candle window</span></span>
       </th:block>
       <th:block th:if="${signal.chart().harmonic() != null}">
-        <span><i class="signal-chart-key motive" aria-hidden="true"></i>Saved harmonic geometry</span>
-        <span><i class="signal-chart-key confirmation" aria-hidden="true"></i>Confirmation candle</span>
-        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-entry" aria-hidden="true"></i>Confirmation-close entry</span>
-        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-stop" aria-hidden="true"></i>Structural boundary and buffered stop</span>
+        <span><i class="signal-chart-key motive" aria-hidden="true"></i><span th:text="#{signalDetail.legend.harmonic}">Saved harmonic geometry</span></span>
+        <span><i class="signal-chart-key confirmation" aria-hidden="true"></i><span th:text="#{harmonicHistory.legend.confirmation}">Confirmation candle</span></span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-entry" aria-hidden="true"></i><span th:text="#{js.signalDetail.confirmationCloseEntry}">Confirmation-close entry</span></span>
+        <span th:if="${signal.lifecycle().entryPrice() != null}"><i class="signal-chart-key trade-stop" aria-hidden="true"></i><span th:text="#{signalDetail.legend.harmonicStop}">Structural boundary and buffered stop</span></span>
       </th:block>
     </div>
 
     <div class="signal-native-interval-notice" data-native-interval-notice hidden>
       <span class="signal-native-interval-icon" aria-hidden="true">i</span>
       <div>
-        <h3 data-native-interval-title>Signal annotations are hidden on this interval</h3>
-        <p data-native-interval-message>The signal and its supporting structure are shown only on the interval where they were detected.</p>
+        <h3 data-native-interval-title th:text="#{signalDetail.annotationsHidden}">Signal annotations are hidden on this interval</h3>
+        <p data-native-interval-message th:text="#{signalDetail.annotationsHiddenHelp}">The signal and its supporting structure are shown only on the interval where they were detected.</p>
       </div>
-      <button type="button" class="btn-secondary" data-return-native-interval>Return to signal interval</button>
+      <button type="button" class="btn-secondary" data-return-native-interval th:text="#{signalDetail.returnToInterval}">Return to signal interval</button>
     </div>
 
     <div th:if="${signal.chart().available()}"
@@ -277,17 +278,17 @@
          class="signal-chart"
          data-native-detail-chart
          role="group"
-         th:attr="aria-label=${signal.patternLabel() + ' candlestick chart for ' + signal.symbol()},
-                  data-trend-start=${signal.chart().trendStartTimestamp()},
+         th:aria-label="#{signalDetail.chartAria(${#tr.text(signal.patternLabel())}, ${signal.symbol()})}"
+         th:attr="data-trend-start=${signal.chart().trendStartTimestamp()},
                   data-pattern-start=${signal.chart().patternStartTimestamp()},
                   data-signal-time=${signal.chart().signalTimestamp()},
                   data-pattern-count=${signal.chart().patternCandleCount()},
-                  data-pattern-label=${signal.patternLabel()},
+                  data-pattern-label=${#tr.text(signal.patternLabel())},
                   data-direction=${signal.tradeSignal().name()},
                   data-family=${signal.patternFamily().name()},
                   data-symbol=${signal.symbol()},
                   data-interval=${signal.interval().name()},
-                  data-trend-label=${signal.chart().trendLabel()},
+                  data-trend-label=${#tr.text(signal.chart().trendLabel())},
                   data-trade-entry=${signal.lifecycle().entryPrice()},
                   data-trade-structural-stop=${signal.lifecycle().structuralStopPrice()},
                   data-trade-stop=${signal.lifecycle().stopLossPrice()},
@@ -299,10 +300,10 @@
                   data-trade-resolution-status=${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.lifecycle().elliottTradePlanStatus() : (signal.patternFamily().name() == 'HARMONIC_FORMATION' ? signal.lifecycle().harmonicStopStatus() : signal.lifecycle().status().name())},
                   data-trade-resolution-close=${signal.lifecycle().tradeResolutionPrice() != null ? signal.lifecycle().tradeResolutionPrice() : signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.lifecycle().elliottTradeResolutionClose() : (signal.patternFamily().name() == 'HARMONIC_FORMATION' ? signal.lifecycle().harmonicStopResolutionPrice() : signal.lifecycle().resolutionClosePrice())}"></div>
     <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
-         th:attr="aria-label=${'Alternate interval price chart for ' + signal.symbol()}" role="group"></div>
+         th:aria-label="#{signalDetail.alternateChartAria(${signal.symbol()})}" role="group"></div>
     <div class="signal-chart-unavailable signal-detail-interval-error" data-detail-interval-error hidden>
       <span aria-hidden="true">!</span>
-      <div><h3>Chart interval is unavailable</h3><p data-detail-interval-error-message>Price history is unavailable for this interval.</p></div>
+      <div><h3 th:text="#{detail.intervalUnavailable}">Chart interval is unavailable</h3><p data-detail-interval-error-message th:text="#{js.detailChart.historyUnavailable}">Price history is unavailable for this interval.</p></div>
     </div>
     <ol th:if="${signal.chart().available()}" id="signalChartData" hidden aria-hidden="true">
       <li th:each="candle : ${signal.chart().candles()}"
@@ -329,11 +330,12 @@
                  data-source-price=${signal.elliottProjection().sourcePrice()}">
       <li th:each="scenario : ${signal.elliottProjection().scenarios()}"
           th:if="${scenario.drawable()}"
-          th:attr="data-key=${scenario.key()},data-label=${scenario.label()},
+          th:attr="data-key=${scenario.key()},data-label=${#tr.text(scenario.label())},
                    data-status=${scenario.status().name()},data-rank=${scenario.rank()},
                    data-confidence=${scenario.confidence()},
                    data-zone-low=${scenario.targetZoneLow()},data-zone-high=${scenario.targetZoneHigh()},
-                   data-min-candles=${scenario.minimumCandles()},data-max-candles=${scenario.maximumCandles()}">
+                   data-min-candles=${scenario.minimumCandles()},data-max-candles=${scenario.maximumCandles()},
+                   data-hard-price=${scenario.hardInvalidationPrice()}">
         <span th:each="point : ${scenario.path()}" data-projection-point
               th:attr="data-offset=${point.candleOffset()},data-time=${point.timestamp()},
                        data-price=${point.price()},data-label=${point.label()}"></span>
@@ -354,8 +356,8 @@
     <div th:unless="${signal.chart().available()}" class="signal-chart-unavailable" data-native-chart-unavailable>
       <span aria-hidden="true">i</span>
       <div>
-        <h3>Chart context is unavailable for this signal</h3>
-        <p th:text="${signal.chart().unavailableReason()}">Price data for the original candle is unavailable.</p>
+        <h3 th:text="#{detail.chartContextUnavailable}">Chart context is unavailable for this signal</h3>
+        <p th:text="${#tr.text(signal.chart().unavailableReason())}">Price data for the original candle is unavailable.</p>
       </div>
     </div>
   </section>
@@ -364,71 +366,71 @@
            class="elliott-projection-card" aria-labelledby="elliott-projection-heading">
     <div class="elliott-projection-heading">
       <div>
-        <div class="signal-section-kicker">Possible Elliott Wave paths</div>
-        <h2 id="elliott-projection-heading">How the next wave could develop</h2>
-        <p>These paths show possible wave developments. Dashed lines connect estimated price ranges and timing; they are not predictions.</p>
+        <div class="signal-section-kicker" th:text="#{signalDetail.projectionKicker}">Possible Elliott Wave paths</div>
+        <h2 id="elliott-projection-heading" th:text="#{signalDetail.projectionTitle}">How the next wave could develop</h2>
+        <p th:text="#{signalDetail.projectionHelp}">These paths show possible wave developments. Dashed lines connect estimated price ranges and timing; they are not predictions.</p>
       </div>
       <span class="elliott-projection-stage"
-            th:text="${#strings.replace(signal.elliottProjection().stage().name(), '_', ' ')}">WAVE II END</span>
+            th:text="${#messages.msgOrNull('enum.elliottStage.' + signal.elliottProjection().stage().name()) ?: #strings.replace(signal.elliottProjection().stage().name(), '_', ' ')}">WAVE II END</span>
     </div>
     <div class="elliott-projection-grid">
       <article th:each="scenario : ${signal.elliottProjection().scenarios()}"
                class="elliott-projection-scenario"
                th:classappend="${!scenario.drawable() or scenario.status().name() == 'DISFAVORED' ? ' disfavored' : (scenario.rank() == 1 ? ' preferred' : '')}">
         <header>
-          <span class="elliott-projection-rank" th:text="${!scenario.drawable() ? 'Monitoring' : (scenario.rank() == 1 ? 'Preferred' : 'Alternate ' + (scenario.rank() - 1))}">Preferred</span>
-          <span class="elliott-projection-confidence" th:text="${scenario.confidence() + '/100 confidence'}">62/100 confidence</span>
+          <span class="elliott-projection-rank" th:text="${!scenario.drawable() ? #messages.msg('signalDetail.monitoring') : (scenario.rank() == 1 ? #messages.msg('signalDetail.preferred') : #messages.msg('signalDetail.alternate', scenario.rank() - 1))}">Preferred</span>
+          <span class="elliott-projection-confidence" th:text="#{signalDetail.confidence(${scenario.confidence()})}">62/100 confidence</span>
         </header>
-        <h3 th:text="${scenario.label()}">Standard Wave III</h3>
-        <p th:text="${scenario.description()}">Five-wave advance.</p>
+        <h3 th:text="${#tr.text(scenario.label())}">Standard Wave III</h3>
+        <p th:text="${#tr.text(scenario.description())}">Five-wave advance.</p>
         <dl>
-          <div><dt>Target zone</dt><dd th:text="${#numbers.formatDecimal(scenario.targetZoneLow(), 1, 4) + ' – ' + #numbers.formatDecimal(scenario.targetZoneHigh(), 1, 4)}">108–112</dd></div>
-          <div><dt>Expected timing</dt><dd th:text="${'Candles ' + scenario.minimumCandles() + '–' + scenario.maximumCandles()}">Candles 6–14</dd></div>
-          <div><dt>Textbook basis</dt><dd th:text="${scenario.targetBasis()}">161.8% extension</dd></div>
-          <div th:if="${scenario.hardInvalidationPrice() != null}"><dt>Hard invalidation</dt><dd th:text="${scenario.hardInvalidationSide() + ' ' + #numbers.formatDecimal(scenario.hardInvalidationPrice(), 1, 4)}">BELOW 95</dd></div>
+          <div><dt th:text="${scenario.key() == 'COMPRESSED_WAVE_IV' ? #messages.msg('signalDetail.legalWaveFour') : #messages.msg('signalDetail.targetZone')}">Target zone</dt><dd th:text="${#numbers.formatDecimal(scenario.targetZoneLow(), 1, 4) + ' – ' + #numbers.formatDecimal(scenario.targetZoneHigh(), 1, 4)}">108–112</dd></div>
+          <div><dt th:text="#{signalDetail.expectedTiming}">Expected timing</dt><dd th:text="#{signalDetail.candleRange(${'' + scenario.minimumCandles()}, ${'' + scenario.maximumCandles()})}">Candles 6–14</dd></div>
+          <div><dt th:text="${scenario.key() == 'COMPRESSED_WAVE_IV' ? #messages.msg('signalDetail.basis') : #messages.msg('signalDetail.textbookBasis')}">Textbook basis</dt><dd th:text="${#tr.text(scenario.targetBasis())}">161.8% extension</dd></div>
+          <div th:if="${scenario.hardInvalidationPrice() != null}"><dt th:text="#{signalDetail.hardInvalidation}">Hard invalidation</dt><dd th:text="${(#messages.msgOrNull('enum.side.' + scenario.hardInvalidationSide()) ?: scenario.hardInvalidationSide()) + ' ' + #numbers.formatDecimal(scenario.hardInvalidationPrice(), 1, 4)}">BELOW 95</dd></div>
         </dl>
         <div class="elliott-projection-state" th:classappend="${!scenario.drawable() or scenario.status().name() == 'DISFAVORED' ? ' warning' : ''}">
-          <span th:text="${#strings.replace(scenario.status().name(), '_', ' ')}">ACTIVE</span>
-          <p th:text="${scenario.evaluationNote()}">Awaiting the next candle.</p>
+          <span th:text="${#messages.msgOrNull('enum.scenarioStatus.' + scenario.status().name()) ?: #strings.replace(scenario.status().name(), '_', ' ')}">ACTIVE</span>
+          <p th:text="${#tr.text(scenario.evaluationNote())}">Awaiting the next candle.</p>
         </div>
         <p th:if="${#lists.size(scenario.revisions()) > 1}"
-           th:text="${'Revised ' + scenario.revisions().getLast().decisionDate() + ': ' + scenario.revisions().getLast().reason()}"></p>
-        <p th:if="${scenario.drawable() and #lists.size(scenario.revisions()) > 1}">The path starts at a completed close as a provisional anchor; its remaining turns are conditional.</p>
+           th:text="#{signalDetail.revised(${scenario.revisions().getLast().decisionDate()}, ${#tr.text(scenario.revisions().getLast().reason())})}"></p>
+        <p th:if="${scenario.drawable() and #lists.size(scenario.revisions()) > 1}" th:text="#{signalDetail.provisionalAnchor}">The path starts at a completed close as a provisional anchor; its remaining turns are conditional.</p>
         <ul>
-          <li th:each="evidence : ${scenario.evidence()}" th:text="${evidence}">Evidence</li>
+          <li th:each="evidence : ${scenario.evidence()}" th:text="${#tr.text(evidence)}">Evidence</li>
         </ul>
       </article>
     </div>
     <p class="elliott-projection-footnote">
-      Only completed candles update these scenarios. Hard rule breaches invalidate a count immediately.
+      <span th:text="#{signalDetail.projectionFootnote}">Only completed candles update these scenarios. Hard rule breaches invalidate a count immediately.
       Material deviations require three consecutive closes before a revision, with at least five candles between redraws.
-      Timing is measured from the original wave endpoint. Target contact awaits wave confirmation; unsupported paths are hidden.
+      Timing is measured from the original wave endpoint. Target contact awaits wave confirmation; unsupported paths are hidden.</span>
       <span th:if="${signal.elliottProjection().hiddenScenarioCount() > 0}"
-            th:text="${signal.elliottProjection().hiddenScenarioCount() + ' invalidated or finished path(s) are hidden from the chart but retained for audit history.'}">Hidden paths retained.</span>
-      <span th:if="${!signal.alertRuleActive()}">This existing map remains monitored after unfollowing, but no new ticker notifications are created.</span>
+            th:text="${#messages.msg(#tr.pluralKey('signalDetail.hiddenPaths', signal.elliottProjection().hiddenScenarioCount()), signal.elliottProjection().hiddenScenarioCount())}">Hidden paths retained.</span>
+      <span th:if="${!signal.alertRuleActive()}" th:text="#{signalDetail.unfollowedMap}">This existing map remains monitored after unfollowing, but no new ticker notifications are created.</span>
     </p>
   </section>
 
   <section th:fragment="elliottProjectionHistory" th:if="${!#lists.isEmpty(signal.elliottProjectionHistory())}"
-           class="elliott-projection-card" aria-label="Projection revision history">
+           class="elliott-projection-card" aria-label="Projection revision history" th:aria-label="#{signalDetail.historyAria}">
     <details>
-      <summary>Projection history — original paths and revisions</summary>
-      <p>Each version shows the forecast retained at that decision candle. Later observations do not rewrite earlier versions.</p>
+      <summary th:text="#{signalDetail.historySummary}">Projection history — original paths and revisions</summary>
+      <p th:text="#{signalDetail.historyHelp}">Each version shows the forecast retained at that decision candle. Later observations do not rewrite earlier versions.</p>
       <div th:each="projection : ${signal.elliottProjectionHistory()}">
-        <h3 th:text="${#strings.replace(projection.stage().name(), '_', ' ') + ' · stage revision ' + projection.revision()}"></h3>
-        <p th:if="${projection.resolutionReason() != null}" th:text="${projection.resolutionReason()}"></p>
+        <h3 th:text="${(#messages.msgOrNull('enum.elliottStage.' + projection.stage().name()) ?: #strings.replace(projection.stage().name(), '_', ' ')) + ' · ' + #messages.msg('signalDetail.stageRevision', projection.revision())}"></h3>
+        <p th:if="${projection.resolutionReason() != null}" th:text="${#tr.text(projection.resolutionReason())}"></p>
         <details th:each="scenario : ${projection.scenarios()}">
-          <summary th:text="${scenario.label() + ' · ' + #strings.replace(scenario.status().name(), '_', ' ')}"></summary>
-          <p th:text="${scenario.evaluationNote()}"></p>
+          <summary th:text="${#tr.text(scenario.label()) + ' · ' + (#messages.msgOrNull('enum.scenarioStatus.' + scenario.status().name()) ?: #strings.replace(scenario.status().name(), '_', ' '))}"></summary>
+          <p th:text="${#tr.text(scenario.evaluationNote())}"></p>
           <details th:each="revision, revisionStat : ${scenario.revisions()}">
-            <summary th:text="${(revisionStat.first ? 'Original path' : 'Path revision ' + revisionStat.index) + ' · known on ' + revision.decisionDate()}"></summary>
-            <p th:text="${revision.reason()}"></p>
-            <p th:text="${'Target ' + #numbers.formatDecimal(revision.targetZoneLow(), 1, 4) + '–' + #numbers.formatDecimal(revision.targetZoneHigh(), 1, 4) + '; candles ' + revision.minimumCandles() + '–' + revision.maximumCandles() + ' from the original endpoint.'}"></p>
+            <summary th:text="${(revisionStat.first ? #messages.msg('signalDetail.originalPath') : #messages.msg('signalDetail.pathRevision', revisionStat.index)) + ' · ' + #messages.msg('signalDetail.knownOn', revision.decisionDate())}"></summary>
+            <p th:text="${#tr.text(revision.reason())}"></p>
+            <p th:text="#{signalDetail.revisionTarget(${#numbers.formatDecimal(revision.targetZoneLow(), 1, 4)}, ${#numbers.formatDecimal(revision.targetZoneHigh(), 1, 4)}, ${'' + revision.minimumCandles()}, ${'' + revision.maximumCandles()})}"></p>
             <table>
-              <thead><tr><th scope="col">Date</th><th scope="col">Point</th><th scope="col">Projected price</th></tr></thead>
+              <thead><tr><th scope="col" th:text="#{virtualTrades.sort.date}">Date</th><th scope="col" th:text="#{signalDetail.point}">Point</th><th scope="col" th:text="#{signalDetail.projectedPrice}">Projected price</th></tr></thead>
               <tbody><tr th:each="point : ${revision.turns()}">
-                <td th:text="${point.date()}"></td>
-                <td th:text="${#strings.isEmpty(point.label()) ? 'Anchor' : point.label()}"></td>
+                <td th:text="${#tr.text(point.date())}"></td>
+                <td th:text="${#strings.isEmpty(point.label()) ? #messages.msg('signalDetail.anchor') : point.label()}"></td>
                 <td th:text="${#numbers.formatDecimal(point.price(), 1, 4)}"></td>
               </tr></tbody>
             </table>
@@ -444,26 +446,26 @@
     <div th:each="projection, projectionStat : ${signal.elliottProjectionHistory()}"
          th:if="${projectionStat.first}" class="elliott-projection-heading">
       <div>
-        <div class="signal-section-kicker">Possible Elliott Wave paths · archive</div>
-        <h2 id="elliott-projection-archive-heading">No projected path remains active</h2>
-        <p th:text="${projection.resolutionReason() != null ? projection.resolutionReason() : 'The historical paths no longer satisfy their stored structural conditions.'}">No paths remain active.</p>
+        <div class="signal-section-kicker" th:text="#{signalDetail.archiveKicker}">Possible Elliott Wave paths · archive</div>
+        <h2 id="elliott-projection-archive-heading" th:text="#{signalDetail.archiveTitle}">No projected path remains active</h2>
+        <p th:text="${projection.resolutionReason() != null ? #tr.text(projection.resolutionReason()) : #messages.msg('signalDetail.pathsNoLongerValid')}">No paths remain active.</p>
       </div>
       <span class="elliott-projection-stage terminal"
-            th:text="${#strings.replace(projection.status().name(), '_', ' ')}">INVALIDATED</span>
+            th:text="${#messages.msgOrNull('enum.projectionStatus.' + projection.status().name()) ?: #strings.replace(projection.status().name(), '_', ' ')}">INVALIDATED</span>
     </div>
-    <p class="elliott-projection-footnote">Completed, revised or invalidated paths are hidden from the chart and kept in the report history.</p>
+    <p class="elliott-projection-footnote" th:text="#{signalDetail.archiveNote}">Completed, revised or invalidated paths are hidden from the chart and kept in the report history.</p>
   </section>
 
-  <section th:if="${signal.lifecycle().tradeQualification() != null}" class="signal-trade-plan-card" aria-label="Trade qualification">
-    <div class="signal-trade-plan-heading"><h2 th:text="${signal.lifecycle().tradeActionable() == true ? 'Qualified trade plan' : 'Projection only'}">Trade qualification</h2></div>
-    <p th:text="${signal.lifecycle().tradeQualification()}"></p>
+  <section th:if="${signal.lifecycle().tradeQualification() != null}" class="signal-trade-plan-card" aria-label="Trade qualification" th:aria-label="#{signalDetail.qualificationAria}">
+    <div class="signal-trade-plan-heading"><h2 th:text="${signal.lifecycle().tradeActionable() == true ? #messages.msg('signalDetail.qualifiedPlan') : #messages.msg('signalDetail.projectionOnly')}">Trade qualification</h2></div>
+    <p th:text="${#tr.text(signal.lifecycle().tradeQualification())}"></p>
     <div class="signal-trade-plan-grid">
-      <article th:if="${signal.lifecycle().tradeRiskPercent() != null}"><span>Stop distance</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().tradeRiskPercent(), 1, 2) + '%'}"></strong><small th:if="${signal.lifecycle().tradeRiskAtr() != null}" th:text="${#numbers.formatDecimal(signal.lifecycle().tradeRiskAtr(), 1, 2) + ' ATR'}"></small></article>
-      <article th:if="${signal.lifecycle().secondaryTargetPrice() != null}"><span>Secondary scenario</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().secondaryTargetPrice(), 1, 4)}"></strong><small>The primary target determines qualification. This further objective does not make a rejected entry actionable.</small></article>
-      <article th:if="${signal.lifecycle().tradeHorizonCandles() != null}"><span>Trade horizon</span><strong th:text="${signal.lifecycle().tradeHorizonCandles() + ' completed candles'}"></strong></article>
-      <article th:if="${signal.lifecycle().tradeResolutionPrice() != null}"><span>Modeled exit before costs</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().tradeResolutionPrice(), 1, 4)}"></strong></article>
+      <article th:if="${signal.lifecycle().tradeRiskPercent() != null}"><span th:text="#{signalDetail.stopDistance}">Stop distance</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().tradeRiskPercent(), 1, 2) + '%'}"></strong><small th:if="${signal.lifecycle().tradeRiskAtr() != null}" th:text="${#numbers.formatDecimal(signal.lifecycle().tradeRiskAtr(), 1, 2) + ' ATR'}"></small></article>
+      <article th:if="${signal.lifecycle().secondaryTargetPrice() != null}"><span th:text="#{signalDetail.secondaryScenario}">Secondary scenario</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().secondaryTargetPrice(), 1, 4)}"></strong><small th:text="#{signalDetail.secondaryHelp}">The primary target determines qualification. This further objective does not make a rejected entry actionable.</small></article>
+      <article th:if="${signal.lifecycle().tradeHorizonCandles() != null}"><span th:text="#{signalDetail.tradeHorizon}">Trade horizon</span><strong th:text="${#messages.msg(#tr.pluralKey('candleHistory.completedCandles', signal.lifecycle().tradeHorizonCandles()), signal.lifecycle().tradeHorizonCandles())}"></strong></article>
+      <article th:if="${signal.lifecycle().tradeResolutionPrice() != null}"><span th:text="#{detail.modeledExitBeforeCosts}">Modeled exit before costs</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().tradeResolutionPrice(), 1, 4)}"></strong></article>
     </div>
-    <p>Pattern validity and protective trade exits are separate. These are reference plans, not executed orders. Gaps can exceed a stop; uncertain intrabar ordering is treated conservatively.</p>
+    <p th:text="#{signalDetail.planDisclaimer}">Pattern validity and protective trade exits are separate. These are reference plans, not executed orders. Gaps can exceed a stop; uncertain intrabar ordering is treated conservatively.</p>
   </section>
 
   <section th:if="${signal.patternFamily().name() == 'CANDLESTICK' and signal.lifecycle().entryPrice() != null}"
@@ -471,23 +473,26 @@
            aria-labelledby="candlestick-trade-plan-heading">
     <div class="signal-trade-plan-heading">
       <div>
-        <div class="signal-section-kicker">Saved trade plan</div>
-        <h2 id="candlestick-trade-plan-heading">Risk, reward, and exit plan</h2>
-        <p th:text="${signal.lifecycle().tradeQualification() != null ? 'Protective stops and targets use candle ranges and opening gaps. The structural boundary is retained.' : 'Legacy plan: only completed closes count; wick touches do not exit.'}"></p>
+        <div class="signal-section-kicker" th:text="#{signalDetail.savedPlan}">Saved trade plan</div>
+        <h2 id="candlestick-trade-plan-heading" th:text="#{detail.planTitle}">Risk, reward, and exit plan</h2>
+        <p th:text="${signal.lifecycle().tradeQualification() != null ? #messages.msg('signalDetail.planRangeRules') : #messages.msg('signalDetail.planLegacyRules')}"></p>
       </div>
       <span class="signal-lifecycle-pill" th:classappend="${' ' + signal.lifecycle().cssClass()}"
-            th:text="${signal.lifecycle().label()}">Detected</span>
+            th:text="${#tr.text(signal.lifecycle().label())}">Detected</span>
     </div>
     <div class="signal-trade-plan-grid">
-      <article class="entry"><span>Entry · candle 0</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${signal.lifecycle().detectionPeriodLabel()}">Detection period</small></article>
-      <article class="risk"><span>Stop loss</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">95.0000</strong><small th:text="${signal.lifecycle().atrCircuitBreakerApplied()} ? 'Active ATR/percentage-capped stop' : 'Configured structural or fixed stop'">Configured stop</small></article>
-      <article class="reward"><span>Price to sell / target</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}">110.0000</strong><small th:text="${'Risk-to-reward 1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)}">Risk-to-reward 1:2</small></article>
-      <article class="time"><span>Time stop</span><strong th:text="${'Candle ' + signal.lifecycle().confirmationWindowCandles()}">Candle 8</strong><small>Exit at the saved horizon close if the trade is still open</small></article>
-      <article class="favorable"><span th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Target return' : 'Most favorable completed-close move'}">Most favorable completed-close move</span><strong th:if="${signal.observedOutcome().bestDirectionalMovePercent() != null}" class="positive" th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">+4.00%</strong><strong th:unless="${signal.observedOutcome().bestDirectionalMovePercent() != null}">Awaiting first outcome close</strong><small th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Fixed at the entry-to-target percentage' : 'Best close from entry through exit or the latest available candle'}">Best close in trade window</small></article>
-      <article th:if="${signal.lifecycle().terminal()}" class="exit"><span>Recorded trade exit</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().resolutionClosePrice(), 1, 4)}">103.0000</strong><small th:text="${signal.lifecycle().resolutionPeriodLabel()}">Resolution period</small></article>
-      <article th:if="${signal.lifecycle().atrCircuitBreakerApplied()}" class="risk"><span>ATR circuit breaker</span><strong>Active</strong><small th:text="${'Structural invalidation ' + #numbers.formatDecimal(signal.lifecycle().structuralStopPrice(), 1, 4) + ' · original configured stop ' + #numbers.formatDecimal(signal.lifecycle().configuredStopLossPrice(), 1, 4) + ' · ATR(' + signal.lifecycle().atrPeriod() + ') ' + (signal.lifecycle().atrValue() != null ? #numbers.formatDecimal(signal.lifecycle().atrValue(), 1, 4) + ' × ' + #numbers.formatDecimal(signal.lifecycle().atrMultiplier(), 1, 2) : 'unavailable; percentage cap used') + ' · activated above ' + #numbers.formatDecimal(signal.lifecycle().activationThresholdPercent(), 1, 2) + '%'}">Circuit-breaker calculation</small></article>
+      <article class="entry" th:if="${signal.lifecycle().awaitingFill()}"><span th:text="#{signalDetail.entryNextOpen}">Entry · next open</span><strong th:text="#{signalDetail.reference(${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)})}">Ref. 100.0000</strong><small th:text="#{signalDetail.entryNextOpenHelp}">The trade enters at the next candle's open; stop and target are re-checked there</small></article>
+      <article class="entry" th:if="${signal.lifecycle().notFilled()}"><span th:text="#{js.chart.entry}">Entry</span><strong th:text="#{signalDetail.notFilled}">Not filled</strong><small th:text="${#tr.text(signal.lifecycle().resolutionReason())}">The next open was beyond the stop or target</small></article>
+      <article class="entry" th:if="${signal.lifecycle().filledAtOpen()}"><span th:text="#{signalDetail.entryOpen}">Entry · open</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${#tr.text(signal.lifecycle().entryPeriodLabel())}">Entry period</small></article>
+      <article class="entry" th:if="${signal.lifecycle().tradeFillStatus() == null}"><span th:text="#{detail.entryCandle0}">Entry · candle 0</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${#tr.text(signal.lifecycle().detectionPeriodLabel())}">Detection period</small></article>
+      <article class="risk"><span th:text="#{alertHistory.stopLoss}">Stop loss</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">95.0000</strong><small th:text="${signal.lifecycle().atrCircuitBreakerApplied()} ? #{candleHistory.stop.atr} : #{candleHistory.stop.configured}">Configured stop</small></article>
+      <article class="reward"><span th:text="#{detail.priceToSell}">Price to sell / target</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}">110.0000</strong><small th:text="#{candleHistory.riskReward(${#numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)})}">Risk-to-reward 1:2</small></article>
+      <article class="time"><span th:text="#{detail.timeStop}">Time stop</span><strong th:text="#{candleHistory.candle(${'' + signal.lifecycle().confirmationWindowCandles()})}">Candle 8</strong><small th:text="#{signalDetail.timeStopHelp}">Exit at the saved horizon close if the trade is still open</small></article>
+      <article class="favorable"><span th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? #messages.msg('candleHistory.targetReturn') : #messages.msg('candleHistory.mostFavorable')}">Most favorable completed-close move</span><strong th:if="${signal.observedOutcome().bestDirectionalMovePercent() != null}" class="positive" th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">+4.00%</strong><strong th:unless="${signal.observedOutcome().bestDirectionalMovePercent() != null}" th:text="#{detail.awaitingFirstClose}">Awaiting first outcome close</strong><small th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? #messages.msg('candleHistory.fixedPercentage') : #messages.msg('candleHistory.bestCloseWindow')}">Best close in trade window</small></article>
+      <article th:if="${signal.lifecycle().terminal()}" class="exit"><span th:text="#{signalDetail.recordedExit}">Recorded trade exit</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().resolutionClosePrice(), 1, 4)}">103.0000</strong><small th:text="${#tr.text(signal.lifecycle().resolutionPeriodLabel())}">Resolution period</small></article>
+      <article th:if="${signal.lifecycle().atrCircuitBreakerApplied()}" class="risk"><span th:text="#{alertHistory.atrCircuitBreaker}">ATR circuit breaker</span><strong th:text="#{alertHistory.active}">Active</strong><small th:text="#{candleHistory.atrDetail(${#numbers.formatDecimal(signal.lifecycle().structuralStopPrice(), 1, 4)}, ${#numbers.formatDecimal(signal.lifecycle().configuredStopLossPrice(), 1, 4)}, ${'' + signal.lifecycle().atrPeriod()}, ${signal.lifecycle().atrValue() != null ? #numbers.formatDecimal(signal.lifecycle().atrValue(), 1, 4) + ' × ' + #numbers.formatDecimal(signal.lifecycle().atrMultiplier(), 1, 2) : #messages.msg('candleHistory.atrUnavailable')}, ${#numbers.formatDecimal(signal.lifecycle().activationThresholdPercent(), 1, 2)})}">Circuit-breaker calculation</small></article>
     </div>
-    <p class="signal-trade-plan-summary" th:text="${signal.observedOutcome().summary()}">The trade remains open.</p>
+    <p class="signal-trade-plan-summary" th:text="${#tr.text(signal.observedOutcome().summary())}">The trade remains open.</p>
   </section>
 
   <section th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().entryPrice() != null and signal.lifecycle().elliottTargetZoneLow() != null}"
@@ -495,31 +500,31 @@
            aria-labelledby="elliott-trade-plan-heading">
     <div class="signal-trade-plan-heading">
       <div>
-        <div class="signal-section-kicker">Possible Elliott trade</div>
-        <h2 id="elliott-trade-plan-heading">Risk, reward, and price zone</h2>
-        <p>A possible trade based on the confirmed wave stage.</p>
+        <div class="signal-section-kicker" th:text="#{signalDetail.elliottPlanKicker}">Possible Elliott trade</div>
+        <h2 id="elliott-trade-plan-heading" th:text="#{signalDetail.elliottPlanTitle}">Risk, reward, and price zone</h2>
+        <p th:text="#{signalDetail.elliottPlanHelp}">A possible trade based on the confirmed wave stage.</p>
       </div>
       <span class="signal-lifecycle-pill"
             th:classappend="${signal.lifecycle().elliottTradeActionable() ? ' confirmed' : ' potential'}"
-            th:text="${signal.lifecycle().elliottTradeActionable() ? 'Possible trade' : 'Projection only'}">Possible trade</span>
+            th:text="${signal.lifecycle().elliottTradeActionable() ? #messages.msg('signalDetail.possibleTrade') : #messages.msg('signalDetail.projectionOnly')}">Possible trade</span>
     </div>
     <div class="signal-trade-plan-grid">
-      <article class="entry"><span>Entry</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${signal.lifecycle().elliottSignalStage() != null ? #strings.replace(signal.lifecycle().elliottSignalStage().name(), '_', ' ') : 'Validated Elliott stage'}">Wave II end</small></article>
-      <article class="risk"><span>Buffered stop loss</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">95.0000</strong><small th:text="${'Exact structural level ' + #numbers.formatDecimal(signal.lifecycle().structuralStopPrice(), 1, 4)}">Exact structural level 95.2000</small></article>
-      <article class="reward"><span>Fibonacci target zone</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().elliottTargetZoneLow(), 1, 4) + ' – ' + #numbers.formatDecimal(signal.lifecycle().elliottTargetZoneHigh(), 1, 4)}">108.0000 – 111.0000</strong><small th:text="${'Conservative trigger ' + #numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}">Conservative trigger 108.0000</small></article>
-      <article><span>Target basis</span><strong th:text="${signal.lifecycle().elliottTargetBasis()}">161.8% Wave I extension</strong><small th:text="${'Midpoint ' + #numbers.formatDecimal(signal.lifecycle().elliottTargetMidPrice(), 1, 4)}">Midpoint 109.5000</small></article>
-      <article th:classappend="${signal.lifecycle().elliottTradeActionable() ? ' favorable' : ' time'}"><span>Risk to reward</span><strong th:text="${'1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 2)}">1:2.40</strong><small th:text="${'Required on this interval: 1:' + #numbers.formatDecimal(signal.lifecycle().elliottRequiredRewardRiskRatio(), 1, 0)}">Required 1:2</small></article>
-      <article th:if="${signal.lifecycle().invalidationPrice() != null}" class="risk"><span>Stored Elliott invalidation</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">90.0000</strong><small>Crossing this level invalidates the wave count. Reaching the buffered stop closes the possible trade without necessarily invalidating the wave.</small></article>
-      <article th:if="${signal.lifecycle().elliottTradePlanStatus() != null}"><span>Plan status</span><strong th:text="${#strings.replace(signal.lifecycle().elliottTradePlanStatus(), '_', ' ')}">ACTIVE</strong><small th:text="${signal.lifecycle().elliottTradeResolutionReason() != null ? signal.lifecycle().elliottTradeResolutionReason() : 'Awaiting a completed-candle outcome'}">Awaiting outcome</small></article>
+      <article class="entry"><span th:text="#{js.chart.entry}">Entry</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${signal.lifecycle().elliottSignalStage() != null ? (#messages.msgOrNull('enum.elliottStage.' + signal.lifecycle().elliottSignalStage().name()) ?: #strings.replace(signal.lifecycle().elliottSignalStage().name(), '_', ' ')) : #messages.msg('signalDetail.validatedStage')}">Wave II end</small></article>
+      <article class="risk"><span th:text="#{signalDetail.bufferedStopLoss}">Buffered stop loss</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">95.0000</strong><small th:text="#{signalDetail.exactStructuralLevel(${#numbers.formatDecimal(signal.lifecycle().structuralStopPrice(), 1, 4)})}">Exact structural level 95.2000</small></article>
+      <article class="reward"><span th:text="#{signalDetail.fibonacciZone}">Fibonacci target zone</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().elliottTargetZoneLow(), 1, 4) + ' – ' + #numbers.formatDecimal(signal.lifecycle().elliottTargetZoneHigh(), 1, 4)}">108.0000 – 111.0000</strong><small th:text="#{signalDetail.conservativeTrigger(${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)})}">Conservative trigger 108.0000</small></article>
+      <article><span th:text="#{signalDetail.targetBasis}">Target basis</span><strong th:text="${#tr.text(signal.lifecycle().elliottTargetBasis())}">161.8% Wave I extension</strong><small th:text="#{signalDetail.midpoint(${#numbers.formatDecimal(signal.lifecycle().elliottTargetMidPrice(), 1, 4)})}">Midpoint 109.5000</small></article>
+      <article th:classappend="${signal.lifecycle().elliottTradeActionable() ? ' favorable' : ' time'}"><span th:text="#{signalDetail.riskToReward}">Risk to reward</span><strong th:text="${'1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 2)}">1:2.40</strong><small th:text="#{signalDetail.requiredRatio(${#numbers.formatDecimal(signal.lifecycle().elliottRequiredRewardRiskRatio(), 1, 0)})}">Required 1:2</small></article>
+      <article th:if="${signal.lifecycle().invalidationPrice() != null}" class="risk"><span th:text="#{signalDetail.storedInvalidation}">Stored Elliott invalidation</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationPrice(), 1, 4)}">90.0000</strong><small th:text="#{signalDetail.storedInvalidationHelp}">Crossing this level invalidates the wave count. Reaching the buffered stop closes the possible trade without necessarily invalidating the wave.</small></article>
+      <article th:if="${signal.lifecycle().elliottTradePlanStatus() != null}"><span th:text="#{signalDetail.planStatus}">Plan status</span><strong th:text="${#messages.msgOrNull('enum.planStatus.' + signal.lifecycle().elliottTradePlanStatus()) ?: #strings.replace(signal.lifecycle().elliottTradePlanStatus(), '_', ' ')}">ACTIVE</strong><small th:text="${signal.lifecycle().elliottTradeResolutionReason() != null ? #tr.text(signal.lifecycle().elliottTradeResolutionReason()) : #messages.msg('signalDetail.awaitingCandleOutcome')}">Awaiting outcome</small></article>
     </div>
-    <p class="signal-trade-plan-summary">Targets use a ±1.5% Fibonacci target range. The nearer edge determines the displayed risk-to-reward ratio. Daily requires at least 1:2; weekly and monthly require at least 1:3. Anything below that is clearly marked projection only.</p>
-    <ol th:if="${!#lists.isEmpty(signal.elliottTradePlans())}" class="signal-lifecycle-timeline" aria-label="Elliott possible-trade plan history">
+    <p class="signal-trade-plan-summary" th:text="#{signalDetail.elliottPlanRules}">Targets use a ±1.5% Fibonacci target range. The nearer edge determines the displayed risk-to-reward ratio. Daily requires at least 1:2; weekly and monthly require at least 1:3. Anything below that is clearly marked projection only.</p>
+    <ol th:if="${!#lists.isEmpty(signal.elliottTradePlans())}" class="signal-lifecycle-timeline" aria-label="Elliott possible-trade plan history" th:aria-label="#{signalDetail.planHistoryAria}">
       <li th:each="plan : ${signal.elliottTradePlans()}" class="signal-lifecycle-step detected">
         <span class="lifecycle-step-marker" aria-hidden="true">•</span>
         <div class="lifecycle-step-copy">
-          <strong th:text="${#strings.replace(plan.stage().name(), '_', ' ') + ' · revision ' + plan.revision() + ' · ' + #strings.replace(plan.status().name(), '_', ' ')}">Wave II · revision 1 · active</strong>
-          <small th:text="${plan.targetBasis() + ' · target zone ' + #numbers.formatDecimal(plan.targetZoneLow(), 1, 4) + '–' + #numbers.formatDecimal(plan.targetZoneHigh(), 1, 4) + ' · R:R 1:' + #numbers.formatDecimal(plan.actualRewardRiskRatio(), 1, 2)}">Plan details</small>
-          <small th:if="${plan.resolutionReason() != null}" th:text="${plan.resolutionReason()}">Resolution</small>
+          <strong th:text="${(#messages.msgOrNull('enum.elliottStage.' + plan.stage().name()) ?: #strings.replace(plan.stage().name(), '_', ' ')) + ' · ' + #messages.msg('signalDetail.revision', plan.revision()) + ' · ' + (#messages.msgOrNull('enum.planStatus.' + plan.status().name()) ?: #strings.replace(plan.status().name(), '_', ' '))}">Wave II · revision 1 · active</strong>
+          <small th:text="#{signalDetail.planDetails(${#tr.text(plan.targetBasis())}, ${#numbers.formatDecimal(plan.targetZoneLow(), 1, 4)}, ${#numbers.formatDecimal(plan.targetZoneHigh(), 1, 4)}, ${#numbers.formatDecimal(plan.actualRewardRiskRatio(), 1, 2)})}">Plan details</small>
+          <small th:if="${plan.resolutionReason() != null}" th:text="${#tr.text(plan.resolutionReason())}">Resolution</small>
         </div>
       </li>
     </ol>
@@ -530,26 +535,26 @@
            aria-labelledby="harmonic-stop-plan-heading">
     <div class="signal-trade-plan-heading">
       <div>
-        <div class="signal-section-kicker">Harmonic trade plan</div>
-        <h2 id="harmonic-stop-plan-heading">Entry, targets, stop, and trade horizon</h2>
-        <p>The outcome is tracked from the candle that confirms the harmonic pattern.</p>
+        <div class="signal-section-kicker" th:text="#{signalDetail.harmonicPlanKicker}">Harmonic trade plan</div>
+        <h2 id="harmonic-stop-plan-heading" th:text="#{signalDetail.harmonicPlanTitle}">Entry, targets, stop, and trade horizon</h2>
+        <p th:text="#{signalDetail.harmonicPlanHelp}">The outcome is tracked from the candle that confirms the harmonic pattern.</p>
       </div>
       <span class="signal-lifecycle-pill"
             th:classappend="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? ' expired' : ' detected')}"
-            th:text="${#strings.replace(signal.lifecycle().harmonicStopStatus(), '_', ' ')}">Active outcome</span>
+            th:text="${#messages.msgOrNull('enum.planStatus.' + signal.lifecycle().harmonicStopStatus()) ?: #strings.replace(signal.lifecycle().harmonicStopStatus(), '_', ' ')}">Active outcome</span>
     </div>
     <div class="signal-trade-plan-grid">
-      <article class="entry"><span>Reference entry</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${'Confirmation close · ' + signal.signalPeriodLabel()}">Confirmation close</small></article>
-      <article><span th:text="${signal.pattern().name() == 'HARMONIC_SHARK' ? 'PRZ point C' : 'PRZ point D'}">PRZ point D</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicEndpointPrice(), 1, 4)}">98.0000</strong><small>The endpoint was not executable until pivot confirmation.</small></article>
-      <article th:if="${signal.lifecycle().profitTargetPrice() != null}" class="reward"><span>Primary target</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}"></strong><small th:text="${'Reward/risk 1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 2)}"></small></article>
-      <article class="risk"><span>Exact structural invalidation</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().structuralStopPrice(), 1, 4)}">95.0000</strong><small th:text="${signal.lifecycle().harmonicStopBasis()}">Point X / 1.0 XA</small></article>
-      <article><span>Structural formula</span><strong th:text="${signal.lifecycle().harmonicStopFormula()}">A + (X − A) × 1.414</strong><small>The saved formation points are used directly.</small></article>
-      <article class="time"><span>Saved price buffer</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopBufferPercent(), 1, 2) + '%'}">0.50%</strong><small th:text="${'Price buffer ' + #numbers.formatDecimal(signal.lifecycle().harmonicStopBufferAmount(), 1, 4)}">Price buffer 0.4750</small></article>
-      <article class="risk"><span>Protective stop trigger</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">94.5250</strong><small th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopDistancePercent(), 1, 2) + '% from entry'}">5.48% from entry</small></article>
-      <article th:if="${signal.lifecycle().harmonicStopStatus() != null}"><span>Outcome status</span><strong th:text="${#strings.replace(signal.lifecycle().harmonicStopStatus(), '_', ' ')}">ACTIVE</strong><small th:text="${signal.lifecycle().harmonicStopResolutionReason() != null ? signal.lifecycle().harmonicStopResolutionReason() : 'Awaiting a protective stop, primary target, or saved horizon'}">Awaiting outcome</small></article>
-      <article th:if="${signal.lifecycle().harmonicStopResolutionPrice() != null}" class="exit"><span>Outcome exit</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopResolutionPrice(), 1, 4)}">94.0000</strong><small th:text="${'Modeled exit under the saved plan rules.'}">Stored outcome exit.</small></article>
+      <article class="entry"><span th:text="#{js.signalDetail.referenceEntry}">Reference entry</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="#{signalDetail.confirmationClose(${#tr.text(signal.signalPeriodLabel())})}">Confirmation close</small></article>
+      <article><span th:text="#{signalDetail.przPointD}">PRZ point D</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicEndpointPrice(), 1, 4)}">98.0000</strong><small th:text="#{signalDetail.przHelp}">The endpoint was not executable until pivot confirmation.</small></article>
+      <article th:if="${signal.lifecycle().profitTargetPrice() != null}" class="reward"><span th:text="#{js.signalDetail.primaryTarget}">Primary target</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}"></strong><small th:text="#{signalDetail.rewardRisk(${#numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 2)})}"></small></article>
+      <article class="risk"><span th:text="#{signalDetail.exactInvalidation}">Exact structural invalidation</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().structuralStopPrice(), 1, 4)}">95.0000</strong><small th:text="${#tr.text(signal.lifecycle().harmonicStopBasis())}">Point X / 1.0 XA</small></article>
+      <article><span th:text="#{signalDetail.structuralFormula}">Structural formula</span><strong th:text="${signal.lifecycle().harmonicStopFormula()}">A + (X − A) × 1.414</strong><small th:text="#{signalDetail.formulaHelp}">The saved formation points are used directly.</small></article>
+      <article class="time"><span th:text="#{signalDetail.savedBuffer}">Saved price buffer</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopBufferPercent(), 1, 2) + '%'}">0.50%</strong><small th:text="#{signalDetail.priceBuffer(${#numbers.formatDecimal(signal.lifecycle().harmonicStopBufferAmount(), 1, 4)})}">Price buffer 0.4750</small></article>
+      <article class="risk"><span th:text="#{signalDetail.protectiveTrigger}">Protective stop trigger</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">94.5250</strong><small th:text="#{signalDetail.fromEntry(${#numbers.formatDecimal(signal.lifecycle().harmonicStopDistancePercent(), 1, 2)})}">5.48% from entry</small></article>
+      <article th:if="${signal.lifecycle().harmonicStopStatus() != null}"><span th:text="#{signalDetail.outcomeStatus}">Outcome status</span><strong th:text="${#messages.msgOrNull('enum.planStatus.' + signal.lifecycle().harmonicStopStatus()) ?: #strings.replace(signal.lifecycle().harmonicStopStatus(), '_', ' ')}">ACTIVE</strong><small th:text="${signal.lifecycle().harmonicStopResolutionReason() != null ? #tr.text(signal.lifecycle().harmonicStopResolutionReason()) : #messages.msg('signalDetail.awaitingHarmonicOutcome')}">Awaiting outcome</small></article>
+      <article th:if="${signal.lifecycle().harmonicStopResolutionPrice() != null}" class="exit"><span th:text="#{signalDetail.outcomeExit}">Outcome exit</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().harmonicStopResolutionPrice(), 1, 4)}">94.0000</strong><small th:text="#{signalDetail.modeledExitRules}">Stored outcome exit.</small></article>
     </div>
-    <p class="signal-trade-plan-summary">Legacy harmonic plans retain their eight-bar stop-only rules. New plans qualify against a primary target, retain the structural stop and use a pattern-specific horizon. Confirmation-bar prices are excluded from subsequent outcomes.</p>
+    <p class="signal-trade-plan-summary" th:text="#{signalDetail.harmonicPlanRules}">Legacy harmonic plans retain their eight-bar stop-only rules. New plans qualify against a primary target, retain the structural stop and use a pattern-specific horizon. Confirmation-bar prices are excluded from subsequent outcomes.</p>
   </section>
 
   <section th:if="${signal.chart().harmonic() != null}"
@@ -557,26 +562,26 @@
            aria-labelledby="harmonic-geometry-heading">
     <div class="method-note-index" aria-hidden="true">01</div>
     <div class="harmonic-geometry-content">
-      <div class="signal-section-kicker">Saved at detection</div>
-      <h2 id="harmonic-geometry-heading">Harmonic formation geometry</h2>
-      <p>These points and ratios were saved with the alert. Confirmation comes after D/C, once later candles establish the turning point.</p>
+      <div class="signal-section-kicker" th:text="#{signalDetail.savedAtDetection}">Saved at detection</div>
+      <h2 id="harmonic-geometry-heading" th:text="#{signalDetail.harmonicGeometry}">Harmonic formation geometry</h2>
+      <p th:text="#{signalDetail.harmonicGeometryHelp}">These points and ratios were saved with the alert. Confirmation comes after D, once later candles establish the turning point.</p>
       <div class="harmonic-geometry-groups">
         <section class="harmonic-geometry-group" aria-labelledby="harmonic-points-heading">
           <div class="harmonic-geometry-group-heading">
-            <h3 id="harmonic-points-heading">Formation points</h3>
-            <span th:text="${signal.chart().harmonic().points().size() + ' pivots'}">5 pivots</span>
+            <h3 id="harmonic-points-heading" th:text="#{harmonicHistory.points}">Formation points</h3>
+            <span th:text="${#messages.msg(#tr.pluralKey('harmonicHistory.pivots', signal.chart().harmonic().points().size()), signal.chart().harmonic().points().size())}">5 pivots</span>
           </div>
           <div class="harmonic-geometry-grid points">
             <div th:each="point : ${signal.chart().harmonic().points()}" class="signal-snapshot-item harmonic-geometry-item">
-              <span th:text="${'Point ' + point.label()}">Point X</span>
+              <span th:text="#{harmonicHistory.point(${point.label()})}">Point X</span>
               <strong th:text="${#numbers.formatDecimal(point.price(), 1, 4)}">100.0000</strong>
             </div>
           </div>
         </section>
         <section class="harmonic-geometry-group" aria-labelledby="harmonic-measurements-heading">
           <div class="harmonic-geometry-group-heading">
-            <h3 id="harmonic-measurements-heading">Measured ratios</h3>
-            <span th:text="${signal.chart().harmonic().measurements().size() + ' checks'}">6 checks</span>
+            <h3 id="harmonic-measurements-heading" th:text="#{harmonicHistory.ratios}">Measured ratios</h3>
+            <span th:text="${#messages.msg(#tr.pluralKey('harmonicHistory.checks', signal.chart().harmonic().measurements().size()), signal.chart().harmonic().measurements().size())}">6 checks</span>
           </div>
           <div class="harmonic-geometry-grid ratios">
             <div th:each="measurement : ${signal.chart().harmonic().measurements()}" class="signal-snapshot-item harmonic-geometry-item">
@@ -601,37 +606,37 @@
            aria-labelledby="lifecycle-heading">
     <div class="signal-lifecycle-heading">
       <div>
-        <div class="signal-section-kicker" th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Detection and trade execution' : 'Candidate validation and follow-through'}">Detection and trade execution</div>
-        <h2 id="lifecycle-heading">Signal lifecycle</h2>
+        <div class="signal-section-kicker" th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? #messages.msg('candleHistory.lifecycleKicker') : #messages.msg('signalDetail.validationKicker')}">Detection and trade execution</div>
+        <h2 id="lifecycle-heading" th:text="#{detail.lifecycle}">Signal lifecycle</h2>
       </div>
       <span class="signal-lifecycle-pill lifecycle-heading-pill"
             th:classappend="${' ' + signal.lifecycle().cssClass()}"
-            th:text="${signal.lifecycle().label()}">Detected</span>
+            th:text="${#tr.text(signal.lifecycle().label())}">Detected</span>
     </div>
-    <p class="signal-lifecycle-summary" th:text="${signal.lifecycle().summary()}">
+    <p class="signal-lifecycle-summary" th:text="${#tr.text(signal.lifecycle().summary())}">
       Waiting for a completed candle to cross a lifecycle boundary.
     </p>
     <div th:if="${signal.lifecycle().developingElliottCycle()}" class="signal-trade-plan-grid">
-      <article class="entry"><span>Current stage entry</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${signal.lifecycle().detectionPeriodLabel()}">Initial Wave II period</small></article>
-      <article class="risk"><span>Buffered stop loss</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">95.0000</strong><small>Completed-candle trade stop outside the exact structural level</small></article>
-      <article class="reward"><span>Next-wave target</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}">110.0000</strong><small th:text="${signal.lifecycle().elliottForecastLabel()}">Projected next wave</small></article>
-      <article><span>Correction count</span><strong th:text="${signal.lifecycle().elliottCorrectionType() != null ? signal.lifecycle().elliottCorrectionType() : 'Not yet applicable'}">Corrective A-B-C</strong><small>Validated at the lower degree</small></article>
+      <article class="entry"><span th:text="#{signalDetail.currentStageEntry}">Current stage entry</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong><small th:text="${#tr.text(signal.lifecycle().detectionPeriodLabel())}">Initial Wave II period</small></article>
+      <article class="risk"><span th:text="#{signalDetail.bufferedStopLoss}">Buffered stop loss</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 4)}">95.0000</strong><small th:text="#{signalDetail.stageStopHelp}">Completed-candle trade stop outside the exact structural level</small></article>
+      <article class="reward"><span th:text="#{signalDetail.nextWaveTarget}">Next-wave target</span><strong th:text="${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4)}">110.0000</strong><small th:text="${#tr.text(signal.lifecycle().elliottForecastLabel())}">Projected next wave</small></article>
+      <article><span th:text="#{signalDetail.correctionCount}">Correction count</span><strong th:text="${signal.lifecycle().elliottCorrectionType() != null ? #tr.text(signal.lifecycle().elliottCorrectionType()) : #messages.msg('signalDetail.notYetApplicable')}">Corrective A-B-C</strong><small th:text="#{signalDetail.lowerDegree}">Validated at the lower degree</small></article>
     </div>
-    <ol th:if="${signal.lifecycle().developingElliottCycle() and !#lists.isEmpty(signal.lifecycle().elliottTransitionHistory())}" class="signal-lifecycle-timeline" aria-label="Elliott stage history">
+    <ol th:if="${signal.lifecycle().developingElliottCycle() and !#lists.isEmpty(signal.lifecycle().elliottTransitionHistory())}" class="signal-lifecycle-timeline" aria-label="Elliott stage history" th:aria-label="#{signalDetail.stageHistoryAria}">
       <li th:each="transition : ${signal.lifecycle().elliottTransitionHistory()}" class="signal-lifecycle-step detected">
         <span class="lifecycle-step-marker" aria-hidden="true">•</span>
-        <div class="lifecycle-step-copy"><strong th:text="${transition}">Stage transition</strong></div>
+        <div class="lifecycle-step-copy"><strong th:text="${#tr.text(transition)}">Stage transition</strong></div>
       </li>
     </ol>
-    <ol class="signal-lifecycle-timeline" aria-label="Signal lifecycle timeline">
+    <ol class="signal-lifecycle-timeline" aria-label="Signal lifecycle timeline" th:aria-label="#{signalDetail.timelineAria}">
       <li class="signal-lifecycle-step detected">
         <span class="lifecycle-step-marker" aria-hidden="true">1</span>
         <div class="lifecycle-step-copy">
-          <span class="lifecycle-step-label" th:text="${signal.lifecycle().immediateConfirmationRequired() ? 'Candidate geometry' : 'Detection'}">Detection</span>
-          <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? 'Potential candidate' : 'Detected'}">Detected</strong>
-          <time th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Signal period unavailable'}">13&ndash;17 Jul 2026</time>
+          <span class="lifecycle-step-label" th:text="${signal.lifecycle().immediateConfirmationRequired() ? #messages.msg('candleHistory.candidateGeometry') : #messages.msg('candleHistory.detection')}">Detection</span>
+          <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? #messages.msg('candleHistory.potentialCandidate') : #messages.msg('candleHistory.detected')}">Detected</strong>
+          <time th:text="${signal.signalPeriodLabel() != null ? #tr.text(signal.signalPeriodLabel()) : #messages.msg('signalDetail.signalPeriodUnavailable')}">13&ndash;17 Jul 2026</time>
           <small th:if="${signal.sentAt() != null}">
-            Alert recorded
+            <span th:text="#{signalDetail.alertRecorded}">Alert recorded</span>
             <time th:text="${#temporals.format(signal.sentAt(), 'dd MMM yyyy, HH:mm')}">17 Jul 2026, 22:15</time>
           </small>
         </div>
@@ -640,10 +645,10 @@
           class="signal-lifecycle-step detected">
         <span class="lifecycle-step-marker" aria-hidden="true">2</span>
         <div class="lifecycle-step-copy">
-          <span class="lifecycle-step-label">Detection gate passed</span>
-          <strong>Detected signal</strong>
-          <time th:text="${signal.lifecycle().detectionPeriodLabel()}">20 Jul 2026</time>
-          <small th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Trade opens at the ' + #numbers.formatDecimal(signal.lifecycle().detectionClosePrice(), 1, 4) + ' close (candle 0)' : 'Outcome measurement starts from the ' + #numbers.formatDecimal(signal.lifecycle().detectionClosePrice(), 1, 4) + ' close'}">Trade opens at this close</small>
+          <span class="lifecycle-step-label" th:text="#{candleHistory.gatePassed}">Detection gate passed</span>
+          <strong th:text="#{candleHistory.detectedSignal}">Detected signal</strong>
+          <time th:text="${#tr.text(signal.lifecycle().detectionPeriodLabel())}">20 Jul 2026</time>
+          <small th:text="${#messages.msg(signal.patternFamily().name() == 'CANDLESTICK' ? 'candleHistory.tradeOpens' : 'signalDetail.measurementStarts', #numbers.formatDecimal(signal.lifecycle().detectionClosePrice(), 1, 4))}">Trade opens at this close</small>
         </div>
       </li>
       <li th:if="${signal.lifecycle().terminal()}"
@@ -652,11 +657,11 @@
         <span class="lifecycle-step-marker" aria-hidden="true"
               th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().detectionCandleTimestamp() != null ? '3' : '2'}">2</span>
         <div class="lifecycle-step-copy">
-          <span class="lifecycle-step-label">Terminal update</span>
-          <strong th:text="${signal.lifecycle().label()}">Confirmed</strong>
-          <time th:text="${signal.lifecycle().resolutionPeriodLabel() != null ? signal.lifecycle().resolutionPeriodLabel() : 'Resolution period unavailable'}">20&ndash;24 Jul 2026</time>
+          <span class="lifecycle-step-label" th:text="#{candleHistory.terminalUpdate}">Terminal update</span>
+          <strong th:text="${#tr.text(signal.lifecycle().label())}">Confirmed</strong>
+          <time th:text="${signal.lifecycle().resolutionPeriodLabel() != null ? #tr.text(signal.lifecycle().resolutionPeriodLabel()) : #messages.msg('alertHistory.resolutionUnavailable')}">20&ndash;24 Jul 2026</time>
           <small th:if="${signal.lifecycle().updatedAt() != null}">
-            Outcome checked
+            <span th:text="#{signalDetail.outcomeChecked}">Outcome checked</span>
             <time th:text="${#temporals.format(signal.lifecycle().updatedAt(), 'dd MMM yyyy, HH:mm')}">24 Jul 2026, 22:15</time>
           </small>
         </div>
@@ -666,11 +671,11 @@
         <span class="lifecycle-step-marker" aria-hidden="true"
               th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'DETECTED' ? '3' : '2'}">2</span>
         <div class="lifecycle-step-copy">
-          <span class="lifecycle-step-label">Next update</span>
-          <strong th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Awaiting mandatory detection gate' : 'Awaiting target, stop, or the saved horizon') : (signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Awaiting mandatory detection gate' : 'Awaiting outcome resolution') : 'Awaiting follow-through')}">Awaiting target, stop, or the saved horizon</strong>
-          <span th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? 'Immediately following completed candle' : 'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles from detection') : 'Up to ' + signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">Up to 3 completed candles</span>
+          <span class="lifecycle-step-label" th:text="#{candleHistory.nextUpdate}">Next update</span>
+          <strong th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? (signal.lifecycle().status().name() == 'POTENTIAL' ? #messages.msg('candleHistory.awaitingGate') : #messages.msg('candleHistory.awaitingOutcome')) : (signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? #messages.msg('candleHistory.awaitingGate') : #messages.msg('signalDetail.awaitingResolution')) : #messages.msg('signalDetail.awaitingFollowThrough'))}">Awaiting target, stop, or the saved horizon</strong>
+          <span th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? #messages.msg('candleHistory.immediatelyFollowing') : #messages.msg(#tr.pluralKey('candleHistory.upToFromDetection', signal.lifecycle().confirmationWindowCandles()), signal.lifecycle().confirmationWindowCandles())) : #messages.msg(#tr.pluralKey('candleHistory.upTo', signal.lifecycle().confirmationWindowCandles()), signal.lifecycle().confirmationWindowCandles())}">Up to 3 completed candles</span>
           <small th:if="${signal.lifecycle().updatedAt() != null}">
-            Tracking started
+            <span th:text="#{signalDetail.trackingStarted}">Tracking started</span>
             <time th:text="${#temporals.format(signal.lifecycle().updatedAt(), 'dd MMM yyyy, HH:mm')}">17 Jul 2026, 22:15</time>
           </small>
         </div>
@@ -678,7 +683,7 @@
     </ol>
     <div class="signal-lifecycle-grid">
       <div>
-        <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? 'Wave structure range' : 'Pattern range'}">Pattern range</span>
+        <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? #messages.msg('signalDetail.waveRange') : #messages.msg('detail.patternRange')}">Pattern range</span>
         <strong>
           <span th:text="${#numbers.formatDecimal(signal.lifecycle().patternLow(), 1, 4)}">96.0000</span>
           <span aria-hidden="true">&ndash;</span>
@@ -686,64 +691,64 @@
         </strong>
       </div>
       <div>
-        <span th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL' ? 'Mandatory detection gate' : (signal.patternFamily().name() == 'CANDLESTICK' ? 'Successful trade target' : 'Confirmation trigger')}">Successful trade target</span>
+        <span th:text="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL' ? #messages.msg('candleHistory.mandatoryGate') : (signal.patternFamily().name() == 'CANDLESTICK' ? #messages.msg('candleHistory.successfulTarget') : #messages.msg('signalDetail.confirmationTrigger'))}">Successful trade target</span>
         <strong th:if="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL'}"
-                th:text="${(signal.tradeSignal().name() == 'BUY' ? 'Green close above ' : 'Red close below ') + #numbers.formatDecimal(signal.closePrice(), 1, 4)}">Green close above 102.0000</strong>
+                th:text="${#messages.msg(signal.tradeSignal().name() == 'BUY' ? 'candleHistory.greenCloseAbove' : 'candleHistory.redCloseBelow', #numbers.formatDecimal(signal.closePrice(), 1, 4))}">Green close above 102.0000</strong>
         <strong th:unless="${signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL'}"
                 th:text="${#numbers.formatDecimal(signal.patternFamily().name() == 'CANDLESTICK' ? signal.lifecycle().profitTargetPrice() : signal.lifecycle().confirmationTriggerPrice(), 1, 4)}">102.0000</strong>
       </div>
       <div th:if="${signal.patternFamily().name() == 'CANDLESTICK' and signal.lifecycle().entryPrice() != null}">
-        <span>Trade entry</span>
+        <span th:text="#{alertHistory.entry}">Trade entry</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 4)}">100.0000</strong>
       </div>
       <div th:if="${signal.lifecycle().invalidationPrice() != null and !(signal.lifecycle().immediateConfirmationRequired() and signal.lifecycle().status().name() == 'POTENTIAL')}">
-        <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? 'Structural invalidation boundary' : 'Stop loss'}">Stop loss</span>
+        <span th:text="${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? #messages.msg('signalDetail.invalidationBoundary') : #messages.msg('alertHistory.stopLoss')}">Stop loss</span>
         <strong th:text="${#numbers.formatDecimal(signal.patternFamily().name() == 'CANDLESTICK' ? signal.lifecycle().stopLossPrice() : signal.lifecycle().invalidationPrice(), 1, 4)}">96.0000</strong>
       </div>
       <div th:if="${signal.patternFamily().name() == 'CANDLESTICK' and signal.lifecycle().rewardRiskRatio() != null}">
-        <span>Risk-to-reward</span>
+        <span th:text="#{detail.riskReward}">Risk-to-reward</span>
         <strong th:text="${'1:' + #numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)}">1:2</strong>
       </div>
       <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().invalidationPrice() == null}">
-        <span>Invalidation rule</span>
-        <strong>Hard Elliott structure rules</strong>
+        <span th:text="#{signalDetail.invalidationRule}">Invalidation rule</span>
+        <strong th:text="#{signalDetail.hardElliottRules}">Hard Elliott structure rules</strong>
       </div>
       <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().elliottEndpointPrice() != null}">
-        <span>Latest Wave V/C endpoint</span>
+        <span th:text="#{signalDetail.latestEndpoint}">Latest Wave V/C endpoint</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().elliottEndpointPrice(), 1, 4)}">108.0000</strong>
       </div>
       <div th:unless="${signal.lifecycle().developingElliottCycle()}">
-        <span th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Time stop' : 'Observation window'}">Time stop</span>
-        <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? '1 mandatory gate candle' : signal.lifecycle().confirmationWindowCandles() + ' completed candles from detection') : signal.lifecycle().confirmationWindowCandles() + ' completed candles'}">3 completed candles</strong>
+        <span th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? #messages.msg('detail.timeStop') : #messages.msg('signalDetail.observationWindow')}">Time stop</span>
+        <strong th:text="${signal.lifecycle().immediateConfirmationRequired() ? (signal.lifecycle().status().name() == 'POTENTIAL' ? #messages.msg('candleHistory.oneGateCandle') : #messages.msg(#tr.pluralKey('candleHistory.completedFromDetection', signal.lifecycle().confirmationWindowCandles()), signal.lifecycle().confirmationWindowCandles())) : #messages.msg(#tr.pluralKey('candleHistory.completedCandles', signal.lifecycle().confirmationWindowCandles()), signal.lifecycle().confirmationWindowCandles())}">3 completed candles</strong>
       </div>
       <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().confirmationMovePercent() != null}">
-        <span>Required favorable move</span>
+        <span th:text="#{signalDetail.requiredMove}">Required favorable move</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().confirmationMovePercent(), 1, 2) + '%'}">2.00%</strong>
       </div>
       <div th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE' and signal.lifecycle().invalidationMovePercent() != null}">
-        <span>Maximum adverse move</span>
+        <span th:text="#{signalDetail.maxAdverse}">Maximum adverse move</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().invalidationMovePercent(), 1, 2) + '%'}">2.00%</strong>
       </div>
       <div th:if="${signal.lifecycle().terminal()}">
-        <span>Resolution period</span>
-        <strong th:text="${signal.lifecycle().resolutionPeriodLabel()}">21 Jul 2026</strong>
+        <span th:text="#{detail.resolutionPeriod}">Resolution period</span>
+        <strong th:text="${#tr.text(signal.lifecycle().resolutionPeriodLabel())}">21 Jul 2026</strong>
       </div>
       <div th:if="${signal.lifecycle().terminal()}">
-        <span>Resolution close</span>
+        <span th:text="#{detail.resolutionClose}">Resolution close</span>
         <strong th:text="${#numbers.formatDecimal(signal.lifecycle().resolutionClosePrice(), 1, 4)}">103.0000</strong>
       </div>
     </div>
     <p class="signal-lifecycle-delivery"
        th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() != null}">
-      Follow-up email sent
+      <span th:text="#{signalDetail.followUpSent}">Follow-up email sent</span>
       <time th:text="${#temporals.format(signal.lifecycle().followUpSentAt(), 'dd MMM yyyy, HH:mm')}">21 Jul 2026, 08:15</time>
     </p>
     <p class="signal-lifecycle-delivery"
-       th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() == null}">
+       th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() == null}" th:text="#{signalDetail.noFollowUp}">
       The outcome is known, but no follow-up email delivery was recorded.
     </p>
     <p class="signal-lifecycle-note"
-       th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? (signal.lifecycle().tradeQualification() != null ? 'Qualified plans use protective stop and target touches, opening gaps and conservative stop-first ordering. Outcomes are modeled before costs.' : 'Candlestick trades use completed-candle closes only. CONFIRMED means the profit target closed successfully, INVALIDATED means the stop loss was hit, and EXPIRED means the trade closed at the saved horizon close.') : (signal.lifecycle().immediateConfirmationRequired() ? 'The mandatory gate and later outcome rules use completed-candle closes, not intraday touches. A rejected candidate never becomes a signal; after detection, the first confirmed, invalidated, or expired outcome is terminal.' : 'Confirmation uses completed-candle closes, not intraday boundary touches. The first confirmed, invalidated, or expired outcome is terminal and does not replace the original detection.')}">
+       th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? (signal.lifecycle().tradeQualification() != null ? #messages.msg('signalDetail.note.qualified') : #messages.msg('signalDetail.note.candleLegacy')) : (signal.lifecycle().immediateConfirmationRequired() ? #messages.msg('signalDetail.note.gate') : #messages.msg('signalDetail.note.confirmation'))}">
       Lifecycle decisions use completed-candle closes, not intraday boundary touches.
     </p>
   </section>
@@ -754,26 +759,26 @@
            aria-labelledby="observed-outcome-heading">
     <div class="historical-outcome-heading">
       <div>
-        <div class="signal-section-kicker">Modeled trade outcome</div>
-        <h2 id="observed-outcome-heading" th:text="${signal.observedOutcome().statusLabel()}">Detected</h2>
+        <div class="signal-section-kicker" th:text="#{candleHistory.outcomeKicker}">Modeled trade outcome</div>
+        <h2 id="observed-outcome-heading" th:text="${#tr.text(signal.observedOutcome().statusLabel())}">Detected</h2>
       </div>
       <span th:if="${signal.observedOutcome().timeStopLabel() != null}"
             class="historical-outcome-badge"
             th:classappend="${' ' + signal.observedOutcome().statusClass()}"
-            th:text="${signal.observedOutcome().timeStopLabel()}">Time stop</span>
+            th:text="${#tr.text(signal.observedOutcome().timeStopLabel())}">Time stop</span>
     </div>
-    <p class="historical-outcome-summary" th:text="${signal.observedOutcome().summary()}">
+    <p class="historical-outcome-summary" th:text="${#tr.text(signal.observedOutcome().summary())}">
       The trade is evaluated from entry through its target, stop, or the saved horizon close.
     </p>
     <div th:if="${signal.observedOutcome().tracked()}" class="historical-outcome-grid">
-      <div><span>Pattern range</span><strong><span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternLow(), 1, 4)}">96.0000</span><span aria-hidden="true">&ndash;</span><span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternHigh(), 1, 4)}">102.0000</span></strong></div>
-      <div><span>Price to sell / target</span><strong th:text="${signal.lifecycle().profitTargetPrice() != null ? #numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4) : 'Set after detection'}">110.0000</strong></div>
-      <div th:if="${signal.observedOutcome().directionalReturnPercent() != null}"><span th:text="${signal.observedOutcome().impactLabel()}">Entry-to-exit return</span><strong th:classappend="${signal.observedOutcome().directionalReturnPercent() >= 0} ? ' positive' : ' negative'" th:text="${(signal.observedOutcome().directionalReturnPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.observedOutcome().directionalReturnPercent(), 1, 2) + '%'}">+4.25%</strong></div>
-      <div th:if="${signal.observedOutcome().evaluationClose() != null}"><span th:text="${signal.lifecycle().terminal() ? 'Modeled exit' : 'Latest evaluated close'}">Exit close</span><strong th:text="${#numbers.formatDecimal(signal.observedOutcome().evaluationClose(), 1, 4)}">106.3400</strong><small th:text="${signal.observedOutcome().evaluationPeriodLabel()}">28 Jul 2026</small></div>
-      <div th:if="${signal.observedOutcome().bestDirectionalMovePercent() != null}"><span th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Target return' : 'Most favorable completed-close move'}">Most favorable completed-close move</span><strong class="positive" th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">+6.20%</strong><small th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? 'Fixed at entry-to-target return' : 'Within the saved trade horizon'}">Within the trade window</small></div>
-      <div th:if="${signal.observedOutcome().worstDirectionalMovePercent() != null}"><span>Largest adverse completed-close move</span><strong class="negative" th:text="${#numbers.formatDecimal(signal.observedOutcome().worstDirectionalMovePercent(), 1, 2) + '%'}">-2.10%</strong><small>Within the saved trade horizon</small></div>
+      <div><span th:text="#{detail.patternRange}">Pattern range</span><strong><span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternLow(), 1, 4)}">96.0000</span><span aria-hidden="true">&ndash;</span><span th:text="${#numbers.formatDecimal(signal.observedOutcome().patternHigh(), 1, 4)}">102.0000</span></strong></div>
+      <div><span th:text="#{detail.priceToSell}">Price to sell / target</span><strong th:text="${signal.lifecycle().profitTargetPrice() != null ? #numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 4) : #messages.msg('candleHistory.setAfterDetection')}">110.0000</strong></div>
+      <div th:if="${signal.observedOutcome().directionalReturnPercent() != null}"><span th:text="${#tr.text(signal.observedOutcome().impactLabel())}">Entry-to-exit return</span><strong th:classappend="${signal.observedOutcome().directionalReturnPercent() >= 0} ? ' positive' : ' negative'" th:text="${(signal.observedOutcome().directionalReturnPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.observedOutcome().directionalReturnPercent(), 1, 2) + '%'}">+4.25%</strong></div>
+      <div th:if="${signal.observedOutcome().evaluationClose() != null}"><span th:text="${signal.lifecycle().terminal() ? #messages.msg('candleHistory.modeledExit') : #messages.msg('candleHistory.latestClose')}">Exit close</span><strong th:text="${#numbers.formatDecimal(signal.observedOutcome().evaluationClose(), 1, 4)}">106.3400</strong><small th:text="${#tr.text(signal.observedOutcome().evaluationPeriodLabel())}">28 Jul 2026</small></div>
+      <div th:if="${signal.observedOutcome().bestDirectionalMovePercent() != null}"><span th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? #messages.msg('candleHistory.targetReturn') : #messages.msg('candleHistory.mostFavorable')}">Most favorable completed-close move</span><strong class="positive" th:text="${'+' + #numbers.formatDecimal(signal.observedOutcome().bestDirectionalMovePercent(), 1, 2) + '%'}">+6.20%</strong><small th:text="${signal.lifecycle().status().name() == 'CONFIRMED' ? #messages.msg('candleHistory.fixedReturn') : #messages.msg('candleHistory.withinHorizon')}">Within the trade window</small></div>
+      <div th:if="${signal.observedOutcome().worstDirectionalMovePercent() != null}"><span th:text="#{detail.largestAdverse}">Largest adverse completed-close move</span><strong class="negative" th:text="${#numbers.formatDecimal(signal.observedOutcome().worstDirectionalMovePercent(), 1, 2) + '%'}">-2.10%</strong><small th:text="#{candleHistory.withinHorizon}">Within the saved trade horizon</small></div>
     </div>
-    <p th:if="${signal.observedOutcome().tracked()}" class="signal-lifecycle-note">
+    <p th:if="${signal.observedOutcome().tracked()}" class="signal-lifecycle-note" th:text="#{signalDetail.candleModelNote}">
       This is the stored candlestick trade model: configured stop loss, configured interval R:R target,
       the saved exit rules and time stop. It excludes fees, slippage, taxes, and position sizing.
     </p>
@@ -782,11 +787,11 @@
   <section class="signal-evidence-section" aria-labelledby="evidence-heading">
     <div class="signal-evidence-heading">
       <div>
-        <div class="signal-section-kicker">Scoring evidence</div>
-        <h2 id="evidence-heading">Why this score</h2>
-        <p>These are the evidence notes saved with the signal when its alert email was created.</p>
+        <div class="signal-section-kicker" th:text="#{signalDetail.evidenceKicker}">Scoring evidence</div>
+        <h2 id="evidence-heading" th:text="#{detail.whyThisScore}">Why this score</h2>
+        <p th:text="#{signalDetail.evidenceHelp}">These are the evidence notes saved with the signal when its alert email was created.</p>
       </div>
-      <span th:if="${displayScore.evidenceAvailable()}" class="evidence-count"><span th:text="${displayScore.sections().size()}">5</span>&nbsp;factors</span>
+      <span th:if="${displayScore.evidenceAvailable()}" class="evidence-count" th:text="${#messages.msg(#tr.pluralKey('signalDetail.factors', displayScore.sections().size()), displayScore.sections().size())}">5 factors</span>
     </div>
 
     <div th:if="${displayScore.evidenceAvailable()}" class="signal-evidence-grid">
@@ -795,20 +800,20 @@
                th:classappend="${reason.caution()} ? ' caution' : ''">
         <div class="evidence-card-topline">
           <span class="evidence-number" th:text="${#numbers.formatInteger(reasonStat.index + 1, 2)}">01</span>
-          <span class="evidence-category" th:text="${reason.category()}">Pattern geometry</span>
+          <span class="evidence-category" th:text="${#tr.text(reason.category())}">Pattern geometry</span>
           <span th:if="${reason.scoreLabel() != null}"
                 class="evidence-score"
-                th:text="${reason.scoreLabel()}">24/25</span>
-          <span class="evidence-impact" th:text="${reason.statusLabel()}">Partial support</span>
+                th:text="${#tr.text(reason.scoreLabel())}">24/25</span>
+          <span class="evidence-impact" th:text="${#tr.text(reason.statusLabel())}">Partial support</span>
         </div>
         <ul class="evidence-detail-list">
           <li th:each="detail : ${reason.details()}">
             <div class="evidence-detail-heading">
-              <strong th:text="${detail.label()}">Pattern rules</strong>
+              <strong th:text="${#tr.text(detail.label())}">Pattern rules</strong>
               <span th:if="${detail.scoreLabel() != null}"
-                    th:text="${detail.scoreLabel() + ' pts'}">4/5 pts</span>
+                    th:text="#{outlookChange.points(${#tr.text(detail.scoreLabel())})}">4/5 pts</span>
             </div>
-            <p th:text="${detail.text()}">Bullish body geometry confirmed the pattern.</p>
+            <p th:text="${#tr.text(detail.text())}">Bullish body geometry confirmed the pattern.</p>
           </li>
         </ul>
       </article>
@@ -817,8 +822,8 @@
     <div th:unless="${displayScore.evidenceAvailable()}" class="signal-evidence-unavailable">
       <div class="legacy-signal-mark" aria-hidden="true">i</div>
       <div>
-        <h3>Detailed evidence was not stored for this signal</h3>
-        <p>This older signal has a saved score but no detailed score breakdown.</p>
+        <h3 th:text="#{signalDetail.noEvidenceTitle}">Detailed evidence was not stored for this signal</h3>
+        <p th:text="#{signalDetail.noEvidenceText}">This older signal has a saved score but no detailed score breakdown.</p>
       </div>
     </div>
   </section>
@@ -828,10 +833,10 @@
            aria-labelledby="horizon-heading">
     <div class="method-note-index" aria-hidden="true">01</div>
     <div>
-      <div class="signal-section-kicker">Backtest guidance</div>
-      <h2 id="horizon-heading">Most useful research horizon: <span th:text="${signal.researchHorizonLabel()}">8&ndash;12 weeks</span></h2>
-      <p><span th:text="${signal.researchHorizonSummary()}">Historical results were measured over this period.</span>
-        <strong th:text="${signal.researchHorizonDisclaimer()}">Historical evaluation window only.</strong>
+      <div class="signal-section-kicker" th:text="#{signalDetail.backtestKicker}">Backtest guidance</div>
+      <h2 id="horizon-heading" th:text="#{signalDetail.horizonHeading(${#tr.text(signal.researchHorizonLabel())})}">Most useful research horizon: 8&ndash;12 weeks</h2>
+      <p><span th:text="${#tr.text(signal.researchHorizonSummary())}">Historical results were measured over this period.</span>
+        <strong th:text="${#tr.text(signal.researchHorizonDisclaimer())}">Historical evaluation window only.</strong>
       </p>
     </div>
   </section>
@@ -840,12 +845,12 @@
     <div class="method-note-index" aria-hidden="true"
          th:text="${signal.researchHorizonLabel() != null ? '02' : '01'}">02</div>
     <div>
-      <div class="signal-section-kicker">Reading the report</div>
-      <h2 id="method-heading">How the setup score works</h2>
-      <p th:if="${signal.patternFamily().name() == 'CANDLESTICK'}">The pattern must meet its shape and prior-trend rules. Its score combines pattern quality, trend, momentum, Bollinger Bands, support/resistance and volume. Your scoring settings determine the weights. Volume-at-price estimates are approximate because candles do not show individual trades.</p>
-      <p th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE'}">The score combines wave structure, proportions, trend, momentum and confirmation. It measures supporting evidence, not the probability of profit.</p>
-      <p th:if="${signal.patternFamily().name() == 'HARMONIC_FORMATION'}">Required pattern rules must pass. The score then measures how closely the price ratios match the pattern. Your scoring settings determine the category weights.</p>
-      <p>Other pattern families can add or subtract points according to your scoring settings. Only the latest signal from each family, on the same ticker and interval in the preceding eight candles, is considered. The final score stays between 0 and 100.</p>
+      <div class="signal-section-kicker" th:text="#{activityDetail.readingReport}">Reading the report</div>
+      <h2 id="method-heading" th:text="#{signalDetail.howScoreWorks}">How the setup score works</h2>
+      <p th:if="${signal.patternFamily().name() == 'CANDLESTICK'}" th:text="#{signalDetail.method.candlestick}">The pattern must meet its shape and prior-trend rules. Its score combines pattern quality, trend, momentum, Bollinger Bands, support/resistance and volume. Your scoring settings determine the weights. Volume-at-price estimates are approximate because candles do not show individual trades.</p>
+      <p th:if="${signal.patternFamily().name() == 'ELLIOTT_WAVE'}" th:text="#{signalDetail.method.elliott}">The score combines wave structure, proportions, trend, momentum and confirmation. It measures supporting evidence, not the probability of profit.</p>
+      <p th:if="${signal.patternFamily().name() == 'HARMONIC_FORMATION'}" th:text="#{signalDetail.method.harmonic}">Required pattern rules must pass. The score then measures how closely the price ratios match the pattern. Your scoring settings determine the category weights.</p>
+      <p th:text="#{signalDetail.method.confluence}">Other pattern families can add or subtract points according to your scoring settings. Only the latest signal from each family, on the same ticker and interval in the preceding eight candles, is considered. The final score stays between 0 and 100.</p>
     </div>
   </section>
   </div>
@@ -860,58 +865,58 @@
              class="signal-results-section"
              th:attr="data-trade-signal=${signal.results().tradeSignal().name()},
                       data-signal-close=${signal.results().signalClose()},
-                      data-outcome-label=${signal.results().outcomeLabel()},
-                      data-best-action-label=${signal.results().bestActionLabel()}">
+                      data-outcome-label=${#tr.text(signal.results().outcomeLabel())},
+                      data-best-action-label=${#tr.text(signal.results().bestActionLabel())}">
       <div class="signal-results-heading">
         <div>
-          <div class="signal-section-kicker" th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Price history after entry' : 'Price changes after the transaction'}">Price history after entry</div>
-          <h2 th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? 'Close-by-close movement after trade entry' : 'Price change after the signal'}">Close-by-close movement after trade entry</h2>
+          <div class="signal-section-kicker" th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? #messages.msg('signalDetail.historyAfterEntry') : #messages.msg('results.kicker')}">Price history after entry</div>
+          <h2 th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? #messages.msg('signalDetail.movementAfterEntry') : #messages.msg('results.title')}">Close-by-close movement after trade entry</h2>
           <p>
-            <span th:text="${signal.results().measurementStartLabel()}">From signal candle close</span>.
-            Each subsequent completed close is measured in the signal&rsquo;s expected direction.
+            <span th:text="${#tr.text(signal.results().measurementStartLabel())}">From signal candle close</span><span th:text="#{results.measuredInDirection}">.
+            Each subsequent completed close is measured in the signal&rsquo;s expected direction.</span>
           </p>
         </div>
-        <span class="signal-chart-cache-badge">Completed closing prices</span>
+        <span class="signal-chart-cache-badge" th:text="#{results.completedCloses}">Completed closing prices</span>
       </div>
 
       <div class="signal-results-metrics" aria-live="polite">
         <article>
-          <span id="resultHorizonLabel" th:text="${signal.results().outcomeLabel()}">Gain / loss</span>
+          <span id="resultHorizonLabel" th:text="${#tr.text(signal.results().outcomeLabel())}">Gain / loss</span>
           <strong id="resultHorizonReturn">+0.00%</strong>
-          <small id="resultHorizonDifference">+0.0000 per share</small>
+          <small id="resultHorizonDifference" th:text="#{virtualTrade.perSharePlaceholder}">+0.0000 per share</small>
         </article>
         <article>
-          <span>Closing price</span>
+          <span th:text="#{results.closingPrice}">Closing price</span>
           <strong id="resultHorizonClose">0.0000</strong>
-          <small id="resultHorizonPeriod">Period unavailable</small>
+          <small id="resultHorizonPeriod" th:text="#{alertHistory.periodUnavailable}">Period unavailable</small>
         </article>
         <article class="best-result">
-          <span id="resultBestActionLabel" th:text="${signal.results().bestActionLabel()}">Best sell close</span>
+          <span id="resultBestActionLabel" th:text="${#tr.text(signal.results().bestActionLabel())}">Best sell close</span>
           <strong id="resultBestClose">0.0000</strong>
-          <small id="resultBestPeriod">Period unavailable</small>
+          <small id="resultBestPeriod" th:text="#{alertHistory.periodUnavailable}">Period unavailable</small>
         </article>
         <article class="best-result">
-          <span>Best result in this period</span>
+          <span th:text="#{virtualTrade.bestResult}">Best result in this period</span>
           <strong id="resultBestReturn">+0.00%</strong>
-          <small id="resultBestDifference">+0.0000 per share</small>
+          <small id="resultBestDifference" th:text="#{virtualTrade.perSharePlaceholder}">+0.0000 per share</small>
         </article>
       </div>
 
       <div id="signalResultsChart"
            class="signal-results-chart"
            role="img"
-           th:attr="aria-label=${'Return chart for the ' + (signal.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : signal.tradeSignal().name()) + ' signal on ' + signal.symbol()}"></div>
-      <div class="signal-results-legend" aria-label="Results chart color legend">
-        <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the signal direction</span>
-        <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the signal</span>
-        <span><i class="signal-results-key start" aria-hidden="true"></i>Starting price</span>
-        <span><i class="signal-results-key best" aria-hidden="true"></i>Best price in this period</span>
+           th:aria-label="${#messages.msg('signalDetail.resultsChartAria', #messages.msg('alertHistory.signal.' + signal.tradeSignal().name()), signal.symbol())}"></div>
+      <div class="signal-results-legend" aria-label="Results chart color legend" th:aria-label="#{results.legendAria}">
+        <span><i class="signal-results-key positive" aria-hidden="true"></i><span th:text="#{results.legend.favorable}">Favorable move in the signal direction</span></span>
+        <span><i class="signal-results-key negative" aria-hidden="true"></i><span th:text="#{results.legend.adverse}">Adverse move against the signal</span></span>
+        <span><i class="signal-results-key start" aria-hidden="true"></i><span th:text="#{results.legend.start}">Starting price</span></span>
+        <span><i class="signal-results-key best" aria-hidden="true"></i><span th:text="#{results.legend.bestPrice}">Best price in this period</span></span>
       </div>
       <ol id="signalResultsData" hidden aria-hidden="true">
         <li th:each="point : ${signal.results().points()}"
             th:attr="data-candle-number=${point.candleNumber()},
                      data-time=${point.timestamp()},
-                     data-period-label=${point.periodLabel()},
+                     data-period-label=${#tr.text(point.periodLabel())},
                      data-close=${point.close()},
                      data-directional-return=${point.directionalReturnPercent()},
                      data-directional-difference=${point.directionalPriceDifference()}"></li>
@@ -919,11 +924,11 @@
 
       <div class="signal-results-window-control">
         <div class="signal-results-window-copy">
-          <label for="resultWindowSlider">Results period</label>
-          <p>Choose how many completed candles after the measurement start to include.</p>
+          <label for="resultWindowSlider" th:text="#{results.period}">Results period</label>
+          <p th:text="#{results.periodHelp}">Choose how many completed candles after the measurement start to include.</p>
         </div>
         <output id="resultWindowValue" for="resultWindowSlider"
-                th:text="${signal.results().minimumForwardCandles() + ' candles'}">10 candles</output>
+                th:text="${#messages.msg(#tr.pluralKey('results.candles', signal.results().minimumForwardCandles()), signal.results().minimumForwardCandles())}">10 candles</output>
         <input id="resultWindowSlider"
                type="range"
                th:min="${signal.results().minimumForwardCandles()}"
@@ -939,7 +944,7 @@
         </div>
       </div>
 
-      <p class="signal-results-disclaimer">
+      <p class="signal-results-disclaimer" th:text="#{results.hindsightDisclaimer}">
         Historical closing-price changes, excluding fees, slippage, taxes, dividends and position sizing. The highlighted best price is known only in hindsight.
       </p>
     </section>
@@ -950,13 +955,13 @@
           class="unsaved-alert-dialog signal-results-unavailable-dialog"
           aria-labelledby="signalResultsUnavailableTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">More price history needed</span>
-      <h2 id="signalResultsUnavailableTitle">Not enough price history yet</h2>
-      <p th:text="${signal.results().unavailableReason()}">
+      <span class="unsaved-alert-kicker" th:text="#{results.moreHistoryNeeded}">More price history needed</span>
+      <h2 id="signalResultsUnavailableTitle" th:text="#{results.notEnoughHistory}">Not enough price history yet</h2>
+      <p th:text="${#tr.text(signal.results().unavailableReason())}">
         At least 10 completed candles after the signal are required before results can be displayed.
       </p>
       <div class="unsaved-alert-dialog-actions">
-        <button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary">Understood</button>
+        <button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary" th:text="#{results.understood}">Understood</button>
       </div>
     </div>
   </dialog>
@@ -966,6 +971,7 @@
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
   (function () {
     'use strict';
+    const i18n = window.StockWatchI18n;
 
     const ELLIOTT_MOTIVE_COLOR = /*[[${elliottMotiveColor}]]*/ '#3B82F6';
     StockWatchCharts.preserveColors([ELLIOTT_MOTIVE_COLOR]);
@@ -989,7 +995,7 @@
       if (typeof dialog.showModal === 'function') {
         if (!dialog.open) dialog.showModal();
       } else {
-        window.alert(dialog.querySelector('p')?.textContent || 'Results need at least 10 completed candles.');
+        window.alert(dialog.querySelector('p')?.textContent || i18n.t('signalDetail.resultsNeedCandles'));
       }
     }
 
@@ -1009,7 +1015,7 @@
       ? Array.from(resultsDataList.children).map(item => ({
           candleNumber: Number(item.dataset.candleNumber),
           time: Number(item.dataset.time),
-          periodLabel: item.dataset.periodLabel || 'Period unavailable',
+          periodLabel: item.dataset.periodLabel || i18n.t('results.periodUnavailable'),
           close: Number(item.dataset.close),
           directionalReturn: Number(item.dataset.directionalReturn),
           directionalDifference: Number(item.dataset.directionalDifference)
@@ -1037,7 +1043,7 @@
     }
 
     function signedNumber(value, decimals, suffix) {
-      return `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}${suffix}`;
+      return `${value >= 0 ? '+' : ''}${i18n.number(value, decimals)}${suffix}`;
     }
 
     function updateResultMetric(id, value, positiveClass) {
@@ -1086,31 +1092,31 @@
         position: tradeSignal === 'SELL' ? 'aboveBar' : 'belowBar',
         color: colors.signalStart,
         shape: tradeSignal === 'SELL' ? 'arrowDown' : 'arrowUp',
-        text: `${tradeSignal === 'SELL' ? 'SELL/SHORT' : tradeSignal} measurement start`
+        text: i18n.t(tradeSignal === 'SELL' ? 'signalDetail.measurementStart.SELL' : 'signalDetail.measurementStart.BUY')
       }, {
         time: bestPoint.time,
         position: bestPoint.directionalReturn >= 0 ? 'aboveBar' : 'belowBar',
         color: colors.best,
         shape: tradeSignal === 'SELL' ? 'arrowUp' : 'arrowDown',
-        text: `${resultsWorkspace.dataset.bestActionLabel} · candle ${bestPoint.candleNumber}`
+        text: i18n.t('signalDetail.bestCandle', resultsWorkspace.dataset.bestActionLabel, bestPoint.candleNumber)
       }]);
       resultsChart.timeScale().fitContent();
 
       const horizonPositive = horizonPoint.directionalReturn >= 0;
       const bestPositive = bestPoint.directionalReturn >= 0;
       updateResultMetric('resultHorizonReturn', signedNumber(horizonPoint.directionalReturn, 2, '%'), horizonPositive);
-      updateResultMetric('resultHorizonDifference', signedNumber(horizonPoint.directionalDifference, 4, ' per share'), horizonPositive);
+      updateResultMetric('resultHorizonDifference', i18n.t('virtualTrade.perShare', signedNumber(horizonPoint.directionalDifference, 4, '')), horizonPositive);
       updateResultMetric('resultBestReturn', signedNumber(bestPoint.directionalReturn, 2, '%'), bestPositive);
-      updateResultMetric('resultBestDifference', signedNumber(bestPoint.directionalDifference, 4, ' per share'), bestPositive);
-      document.getElementById('resultHorizonClose').textContent = horizonPoint.close.toFixed(4);
+      updateResultMetric('resultBestDifference', i18n.t('virtualTrade.perShare', signedNumber(bestPoint.directionalDifference, 4, '')), bestPositive);
+      document.getElementById('resultHorizonClose').textContent = i18n.number(horizonPoint.close, 4);
       document.getElementById('resultHorizonPeriod').textContent = horizonPoint.periodLabel;
-      document.getElementById('resultBestClose').textContent = bestPoint.close.toFixed(4);
+      document.getElementById('resultBestClose').textContent = i18n.number(bestPoint.close, 4);
       document.getElementById('resultBestPeriod').textContent = bestPoint.periodLabel;
       const output = document.getElementById('resultWindowValue');
-      output.textContent = `${windowSize} candles`;
+      output.textContent = i18n.plural('results.candles', windowSize, windowSize);
       resultsWindowSlider.value = String(windowSize);
       resultsWindowSlider.setAttribute('aria-valuenow', String(windowSize));
-      resultsWindowSlider.setAttribute('aria-valuetext', `${windowSize} completed candles after the measurement start`);
+      resultsWindowSlider.setAttribute('aria-valuetext', i18n.plural('signalDetail.candlesAfterStart', windowSize, windowSize));
     }
 
     function ensureResultsChart() {
@@ -1151,7 +1157,7 @@
           lineWidth: 1,
           lineStyle: LightweightCharts.LineStyle.Dashed,
           axisLabelVisible: true,
-          title: 'Signal close'
+          title: i18n.t('signalDetail.signalClose')
         });
       }
       renderSelectedResults();
@@ -1266,7 +1272,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Dashed,
         axisLabelVisible: true,
-        title: 'Entry'
+        title: i18n.t('chart.entry')
       }));
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.target,
@@ -1274,7 +1280,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Solid,
         axisLabelVisible: true,
-        title: `${container.dataset.family === 'ELLIOTT_WAVE' ? 'Target trigger' : 'Sell target'} · 1:${Number.isFinite(tradePlan.rewardRisk) ? tradePlan.rewardRisk.toFixed(2) : '?'}`
+        title: `${i18n.t(container.dataset.family === 'ELLIOTT_WAVE' ? 'signalDetail.targetTrigger' : 'signalDetail.sellTarget')} · 1:${Number.isFinite(tradePlan.rewardRisk) ? i18n.number(tradePlan.rewardRisk, 2) : '?'}`
       }));
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.stop,
@@ -1282,7 +1288,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Solid,
         axisLabelVisible: true,
-        title: 'Stop loss'
+        title: i18n.t('signalDetail.stopLoss')
       }));
 
       const tradeMarkers = [{
@@ -1290,7 +1296,7 @@
         position: container.dataset.direction === 'SELL' ? 'aboveBar' : 'belowBar',
         color: initialColors.tradeEntry,
         shape: container.dataset.direction === 'SELL' ? 'arrowDown' : 'arrowUp',
-        text: container.dataset.family === 'ELLIOTT_WAVE' ? 'Possible-trade entry' : 'Entry · candle 0'
+        text: i18n.t(container.dataset.family === 'ELLIOTT_WAVE' ? 'signalDetail.possibleTradeEntry' : 'signalDetail.entryCandle0')
       }];
       if (Number.isFinite(tradePlan.resolutionTime) && tradePlan.resolutionTime > 0
           && candleData.some(candle => candle.time === tradePlan.resolutionTime)) {
@@ -1300,8 +1306,8 @@
           || tradePlan.resolutionStatus === 'STOPPED'
           || tradePlan.resolutionStatus === 'STRUCTURE_INVALIDATED';
         const exitText = targetOutcome
-          ? 'Target reached'
-          : (stopOutcome ? 'Trade plan closed' : 'Time-stop exit');
+          ? i18n.t('signalDetail.targetReached')
+          : i18n.t(stopOutcome ? 'signalDetail.planClosed' : 'signalDetail.timeStopExit');
         const exitColor = targetOutcome
           ? initialColors.tradeTarget
           : (stopOutcome ? initialColors.tradeStop : initialColors.timeStop);
@@ -1322,7 +1328,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Dashed,
         axisLabelVisible: true,
-        title: 'Confirmation-close entry'
+        title: i18n.t('signalDetail.confirmationCloseEntry')
       }));
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.structuralStop,
@@ -1330,7 +1336,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Dotted,
         axisLabelVisible: true,
-        title: 'Structural invalidation'
+        title: i18n.t('signalDetail.structuralInvalidation')
       }));
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.stop,
@@ -1338,18 +1344,18 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Solid,
         axisLabelVisible: true,
-        title: 'Buffered stop'
+        title: i18n.t('signalDetail.bufferedStop')
       }));
       if (Number.isFinite(tradePlan.target) && tradePlan.target > 0) tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.target, color: initialColors.tradeTarget, lineWidth: 2, lineStyle: 2,
-        axisLabelVisible: true, title: 'Primary target'
+        axisLabelVisible: true, title: i18n.t('signalDetail.primaryTarget')
       }));
       const harmonicStopMarkers = [{
         time: tradePlan.entryTime,
         position: container.dataset.direction === 'SELL' ? 'aboveBar' : 'belowBar',
         color: initialColors.tradeEntry,
         shape: container.dataset.direction === 'SELL' ? 'arrowDown' : 'arrowUp',
-        text: 'Reference entry'
+        text: i18n.t('signalDetail.referenceEntry')
       }];
       if (Number.isFinite(tradePlan.resolutionTime) && tradePlan.resolutionTime > 0
           && candleData.some(candle => candle.time === tradePlan.resolutionTime)) {
@@ -1359,7 +1365,7 @@
           position: container.dataset.direction === 'SELL' ? 'aboveBar' : 'belowBar',
           color: harmonicTimeStopped ? initialColors.timeStop : (tradePlan.status === 'TARGET_REACHED' ? initialColors.tradeTarget : initialColors.tradeStop),
           shape: 'circle',
-          text: harmonicTimeStopped ? 'Time stop' : (tradePlan.status === 'TARGET_REACHED' ? 'Primary target reached' : 'Protective stop reached')
+          text: i18n.t(harmonicTimeStopped ? 'signalDetail.timeStop' : (tradePlan.status === 'TARGET_REACHED' ? 'signalDetail.primaryTargetReached' : 'signalDetail.protectiveStopReached'))
         });
       }
       candles.setMarkers(harmonicStopMarkers);
@@ -1403,7 +1409,7 @@
     const elliottProjections = elliottProjectionDataList
       ? Array.from(elliottProjectionDataList.children).map(item => ({
           key: item.dataset.key || '',
-          label: item.dataset.label || 'Conditional path',
+          label: item.dataset.label || i18n.t('signalDetail.conditionalPath'),
           status: item.dataset.status || 'ACTIVE',
           rank: Number(item.dataset.rank),
           confidence: Number(item.dataset.confidence),
@@ -1411,6 +1417,7 @@
           zoneHigh: Number(item.dataset.zoneHigh),
           minimumCandles: Number(item.dataset.minCandles),
           maximumCandles: Number(item.dataset.maxCandles),
+          hardPrice: Number(item.dataset.hardPrice),
           points: Array.from(item.querySelectorAll('[data-projection-point]')).map(point => ({
             candleOffset: Number(point.dataset.offset),
             timestamp: Number(point.dataset.time),
@@ -1433,14 +1440,14 @@
     function elliottPointWarningLabel(wave, point) {
       const label = String(point.label || '').toUpperCase();
       if (label === 'II' && (wave.waveTwoRetracement < 0.236 || wave.waveTwoRetracement > 0.786)) {
-        return wave.waveTwoRetracement > 0.786 ? 'deep' : 'shallow';
+        return i18n.t(wave.waveTwoRetracement > 0.786 ? 'signalDetail.wave.deep' : 'signalDetail.wave.shallow');
       }
       if (label === 'IV' && (wave.waveFourRetracement < 0.146 || wave.waveFourRetracement > 0.618)) {
-        return wave.waveFourRetracement > 0.618 ? 'deep' : 'shallow';
+        return i18n.t(wave.waveFourRetracement > 0.618 ? 'signalDetail.wave.deep' : 'signalDetail.wave.shallow');
       }
-      if (label === 'V' && wave.impulseVariant === 'TRUNCATED_FIFTH') return 'truncated';
-      if (label === 'C' && wave.correctionVariant === 'EXPANDED_FLAT') return 'expanded flat';
-      if (label === 'C' && wave.correctionVariant === 'RUNNING_FLAT') return 'running flat';
+      if (label === 'V' && wave.impulseVariant === 'TRUNCATED_FIFTH') return i18n.t('signalDetail.wave.truncated');
+      if (label === 'C' && wave.correctionVariant === 'EXPANDED_FLAT') return i18n.t('signalDetail.wave.expandedFlat');
+      if (label === 'C' && wave.correctionVariant === 'RUNNING_FLAT') return i18n.t('signalDetail.wave.runningFlat');
       return '';
     }
 
@@ -1515,7 +1522,41 @@
       }
     }
 
+    // The dashed path is the next wave itself; its endpoint carries that wave's number.
+    const projectedWaveLabel = ({
+      WAVE_II_END: 'III', WAVE_III_END: 'IV', WAVE_IV_END: 'V', WAVE_V_END: 'C'
+    })[elliottProjectionDataList?.dataset.stage] || '';
+
+    function projectionMarkers(scenario, color) {
+      const points = scenario.points;
+      const endpoint = points[points.length - 1];
+      const rank = scenario.rank === 1 ? i18n.t('signalDetail.rankPreferred') : i18n.t('signalDetail.rankAlternate', scenario.rank - 1);
+      // Only the preferred path labels its sub-waves; alternates would crowd the same candles.
+      const turns = scenario.rank !== 1 ? [] : points.slice(1, -1)
+        .map((point, index) => ({ point, previous: points[index], next: points[index + 2] }))
+        .filter(({ point }) => /^[A-E1-5]$/i.test(point.label))
+        .map(({ point, previous, next }) => ({
+          time: point.timestamp,
+          position: point.price >= previous.price && point.price >= next.price ? 'aboveBar' : 'belowBar',
+          color,
+          shape: 'circle',
+          size: 0.5,
+          text: point.label.toLowerCase()
+        }));
+      // A compressed Wave IV ends against its invalidation line; label it from the inside.
+      const rising = points[0].price <= endpoint.price;
+      const above = scenario.key === 'COMPRESSED_WAVE_IV' ? !rising : rising;
+      return [...turns, {
+        time: endpoint.timestamp,
+        position: above ? 'aboveBar' : 'belowBar',
+        color,
+        shape: 'circle',
+        text: `${projectedWaveLabel ? `${projectedWaveLabel} · ` : ''}${rank} · ${scenario.confidence}/100`
+      }];
+    }
+
     const initialProjectionColors = projectionPalette(document.documentElement.dataset.theme);
+    let projectionInvalidationLine = null;
     elliottProjections.forEach((scenario, index) => {
       const color = initialProjectionColors[Math.min(index, initialProjectionColors.length - 1)];
       const series = chart.addLineSeries({
@@ -1527,14 +1568,17 @@
         priceLineVisible: false
       });
       series.setData(scenario.points.map(point => ({ time: point.timestamp, value: point.price })));
-      const endpoint = scenario.points[scenario.points.length - 1];
-      series.setMarkers([{
-        time: endpoint.timestamp,
-        position: scenario.points[0].price <= endpoint.price ? 'aboveBar' : 'belowBar',
-        color,
-        shape: 'circle',
-        text: `${scenario.rank === 1 ? 'Preferred' : `Alt ${scenario.rank - 1}`} · ${scenario.confidence}/100`
-      }]);
+      series.setMarkers(projectionMarkers(scenario, color));
+      if (scenario.rank === 1 && Number.isFinite(scenario.hardPrice) && scenario.hardPrice > 0) {
+        projectionInvalidationLine = series.createPriceLine({
+          price: scenario.hardPrice,
+          color: initialColors.tradeStop,
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: `${projectedWaveLabel || 'Count'} invalidation`
+        });
+      }
       elliottProjectionSeries.push({ series, scenario, colorIndex: index });
     });
 
@@ -1576,7 +1620,7 @@
           position: harmonicFormation.direction === 'BEARISH' ? 'aboveBar' : 'belowBar',
           color: harmonicColor,
           shape: harmonicFormation.direction === 'BEARISH' ? 'arrowDown' : 'arrowUp',
-          text: 'Signal confirmed'
+          text: i18n.t('harmonicHistory.signalConfirmed')
         }]);
       }
     }
@@ -1612,8 +1656,11 @@
       const zone = document.createElement('div');
       zone.className = `elliott-projection-chart-zone rank-${Math.min(index + 1, 3)}`;
       if (scenario.status === 'DISFAVORED') zone.classList.add('disfavored');
+      if (scenario.key === 'COMPRESSED_WAVE_IV') zone.classList.add('compressed');
       const label = document.createElement('span');
-      label.textContent = `${scenario.rank === 1 ? 'Preferred' : `Alt ${scenario.rank - 1}`} target · candles ${scenario.minimumCandles}–${scenario.maximumCandles}`;
+      label.textContent = scenario.key === 'COMPRESSED_WAVE_IV'
+        ? i18n.t('signalDetail.legalWaveFourZone', scenario.minimumCandles, scenario.maximumCandles)
+        : i18n.t('signalDetail.targetZoneLabel', scenario.rank === 1 ? i18n.t('signalDetail.rankPreferred') : i18n.t('signalDetail.rankAlternate', scenario.rank - 1), scenario.minimumCandles, scenario.maximumCandles);
       zone.append(label);
       annotationLayer.append(zone);
       return { zone, scenario };
@@ -1626,17 +1673,17 @@
       rewardZone = document.createElement('div');
       rewardZone.className = 'signal-trade-chart-zone reward';
       const rewardLabel = document.createElement('span');
-      rewardLabel.textContent = `Reward · sell at ${tradePlan.target.toFixed(4)}`;
+      rewardLabel.textContent = i18n.t('signalDetail.rewardZone', i18n.number(tradePlan.target, 4));
       rewardZone.append(rewardLabel);
       riskZone = document.createElement('div');
       riskZone.className = 'signal-trade-chart-zone risk';
       const riskLabel = document.createElement('span');
-      riskLabel.textContent = `Risk · stop at ${tradePlan.stop.toFixed(4)}`;
+      riskLabel.textContent = i18n.t('signalDetail.riskZone', i18n.number(tradePlan.stop, 4));
       riskZone.append(riskLabel);
       timeStopLine = document.createElement('div');
       timeStopLine.className = 'signal-trade-time-stop-line';
       const timeStopLabel = document.createElement('span');
-      timeStopLabel.textContent = `Candle ${tradePlan.timeStopCandles} time stop`;
+      timeStopLabel.textContent = i18n.t('signalDetail.timeStopLine', tradePlan.timeStopCandles);
       timeStopLine.append(timeStopLabel);
       annotationLayer.append(rewardZone, riskZone, timeStopLine);
     }
@@ -1658,8 +1705,8 @@
       const label = document.createElement('span');
       label.className = 'signal-pattern-callout-label';
       label.textContent = candle.time === signalTime
-        ? `Pattern candle ${index + 1} · detection`
-        : `Pattern candle ${index + 1}`;
+        ? i18n.t('signalDetail.patternCandleDetection', index + 1)
+        : i18n.t('signalDetail.patternCandle', index + 1);
       const arrow = document.createElement('span');
       arrow.className = 'signal-pattern-callout-arrow';
       callout.append(label, arrow);
@@ -1678,7 +1725,8 @@
       projectionZones.forEach(({ zone, scenario }) => {
         const first = scenario.points[0];
         const last = scenario.points[scenario.points.length - 1];
-        const minimumPoint = scenario.points.find(
+        // A compressed Wave IV's range is a structural boundary for the whole wave, not a late target.
+        const minimumPoint = scenario.key === 'COMPRESSED_WAVE_IV' ? first : scenario.points.find(
           point => point.candleOffset >= scenario.minimumCandles) || last;
         const minimumTime = minimumPoint.timestamp;
         const startX = chart.timeScale().timeToCoordinate(minimumTime);
@@ -1873,9 +1921,12 @@
       }
       trendSeries.applyOptions({ color: colors.trend });
       const projectionColors = projectionPalette(event.detail.theme);
-      elliottProjectionSeries.forEach(item => item.series.applyOptions({
-        color: projectionColors[Math.min(item.colorIndex, projectionColors.length - 1)]
-      }));
+      elliottProjectionSeries.forEach(item => {
+        const color = projectionColors[Math.min(item.colorIndex, projectionColors.length - 1)];
+        item.series.applyOptions({ color });
+        item.series.setMarkers(projectionMarkers(item.scenario, color));
+      });
+      if (projectionInvalidationLine) projectionInvalidationLine.applyOptions({ color: colors.tradeStop });
       requestAnimationFrame(renderAnnotations);
     });
   }());

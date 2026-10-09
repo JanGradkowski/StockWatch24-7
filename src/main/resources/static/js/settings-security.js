@@ -11,7 +11,7 @@
         };
         form.addEventListener('submit', () => {
             button.disabled = true;
-            button.textContent = button.dataset.pendingLabel || 'Please wait...';
+            button.textContent = button.dataset.pendingLabel || window.StockWatchI18n.t('common.pleaseWait');
             form.setAttribute('aria-busy', 'true');
         });
         window.addEventListener('pageshow', reset);
@@ -24,8 +24,8 @@
     const update = () => {
         const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
         expiry.textContent = seconds > 0
-            ? `Code expires in ${Math.floor(seconds / 60)}m ${seconds % 60}s. Check your spam folder if it has not arrived.`
-            : 'This code has expired. Request a new code above to continue.';
+            ? window.StockWatchI18n.t('settings.codeExpiresIn', Math.floor(seconds / 60), seconds % 60)
+            : window.StockWatchI18n.t('settings.codeExpired');
         return seconds;
     };
     // Keep frequent countdown updates outside the live region; announce expiry once.

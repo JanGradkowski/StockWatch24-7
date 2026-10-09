@@ -1,10 +1,11 @@
 (() => {
   'use strict';
-  const intervals = { '1d': 'Daily', '1wk': 'Weekly', '1mo': 'Monthly' };
+  const apiIntervals = { '1d': 'DAILY', '1wk': 'WEEKLY', '1mo': 'MONTHLY' };
   const direction = value => /buy/i.test(value || '') ? 'buy' : /sell/i.test(value || '') ? 'sell' : 'neutral';
-  const label = value => (value || 'Unavailable').replace(/ outlook$/i, '');
   const intervalFor = (ticker, interval) => ticker.intervals.find(item => item.apiInterval === interval);
-  const signed = value => value == null || !Number.isFinite(value) ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(1)}`;
+  // Also used by the Node tests, which load this file without the page's translations.
+  const decimal = (value, digits) => globalThis.StockWatchI18n?.number(value, digits) ?? value.toFixed(digits);
+  const signed = value => value == null || !Number.isFinite(value) ? '—' : `${value > 0 ? '+' : ''}${decimal(value, 1)}`;
 
   function ranked(tickers, interval, side) {
     return tickers.map(ticker => ({ ticker, outlook: intervalFor(ticker, interval) }))
@@ -45,15 +46,24 @@
   // Pure selection logic is also exercised by the Node regression tests.
   if (typeof module !== 'undefined' && module.exports) module.exports = { ranked, filtered, direction, signed };
   if (typeof document === 'undefined') return;
+  const i18n = window.StockWatchI18n;
+  const intervals = Object.fromEntries(Object.entries(apiIntervals).map(([api, name]) => [api, i18n.t(`interval.${name}`)]));
+  // Classifications arrive in English ("Strong buy outlook"); show them in the page language.
+  const label = value => {
+    if (!value) return i18n.t('outlookClass.unavailable');
+    const base = value.replace(/ outlook$/i, ''), key = `outlookClass.${base.toLowerCase().replace(/\s+(\w)/g, (match, letter) => letter.toUpperCase())}`;
+    const text = i18n.t(key);
+    return text === key ? base : text;
+  };
   const page = document.getElementById('technicalWatchlist');
   if (!page) return;
   const get = id => document.getElementById(id);
   const endpoint = page.dataset.endpoint;
   const dialog = get('unfollowAllDialog');
   let tickers = [], rankingInterval = '1d', busy = false, loading = false, loaded = false, changesSequence = 0;
-  const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-  const dates = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
-  const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const number = new Intl.NumberFormat(i18n.tag, { maximumFractionDigits: 2 });
+  const dates = new Intl.DateTimeFormat(i18n.tag, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
+  const relative = new Intl.RelativeTimeFormat(i18n.tag, { numeric: 'auto' });
 
   function node(tag, className, text) {
     const item = document.createElement(tag);
@@ -61,11 +71,11 @@
     if (text != null) item.textContent = text;
     return item;
   }
-  function dateText(timestamp) { return timestamp == null ? 'Unknown' : `${dates.format(new Date(timestamp * 1000))} UTC`; }
+  function dateText(timestamp) { return timestamp == null ? i18n.t('technicalWatchlist.unknown') : `${dates.format(new Date(timestamp * 1000))} UTC`; }
   function time(timestamp) {
     const element = node('time', '', '');
     const seconds = Math.min(0, timestamp - Date.now() / 1000);
-    element.textContent = Math.abs(seconds) < 60 ? 'Just now' : Math.abs(seconds) < 3600
+    element.textContent = Math.abs(seconds) < 60 ? i18n.t('technicalWatchlist.justNow') : Math.abs(seconds) < 3600
       ? relative.format(Math.round(seconds / 60), 'minute') : Math.abs(seconds) < 86400
         ? relative.format(Math.round(seconds / 3600), 'hour') : relative.format(Math.round(seconds / 86400), 'day');
     element.dateTime = new Date(timestamp * 1000).toISOString();
@@ -82,17 +92,17 @@
   function message(container, text) { container.replaceChildren(node('li', 'watchlist-panel-message', text)); }
   async function request(url, options = {}) {
     const response = await fetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(20_000), ...options });
-    if (response.redirected || response.status === 401) throw new Error('Your session has expired. Sign in again to continue.');
-    if (!response.ok) throw new Error(response.status === 403 ? 'This action could not be authorized. Refresh the page and try again.' : 'Could not update the watchlist. Please try again.');
+    if (response.redirected || response.status === 401) throw new Error(i18n.t('common.sessionExpired'));
+    if (!response.ok) throw new Error(i18n.t(response.status === 403 ? 'technicalWatchlist.forbidden' : 'technicalWatchlist.updateFailed'));
     return response.json();
   }
   function renderRankings() {
-    get('rankingCaption').textContent = `Strongest followed outlooks · ${intervals[rankingInterval]}`;
+    get('rankingCaption').textContent = i18n.t('technicalWatchlist.rankingCaption', intervals[rankingInterval]);
     document.querySelectorAll('[data-ranking-interval]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.rankingInterval === rankingInterval)));
     for (const side of ['buy', 'sell']) {
       const container = get(side === 'buy' ? 'watchlistBuys' : 'watchlistSells');
       const leaders = ranked(tickers, rankingInterval, side);
-      if (!leaders.length) { message(container, `No current ${side} outlooks among your followed ${intervals[rankingInterval].toLowerCase()} intervals.`); continue; }
+      if (!leaders.length) { message(container, i18n.t(`technicalWatchlist.noLeaders.${side}.${apiIntervals[rankingInterval]}`)); continue; }
       container.replaceChildren(...leaders.map(({ ticker, outlook }, index) => {
         const row = node('li');
         const link = node('a'); link.href = outlookUrl(ticker.symbol, rankingInterval);
@@ -100,7 +110,7 @@
         company.append(node('strong', '', ticker.symbol), node('small', '', ticker.companyName));
         const score = node('span', 'watchlist-ranking-value');
         score.append(node('strong', side === 'buy' ? 'watchlist-positive' : 'watchlist-negative', signed(outlook.score)), node('small', '', label(outlook.classification)));
-        score.title = `Overall outlook score: ${signed(outlook.score)} of ±100. Candle: ${dateText(outlook.candleTimestamp)}`;
+        score.title = i18n.t('technicalWatchlist.rankingTitle', signed(outlook.score), dateText(outlook.candleTimestamp));
         link.append(node('span', 'watchlist-rank', String(index + 1).padStart(2, '0')), company, score);
         row.append(link); return row;
       }));
@@ -111,36 +121,41 @@
     const outlook = intervalFor(ticker, interval);
     const content = node(outlook ? 'a' : 'div', outlook ? 'watchlist-interval-link' : 'watchlist-not-followed');
     content.append(node('span', 'watchlist-mobile-interval', intervals[interval]));
-    if (!outlook) { content.append(node('span', '', 'Not followed')); cell.append(content); return cell; }
+    if (!outlook) { content.append(node('span', '', i18n.t('technicalWatchlist.notFollowed'))); cell.append(content); return cell; }
     content.href = outlookUrl(ticker.symbol, interval);
-    content.setAttribute('aria-label', `${ticker.symbol} ${intervals[interval]} outlook. ${outlook.available ? label(outlook.classification) : 'Awaiting analysis'}`);
+    content.setAttribute('aria-label', i18n.t(`technicalWatchlist.cellAria.${apiIntervals[interval]}`, ticker.symbol,
+      outlook.available ? label(outlook.classification) : i18n.t('technicalWatchlist.awaitingAnalysis')));
     if (!outlook.available) {
-      content.append(node('span', 'watchlist-badge', 'Awaiting analysis'), node('span', 'watchlist-cell-date', outlook.settingsChanged ? 'Settings changed · awaiting next evaluation' : 'Waiting for the first evaluated candle'));
+      content.append(node('span', 'watchlist-badge', i18n.t('technicalWatchlist.awaitingAnalysis')),
+        node('span', 'watchlist-cell-date', i18n.t(outlook.settingsChanged ? 'technicalWatchlist.settingsChanged' : 'technicalWatchlist.waitingFirstCandle')));
       cell.append(content); return cell;
     }
     const top = node('div', 'watchlist-interval-top');
     const score = node('span', 'watchlist-cell-score');
-    score.append(node('small', '', 'Score'), node('strong', '', signed(outlook.score)));
+    score.append(node('small', '', i18n.t('technicalWatchlist.score')), node('strong', '', signed(outlook.score)));
     top.append(badge(outlook.classification), score);
     content.append(top);
     if (outlook.changedAt != null) {
-      const changed = node('span', 'watchlist-cell-date', 'Changed '); changed.append(time(outlook.changedAt));
+      const changed = node('span', 'watchlist-cell-date', `${i18n.t('technicalWatchlist.changed')} `); changed.append(time(outlook.changedAt));
       const history = node('div', 'watchlist-cell-history');
       history.append(changed, node('span', 'watchlist-cell-transition', `${label(outlook.previousClassification)} \u2192 ${label(outlook.classification)}`));
       content.append(history);
       const progress = node('span', 'watchlist-price-progress');
-      progress.append(node('strong', tone(outlook.priceChangePercent), outlook.priceChangePercent == null ? '—' : `${signed(outlook.priceChangePercent)}%`), node('span', '', 'price since change'));
-      progress.title = `Change close: ${outlook.changePrice == null ? 'unavailable' : number.format(outlook.changePrice)} ${ticker.currency || ''} on ${dateText(outlook.changedAt)}. Latest evaluated close: ${outlook.price == null ? 'unavailable' : number.format(outlook.price)} ${ticker.currency || ''} on ${dateText(outlook.candleTimestamp)}.`;
+      progress.append(node('strong', tone(outlook.priceChangePercent), outlook.priceChangePercent == null ? '—' : `${signed(outlook.priceChangePercent)}%`), node('span', '', i18n.t('technicalWatchlist.priceSinceChange')));
+      const price = value => value == null ? i18n.t('technicalWatchlist.unavailable') : number.format(value);
+      progress.title = i18n.t('technicalWatchlist.priceTitle', price(outlook.changePrice), ticker.currency || '', dateText(outlook.changedAt),
+        price(outlook.price), dateText(outlook.candleTimestamp));
       const metrics = node('div', 'watchlist-cell-metrics');
-      metrics.append(progress, node('span', 'watchlist-score-progress', `${signed(outlook.scoreChangePoints)} pts since change`));
+      metrics.append(progress, node('span', 'watchlist-score-progress', i18n.t('technicalWatchlist.pointsSinceChange', signed(outlook.scoreChangePoints))));
       content.append(metrics);
     } else {
       const pending = node('div', 'watchlist-cell-history watchlist-history-pending');
-      pending.append(node('span', 'watchlist-cell-date', outlook.historyUnknown ? 'Earlier baseline unavailable' : 'No outlook change yet'), node('span', 'watchlist-score-progress', 'Tracking the next change'));
-      pending.title = 'Price and score progress will be measured from the next recorded outlook change.';
+      pending.append(node('span', 'watchlist-cell-date', i18n.t(outlook.historyUnknown ? 'technicalWatchlist.baselineUnavailable' : 'technicalWatchlist.noChangeYet')),
+        node('span', 'watchlist-score-progress', i18n.t('technicalWatchlist.trackingNext')));
+      pending.title = i18n.t('technicalWatchlist.pendingTitle');
       content.append(pending);
     }
-    const asOf = node('span', outlook.stale ? 'watchlist-stale' : 'watchlist-asof', outlook.stale ? 'Potentially stale · ' : 'Evaluated candle · ');
+    const asOf = node('span', outlook.stale ? 'watchlist-stale' : 'watchlist-asof', `${i18n.t(outlook.stale ? 'technicalWatchlist.potentiallyStale' : 'technicalWatchlist.evaluatedCandle')} · `);
     asOf.append(time(outlook.candleTimestamp)); content.append(asOf);
     cell.append(content); return cell;
   }
@@ -158,24 +173,24 @@
       copy.append(link, node('p', '', ticker.companyName));
       identity.append(emblem, copy);
       const followed = node('div', 'watchlist-followed-intervals');
-      followed.setAttribute('aria-label', `${ticker.intervals.length} intervals followed`);
+      followed.setAttribute('aria-label', i18n.t('technicalWatchlist.intervalsFollowed', ticker.intervals.length));
       Object.keys(intervals).filter(key => intervalFor(ticker, key)).forEach(key => {
         const tag = node('span', '', intervals[key]);
-        tag.title = `Following ${intervals[key].toLowerCase()} automated analysis`;
+        tag.title = i18n.t(`technicalWatchlist.followingTitle.${apiIntervals[key]}`);
         followed.append(tag);
       });
       company.append(identity, followed);
       cell.append(company); row.append(cell);
       Object.keys(intervals).forEach(key => row.append(intervalCell(ticker, key)));
-      const action = node('td', 'watchlist-row-action'), button = node('button', 'watchlist-unfollow', 'Unfollow');
-      button.type = 'button'; button.disabled = busy || loading; button.title = `Unfollow all automated outlook intervals for ${ticker.symbol}`;
-      button.setAttribute('aria-label', `Unfollow ${ticker.symbol}`);
+      const action = node('td', 'watchlist-row-action'), button = node('button', 'watchlist-unfollow', i18n.t('technicalWatchlist.unfollow'));
+      button.type = 'button'; button.disabled = busy || loading; button.title = i18n.t('technicalWatchlist.unfollowTitle', ticker.symbol);
+      button.setAttribute('aria-label', i18n.t('technicalWatchlist.unfollowAria', ticker.symbol));
       button.addEventListener('click', () => unfollow(ticker.symbol));
       action.append(button); row.append(action); return row;
     }));
-    get('watchlistCount').textContent = `${tickers.length} ticker${tickers.length === 1 ? '' : 's'} followed`;
-    get('watchlistResults').textContent = `${selected.length} of ${tickers.length} tickers`;
-    get('watchlistSortNote').textContent = `Score and price sorting use ${intervals[interval === 'all' ? rankingInterval : interval]}.`;
+    get('watchlistCount').textContent = i18n.plural('technicalWatchlist.tickersFollowed', tickers.length, tickers.length);
+    get('watchlistResults').textContent = i18n.plural('technicalWatchlist.results', tickers.length, selected.length, tickers.length);
+    get('watchlistSortNote').textContent = i18n.t(`technicalWatchlist.sortNote.${apiIntervals[interval === 'all' ? rankingInterval : interval]}`);
     get('watchlistTable').hidden = !selected.length;
     get('watchlistEmpty').hidden = !!tickers.length;
     get('watchlistNoMatches').hidden = !tickers.length || !!selected.length;
@@ -184,20 +199,20 @@
   async function loadChanges() {
     const sequence = ++changesSequence;
     const container = get('watchlistChanges');
-    message(container, 'Loading changes…');
+    message(container, i18n.t('technicalWatchlist.loadingChanges'));
     try {
       const changes = await request(`${endpoint}/changes?interval=${encodeURIComponent(get('changeInterval').value)}&watchlistId=${encodeURIComponent(get('namedWatchlistFilter')?.value || '')}`);
       if (sequence !== changesSequence) return;
-      if (!changes.length) { message(container, 'No recent outlook changes for your followed intervals. New changes will appear here.'); return; }
+      if (!changes.length) { message(container, i18n.t('technicalWatchlist.noChanges')); return; }
       container.replaceChildren(...changes.map(change => {
         const row = node('li'), link = node('a'); link.href = `${page.dataset.changeBase}${encodeURIComponent(change.id)}`;
         const copy = node('span', 'watchlist-change-copy'), title = node('span', 'watchlist-change-title');
-        title.append(node('strong', '', change.symbol), node('small', '', change.intervalLabel));
+        title.append(node('strong', '', change.symbol), node('small', '', ['DAILY', 'WEEKLY', 'MONTHLY'].includes(change.interval) ? i18n.t(`interval.${change.interval}`) : change.intervalLabel));
         const transition = node('span', 'watchlist-change-transition', `${label(change.previousClassification)} → `);
         transition.append(node('strong', direction(change.currentClassification) === 'buy' ? 'watchlist-positive' : direction(change.currentClassification) === 'sell' ? 'watchlist-negative' : '', label(change.currentClassification)));
         copy.append(title, transition); link.append(copy, time(change.candleTimestamp)); row.append(link); return row;
       }));
-    } catch (error) { if (sequence === changesSequence) message(container, `${error.message} Use Refresh to retry.`); }
+    } catch (error) { if (sequence === changesSequence) message(container, i18n.t('technicalWatchlist.retryHint', error.message)); }
   }
   async function load() {
     if (busy || loading) return;
@@ -211,15 +226,16 @@
       tickers = data.tickers; loaded = true; showError('');
       renderRankings(); renderTable();
       const staleCount = tickers.flatMap(ticker => ticker.intervals).filter(item => item.stale).length;
-      get('watchlistFreshness').textContent = `Checked ${dateText(data.fetchedAt)}${staleCount ? ` · ${staleCount} potentially stale interval${staleCount === 1 ? '' : 's'}` : ' · Completed candles'}`;
+      get('watchlistFreshness').textContent = `${i18n.t('technicalWatchlist.checked', dateText(data.fetchedAt))} · ${staleCount
+        ? i18n.plural('technicalWatchlist.staleIntervals', staleCount, staleCount) : i18n.t('technicalWatchlist.completedCandles')}`;
     } catch (error) {
-      showError(`${error.message}${loaded ? ' Previously loaded values remain visible.' : ' Use Refresh to retry.'}`);
+      showError(i18n.t(loaded ? 'technicalWatchlist.keptHint' : 'technicalWatchlist.retryHint', error.message));
       if (!loaded) {
-        get('watchlistCount').textContent = 'Watchlist unavailable';
-        get('watchlistResults').textContent = 'Could not load tickers';
-        get('watchlistFreshness').textContent = 'Data could not be checked';
-        message(get('watchlistBuys'), 'Outlooks could not be loaded. Use Refresh to retry.');
-        message(get('watchlistSells'), 'Outlooks could not be loaded. Use Refresh to retry.');
+        get('watchlistCount').textContent = i18n.t('technicalWatchlist.watchlistUnavailable');
+        get('watchlistResults').textContent = i18n.t('technicalWatchlist.tickersFailed');
+        get('watchlistFreshness').textContent = i18n.t('technicalWatchlist.checkFailed');
+        message(get('watchlistBuys'), i18n.t('technicalWatchlist.outlooksFailed'));
+        message(get('watchlistSells'), i18n.t('technicalWatchlist.outlooksFailed'));
       }
     } finally {
       get('watchlistLoading').hidden = true;
@@ -246,7 +262,7 @@
       tickers = symbol == null ? [] : tickers.filter(ticker => ticker.symbol !== symbol);
       if (dialog.open) dialog.close();
       showError(''); renderRankings(); renderTable();
-      announce(symbol == null ? 'All automated outlooks unfollowed.' : `${symbol} unfollowed on all intervals.`);
+      announce(symbol == null ? i18n.t('technicalWatchlist.allUnfollowed') : i18n.t('technicalWatchlist.symbolUnfollowed', symbol));
       get('watchlistSearch').focus();
       await loadChanges();
     } catch (failure) {
@@ -277,7 +293,7 @@
   });
   get('watchlistRefresh').addEventListener('click', load);
   get('unfollowAll').addEventListener('click', () => {
-    get('unfollowAllDescription').textContent = `Stop following automated technical analysis for every ticker in your account, across every watchlist and followed interval. This includes tickers hidden by your filters. You can follow them again from their stock pages.`;
+    get('unfollowAllDescription').textContent = i18n.t('technicalWatchlist.unfollowAllDescription');
     get('unfollowAllError').hidden = true; dialog.showModal();
   });
   get('cancelUnfollowAll').addEventListener('click', () => dialog.close());

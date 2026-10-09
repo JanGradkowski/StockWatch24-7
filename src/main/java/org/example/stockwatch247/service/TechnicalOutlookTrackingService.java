@@ -35,11 +35,12 @@ import java.util.Objects;
 
 @Service
 public class TechnicalOutlookTrackingService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TechnicalOutlookTrackingService.class);
     private static final List<TimeInterval> SUPPORTED_INTERVALS = List.of(
             TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY);
     private static final String SNAPSHOT_VERSION = "OUTLOOK_TRACKING_V1";
     private static final DateTimeFormatter PERIOD_FORMAT =
-            DateTimeFormatter.ofPattern("d MMM uuuu, HH:mm 'UTC'").withZone(ZoneId.of("UTC"));
+            DateTimeFormatter.ofPattern("d MMM uuuu, HH:mm 'UTC'", Locale.ENGLISH).withZone(ZoneId.of("UTC"));
 
     private final TechnicalOutlookSubscriptionRepository subscriptionRepository;
     private final TechnicalOutlookNotificationRepository notificationRepository;
@@ -105,16 +106,19 @@ public class TechnicalOutlookTrackingService {
             User user, String rawSymbol, TimeInterval interval, boolean active) {
         requireSupported(interval);
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
-        StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
-                .orElseGet(() -> twelveDataService.upsertStockAsset(symbol, symbol, "UNKNOWN", "USD"));
-        jdbcTemplate.queryForObject(
-                "select lock_name from security_resource_locks where lock_name = ? for update",
-                String.class, "alert-stock-quota");
+        StockAsset existing = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
+        if (existing == null && !active) {
+            return getState(user, symbol);
+        }
+        StockAsset asset = existing != null ? existing
+                : twelveDataService.upsertStockAsset(symbol, symbol, "UNKNOWN", "USD");
         TechnicalOutlookSubscription subscription = subscriptionRepository
                 .findByUserAndStockAssetAndInterval(user, asset, interval)
                 .orElseGet(TechnicalOutlookSubscription::new);
         boolean wasActive = subscription.getId() != null && subscription.isActive();
         if (active && !wasActive) {
+            TrackedInstrumentGuard.requireExchangeSession(asset.getTickerSymbol());
+            if (trackedInstrumentGuard != null) asset = trackedInstrumentGuard.requireMarketData(asset);
             enforceCapacity(user, asset);
         }
         subscription.setUser(user);
@@ -159,9 +163,8 @@ public class TechnicalOutlookTrackingService {
         User user = subscription.getUser();
         String symbol = subscription.getStockAsset().getTickerSymbol();
         String apiInterval = apiInterval(subscription.getInterval());
-        outlookService.invalidate(user, symbol, apiInterval);
         TechnicalOutlookService.OutlookView current =
-                outlookService.getSummaryOutlook(user, symbol, apiInterval);
+                outlookService.getTrackingOutlook(user, symbol, apiInterval, false);
         if (!current.available() || current.candleTimestamp() == null) {
             return EvaluationStatus.SKIPPED;
         }
@@ -183,7 +186,8 @@ public class TechnicalOutlookTrackingService {
         boolean changed = !Objects.equals(previousClass, currentClass);
         if (changed && !notificationRepository.existsBySubscriptionAndCurrentCandleTimestamp(
                 subscription, current.candleTimestamp())) {
-            TechnicalOutlookService.OutlookView detailed = outlookService.getOutlook(user, symbol, apiInterval);
+            TechnicalOutlookService.OutlookView detailed = outlookService.getTrackingOutlook(user, symbol, apiInterval, true);
+            long reportStarted = System.nanoTime();
             ChangeReport report = compare(previous, detailed);
             TechnicalOutlookNotification notification = new TechnicalOutlookNotification();
             notification.setSubscription(subscription);
@@ -197,6 +201,8 @@ public class TechnicalOutlookTrackingService {
             notification.setCurrentSnapshot(write(detailed));
             notification.setChangeReport(write(report));
             notification = notificationRepository.save(notification);
+            log.info("Technical outlook stage=notification-persisted symbol={} interval={} reportAndPersistenceMs={}",
+                    symbol, apiInterval, (System.nanoTime() - reportStarted) / 1_000_000);
             sendEmail(notification, report);
         }
         if (changed) {
@@ -212,9 +218,8 @@ public class TechnicalOutlookTrackingService {
     private void establishBaseline(TechnicalOutlookSubscription subscription) {
         String symbol = subscription.getStockAsset().getTickerSymbol();
         String interval = apiInterval(subscription.getInterval());
-        outlookService.invalidate(subscription.getUser(), symbol, interval);
         TechnicalOutlookService.OutlookView outlook =
-                outlookService.getSummaryOutlook(subscription.getUser(), symbol, interval);
+                outlookService.getTrackingOutlook(subscription.getUser(), symbol, interval, false);
         if (outlook.available() && outlook.candleTimestamp() != null) {
             updateBaseline(subscription, outlook,
                     profileFingerprint(subscription.getUser(), subscription.getInterval()));
@@ -365,7 +370,8 @@ public class TechnicalOutlookTrackingService {
                 .append("/technical-outlook/changes/").append(notification.getId());
         try {
             if (notificationService.sendTechnicalOutlookChangeEmail(
-                    subscription.getUser(), symbol, subscription.getInterval(), subject, body.toString())) {
+                    subscription.getUser(), symbol, subscription.getInterval(), subject, body.toString(), notification.getId())
+                    && !notificationService.usesDurableDelivery()) {
                 notification.setEmailSentAt(LocalDateTime.now());
                 notificationRepository.save(notification);
             }
@@ -442,7 +448,21 @@ public class TechnicalOutlookTrackingService {
                 "/technical-outlook/changes/" + notification.getId());
     }
 
+    private TrackedInstrumentGuard trackedInstrumentGuard;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureTrackedInstrumentGuard(TrackedInstrumentGuard trackedInstrumentGuard) {
+        this.trackedInstrumentGuard = trackedInstrumentGuard;
+    }
+
     private void enforceCapacity(User user, StockAsset asset) {
+        if (trackedInstrumentGuard != null) {
+            trackedInstrumentGuard.enforceCapacity(user, asset);
+            return;
+        }
+        jdbcTemplate.queryForObject(
+                "select lock_name from security_resource_locks where lock_name = ? for update",
+                String.class, "alert-stock-quota");
         Boolean userAlreadyTracks = jdbcTemplate.queryForObject("""
                 select exists (
                     select 1 from alert_rules where user_id = ? and stock_asset_id = ? and is_active = true
@@ -562,7 +582,7 @@ public class TechnicalOutlookTrackingService {
 
     private static void requireSupported(TimeInterval interval) {
         if (!SUPPORTED_INTERVALS.contains(interval)) {
-            throw new IllegalArgumentException("Automated Technical Outlook supports daily, weekly, and monthly intervals.");
+            throw new UserInputException("Automated Technical Outlook supports daily, weekly, and monthly intervals.");
         }
     }
 

@@ -13,7 +13,36 @@ import java.util.Optional;
  * confluence, or signal eligibility.
  */
 final class HarmonicStopPlanPolicy {
-    static final String VERSION = "HARMONIC_TRADE_V2";
+    /** V3 enters at the next candle's open; stored V2 plans entered at the confirmation close. */
+    static final String VERSION = "HARMONIC_TRADE_V3";
+    static final String PREVIOUS_VERSION = "HARMONIC_TRADE_V2";
+
+    static boolean qualifiedPlan(String version) {
+        return VERSION.equals(version) || PREVIOUS_VERSION.equals(version);
+    }
+
+    static boolean entersAtNextOpen(String version) {
+        return VERSION.equals(version);
+    }
+
+    static double requiredRewardRisk(TimeInterval interval) {
+        return interval == TimeInterval.DAILY ? 2 : 3;
+    }
+
+    /** V3 plans scale out: half at the first target, the stop to breakeven, the rest at the second. */
+    static boolean scalesOut(String version) {
+        return VERSION.equals(version);
+    }
+
+    /** Minimum blended reward/risk for a scale-out plan. */
+    static double scaleOutRequiredRewardRisk(TimeInterval interval) {
+        return interval == TimeInterval.DAILY ? 1.5 : 2.0;
+    }
+
+    /** The average exit if both halves reach their targets; a single target when there is no second one. */
+    static double blendedTarget(double primary, Double secondary) {
+        return secondary == null ? primary : (primary + secondary) / 2.0;
+    }
     static final double EQUITY_BUFFER_PERCENT = .50;
 
     private HarmonicStopPlanPolicy() {
@@ -27,6 +56,13 @@ final class HarmonicStopPlanPolicy {
 
     static Optional<StopPlan> calculate(HarmonicPatternDetectionService.HarmonicFormation formation,
                                         double confirmationEntryPrice, double atr, TimeInterval interval) {
+        return calculate(formation, confirmationEntryPrice, atr, interval, null);
+    }
+
+    /** {@code userRequiredRewardRisk}: the user's minimum reward/risk; null uses the interval default. */
+    static Optional<StopPlan> calculate(HarmonicPatternDetectionService.HarmonicFormation formation,
+                                        double confirmationEntryPrice, double atr, TimeInterval interval,
+                                        Double userRequiredRewardRisk) {
         if (formation == null || formation.pattern() == null || formation.tradeSignal() == null
                 || formation.tradeSignal() != TradeSignal.BUY
                 && formation.tradeSignal() != TradeSignal.SELL
@@ -52,24 +88,31 @@ final class HarmonicStopPlanPolicy {
         double distance = Math.abs(confirmationEntryPrice - stop);
         double distancePercent = distance / confirmationEntryPrice * 100.0;
         boolean shark = formation.pattern() == HarmonicPatternType.SHARK;
-        Double endpoint = price(points, shark ? "C" : "D");
-        Double anchor = price(points, shark ? "B" : (formation.pattern() == HarmonicPatternType.CYPHER || formation.pattern() == HarmonicPatternType.FIVE_ZERO) ? "C" : "A");
+        boolean measuredFromC = shark || formation.pattern() == HarmonicPatternType.CYPHER
+                || formation.pattern() == HarmonicPatternType.FIVE_ZERO;
+        Double endpoint = price(points, "D");
+        Double anchor = price(points, measuredFromC ? "C" : "A");
         if (endpoint == null || anchor == null) return Optional.empty();
         double primary = endpoint + (anchor - endpoint) * (shark ? .50 : .382);
         Double secondary = shark ? null : endpoint + (anchor - endpoint) * .618;
-        double requiredRr = interval == TimeInterval.DAILY ? 2 : 3;
+        // Taking half at the 38.2% target and the rest at 61.8% gives an achievable blended reward; the
+        // first target alone rarely clears 2R for patterns whose stop sits beyond X.
+        double blended = blendedTarget(primary, secondary);
+        double requiredRr = userRequiredRewardRisk != null && Double.isFinite(userRequiredRewardRisk)
+                && userRequiredRewardRisk > 0 ? userRequiredRewardRisk : scaleOutRequiredRewardRisk(interval);
         var qualification = TradeRiskPolicy.qualify(formation.tradeSignal(), confirmationEntryPrice,
-                stop, primary, atr, interval, requiredRr);
+                stop, blended, atr, interval, requiredRr);
         int horizon = shark ? switch (interval) { case DAILY -> 5; case WEEKLY -> 4; default -> 3; }
                 : TradeRiskPolicy.profile(interval).harmonicHorizon();
         return Optional.of(new StopPlan(
                 VERSION, formation.pattern(), formation.tradeSignal(), confirmationEntryPrice,
                 level.price(), buffer, buffer / level.price() * 100, stop,
                 distance, distancePercent, level.basis(), level.formula(), primary, secondary,
-                TradeRiskPolicy.reward(formation.tradeSignal(), confirmationEntryPrice, primary) / distance,
+                TradeRiskPolicy.reward(formation.tradeSignal(), confirmationEntryPrice, blended) / distance,
                 qualification.actionable(), qualification.reason(), qualification.riskAtr(), horizon,
-                shark ? "50% BC reaction target" : (formation.pattern() == HarmonicPatternType.CYPHER || formation.pattern() == HarmonicPatternType.FIVE_ZERO)
-                        ? "38.2% CD primary / 61.8% CD secondary" : "38.2% AD primary / 61.8% AD secondary"));
+                (shark ? "50% CD reaction target" : measuredFromC
+                        ? "38.2% CD primary / 61.8% CD secondary" : "38.2% AD primary / 61.8% AD secondary")
+                        + (secondary == null ? "" : "; half exits at the first target, the stop then moves to breakeven, the rest exits at the second")));
     }
 
     private static Optional<StructuralLevel> structuralLevel(
@@ -90,8 +133,8 @@ final class HarmonicStopPlanPolicy {
             case ALTERNATE_BAT -> xaExtension(points, 1.27, "1.27 XA extension", "A + (X - A) x 1.27");
             case FIVE_ZERO -> fixed(price(points, "B"), "Point B", "5-0 origin of BC");
             case AB_CD, ALTERNATE_AB_CD -> fixed(price(points, "D"), "Point D", "Terminal D plus volatility buffer");
-            case SHARK -> oxExtension(points, 1.27,
-                    "1.27 OX extension", "X + (0 - X) × 1.27");
+            case SHARK -> xaExtension(points, 1.27,
+                    "1.27 XA extension", "A + (X - A) × 1.27");
         };
     }
 
@@ -110,17 +153,6 @@ final class HarmonicStopPlanPolicy {
         Double a = price(points, "A");
         if (x == null || a == null) return Optional.empty();
         return Optional.of(new StructuralLevel(a + (x - a) * ratio, basis, formula));
-    }
-
-    private static Optional<StructuralLevel> oxExtension(
-            List<HarmonicPatternDetectionService.HarmonicPoint> points,
-            double ratio,
-            String basis,
-            String formula) {
-        Double origin = price(points, "0");
-        Double x = price(points, "X");
-        if (origin == null || x == null) return Optional.empty();
-        return Optional.of(new StructuralLevel(x + (origin - x) * ratio, basis, formula));
     }
 
     private static Double price(

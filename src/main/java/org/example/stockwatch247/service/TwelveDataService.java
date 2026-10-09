@@ -46,7 +46,7 @@ public class TwelveDataService {
     private final String baseUrl;
     private final TickerSearchIndex tickerSearchIndex = new TickerSearchIndex();
     private final BoundedTtlCache<String, List<Map<String, Object>>> searchCache =
-            new BoundedTtlCache<>(1_000, 900);
+            new BoundedTtlCache<>(1_000, 86_400);
 
     @Autowired
     public TwelveDataService(RestTemplate restTemplate,
@@ -76,9 +76,21 @@ public class TwelveDataService {
         refreshTickerSearchIndex();
     }
 
+    private volatile long indexedAssetCount = -1;
+    private volatile long indexBuiltAtNanos;
+
     @Scheduled(fixedDelayString = "${market-search.index-refresh-ms:60000}")
     void refreshTickerSearchIndex() {
-        tickerSearchIndex.rebuild(stockAssetRepository.findAll());
+        // Reload when listings were added, or every ten minutes for metadata corrections.
+        long count = stockAssetRepository.count();
+        boolean stale = System.nanoTime() - indexBuiltAtNanos > java.util.concurrent.TimeUnit.MINUTES.toNanos(10);
+        if (count == indexedAssetCount && !stale) return;
+        // Placeholders created for tickers nobody could price are not offered to other users.
+        tickerSearchIndex.rebuild(stockAssetRepository.findAll().stream()
+                .filter(asset -> asset.hasConfirmedListing() || asset.getMarketDataVerifiedAt() != null)
+                .toList());
+        indexedAssetCount = count;
+        indexBuiltAtNanos = System.nanoTime();
     }
 
     public List<MarketDataBar> getTimeSeries(String rawSymbol, String interval, int outputSize) {
@@ -124,6 +136,12 @@ public class TwelveDataService {
                 .toUri();
 
         JsonNode root = query(uri);
+        String responseMic = normalizeMic(root.path("meta").path("mic_code").asText(""));
+        if (providerReference.micCode() != null && responseMic != null
+                && !providerReference.micCode().equalsIgnoreCase(responseMic)) {
+            throw new IllegalStateException("Twelve Data returned a different exchange than requested.");
+        }
+        rejectConflictingListing(symbol, root.path("meta"));
         updateAssetFromMeta(symbol, providerReference.symbol(), root.path("meta"));
         JsonNode values = root.path("values");
         if (!values.isArray()) {
@@ -137,6 +155,25 @@ public class TwelveDataService {
                     .ifPresent(bars::add);
         }
         return bars;
+    }
+
+    /**
+     * A same-named listing in another currency is a different instrument. Mixing its candles into
+     * an established series would create fake price jumps, so the request falls back instead.
+     */
+    private void rejectConflictingListing(String symbol, JsonNode meta) {
+        String responseCurrency = normalizeSymbol(meta.path("currency").asText(""));
+        if (responseCurrency.isBlank()) return;
+        stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).ifPresent(asset -> {
+            boolean established = asset.getExchange() != null && !asset.getExchange().isBlank()
+                    && !"UNKNOWN".equalsIgnoreCase(asset.getExchange())
+                    && asset.getCompanyName() != null && !asset.getCompanyName().equalsIgnoreCase(symbol);
+            String expected = normalizeSymbol(asset.getCurrency());
+            if (established && !expected.isBlank() && !expected.equals(responseCurrency)) {
+                throw new IllegalStateException("Twelve Data returned a " + responseCurrency
+                        + " listing for a " + expected + " instrument.");
+            }
+        });
     }
 
     public StockAsset refreshStockAssetMetadata(String rawSymbol) {
@@ -201,7 +238,8 @@ public class TwelveDataService {
                 symbol,
                 parseDouble(root.path("close").asText("0")),
                 parseDouble(root.path("percent_change").asText("0")),
-                root.path("timestamp").asLong(Instant.now().getEpochSecond())
+                root.path("timestamp").asLong(Instant.now().getEpochSecond()),
+                root.path("is_market_open").isBoolean() ? root.path("is_market_open").asBoolean() : null
         ));
     }
 
@@ -212,7 +250,9 @@ public class TwelveDataService {
         }
 
         List<Map<String, Object>> builtInMatches = tickerSearchIndex.search(query, 8);
-        if (query.length() < 2) {
+        // Typing into the search box must not spend the shared provider allowance when the
+        // local index already answers the question.
+        if (query.length() < 2 || builtInMatches.size() >= 3) {
             return builtInMatches;
         }
 
@@ -345,9 +385,16 @@ public class TwelveDataService {
     @Autowired
     void setRequestBudget(MarketDataProviderRequestBudget requestBudget) { this.requestBudget = requestBudget; }
 
+    private final BoundedTtlCache<String, Boolean> unavailableListings = new BoundedTtlCache<>(2048, 21_600);
+
     private JsonNode query(URI uri) {
         if (!providerEnabled) throw new IllegalStateException("Twelve Data is disabled.");
         validateApiKey();
+        var parameters = org.springframework.web.util.UriComponentsBuilder.fromUri(uri).build().getQueryParams();
+        String listing = parameters.getFirst("symbol") + ":" + parameters.getFirst("mic_code");
+        boolean series = uri.getPath().endsWith("/time_series");
+        if (series && unavailableListings.get(listing, java.time.Instant.now().getEpochSecond()) != null)
+            throw new IllegalStateException("Twelve Data listing coverage is unavailable; revalidation is deferred for up to six hours.");
         if (requestBudget != null) requestBudget.reserveTwelveDataRequest();
         try {
             String response = restTemplate.getForObject(uri, String.class);
@@ -355,18 +402,29 @@ public class TwelveDataService {
             failOnApiError(root);
             return root;
         } catch (RestClientResponseException e) {
+            if (series && e.getStatusCode().value() == 404 && persistentCoverageFailure(e.getResponseBodyAsString()))
+                unavailableListings.put(listing, true, java.time.Instant.now().getEpochSecond());
             if (requestBudget != null) requestBudget.recordTwelveDataFailure(describeHttpError(e));
             throw new IllegalStateException("Twelve Data request failed: " + describeHttpError(e), e);
         } catch (RestClientException e) {
             throw new IllegalStateException(
                     "Twelve Data response could not be read: " + describeClientFailure(e), e);
         } catch (RuntimeException e) {
+            if (series && persistentCoverageFailure(e.getMessage()))
+                unavailableListings.put(listing, true, java.time.Instant.now().getEpochSecond());
             if (requestBudget != null) requestBudget.recordTwelveDataFailure(e.getMessage());
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Twelve Data response could not be parsed: " + describeClientFailure(e), e);
         }
+    }
+
+    private static boolean persistentCoverageFailure(String message) {
+        if (message == null) return false;
+        String normalized = message.toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("available starting with") || normalized.contains("symbol")
+                && normalized.contains("missing or invalid");
     }
 
     private void failOnApiError(JsonNode root) {
@@ -385,15 +443,31 @@ public class TwelveDataService {
             return Optional.empty();
         }
 
+        // Missing prices must never become zero-priced candles.
+        double open = parsePrice(value.path("open"));
+        double high = parsePrice(value.path("high"));
+        double low = parsePrice(value.path("low"));
+        double close = parsePrice(value.path("close"));
+        if (!MarketDataBar.validPrices(open, high, low, close)) {
+            return Optional.empty();
+        }
         return Optional.of(new MarketDataBar(
                 normalizeSymbol(fallbackSymbol),
                 canonicalTimestamp(parseTimestamp(datetime), interval),
-                parseDouble(value.path("open").asText("0")),
-                parseDouble(value.path("high").asText("0")),
-                parseDouble(value.path("low").asText("0")),
-                parseDouble(value.path("close").asText("0")),
-                parseLong(value.path("volume").asText("0"))
+                open, high, low, close,
+                Math.max(0L, parseLong(value.path("volume").asText("0")))
         ));
+    }
+
+    private double parsePrice(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) return Double.NaN;
+        String text = node.asText("").trim();
+        if (text.isEmpty()) return Double.NaN;
+        try {
+            return Double.parseDouble(text);
+        } catch (NumberFormatException e) {
+            return Double.NaN;
+        }
     }
 
     private Optional<StockAsset> findProviderAsset(String symbol, String selectedMic) {
@@ -801,7 +875,11 @@ public class TwelveDataService {
                 || normalized.contains("OTC");
     }
 
-    public record TwelveDataQuote(String symbol, double price, double percentChange, long timestamp) {
+    /** {@code marketOpen} is null when the provider did not say whether the exchange is trading. */
+    public record TwelveDataQuote(String symbol, double price, double percentChange, long timestamp, Boolean marketOpen) {
+        public TwelveDataQuote(String symbol, double price, double percentChange, long timestamp) {
+            this(symbol, price, percentChange, timestamp, null);
+        }
     }
 
     private record ProviderAssetCandidate(String symbol,

@@ -48,7 +48,7 @@ public class SignalScoringPreferencesService {
     );
     private static final List<ComponentDefinition> HARMONIC_COMPONENTS = List.of(
             new ComponentDefinition("primaryB", "Primary B ratio", "Fit of the B point to the selected formation's preferred retracement or extension.", 35),
-            new ComponentDefinition("completion", "Completion ratio", "Fit of terminal D/C to the selected formation's preferred completion target.", 45),
+            new ComponentDefinition("completion", "Completion ratio", "Fit of point D to the selected formation's preferred completion target.", 45),
             new ComponentDefinition("secondary", "Secondary ratios", "Supporting retracements, extensions, and AB/CD relationship quality.", 20)
     );
 
@@ -334,6 +334,8 @@ public class SignalScoringPreferencesService {
     private static String componentKey(AlertPatternFamily family, String category) {
         if (category == null) return null;
         String normalized = category.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        // The experimental turn-confirmation score model fills the trend-indicator slot it replaces.
+        if (family == AlertPatternFamily.CANDLESTICK && normalized.equals("turnconfirmation")) return "trendIndicators";
         for (ComponentDefinition definition : definitions(family)) {
             String label = definition.label().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
             if (normalized.equals(label)) return definition.key();

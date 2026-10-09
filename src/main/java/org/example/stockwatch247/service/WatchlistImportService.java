@@ -26,6 +26,9 @@ public class WatchlistImportService {
     private final AlertRuleService alerts;
     @org.springframework.beans.factory.annotation.Autowired private WatchlistSignalSettingsService signalSettings;
     @org.springframework.beans.factory.annotation.Autowired private WatchlistMonitoringService monitoring;
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private TrackedInstrumentGuard guard;
+    /** Unlisted tickers each cost a provider lookup; catalog constituents and known listings do not. */
+    private static final int MAXIMUM_UNKNOWN_SYMBOLS_PER_IMPORT=200;
     @Value("${insider-activity.maximum-follows-per-user:50}") private int insiderLimit;
     @Value("${congressional-activity.maximum-follows-per-user:50}") private int congressLimit;
     @Value("${insider-activity.enabled:false}") private boolean insiderEnabled;
@@ -34,13 +37,32 @@ public class WatchlistImportService {
     public WatchlistImportService(JdbcTemplate db,WatchlistService lists,WatchlistIndexCatalog catalog,ObjectMapper json,
             StockAssetRepository assets,UserRepository users,TwelveDataService market,AlertRuleService alerts,
             @Value("${alerts.max-tracked-stocks-per-user:300}") int perUser,@Value("${alerts.max-global-tracked-stocks:500}") int global) {
-        this.db=db;this.lists=lists;this.catalog=catalog;this.json=json;this.assets=assets;this.users=users;this.market=market;this.alerts=alerts;this.perUser=perUser;this.global=global;
+        this.db=db;this.lists=lists;this.catalog=catalog;this.json=json;this.assets=assets;this.users=users;this.market=market;this.alerts=alerts;
+        // Clamped exactly as TrackedInstrumentGuard does, so the preview never allows what the guard refuses.
+        this.perUser=Math.max(1,perUser);this.global=Math.max(this.perUser,global);
     }
     public Preview preview(User user,Long listId,ImportRequest request) {
         if(listId!=null) lists.requireOwned(user,listId);
         var expanded=expand(request,listId);
-        Set<String> monitored=new HashSet<>(db.queryForList("select a.ticker_symbol from watchlist_monitoring m join stock_assets a on a.id=m.stock_asset_id where m.user_id=?",String.class,user.getId()));
-        Set<String> globalSymbols=new HashSet<>(db.queryForList("select distinct a.ticker_symbol from watchlist_monitoring m join stock_assets a on a.id=m.stock_asset_id",String.class));
+        // Same definition the alert and outlook paths enforce: active technical rules or outlooks.
+        Set<String> monitored=new HashSet<>(db.queryForList("""
+                select a.ticker_symbol from (
+                  select stock_asset_id from alert_rules where user_id=? and is_active
+                  union select stock_asset_id from technical_outlook_subscriptions where user_id=? and is_active
+                ) tracked join stock_assets a on a.id=tracked.stock_asset_id
+                """,String.class,user.getId(),user.getId()));
+        Set<String> globalSymbols=new HashSet<>(db.queryForList("""
+                select a.ticker_symbol from (
+                  select stock_asset_id from alert_rules where is_active
+                  union select stock_asset_id from technical_outlook_subscriptions where is_active
+                ) tracked join stock_assets a on a.id=tracked.stock_asset_id
+                """,String.class));
+        // Items still waiting in earlier imports will claim capacity when they are processed.
+        Set<String> reserved=new HashSet<>(db.queryForList("""
+                select distinct i.symbol from watchlist_import_items i join watchlist_imports j on j.id=i.import_id
+                where j.user_id=? and i.status in ('PENDING','PROCESSING')
+                """,String.class,user.getId()));
+        reserved.removeAll(monitored);
         Set<String> members=listId==null?Set.of():new HashSet<>(db.queryForList("select a.ticker_symbol from watchlist_members m join stock_assets a on a.id=m.stock_asset_id where m.watchlist_id=?",String.class,listId));
         var selected=request.selections()==null?List.<WatchlistSignalSettingsService.Selection>of():WatchlistSignalSettingsService.validate(request.selections());
         boolean technical=selected.stream().anyMatch(v->v.watch() && !WatchlistSignalSettingsService.activity(v.type()));
@@ -49,11 +71,13 @@ public class WatchlistImportService {
         var affected=expanded.items().stream().filter(i->request.applySettings() || !members.contains(i.symbol())).toList();
         Set<String> stockSymbols=new HashSet<>();
         affected.stream().filter(i->"EQUITY".equals(i.type())).forEach(i->stockSymbols.add(i.symbol()));
+        // Ticker alerts (congressional/insider) have their own limits below; they do not use technical capacity.
         Set<String> wanted=new HashSet<>();
-        for(var item:affected) if(technical || request.selections()==null && request.monitor() || (congress || insider) && stockSymbols.contains(item.symbol())) wanted.add(item.symbol());
-        long fresh=wanted.stream().filter(symbol->!monitored.contains(symbol)).count();
+        boolean technicalMonitoring=technical || request.selections()==null && request.monitor();
+        if(technicalMonitoring) for(var item:affected) wanted.add(item.symbol());
+        long fresh=wanted.stream().filter(symbol->!monitored.contains(symbol) && !reserved.contains(symbol)).count();
         long freshGlobal=wanted.stream().filter(symbol->!globalSymbols.contains(symbol)).count();
-        int remaining=Math.max(0,perUser-monitored.size());
+        int remaining=Math.max(0,perUser-monitored.size()-reserved.size());
         var existingCongress=activitySymbols(user,"congressional"); var existingInsider=activitySymbols(user,"insider");
         int congressRemaining=Math.max(0,congressLimit-existingCongress.size()),insiderRemaining=Math.max(0,insiderLimit-existingInsider.size());
         long congressNew=congress?stockSymbols.stream().filter(symbol->!existingCongress.contains(symbol)).count():0;
@@ -78,7 +102,7 @@ public class WatchlistImportService {
         lists.lock(user); lists.requireOwned(user,listId);
         if (request.selections()!=null) request.selections().stream().filter(WatchlistSignalSettingsService.Selection::watch).forEach(value -> permissions.requireAllowed(listId,value.type()));
         else if (request.monitor() && request.families()!=null) request.families().forEach(type -> permissions.requireAllowed(listId,type));
-        if(!preview(user,listId,request).allowed()) throw new IllegalArgumentException("The import exceeds monitoring capacity. Save without alerts or select fewer instruments.");
+        if(!preview(user,listId,request).allowed()) throw new UserInputException("The import exceeds monitoring capacity. Save without alerts or select fewer instruments.");
         long id=db.queryForObject("insert into watchlist_imports(user_id,watchlist_id,settings) values (?,?,?) returning id",Long.class,user.getId(),listId,json.writeValueAsString(request));
         for(var item:expand(request,listId).items()) db.update("insert into watchlist_import_items(import_id,symbol,metadata) values (?,?,?)",id,item.symbol(),json.writeValueAsString(item));
         return id;
@@ -116,9 +140,16 @@ public class WatchlistImportService {
         var existing=assets.findByTickerSymbolIgnoreCase(item.symbol());
         if(existing.isEmpty()) {
             if(item.exchange()==null) {
-                var resolved=market.refreshStockAssetMetadata(item.symbol());
-                if("UNKNOWN".equals(resolved.getExchange())) throw new IllegalArgumentException("Instrument metadata is unavailable. Try again later.");
-            } else market.upsertStockAsset(item.symbol(),item.name(),item.exchange(),item.currency(),InstrumentType.valueOf(item.type()));
+                var resolved=guard==null?market.refreshStockAssetMetadata(item.symbol()):guard.resolveListing(item.symbol());
+                if("UNKNOWN".equals(resolved.getExchange())) throw new UserInputException("Instrument metadata is unavailable. Try again later.");
+            } else {
+                var created=market.upsertStockAsset(item.symbol(),item.name(),item.exchange(),item.currency(),InstrumentType.valueOf(item.type()));
+                // Reviewed index snapshots are known listings; probing each one would drain provider budgets.
+                if(created!=null && created.getMarketDataVerifiedAt()==null && catalog.instrument(item.symbol())!=null) {
+                    created.setMarketDataVerifiedAt(java.time.Instant.now());
+                    assets.save(created);
+                }
+            }
             assets.flush();
         }
         boolean alreadyMonitored=Boolean.TRUE.equals(db.queryForObject("select exists(select 1 from watchlist_monitoring m join stock_assets a on a.id=m.stock_asset_id where m.user_id=? and a.ticker_symbol=?)",Boolean.class,user.getId(),item.symbol()));
@@ -134,34 +165,43 @@ public class WatchlistImportService {
         db.update("update watchlist_import_items set status='DONE',error=null,lease_until=null where id=?",work.id());
     }
     public void fail(Work work,RuntimeException error) {
-        String message=error instanceof IllegalArgumentException || error instanceof IllegalStateException ? error.getMessage():"Import could not finish. Retry this instrument.";
+        // Only messages written for people are stored; provider and library text stays in the logs.
+        String message=error instanceof UserInputException || error instanceof TechnicalOutlookCapacityException
+                || error instanceof MarketDataUnavailableException ? error.getMessage():"Import could not finish. Retry this instrument.";
         if(message==null) message="Import could not finish. Retry this instrument.";
+        if(!(error instanceof UserInputException || error instanceof TechnicalOutlookCapacityException))
+            org.slf4j.LoggerFactory.getLogger(WatchlistImportService.class)
+                    .warn("Watchlist import item {} failed", work.id(), error);
         db.update("update watchlist_import_items set status='FAILED',error=?,lease_until=null where id=? and status<>'DONE'",message.substring(0,Math.min(500,message.length())),work.id());
     }
     private Expanded expand(ImportRequest request,Long listId) {
         if(request==null || request.symbols()==null || request.indexIds()==null || request.symbols().size()>10000 || request.indexIds().size()>100)
-            throw new IllegalArgumentException("Choose instruments or indexes to add.");
+            throw new UserInputException("Choose instruments or indexes to add.");
         if(request.selections()!=null) WatchlistSignalSettingsService.validate(request.selections());
         if(request.monitor() && request.selections()==null) {
             if(request.families()==null || request.families().isEmpty() || request.families().size()>3 || request.intervals()==null || request.intervals().isEmpty() || request.intervals().size()>3)
-                throw new IllegalArgumentException("Choose at least one pattern family and interval.");
+                throw new UserInputException("Choose at least one pattern family and interval.");
             request.families().forEach(AlertPatternFamily::valueOf);
-            if(!Set.of("DAILY","WEEKLY","MONTHLY").containsAll(request.intervals())) throw new IllegalArgumentException("Choose Daily, Weekly or Monthly.");
+            if(!Set.of("DAILY","WEEKLY","MONTHLY").containsAll(request.intervals())) throw new UserInputException("Choose Daily, Weekly or Monthly.");
         }
         Map<String,WatchlistIndexCatalog.Instrument> items=new LinkedHashMap<>(); int total=0;
         for(String id:request.indexIds()) for(var item:catalog.get(id).constituents()) { items.putIfAbsent(item.symbol(),item); total++; }
         if(request.includeExisting()) {
-            if(listId==null) throw new IllegalArgumentException("Choose a watchlist to edit.");
+            if(listId==null) throw new UserInputException("Choose a watchlist to edit.");
             var current=db.query("select a.ticker_symbol,a.company_name,a.exchange,a.currency,a.instrument_type from watchlist_members m join stock_assets a on a.id=m.stock_asset_id where m.watchlist_id=?",(r,n)->new WatchlistIndexCatalog.Instrument(r.getString(1),r.getString(2),r.getString(3),r.getString(4),r.getString(5)),listId);
             for(var item:current) { items.putIfAbsent(item.symbol(),item); total++; }
         }
+        int unknown=0;
         for(String raw:request.symbols()) {
             String symbol=SecurityInputValidator.requireMarketSymbol(raw); var item=catalog.instrument(symbol);
             var known=assets.findByTickerSymbolIgnoreCase(symbol);
             if(known.isPresent()) { var a=known.get(); item=new WatchlistIndexCatalog.Instrument(symbol,a.getCompanyName(),a.getExchange(),a.getCurrency(),a.getInstrumentType().name()); }
+            if(item==null && !items.containsKey(symbol) && ++unknown>MAXIMUM_UNKNOWN_SYMBOLS_PER_IMPORT)
+                throw new UserInputException("Add at most "+MAXIMUM_UNKNOWN_SYMBOLS_PER_IMPORT
+                        +" tickers that are not yet known to StockWatch per import. Index presets are not limited.");
             items.putIfAbsent(symbol,item==null?new WatchlistIndexCatalog.Instrument(symbol,symbol,null,null,"EQUITY"):item); total++;
         }
-        if(items.isEmpty() || items.size()>10000) throw new IllegalArgumentException("Select between 1 and 10,000 unique instruments per import.");
+        if(items.isEmpty() || items.size()>10000) throw new UserInputException("Select between 1 and 10,000 unique instruments per import.");
         return new Expanded(List.copyOf(items.values()),total-items.size());
     }
     private void owned(User user,long id) {

@@ -74,8 +74,10 @@ public class WatchlistController {
     public void removeMembers(Principal principal, @PathVariable long id, @RequestBody Bulk request) {
         bulk.remove(user(principal), id, request.symbols());
     }
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<?> invalid(IllegalArgumentException error) { return ResponseEntity.badRequest().body(Map.of("error",error.getMessage())); }
+    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+    public ResponseEntity<?> invalid(RuntimeException error) {
+        return ApiErrorResponses.of(error, "The watchlist request is invalid.", "The watchlist change could not be completed.");
+    }
     private User user(Principal principal) {
         return org.example.stockwatch247.security.CurrentAccount.find(users,principal.getName()).orElseThrow();
     }

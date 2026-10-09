@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Create account — StockWatch 24/7</title>
-  <script th:src="@{/js/theme.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <title th:text="|#{auth.signup.title} — StockWatch 24/7|">Create account — StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
@@ -17,70 +17,70 @@
 
 <main class="auth-shell">
   <section class="auth-showcase">
-    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7">
+    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7" th:aria-label="#{auth.backHome}">
       <span class="logo-mark" aria-hidden="true"></span>
       <span class="logo-word">StockWatch <span>24/7</span></span>
     </a>
     <div class="auth-pitch">
-      <div class="eyebrow">Stock charts and alerts</div>
-      <h1>Follow your stocks.<br><span class="text-gradient">Get alerts.</span></h1>
-      <p>Choose stocks and signals to follow, then receive matching alerts.</p>
+      <div class="eyebrow" th:text="#{auth.signup.eyebrow}">Stock charts and alerts</div>
+      <h1><span th:text="#{auth.signup.headline1}">Follow your stocks.</span><br><span class="text-gradient" th:text="#{auth.signup.headline2}">Get alerts.</span></h1>
+      <p th:text="#{auth.signup.pitch}">Choose stocks and signals to follow, then receive matching alerts.</p>
     </div>
     <div class="auth-signal-card" aria-hidden="true">
       <span class="auth-signal-icon">✓</span>
-      <span class="auth-signal-copy"><strong>Keep track of your alerts</strong><span>Review signals and their results in your account</span></span>
+      <span class="auth-signal-copy"><strong th:text="#{auth.signup.sampleTitle}">Keep track of your alerts</strong><span th:text="#{auth.signup.sampleDetail}">Review signals and their results in your account</span></span>
       <span class="auth-signal-score">24/7</span>
     </div>
   </section>
 
   <section class="auth-card">
-    <div class="auth-kicker">Create an account</div>
-    <h2>Sign up</h2>
-    <p class="auth-description">Enter your details to get started.</p>
+    <div class="auth-kicker" th:text="#{auth.signup.kicker}">Create an account</div>
+    <h2 th:text="#{auth.signup.heading}">Sign up</h2>
+    <p class="auth-description" th:text="#{auth.signup.description}">Enter your details to get started.</p>
 
-    <div th:if="${error}" class="auth-message error-msg" th:text="${error}"></div>
+    <div th:if="${error}" class="auth-message error-msg" th:text="${T(org.example.stockwatch247.i18n.ServerMessages).translate(error)}"></div>
 
     <form th:action="@{/signup}" method="post">
       <div class="form-row">
         <div class="form-group">
-          <label for="firstName">First name</label>
+          <label for="firstName" th:text="#{auth.signup.firstName}">First name</label>
           <input id="firstName" type="text" name="firstName" required minlength="1" maxlength="100" autocomplete="given-name" placeholder="Jan">
         </div>
         <div class="form-group">
-          <label for="lastName">Last name</label>
+          <label for="lastName" th:text="#{auth.signup.lastName}">Last name</label>
           <input id="lastName" type="text" name="lastName" required minlength="1" maxlength="100" autocomplete="family-name" placeholder="Kowalski">
         </div>
       </div>
       <div class="form-group">
-        <label for="signupEmail">Email address</label>
-        <input id="signupEmail" type="email" name="email" required maxlength="254" autocomplete="email" placeholder="you@example.com">
+        <label for="signupEmail" th:text="#{auth.email}">Email address</label>
+        <input id="signupEmail" type="email" name="email" required maxlength="254" autocomplete="email" placeholder="you@example.com" th:placeholder="#{auth.email.placeholder}">
       </div>
       <div class="form-group">
-        <label for="signupPassword">Password</label>
-        <input id="signupPassword" type="password" name="password" required minlength="15" maxlength="72" autocomplete="new-password" placeholder="Create a secure password">
+        <label for="signupPassword" th:text="#{auth.password}">Password</label>
+        <input id="signupPassword" type="password" name="password" required minlength="15" maxlength="72" autocomplete="new-password" placeholder="Create a secure password" th:placeholder="#{auth.signup.password.placeholder}">
       </div>
-      <p class="form-hint">Use at least 15 characters. Longer, unique passwords are strongest.</p>
+      <p class="form-hint" th:text="#{auth.signup.password.hint}">Use at least 15 characters. Longer, unique passwords are strongest.</p>
       <details class="signup-colour-options">
-        <summary>Chart colours (optional)</summary>
+        <summary th:text="#{auth.signup.colours}">Chart colours (optional)</summary>
       <fieldset class="signup-appearance-fieldset">
-        <legend>Elliott Wave overlay colors</legend>
-        <p>Keep chart overlays distinct from red and green candles. You can change these later in Appearance settings.</p>
+        <legend th:text="#{auth.signup.elliottColours}">Elliott Wave overlay colors</legend>
+        <p th:text="#{auth.signup.elliottColours.help}">Keep chart overlays distinct from red and green candles. You can change these later in Appearance settings.</p>
         <div class="elliott-color-grid signup-elliott-colors">
           <label class="elliott-color-choice" for="signupElliottMotiveColor">
-            <span><strong>Motive I–V</strong><small>Default: blue</small></span>
+            <span><strong th:text="#{auth.signup.motive}">Motive I–V</strong><small th:text="#{auth.signup.motive.default}">Default: blue</small></span>
             <input id="signupElliottMotiveColor" type="color" name="elliottMotiveColor" value="#3B82F6" required>
           </label>
           <label class="elliott-color-choice" for="signupElliottCorrectiveColor">
-            <span><strong>Corrective A–B–C</strong><small>Default: violet</small></span>
+            <span><strong th:text="#{auth.signup.corrective}">Corrective A–B–C</strong><small th:text="#{auth.signup.corrective.default}">Default: violet</small></span>
             <input id="signupElliottCorrectiveColor" type="color" name="elliottCorrectiveColor" value="#A855F7" required>
           </label>
         </div>
       </fieldset>
       </details>
-      <button type="submit" class="btn-accent auth-btn">Create account <span class="button-arrow" aria-hidden="true">→</span></button>
+      <button type="submit" class="btn-accent auth-btn"><span th:text="#{auth.signup.submit}">Create account</span> <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
 
-    <p class="auth-switch">Already have an account? <a th:href="@{/login}" class="text-link">Sign in</a></p>
+    <p class="auth-switch"><span th:text="#{auth.signup.haveAccount}">Already have an account?</span> <a th:href="@{/login}" class="text-link" th:text="#{auth.signIn}">Sign in</a></p>
   </section>
 </main>
 </body>

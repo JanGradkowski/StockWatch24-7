@@ -46,7 +46,34 @@ public class StockAsset {
     @Column(name = "instrument_type", nullable = false, length = 20)
     private InstrumentType instrumentType = InstrumentType.EQUITY;
 
-    // Getters, Setters, and Constructors omitted
+    /** Set once a provider has returned real candles for this listing. */
+    @Column(name = "market_data_verified_at")
+    private java.time.Instant marketDataVerifiedAt;
+
+    public java.time.Instant getMarketDataVerifiedAt() {
+        return marketDataVerifiedAt;
+    }
+
+    public void setMarketDataVerifiedAt(java.time.Instant marketDataVerifiedAt) {
+        this.marketDataVerifiedAt = marketDataVerifiedAt;
+    }
+
+    @Column(name = "metadata_refreshed_at")
+    private java.time.Instant metadataRefreshedAt;
+
+    public java.time.Instant getMetadataRefreshedAt() {
+        return metadataRefreshedAt;
+    }
+
+    public void setMetadataRefreshedAt(java.time.Instant metadataRefreshedAt) {
+        this.metadataRefreshedAt = metadataRefreshedAt;
+    }
+
+    /** A provider has supplied a real name and venue, not the placeholder created for an unknown ticker. */
+    public boolean hasConfirmedListing() {
+        return exchange != null && !exchange.isBlank() && !"UNKNOWN".equalsIgnoreCase(exchange)
+                && companyName != null && !companyName.isBlank() && !companyName.equalsIgnoreCase(tickerSymbol);
+    }
 
     public Long getId() {
         return id;

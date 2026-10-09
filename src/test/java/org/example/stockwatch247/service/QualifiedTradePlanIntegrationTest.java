@@ -49,7 +49,7 @@ class QualifiedTradePlanIntegrationTest {
             events.saveAndFlush(e);
             String html=mvc.perform(get("/alerts/signals/"+e.getId()).with(user(u.getEmail())).sessionAttr(AccountSession.SECURITY_VERSION,u.getSecurityVersion()))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-            assertThat(html).contains("Qualified trade plan","Secondary scenario","Protective");
+            assertThat(html).contains("Qualified trade plan","Secondary scenario").containsIgnoringCase("protective");
             if(family==AlertPatternFamily.HARMONIC_FORMATION) assertThat(html).contains("Primary target");
             e.setTradeActionable(false);e.setTradeQualification("Projection only: insufficient valid volatility history.");
             e.setTradeRiskAtr(null);

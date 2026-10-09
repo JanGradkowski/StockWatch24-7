@@ -76,6 +76,43 @@ class ElliottProjectionServiceTest {
     }
 
     @Test
+    void compressedWaveFourStaysDrawnWhilePriceTradesInsideItsLegalRange() {
+        ElliottProjectionSet set = projectionSet();
+        ElliottProjectionScenario scenario = compressedWaveFour(set);
+        when(setRepository.findForEvaluation(
+                "TEST", TimeInterval.DAILY, ElliottProjectionSetStatus.ACTIVE))
+                .thenReturn(List.of(set));
+        when(scenarioRepository.findByProjectionSetOrderByDisplayRankAscIdAsc(set))
+                .thenReturn(List.of(scenario));
+
+        service.evaluateOpenProjections("TEST", TimeInterval.DAILY, List.of(
+                candle(101, 108.5, 100.5, 108), candle(102, 108.8, 104, 106)));
+
+        assertThat(scenario.getStatus()).isEqualTo(ElliottProjectionScenarioStatus.ACTIVE);
+        assertThat(scenario.getTargetReachedTimestamp()).isNull();
+        assertThat(scenario.getCurrentConfidence()).isEqualTo(30);
+        assertThat(scenario.getEvaluationNote()).contains("Wave I boundary at 110.00");
+        assertThat(set.getStatus()).isEqualTo(ElliottProjectionSetStatus.ACTIVE);
+    }
+
+    @Test
+    void compressedWaveFourIsInvalidatedWhenPriceOverlapsWaveOne() {
+        ElliottProjectionSet set = projectionSet();
+        ElliottProjectionScenario scenario = compressedWaveFour(set);
+        when(setRepository.findForEvaluation(
+                "TEST", TimeInterval.DAILY, ElliottProjectionSetStatus.ACTIVE))
+                .thenReturn(List.of(set));
+        when(scenarioRepository.findByProjectionSetOrderByDisplayRankAscIdAsc(set))
+                .thenReturn(List.of(scenario));
+
+        service.evaluateOpenProjections("TEST", TimeInterval.DAILY,
+                List.of(candle(101, 110.2, 104, 107)));
+
+        assertThat(scenario.getStatus()).isEqualTo(ElliottProjectionScenarioStatus.INVALIDATED);
+        assertThat(set.getStatus()).isEqualTo(ElliottProjectionSetStatus.INVALIDATED);
+    }
+
+    @Test
     void nextValidatedStageCompletesOldPathsAndCreatesAReplacementSet() {
         AlertEvent event = new AlertEvent();
         event.setId(7L);
@@ -154,6 +191,21 @@ class ElliottProjectionServiceTest {
         scenario.setHardInvalidationSide("BELOW");
         scenario.setScenarioInvalidationPrice(130.0);
         scenario.setScenarioInvalidationSide("ABOVE");
+        return scenario;
+    }
+
+    /** Bearish count: Wave III at 100, Wave I at 110, so Wave IV may rise only to just below 110. */
+    private ElliottProjectionScenario compressedWaveFour(ElliottProjectionSet set) {
+        set.setStage(ElliottSignalStage.WAVE_III_END);
+        ElliottProjectionScenario scenario = scenario(set, 1, 30);
+        scenario.setScenarioKey(ElliottProjectionPolicy.COMPRESSED_WAVE_IV);
+        scenario.setTargetMidpoint(109.0);
+        scenario.setTargetZoneLow(100.0);
+        scenario.setTargetZoneHigh(109.99);
+        scenario.setHardInvalidationPrice(110.0);
+        scenario.setHardInvalidationSide("ABOVE");
+        scenario.setScenarioInvalidationPrice(100.0);
+        scenario.setScenarioInvalidationSide("BELOW");
         return scenario;
     }
 

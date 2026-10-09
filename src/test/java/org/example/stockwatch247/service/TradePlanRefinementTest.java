@@ -92,7 +92,7 @@ class TradePlanRefinementTest {
     void harmonicTargetsAndRiskQualificationExistAcrossIntervalsAndDirections(HarmonicPatternType type) {
         for(var interval:List.of(TimeInterval.DAILY,TimeInterval.WEEKLY,TimeInterval.MONTHLY)) {
             for (var side:List.of(TradeSignal.BUY,TradeSignal.SELL)) {
-                String[] labels=type==HarmonicPatternType.SHARK?new String[]{"0","X","A","B","C"}:new String[]{"X","A","B","C","D"};
+                String[] labels={"X","A","B","C","D"};
                 double[] prices=type==HarmonicPatternType.SHARK?new double[]{100,120,108,124,99}:new double[]{100,120,110,115,104};
                 var ps=new ArrayList<HarmonicPatternDetectionService.HarmonicPoint>();
                 for(int i=0;i<5;i++) ps.add(new HarmonicPatternDetectionService.HarmonicPoint(labels[i],i+1L,

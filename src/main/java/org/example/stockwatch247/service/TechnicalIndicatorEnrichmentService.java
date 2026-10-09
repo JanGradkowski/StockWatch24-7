@@ -22,6 +22,12 @@ import java.util.Objects;
 
 @Service
 public class TechnicalIndicatorEnrichmentService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TechnicalIndicatorEnrichmentService.class);
+    private final BoundedTtlCache<EnrichmentKey, List<EnrichedCandle>> enrichmentCache = new BoundedTtlCache<>(16, 600);
+    private record EnrichmentKey(TechnicalIndicatorProfile profile, int count, List<InputBar> candles) { }
+    private final BoundedTtlCache<AnalysisKey, AnalysisResult> analysisCache = new BoundedTtlCache<>(32, 600);
+    private record AnalysisKey(EnrichmentKey input, boolean research) { }
+    private record InputBar(Long timestamp, Double open, Double high, Double low, Double close, Long volume) { }
     private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int VOLUME_PROFILE_BIN_COUNT = 24;
     private final Ta4jBarSeriesFactory seriesFactory;
@@ -141,8 +147,24 @@ public class TechnicalIndicatorEnrichmentService {
         }
         validateInterval(candles, interval);
 
-        BarSeries series = seriesFactory.create(candles);
-        return enrichPrepared(candles, latestCount, profile, series);
+        EnrichmentKey key = candles.size() <= 20000 ? new EnrichmentKey(profile, latestCount,
+                candles.stream().map(candle -> new InputBar(candle.getTimestamp(), candle.getOpenPrice(),
+                        candle.getHighPrice(), candle.getLowPrice(), candle.getClosePrice(), candle.getVolume())).toList()) : null;
+        java.util.function.Supplier<List<EnrichedCandle>> calculation = () -> {
+            long started = System.nanoTime();
+            List<EnrichedCandle> result = enrichPrepared(candles, latestCount, profile, seriesFactory.create(candles));
+            log.debug("Outlook calculation stage=core interval={} inputBars={} outputBars={} elapsedMs={}",
+                    interval, candles.size(), result.size(), (System.nanoTime() - started) / 1_000_000);
+            return result;
+        };
+        if (key != null) {
+            List<EnrichedCandle> cached = enrichmentCache.get(key, java.time.Instant.now().getEpochSecond());
+            if (cached != null) {
+                log.debug("Outlook calculation stage=core cacheHit=true interval={} inputBars={}", interval, candles.size());
+                return cached;
+            }
+        }
+        return key == null ? calculation.get() : enrichmentCache.getOrCompute(key, calculation);
     }
 
     AnalysisResult analyze(List<Candle> rawCandles,
@@ -159,12 +181,28 @@ public class TechnicalIndicatorEnrichmentService {
                 .toList();
         if (candles.isEmpty()) return new AnalysisResult(List.of(), List.of());
         validateInterval(candles, profile.interval());
-        BarSeries series = seriesFactory.create(candles);
-        List<EnrichedCandle> enriched = enrichPrepared(candles, latestCount, profile, series);
-        List<TechnicalResearchSnapshot> research = includeResearch
-                ? researchPrepared(candles, latestCount, profile, series, false)
-                : List.of();
-        return new AnalysisResult(enriched, research);
+        AnalysisKey key = new AnalysisKey(new EnrichmentKey(profile, latestCount,
+                candles.stream().map(candle -> new InputBar(candle.getTimestamp(), candle.getOpenPrice(), candle.getHighPrice(),
+                        candle.getLowPrice(), candle.getClosePrice(), candle.getVolume())).toList()), includeResearch);
+        long now = java.time.Instant.now().getEpochSecond();
+        AnalysisResult cached = analysisCache.get(key, now);
+        if (cached != null) {
+            log.debug("Outlook calculation cacheHit=true interval={} inputBars={} research={}",
+                    profile.interval(), candles.size(), includeResearch);
+            return cached;
+        }
+        return analysisCache.getOrCompute(key, () -> {
+            long started = System.nanoTime();
+            log.debug("Outlook calculation stage=analysis interval={} inputBars={} research={}",
+                    profile.interval(), candles.size(), includeResearch);
+            List<EnrichedCandle> enriched = enrich(candles, latestCount, profile);
+            List<TechnicalResearchSnapshot> research = includeResearch
+                    ? researchPrepared(candles, latestCount, profile, seriesFactory.create(candles), false)
+                    : List.of();
+            log.debug("Outlook calculation stage=analysis-complete interval={} research={} elapsedMs={}",
+                    profile.interval(), includeResearch, (System.nanoTime() - started) / 1_000_000);
+            return new AnalysisResult(enriched, research);
+        });
     }
 
     private List<EnrichedCandle> enrichPrepared(List<Candle> candles,
@@ -272,6 +310,9 @@ public class TechnicalIndicatorEnrichmentService {
             TechnicalIndicatorProfile profile,
             BarSeries series,
             boolean includeHistoricalKde) {
+        long started = System.nanoTime();
+        log.debug("Outlook calculation stage=research inputBars={} outputBars={} kdeWindow={} historicalKde={}",
+                candles.size(), latestCount, profile.volumeProfilePeriod(), includeHistoricalKde);
         Ta4jIndicatorRegistry.ResearchIndicators indicators = indicatorRegistry.research(
                 series, parameters(profile));
         int firstIndex = Math.max(0, candles.size() - latestCount);
@@ -300,6 +341,7 @@ public class TechnicalIndicatorEnrichmentService {
                             : Double.NaN
             ));
         }
+        log.debug("Outlook calculation stage=research-complete elapsedMs={}", (System.nanoTime() - started) / 1_000_000);
         return List.copyOf(snapshots);
     }
 
@@ -528,11 +570,13 @@ public class TechnicalIndicatorEnrichmentService {
         return index >= indicator.getCountOfUnstableBars() && Boolean.TRUE.equals(indicator.getValue(index));
     }
 
-    private double researchKdeMode(org.ta4j.core.indicators.supportresistance.VolumeProfileKDEIndicator indicator,
+    private double researchKdeMode(org.example.stockwatch247.service.technical.StableVolumeProfileKde indicator,
                                    int index) {
         if (index < indicator.getCountOfUnstableBars()) return Double.NaN;
-        Num value = indicator.getModePrice(index);
-        return value == null || value.isNaN() ? Double.NaN : value.doubleValue();
+        long started = System.nanoTime();
+        double value = indicator.getModePrice(index);
+        log.debug("Outlook calculation stage=kde index={} elapsedMicros={}", index, (System.nanoTime() - started) / 1_000);
+        return value;
     }
 
     private TechnicalIndicatorParameters parameters(TechnicalIndicatorProfile profile) {

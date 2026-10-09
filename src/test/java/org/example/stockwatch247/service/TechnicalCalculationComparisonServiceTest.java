@@ -23,7 +23,9 @@ class TechnicalCalculationComparisonServiceTest {
         assertThat(report.volumeProfile().samples()).isGreaterThanOrEqualTo(100);
         assertThat(report.volumeProfile().establishedMeanAtrError()).isFinite().isPositive();
         assertThat(report.volumeProfile().ta4jMeanAtrError()).isFinite().isPositive();
-        assertThat(report.volumeProfile().lowerErrorMethod()).isEqualTo("ESTABLISHED_BINNED_PROFILE");
+        assertThat(report.volumeProfile().lowerErrorMethod()).isEqualTo("NO_MATERIAL_DIFFERENCE");
+        assertThat(report.volumeProfile().ta4jMeanAtrError()).isCloseTo(1.1323689213945263,
+                org.assertj.core.api.Assertions.within(1e-10));
         assertThat(report.volumeProfile().ta4jRelativeImprovement()).isLessThan(0.0);
         assertThat(report.volumeProfile().recommendation()).isEqualTo("KEEP_ESTABLISHED_PRODUCTION_INPUT");
         assertThat(report.safetyBoundary()).contains("No result automatically changes detection");

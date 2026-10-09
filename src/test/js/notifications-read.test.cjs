@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 const { JSDOM } = require('jsdom');
 const source = fs.readFileSync('src/main/resources/static/js/notifications-read.js', 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -13,7 +14,7 @@ function setup(t, attributes = '', response = { ok: true }) {
   let finish;
   const pending = new Promise(resolve => { finish = resolve; });
   vm.runInNewContext(source, { document: dom.window.document, URLSearchParams,
-    window: { location: { reload: () => { reloads++; } } },
+    window: { StockWatchI18n, location: { reload: () => { reloads++; } } },
     fetch: async (url, options) => { requests.push({ url, options }); await pending; return response; } });
   // Watchlist buttons are inserted after the shared script initializes.
   dom.window.document.getElementById('actions').innerHTML = `<button data-notifications-read-all ${attributes}>Mark all as read</button><span data-notifications-read-status role="status"></span>`;

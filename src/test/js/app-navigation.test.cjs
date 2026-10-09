@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 
 // Exercise our state and event wiring; modal focus trapping is provided by HTMLDialogElement.
 function setup({mobile = false, stored = null, blockedStorage = false, section = 'home', path = '/home', hash = ''} = {}) {
@@ -36,6 +37,7 @@ function setup({mobile = false, stored = null, blockedStorage = false, section =
     sidebar.getBoundingClientRect = () => ({left: 0, right: 280, top: 0, bottom: 800});
     document.getElementById = id => id === 'appSidebar' ? sidebar : menu;
     const window = new EventTarget();
+    window.StockWatchI18n = StockWatchI18n;
     window.location = {pathname: path, hash};
     const query = new EventTarget(); query.matches = mobile;
     window.matchMedia = () => query;
@@ -123,38 +125,42 @@ test('link capture closes the drawer without preventing the existing navigation 
     assert.equal(event.defaultPrevented, false);
 });
 
-test('dashboard switches from sidebar links and restored history without dashboard tab buttons', () => {
-    const app = setup();
+// The server picks the dashboard view: /home shows technical signals, /ticker-alerts shows filings.
+function runDashboard(app, {activeView = null, url}) {
     const makeControl = dataset => Object.assign(new EventTarget(), {
         dataset, classList: {toggle() {}}, setAttribute() {}, focus() {}
     });
     const sections = ['technical', 'alerts'].map(view => makeControl({dashboardView: view}));
+    const layout = activeView ? makeControl({activeView}) : null;
+    const replaced = [];
     app.document.querySelectorAll = selector => selector === '[data-dashboard-view]' ? sections : [];
-    app.document.querySelector = () => null;
+    app.document.querySelector = selector => selector === '[data-dashboard-view-layout]' ? layout : null;
     app.document.getElementById = () => null;
     app.document.readyState = 'complete';
-    app.window.location = new URL('https://test.local/home#latestTechnicalSignals');
-    app.window.history = {state: {saved: true}, replaceState(state, title, url) {
-        this.state = state;
-        app.window.location = new URL(url);
-    }};
+    app.window.location = Object.assign(new URL(url), {replace: target => replaced.push(target)});
+    app.window.history = {state: {saved: true}, replaceState() {}};
     vm.runInNewContext(fs.readFileSync('src/main/resources/static/js/dashboard.js', 'utf8'),
         {document: app.document, window: app.window, URL, Event});
-    assert.equal(app.window.location.hash, '#latestTechnicalSignals');
-    assert.equal(sections[0].hidden, false);
-    app.window.location.hash = '#ticker-alerts';
-    app.window.dispatchEvent(new Event('hashchange'));
-    assert.equal(sections[1].hidden, false);
-    assert.equal(sections[0].hidden, true);
-    app.window.location.hash = '';
-    app.window.dispatchEvent(new Event('hashchange'));
-    assert.equal(app.window.location.hash, '');
-    assert.equal(sections[0].hidden, false);
-    assert.equal(app.links[0].getAttribute('aria-current'), 'page');
-    assert.deepEqual(app.window.history.state, {saved: true});
-    app.window.location.hash = '#ticker-alerts';
-    app.window.dispatchEvent(new Event('pageshow'));
-    assert.equal(sections[1].hidden, false);
-    assert.equal(sections[0].hidden, true);
-    assert.equal(app.links[2].getAttribute('aria-current'), 'page');
+    return {sections, replaced};
+}
+
+test('dashboard shows the server-chosen view and sends old ticker-alert links to their own page', () => {
+    const home = setup();
+    const dashboard = runDashboard(home, {activeView: 'technical', url: 'https://test.local/home#latestTechnicalSignals'});
+    assert.equal(dashboard.sections[0].hidden, false);
+    assert.equal(dashboard.sections[1].hidden, true);
+    assert.equal(home.links[0].getAttribute('aria-current'), 'page');
+    home.window.location.hash = '#ticker-alerts';
+    home.window.dispatchEvent(new Event('hashchange'));
+    assert.deepEqual(dashboard.replaced, ['/ticker-alerts']);
+
+    const bookmark = runDashboard(setup(), {activeView: 'technical', url: 'https://test.local/home#ticker-alerts'});
+    assert.deepEqual(bookmark.replaced, ['/ticker-alerts']);
+
+    const alertsApp = setup({section: 'alerts', path: '/ticker-alerts'});
+    const alerts = runDashboard(alertsApp, {activeView: 'alerts', url: 'https://test.local/ticker-alerts'});
+    assert.equal(alerts.sections[1].hidden, false);
+    assert.equal(alerts.sections[0].hidden, true);
+    assert.deepEqual(alerts.replaced, []);
+    assert.equal(alertsApp.links[2].getAttribute('aria-current'), 'page');
 });

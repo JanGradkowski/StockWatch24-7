@@ -16,9 +16,11 @@
     var valid = total === 100;
     card.classList.toggle('invalid-total', !valid);
     card.querySelector('.scoring-total').textContent = total + ' / 100';
+    var i18n = window.StockWatchI18n;
     card.querySelector('.scoring-total-message').textContent = valid
-      ? 'Ready to apply'
-      : (total < 100 ? (100 - total) + ' points still needed' : (total - 100) + ' points over');
+      ? i18n.t('scoring.ready')
+      : (total < 100 ? i18n.plural('scoring.pointsNeeded', 100 - total, 100 - total)
+        : i18n.plural('scoring.pointsOver', total - 100, total - 100));
     return valid;
   }
 

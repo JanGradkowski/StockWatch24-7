@@ -34,7 +34,7 @@
                 if (item.dash) path.setAttribute('stroke-dasharray', item.dash);
                 swatch.append(path);
                 const text = document.createElement('span');
-                text.textContent = item.label + (input.disabled ? ' · No data' : '');
+                text.textContent = item.label + (input.disabled ? ` · ${window.StockWatchI18n.t('chart.noData')}` : '');
                 label.title = item.description || item.label;
                 label.append(input, swatch, text);
                 options.append(label);
@@ -42,7 +42,7 @@
                 controls.push({input, item});
             });
 
-            for (const [text, visible] of [['Show all', true], ['Hide all', false]]) {
+            for (const [text, visible] of [[window.StockWatchI18n.t('chart.showAll'), true], [window.StockWatchI18n.t('chart.hideAll'), false]]) {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.textContent = text;

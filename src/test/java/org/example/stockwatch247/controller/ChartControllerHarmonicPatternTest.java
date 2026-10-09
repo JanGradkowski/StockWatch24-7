@@ -89,6 +89,31 @@ class ChartControllerHarmonicPatternTest {
         });
     }
 
+    @Test
+    void theCandleStillFormingCannotCompleteAFormationOnTheChart() {
+        CandleRepository candles = mock(CandleRepository.class);
+        ChartController controller = controller(candles);
+        controller.configureHarmonicPatterns(new HarmonicPatternDetectionService(
+                new HarmonicPatternDetectionService.Rules(.04, .08, .10, 0.0, 1, 40)));
+        long start = 1_700_000_000L;
+        when(candles.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
+                "MSFT", "1d", start)).thenReturn(gartleyCandles(start));
+        var completion = mock(org.example.stockwatch247.service.CandleCompletionService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "candidateCandleCompletion", completion);
+
+        // The confirming candle at day 6 is still forming.
+        when(completion.firstIncompleteCandleTimestamp(org.example.stockwatch247.model.enums.TimeInterval.DAILY))
+                .thenReturn(start + 6 * 86_400L);
+        assertThat(controller.getHistoricalHarmonicFormations("MSFT", "1d", start).formations())
+                .noneMatch(formation -> formation.pattern() == HarmonicPatternType.GARTLEY);
+
+        // Once it has closed, the same formation appears.
+        when(completion.firstIncompleteCandleTimestamp(org.example.stockwatch247.model.enums.TimeInterval.DAILY))
+                .thenReturn(start + 7 * 86_400L);
+        assertThat(controller.getHistoricalHarmonicFormations("MSFT", "1d", start).formations())
+                .anyMatch(formation -> formation.pattern() == HarmonicPatternType.GARTLEY);
+    }
+
     private ChartController controller(CandleRepository candles) {
         return new ChartController(
                 candles,

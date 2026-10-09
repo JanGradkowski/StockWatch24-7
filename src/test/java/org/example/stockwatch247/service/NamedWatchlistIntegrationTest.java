@@ -23,6 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class NamedWatchlistIntegrationTest {
     @Autowired WatchlistService lists;
     @Autowired WatchlistFollowService follows;
+    @Autowired AlertRuleService alerts;
     @Autowired WatchlistImportService imports;
     @Autowired WatchlistEditorService editor;
     @Autowired WatchlistSignalSettingsService settings;
@@ -196,7 +197,13 @@ class NamedWatchlistIntegrationTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/signals/mixed/delete")));
         String returnTo="/signals?watchlistId="+watching.id()+"&state=unread";
         mvc.perform(get("/activity-signals/congressional/"+congress).param("returnTo",returnTo).with(user(owner.getEmail())).sessionAttr(AccountSession.SECURITY_VERSION,owner.getSecurityVersion()))
-                .andExpect(status().isOk()).andExpect(model().attribute("archiveReturnUrl",returnTo));
+                .andExpect(status().isOk()).andExpect(model().attribute("archiveReturnUrl",returnTo))
+                .andExpect(model().attribute("markReadEndpoint","/api/congressional-activity/notifications/"+congress+"/read"));
+        // Viewing alone changes nothing; the page then marks the delivery read with a POST.
+        assertThat(lists.members(owner,watching.id(),0,"all","").items().getFirst().unreadSignalCount()).isEqualTo(3);
+        mvc.perform(post("/api/congressional-activity/notifications/"+congress+"/read").with(csrf()).with(user(owner.getEmail()))
+                        .sessionAttr(AccountSession.SECURITY_VERSION,owner.getSecurityVersion()))
+                .andExpect(status().is2xxSuccessful());
         assertThat(lists.members(owner,watching.id(),0,"all","").items().getFirst().unreadSignalCount()).isEqualTo(2);
         assertThat(archiveQuery.page(owner.getId(),null,"date",false,0,50,new SignalArchiveFilter("unread","",watching.id())).count()).isEqualTo(2);
         assertThatThrownBy(() -> deletion.deleteMixedSignals(owner,List.of(event),List.of("INSIDER:9223372036854775807"))).isInstanceOf(IllegalArgumentException.class);
@@ -480,6 +487,18 @@ class NamedWatchlistIntegrationTest {
         lists.remove(owner,a,asset.getTickerSymbol());
         assertThat(lists.lists(owner).stream().filter(l->l.id()==b).findFirst().orElseThrow().monitored()).isEqualTo(1);
         lists.delete(owner,b);
+        assertThat(db.queryForObject("select count(*) from alert_rules where user_id=? and is_active",Long.class,owner.getId())).isZero();
+    }
+    @Test void unfollowingRemovesWatchlistMonitoringSoALaterMembershipChangeCannotReactivateIt() {
+        long a=lists.create(owner,"Growth",""),b=lists.create(owner,"Long term","");
+        follows.apply(owner,asset.getTickerSymbol(),List.of(buy()),List.of(a,b),null);
+        assertThat(db.queryForObject("select count(*) from watchlist_member_signals where stock_asset_id=?",Long.class,asset.getId())).isEqualTo(2);
+
+        alerts.unfollowAllTechnicalRules(owner,asset.getTickerSymbol());
+
+        assertThat(db.queryForObject("select count(*) from watchlist_member_signals where stock_asset_id=?",Long.class,asset.getId())).isZero();
+        assertThat(lists.lists(owner)).allSatisfy(list->assertThat(list.monitored()).isZero());
+        lists.remove(owner,a,asset.getTickerSymbol());
         assertThat(db.queryForObject("select count(*) from alert_rules where user_id=? and is_active",Long.class,owner.getId())).isZero();
     }
     @Test void applyChangesSavesInlineListAndMembershipTogetherAndRollsBackInvalidRules() throws Exception {

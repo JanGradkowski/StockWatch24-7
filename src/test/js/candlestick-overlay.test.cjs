@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 
 function workspace() {
   const nodes = new Map(), pending = [];
@@ -17,11 +18,13 @@ function workspace() {
   }
   const get = id => {if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id);};
   const series = {data: [1], setData(data) {this.data = data;}};
-  const context = {document: {createElement: element, getElementById: get}, console,
+  const context = {document: {createElement: element, getElementById: get}, console, i18n: StockWatchI18n,
     historicalCandlestickOverlayEnabled: false, historicalCandlestickOverlayRequestSequence: 0,
     historicalCandlestickOverlayHistory: null, historicalCandlestickOverlaySignals: [],
     historicalCandlestickTrendSeries: series, historicalCandlestickFormationSeries: series,
     currentInterval: '1d', encodedTicker: 'AAPL', globalCandleData: [],
+    patternRangeLoader: null,
+    loadPatternRange() {return new Promise(resolve => pending.push(resolve));},
     activeChartIndicators: new Map([['bb', {id:'bb', displayLabel:'Bollinger Bands'}]]),
     chartIndicatorPriceSeries: new Map([['bb', []]]), indicatorColor: () => '#123456',
     removeChartIndicator() {throw new Error('Removing patterns must leave other indicators alone');},
@@ -36,7 +39,7 @@ function workspace() {
     'renderChartIndicatorOverlayLegend', 'showHistoricalCandlestickViewPicker',
     'enableHistoricalCandlestickOverlay', 'disableHistoricalCandlestickOverlay',
     'updateHistoricalCandlestickOverlayToggle', 'refreshHistoricalCandlestickOverlay',
-    'historicalCandlestickIntervalLabel', 'updateHistoricalCandlestickOverlayStatus',
+    'apiIntervalEnum', 'updateHistoricalCandlestickOverlayStatus',
     'clearHistoricalCandlestickOverlayVisuals']) {
     const declaration = source.match(new RegExp('^  (?:async )?function '+name+'\\([\\s\\S]*?^  }', 'm'));
     assert.ok(declaration, name);

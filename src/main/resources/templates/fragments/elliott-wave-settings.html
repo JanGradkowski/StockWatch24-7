@@ -4,22 +4,22 @@
 <div th:fragment="elliottWaveSettings(preferences)" class="elliott-settings-stack">
   <section class="settings-card analysis-profile-overview elliott-settings-overview">
     <div class="settings-card-heading">
-      <div><span class="settings-number">01</span><h2>Elliott Wave detection definitions</h2></div>
+      <div><span class="settings-number">01</span><h2 th:text="#{elliott.heading}">Elliott Wave detection definitions</h2></div>
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
-            th:text="${preferences.custom()} ? 'Custom definitions' : 'Default settings'">Default settings</span>
+            th:text="${preferences.custom()} ? #{candlestick.custom} : #{candlestick.default}">Default settings</span>
     </div>
-    <p class="analysis-settings-intro">Control how completed candles become swing pivots, how I–II–III–IV–V is validated, and which A–B–C corrections are accepted. One shared definition applies across all intervals.</p>
+    <p class="analysis-settings-intro" th:text="#{elliott.intro}">Control how completed candles become swing pivots, how I–II–III–IV–V is validated, and which A–B–C corrections are accepted. One shared definition applies across all intervals.</p>
     <div class="analysis-safety-strip elliott-definition-guide">
-      <strong>How the values are measured</strong>
-      <span><b>Retracement (%)</b> divides a corrective price distance by the actionary wave or complete impulse named in that option.</span>
-      <span><b>Ratio (%)</b> compares two wave lengths: 100% means equal length, 50% means half, and 200% means twice as long.</span>
-      <span><b>ATR multiple (×)</b> controls how far price must reverse before a new swing pivot exists.</span>
+      <strong th:text="#{candlestick.measured}">How the values are measured</strong>
+      <span><b th:text="#{elliott.measured.retracement}">Retracement (%)</b> <span th:text="#{elliott.measured.retracement.help}">divides a corrective price distance by the actionary wave or complete impulse named in that option.</span></span>
+      <span><b th:text="#{elliott.measured.ratio}">Ratio (%)</b> <span th:text="#{elliott.measured.ratio.help}">compares two wave lengths: 100% means equal length, 50% means half, and 200% means twice as long.</span></span>
+      <span><b th:text="#{elliott.measured.atr}">ATR multiple (×)</b> <span th:text="#{elliott.measured.atr.help}">controls how far price must reverse before a new swing pivot exists.</span></span>
     </div>
     <div class="elliott-theory-note">
-      <strong>About the “longest wave” rules</strong>
-      <p>Wave III cannot be the shortest of I, III and V. You can also require Wave I to be shortest. That optional rule allows ties and overrides the setting that lets Wave I be longest.</p>
+      <strong th:text="#{elliott.longest.heading}">About the “longest wave” rules</strong>
+      <p th:text="#{elliott.longest.help}">Wave III cannot be the shortest of I, III and V. You can also require Wave I to be shortest. That optional rule allows ties and overrides the setting that lets Wave I be longest.</p>
     </div>
-    <p class="candlestick-pattern-note">Changes affect future alerts, newly calculated chart overlays, lower-degree hover counts, and newly reconstructed historical results. Already stored signals are not rewritten.</p>
+    <p class="candlestick-pattern-note" th:text="#{elliott.affects}">Changes affect future alerts, newly calculated chart overlays, lower-degree hover counts, and newly reconstructed historical results. Already stored signals are not rewritten.</p>
   </section>
 
   <form id="elliottWaveDefinitionsForm" th:action="@{/settings/elliott-waves}" method="post" class="elliott-preferences-form">
@@ -28,31 +28,31 @@
       <div class="settings-card-heading candlestick-pattern-heading">
         <div>
           <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 2, 2)}">02</span>
-          <div><p class="scoring-family-label">Shared detection rules</p><h2 th:text="${'Elliott Waves'}">Elliott Waves</h2></div>
+          <div><p class="scoring-family-label" th:text="#{elliott.sharedRules}">Shared detection rules</p><h2 th:text="#{settings.nav.elliott}">Elliott Waves</h2></div>
         </div>
         <div class="candlestick-pattern-heading-actions">
           <span class="analysis-profile-state" th:classappend="${profile.factoryProfile} ? '' : ' custom'"
-                th:text="${profile.factoryProfile} ? 'Default' : 'Custom'">Default</span>
-          <button class="danger-outline-button" type="submit" th:form="${profile.key + '-elliott-reset-form'}">Reset settings</button>
+                th:text="${profile.factoryProfile} ? #{candlestick.state.default} : #{candlestick.state.custom}">Default</span>
+          <button class="danger-outline-button" type="submit" th:form="${profile.key + '-elliott-reset-form'}" th:text="#{analysis.reset}">Reset settings</button>
         </div>
       </div>
-      <p class="candlestick-pattern-description" th:text="${profile.description}">Completed weekly candles.</p>
+      <p class="candlestick-pattern-description" th:text="#{elliott.profile.description}">Completed weekly candles.</p>
 
       <section class="elliott-rule-section elliott-pivot-section">
         <div class="elliott-rule-section-heading">
-          <div><span class="elliott-rule-kicker">Step 1</span><h3>Pivot construction and confirmation</h3></div>
-          <p>These values decide which price reversals become candidate wave endpoints before any Elliott labels are assigned.</p>
+          <div><span class="elliott-rule-kicker" th:text="#{elliott.step1}">Step 1</span><h3 th:text="#{elliott.section.PIVOTS}">Pivot construction and confirmation</h3></div>
+          <p th:text="#{elliott.section.PIVOTS.help}">These values decide which price reversals become candidate wave endpoints before any Elliott labels are assigned.</p>
         </div>
         <div class="elliott-setting-list">
           <div class="candlestick-threshold-row elliott-number-row" th:each="setting : ${profile.numbers}"
                th:if="${setting.section.name() == 'PIVOTS'}">
             <label class="candlestick-threshold-copy" th:for="${profile.key + '-' + setting.key}">
-              <strong th:text="${setting.label}">Minimum completed candles</strong>
-              <small th:text="${setting.description}">What the value measures.</small>
-              <em th:text="${setting.effect}">How changing it affects detection.</em>
+              <strong th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.label') ?: setting.label}">Minimum completed candles</strong>
+              <small th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.description') ?: setting.description}">What the value measures.</small>
+              <em th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.effect') ?: setting.effect}">How changing it affects detection.</em>
             </label>
             <label class="candlestick-value-control" th:for="${profile.key + '-' + setting.key}">
-              <span>Value <small>Default: <b th:text="${setting.factoryValue + setting.unit}">34</b></small></span>
+              <span><span th:text="#{candlestick.value}">Value</span> <small><span th:text="#{common.default}">Default:</span> <b th:text="${#numbers.formatDecimal(setting.factoryValue, 1, 'DEFAULT', 2, 'DEFAULT').replaceAll('[.,]?0+$', '') + setting.unit}">34</b></small></span>
               <span><input type="number" required inputmode="decimal" th:id="${profile.key + '-' + setting.key}"
                            th:name="${profile.key + '.' + setting.key}" th:min="${setting.min}" th:max="${setting.max}"
                            th:step="${setting.step}" th:value="${setting.value}"><b th:text="${setting.unit}"></b></span>
@@ -63,27 +63,27 @@
 
       <section class="elliott-rule-section elliott-motive-section">
         <div class="elliott-rule-section-heading">
-          <div><span class="elliott-rule-kicker">Step 2</span><h3>Motive I–II–III–IV–V definition</h3></div>
-          <p>Retracement fields define price proportions. Structural switches decide which wave relationships are hard requirements.</p>
+          <div><span class="elliott-rule-kicker" th:text="#{elliott.step2}">Step 2</span><h3 th:text="#{elliott.section.MOTIVE}">Motive I–II–III–IV–V definition</h3></div>
+          <p th:text="#{elliott.section.MOTIVE.help}">Retracement fields define price proportions. Structural switches decide which wave relationships are hard requirements.</p>
         </div>
         <div class="elliott-structural-switches">
           <label class="elliott-switch-row" th:each="setting : ${profile.switches}"
                  th:if="${setting.section.name() == 'MOTIVE'}">
             <input type="checkbox" th:name="${profile.key + '.' + setting.key}" value="true" th:checked="${setting.value}">
             <span class="elliott-switch-control" aria-hidden="true"></span>
-            <span><strong th:text="${setting.label}">Require Wave III not to be shortest</strong><small th:text="${setting.description}">Exact structural meaning.</small><em th:text="${setting.enabledEffect}">What enabled means.</em><b th:text="${'Default: ' + (setting.factoryValue ? 'enabled' : 'disabled')}">Default: enabled</b></span>
+            <span><strong th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.label') ?: setting.label}">Require Wave III not to be shortest</strong><small th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.description') ?: setting.description}">Exact structural meaning.</small><em th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.effect') ?: setting.enabledEffect}">What enabled means.</em><b th:text="${setting.factoryValue} ? #{elliott.switch.defaultEnabled} : #{elliott.switch.defaultDisabled}">Default: enabled</b></span>
           </label>
         </div>
         <div class="elliott-setting-list">
           <div class="candlestick-threshold-row elliott-number-row" th:each="setting : ${profile.numbers}"
                th:if="${setting.section.name() == 'MOTIVE'}">
             <label class="candlestick-threshold-copy" th:for="${profile.key + '-' + setting.key}">
-              <strong th:text="${setting.label}">Wave II preferred minimum</strong>
-              <small th:text="${setting.description}">Exact ratio definition.</small>
-              <em th:text="${setting.effect}">How changing it affects detection.</em>
+              <strong th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.label') ?: setting.label}">Wave II preferred minimum</strong>
+              <small th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.description') ?: setting.description}">Exact ratio definition.</small>
+              <em th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.effect') ?: setting.effect}">How changing it affects detection.</em>
             </label>
             <label class="candlestick-value-control" th:for="${profile.key + '-' + setting.key}">
-              <span>Value <small>Default: <b th:text="${setting.factoryValue + setting.unit}">23.6%</b></small></span>
+              <span><span th:text="#{candlestick.value}">Value</span> <small><span th:text="#{common.default}">Default:</span> <b th:text="${#numbers.formatDecimal(setting.factoryValue, 1, 'DEFAULT', 2, 'DEFAULT').replaceAll('[.,]?0+$', '') + setting.unit}">23.6%</b></small></span>
               <span><input type="number" required inputmode="decimal" th:id="${profile.key + '-' + setting.key}"
                            th:name="${profile.key + '.' + setting.key}" th:min="${setting.min}" th:max="${setting.max}"
                            th:step="${setting.step}" th:value="${setting.value}"><b th:text="${setting.unit}">%</b></span>
@@ -94,27 +94,27 @@
 
       <section class="elliott-rule-section elliott-corrective-section">
         <div class="elliott-rule-section-heading">
-          <div><span class="elliott-rule-kicker">Step 3</span><h3>Corrective A–B–C definition</h3></div>
-          <p>Choose permitted correction shapes, then define the maximum retracement and the allowed relationship between Waves A, B, and C.</p>
+          <div><span class="elliott-rule-kicker" th:text="#{elliott.step3}">Step 3</span><h3 th:text="#{elliott.section.CORRECTIVE}">Corrective A–B–C definition</h3></div>
+          <p th:text="#{elliott.section.CORRECTIVE.help}">Choose permitted correction shapes, then define the maximum retracement and the allowed relationship between Waves A, B, and C.</p>
         </div>
         <div class="elliott-structural-switches">
           <label class="elliott-switch-row" th:each="setting : ${profile.switches}"
                  th:if="${setting.section.name() == 'CORRECTIVE'}">
             <input type="checkbox" th:name="${profile.key + '.' + setting.key}" value="true" th:checked="${setting.value}">
             <span class="elliott-switch-control" aria-hidden="true"></span>
-            <span><strong th:text="${setting.label}">Allow expanded flats</strong><small th:text="${setting.description}">Exact structural meaning.</small><em th:text="${setting.enabledEffect}">What enabled means.</em><b th:text="${'Default: ' + (setting.factoryValue ? 'enabled' : 'disabled')}">Default: enabled</b></span>
+            <span><strong th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.label') ?: setting.label}">Allow expanded flats</strong><small th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.description') ?: setting.description}">Exact structural meaning.</small><em th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.effect') ?: setting.enabledEffect}">What enabled means.</em><b th:text="${setting.factoryValue} ? #{elliott.switch.defaultEnabled} : #{elliott.switch.defaultDisabled}">Default: enabled</b></span>
           </label>
         </div>
         <div class="elliott-setting-list">
           <div class="candlestick-threshold-row elliott-number-row" th:each="setting : ${profile.numbers}"
                th:if="${setting.section.name() == 'CORRECTIVE'}">
             <label class="candlestick-threshold-copy" th:for="${profile.key + '-' + setting.key}">
-              <strong th:text="${setting.label}">Maximum Wave B recovery</strong>
-              <small th:text="${setting.description}">Exact ratio definition.</small>
-              <em th:text="${setting.effect}">How changing it affects detection.</em>
+              <strong th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.label') ?: setting.label}">Maximum Wave B recovery</strong>
+              <small th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.description') ?: setting.description}">Exact ratio definition.</small>
+              <em th:text="${#messages.msgOrNull('elliott.setting.' + setting.key + '.effect') ?: setting.effect}">How changing it affects detection.</em>
             </label>
             <label class="candlestick-value-control" th:for="${profile.key + '-' + setting.key}">
-              <span>Value <small>Default: <b th:text="${setting.factoryValue + setting.unit}">200%</b></small></span>
+              <span><span th:text="#{candlestick.value}">Value</span> <small><span th:text="#{common.default}">Default:</span> <b th:text="${#numbers.formatDecimal(setting.factoryValue, 1, 'DEFAULT', 2, 'DEFAULT').replaceAll('[.,]?0+$', '') + setting.unit}">200%</b></small></span>
               <span><input type="number" required inputmode="decimal" th:id="${profile.key + '-' + setting.key}"
                            th:name="${profile.key + '.' + setting.key}" th:min="${setting.min}" th:max="${setting.max}"
                            th:step="${setting.step}" th:value="${setting.value}"><b th:text="${setting.unit}">%</b></span>
@@ -125,8 +125,8 @@
     </section>
 
     <section class="settings-card analysis-save-card candlestick-pattern-save-card">
-      <div><strong>Apply Elliott Wave definitions</strong><p>Minimums must not exceed maximums, and candle limits must allow the pattern to form.</p></div>
-      <button class="btn-accent" type="submit">Apply changes</button>
+      <div><strong th:text="#{elliott.apply.heading}">Apply Elliott Wave definitions</strong><p th:text="#{elliott.apply.help}">Minimums must not exceed maximums, and candle limits must allow the pattern to form.</p></div>
+      <button class="btn-accent" type="submit" th:text="#{settings.apply}">Apply changes</button>
     </section>
   </form>
 
@@ -135,10 +135,10 @@
   </form>
 
   <section class="settings-card analysis-factory-zone candlestick-pattern-factory-zone">
-    <div class="settings-card-heading"><div><span class="settings-number">04</span><h2>Reset to defaults</h2></div><p>Candlestick, scoring, alert, and appearance settings remain unchanged.</p></div>
+    <div class="settings-card-heading"><div><span class="settings-number">04</span><h2 th:text="#{analysis.factory.heading}">Reset to defaults</h2></div><p th:text="#{elliott.factory.headingNote}">Candlestick, scoring, alert, and appearance settings remain unchanged.</p></div>
     <form th:action="@{/settings/elliott-waves/reset}" method="post" class="settings-action-row">
-      <div><h3>Restore every Elliott Wave definition</h3><p>Returns shared pivot, motive, and corrective rules to the documented StockWatch defaults.</p></div>
-      <button class="danger-button" type="submit">Restore defaults</button>
+      <div><h3 th:text="#{elliott.factory.allHeading}">Restore every Elliott Wave definition</h3><p th:text="#{elliott.factory.allHelp}">Returns shared pivot, motive, and corrective rules to the documented StockWatch defaults.</p></div>
+      <button class="danger-button" type="submit" th:text="#{elliott.factory.allButton}">Restore defaults</button>
     </form>
   </section>
 </div>

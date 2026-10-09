@@ -62,6 +62,8 @@ class VirtualTradeServiceTest {
         when(outlookService.getOutlook(any(), any(), any())).thenReturn(outlook("Moderate buy outlook", 3));
         service = new VirtualTradeService(tradeRepository, stockAssetRepository, candleRepository,
                 pricingService, outlookService, tools.jackson.databind.json.JsonMapper.builder().build());
+        clock.at(1_770_000_060L);
+        service.setClock(clock);
     }
 
     @Test
@@ -125,6 +127,7 @@ class VirtualTradeServiceTest {
         org.mockito.Mockito.verify(tradeRepository).saveAndFlush(captor.capture());
         VirtualTrade stored = captor.getValue();
         when(tradeRepository.findOwnedById(stored.getId(), user)).thenReturn(Optional.of(stored));
+        clock.at(1_771_000_060L);
 
         VirtualTradeService.TradeView closed = service.close(user, stored.getId());
 
@@ -147,6 +150,56 @@ class VirtualTradeServiceTest {
         assertThat(trade.getDeletedAt()).isNotNull();
         assertThat(trade.getUpdatedAt()).isEqualTo(trade.getDeletedAt());
         verify(tradeRepository).saveAndFlush(trade);
+    }
+
+    @Test
+    void aQuoteOlderThanTwentyMinutesWhileTheMarketTradesIsRefused() {
+        when(pricingService.getLatestPrice("AAPL")).thenReturn(quote(100.0, 1_770_000_060L - 21 * 60));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.create(user, "AAPL",
+                        new VirtualTradeService.CreateCommand("BUY", "1d", BigDecimal.ONE, null,
+                                "4b0f1e6a-8a49-4a07-9d0a-3c1f0e9d2b11")))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("out of date");
+    }
+
+    @Test
+    void whileTheMarketIsClosedTheSessionCloseIsUsedAndLabelledAsSuch() {
+        when(pricingService.getLatestPrice("AAPL")).thenReturn(Map.of("price", 100.0,
+                "timestamp", 1_769_900_000L, "source", "Twelve Data", "marketOpen", false));
+
+        service.create(user, "AAPL", new VirtualTradeService.CreateCommand("BUY", "1d", BigDecimal.ONE, null,
+                "0d6d5c0e-3f7a-4c84-8f3c-5f1c9a1e2d33"));
+
+        ArgumentCaptor<VirtualTrade> captor = ArgumentCaptor.forClass(VirtualTrade.class);
+        org.mockito.Mockito.verify(tradeRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getEntryQuoteSource()).isEqualTo("Last close (market closed)");
+    }
+
+    @Test
+    void aStoredCloseFromBeforeTheLatestFinishedSessionsIsRefused() {
+        var completion = mock(CandleCompletionService.class);
+        when(completion.firstIncompleteCandleTimestamp(org.example.stockwatch247.model.enums.TimeInterval.DAILY))
+                .thenReturn(1_770_000_000L);
+        service.setCompletion(completion);
+        when(pricingService.getLatestPrice("AAPL")).thenReturn(Map.of("price", 100.0,
+                "timestamp", 1_770_000_000L - 10 * 86_400L, "source", "Stored candle"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.create(user, "AAPL",
+                        new VirtualTradeService.CreateCommand("BUY", "1d", BigDecimal.ONE, null,
+                                "9c3b2a1d-6e5f-4a7b-8c9d-0e1f2a3b4c5d")))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("outdated");
+    }
+
+    private final MutableClock clock = new MutableClock();
+
+    private static final class MutableClock extends java.time.Clock {
+        private Instant now = Instant.EPOCH;
+        void at(long epochSecond) { now = Instant.ofEpochSecond(epochSecond); }
+        @Override public java.time.ZoneId getZone() { return java.time.ZoneOffset.UTC; }
+        @Override public java.time.Clock withZone(java.time.ZoneId zone) { return this; }
+        @Override public Instant instant() { return now; }
     }
 
     private Map<String, Object> quote(double price, long timestamp) {

@@ -15,12 +15,26 @@ import java.util.Optional;
  * confidence scoring, or signal eligibility.
  */
 final class ElliottTradePlanPolicy {
-    static final String VERSION = "ELLIOTT_FIB_RR_V3";
+    /** V4 enters at the next candle's open; stored V3 plans entered at the notification close. */
+    static final String VERSION = "ELLIOTT_FIB_RR_V4";
+    static final String PREVIOUS_VERSION = "ELLIOTT_FIB_RR_V3";
+
+    static boolean qualifiedPlan(String version) {
+        return VERSION.equals(version) || PREVIOUS_VERSION.equals(version);
+    }
+
+    static boolean entersAtNextOpen(String version) {
+        return VERSION.equals(version);
+    }
     static final double TARGET_ZONE_PERCENT = 1.5;
     private static final double ATR_STOP_BUFFER_MULTIPLIER = 0.10;
     private static final double FALLBACK_STOP_BUFFER_PERCENT = 0.10;
 
     private ElliottTradePlanPolicy() {
+    }
+
+    static double defaultRequiredRewardRisk(TimeInterval interval) {
+        return interval == TimeInterval.DAILY ? 2.0 : 3.0;
     }
 
     static Optional<TradePlan> calculate(
@@ -31,6 +45,19 @@ final class ElliottTradePlanPolicy {
             List<ElliottWaveDetectionService.ElliottWavePoint> points,
             double atr,
             TimeInterval interval) {
+        return calculate(stage, cycleDirection, expectedMove, entryPrice, points, atr, interval, null);
+    }
+
+    /** {@code requiredRewardRisk}: the user's minimum reward/risk; null uses the interval default. */
+    static Optional<TradePlan> calculate(
+            ElliottSignalStage stage,
+            String cycleDirection,
+            TradeSignal expectedMove,
+            double entryPrice,
+            List<ElliottWaveDetectionService.ElliottWavePoint> points,
+            double atr,
+            TimeInterval interval,
+            Double requiredRewardRisk) {
         if (stage == null || expectedMove == null
                 || expectedMove != TradeSignal.BUY && expectedMove != TradeSignal.SELL
                 || !Double.isFinite(entryPrice) || entryPrice <= 0.0
@@ -51,6 +78,13 @@ final class ElliottTradePlanPolicy {
         Double hardInvalidation = null;
         BoundarySide hardInvalidationSide = null;
         List<TargetCandidate> targets = new ArrayList<>();
+        // Weekly and monthly swings span large percentage moves, so their Fibonacci ratios are
+        // measured on a log scale (equal ratios of percentage change); daily swings stay arithmetic.
+        if (logScale(interval) && positivePrices(points)) {
+            return logScaleTargets(stage, bullishCycle, points).flatMap(log -> finish(stage, expectedMove,
+                    entryPrice, points, atr, interval, requiredRewardRisk, bullishCycle,
+                    log.structuralStop(), log.hardInvalidation(), log.hardInvalidationSide(), log.targets()));
+        }
         switch (stage) {
             case WAVE_II_END -> {
                 structuralStop = wave0;
@@ -124,7 +158,100 @@ final class ElliottTradePlanPolicy {
                 return Optional.empty();
             }
         }
+        return finish(stage, expectedMove, entryPrice, points, atr, interval, requiredRewardRisk, bullishCycle,
+                structuralStop, hardInvalidation, hardInvalidationSide, targets);
+    }
 
+    static boolean logScale(TimeInterval interval) {
+        return interval == TimeInterval.WEEKLY || interval == TimeInterval.MONTHLY;
+    }
+
+    private static boolean positivePrices(List<ElliottWaveDetectionService.ElliottWavePoint> points) {
+        return points.stream().allMatch(point -> Double.isFinite(point.price()) && point.price() > 0.0);
+    }
+
+    private record StructureTargets(Double structuralStop, Double hardInvalidation,
+                                    BoundarySide hardInvalidationSide, List<TargetCandidate> targets) {
+    }
+
+    /** {@code from} moved by {@code ratio} times the log-move from {@code a} to {@code b}. */
+    private static double logProjection(double from, double a, double b, double ratio) {
+        return from * Math.pow(b / a, ratio);
+    }
+
+    private static Optional<StructureTargets> logScaleTargets(
+            ElliottSignalStage stage, boolean bullishCycle, List<ElliottWaveDetectionService.ElliottWavePoint> points) {
+        double wave0 = price(points, "0");
+        double wave1 = price(points, "I");
+        double wave2 = price(points, "II");
+        BoundarySide beyondOrigin = bullishCycle ? BoundarySide.BELOW : BoundarySide.ABOVE;
+        List<TargetCandidate> targets = new ArrayList<>();
+        switch (stage) {
+            case WAVE_II_END -> {
+                targets.add(target(logProjection(wave2, wave0, wave1, 1.618),
+                        "Wave III at 161.8% of Wave I from Wave II (log scale)", 1.618));
+                targets.add(target(logProjection(wave2, wave0, wave1, 2.618),
+                        "Extended Wave III at 261.8% of Wave I from Wave II (log scale)", 2.618));
+                return Optional.of(new StructureTargets(wave0, wave0, beyondOrigin, targets));
+            }
+            case WAVE_III_END -> {
+                Double wave3 = price(points, "III");
+                if (wave3 == null) return Optional.empty();
+                targets.add(target(logProjection(wave3, wave3, wave2, .382),
+                        "Wave IV at a 38.2% retracement of Wave III (log scale)", .382));
+                targets.add(target(logProjection(wave3, wave3, wave2, .50),
+                        "Deeper Wave IV at a 50.0% retracement of Wave III (log scale)", .50));
+                return Optional.of(new StructureTargets(wave3, wave1, beyondOrigin, targets));
+            }
+            case WAVE_IV_END -> {
+                Double wave3 = price(points, "III");
+                Double wave4 = price(points, "IV");
+                if (wave3 == null || wave4 == null) return Optional.empty();
+                targets.add(target(logProjection(wave4, wave0, wave1, 1.0),
+                        "Wave V at equality with Wave I from Wave IV (log scale)", 1.0));
+                targets.add(target(logProjection(wave4, wave0, wave3, .618),
+                        "Wave V at 61.8% of the Wave 0-to-III advance from Wave IV (log scale)", .618));
+                return Optional.of(new StructureTargets(wave4, wave1, beyondOrigin, targets));
+            }
+            case WAVE_V_END -> {
+                Double wave3 = price(points, "III");
+                Double wave4 = price(points, "IV");
+                Double wave5 = price(points, "V");
+                if (wave3 == null || wave4 == null || wave5 == null) return Optional.empty();
+                // Shortest-wave rule in percentage terms, consistent with the log-scale targets:
+                // Wave V cannot outrun Wave III's percentage move when Wave I was the longer one.
+                double waveOneLength = Math.abs(Math.log(wave1 / wave0));
+                double waveThreeLength = Math.abs(Math.log(wave3 / wave2));
+                Double hard = null;
+                BoundarySide hardSide = null;
+                if (waveOneLength > waveThreeLength) {
+                    hard = wave4 * (wave3 / wave2);
+                    hardSide = bullishCycle ? BoundarySide.ABOVE : BoundarySide.BELOW;
+                }
+                targets.add(target(wave4, "Correction toward the previous Wave IV territory", null));
+                targets.add(target(logProjection(wave5, wave5, wave0, .382),
+                        "Correction at a 38.2% retracement of the complete impulse (log scale)", .382));
+                return Optional.of(new StructureTargets(wave5, hard, hardSide, targets));
+            }
+            case CORRECTION_END -> {
+                Double wave5 = price(points, "V");
+                Double waveC = price(points, "C");
+                if (wave5 == null || waveC == null) return Optional.empty();
+                targets.add(target(wave5, "Primary-trend resumption toward the prior Wave V extreme", null));
+                return Optional.of(new StructureTargets(waveC, wave0, beyondOrigin, targets));
+            }
+            default -> {
+                return Optional.empty();
+            }
+        }
+    }
+
+    private static Optional<TradePlan> finish(
+            ElliottSignalStage stage, TradeSignal expectedMove, double entryPrice,
+            List<ElliottWaveDetectionService.ElliottWavePoint> points, double atr, TimeInterval interval,
+            Double requiredRewardRisk, boolean bullishCycle, Double structuralStop, Double hardInvalidation,
+            BoundarySide hardInvalidationSide, List<TargetCandidate> targets) {
+        if (structuralStop == null) return Optional.empty();
         double stopBuffer = TradeRiskPolicy.buffer(entryPrice, atr, interval);
         double stopLoss = TradeRiskPolicy.roundStop(expectedMove == TradeSignal.BUY
                 ? structuralStop - stopBuffer : structuralStop + stopBuffer, expectedMove, entryPrice);
@@ -134,19 +261,21 @@ final class ElliottTradePlanPolicy {
             return Optional.empty();
         }
 
-        double requiredRewardRisk = interval == TimeInterval.DAILY ? 2.0 : 3.0;
+        double required = requiredRewardRisk != null && Double.isFinite(requiredRewardRisk) && requiredRewardRisk > 0
+                ? requiredRewardRisk : defaultRequiredRewardRisk(interval);
         List<QualifiedTarget> validTargets = targets.stream()
                 .filter(candidate -> candidate != null && Double.isFinite(candidate.midpoint())
                         && candidate.midpoint() > 0.0)
                 .map(candidate -> qualify(candidate, expectedMove, entryPrice, risk, atr))
                 .filter(java.util.Objects::nonNull)
-                .filter(candidate -> ElliottTargetRules.allowed(stage, bullishCycle, points, candidate.zoneLow(), candidate.zoneHigh()))
+                .filter(candidate -> ElliottTargetRules.allowed(stage, bullishCycle, points, candidate.zoneLow(),
+                        candidate.zoneHigh(), logScale(interval) && positivePrices(points)))
                 .sorted(java.util.Comparator.comparingDouble(QualifiedTarget::rewardRiskRatio))
                 .toList();
         if (validTargets.isEmpty()) return Optional.empty();
         QualifiedTarget selected = validTargets.getFirst();
         TradeRiskPolicy.Qualification riskCheck = TradeRiskPolicy.qualify(expectedMove, entryPrice,
-                stopLoss, selected.triggerPrice(), atr, interval, requiredRewardRisk);
+                stopLoss, selected.triggerPrice(), atr, interval, required);
         boolean actionable = riskCheck.actionable();
         String qualification = riskCheck.reason();
         Double secondaryTarget = validTargets.size() > 1 ? validTargets.get(1).triggerPrice() : null;
@@ -157,7 +286,7 @@ final class ElliottTradePlanPolicy {
                 selected.candidate().midpoint(), selected.zoneLow(), selected.zoneHigh(),
                 selected.triggerPrice(), selected.candidate().basis(),
                 selected.candidate().fibonacciRatio(), (selected.zoneHigh() - selected.zoneLow()) / selected.candidate().midpoint() * 50,
-                requiredRewardRisk, selected.rewardRiskRatio(), actionable, qualification,
+                required, selected.rewardRiskRatio(), actionable, qualification,
                 secondaryTarget, riskCheck.riskAtr(), riskCheck.riskPercent(),
                 TradeRiskPolicy.profile(interval).elliottHorizon()));
     }

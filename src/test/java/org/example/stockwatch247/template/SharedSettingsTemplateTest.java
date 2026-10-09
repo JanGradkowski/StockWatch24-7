@@ -7,9 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.thymeleaf.context.WebContext;
-import org.thymeleaf.spring6.SpringTemplateEngine;
-import org.thymeleaf.templatemode.TemplateMode;
-import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 import org.thymeleaf.web.servlet.JakartaServletWebApplication;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,12 +14,7 @@ import static org.mockito.Mockito.mock;
 
 class SharedSettingsTemplateTest {
     @Test void settingsRenderOneControlPerParameterWithoutIntervalSpecificInputs() {
-        var resolver = new ClassLoaderTemplateResolver();
-        resolver.setPrefix("templates/");
-        resolver.setSuffix(".html");
-        resolver.setTemplateMode(TemplateMode.HTML);
-        var engine = new SpringTemplateEngine();
-        engine.setTemplateResolver(resolver);
+        var engine = TestTemplateEngines.create();
         var request = new MockHttpServletRequest();
         var app = JakartaServletWebApplication.buildApplication(request.getServletContext());
         var context = new WebContext(app.buildExchange(request, new MockHttpServletResponse()));

@@ -49,13 +49,15 @@ class CandlestickTextbookRulesTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void haramiAllowsAllBodyColorCombinationsButRequiresContainment(boolean bearish) {
+    void haramiNeedsAFirstCandleAgainstTheTrendButAllowsEitherInsideColorAndRequiresContainment(boolean bearish) {
         CandlePattern pattern = bearish ? CandlePattern.BEARISH_HARAMI : CandlePattern.BULLISH_HARAMI;
         for (boolean firstBullish : List.of(false, true)) {
             for (boolean secondBullish : List.of(false, true)) {
                 EnrichedCandle first = bar(31,firstBullish ? 150 : 160,161,149,firstBullish ? 160 : 150);
                 EnrichedCandle second = bar(32,secondBullish ? 153.5 : 154,155,152,secondBullish ? 154 : 153.5);
-                assertPattern(pattern, bearish, true, first, second);
+                // The bearish case mirrors prices, so in both directions the long first candle must
+                // run with the prior trend (black before a bullish harami, white before a bearish one).
+                assertPattern(pattern, bearish, !firstBullish, first, second);
             }
         }
         assertPattern(pattern, bearish, false, bar(31,160,161,149,150), bar(32,149.5,151,149,150.2));

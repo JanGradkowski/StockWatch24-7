@@ -26,13 +26,13 @@ public class WatchlistBulkService {
 
     private Map<String, Member> members(User user, long id, List<String> symbols) {
         lists.requireOwned(user, id);
-        if (symbols == null || symbols.isEmpty()) throw new IllegalArgumentException("Select at least one instrument.");
+        if (symbols == null || symbols.isEmpty()) throw new UserInputException("Select at least one instrument.");
         var selected = new LinkedHashSet<String>();
         symbols.forEach(symbol -> selected.add(SecurityInputValidator.requireMarketSymbol(symbol)));
         Map<String, Member> members = new LinkedHashMap<>();
         db.query("select a.ticker_symbol,a.id,a.instrument_type from watchlist_members m join stock_assets a on a.id=m.stock_asset_id where m.watchlist_id=?",
                 r -> { if (selected.contains(r.getString(1))) members.put(r.getString(1), new Member(r.getLong(2), "EQUITY".equals(r.getString(3)))); }, id);
-        if (members.size() != selected.size()) throw new IllegalArgumentException("Some selected instruments are no longer in this watchlist. Refresh and select them again.");
+        if (members.size() != selected.size()) throw new UserInputException("Some selected instruments are no longer in this watchlist. Refresh and select them again.");
         return members;
     }
 

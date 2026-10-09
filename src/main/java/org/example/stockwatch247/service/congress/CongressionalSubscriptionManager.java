@@ -42,7 +42,7 @@ public class CongressionalSubscriptionManager {
         if (active) {
             if (subscription == null || !subscription.isActive()) {
                 if (subscriptionRepository.countByUserAndActiveTrue(user) >= maximumFollows) {
-                    throw new IllegalStateException(
+                    throw new org.example.stockwatch247.service.ConflictException(
                             "The maximum number of congressional activity follows has been reached.");
                 }
                 if (subscription == null) {

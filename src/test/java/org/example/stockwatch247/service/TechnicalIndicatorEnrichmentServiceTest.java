@@ -16,6 +16,38 @@ class TechnicalIndicatorEnrichmentServiceTest {
     private final TechnicalIndicatorEnrichmentService service = new TechnicalIndicatorEnrichmentService();
 
     @Test
+    void summaryAndDetailShareExactCoreResultsAndInvalidateCorrectedInputs() {
+        List<Candle> history = IntStream.rangeClosed(1, 320).mapToObj(this::oscillatingCandle).toList();
+        var profile = TechnicalIndicatorProfile.forInterval(TimeInterval.DAILY);
+        var summary = service.analyze(history, 100, profile, false);
+        var detailed = service.analyze(history, 100, profile, true);
+        assertThat(detailed.candles()).isSameAs(summary.candles());
+        assertThat(service.analyze(history, 100, profile, true)).isSameAs(detailed);
+        assertThat(summary.research()).isEmpty();
+        history.getLast().setVolume(history.getLast().getVolume() + 1000);
+        var corrected = service.analyze(history, 100, profile, true);
+        assertThat(corrected).isNotSameAs(detailed);
+        assertThat(corrected.candles().getLast().volume()).isEqualTo(detailed.candles().getLast().volume() + 1000);
+        assertThat(service.analyze(history, 80, profile, false).candles()).hasSize(80);
+    }
+
+    @Test
+    void concurrentRequestsShareTheSameCompletedCalculation() throws Exception {
+        List<Candle> history = IntStream.rangeClosed(1, 320).mapToObj(this::oscillatingCandle).toList();
+        var profile = TechnicalIndicatorProfile.forInterval(TimeInterval.DAILY);
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var start = new java.util.concurrent.CountDownLatch(1);
+            var requests = IntStream.range(0, 8).mapToObj(index -> executor.submit(() -> {
+                start.await();
+                return service.analyze(history, 100, profile, true);
+            })).toList();
+            start.countDown();
+            var first = requests.getFirst().get(10, java.util.concurrent.TimeUnit.SECONDS);
+            for (var request : requests) assertThat(request.get(10, java.util.concurrent.TimeUnit.SECONDS)).isSameAs(first);
+        }
+    }
+
+    @Test
     void dailyProfileUsesRsi14Ema20And50AndSma200() {
         ProfileResult result = enrichProfile(TimeInterval.DAILY, "1d", 86_400L);
 

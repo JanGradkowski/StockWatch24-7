@@ -14,6 +14,7 @@ import org.example.stockwatch247.service.ElliottWavePreferencesService;
 import org.example.stockwatch247.service.HarmonicPatternDetectionService;
 import org.example.stockwatch247.service.HarmonicPatternPreferencesService;
 import org.example.stockwatch247.service.HistoricalSignalCacheService;
+import org.example.stockwatch247.service.HistoricalPatternInputs;
 import org.example.stockwatch247.service.TechnicalIndicatorEnrichmentService;
 import org.example.stockwatch247.service.ChartTechnicalIndicatorService;
 import org.example.stockwatch247.service.TwelveDataService;
@@ -35,6 +36,7 @@ import java.util.Set;
 public class ChartController {
     private static final int LATEST_WAVE_CANDLES = 100;
     private static final int HARMONIC_CONTEXT_CANDLES = 750;
+    private static final java.time.Duration METADATA_REUSE = java.time.Duration.ofDays(30);
 
     private final MarketDataService marketDataService;
     private final CandleRepository candleRepository;
@@ -51,6 +53,8 @@ public class ChartController {
     private HarmonicPatternPreferencesService harmonicPatternPreferencesService;
     private HistoricalSignalCacheService historicalSignalCacheService;
     private ChartTechnicalIndicatorService chartTechnicalIndicatorService;
+    @Autowired
+    private HistoricalPatternInputs patternInputs;
 
     public ChartController(CandleRepository candleRepository,
                            LivePricingService livePricingService, MarketDataService marketDataService,
@@ -144,7 +148,7 @@ public class ChartController {
 
         MarketDataService.CandleSyncResult syncResult = marketDataService.syncCandles(symbol, validatedInterval, null);
         if (!syncResult.successful()) {
-            throw new IllegalStateException("Candle refresh failed.");
+            throw new org.example.stockwatch247.service.MarketDataUnavailableException(symbol, validatedInterval, syncResult.failureMessage());
         }
         List<Candle> candles = candleRepository
                 .findBySymbolAndTimeIntervalOrderByTimestampDesc(
@@ -158,6 +162,8 @@ public class ChartController {
                                 )
                         )
                 );
+        // Overlays use finished candles only, like the alert engine, so they do not repaint intraday.
+        candles = completedOnly(candles, waveInterval);
         ElliottWaveDetectionService detector = detector(principal, waveInterval);
         var structure = detector
                 .findLatestWaveStructure(
@@ -244,7 +250,7 @@ public class ChartController {
                 symbol,
                 validatedInterval,
                 ElliottWaveDetectionService.DETECTION_RULE_VERSION,
-                settings,
+                java.util.Arrays.asList(settings, completionCutoff(waveInterval)),
                 ElliottWaveHistoryOverlay.class,
                 () -> calculateHistoricalElliottWaves(
                         cacheSymbol, validatedInterval, null, historicalDetector, waveInterval));
@@ -266,10 +272,10 @@ public class ChartController {
             Long from,
             ElliottWaveDetectionService detector,
             TimeInterval waveInterval) {
-        List<Candle> candles = from == null
+        List<Candle> candles = completedOnly(from == null
                 ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, validatedInterval)
                 : candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
-                        symbol, validatedInterval, from);
+                        symbol, validatedInterval, from), waveInterval);
         List<ElliottWaveOverlay> structures = detector
                 .findHistoricalWaveStructures(
                         enrichmentService.enrichForElliott(
@@ -316,6 +322,76 @@ public class ChartController {
         return getHistoricalElliottWaves(symbol, interval, from, null);
     }
 
+    @GetMapping("/{symbol}/elliott-waves/history/range")
+    public ElliottWaveHistoryOverlay getElliottRange(@PathVariable String symbol, @RequestParam String interval,
+                                                    @RequestParam long from, @RequestParam long to, Principal principal) {
+        String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String validInterval = SecurityInputValidator.requireInterval(interval);
+        HistoricalPatternInputs.validateRange(from, to);
+        TimeInterval timeframe = elliottInterval(validInterval);
+        var settings = elliottPreferences(principal).profile(timeframe).rules();
+        var detector = elliottWaveDetectionService.configured(settings);
+        return cachedRange(HistoricalSignalCacheService.Family.ELLIOTT_WAVE, validSymbol, validInterval,
+                ElliottWaveDetectionService.DETECTION_RULE_VERSION, List.of("structures", settings, from, to,
+                        patternInputs.cutoff(timeframe)), ElliottWaveHistoryOverlay.class, () -> {
+                    var structures = patternInputs.load(validSymbol, validInterval, timeframe).structures(detector, settings)
+                            .stream().filter(structure -> structure.points().getLast().timestamp() >= from
+                                    && structure.points().getFirst().timestamp() <= to)
+                            .map(structure -> rangeWaveOverlay(validInterval, detector, structure)).toList();
+                    return new ElliottWaveHistoryOverlay(validInterval, labelStyle(validInterval), from, structures);
+                });
+    }
+
+    @GetMapping("/{symbol}/elliott-waves/candidates/range")
+    public ElliottCandidateRange getElliottCandidateRange(@PathVariable String symbol, @RequestParam String interval,
+                                                         @RequestParam long from, @RequestParam long to, Principal principal) {
+        String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String validInterval = SecurityInputValidator.requireInterval(interval);
+        HistoricalPatternInputs.validateRange(from, to);
+        TimeInterval timeframe = elliottInterval(validInterval);
+        var settings = elliottPreferences(principal).profile(timeframe).rules();
+        return cachedRange(HistoricalSignalCacheService.Family.ELLIOTT_WAVE, validSymbol, validInterval,
+                ElliottWaveDetectionService.DETECTION_RULE_VERSION, List.of("candidates-v2", settings, from, to,
+                        patternInputs.cutoff(timeframe)), ElliottCandidateRange.class,
+                () -> new ElliottCandidateRange(elliottWaveDetectionService.configured(settings).findPatternCandidates(
+                        patternInputs.load(validSymbol, validInterval, timeframe).waves(), from, to)));
+    }
+
+    @GetMapping("/{symbol}/harmonic-formations/history/range")
+    public HarmonicHistoryOverlay getHarmonicRange(@PathVariable String symbol, @RequestParam String interval,
+                                                  @RequestParam long from, @RequestParam long to, Principal principal) {
+        String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String validInterval = SecurityInputValidator.requireInterval(interval);
+        HistoricalPatternInputs.validateRange(from, to);
+        TimeInterval timeframe = harmonicInterval(validInterval);
+        var preferences = harmonicPreferences(principal);
+        return cachedRange(HistoricalSignalCacheService.Family.HARMONIC_FORMATION, validSymbol, validInterval,
+                HarmonicPatternDetectionService.RULE_VERSION, List.of(preferences.version(), preferences.rules(),
+                        preferences.patternRules(), from, to, patternInputs.cutoff(timeframe)), HarmonicHistoryOverlay.class,
+                () -> new HarmonicHistoryOverlay(validInterval, from, HarmonicPatternDetectionService.RULE_VERSION,
+                        harmonicPatternDetectionService.configured(preferences.rules(), preferences.patternRules())
+                                .detectRange(patternInputs.load(validSymbol, validInterval, timeframe).raw(), from, to)));
+    }
+
+    private <T> T cachedRange(HistoricalSignalCacheService.Family family, String symbol, String interval,
+                              String version, Object settings, Class<T> type, java.util.function.Supplier<T> calculation) {
+        return historicalSignalCacheService == null ? calculation.get()
+                : historicalSignalCacheService.getOrCompute(family, symbol, interval, "RANGE_V1:" + version, settings, type, calculation);
+    }
+
+    private ElliottWaveOverlay rangeWaveOverlay(String interval, ElliottWaveDetectionService detector,
+                                                ElliottWaveDetectionService.ElliottWaveStructure structure) {
+        return new ElliottWaveOverlay(interval, labelStyle(interval), structureId(structure),
+                detector.lifecycleCycleKey(structure).orElse(null), structure.direction(), structure.correctionComplete(),
+                structure.points().stream().map(point -> new ElliottWavePointView(formatWaveLabel(point.label(), interval),
+                        point.timestamp(), point.price(), point.pivotType())).toList(),
+                structure.confirmationTimestamp(), structure.qualityScore(), structure.waveTwoRetracement(), structure.deepWaveTwo(),
+                structure.waveThreeToOneRatio(), structure.waveFourRetracement(), structure.impulseVariant(), structure.correctionVariant(),
+                structure.correctionRetracement(), structure.waveCToARatio(), structure.qualityWarnings());
+    }
+
+    public record ElliottCandidateRange(List<ElliottWaveDetectionService.ElliottPatternCandidate> candidates) { }
+
     @GetMapping("/{symbol}/harmonic-formations/history")
     public HarmonicHistoryOverlay getHistoricalHarmonicFormations(
             @PathVariable String symbol,
@@ -338,7 +414,8 @@ public class ChartController {
                 symbol,
                 validatedInterval,
                 HarmonicPatternDetectionService.RULE_VERSION,
-                List.of(preferences.version(), preferences.rules(), preferences.patternRules()),
+                java.util.Arrays.asList(preferences.version(), preferences.rules(), preferences.patternRules(),
+                        completionCutoff(harmonicInterval(validatedInterval))),
                 HarmonicHistoryOverlay.class,
                 () -> calculateHistoricalHarmonicFormations(
                         cacheSymbol, validatedInterval, null, historicalDetector));
@@ -361,7 +438,8 @@ public class ChartController {
             Long from,
             HarmonicPatternDetectionService historicalDetector) {
         Long requestedFrom = from;
-        List<Candle> candles = harmonicDetectionCandles(symbol, validatedInterval, from);
+        List<Candle> candles = completedOnly(harmonicDetectionCandles(symbol, validatedInterval, from),
+                harmonicInterval(validatedInterval));
         List<HarmonicPatternDetectionService.HarmonicFormation> formations =
                 historicalDetector.detectHistorical(candles).stream()
                         .filter(formation -> requestedFrom == null
@@ -378,6 +456,20 @@ public class ChartController {
     public HarmonicHistoryOverlay getHistoricalHarmonicFormations(
             String symbol, String interval, Long from) {
         return getHistoricalHarmonicFormations(symbol, interval, from, null);
+    }
+
+    private Long completionCutoff(TimeInterval interval) {
+        return candidateCandleCompletion == null || interval == null
+                ? null : candidateCandleCompletion.firstIncompleteCandleTimestamp(interval);
+    }
+
+    /** Drops the candle that is still forming; ascending or descending order is preserved. */
+    private List<Candle> completedOnly(List<Candle> candles, TimeInterval interval) {
+        Long cutoff = completionCutoff(interval);
+        if (cutoff == null || candles == null) return candles;
+        return candles.stream()
+                .filter(candle -> candle != null && candle.getTimestamp() != null && candle.getTimestamp() < cutoff)
+                .toList();
     }
 
     private List<Candle> harmonicDetectionCandles(String symbol, String interval, Long from) {
@@ -446,13 +538,27 @@ public class ChartController {
                                                 @RequestParam(required = false) String micCode) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
         micCode = SecurityInputValidator.requireOptionalMicCode(micCode);
-        StockAsset asset = twelveDataService.refreshStockAssetMetadata(symbol, micCode);
-        if (isGenericMetadata(asset, symbol) || isInconsistentUsMetadata(asset, symbol)) {
+        String requestedSymbol = symbol;
+        String requestedMic = micCode;
+        StockAsset stored = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
+        boolean fresh = stored != null && stored.hasConfirmedListing()
+                && !isInconsistentUsMetadata(stored, symbol)
+                && stored.getMetadataRefreshedAt() != null
+                && stored.getMetadataRefreshedAt().isAfter(java.time.Instant.now().minus(METADATA_REUSE))
+                && (requestedMic == null || requestedMic.equalsIgnoreCase(stored.getMicCode()));
+        // Every stock page view used to spend one or two credits from the shared provider allowance.
+        StockAsset asset = fresh ? stored : twelveDataService.refreshStockAssetMetadata(requestedSymbol, requestedMic);
+        if (!fresh && (isGenericMetadata(asset, symbol) || isInconsistentUsMetadata(asset, symbol))) {
             try {
                 asset = yahooFinanceService.refreshStockAssetMetadata(symbol);
             } catch (RuntimeException e) {
                 System.err.println("Yahoo Finance metadata refresh unavailable for " + symbol + ": " + e.getMessage());
             }
+        }
+        if (!fresh && asset.hasConfirmedListing() && asset.getId() != null) {
+            asset.setMetadataRefreshedAt(java.time.Instant.now());
+            StockAsset saved = stockAssetRepository.save(asset);
+            if (saved != null) asset = saved;
         }
         return Map.of(
                 "symbol", asset.getTickerSymbol(),

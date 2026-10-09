@@ -24,8 +24,8 @@
                 const fixed = mode.value === 'FIXED_ENTRY_PERCENT';
                 value.min = fixed ? '0.1' : '0';
                 if (fixed && Number(value.value) < 0.1) value.value = '0.1';
-                if (valueLabel) valueLabel.textContent = fixed
-                    ? 'Distance from entry (%)' : 'Additional buffer (%)';
+                if (valueLabel) valueLabel.textContent = window.StockWatchI18n.t(fixed
+                    ? 'candlestick.stopValue.distance' : 'candlestick.stopValue.buffer');
             };
             mode.addEventListener('change', refreshStopLossControl);
             refreshStopLossControl();

@@ -14,6 +14,32 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ElliottWaveDetectionServiceTest {
+    @Test void standaloneViewportSearchMatchesFullRecognitionAtEveryBatchBoundary() {
+        var candles = completeNestedImpulseWithNestedZigzagCorrection();
+        var detector = new ElliottWaveDetectionService();
+        var all = detector.findPatternCandidates(candles);
+        assertThat(all).isNotEmpty();
+        for (int index = 0; index < candles.size(); index += 10) {
+            long from = candles.get(index).timestamp();
+            long to = candles.get(Math.min(candles.size() - 1, index + 9)).timestamp();
+            assertThat(detector.findPatternCandidates(candles, from, to)).containsExactlyElementsOf(all.stream()
+                    .filter(candidate -> candidate.points().getLast().timestamp() >= from
+                            && candidate.points().getFirst().timestamp() <= to).toList());
+        }
+    }
+
+    @Test void standaloneCandidatesCarryAUniqueLookupKeyAndTheirEvidence() {
+        var candidates = new ElliottWaveDetectionService()
+                .findPatternCandidates(completeNestedImpulseWithNestedZigzagCorrection());
+        assertThat(candidates).isNotEmpty().allSatisfy(candidate -> {
+            assertThat(candidate.candidateKey()).endsWith(":" + candidate.points().stream()
+                    .map(point -> String.valueOf(point.timestamp()))
+                    .collect(java.util.stream.Collectors.joining("-")));
+            assertThat(candidate.evidence()).isNotEmpty();
+        });
+        assertThat(candidates).extracting(ElliottWaveDetectionService.ElliottPatternCandidate::candidateKey)
+                .doesNotHaveDuplicates();
+    }
     private final ElliottWaveDetectionService detectionService = new ElliottWaveDetectionService();
     private final ElliottWaveDetectionService v2DetectionService = new ElliottWaveDetectionService(
             1, ElliottWaveDetectionService.ScoringModel.V2);
@@ -23,6 +49,10 @@ class ElliottWaveDetectionServiceTest {
         for (var candles : List.of(completeNestedImpulseWithNestedZigzagCorrection(),
                 completeNestedImpulseWithNestedFlatCorrection(), completeNestedImpulseWithTriangularWaveB())) {
             var all = detectionService.findDevelopingImpulseHypotheses(candles);
+            assertThat(detectionService.findDevelopingObservations(candles))
+                    .containsExactlyInAnyOrderElementsOf(all.stream().map(candidate ->
+                            new ElliottWaveDetectionService.DevelopingObservation(candidate.pattern(),
+                                    candidate.expectedMove(), candidate.confirmationTimestamp(), candidate.points())).toList());
             var grouped = all.stream().collect(java.util.stream.Collectors.groupingBy(
                     ElliottWaveDetectionService.DevelopingImpulse::developmentKey));
             var primary = detectionService.findDevelopingImpulses(candles);
@@ -31,6 +61,61 @@ class ElliottWaveDetectionServiceTest {
                 var alternatives = grouped.get(candidate.developmentKey());
                 assertThat(candidate).usingRecursiveComparison().ignoringFields("evidence").isEqualTo(alternatives.getFirst());
                 assertThat(candidate.evidence().getLast()).startsWith(alternatives.size() == 1 ? "One parent-degree" : alternatives.size()+" admissible");
+            }
+        }
+    }
+
+    @Test
+    void incrementalAvailabilityMatchesExhaustiveGeometryDifferenceAtEveryPrefix() {
+        for (var full : List.of(completeNestedImpulseWithNestedZigzagCorrection(),
+                completeNestedImpulseWithNestedFlatCorrection(), completeNestedImpulseWithTriangularWaveB())) {
+            var context = new ElliottWaveDetectionService.DevelopingScanContext();
+            List<ElliottWaveDetectionService.DevelopingImpulse> previous = List.of();
+            for (int end = 1; end <= full.size(); end++) {
+                var prefix = full.subList(0, end);
+                var all = detectionService.findDevelopingImpulseHypotheses(prefix);
+                var old = previous;
+                var expected = all.stream().filter(candidate -> old.stream().noneMatch(before ->
+                                before.pattern() == candidate.pattern() && before.points().equals(candidate.points())))
+                        .map(candidate -> new ElliottWaveDetectionService.DevelopingObservation(candidate.pattern(),
+                                candidate.expectedMove(), candidate.confirmationTimestamp(), candidate.points())).toList();
+                var actual = new ArrayList<ElliottWaveDetectionService.DevelopingObservation>();
+                detectionService.forEachNewDevelopingObservation(prefix, full.subList(0, end - 1), context, actual::add);
+                assertThat(actual).as("prefix %s", end).containsExactlyInAnyOrderElementsOf(expected);
+                previous = all;
+            }
+        }
+    }
+
+    @Test
+    void streamedObservationsMatchExhaustiveAcrossAppendsRewindsAndReplacements() {
+        var full = completeNestedImpulseWithNestedZigzagCorrection();
+        var context = new ElliottWaveDetectionService.DevelopingScanContext();
+        for (var input : List.of(full.subList(0, full.size() - 2), full.subList(0, full.size() - 1),
+                full, full.subList(0, full.size() / 2), completeNestedImpulseWithNestedFlatCorrection())) {
+            var streamed = new ArrayList<ElliottWaveDetectionService.DevelopingObservation>();
+            detectionService.forEachDevelopingObservation(input, context, streamed::add);
+            assertThat(streamed).containsExactlyInAnyOrderElementsOf(
+                    detectionService.findDevelopingImpulseHypotheses(input).stream().map(candidate ->
+                            new ElliottWaveDetectionService.DevelopingObservation(candidate.pattern(),
+                                    candidate.expectedMove(), candidate.confirmationTimestamp(), candidate.points())).toList());
+        }
+    }
+
+    @Test
+    void viabilityAgreesWithExhaustiveCountsForEveryCycleAndStage() {
+        var candles = completeNestedImpulseWithNestedZigzagCorrection();
+        var all = detectionService.findDevelopingImpulseHypotheses(candles);
+        try (var ignored = AnalysisComputationScope.open()) {
+            for (String key : all.stream().map(ElliottWaveDetectionService.DevelopingImpulse::developmentKey).distinct().toList()) {
+                for (var stage : ElliottSignalStage.values()) {
+                    boolean expected = all.stream().filter(candidate -> key.equals(candidate.developmentKey()))
+                            .anyMatch(candidate -> candidate.stage().progressionOrder() >= stage.progressionOrder()
+                                    && (candidate.stage().progressionOrder() > stage.progressionOrder()
+                                    || stage != ElliottSignalStage.WAVE_II_END && stage != ElliottSignalStage.WAVE_IV_END
+                                    || detectionService.findActionaryStructureMismatch(candles, stage, candidate.points()).isEmpty()));
+                    assertThat(detectionService.hasViableDevelopingHypothesis(candles, key, stage)).isEqualTo(expected);
+                }
             }
         }
     }
@@ -957,7 +1042,7 @@ class ElliottWaveDetectionServiceTest {
         ));
     }
 
-    private List<EnrichedCandle> completeNestedImpulseWithNestedZigzagCorrection() {
+    List<EnrichedCandle> completeNestedImpulseWithNestedZigzagCorrection() {
         return syntheticSeries(List.of(
                 anchor(1, 112.0), anchor(6, 100.0),
                 anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
@@ -976,7 +1061,7 @@ class ElliottWaveDetectionServiceTest {
         ));
     }
 
-    private List<EnrichedCandle> completeNestedImpulseWithNestedFlatCorrection() {
+    List<EnrichedCandle> completeNestedImpulseWithNestedFlatCorrection() {
         return syntheticSeries(List.of(
                 anchor(1, 112.0), anchor(6, 100.0),
                 anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),
@@ -994,7 +1079,7 @@ class ElliottWaveDetectionServiceTest {
         ));
     }
 
-    private List<EnrichedCandle> completeNestedImpulseWithTriangularWaveB() {
+    List<EnrichedCandle> completeNestedImpulseWithTriangularWaveB() {
         return syntheticSeries(List.of(
                 anchor(1, 112.0), anchor(6, 100.0),
                 anchor(12, 112.0), anchor(18, 108.0), anchor(26, 130.0),

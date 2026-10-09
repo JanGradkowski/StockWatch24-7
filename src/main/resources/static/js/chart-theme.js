@@ -40,7 +40,7 @@
             : {text: '#94a3b8', grid: 'rgba(232,237,243,.06)', border: 'rgba(232,237,243,.16)'};
         return {...paint(options),
             layout: {...options.layout, textColor: palette.text, fontSize: 12,
-                fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'},
+                fontFamily: '"Inter Variable", Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'},
             grid: {vertLines: {...options.grid?.vertLines, color: palette.grid}, horzLines: {...options.grid?.horzLines, color: palette.grid}},
             rightPriceScale: {...options.rightPriceScale, borderColor: palette.border},
             timeScale: {...options.timeScale, borderColor: palette.border}};

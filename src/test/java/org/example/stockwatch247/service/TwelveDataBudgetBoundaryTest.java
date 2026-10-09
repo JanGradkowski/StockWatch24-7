@@ -9,6 +9,18 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class TwelveDataBudgetBoundaryTest {
+    @Test void persistentCoverageRejectionIsRememberedAcrossIntervalsWithoutSpendingAnotherCredit() {
+        var http = mock(RestTemplate.class);
+        var budget = mock(MarketDataProviderRequestBudget.class);
+        var service = new TwelveDataService(http, JsonMapper.builder().build(), mock(StockAssetRepository.class), "test-key", "https://provider.example");
+        service.setRequestBudget(budget);
+        when(http.getForObject(any(URI.class), eq(String.class))).thenReturn(
+                "{\"status\":\"error\",\"code\":404,\"message\":\"This symbol is available starting with the Ultra plan\"}");
+        assertThatThrownBy(() -> service.getTimeSeries("CDR", "1day", 10)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.getTimeSeries("CDR", "1h", 1000)).hasMessageContaining("revalidation");
+        verify(http, times(1)).getForObject(any(URI.class), eq(String.class));
+        verify(budget, times(1)).reserveTwelveDataRequest();
+    }
     @Test void everyQuoteAndCandlePageReservesExactlyOneCreditImmediatelyBeforeHttp() {
         var http = mock(RestTemplate.class);
         var budget = mock(MarketDataProviderRequestBudget.class);

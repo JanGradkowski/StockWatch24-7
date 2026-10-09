@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="StockWatch full JIT" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="org.example.stockwatch247.StockWatch247Application" />
+    <module name="StockWatch24-7" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="VM_PARAMETERS" value="-Dspring.profiles.active=dev" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

@@ -12,12 +12,22 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.function.Consumer;
 
 public class RateLimitFilter extends OncePerRequestFilter {
     private final RequestRateLimiter rateLimiter;
+    private final KnownDeviceCookies knownDevices;
+    private final Consumer<String> accountLimitReached;
 
     public RateLimitFilter(RequestRateLimiter rateLimiter) {
+        this(rateLimiter, null, account -> { });
+    }
+
+    public RateLimitFilter(RequestRateLimiter rateLimiter, KnownDeviceCookies knownDevices,
+                           Consumer<String> accountLimitReached) {
         this.rateLimiter = rateLimiter;
+        this.knownDevices = knownDevices;
+        this.accountLimitReached = accountLimitReached;
     }
 
     @Override
@@ -42,10 +52,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (limit != null && !tryAcquire(response, limit, requester)) {
             return;
         }
+        // Provider-backed search shares a small external allowance across every account.
+        if (request.getRequestURI().equals("/api/stocks/search")
+                && !tryAcquire(response, new Limit("stock-search-hour", 100, Duration.ofHours(1)), requester)) {
+            return;
+        }
 
         String account = accountKey(request);
-        if (isLogin(request) && account != null
-                && !tryAcquire(response, new Limit("login-account", 30, Duration.ofMinutes(15)), "account:" + account)) {
+        if (isLogin(request) && account != null && !acquireLogin(request, response, account)) {
             return;
         }
         if (isVerificationResend(request) && account != null
@@ -61,16 +75,56 @@ public class RateLimitFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * One address guessing at an account is stopped quickly, while the account-wide ceiling is high
+     * enough that many addresses are needed to reach it, and browsers that already signed in to the
+     * account skip it entirely. A flood of failures elsewhere therefore cannot lock the owner out.
+     */
+    private boolean acquireLogin(HttpServletRequest request, HttpServletResponse response, String account)
+            throws IOException {
+        Limit perClient = new Limit("login-account-client", 10, Duration.ofMinutes(15));
+        if (!rateLimiter.tryAcquire(perClient.bucket() + ":account:" + account + ":ip:" + request.getRemoteAddr(),
+                perClient.requests(), perClient.window())) {
+            rejectLogin(request, response, perClient);
+            return false;
+        }
+        if (knownDevices != null && knownDevices.recognizes(request, account)) {
+            return true;
+        }
+        Limit perAccount = new Limit("login-account", 200, Duration.ofHours(1));
+        if (!rateLimiter.tryAcquire(perAccount.bucket() + ":account:" + account,
+                perAccount.requests(), perAccount.window())) {
+            accountLimitReached.accept(account);
+            rejectLogin(request, response, perAccount);
+            return false;
+        }
+        return true;
+    }
+
+    private void rejectLogin(HttpServletRequest request, HttpServletResponse response, Limit limit) throws IOException {
+        String accept = request.getHeader("Accept");
+        if (accept != null && accept.contains("text/html")) {
+            response.setStatus(303);
+            response.setHeader("Location", request.getContextPath() + "/login?locked=true");
+            return;
+        }
+        reject(response, limit);
+    }
+
     private boolean tryAcquire(HttpServletResponse response, Limit limit, String requester) throws IOException {
         String key = limit.bucket() + ':' + requester;
         if (rateLimiter.tryAcquire(key, limit.requests(), limit.window())) {
             return true;
         }
+        reject(response, limit);
+        return false;
+    }
+
+    private void reject(HttpServletResponse response, Limit limit) throws IOException {
         response.setStatus(429);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setHeader("Retry-After", Long.toString(Math.max(1L, limit.window().toSeconds())));
         response.getWriter().write("{\"error\":\"Too many requests. Please try again later.\"}");
-        return false;
     }
 
     private Limit limitFor(HttpServletRequest request) {

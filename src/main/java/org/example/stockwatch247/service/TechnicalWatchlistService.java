@@ -49,13 +49,8 @@ public class TechnicalWatchlistService {
                 && !Objects.equals(fingerprint, row.getProfileFingerprint());
         boolean available = !settingsChanged && row.getClassification() != null
                 && finite(row.getScore()) && row.getCandleTimestamp() != null;
-        long expectedAge = switch (row.getInterval()) {
-            case DAILY -> 4L * 86_400;
-            case WEEKLY -> 12L * 86_400;
-            case MONTHLY -> 40L * 86_400;
-            default -> 0;
-        };
-        boolean stale = available && now - row.getCandleTimestamp() > expectedAge;
+        boolean stale = available
+                && CandleFreshness.isStale(row.getCandleTimestamp(), row.getInterval(), Instant.ofEpochSecond(now));
         Double priceChange = available && row.getChangedAt() != null
                 && positive(row.getChangePrice()) && positive(row.getPrice())
                 ? (row.getPrice() / row.getChangePrice() - 1) * 100 : null;

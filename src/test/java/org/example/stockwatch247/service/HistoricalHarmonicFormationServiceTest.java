@@ -67,11 +67,12 @@ class HistoricalHarmonicFormationServiceTest {
         assertThat(detail.result().available()).isTrue();
         assertThat(detail.result().availableForwardCandles()).isEqualTo(10);
         assertThat(detail.result().tradeSignal()).isEqualTo(TradeSignal.BUY);
-        assertThat(detail.result().signalClose()).isEqualTo(130.0);
+        // Entry at the next candle's 132.0 open rather than the 130.0 confirmation close.
+        assertThat(detail.result().signalClose()).isEqualTo(132.0);
         assertThat(detail.result().outcomeLabel()).isEqualTo("Best close-based return");
         assertThat(detail.result().bestActionLabel()).isEqualTo("Best sell close");
         assertThat(detail.result().points()).hasSize(11);
-        assertThat(detail.result().points().getLast().directionalPriceDifference()).isEqualTo(20.0);
+        assertThat(detail.result().points().getLast().directionalPriceDifference()).isEqualTo(18.0);
     }
 
     private List<Candle> history() {

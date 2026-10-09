@@ -48,6 +48,14 @@
         @Column(name = "theme_preference", nullable = false, length = 16)
         private String themePreference = "DARK";
 
+        /** "en" or "pl"; null follows the browser language. */
+        @Column(name = "preferred_language", length = 8)
+        private String preferredLanguage;
+
+        /** Browser language last seen while following the browser; used for background emails. */
+        @Column(name = "detected_language", length = 8)
+        private String detectedLanguage;
+
         @Column(name = "elliott_motive_color", nullable = false, length = 7)
         private String elliottMotiveColor = DEFAULT_ELLIOTT_MOTIVE_COLOR;
 
@@ -78,6 +86,18 @@
         @JsonIgnore
         @Column(name = "last_accepted_totp_step")
         private Long lastAcceptedTotpStep;
+
+        @JsonIgnore
+        @Column(name = "mfa_failure_count", nullable = false)
+        private int mfaFailureCount;
+
+        @JsonIgnore
+        @Column(name = "mfa_failure_window_started_at")
+        private java.time.Instant mfaFailureWindowStartedAt;
+
+        @JsonIgnore
+        @Column(name = "mfa_paused_until")
+        private java.time.Instant mfaPausedUntil;
 
         @JsonIgnore
         @Column(name = "password_changed_at")
@@ -187,6 +207,10 @@
         }
 
         public String getThemePreference() { return themePreference; }
+        public String getPreferredLanguage() { return preferredLanguage; }
+        public void setPreferredLanguage(String value) { this.preferredLanguage = value; }
+        public String getDetectedLanguage() { return detectedLanguage; }
+        public void setDetectedLanguage(String value) { this.detectedLanguage = value; }
         public void setThemePreference(String themePreference) { this.themePreference = themePreference; }
         public String getElliottMotiveColor() { return elliottMotiveColor; }
         public void setElliottMotiveColor(String value) { this.elliottMotiveColor = value; }
@@ -206,6 +230,12 @@
         public void setSecurityVersion(long securityVersion) { this.securityVersion = securityVersion; }
         public Long getLastAcceptedTotpStep() { return lastAcceptedTotpStep; }
         public void setLastAcceptedTotpStep(Long value) { this.lastAcceptedTotpStep = value; }
+        public int getMfaFailureCount() { return mfaFailureCount; }
+        public void setMfaFailureCount(int value) { this.mfaFailureCount = value; }
+        public java.time.Instant getMfaFailureWindowStartedAt() { return mfaFailureWindowStartedAt; }
+        public void setMfaFailureWindowStartedAt(java.time.Instant value) { this.mfaFailureWindowStartedAt = value; }
+        public java.time.Instant getMfaPausedUntil() { return mfaPausedUntil; }
+        public void setMfaPausedUntil(java.time.Instant value) { this.mfaPausedUntil = value; }
         public LocalDateTime getPasswordChangedAt() { return passwordChangedAt; }
         public void setPasswordChangedAt(LocalDateTime value) { this.passwordChangedAt = value; }
         public LocalDateTime getDeletionRequestedAt() { return deletionRequestedAt; }

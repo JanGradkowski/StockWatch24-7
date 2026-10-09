@@ -22,6 +22,9 @@ public class WatchlistImportController {
     @GetMapping("/imports") public List<WatchlistImportService.JobView> recent(Principal principal) { return imports.recent(user(principal)); }
     @GetMapping("/imports/{id}") public WatchlistImportService.JobView status(Principal principal,@PathVariable long id) { return imports.status(user(principal),id); }
     @PostMapping("/imports/{id}/retry") public void retry(Principal principal,@PathVariable long id) { imports.retry(user(principal),id); }
-    @ExceptionHandler(IllegalArgumentException.class) public ResponseEntity<?> invalid(IllegalArgumentException error) { return ResponseEntity.badRequest().body(Map.of("error",error.getMessage())); }
+    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+    public ResponseEntity<?> invalid(RuntimeException error) {
+        return ApiErrorResponses.of(error, "The import request is invalid.", "The import could not be completed.");
+    }
     private User user(Principal principal) { return org.example.stockwatch247.security.CurrentAccount.find(users,principal.getName()).orElseThrow(); }
 }

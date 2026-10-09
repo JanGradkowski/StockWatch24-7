@@ -40,12 +40,16 @@ public class AlertController {
             User user = currentUser(principal);
             int unfollowedRules = alertRuleService.unfollowAllTechnicalRules(user);
             return ResponseEntity.ok(Map.of("unfollowedRules", unfollowedRules));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid unfollow request."));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", "The followed tickers could not be unfollowed."));
+        } catch (RuntimeException e) {
+            return failure(e, "Invalid unfollow request.", "The followed tickers could not be unfollowed.");
         }
+    }
+
+    @PostMapping("/signals/{alertEventId}/read")
+    public ResponseEntity<?> markSignalRead(@PathVariable Long alertEventId, Principal principal) {
+        return alertRuleService.markSignalRead(currentUser(principal), alertEventId)
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.notFound().build();
     }
 
     @GetMapping("/{symbol}")
@@ -84,19 +88,21 @@ public class AlertController {
                     change.patternFamily(),
                     change.active()
             );
-            return ResponseEntity.ok(Map.of(
-                    "id", rule.getId(),
-                    "symbol", rule.getStockAsset().getTickerSymbol(),
-                    "interval", rule.getInterval().name(),
-                    "signal", rule.getTradeSignal().name(),
-                    "patternFamily", rule.getPatternFamily().name(),
-                    "active", rule.isActive()
-            ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid alert request."));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "The alert request could not be completed."));
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("id", rule.getId());
+            body.put("symbol", rule.getStockAsset().getTickerSymbol());
+            body.put("interval", rule.getInterval().name());
+            body.put("signal", rule.getTradeSignal().name());
+            body.put("patternFamily", rule.getPatternFamily().name());
+            body.put("active", rule.isActive());
+            return ResponseEntity.ok(body);
+        } catch (RuntimeException e) {
+            return failure(e, "Invalid alert request.", "The alert request could not be completed.");
         }
+    }
+
+    private ResponseEntity<?> failure(RuntimeException e, String invalidMessage, String failureMessage) {
+        return ApiErrorResponses.of(e, invalidMessage, failureMessage);
     }
 
     @PutMapping("/{symbol}")
@@ -116,11 +122,8 @@ public class AlertController {
                     user, validatedSymbol, changes, request.outlookChanges(), request.watchlistIds(), request.newWatchlistName()));
             alertRuleService.applyAlertChanges(user, validatedSymbol, changes);
             return ResponseEntity.ok(alertRuleService.getAlertState(user, validatedSymbol));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid alert changes."));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", "The alert changes could not be applied."));
+        } catch (RuntimeException e) {
+            return failure(e, "Invalid alert changes.", "The alert changes could not be applied.");
         }
     }
 
@@ -135,11 +138,8 @@ public class AlertController {
                     "symbol", validatedSymbol,
                     "unfollowedRules", unfollowedRules
             ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid unfollow request."));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", "The company could not be unfollowed."));
+        } catch (RuntimeException e) {
+            return failure(e, "Invalid unfollow request.", "The company could not be unfollowed.");
         }
     }
 
@@ -159,11 +159,8 @@ public class AlertController {
                     "symbol", validatedSymbol,
                     "unfollowedRules", unfollowedRules
             ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid rule selection."));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", "The selected rules could not be deleted."));
+        } catch (RuntimeException e) {
+            return failure(e, "Invalid rule selection.", "The selected rules could not be deleted.");
         }
     }
 
@@ -180,10 +177,8 @@ public class AlertController {
                     TradeSignal.valueOf(request.signal()),
                     parsePatternFamily(request.patternFamily())
             ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid signal-check request."));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "The signal check could not be completed."));
+        } catch (RuntimeException e) {
+            return failure(e, "Invalid signal-check request.", "The signal check could not be completed.");
         }
     }
 

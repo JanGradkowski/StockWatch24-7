@@ -38,10 +38,13 @@ public class UserViewModelAdvice {
                 || path.matches("/stock/[^/]+/technical-outlook")) return "watchlist";
         if (path.equals("/settings") || path.startsWith("/settings/")) return "settings";
         if (path.equals("/virtual-trades") || path.startsWith("/virtual-trades/")) return "demo";
-        if (path.equals("/activity-signals") || path.startsWith("/activity-signals/")) return "alerts";
+        if (path.equals("/ticker-alerts") || path.equals("/activity-signals")
+                || path.startsWith("/activity-signals/")) return "alerts";
         if (path.equals("/about")) return "help";
         if (path.equals("/signals") || path.startsWith("/alerts/")
                 || path.matches("/stock/[^/]+/.+")) return "signals";
+        // A stock workspace is reached from search, not from a sidebar section.
+        if (path.matches("/stock/[^/]+")) return "stock";
         return "home";
     }
 }

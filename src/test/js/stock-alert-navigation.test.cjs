@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 
 const stock = fs.readFileSync('src/main/resources/static/js/stock-workspace.js', 'utf8');
 const picker = fs.readFileSync('src/main/resources/static/js/watchlist-picker.js', 'utf8');
@@ -31,12 +32,13 @@ function setup(t) {
     for (const change of body.outlookChanges) intervals[change.interval] = change.active;
     return { ok: !fail, json: async () => ({ error: 'Test save failure', families, trackedStocks: 1, maxTrackedStocks: 100, outlookState: { intervals } }) };
   };
+  w.StockWatchI18n = StockWatchI18n;
   w.eval(picker);
   w.eval(`
     var alertStateLoaded = false, outlookFollowStateLoaded = false, alertSaveInProgress = false;
     var technicalFollowAllBusy = false, pageExitAllowed = false, alertBeforeUnloadRegistered = false;
     var alertSavePromise = null, pendingNavigationAction = null, trackedAlertSummary = '';
-    var persistedAlertState = new Map(), encodedTicker = 'AAPL';
+    var persistedAlertState = new Map(), encodedTicker = 'AAPL', i18n = window.StockWatchI18n;
     function secureJsonHeaders() { return {}; }
     ${stock.slice(stock.indexOf('  function outlookFollowInputs()'), stock.indexOf('  async function loadOutlookFollowState()'))}
     ${stock.slice(stock.indexOf('  function alertInputs()'), stock.indexOf('  const STOCK_WORKSPACE_SECTIONS'))}

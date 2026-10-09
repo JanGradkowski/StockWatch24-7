@@ -16,6 +16,15 @@ import java.util.Map;
 
 @Service
 public class ElliottWaveDetectionService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ElliottWaveDetectionService.class);
+    private static final BoundedTtlCache<Object, List<DevelopingImpulse>> completedPrimaryScans = new BoundedTtlCache<>(16, 600);
+    private static final BoundedTtlCache<String, List<DevelopingObservation>> confluenceObservations = new BoundedTtlCache<>(512, 600);
+    private static final BoundedTtlCache<SharedSubdivisionKey, List<ElliottSubdivision>> sharedSubdivisions = new BoundedTtlCache<>(512, 600);
+    private record SharedSubdivisionKey(DetectionRules rules, ScoringModel scoring, int lookback,
+                                        String parentLabel, SubdivisionMemoKey input) { }
+    private final ThreadLocal<Map<List<Pivot>, PivotContainment>> coherenceRanges = new ThreadLocal<>();
+    private static final BoundedTtlCache<String, Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>>>
+            resumedSubdivisions = new BoundedTtlCache<>(4, 3600);
     public static final String SETUP_SCORE_VERSION = "ELLIOTT_V1";
     public static final String DETECTION_RULE_VERSION = "ELLIOTT_RULES_V2";
     private static final int MIN_CANDLES = 34;
@@ -55,12 +64,41 @@ public class ElliottWaveDetectionService {
     private final ThreadLocal<Integer> grammarDepth = ThreadLocal.withInitial(() -> 0);
     private final ThreadLocal<Map<SubdivisionMemoKey, List<ElliottSubdivision>>> subdivisionMemo = new ThreadLocal<>();
     private final ThreadLocal<java.util.IdentityHashMap<List<EnrichedCandle>, GrammarInput>> grammarInputs = new ThreadLocal<>();
-    private record SubdivisionMemoKey(List<EnrichedCandle> candles, String label, double start, double end, int depth) {}
+    private final ThreadLocal<Boolean> rankingOnly = ThreadLocal.withInitial(() -> false);
+    private record SubdivisionMemoKey(List<EnrichedCandle> candles, String label, double start, double end, int depth, boolean bestPerLabel, String bestKind, boolean rankingOnly) {}
+    private record SubdivisionSelectionKey(String mode, String label, long startTime, double startPrice, long endTime, double endPrice) {}
+    private record PivotScanKey(List<EnrichedCandle> candles, double sensitivity) {}
+    private final ThreadLocal<Map<PivotScanKey, List<Pivot>>> pivotScans = new ThreadLocal<>();
+    private final ThreadLocal<Map<PivotOrigin, PivotTrajectory>> pivotTrajectories = new ThreadLocal<>();
+    private final ThreadLocal<Map<BoundaryKey, java.util.Optional<Pivot>>> boundaryPivots = new ThreadLocal<>();
+    private record BoundaryKey(List<EnrichedCandle> candles, double price, PivotType type, boolean earlier) { }
+    private static final class PivotOrigin {
+        final Object root; final int offset; final double sensitivity;
+        PivotOrigin(ValidatedCandleWindow window, double sensitivity) {
+            root = window.rootIdentity(); offset = window.rootOffset(); this.sensitivity = sensitivity;
+        }
+        @Override public int hashCode() { return 31 * (31 * System.identityHashCode(root) + offset) + Double.hashCode(sensitivity); }
+        @Override public boolean equals(Object other) {
+            return other instanceof PivotOrigin key && root == key.root && offset == key.offset && sensitivity == key.sensitivity;
+        }
+    }
+    private final ThreadLocal<java.util.function.Consumer<DevelopingObservation>> observationSink = new ThreadLocal<>();
+    private final ThreadLocal<ObservationDelta> observationDelta = new ThreadLocal<>();
+    private record Seed(Pivot origin, Pivot one) { }
+    private record ObservationDelta(int earliestEndpoint, long previousTimestamp,
+                                    Map<Pivot, PivotSupport> previousSupport, java.util.Set<Seed> previousSeeds) {
+        boolean contains(DevelopingImpulse candidate, List<Pivot> path) {
+            return candidate.confirmationTimestamp() <= previousTimestamp
+                    && previousSeeds.contains(new Seed(path.get(0), path.get(1)))
+                    && !sharedScales(path, previousSupport).isEmpty();
+        }
+    }
     private record GrammarLegKey(ElliottWavePoint from, ElliottWavePoint to, String requested, int depth) {}
     private record GrammarInput(List<EnrichedCandle> candles, Map<GrammarLegKey, List<ElliottSubdivision>> options,
                                 Map<Integer, Double> previewAtr) {}
     private static final class DevelopingHypotheses {
         final boolean primaryOnly;
+        int pathCount;
         final Map<String, RankedDevelopingImpulse> paths = new LinkedHashMap<>();
         RankedDevelopingImpulse best;
         List<Pivot> bestParent;
@@ -75,7 +113,7 @@ public class ElliottWaveDetectionService {
                 return size() > 8192;
             }
         };
-        var result = new GrammarInput(PatternCandleIntegrity.enriched(input), options, new java.util.HashMap<>());
+        var result = new GrammarInput(ValidatedCandleWindow.latest(input), options, new java.util.HashMap<>());
         if (memo != null && memo.size() < 2048) memo.put(input, result);
         return result;
     }
@@ -90,7 +128,19 @@ public class ElliottWaveDetectionService {
             }
         });
         grammarInputs.set(new java.util.IdentityHashMap<>());
-        try { return work.get(); } finally { subdivisionMemo.remove(); grammarInputs.remove(); }
+        coherenceRanges.set(new java.util.IdentityHashMap<>());
+        pivotTrajectories.set(new LinkedHashMap<>(32, .75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<PivotOrigin, PivotTrajectory> entry) { return size() > 256; }
+        });
+        boundaryPivots.set(new LinkedHashMap<>(256, .75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<BoundaryKey, java.util.Optional<Pivot>> entry) { return size() > 16384; }
+        });
+        pivotScans.set(new LinkedHashMap<>(256, .75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<PivotScanKey, List<Pivot>> entry) {
+                return size() > 16_384;
+            }
+        });
+        try { return work.get(); } finally { subdivisionMemo.remove(); grammarInputs.remove(); pivotScans.remove(); coherenceRanges.remove(); pivotTrajectories.remove(); boundaryPivots.remove(); }
     }
 
     private final int presentSignalLookbackCandles;
@@ -132,7 +182,7 @@ public class ElliottWaveDetectionService {
             return List.of();
         }
 
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(recentCandles);
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(recentCandles);
         if (candles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
@@ -175,7 +225,7 @@ public class ElliottWaveDetectionService {
         if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return java.util.Optional.empty();
         }
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(recentCandles);
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(recentCandles);
         if (candles.size() < detectionRules.minimumCandles()) {
             return java.util.Optional.empty();
         }
@@ -196,8 +246,8 @@ public class ElliottWaveDetectionService {
     }
 
     public List<ElliottWaveStructure> findHistoricalWaveStructures(List<EnrichedCandle> historicalCandles) {
-        return selectNonOverlappingStructures(PatternCandleIntegrity.enrichedSegments(historicalCandles).stream()
-                .flatMap(segment -> collectHistoricalWaveStructures(segment).stream()).toList());
+        return withSubdivisionMemo(() -> selectNonOverlappingStructures(PatternCandleIntegrity.enrichedSegments(historicalCandles).stream()
+                .flatMap(segment -> collectHistoricalWaveStructures(segment).stream()).toList()));
     }
 
     /** All confirmed endpoint counts; scoring and display overlap limits are not recognition rules. */
@@ -207,7 +257,7 @@ public class ElliottWaveDetectionService {
     }
 
     private List<ElliottWaveStructure> findAllSegmentStructures(List<EnrichedCandle> input) {
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(input);
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(input);
         if (candles.size() < 6) return List.of();
         List<StructureCandidate> candidates = new ArrayList<>();
         for (List<Pivot> pivots : findPivotSets(candles)) addConfirmedStructures(candles, pivots, candidates, false);
@@ -231,7 +281,7 @@ public class ElliottWaveDetectionService {
                 || confirmationTimestamp == null) {
             return new ElliottScoreAssessment(0, List.of());
         }
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(historicalCandles);
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(historicalCandles);
         int confirmationIndex = indexAtTimestamp(candles, confirmationTimestamp);
         if (confirmationIndex < 1) {
             return new ElliottScoreAssessment(0, List.of());
@@ -325,7 +375,7 @@ public class ElliottWaveDetectionService {
         if (historicalCandles == null || historicalCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(historicalCandles);
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(historicalCandles);
         if (candles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
@@ -361,7 +411,7 @@ public class ElliottWaveDetectionService {
                 || !pattern.name().startsWith("ELLIOTT_")) {
             return java.util.Optional.empty();
         }
-        List<EnrichedCandle> detectionHistory = PatternCandleIntegrity.enriched(historicalCandles).stream()
+        List<EnrichedCandle> detectionHistory = ValidatedCandleWindow.latest(historicalCandles).stream()
                 .filter(candle -> candle.timestamp() <= signalTimestamp)
                 .sorted(Comparator.comparing(EnrichedCandle::timestamp))
                 .toList();
@@ -765,11 +815,13 @@ public class ElliottWaveDetectionService {
     }
 
     private int firstBullishReboundIndex(List<EnrichedCandle> candles, Pivot correctionLow) {
+        if (candles instanceof ValidatedCandleWindow window) return window.firstConfirmationAfter(correctionLow.index(), true);
         return firstIndexedSignalAfterPivot(candles, correctionLow, index -> index > 0
                 && candles.get(index).close() > candles.get(index - 1).high());
     }
 
     private int firstBearishRejectionIndex(List<EnrichedCandle> candles, Pivot correctionHigh) {
+        if (candles instanceof ValidatedCandleWindow window) return window.firstConfirmationAfter(correctionHigh.index(), false);
         return firstIndexedSignalAfterPivot(candles, correctionHigh, index -> index > 0
                 && candles.get(index).close() < candles.get(index - 1).low());
     }
@@ -1654,6 +1706,16 @@ public class ElliottWaveDetectionService {
         return 0;
     }
 
+    /** Guideline only: some legal Wave IV room remains, but no common retracement fits in it. */
+    int compressedWaveFourPenalty(double room) {
+        double common = detectionRules.waveFourCommonMinRetracement();
+        if (!detectionRules.requireWaveFourNoOverlap() || !Double.isFinite(room)
+                || room <= 0.0 || room >= common) {
+            return 0;
+        }
+        return 6 + (int) Math.round(Math.min(1.0, safeRatio(common - room, common)) * 4.0);
+    }
+
     private int shortImpulseSpanPenalty(int impulseSpan) {
         return impulseSpan >= detectionRules.minimumImpulseSpanCandles()
                 ? 0
@@ -1721,7 +1783,7 @@ public class ElliottWaveDetectionService {
                 || Double.compare(parentStartPrice, parentEndPrice) == 0) {
             return java.util.Optional.empty();
         }
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(parentCandles);
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(parentCandles);
         if (candles.size() < 6) {
             return java.util.Optional.empty();
         }
@@ -1752,26 +1814,54 @@ public class ElliottWaveDetectionService {
             String parentLabel,
             double parentStartPrice,
             double parentEndPrice) {
+        return findStrictSubdivisions(parentCandles, parentLabel, parentStartPrice, parentEndPrice, false);
+    }
+
+    private List<ElliottSubdivision> findStrictSubdivisions(List<EnrichedCandle> parentCandles,
+            String parentLabel, double parentStartPrice, double parentEndPrice, boolean bestPerLabel) {
+        return findStrictSubdivisions(parentCandles, parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, null);
+    }
+
+    private List<ElliottSubdivision> findStrictSubdivisions(List<EnrichedCandle> parentCandles,
+            String parentLabel, double parentStartPrice, double parentEndPrice, boolean bestPerLabel, String bestKind) {
         if (parentCandles == null || parentLabel == null
                 || !Double.isFinite(parentStartPrice) || !Double.isFinite(parentEndPrice)
                 || Double.compare(parentStartPrice, parentEndPrice) == 0) {
             return List.of();
         }
         return withSubdivisionMemo(() -> {
-            var key = new SubdivisionMemoKey(new ArrayList<>(parentCandles), grammarLabel(parentLabel),
-                    parentStartPrice, parentEndPrice, grammarDepth.get());
+            var key = new SubdivisionMemoKey(ValidatedCandleWindow.latest(parentCandles), grammarLabel(parentLabel),
+                    parentStartPrice, parentEndPrice, grammarDepth.get(), bestPerLabel, bestKind, rankingOnly.get());
             var memo = subdivisionMemo.get();
             var saved = memo.get(key);
             if (saved != null) return saved;
-            var result = computeStrictSubdivisions(parentCandles, parentLabel, parentStartPrice, parentEndPrice);
+            SharedSubdivisionKey sharedKey = null;
+            long now = java.time.Instant.now().getEpochSecond();
+            if (bestPerLabel && key.depth() == 0 && key.candles().size() <= 2048) {
+                sharedKey = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
+                        parentLabel, key);
+                saved = sharedSubdivisions.get(sharedKey, now);
+                if (saved != null) {
+                    memo.put(key, saved);
+                    return saved;
+                }
+            }
+            long started = System.nanoTime();
+            var result = computeStrictSubdivisions(key.candles(), parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind);
             memo.put(key, result);
+            if (sharedKey != null && System.nanoTime() - started >= 100000) {
+                var retained = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
+                        parentLabel, new SubdivisionMemoKey(List.copyOf(key.candles()), key.label(), key.start(),
+                        key.end(), key.depth(), key.bestPerLabel(), key.bestKind(), key.rankingOnly()));
+                sharedSubdivisions.put(retained, List.copyOf(result), now);
+            }
             return result;
         });
     }
 
     private List<ElliottSubdivision> computeStrictSubdivisions(List<EnrichedCandle> parentCandles,
-            String parentLabel, double parentStartPrice, double parentEndPrice) {
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(parentCandles);
+            String parentLabel, double parentStartPrice, double parentEndPrice, boolean bestPerLabel, String bestKind) {
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(parentCandles);
         String label = grammarLabel(parentLabel);
         boolean motive = java.util.Set.of("I", "III", "V", "1", "3", "5", "A", "C")
                 .contains(label);
@@ -1782,13 +1872,14 @@ public class ElliottWaveDetectionService {
 
         List<SubdivisionCandidate> candidates = new ArrayList<>();
         for (double sensitivity : detectionRules.pivotSensitivities()) {
+            JobLeaseGuard.checkActive();
             List<Pivot> pivots = findPivots(candles, sensitivity);
-            if (motive) {
+            if (motive && !"CORRECTIVE".equals(bestKind)) {
                 collectStrictMotiveSubdivisionCandidates(
                         candles, pivots, parentStartPrice, parentEndPrice,
                         diagonalAllowedAt(label), candidates);
             }
-            if (corrective) {
+            if (corrective && !"MOTIVE".equals(bestKind)) {
                 collectCorrectionSubdivisionCandidates(
                         candles, pivots, parentStartPrice, parentEndPrice, candidates);
                 collectComplexCorrectionSubdivisionCandidates(
@@ -1808,17 +1899,41 @@ public class ElliottWaveDetectionService {
                                 (SubdivisionCandidate candidate) -> candidate.pivots().getLast().index()
                                         - candidate.pivots().getFirst().index()).reversed()))
                 .forEach(candidate -> distinct.putIfAbsent(subdivisionKey(candidate), candidate));
-        return distinct.values().stream()
-                .map(candidate -> validatedSubdivision(candles, candidate, label))
-                .filter(java.util.Objects::nonNull)
-                .toList();
+        var result = new ArrayList<ElliottSubdivision>();
+        var retainedLabels = new java.util.HashSet<String>();
+        for (var candidate : distinct.values()) {
+            String candidateLabel = subdivisionLabel(candidate, label);
+            if ("MOTIVE".equals(bestKind) && !candidateLabel.startsWith("Motive")
+                    || "CORRECTIVE".equals(bestKind) && candidateLabel.startsWith("Motive")) continue;
+            String retainedKey = "CATEGORIES".equals(bestKind)
+                    ? (candidateLabel.startsWith("Motive") ? "MOTIVE" : "CORRECTIVE") : candidateLabel;
+            if (bestPerLabel && retainedLabels.contains(retainedKey)) continue;
+            var validated = validatedSubdivision(candles, candidate, label);
+            if (validated != null) {
+                result.add(validated); retainedLabels.add(retainedKey);
+                // Confidence/span/encounter order already matches the caller's
+                // max selector. Later alternatives cannot improve its winner.
+                if (bestKind != null && (!bestKind.equals("CATEGORIES") || retainedLabels.size() == 2)) break;
+            }
+        }
+        return List.copyOf(result);
     }
 
     private ElliottSubdivision validatedSubdivision(List<EnrichedCandle> candles,
                                                       SubdivisionCandidate candidate, String parentLabel) {
         String label = subdivisionLabel(candidate, parentLabel);
         List<ElliottWavePoint> points = subdivisionPoints(candles, candidate);
-        GrammarAssessment assessment = assessGrammar(candles, label, points);
+        // Non-leading structures cannot be rejected by assessGrammar: missing
+        // inferred children are reported as unresolved, without changing rank.
+        // Build that expensive drill-down only for retained winners. Leading
+        // diagonals still need the full compatibility test before ranking.
+        if (rankingOnly.get() && !label.toLowerCase(java.util.Locale.ROOT).contains("leading diagonal"))
+            return new ElliottSubdivision(label, candidate.confidence(), true, points, candidate.evidence(), List.of());
+        boolean ranking = rankingOnly.get();
+        rankingOnly.set(false);
+        GrammarAssessment assessment;
+        try { assessment = assessGrammar(candles, label, points); }
+        finally { rankingOnly.set(ranking); }
         if (!assessment.compatible()) return null;
         List<String> evidence = new ArrayList<>(candidate.evidence());
         evidence.add(assessment.description());
@@ -1853,13 +1968,16 @@ public class ElliottWaveDetectionService {
                 var legKey = new GrammarLegKey(from, to, requested, depth);
                 List<ElliottSubdivision> options = grammarInput.options().get(legKey);
                 if (options == null) {
-                    List<EnrichedCandle> leg = candles.stream().filter(c -> c.timestamp() >= from.timestamp()
-                            && c.timestamp() <= to.timestamp()).toList();
+                    var window = (ValidatedCandleWindow) candles;
+                    int end = window.lowerBound(to.timestamp());
+                    List<EnrichedCandle> leg = window.subList(window.lowerBound(from.timestamp()),
+                            end < window.size() && window.get(end).timestamp().equals(to.timestamp()) ? end + 1 : end);
                     if (leg.isEmpty() || leg.getFirst().timestamp() != from.timestamp()
                             || leg.getLast().timestamp() != to.timestamp()) {
                         return new GrammarAssessment(false, observed, List.of(to.label() + ": missing boundary candles"));
                     }
-                    options = findStrictSubdivisions(leg, requested, from.price(), to.price());
+                    // Grammar uses the first compatible option in each category, never every geometry.
+                    options = findStrictSubdivisions(leg, requested, from.price(), to.price(), true, "CATEGORIES");
                     grammarInput.options().put(legKey, options);
                 }
                 final boolean expectedMotive = motive;
@@ -1901,20 +2019,28 @@ public class ElliottWaveDetectionService {
      * Legal parent positions remain explicit: endpoint geometry alone cannot establish context.
      */
     public List<ElliottPatternCandidate> findPatternCandidates(List<EnrichedCandle> input) {
-        return PatternCandleIntegrity.enrichedSegments(input).stream()
-                .flatMap(segment -> findSegmentPatternCandidates(segment).stream()).toList();
+        return findPatternCandidates(input, Long.MIN_VALUE, Long.MAX_VALUE);
     }
 
-    private List<ElliottPatternCandidate> findSegmentPatternCandidates(List<EnrichedCandle> input) {
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(input);
+    public List<ElliottPatternCandidate> findPatternCandidates(List<EnrichedCandle> input, long from, long to) {
+        return withSubdivisionMemo(() -> PatternCandleIntegrity.enrichedSegments(input).stream()
+                .flatMap(segment -> findSegmentPatternCandidates(segment, from, to).stream())
+                .filter(candidate -> candidate.points().getLast().timestamp() >= from
+                        && candidate.points().getFirst().timestamp() <= to).toList());
+    }
+
+    private List<ElliottPatternCandidate> findSegmentPatternCandidates(List<EnrichedCandle> input, long from, long to) {
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(input);
         if (candles.size() < 4) return List.of();
         Map<String, ElliottPatternCandidate> result = new LinkedHashMap<>();
         for (double sensitivity : detectionRules.pivotSensitivities()) {
+            JobLeaseGuard.checkActive();
             List<Pivot> pivots = findPivots(candles, sensitivity);
             for (int size : new int[]{4, 6, 8, 10, 12, 14}) {
                 for (int start = 0; start + size <= pivots.size(); start++) {
                     List<Pivot> sequence = pivots.subList(start, start + size);
                     Pivot first = sequence.getFirst(), last = sequence.getLast();
+                    if (candles.get(last.index()).timestamp() < from || candles.get(first.index()).timestamp() > to) continue;
                     int confirmation = last.type() == PivotType.LOW
                             ? firstBullishReboundIndex(candles, last) : firstBearishRejectionIndex(candles, last);
                     if (confirmation < 0) continue;
@@ -1942,7 +2068,8 @@ public class ElliottWaveDetectionService {
                         ElliottPatternCandidate candidate = new ElliottPatternCandidate(c.kind().displayName,
                                 last.price() > first.price() ? "RISING" : "FALLING", points,
                                 candles.get(confirmation).timestamp(), c.confidence(), positions,
-                                "OBSERVED_DEGREE_GEOMETRY", 1, points.stream().skip(1).map(ElliottWavePoint::label).toList());
+                                "OBSERVED_DEGREE_GEOMETRY", 1, points.stream().skip(1).map(ElliottWavePoint::label).toList(),
+                                patternCandidateKey(c.kind(), points), c.evidence());
                         result.putIfAbsent(c.kind() + ":" + points, candidate);
                     }
                 }
@@ -1951,10 +2078,16 @@ public class ElliottWaveDetectionService {
         return result.values().stream().sorted(Comparator.comparingLong(ElliottPatternCandidate::confirmationTimestamp)).toList();
     }
 
+    /** Stable across viewport batches, so a chart link can locate the same count again. */
+    private static String patternCandidateKey(SubdivisionKind kind, List<ElliottWavePoint> points) {
+        return kind.name() + ":" + points.stream().map(point -> String.valueOf(point.timestamp()))
+                .collect(java.util.stream.Collectors.joining("-"));
+    }
+
     public record ElliottPatternCandidate(String structureLabel, String direction,
             List<ElliottWavePoint> points, long confirmationTimestamp, int qualityScore,
             List<String> legalParentPositions, String validationScope, int observedDepth,
-            List<String> unresolvedLegs) { }
+            List<String> unresolvedLegs, String candidateKey, List<String> evidence) { }
 
     private String subdivisionLabel(SubdivisionCandidate candidate, String parentLabel) {
         if (candidate.kind() != SubdivisionKind.DIAGONAL) return candidate.kind().displayName;
@@ -1992,7 +2125,9 @@ public class ElliottWaveDetectionService {
             List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles) {
         return findDevelopingImpulses(
-                recentCandles, lowerDegreeCandles, new DevelopingScanContext());
+                recentCandles, lowerDegreeCandles, AnalysisComputationScope.memo(
+                        List.of("elliott-leg-context", detectionRules, scoringModel, presentSignalLookbackCandles),
+                        DevelopingScanContext::new));
     }
 
     /**
@@ -2004,12 +2139,35 @@ public class ElliottWaveDetectionService {
             List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles,
             DevelopingScanContext scanContext) {
-        return withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
+        Object key = List.of("elliott-primary", detectionRules, scoringModel, presentSignalLookbackCandles, reuseCorrectionSuffixes(),
+                recentCandles == null ? List.of() : new ArrayList<>(recentCandles),
+                lowerDegreeCandles == null ? List.of() : new ArrayList<>(lowerDegreeCandles));
+        return AnalysisComputationScope.memo(key, () -> {
+            long now = java.time.Instant.now().getEpochSecond();
+            var work = AnalysisWork.current();
+            String durableKey = work == null ? null : AnalysisWork.key(List.of("ELLIOTT_COMPLETED_V1", key));
+            var reused = work == null || work.runsContinuously() ? completedPrimaryScans.get(key, now) : null;
+            if (reused != null) {
+                if (work != null) work.store.write(durableKey, new CompletedScan(reused), 1);
+                return reused;
+            }
+            CompletedScan completed = work == null ? null : work.store.read(durableKey, CompletedScan.class);
+            if (completed != null) return completed.results();
+            var results = withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
                 recentCandles, lowerDegreeCandles, scanContext, true)).stream()
                 .sorted(Comparator.comparingLong(DevelopingImpulse::confirmationTimestamp)
                         .thenComparingInt(candidate -> candidate.stage().progressionOrder()))
                 .toList();
+            if (work != null) work.store.write(durableKey, new CompletedScan(results), 1);
+            if (results.size() <= 1000 && (recentCandles == null || recentCandles.size() <= 2000)
+                    && (lowerDegreeCandles == null || lowerDegreeCandles.size() <= 12000)) {
+                completedPrimaryScans.put(key, results, now);
+            }
+            return results;
+        });
     }
+
+    private record CompletedScan(List<DevelopingImpulse> results) { }
 
     private DevelopingImpulse withHypothesisEvidence(DevelopingImpulse primary, int hypothesisCount) {
         List<String> evidence = new ArrayList<>(primary.evidence());
@@ -2035,6 +2193,95 @@ public class ElliottWaveDetectionService {
         return findDevelopingImpulseHypotheses(recentCandles, null);
     }
 
+    /** Confluence needs geometry and availability, not a trade preview for every alternative. */
+    List<DevelopingObservation> findDevelopingObservations(List<EnrichedCandle> candles) {
+        List<DevelopingObservation> observations = new ArrayList<>();
+        forEachDevelopingObservation(candles, observations::add);
+        return List.copyOf(observations);
+    }
+
+    /** Enumerate all observable paths without retaining/ranking their full result graphs. */
+    void forEachDevelopingObservation(List<EnrichedCandle> candles,
+                                     java.util.function.Consumer<DevelopingObservation> sink) {
+        forEachDevelopingObservation(candles, new DevelopingScanContext(), sink);
+    }
+
+    void forEachDevelopingObservation(List<EnrichedCandle> candles, DevelopingScanContext context,
+                                     java.util.function.Consumer<DevelopingObservation> sink) {
+        var previous = observationSink.get();
+        observationSink.set(java.util.Objects.requireNonNull(sink));
+        try {
+            withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
+                    candles, null, context, false));
+        } finally {
+            if (previous == null) observationSink.remove(); else observationSink.set(previous);
+        }
+    }
+
+    record DevelopingObservation(CandlePattern pattern, TradeSignal expectedMove,
+                                 long confirmationTimestamp, List<ElliottWavePoint> points) { }
+
+    /** Exact adjacent-prefix difference without storing millions of unchanged paths. */
+    void forEachNewDevelopingObservation(List<EnrichedCandle> input, List<EnrichedCandle> preceding,
+                                         DevelopingScanContext context,
+                                         java.util.function.Consumer<DevelopingObservation> sink) {
+        var current = ValidatedCandleWindow.latest(input);
+        var previous = ValidatedCandleWindow.latest(preceding);
+        if (current.equals(previous) || current.size() < detectionRules.minimumCandles()) return;
+        if (previous.isEmpty() || current.size() != previous.size() + 1
+                || !current.subList(0, previous.size()).equals(previous)) {
+            var old = new java.util.HashSet<ObservationIdentity>();
+            forEachDevelopingObservation(previous, candidate -> old.add(new ObservationIdentity(candidate.pattern(), candidate.points())));
+            forEachDevelopingObservation(current, context, candidate -> {
+                if (!old.contains(new ObservationIdentity(candidate.pattern(), candidate.points()))) sink.accept(candidate);
+            });
+            return;
+        }
+        withSubdivisionMemo(() -> {
+            var oldSets = findDevelopmentPivotSets(previous);
+            var oldSupport = pivotSupport(oldSets);
+            var oldSeeds = new java.util.HashSet<Seed>();
+            for (var set : oldSets) for (int i = 0; i + 1 < set.pivots().size(); i++) {
+                oldSeeds.add(new Seed(set.pivots().get(i), set.pivots().get(i + 1)));
+            }
+            var newSets = findDevelopmentPivotSets(current);
+            var newSupport = pivotSupport(newSets);
+            int earliest = Integer.MAX_VALUE;
+            for (var entry : newSupport.entrySet()) {
+                var old = oldSupport.get(entry.getKey());
+                Pivot pivot = entry.getKey();
+                int confirmation = pivot.type() == PivotType.LOW ? firstBullishReboundIndex(current, pivot)
+                        : firstBearishRejectionIndex(current, pivot);
+                if (old == null || !old.scaleRanks().equals(entry.getValue().scaleRanks())
+                        || confirmation == current.size() - 1 && isTimelyConfirmation(pivot, confirmation)) {
+                    earliest = Math.min(earliest, pivot.index());
+                }
+            }
+            for (var set : newSets) for (int i = 0; i + 1 < set.pivots().size(); i++) {
+                if (!oldSeeds.contains(new Seed(set.pivots().get(i), set.pivots().get(i + 1)))) {
+                    earliest = Math.min(earliest, set.pivots().get(i).index());
+                }
+            }
+            if (earliest == Integer.MAX_VALUE) return null;
+            var saved = observationDelta.get();
+            observationDelta.set(new ObservationDelta(earliest, previous.getLast().timestamp(), oldSupport, oldSeeds));
+            try { forEachDevelopingObservation(current, context, sink); }
+            finally { if (saved == null) observationDelta.remove(); else observationDelta.set(saved); }
+            return null;
+        });
+    }
+
+    private record ObservationIdentity(CandlePattern pattern, List<ElliottWavePoint> points) { }
+
+    private Map<Pivot, PivotSupport> pivotSupport(List<DevelopmentPivotSet> sets) {
+        Map<Pivot, PivotSupport> result = new LinkedHashMap<>();
+        for (var set : sets) for (var pivot : set.pivots()) {
+            result.computeIfAbsent(pivot, ignored -> new PivotSupport(pivot, new java.util.TreeSet<>()))
+                    .scaleRanks().add(set.scaleRank());
+        }
+        return result;
+    }
+
     public List<DevelopingImpulse> findDevelopingImpulseHypotheses(
             List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles) {
@@ -2052,26 +2299,32 @@ public class ElliottWaveDetectionService {
     private List<DevelopingImpulse> computeDevelopingImpulseHypotheses(
             List<EnrichedCandle> recentCandles, List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext,
             boolean primaryOnly) {
+        return computeDevelopingImpulseHypotheses(recentCandles, lowerDegreeCandles, scanContext, primaryOnly, null);
+    }
+
+    private List<DevelopingImpulse> computeDevelopingImpulseHypotheses(
+            List<EnrichedCandle> recentCandles, List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext,
+            boolean primaryOnly, String requiredDevelopmentKey) {
         if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
         DevelopingScanContext context = scanContext == null
                 ? new DevelopingScanContext() : scanContext;
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(recentCandles);
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(recentCandles);
         if (candles.size() < detectionRules.minimumCandles()) return List.of();
         // Reserve the shared parent input before recursive child inputs fill the memo.
         grammarInput(candles);
         List<EnrichedCandle> childCandles = lowerDegreeCandles == null
                 ? List.of()
-                : PatternCandleIntegrity.enriched(lowerDegreeCandles);
+                : ValidatedCandleWindow.latest(lowerDegreeCandles);
 
         context.prepare(candles, childCandles, detectionRules);
         Map<String, DevelopingHypotheses> hypothesesByDevelopment = new LinkedHashMap<>();
         List<DevelopmentPivotSet> pivotSets = findDevelopmentPivotSets(candles);
-        Map<String, PivotSupport> supportByPivot = new LinkedHashMap<>();
+        Map<Pivot, PivotSupport> supportByPivot = new LinkedHashMap<>();
         for (DevelopmentPivotSet pivotSet : pivotSets) {
             for (Pivot pivot : pivotSet.pivots()) {
-                String key = pivotKey(pivot);
+                Pivot key = pivot;
                 PivotSupport support = supportByPivot.computeIfAbsent(
                         key, ignored -> new PivotSupport(pivot, new java.util.TreeSet<>()));
                 support.scaleRanks().add(pivotSet.scaleRank());
@@ -2079,9 +2332,32 @@ public class ElliottWaveDetectionService {
         }
         List<Pivot> allPivots = supportByPivot.values().stream()
                 .map(PivotSupport::pivot).sorted(Comparator.comparingInt(Pivot::index)).toList();
+        PivotExpansionIndex expansion = new PivotExpansionIndex(allPivots, supportByPivot);
+        long searchStarted = System.nanoTime();
+        String checkpointScan = AnalysisWork.current() == null ? null : AnalysisWork.key(List.of(
+                "ELLIOTT_CHECKPOINT_V2", candles, childCandles, detectionRules, scoringModel,
+                presentSignalLookbackCandles, primaryOnly, reuseCorrectionSuffixes(),
+                confluenceCheckpoint.get() == null ? "primary" : confluenceCheckpoint.get()));
         java.util.Set<String> seededPairs = new java.util.HashSet<>();
-        Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache =
+        Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisionCache =
                 context.subdivisionCache;
+        if (checkpointScan != null && !AnalysisWork.current().runsContinuously()) {
+            synchronized (resumedSubdivisions) {
+                long now = java.time.Instant.now().getEpochSecond();
+                subdivisionCache = resumedSubdivisions.get(checkpointScan, now);
+                if (subdivisionCache == null) {
+                    subdivisionCache = java.util.Collections.synchronizedMap(new LinkedHashMap<>(128, .75f, true) {
+                        @Override protected boolean removeEldestEntry(Map.Entry<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> entry) {
+                            return size() > 8192;
+                        }
+                    });
+                    resumedSubdivisions.put(checkpointScan, subdivisionCache, now);
+                }
+            }
+        }
+        boolean priorRanking = rankingOnly.get();
+        rankingOnly.set(primaryOnly || observationSink.get() != null);
+        try {
         for (DevelopmentPivotSet pivotSet : pivotSets) {
             List<Pivot> pivots = pivotSet.pivots();
             for (int index = 0; index + 1 < pivots.size(); index++) {
@@ -2089,14 +2365,23 @@ public class ElliottWaveDetectionService {
                 Pivot waveOne = pivots.get(index + 1);
                 String pairKey = origin.type() + ":" + origin.index() + ':' + waveOne.index();
                 if (!seededPairs.add(pairKey)) continue;
-                extendDevelopingImpulse(candles, List.of(origin, waveOne), allPivots,
-                        supportByPivot, hypothesesByDevelopment, childCandles, subdivisionCache, primaryOnly);
+                if (requiredDevelopmentKey != null && !requiredDevelopmentKey.equals(
+                        (origin.type() == PivotType.LOW ? "BULLISH" : "BEARISH") + ':'
+                                + candles.get(origin.index()).timestamp() + ':' + candles.get(waveOne.index()).timestamp())) continue;
+                extendDevelopingImpulse(candles, new ArrayList<>(List.of(origin, waveOne)), allPivots,
+                        supportByPivot, hypothesesByDevelopment, childCandles, subdivisionCache, primaryOnly, checkpointScan, expansion);
             }
         }
+        } finally { rankingOnly.set(priorRanking); }
+        log.debug("Elliott search primary={} bars={} prefixes={} correctionPrefixes={} correctionStates={} suffixReuses={} searchMs={}",
+                primaryOnly, candles.size(), expansion.prefixes, expansion.correctionPrefixes,
+                expansion.corrections.size() + expansion.observationCorrections.size(), expansion.suffixReuses,
+                (System.nanoTime() - searchStarted) / 1_000_000);
+        final var materializationCache = subdivisionCache;
         if (primaryOnly) return hypothesesByDevelopment.values().stream()
                 .sorted((left, right) -> rankedDevelopingComparator().compare(left.best, right.best))
                 .map(group -> withHypothesisEvidence(developingImpulse(candles, group.bestParent, 0,
-                        childCandles, subdivisionCache, false, true).orElseThrow(), group.paths.size())).toList();
+                        childCandles, materializationCache, false, true).orElseThrow(), group.pathCount)).toList();
         return hypothesesByDevelopment.values().stream()
                 .flatMap(group -> group.paths.values().stream())
                 .sorted(rankedDevelopingComparator())
@@ -2104,22 +2389,127 @@ public class ElliottWaveDetectionService {
                 .toList();
     }
 
-    private void extendDevelopingImpulse(
+    private final ThreadLocal<String> confluenceCheckpoint = new ThreadLocal<>();
+
+    List<DevelopingObservation> newConfluenceObservations(List<EnrichedCandle> current,
+            List<EnrichedCandle> previous, DevelopingScanContext context) {
+        String inputKey = AnalysisWork.key(List.of(current, previous));
+        String observationKey = AnalysisWork.key(List.of(inputKey, detectionRules, scoringModel,
+                presentSignalLookbackCandles, reuseCorrectionSuffixes()));
+        long now = java.time.Instant.now().getEpochSecond();
+        var work = AnalysisWork.current();
+        String durableKey = AnalysisWork.key(List.of("ELLIOTT_CONFLUENCE_RESULT_V1", observationKey));
+        var reused = work == null || work.runsContinuously() ? confluenceObservations.get(observationKey, now) : null;
+        if (reused != null) {
+            if (work != null) work.store.write(durableKey, new CompletedObservations(reused), 1);
+            return reused;
+        }
+        CompletedObservations completed = work == null ? null : work.store.read(durableKey, CompletedObservations.class);
+        if (completed != null) {
+            confluenceObservations.put(observationKey, completed.observations(), now);
+            return completed.observations();
+        }
+        String saved = confluenceCheckpoint.get();
+        boolean append = previous.isEmpty() || current.size() == previous.size() + 1
+                && current.subList(0, previous.size()).equals(previous);
+        if (append) confluenceCheckpoint.set(inputKey);
+        else confluenceCheckpoint.remove(); // Full geometry difference is required for corrections/rewinds.
+        try {
+            Map<String, DevelopingObservation> result = new LinkedHashMap<>();
+            forEachNewDevelopingObservation(current, previous, context,
+                    candidate -> result.putIfAbsent(candidate.pattern() + ":" + candidate.expectedMove(), candidate));
+            var observations = List.copyOf(result.values());
+            if (work != null) work.store.write(durableKey, new CompletedObservations(observations), 1);
+            confluenceObservations.put(observationKey, observations, now);
+            return observations;
+        } finally { if (saved == null) confluenceCheckpoint.remove(); else confluenceCheckpoint.set(saved); }
+    }
+
+    private record HypothesisCheckpoint(String key, int count, RankedDevelopingImpulse best, List<Pivot> parent) { }
+    private record ScanCheckpoint(List<List<Pivot>> pending, List<HypothesisCheckpoint> hypotheses,
+                                  List<DevelopingObservation> observations, long visited) { }
+
+    private void extendDevelopingImpulse(List<EnrichedCandle> candles, List<Pivot> initial,
+            List<Pivot> allPivots, Map<Pivot, PivotSupport> support,
+            Map<String, DevelopingHypotheses> combined, List<EnrichedCandle> children,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisions,
+            boolean primaryOnly, String scanKey, PivotExpansionIndex expansion) {
+        var work = AnalysisWork.current();
+        boolean compact = confluenceCheckpoint.get() != null && observationSink.get() != null;
+        boolean durable = work != null && (primaryOnly || compact);
+        String key = durable ? AnalysisWork.key(List.of(scanKey, initial)) : null;
+        ScanCheckpoint checkpoint = durable ? work.store.read(key, ScanCheckpoint.class) : null;
+        var pending = new java.util.ArrayDeque<List<Pivot>>();
+        Map<String, DevelopingHypotheses> groups = new LinkedHashMap<>();
+        Map<String, DevelopingObservation> observations = new LinkedHashMap<>();
+        long visited = checkpoint == null ? 0 : checkpoint.visited();
+        if (checkpoint == null) pending.push(List.copyOf(initial));
+        else {
+            pending.addAll(checkpoint.pending());
+            for (var item : checkpoint.hypotheses()) {
+                var group = new DevelopingHypotheses(true);
+                group.pathCount = item.count(); group.best = item.best(); group.bestParent = item.parent();
+                groups.put(item.key(), group);
+            }
+            for (var item : checkpoint.observations()) observations.put(item.pattern() + ":" + item.expectedMove(), item);
+        }
+        var originalSink = observationSink.get();
+        if (compact) observationSink.set(candidate -> observations.putIfAbsent(
+                candidate.pattern() + ":" + candidate.expectedMove(), candidate));
+        try {
+            while (!pending.isEmpty()) {
+                JobLeaseGuard.checkActive();
+                if (durable && work.checkpointDue()) {
+                    work.store.write(key, snapshot(pending, groups, observations, visited), visited);
+                    if (!work.continueAfterCheckpoint())
+                        throw new AnalysisDeferredException("Calculation slice complete; durable Elliott checkpoint saved.");
+                }
+                List<Pivot> prefix = pending.pop();
+                expansion.prefixes++;
+                var extensions = new ArrayList<List<Pivot>>();
+                evaluateDevelopingPrefix(candles, prefix, allPivots, support, groups, children, subdivisions,
+                        primaryOnly, expansion, next -> { var path = new ArrayList<>(prefix); path.add(next); extensions.add(path); });
+                // Match the recursive traversal order exactly, including ranking ties.
+                for (int index = extensions.size() - 1; index >= 0; index--) pending.push(extensions.get(index));
+                visited++;
+            }
+            if (durable && (checkpoint == null || !checkpoint.pending().isEmpty()))
+                work.store.write(key, snapshot(pending, groups, observations, visited), visited);
+            combined.putAll(groups); // A unique 0/I seed owns each development key.
+        } finally {
+            if (compact) observationSink.set(originalSink);
+        }
+        if (compact) observations.values().forEach(originalSink);
+    }
+
+    private ScanCheckpoint snapshot(java.util.ArrayDeque<List<Pivot>> pending,
+            Map<String, DevelopingHypotheses> groups, Map<String, DevelopingObservation> observations, long visited) {
+        return new ScanCheckpoint(List.copyOf(pending), groups.entrySet().stream().map(entry ->
+                new HypothesisCheckpoint(entry.getKey(), entry.getValue().pathCount,
+                        entry.getValue().best, entry.getValue().bestParent)).toList(), List.copyOf(observations.values()), visited);
+    }
+
+    private void evaluateDevelopingPrefix(
             List<EnrichedCandle> candles,
             List<Pivot> prefix,
             List<Pivot> allPivots,
-            Map<String, PivotSupport> supportByPivot,
+            Map<Pivot, PivotSupport> supportByPivot,
             Map<String, DevelopingHypotheses> hypothesesByDevelopment,
             List<EnrichedCandle> lowerDegreeCandles,
-            Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache, boolean primaryOnly) {
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisionCache, boolean primaryOnly,
+            PivotExpansionIndex expansion, java.util.function.Consumer<Pivot> extension) {
+        JobLeaseGuard.checkActive();
+        var delta = observationDelta.get();
+        boolean observableEndpoint = delta == null || prefix.getLast().index() >= delta.earliestEndpoint();
+        if (prefix.size() == 9 && !observableEndpoint) return;
         if (prefix.size() >= 3 && prefix.size() <= 6) {
             DevelopingImpulse candidate = developingImpulse(
-                    candles, prefix, 0, lowerDegreeCandles, subdivisionCache, false, !primaryOnly).orElse(null);
+                    candles, prefix, 0, lowerDegreeCandles, subdivisionCache, false, !primaryOnly && observableEndpoint).orElse(null);
             if (candidate == null || candidate.stage().progressionOrder() != prefix.size() - 1) return;
             Pivot endpoint = prefix.getLast();
             int confirmation = endpoint.type() == PivotType.LOW
                     ? firstBullishReboundIndex(candles, endpoint) : firstBearishRejectionIndex(candles, endpoint);
-            if (isTimelyConfirmation(endpoint, confirmation)) {
+            if (observableEndpoint && isTimelyConfirmation(endpoint, confirmation)) {
                 retainDevelopingHypothesis(candidate, prefix, supportByPivot, hypothesesByDevelopment, primaryOnly);
             }
         } else if (prefix.size() > 6) {
@@ -2150,6 +2540,11 @@ public class ElliottWaveDetectionService {
             // A missed earlier trade trigger must not invalidate a later structural stage.
             if (prefix.size() == 9) {
                 if (!(bullish ? isBullishCorrectionComplete(prefix) : isBearishCorrectionComplete(prefix))) return;
+                if (primaryOnly && expansion.correctionRanking != null) {
+                    retainCorrectionRanking(candles, prefix, supportByPivot, lowerDegreeCandles,
+                            subdivisionCache, expansion.correctionRanking);
+                    return;
+                }
                 DevelopingImpulse correction = developingImpulse(
                         candles, prefix, 0, lowerDegreeCandles, subdivisionCache, true, !primaryOnly).orElse(null);
                 if (correction != null && correction.stage() == ElliottSignalStage.CORRECTION_END) {
@@ -2160,28 +2555,267 @@ public class ElliottWaveDetectionService {
             }
         }
         if (prefix.size() >= 9) return;
+        if (prefix.size() == 6 && confluenceCheckpoint.get() != null && observationSink.get() != null
+                && reuseCorrectionSuffixes()) {
+            retainCorrectionObservations(candles, prefix, allPivots, supportByPivot,
+                    lowerDegreeCandles, subdivisionCache, expansion);
+            return;
+        }
+        if (prefix.size() == 6 && primaryOnly && observationSink.get() == null
+                && reuseCorrectionSuffixes()) {
+            retainCorrectionSuffix(candles, prefix, allPivots, supportByPivot,
+                    hypothesesByDevelopment, lowerDegreeCandles, subdivisionCache, expansion);
+            return;
+        }
         Pivot last = prefix.getLast();
         PivotType required = opposite(last.type());
         java.util.NavigableSet<Integer> commonScales = commonScaleRanks(prefix, supportByPivot);
         if (commonScales.isEmpty()) return;
-        for (Pivot next : allPivots) {
-            if (next.type() != required || next.index() <= last.index()) continue;
-            PivotSupport nextSupport = supportByPivot.get(pivotKey(next));
+        for (Pivot next : expansion.following(required, commonScales, last.index())) {
+            if (prefix.size() == 8 && delta != null && next.index() < delta.earliestEndpoint()) continue;
+            if (!parentExtensionCanComplete(prefix, next)) continue;
+            PivotSupport nextSupport = supportByPivot.get(next);
             if (nextSupport == null || java.util.Collections.disjoint(
                     commonScales, nextSupport.scaleRanks())) continue;
-            List<Pivot> extended = new ArrayList<>(prefix);
-            extended.add(next);
-            extendDevelopingImpulse(candles, List.copyOf(extended), allPivots,
-                    supportByPivot, hypothesesByDevelopment, lowerDegreeCandles, subdivisionCache, primaryOnly);
+            extension.accept(next);
+        }
+    }
+
+    private record CompletedObservations(List<DevelopingObservation> observations) { }
+
+    boolean reuseCorrectionSuffixes() {
+        return true;
+    }
+
+    private record CorrectionSuffixKey(Pivot origin, Pivot five, List<Integer> scales) { }
+    private record CorrectionSuffix(int count, List<List<Pivot>> best) { }
+    private record CorrectionChoice(List<Pivot> suffix, int guideline, int coherence,
+                                    int confidence, long confirmation) { }
+    private static final class CorrectionRanking {
+        int count;
+        final CorrectionChoice[] best = new CorrectionChoice[8];
+
+        void accept(List<Pivot> path, boolean triangle, int coherence, int confidenceSum, long confirmation) {
+            count++;
+            int guideline = triangle ? 1 : 0;
+            List<Pivot> suffix = null;
+            for (int remainder = 0; remainder < best.length; remainder++) {
+                int confidence = (int) Math.round((confidenceSum + remainder) / 8.0);
+                var previous = best[remainder];
+                if (previous != null && !(guideline > previous.guideline()
+                        || guideline == previous.guideline() && (coherence > previous.coherence()
+                        || coherence == previous.coherence() && (confidence > previous.confidence()
+                        || confidence == previous.confidence() && confirmation < previous.confirmation())))) continue;
+                if (suffix == null) suffix = List.copyOf(path.subList(6, 9));
+                best[remainder] = new CorrectionChoice(suffix, guideline, coherence, confidence, confirmation);
+            }
+        }
+
+        CorrectionSuffix result() {
+            return new CorrectionSuffix(count, count == 0 ? List.of()
+                    : java.util.Arrays.stream(best).map(CorrectionChoice::suffix).toList());
+        }
+    }
+
+    private void retainCorrectionRanking(List<EnrichedCandle> candles, List<Pivot> path,
+            Map<Pivot, PivotSupport> support, List<EnrichedCandle> children,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisions,
+            CorrectionRanking ranking) {
+        Pivot endpoint = path.get(8);
+        int confirmation = endpoint.type() == PivotType.LOW
+                ? firstBullishReboundIndex(candles, endpoint) : firstBearishRejectionIndex(candles, endpoint);
+        if (!isTimelyConfirmation(endpoint, confirmation)) return;
+        Pivot five = path.get(5), waveA = path.get(6), waveB = path.get(7);
+        boolean flat = safeRatio(Math.abs(waveB.price() - waveA.price()), Math.abs(five.price() - waveA.price())) >= .90;
+        var first = flat ? cachedCorrectiveSubdivision(candles, children, five, waveA, "A", false, subdivisions)
+                : cachedMotiveSubdivision(candles, children, five, waveA, "A", subdivisions);
+        var second = cachedCorrectiveSubdivision(candles, children, waveA, waveB, "B", true, subdivisions);
+        var third = cachedMotiveSubdivision(candles, children, waveB, endpoint, "C", subdivisions);
+        if (first == null || second == null || third == null) return;
+        ranking.accept(path, second.structureLabel().toLowerCase(java.util.Locale.ROOT).contains("triangle"),
+                degreeCoherence(path, support), first.confidence() + second.confidence() + third.confidence(),
+                candles.get(confirmation).timestamp());
+    }
+    private record ObservationSuffixKey(Pivot origin, Pivot five, List<Integer> scales,
+                                        List<Integer> previousScales) { }
+
+    private void retainCorrectionObservations(List<EnrichedCandle> candles, List<Pivot> prefix,
+            List<Pivot> allPivots, Map<Pivot, PivotSupport> support, List<EnrichedCandle> children,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisions,
+            PivotExpansionIndex expansion) {
+        var scales = commonScaleRanks(prefix, support);
+        if (scales.isEmpty()) return;
+        var delta = observationDelta.get();
+        List<Integer> previousScales = delta != null
+                && delta.previousSeeds().contains(new Seed(prefix.get(0), prefix.get(1)))
+                ? List.copyOf(sharedScales(prefix, delta.previousSupport())) : List.of();
+        var key = new ObservationSuffixKey(prefix.getFirst(), prefix.getLast(), List.copyOf(scales), previousScales);
+        var suffixes = expansion.observationCorrections.get(key);
+        var sink = observationSink.get();
+        if (suffixes == null) {
+            Map<String, DevelopingObservation> found = new LinkedHashMap<>();
+            observationSink.set(candidate -> found.putIfAbsent(candidate.pattern() + ":" + candidate.expectedMove(),
+                    new DevelopingObservation(candidate.pattern(), candidate.expectedMove(), candidate.confirmationTimestamp(),
+                            List.copyOf(candidate.points().subList(6, 9)))));
+            try {
+                scanCorrectionSuffix(candles, prefix, allPivots, support, children, subdivisions,
+                        expansion, scales, new LinkedHashMap<>(), false);
+            } finally { observationSink.set(sink); }
+            suffixes = List.copyOf(found.values());
+            expansion.observationCorrections.put(key, suffixes);
+        } else expansion.suffixReuses++;
+        for (var suffix : suffixes) {
+            var points = new ArrayList<>(parentPoints(candles, prefix));
+            points.addAll(suffix.points());
+            sink.accept(new DevelopingObservation(suffix.pattern(), suffix.expectedMove(),
+                    suffix.confirmationTimestamp(), List.copyOf(points)));
+        }
+    }
+
+    private void retainCorrectionSuffix(List<EnrichedCandle> candles, List<Pivot> prefix,
+            List<Pivot> allPivots, Map<Pivot, PivotSupport> support,
+            Map<String, DevelopingHypotheses> groups, List<EnrichedCandle> children,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisions,
+            PivotExpansionIndex expansion) {
+        var scales = commonScaleRanks(prefix, support);
+        if (scales.isEmpty()) return;
+        var waveTwo = cachedStrictSubdivision(candles, children, prefix.get(1), prefix.get(2), "II", subdivisions);
+        int confidenceSum = cachedStrictSubdivision(candles, children, prefix.get(0), prefix.get(1), "I", subdivisions).confidence()
+                + waveTwo.confidence()
+                + cachedStrictSubdivision(candles, children, prefix.get(2), prefix.get(3), "III", subdivisions).confidence()
+                + cachedWaveFourSubdivision(candles, children, prefix.get(3), prefix.get(4), waveTwo, subdivisions).confidence()
+                + cachedStrictSubdivision(candles, children, prefix.get(4), prefix.get(5), "V", subdivisions).confidence();
+        var key = new CorrectionSuffixKey(prefix.getFirst(), prefix.getLast(), List.copyOf(scales));
+        var suffix = expansion.corrections.get(key);
+        if (suffix == null) {
+            var ranking = new CorrectionRanking();
+            expansion.correctionRanking = ranking;
+            try {
+                scanCorrectionSuffix(candles, prefix, allPivots, support, children, subdivisions,
+                        expansion, scales, new LinkedHashMap<>(), true);
+            } finally { expansion.correctionRanking = null; }
+            suffix = ranking.result();
+            expansion.corrections.put(key, suffix);
+        } else expansion.suffixReuses++;
+        if (suffix.count() == 0) return;
+        var parent = new ArrayList<>(prefix);
+        parent.addAll(suffix.best().get(confidenceSum % 8));
+        var candidate = developingImpulse(candles, parent, 0, children, subdivisions, true, false).orElseThrow();
+        retainDevelopingHypothesis(candidate, parent, support, groups, true);
+        groups.get(candidate.developmentKey()).pathCount += suffix.count() - 1;
+    }
+
+    private void scanCorrectionSuffix(List<EnrichedCandle> candles, List<Pivot> prefix,
+            List<Pivot> allPivots, Map<Pivot, PivotSupport> support, List<EnrichedCandle> children,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisions,
+            PivotExpansionIndex expansion, java.util.NavigableSet<Integer> scales,
+            Map<String, DevelopingHypotheses> corrections, boolean primaryOnly) {
+        var pending = new java.util.ArrayDeque<List<Pivot>>();
+        var starts = expansion.following(opposite(prefix.getLast().type()), scales, prefix.getLast().index());
+        for (int index = starts.size() - 1; index >= 0; index--) {
+            var next = starts.get(index);
+            if (!parentExtensionCanComplete(prefix, next)) continue;
+            var path = new ArrayList<>(prefix);
+            path.add(next);
+            pending.push(path);
+        }
+        while (!pending.isEmpty()) {
+            JobLeaseGuard.checkActive();
+            var path = pending.pop();
+            expansion.correctionPrefixes++;
+            var extensions = new ArrayList<List<Pivot>>();
+            evaluateDevelopingPrefix(candles, path, allPivots, support, corrections, children,
+                    subdivisions, primaryOnly, expansion, next -> {
+                        var extended = new ArrayList<>(path);
+                        extended.add(next);
+                        extensions.add(extended);
+                    });
+            for (int index = extensions.size() - 1; index >= 0; index--) pending.push(extensions.get(index));
+        }
+    }
+
+    /** Necessary endpoint rules already enforced by evaluation. Check them before
+     * allocating a continuation for every later pivot, especially historical C legs. */
+    private boolean parentExtensionCanComplete(List<Pivot> prefix, Pivot next) {
+        boolean bullish = prefix.getFirst().type() == PivotType.LOW;
+        Pivot origin = prefix.getFirst(), one = prefix.get(1);
+        if (prefix.size() == 2) return bullish
+                ? one.price() > origin.price() && next.price() > origin.price() && next.price() < one.price()
+                : one.price() < origin.price() && next.price() < origin.price() && next.price() > one.price();
+        if (prefix.size() == 3) return bullish ? next.price() > one.price() : next.price() < one.price();
+        if (prefix.size() == 4) return !detectionRules.requireWaveFourNoOverlap()
+                || (bullish ? next.price() > one.price() : next.price() < one.price());
+        if (prefix.size() == 5) return bullish
+                ? isBullishImpulseComplete(origin, one, prefix.get(2), prefix.get(3), prefix.get(4), next)
+                : isBearishImpulseComplete(origin, one, prefix.get(2), prefix.get(3), prefix.get(4), next);
+        Pivot five = prefix.get(5);
+        if (prefix.size() == 6) return next.index() - five.index() >= detectionRules.minimumLegSpanCandles()
+                && (bullish ? next.price() < five.price() : next.price() > five.price())
+                && (!detectionRules.requireWaveAWithinOrigin()
+                    || (bullish ? next.price() > origin.price() : next.price() < origin.price()));
+        Pivot a = prefix.get(6);
+        double aLength = bullish ? five.price() - a.price() : a.price() - five.price();
+        if (prefix.size() == 7) {
+            double recovery = bullish ? next.price() - a.price() : a.price() - next.price();
+            return recovery > 0 && safeRatio(recovery, aLength) <= detectionRules.waveBMaximumRecovery()
+                    && next.index() - a.index() >= detectionRules.minimumLegSpanCandles();
+        }
+        Pivot b = prefix.get(7);
+        double retracement = safeRatio(bullish ? five.price() - next.price() : next.price() - five.price(),
+                Math.abs(five.price() - origin.price()));
+        double cRatio = safeRatio(Math.abs(b.price() - next.price()), Math.abs(five.price() - a.price()));
+        return (bullish ? next.price() < b.price() : next.price() > b.price())
+                && retracement > 0 && retracement < detectionRules.correctionMaximumRetracement()
+                && cRatio > 0 && waveCToARatioAllowed(cRatio)
+                && next.index() - b.index() >= detectionRules.minimumLegSpanCandles();
+    }
+
+    /** Exact indexed equivalent of scanning every pivot at every node. Preserves encounter order. */
+    private static final class PivotExpansionIndex {
+        private record Key(PivotType type, List<Integer> scales) { }
+        private final List<Pivot> pivots;
+        private final Map<Pivot, PivotSupport> support;
+        private final Map<Key, List<Pivot>> lists = new java.util.HashMap<>();
+        private final Map<CorrectionSuffixKey, CorrectionSuffix> corrections = suffixCache();
+        private final Map<ObservationSuffixKey, List<DevelopingObservation>> observationCorrections = suffixCache();
+        private long prefixes;
+        private long correctionPrefixes;
+        private long suffixReuses;
+        private CorrectionRanking correctionRanking;
+        private static <Key, Value> Map<Key, Value> suffixCache() {
+            return new LinkedHashMap<>(128, .75f, true) {
+                @Override protected boolean removeEldestEntry(Map.Entry<Key, Value> entry) {
+                    return size() > 8192;
+                }
+            };
+        }
+        PivotExpansionIndex(List<Pivot> pivots, Map<Pivot, PivotSupport> support) {
+            this.pivots = pivots; this.support = support;
+        }
+        List<Pivot> following(PivotType type, java.util.NavigableSet<Integer> scales, int after) {
+            var key = new Key(type, List.copyOf(scales));
+            var candidates = lists.computeIfAbsent(key, ignored -> pivots.stream()
+                    .filter(p -> p.type() == type && !java.util.Collections.disjoint(scales, support.get(p).scaleRanks())).toList());
+            int low = 0, high = candidates.size();
+            while (low < high) {
+                int middle = (low + high) >>> 1;
+                if (candidates.get(middle).index() <= after) low = middle + 1; else high = middle;
+            }
+            return candidates.subList(low, candidates.size());
         }
     }
 
     private java.util.NavigableSet<Integer> commonScaleRanks(
             List<Pivot> pivots,
-            Map<String, PivotSupport> supportByPivot) {
+            Map<Pivot, PivotSupport> supportByPivot) {
+        return sharedScales(pivots, supportByPivot);
+    }
+
+    private static java.util.NavigableSet<Integer> sharedScales(
+            List<Pivot> pivots, Map<Pivot, PivotSupport> supportByPivot) {
         java.util.NavigableSet<Integer> common = null;
         for (Pivot pivot : pivots) {
-            PivotSupport support = supportByPivot.get(pivotKey(pivot));
+            PivotSupport support = supportByPivot.get(pivot);
             if (support == null) return new java.util.TreeSet<>();
             if (common == null) common = new java.util.TreeSet<>(support.scaleRanks());
             else common.retainAll(support.scaleRanks());
@@ -2213,22 +2847,38 @@ public class ElliottWaveDetectionService {
     private void retainDevelopingHypothesis(
             DevelopingImpulse candidate,
             List<Pivot> parent,
-            Map<String, PivotSupport> supportByPivot,
+            Map<Pivot, PivotSupport> supportByPivot,
             Map<String, DevelopingHypotheses> hypothesesByDevelopment, boolean primaryOnly) {
-        RankedDevelopingImpulse ranked = new RankedDevelopingImpulse(
-                candidate, degreeCoherence(parent, supportByPivot), parentPath(parent));
+        var sink = observationSink.get();
+        if (sink != null) {
+            var delta = observationDelta.get();
+            if (delta != null && delta.contains(candidate, parent)) return;
+            sink.accept(new DevelopingObservation(candidate.pattern(), candidate.expectedMove(),
+                    candidate.confirmationTimestamp(), candidate.points()));
+            return;
+        }
         DevelopingHypotheses group = hypothesesByDevelopment.computeIfAbsent(
                 candidate.developmentKey(), ignored -> new DevelopingHypotheses(primaryOnly));
         if (group.primaryOnly) {
-            // The primary API only returns the best path and the number of alternatives.
-            // Count every path without retaining every fully materialized alternative.
-            group.paths.put(ranked.parentPath(), null);
+            // Each seed pair is visited once, and its tree contains each chronological
+            // pivot path exactly once. Count paths without storing their string encodings.
+            group.pathCount++;
+            if (group.best != null) {
+                int stageOrder = Integer.compare(candidate.stage().progressionOrder(),
+                        group.best.candidate().stage().progressionOrder());
+                if (stageOrder < 0 || stageOrder == 0 && structuralGuidelineScore(candidate)
+                        < structuralGuidelineScore(group.best.candidate())) return;
+            }
+            RankedDevelopingImpulse ranked = new RankedDevelopingImpulse(
+                    candidate, degreeCoherence(parent, supportByPivot), null);
             if (group.best == null || rankedDevelopingComparator().compare(ranked, group.best) < 0) {
                 group.best = ranked;
-                group.bestParent = parent;
+                group.bestParent = List.copyOf(parent);
             }
             return;
         }
+        RankedDevelopingImpulse ranked = new RankedDevelopingImpulse(
+                candidate, degreeCoherence(parent, supportByPivot), parentPath(parent));
         group.paths.merge(ranked.parentPath(), ranked,
                 (old, replacement) -> rankedDevelopingComparator().compare(replacement, old) < 0 ? replacement : old);
         // Preserve structurally different hypotheses; presentation chooses its own limit.
@@ -2255,12 +2905,12 @@ public class ElliottWaveDetectionService {
         return triangle || alternation ? 1 : 0;
     }
 
-    private int degreeCoherence(List<Pivot> parent, Map<String, PivotSupport> supportByPivot) {
+    private int degreeCoherence(List<Pivot> parent, Map<Pivot, PivotSupport> supportByPivot) {
         java.util.Set<Integer> common = null;
         int persistence = 0;
         Map<Integer, Integer> coverage = new java.util.HashMap<>();
         for (Pivot pivot : parent) {
-            PivotSupport support = supportByPivot.get(pivotKey(pivot));
+            PivotSupport support = supportByPivot.get(pivot);
             if (support == null) continue;
             persistence += support.scaleRanks().size();
             for (int rank : support.scaleRanks()) coverage.merge(rank, 1, Integer::sum);
@@ -2294,14 +2944,14 @@ public class ElliottWaveDetectionService {
             List<Pivot> pivots,
             int start,
             List<EnrichedCandle> lowerDegreeCandles,
-            Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache) {
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisionCache) {
         return developingImpulse(candles, pivots, start, lowerDegreeCandles, subdivisionCache, true);
     }
 
     private java.util.Optional<DevelopingImpulse> developingImpulse(
             List<EnrichedCandle> candles, List<Pivot> pivots, int start,
             List<EnrichedCandle> lowerDegreeCandles,
-            Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisionCache,
             boolean requireConfirmation) {
         return developingImpulse(candles, pivots, start, lowerDegreeCandles, subdivisionCache,
                 requireConfirmation, true);
@@ -2310,7 +2960,7 @@ public class ElliottWaveDetectionService {
     private java.util.Optional<DevelopingImpulse> developingImpulse(
             List<EnrichedCandle> candles, List<Pivot> pivots, int start,
             List<EnrichedCandle> lowerDegreeCandles,
-            Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisionCache,
             boolean requireConfirmation, boolean materialize) {
         Pivot wave0 = pivots.get(start);
         Pivot wave1 = pivots.get(start + 1);
@@ -2323,6 +2973,20 @@ public class ElliottWaveDetectionService {
         if (bullish
                 ? !(wave1.price() > wave0.price() && wave2.price() > wave0.price() && wave2.price() < wave1.price())
                 : !(wave1.price() < wave0.price() && wave2.price() < wave0.price() && wave2.price() > wave1.price())) {
+            return java.util.Optional.empty();
+        }
+
+        // The caller requests this exact stage. Reject its fixed parent geometry
+        // before searching any child degree, including long daily windows.
+        if (start + 3 < pivots.size() && !(bullish
+                ? pivots.get(start + 3).price() > wave1.price()
+                : pivots.get(start + 3).price() < wave1.price())) return java.util.Optional.empty();
+        if (start + 4 < pivots.size() && detectionRules.requireWaveFourNoOverlap() && !(bullish
+                ? pivots.get(start + 4).price() > wave1.price()
+                : pivots.get(start + 4).price() < wave1.price())) return java.util.Optional.empty();
+        if (start + 5 < pivots.size() && !(bullish
+                ? isBullishImpulseComplete(wave0, wave1, wave2, pivots.get(start + 3), pivots.get(start + 4), pivots.get(start + 5))
+                : isBearishImpulseComplete(wave0, wave1, wave2, pivots.get(start + 3), pivots.get(start + 4), pivots.get(start + 5)))) {
             return java.util.Optional.empty();
         }
 
@@ -2422,9 +3086,28 @@ public class ElliottWaveDetectionService {
         if (requireConfirmation && !isTimelyConfirmation(endpoint, confirmationIndex)) return java.util.Optional.empty();
         if (confirmationIndex < 0) confirmationIndex = endpoint.index();
 
-        List<Pivot> parent = List.copyOf(pivots.subList(start, start + endpointOffset + 1));
         int confidence = (int) Math.round(subdivisions.stream()
                 .mapToInt(ElliottSubdivision::confidence).average().orElse(0.0));
+        // Ranking and alert gates must see the same score, so apply this before any early return.
+        double waveFourRoom = stage == ElliottSignalStage.WAVE_III_END
+                ? ElliottTargetRules.waveFourRoom(wave1.price(), wave2.price(), pivots.get(start + 3).price())
+                : Double.NaN;
+        int compressedWaveFourPenalty = compressedWaveFourPenalty(waveFourRoom);
+        confidence = Math.max(0, confidence - compressedWaveFourPenalty);
+        if (!materialize) {
+            // Enumeration needs only the ranking fields; public results are fully built
+            // after the winner is known. This does not omit any admissible path.
+            boolean triangle = stage == ElliottSignalStage.CORRECTION_END
+                    ? subdivisions.get(6).structureLabel().toLowerCase(java.util.Locale.ROOT).contains("triangle")
+                    : subdivisions.stream().anyMatch(s -> s.structureLabel().toLowerCase(java.util.Locale.ROOT).contains("triangle"));
+            String key = (bullish ? "BULLISH" : "BEARISH") + ':'
+                    + candles.get(wave0.index()).timestamp() + ':' + candles.get(wave1.index()).timestamp();
+            return java.util.Optional.of(new DevelopingImpulse(key, bullish ? "BULLISH" : "BEARISH",
+                    stage, null, null, candles.get(confirmationIndex).timestamp(),
+                    candles.get(confirmationIndex).close(), endpoint.price(), null, null, null,
+                    triangle ? "triangle" : null, confidence, List.of(), List.of(), null));
+        }
+        List<Pivot> parent = List.copyOf(pivots.subList(start, start + endpointOffset + 1));
         String forecast;
         TradeSignal expectedMove;
         CandlePattern pattern;
@@ -2440,7 +3123,9 @@ public class ElliottWaveDetectionService {
                 expectedMove = bullish ? TradeSignal.SELL : TradeSignal.BUY;
                 pattern = bullish ? CandlePattern.ELLIOTT_BULLISH_WAVE_III_END
                         : CandlePattern.ELLIOTT_BEARISH_WAVE_III_END;
-                forecast = "Projected Wave IV (38.2% retracement of Wave III)";
+                forecast = compressedWaveFourPenalty > 0
+                        ? "Projected compressed Wave IV (must stay outside Wave I territory)"
+                        : "Projected Wave IV (38.2% retracement of Wave III)";
             }
             case WAVE_IV_END -> {
                 Pivot wave4 = parent.get(4);
@@ -2480,6 +3165,16 @@ public class ElliottWaveDetectionService {
                 + ':' + candles.get(wave0.index()).timestamp()
                 + ':' + candles.get(wave1.index()).timestamp();
         List<ElliottWavePoint> points = parentPoints(candles, parent);
+        if (observationSink.get() != null) {
+            if (stage == ElliottSignalStage.WAVE_V_END && isTruncatedWaveFive(parent.get(3), parent.get(5))) {
+                pattern = bullish ? CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END
+                        : CandlePattern.ELLIOTT_BEARISH_TRUNCATED_WAVE_V_END;
+            }
+            return java.util.Optional.of(new DevelopingImpulse(developmentKey,
+                    bullish ? "BULLISH" : "BEARISH", stage, pattern, expectedMove,
+                    candles.get(confirmationIndex).timestamp(), candles.get(confirmationIndex).close(),
+                    endpoint.price(), null, null, null, null, confidence, points, List.of(), null));
+        }
         String correctionType = subdivisions.stream()
                 .filter(subdivision -> subdivision.structureLabel().contains("Correct")
                         || subdivision.structureLabel().contains("triangle")
@@ -2507,9 +3202,18 @@ public class ElliottWaveDetectionService {
                     + subdivisions.get(index).structureLabel() + " ("
                     + subdivisions.get(index).confidence() + "/100).");
         }
+        if (compressedWaveFourPenalty > 0) {
+            evidence.add("Compressed Wave IV: only " + formatPercentage(waveFourRoom)
+                    + " of Wave III remains before Wave I territory at "
+                    + ElliottTargetRules.formatPrice(wave1.price()) + ", less than the "
+                    + formatPercentage(detectionRules.waveFourCommonMinRetracement())
+                    + " common retracement. The count stays valid until Wave I is overlapped; "
+                    + "confidence reduced by " + compressedWaveFourPenalty + " points.");
+        }
         // Ranking uses stage, guideline evidence, confidence and confirmation time.
         // Build the expensive structure and trade preview only for the winning path.
-        ElliottWaveStructure completedStructure = materialize && (stage == ElliottSignalStage.WAVE_V_END
+        ElliottWaveStructure completedStructure = materialize
+                && (stage == ElliottSignalStage.WAVE_V_END
                 || stage == ElliottSignalStage.CORRECTION_END)
                 ? toStructure(bullish ? "BULLISH" : "BEARISH",
                         stage == ElliottSignalStage.CORRECTION_END, candles, parent,
@@ -2517,14 +3221,14 @@ public class ElliottWaveDetectionService {
                                 candles, parent, bullish ? "BULLISH" : "BEARISH",
                                 stage == ElliottSignalStage.CORRECTION_END))
                 : null;
-        if (stage == ElliottSignalStage.WAVE_V_END && completedStructure != null
-                && completedStructure.impulseVariant() == ImpulseVariant.TRUNCATED_FIFTH) {
+        if (stage == ElliottSignalStage.WAVE_V_END && isTruncatedWaveFive(parent.get(3), parent.get(5))) {
             pattern = bullish ? CandlePattern.ELLIOTT_BULLISH_TRUNCATED_WAVE_V_END
                     : CandlePattern.ELLIOTT_BEARISH_TRUNCATED_WAVE_V_END;
         }
         // Preview and persisted plans share structural/target rules. Actual interval risk qualification
         // is repeated at publication using the completed candle cache for that interval.
-        var preview = !materialize ? java.util.Optional.<ElliottTradePlanPolicy.TradePlan>empty()
+        var preview = !materialize
+                ? java.util.Optional.<ElliottTradePlanPolicy.TradePlan>empty()
                 : ElliottTradePlanPolicy.calculate(stage, bullish ? "BULLISH" : "BEARISH", expectedMove,
                 candles.get(confirmationIndex).close(), points, developingPreviewAtr(candles, confirmationIndex),
                 org.example.stockwatch247.model.enums.TimeInterval.DAILY);
@@ -2551,13 +3255,9 @@ public class ElliottWaveDetectionService {
             Pivot start,
             Pivot end,
             String label,
-            Map<String, java.util.Optional<ElliottSubdivision>> cache) {
-        String key = "STRICT:" + label + ':'
-                + candles.get(start.index()).timestamp() + ':' + start.price() + ':'
-                + candles.get(end.index()).timestamp() + ':' + end.price();
-        return cache.computeIfAbsent(key, ignored -> java.util.Optional.ofNullable(
-                bestStrictSubdivision(candles, lowerDegreeCandles, start, end, label)))
-                .orElse(null);
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
+        return selectedSubdivision("STRICT", label, candles, start, end, cache,
+                () -> bestStrictSubdivision(candles, lowerDegreeCandles, start, end, label));
     }
 
     private ElliottSubdivision cachedMotiveSubdivision(
@@ -2566,14 +3266,9 @@ public class ElliottWaveDetectionService {
             Pivot start,
             Pivot end,
             String label,
-            Map<String, java.util.Optional<ElliottSubdivision>> cache) {
-        String key = "MOTIVE:" + label + ':'
-                + candles.get(start.index()).timestamp() + ':' + start.price() + ':'
-                + candles.get(end.index()).timestamp() + ':' + end.price();
-        return cache.computeIfAbsent(key, ignored -> java.util.Optional.ofNullable(
-                bestSubdivisionByMode(
-                        candles, lowerDegreeCandles, start, end, label, true, false)))
-                .orElse(null);
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
+        return selectedSubdivision("MOTIVE", label, candles, start, end, cache,
+                () -> bestSubdivisionByMode(candles, lowerDegreeCandles, start, end, label, true, false));
     }
 
     private ElliottSubdivision cachedCorrectiveSubdivision(
@@ -2583,14 +3278,10 @@ public class ElliottWaveDetectionService {
             Pivot end,
             String label,
             boolean triangleAllowed,
-            Map<String, java.util.Optional<ElliottSubdivision>> cache) {
-        String key = "CORRECTIVE:" + label + ':' + triangleAllowed + ':'
-                + candles.get(start.index()).timestamp() + ':' + start.price() + ':'
-                + candles.get(end.index()).timestamp() + ':' + end.price();
-        return cache.computeIfAbsent(key, ignored -> java.util.Optional.ofNullable(
-                bestSubdivisionByMode(candles, lowerDegreeCandles, start, end,
-                        triangleAllowed ? "B" : "II", false, true)))
-                .orElse(null);
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
+        return selectedSubdivision("CORRECTIVE", triangleAllowed ? "B" : "II", candles,
+                start, end, cache, () -> bestSubdivisionByMode(candles, lowerDegreeCandles, start, end,
+                        triangleAllowed ? "B" : "II", false, true));
     }
 
     private ElliottSubdivision bestSubdivisionByMode(
@@ -2604,7 +3295,7 @@ public class ElliottWaveDetectionService {
         if (start == null || end == null || start.index() >= end.index()) return null;
         return findStrictSubdivisions(
                         subdivisionCandles(candles, lowerDegreeCandles, start, end),
-                        label, start.price(), end.price()).stream()
+                        label, start.price(), end.price(), true, motive ? "MOTIVE" : "CORRECTIVE").stream()
                 .filter(option -> motive == option.structureLabel().startsWith("Motive")
                         || corrective && !option.structureLabel().startsWith("Motive"))
                 .max(Comparator.comparingInt(ElliottSubdivision::confidence))
@@ -2617,13 +3308,31 @@ public class ElliottWaveDetectionService {
             Pivot start,
             Pivot end,
             ElliottSubdivision waveTwo,
-            Map<String, java.util.Optional<ElliottSubdivision>> cache) {
-        String key = "FOUR:" + waveTwo.structureLabel() + ':'
-                + candles.get(start.index()).timestamp() + ':' + start.price() + ':'
-                + candles.get(end.index()).timestamp() + ':' + end.price();
-        return cache.computeIfAbsent(key, ignored -> java.util.Optional.ofNullable(
-                bestWaveFourSubdivision(candles, lowerDegreeCandles, start, end, waveTwo)))
-                .orElse(null);
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
+        return selectedSubdivision("FOUR", waveTwo.structureLabel(), candles, start, end, cache,
+                () -> bestWaveFourSubdivision(candles, lowerDegreeCandles, start, end, waveTwo));
+    }
+
+    private ElliottSubdivision selectedSubdivision(String mode, String label, List<EnrichedCandle> candles,
+            Pivot start, Pivot end,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache,
+            java.util.function.Supplier<ElliottSubdivision> calculation) {
+        var key = new SubdivisionSelectionKey(selectionMode(mode), label,
+                candles.get(start.index()).timestamp(), start.price(), candles.get(end.index()).timestamp(), end.price());
+        return cache.computeIfAbsent(key, ignored -> java.util.Optional.ofNullable(calculation.get())).orElse(null);
+    }
+
+    private String selectionMode(String mode) {
+        if (!rankingOnly.get()) return mode;
+        // These keys are looked up for every parent hypothesis. Reuse the fixed
+        // strings instead of allocating and hashing the same concatenation.
+        return switch (mode) {
+            case "STRICT" -> "RANK:STRICT";
+            case "MOTIVE" -> "RANK:MOTIVE";
+            case "CORRECTIVE" -> "RANK:CORRECTIVE";
+            case "FOUR" -> "RANK:FOUR";
+            default -> throw new IllegalArgumentException("Unknown subdivision mode: " + mode);
+        };
     }
 
     private ElliottSubdivision bestStrictSubdivision(
@@ -2640,7 +3349,7 @@ public class ElliottWaveDetectionService {
         if (start == null || end == null || start.index() >= end.index()) return null;
         List<EnrichedCandle> leg = subdivisionCandles(
                 candles, lowerDegreeCandles, start, end);
-        return findStrictSubdivisions(leg, label, start.price(), end.price()).stream()
+        return findStrictSubdivisions(leg, label, start.price(), end.price(), true, "ANY").stream()
                 .max(Comparator.comparingInt(ElliottSubdivision::confidence))
                 .orElse(null);
     }
@@ -2662,7 +3371,7 @@ public class ElliottWaveDetectionService {
         if (start == null || end == null || start.index() >= end.index()) return null;
         List<ElliottSubdivision> options = findStrictSubdivisions(
                 subdivisionCandles(candles, lowerDegreeCandles, start, end),
-                "IV", start.price(), end.price());
+                "IV", start.price(), end.price(), true);
         ElliottSubdivision best = options.stream()
                 .max(Comparator.comparingInt(option ->
                         option.confidence() + waveFourAlternationBonus(waveTwo, option)))
@@ -2689,10 +3398,8 @@ public class ElliottWaveDetectionService {
         long endExclusive = end.index() + 1 < parentCandles.size()
                 ? parentCandles.get(end.index() + 1).timestamp()
                 : Long.MAX_VALUE;
-        return lowerDegreeCandles.stream()
-                .filter(candle -> candle.timestamp() >= startTimestamp)
-                .filter(candle -> candle.timestamp() < endExclusive)
-                .toList();
+        var children = ValidatedCandleWindow.latest(lowerDegreeCandles);
+        return children.subList(children.lowerBound(startTimestamp), children.lowerBound(endExclusive));
     }
 
     private int waveFourAlternationBonus(ElliottSubdivision waveTwo, ElliottSubdivision waveFour) {
@@ -2717,7 +3424,7 @@ public class ElliottWaveDetectionService {
                 && currentStage != ElliottSignalStage.WAVE_IV_END) {
             return java.util.Optional.empty();
         }
-        List<EnrichedCandle> candles = PatternCandleIntegrity.enriched(recentCandles);
+        List<EnrichedCandle> candles = ValidatedCandleWindow.latest(recentCandles);
         ElliottWavePoint startPoint = parentPoints.getLast();
         int startIndex = indexAtTimestamp(candles, startPoint.timestamp());
         if (startIndex < 0) return java.util.Optional.empty();
@@ -2732,6 +3439,7 @@ public class ElliottWaveDetectionService {
                         - indexAtTimestamp(candles, parentPoints.get(0).timestamp()));
         int minimumComparableSpan = Math.max(3, waveOneSpan / 2);
         for (double sensitivity : detectionRules.pivotSensitivities()) {
+            JobLeaseGuard.checkActive();
             for (Pivot endpoint : findPivots(candles, sensitivity)) {
                 if (endpoint.type() != endpointType
                         || endpoint.index() - startIndex < minimumComparableSpan
@@ -2781,6 +3489,7 @@ public class ElliottWaveDetectionService {
         DevelopingInvalidation best = null;
         String correctionLabel = currentStage == ElliottSignalStage.WAVE_II_END ? "II" : "IV";
         for (double sensitivity : detectionRules.pivotSensitivities()) {
+            JobLeaseGuard.checkActive();
             for (Pivot endpoint : findPivots(candles, sensitivity)) {
                 if (endpoint.type() != endpointType || endpoint.index() <= storedEndIndex
                         || !directedMove(start, endpoint, correctionRises)) continue;
@@ -2813,17 +3522,25 @@ public class ElliottWaveDetectionService {
             String developmentKey,
             ElliottSignalStage currentStage) {
         if (developmentKey == null || currentStage == null) return false;
-        for (DevelopingImpulse hypothesis : findDevelopingImpulseHypotheses(recentCandles)) {
-            if (!developmentKey.equals(hypothesis.developmentKey())
-                    || hypothesis.stage().progressionOrder() < currentStage.progressionOrder()) continue;
-            if (hypothesis.stage().progressionOrder() > currentStage.progressionOrder()
-                    || currentStage != ElliottSignalStage.WAVE_II_END
-                    && currentStage != ElliottSignalStage.WAVE_IV_END
-                    || findActionaryStructureMismatch(recentCandles, currentStage, hypothesis.points()).isEmpty()) {
-                return true;
-            }
+        // The primary result is itself an admissible hypothesis. Usually it proves
+        // viability without materializing every alternative again for each open event.
+        for (DevelopingImpulse hypothesis : findDevelopingImpulses(recentCandles)) {
+            if (developmentKey.equals(hypothesis.developmentKey())
+                    && viableAtStage(recentCandles, hypothesis, currentStage)) return true;
+        }
+        for (DevelopingImpulse hypothesis : withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
+                recentCandles, null, new DevelopingScanContext(), false, developmentKey))) {
+            if (viableAtStage(recentCandles, hypothesis, currentStage)) return true;
         }
         return false;
+    }
+
+    private boolean viableAtStage(List<EnrichedCandle> candles, DevelopingImpulse hypothesis,
+                                  ElliottSignalStage currentStage) {
+        if (hypothesis.stage().progressionOrder() < currentStage.progressionOrder()) return false;
+        return hypothesis.stage().progressionOrder() > currentStage.progressionOrder()
+                || currentStage != ElliottSignalStage.WAVE_II_END && currentStage != ElliottSignalStage.WAVE_IV_END
+                || findActionaryStructureMismatch(candles, currentStage, hypothesis.points()).isEmpty();
     }
 
     private List<ElliottWavePoint> parentPoints(List<EnrichedCandle> candles, List<Pivot> pivots) {
@@ -3003,8 +3720,19 @@ public class ElliottWaveDetectionService {
         Pivot end = closestBoundaryPivot(candles, endPrice, opposite(startType), false);
         if (start == null || end == null || start.index() >= end.index()) return;
         List<Pivot> interior = pivotsStrictlyBetween(detected, start, end);
+        // Both legal motive forms keep every selected pivot beyond the origin.
+        // Grouping also keeps all skipped pivots inside those legs. Therefore a
+        // breach of the origin anywhere in the interior cannot be repaired by
+        // enumerating a different four-pivot selection.
+        double magnitude = Math.max(Math.abs(start.price()), Math.abs(end.price()));
+        double extreme = rising ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY;
+        for (Pivot pivot : interior) {
+            magnitude = Math.max(magnitude, Math.abs(pivot.price()));
+            extreme = rising ? Math.min(extreme, pivot.price()) : Math.max(extreme, pivot.price());
+        }
+        if (rising ? extreme < start.price() - magnitude * 1e-9 : extreme > start.price() + magnitude * 1e-9) return;
         for (List<Pivot> selected : selectDegreePivots(
-                interior, interiorTypes, start, end, Integer.MAX_VALUE)) {
+                interior, interiorTypes, start, end, Integer.MAX_VALUE, true, diagonalAllowed)) {
             List<Pivot> sequence = List.of(start, selected.get(0), selected.get(1),
                     selected.get(2), selected.get(3), end);
             if (!isScaleCoherentGrouping(interior, sequence)) continue;
@@ -3051,11 +3779,46 @@ public class ElliottWaveDetectionService {
             Pivot start,
             Pivot end,
             int maximumSelections) {
+        return selectDegreePivots(interior, expectedTypes, start, end, maximumSelections, false, false);
+    }
+
+    private List<List<Pivot>> selectDegreePivots(List<Pivot> interior, PivotType[] expectedTypes,
+            Pivot start, Pivot end, int maximumSelections, boolean motive, boolean diagonalAllowed) {
         if (interior.size() < expectedTypes.length) return List.of();
         List<List<Pivot>> selections = new ArrayList<>();
+        var containment = new PivotContainment(interior);
+        byte[][] reachable = interior.size() > 24
+                ? new byte[expectedTypes.length][interior.size()] : null;
         selectDegreePivots(interior, expectedTypes, start, end, 0,
-                new ArrayList<>(), selections, maximumSelections);
+                new ArrayList<>(), selections, maximumSelections, containment, reachable, motive, diagonalAllowed);
         return List.copyOf(selections);
+    }
+
+    /** Check only suffixes reached by a valid prefix. Eagerly solving every suffix
+     * made long child windows quadratic even when the origin could reach no pivot.
+     * 0 = unknown, 1 = unreachable, 2 = reachable; eviction is unnecessary within a selection. */
+    private boolean canReachSelectionEnd(List<Pivot> interior, PivotType[] types, Pivot end,
+            PivotContainment containment, byte[][] reachable, int position, int index) {
+        if (reachable[position][index] != 0) return reachable[position][index] == 2;
+        Pivot from = interior.get(index);
+        boolean found = false;
+        if (position == types.length - 1) {
+            found = end.index() - from.index() >= detectionRules.minimumLegSpanCandles()
+                    && containment.contains(from, end);
+        } else {
+            for (int next : containment.following(from)) {
+                if ((++containment.cancellationSteps & 4095) == 0) containment.cancellation.run();
+                Pivot to = interior.get(next);
+                if (to.type() == types[position + 1]
+                        && to.index() - from.index() >= detectionRules.minimumLegSpanCandles()
+                        && canReachSelectionEnd(interior, types, end, containment, reachable, position + 1, next)) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        reachable[position][index] = (byte) (found ? 2 : 1);
+        return found;
     }
 
     private void selectDegreePivots(
@@ -3066,30 +3829,153 @@ public class ElliottWaveDetectionService {
             int fromIndex,
             List<Pivot> selected,
             List<List<Pivot>> selections,
-            int maximumSelections) {
+            int maximumSelections, PivotContainment containment, byte[][] reachable,
+            boolean motive, boolean diagonalAllowed) {
         if (selections.size() >= maximumSelections) return;
         int position = selected.size();
         if (position == expectedTypes.length) {
             if (end.index() - selected.getLast().index()
                     >= detectionRules.minimumLegSpanCandles()
-                    && isScaleCoherentLeg(interior, selected.getLast(), end)) {
+                    && containment.contains(selected.getLast(), end)) {
                 selections.add(List.copyOf(selected));
             }
             return;
         }
         int remaining = expectedTypes.length - position - 1;
         Pivot previous = selected.isEmpty() ? start : selected.getLast();
-        for (int index = fromIndex; index < interior.size() - remaining; index++) {
+        for (int index : containment.following(previous)) {
+            if (index < fromIndex) continue;
+            if (index >= interior.size() - remaining) break;
+            if ((++containment.cancellationSteps & 4095) == 0) containment.cancellation.run();
             Pivot candidate = interior.get(index);
             if (candidate.type() != expectedTypes[position]
                     || candidate.index() - previous.index()
-                    < detectionRules.minimumLegSpanCandles()
-                    || !isScaleCoherentLeg(interior, previous, candidate)) continue;
+                    < detectionRules.minimumLegSpanCandles()) continue;
+            if (motive && !motivePrefixCanComplete(start, end, selected, candidate, diagonalAllowed)) continue;
+            if (reachable != null && !canReachSelectionEnd(
+                    interior, expectedTypes, end, containment, reachable, position, index)) continue;
             selected.add(candidate);
             selectDegreePivots(interior, expectedTypes, start, end, index + 1,
-                    selected, selections, maximumSelections);
+                    selected, selections, maximumSelections, containment, reachable, motive, diagonalAllowed);
             selected.removeLast();
             if (selections.size() >= maximumSelections) return;
+        }
+    }
+
+    private boolean motivePrefixCanComplete(Pivot start, Pivot end, List<Pivot> selected,
+                                            Pivot candidate, boolean diagonalAllowed) {
+        boolean rising = end.price() > start.price();
+        int position = selected.size();
+        Pivot one = position == 0 ? candidate : selected.getFirst();
+        // Standard IV must lie beyond I and before V. A diagonal instead requires
+        // II before both IV (which overlaps I) and V. If neither interval exists,
+        // adding more pivots cannot repair this prefix.
+        boolean standardPossible = rising ? end.price() > one.price() : end.price() < one.price();
+        boolean diagonalPossible = diagonalAllowed;
+        if (position > 0 && diagonalPossible) {
+            Pivot two = position == 1 ? candidate : selected.get(1);
+            diagonalPossible = rising
+                    ? two.price() < one.price() && two.price() < end.price()
+                    : two.price() > one.price() && two.price() > end.price();
+        }
+        if (!standardPossible && !diagonalPossible) return false;
+        // Conditions shared by both final motive validators, evaluated as soon as fixed.
+        if (position < 2) return rising ? candidate.price() > start.price() : candidate.price() < start.price();
+        if (position == 2) return rising ? candidate.price() > selected.getFirst().price()
+                : candidate.price() < selected.getFirst().price();
+        var sequence = List.of(start, selected.get(0), selected.get(1), selected.get(2), candidate, end);
+        return passesFractalMotiveHardRules(sequence, rising)
+                || diagonalAllowed && isDiagonalSubdivision(sequence, rising);
+    }
+
+    /** Range extrema replace repeatedly walking the same interior pivots during enumeration. */
+    private static final class PivotContainment {
+        private final Map<Pivot, int[]> following = new java.util.HashMap<>();
+        private int retainedEdges;
+
+        int[] following(Pivot from) {
+            int[] saved = following.get(from);
+            if (saved != null) return saved;
+            int[] candidates = new int[pivots.size() - lowerBound(from.index() + 1)];
+            int count = 0;
+            double low = Double.POSITIVE_INFINITY;
+            double high = Double.NEGATIVE_INFINITY;
+            double maximumTolerance = Math.max(maximumAbsolutePrice, Math.abs(from.price())) * 1e-9;
+            for (int index = lowerBound(from.index() + 1); index < pivots.size(); index++) {
+                if ((++cancellationSteps & 4095) == 0) cancellation.run();
+                Pivot to = pivots.get(index);
+                double tolerance = Math.max(Math.abs(from.price()), Math.abs(to.price())) * 1e-9;
+                boolean contains = low >= Math.min(from.price(), to.price()) - tolerance
+                        && high <= Math.max(from.price(), to.price()) + tolerance;
+                if (low < from.price() - maximumTolerance && high > from.price() + maximumTolerance) break;
+                low = Math.min(low, to.price());
+                high = Math.max(high, to.price());
+                if (contains) candidates[count++] = index;
+            }
+            int[] result = java.util.Arrays.copyOf(candidates, count);
+            if (retainedEdges + count <= 1000000) {
+                following.put(from, result);
+                retainedEdges += count;
+            }
+            return result;
+        }
+        private final Runnable cancellation = JobLeaseGuard.cancellationCheck();
+        private int cancellationSteps;
+        private final List<Pivot> pivots;
+        private double[][] lows, highs;
+        private final double[] suffixLows, suffixHighs;
+        private final double maximumAbsolutePrice;
+        PivotContainment(List<Pivot> pivots) {
+            this.pivots = pivots;
+            int size = pivots.size();
+            double maximum = 0;
+            for (Pivot pivot : pivots) maximum = Math.max(maximum, Math.abs(pivot.price()));
+            maximumAbsolutePrice = maximum;
+            suffixLows = new double[size + 1]; suffixHighs = new double[size + 1];
+            suffixLows[size] = Double.POSITIVE_INFINITY; suffixHighs[size] = Double.NEGATIVE_INFINITY;
+            for (int i = size - 1; i >= 0; i--) {
+                suffixLows[i] = Math.min(pivots.get(i).price(), suffixLows[i+1]);
+                suffixHighs[i] = Math.max(pivots.get(i).price(), suffixHighs[i+1]);
+            }
+        }
+        private void prepareRanges() {
+            if (lows != null) return;
+            int size = pivots.size();
+            int levels = size == 0 ? 1 : 32 - Integer.numberOfLeadingZeros(size);
+            lows = new double[levels][size]; highs = new double[levels][size];
+            for (int i = 0; i < size; i++) lows[0][i] = highs[0][i] = pivots.get(i).price();
+            for (int k = 1; k < levels; k++) for (int i = 0; i + (1 << k) <= size; i++) {
+                lows[k][i] = Math.min(lows[k-1][i], lows[k-1][i + (1 << (k-1))]);
+                highs[k][i] = Math.max(highs[k-1][i], highs[k-1][i + (1 << (k-1))]);
+            }
+        }
+        private int lowerBound(int index) {
+            return pivotLowerBound(pivots, index);
+        }
+        /** Once intervening prices straddle the start, no later endpoint can
+         * enclose them with that start. Use the largest possible tolerance so
+         * even a later endpoint with a greater magnitude cannot repair the leg. */
+        boolean blocksAllLaterEndpoints(Pivot from, Pivot to) {
+            int first = lowerBound(from.index() + 1), end = lowerBound(to.index());
+            if (first == end) return false;
+            prepareRanges();
+            int level = 31 - Integer.numberOfLeadingZeros(end - first);
+            int last = end - (1 << level);
+            double tolerance = Math.max(maximumAbsolutePrice, Math.abs(from.price())) * 1.0e-9;
+            return Math.min(lows[level][first], lows[level][last]) < from.price() - tolerance
+                    && Math.max(highs[level][first], highs[level][last]) > from.price() + tolerance;
+        }
+        boolean contains(Pivot from, Pivot to) {
+            int first = lowerBound(from.index() + 1), end = lowerBound(to.index());
+            if (first == end) return true;
+            double tolerance = Math.max(Math.abs(from.price()), Math.abs(to.price())) * 1.0e-9;
+            if (end == pivots.size()) return suffixLows[first] >= Math.min(from.price(), to.price()) - tolerance
+                    && suffixHighs[first] <= Math.max(from.price(), to.price()) + tolerance;
+            prepareRanges();
+            int level = 31 - Integer.numberOfLeadingZeros(end - first);
+            int last = end - (1 << level);
+            return Math.min(lows[level][first], lows[level][last]) >= Math.min(from.price(), to.price()) - tolerance
+                    && Math.max(highs[level][first], highs[level][last]) <= Math.max(from.price(), to.price()) + tolerance;
         }
     }
 
@@ -3109,22 +3995,15 @@ public class ElliottWaveDetectionService {
     }
 
     private boolean isScaleCoherentGrouping(List<Pivot> detectedInterior, List<Pivot> sequence) {
-        for (Pivot pivot : detectedInterior) {
-            int segment = -1;
-            for (int index = 0; index + 1 < sequence.size(); index++) {
-                if (pivot.index() > sequence.get(index).index()
-                        && pivot.index() < sequence.get(index + 1).index()) {
-                    segment = index;
-                    break;
-                }
-            }
-            if (segment < 0 || sequence.contains(pivot)) continue;
-            double first = sequence.get(segment).price();
-            double second = sequence.get(segment + 1).price();
-            double tolerance = Math.max(Math.abs(first), Math.abs(second)) * 1.0e-9;
-            if (pivot.price() < Math.min(first, second) - tolerance
-                    || pivot.price() > Math.max(first, second) + tolerance) return false;
+        var cache = coherenceRanges.get();
+        PivotContainment ranges = cache == null ? null : cache.get(detectedInterior);
+        if (ranges == null) {
+            ranges = new PivotContainment(detectedInterior);
+            if (cache != null) { if (cache.size() >= 512) cache.clear(); cache.put(detectedInterior, ranges); }
         }
+        // Selected boundaries are excluded by the open interval in contains().
+        for (int index = 0; index + 1 < sequence.size(); index++)
+            if (!ranges.contains(sequence.get(index), sequence.get(index + 1))) return false;
         return true;
     }
 
@@ -3242,9 +4121,18 @@ public class ElliottWaveDetectionService {
     }
 
     private List<Pivot> pivotsStrictlyBetween(List<Pivot> detected, Pivot start, Pivot end) {
-        return detected.stream()
-                .filter(pivot -> pivot.index() > start.index() && pivot.index() < end.index())
-                .toList();
+        int from = pivotLowerBound(detected, start.index() + 1);
+        int to = pivotLowerBound(detected, end.index());
+        return detected.subList(from, Math.max(from, to));
+    }
+
+    private static int pivotLowerBound(List<Pivot> pivots, int index) {
+        int low = 0, high = pivots.size();
+        while (low < high) {
+            int mid = (low + high) >>> 1;
+            if (pivots.get(mid).index() < index) low = mid + 1; else high = mid;
+        }
+        return low;
     }
 
     private void collectComplexCorrectionSubdivisionCandidates(
@@ -3403,6 +4291,14 @@ public class ElliottWaveDetectionService {
                                        double parentPrice,
                                        PivotType type,
                                        boolean preferEarlierOnTie) {
+        var memo = boundaryPivots.get();
+        if (memo == null) return computeBoundaryPivot(candles, parentPrice, type, preferEarlierOnTie);
+        return memo.computeIfAbsent(new BoundaryKey(candles, parentPrice, type, preferEarlierOnTie),
+                ignored -> java.util.Optional.ofNullable(computeBoundaryPivot(candles, parentPrice, type, preferEarlierOnTie))).orElse(null);
+    }
+
+    private Pivot computeBoundaryPivot(List<EnrichedCandle> candles, double parentPrice,
+                                        PivotType type, boolean preferEarlierOnTie) {
         if (candles == null || candles.isEmpty() || !Double.isFinite(parentPrice)) return null;
         int bestIndex = -1;
         double bestPrice = Double.NaN;
@@ -3606,6 +4502,7 @@ public class ElliottWaveDetectionService {
     private List<List<Pivot>> findPivotSets(List<EnrichedCandle> candles) {
         Map<String, List<Pivot>> uniqueSets = new LinkedHashMap<>();
         for (double sensitivity : detectionRules.pivotSensitivities()) {
+            JobLeaseGuard.checkActive();
             List<Pivot> pivots = findPivots(candles, sensitivity);
             if (pivots.size() < 5) {
                 continue;
@@ -3619,6 +4516,18 @@ public class ElliottWaveDetectionService {
     }
 
     private List<Pivot> findPivots(List<EnrichedCandle> candles, double sensitivity) {
+        var memo = pivotScans.get();
+        if (memo == null) return computePivots(candles, sensitivity);
+        var key = new PivotScanKey(candles, sensitivity);
+        return memo.computeIfAbsent(key, ignored -> computePivots(candles, sensitivity));
+    }
+
+    private List<Pivot> computePivots(List<EnrichedCandle> candles, double sensitivity) {
+        var trajectories = pivotTrajectories.get();
+        if (trajectories != null && candles instanceof ValidatedCandleWindow window && candles.size() >= 3) {
+            return trajectories.computeIfAbsent(new PivotOrigin(window, sensitivity),
+                    ignored -> new PivotTrajectory(window.suffixFromStart(), sensitivity)).prefix(candles.size());
+        }
         if (candles.size() < 3) {
             return List.of();
         }
@@ -3687,6 +4596,66 @@ public class ElliottWaveDetectionService {
         }
         return List.copyOf(pivots);
     }
+
+    /** Persistent pivot tails preserve the exact result at every historical prefix,
+     * including replacement of the last pivot. Extending a leg visits only new bars. */
+    private final class PivotTrajectory {
+        final List<EnrichedCandle> candles;
+        final double sensitivity;
+        final List<PivotTail> prefixes = new ArrayList<>();
+        SwingDirection direction = SwingDirection.UNKNOWN;
+        int highIndex, lowIndex;
+        double highPrice, lowPrice;
+        PivotTail tail;
+        PivotTrajectory(List<EnrichedCandle> candles, double sensitivity) {
+            this.candles = candles; this.sensitivity = sensitivity;
+            highPrice = candles.getFirst().high(); lowPrice = candles.getFirst().low();
+            prefixes.add(null);
+        }
+        List<Pivot> prefix(int size) {
+            for (int index = prefixes.size(); index < size; index++) {
+                EnrichedCandle candle = candles.get(index);
+                if (direction == SwingDirection.UNKNOWN) {
+                    if (candle.high() >= highPrice) { highPrice = candle.high(); highIndex = index; }
+                    if (candle.low() <= lowPrice) { lowPrice = candle.low(); lowIndex = index; }
+                    double threshold = Math.max(reversalAmount(candles, highIndex, sensitivity), reversalAmount(candles, lowIndex, sensitivity));
+                    if (highPrice - lowPrice >= threshold) {
+                        if (lowIndex < highIndex || lowIndex == highIndex && closesInUpperHalf(candle)) {
+                            append(new Pivot(lowIndex, PivotType.LOW, lowPrice)); direction = SwingDirection.UP;
+                        } else { append(new Pivot(highIndex, PivotType.HIGH, highPrice)); direction = SwingDirection.DOWN; }
+                    }
+                } else if (direction == SwingDirection.UP) {
+                    if (candle.high() >= highPrice) { highPrice = candle.high(); highIndex = index; }
+                    if (candle.low() <= highPrice - reversalAmount(candles, highIndex, sensitivity)
+                            && (highIndex < index || closesInLowerHalf(candle))) {
+                        append(new Pivot(highIndex, PivotType.HIGH, highPrice)); direction = SwingDirection.DOWN;
+                        lowIndex = index; lowPrice = candle.low();
+                    }
+                } else {
+                    if (candle.low() <= lowPrice) { lowPrice = candle.low(); lowIndex = index; }
+                    if (candle.high() >= lowPrice + reversalAmount(candles, lowIndex, sensitivity)
+                            && (lowIndex < index || closesInUpperHalf(candle))) {
+                        append(new Pivot(lowIndex, PivotType.LOW, lowPrice)); direction = SwingDirection.UP;
+                        highIndex = index; highPrice = candle.high();
+                    }
+                }
+                prefixes.add(tail);
+            }
+            var result = new ArrayList<Pivot>();
+            for (PivotTail node = prefixes.get(size - 1); node != null; node = node.previous()) result.add(node.pivot());
+            java.util.Collections.reverse(result);
+            return List.copyOf(result);
+        }
+        void append(Pivot candidate) {
+            if (tail == null) { tail = new PivotTail(candidate, null); return; }
+            Pivot previous = tail.pivot();
+            if (previous.index() == candidate.index() && previous.type() != candidate.type()) return;
+            if (previous.type() != candidate.type()) tail = new PivotTail(candidate, tail);
+            else if (candidate.type() == PivotType.HIGH ? candidate.price() > previous.price() : candidate.price() < previous.price())
+                tail = new PivotTail(candidate, tail.previous());
+        }
+    }
+    private record PivotTail(Pivot pivot, PivotTail previous) { }
 
     private void appendPivot(List<Pivot> pivots, Pivot candidate) {
         if (pivots.isEmpty()) {
@@ -4502,14 +5471,41 @@ public class ElliottWaveDetectionService {
         private DetectionRules rules;
         private void prepare(List<EnrichedCandle> parentInput, List<EnrichedCandle> childInput, DetectionRules currentRules) {
             if (!parents.equals(parentInput) || !children.equals(childInput) || !java.util.Objects.equals(rules, currentRules)) {
-                subdivisionCache.clear();
+                // Without child data each cached leg depends only on its inclusive
+                // endpoint range. Appending unchanged parent history cannot change
+                // it. Unchanged rewinds retain only safe endpoint ranges;
+                // corrected history and changed rules invalidate the whole context.
+                boolean sameHistory = java.util.Objects.equals(rules, currentRules)
+                        && samePrefix(parents, parentInput) && samePrefix(children, childInput)
+                        && children.isEmpty() == childInput.isEmpty();
+                if (!sameHistory) subdivisionCache.clear();
+                else if (!parents.isEmpty() && !parentInput.isEmpty()) {
+                    long cutoff = Math.min(parents.getLast().timestamp(), parentInput.getLast().timestamp());
+                    if (!children.isEmpty()) {
+                        long childCutoff = Math.min(children.getLast().timestamp(), childInput.getLast().timestamp());
+                        // Child legs include the entire endpoint's parent candle.
+                        // Retain only ranges whose exclusive next-parent boundary
+                        // already existed in both child histories.
+                        long safe = Long.MIN_VALUE;
+                        for (int i=0;i+1<parentInput.size();i++)
+                            if (parentInput.get(i+1).timestamp() <= childCutoff) safe = parentInput.get(i).timestamp();
+                        cutoff = Math.min(cutoff, safe);
+                    }
+                    final long retainedThrough = cutoff;
+                    subdivisionCache.keySet().removeIf(key -> key.endTime() >= retainedThrough);
+                }
                 parents = List.copyOf(parentInput);
                 children = List.copyOf(childInput);
                 rules = currentRules;
             }
         }
-        private final Map<String, java.util.Optional<ElliottSubdivision>> subdivisionCache =
+        private final Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> subdivisionCache =
                 new java.util.HashMap<>();
+
+        private static boolean samePrefix(List<EnrichedCandle> left, List<EnrichedCandle> right) {
+            int size = Math.min(left.size(), right.size());
+            return left.subList(0, size).equals(right.subList(0, size));
+        }
 
         public int cachedLegCount() {
             return subdivisionCache.size();

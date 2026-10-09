@@ -40,7 +40,7 @@ public class LivePricingService {
         if (!claim.acquired()) {
             return quoteCache.getFresh(symbol, quoteCacheTtlSeconds).orElseGet(() -> {
                 Map<String, Object> stored = getStoredQuote(symbol);
-                return stored.isEmpty() ? Map.of("status", "Quote refresh is in progress for " + symbol) : stored;
+                return stored.isEmpty() ? Map.of("status", org.example.stockwatch247.i18n.ServerMessages.translate("Quote refresh is in progress for " + symbol)) : stored;
             });
         }
 
@@ -50,13 +50,14 @@ public class LivePricingService {
                 var latestQuote = twelveDataService.getQuote(symbol);
                 if (latestQuote.isPresent()) {
                     TwelveDataService.TwelveDataQuote quoteData = latestQuote.get();
-                    Map<String, Object> quote = Map.of(
-                            "symbol", symbol,
-                            "price", quoteData.price(),
-                            "changePercent", quoteData.percentChange(),
-                            "timestamp", quoteData.timestamp(),
-                            "source", "Twelve Data"
-                    );
+                    Map<String, Object> values = new java.util.LinkedHashMap<>();
+                    values.put("symbol", symbol);
+                    values.put("price", quoteData.price());
+                    values.put("changePercent", quoteData.percentChange());
+                    values.put("timestamp", quoteData.timestamp());
+                    values.put("source", "Twelve Data");
+                    if (quoteData.marketOpen() != null) values.put("marketOpen", quoteData.marketOpen());
+                    Map<String, Object> quote = java.util.Collections.unmodifiableMap(values);
                     quoteCache.put(symbol, quote);
                     syncCoordinator.markSuccessful(claim);
                     completed = true;
@@ -74,7 +75,7 @@ public class LivePricingService {
                 return storedQuote;
             }
 
-            return Map.of("status", "Quote unavailable for " + symbol);
+            return Map.of("status", org.example.stockwatch247.i18n.ServerMessages.translate("Quote unavailable for " + symbol));
         } finally {
             if (!completed) {
                 syncCoordinator.release(claim);

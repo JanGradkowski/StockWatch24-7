@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign in — StockWatch 24/7</title>
-  <script th:src="@{/js/theme.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <title th:text="|#{auth.login.title} — StockWatch 24/7|">Sign in — StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
@@ -17,53 +17,56 @@
 
 <main class="auth-shell">
   <section class="auth-showcase">
-    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7">
+    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7" th:aria-label="#{auth.backHome}">
       <span class="logo-mark" aria-hidden="true"></span>
       <span class="logo-word">StockWatch <span>24/7</span></span>
     </a>
     <div class="auth-pitch">
-      <div class="eyebrow">Welcome back</div>
-      <h1>Your stocks,<br><span class="text-gradient">in one place.</span></h1>
-      <p>Sign in to view your watchlist, alerts and demo trades.</p>
+      <div class="eyebrow" th:text="#{auth.login.eyebrow}">Welcome back</div>
+      <h1><span th:text="#{auth.login.headline1}">Your stocks,</span><br><span class="text-gradient" th:text="#{auth.login.headline2}">in one place.</span></h1>
+      <p th:text="#{auth.login.pitch}">Sign in to view your watchlist, alerts and demo trades.</p>
     </div>
     <div class="auth-signal-card" aria-hidden="true">
       <span class="auth-signal-icon">↗</span>
-      <span class="auth-signal-copy"><strong>Bullish pattern confirmed</strong><span>NVDA · Daily candlestick · just now</span></span>
+      <span class="auth-signal-copy"><strong th:text="#{auth.login.sampleTitle}">Bullish pattern confirmed</strong><span th:text="#{auth.login.sampleDetail}">NVDA · Daily candlestick · just now</span></span>
       <span class="auth-signal-score">88/100</span>
     </div>
   </section>
 
   <section class="auth-card">
-    <div class="auth-kicker">Secure access</div>
-    <h2>Sign in to StockWatch</h2>
-    <p class="auth-description">Enter your email and password.</p>
+    <div class="auth-kicker" th:text="#{auth.login.kicker}">Secure access</div>
+    <h2 th:text="#{auth.login.heading}">Sign in to StockWatch</h2>
+    <p class="auth-description" th:text="#{auth.login.description}">Enter your email and password.</p>
 
-    <div th:if="${param.error}" class="auth-message error-msg">The email or password is incorrect.</div>
-    <div th:if="${param.registered}" class="auth-message success-msg">Account created. You can sign in now.</div>
-    <div th:if="${param.verificationSent}" class="auth-message success-msg">If the address is eligible, a verification email has been sent.</div>
-    <div th:if="${param.verificationResendRequested}" class="auth-message success-msg">If these details match an unverified account, a verification email has been sent.</div>
-    <div th:if="${param.verified}" class="auth-message success-msg">Email verified. Your account is ready.</div>
-    <div th:if="${param.verificationError}" class="auth-message error-msg">That verification link is invalid or has expired.</div>
-    <div th:if="${param.expired}" class="auth-message error-msg">Your session expired. Please sign in again.</div>
-    <div th:if="${param.passwordReset}" class="auth-message success-msg">Password reset. Sign in with your new password.</div>
-    <div th:if="${param.deletionScheduled}" class="auth-message success-msg">Your account is disabled and scheduled for deletion. Check your email if you need to cancel.</div>
-    <div th:if="${param.deletionCancelled}" class="auth-message success-msg">Account deletion cancelled. You can sign in again.</div>
-    <div th:if="${param.deletionCancelError}" class="auth-message error-msg">That cancellation link is invalid or expired.</div>
+    <div th:if="${param.error}" class="auth-message error-msg" th:text="#{auth.login.error}">The email or password is incorrect.</div>
+    <div th:if="${param.registered}" class="auth-message success-msg" th:text="#{auth.login.registered}">Account created. You can sign in now.</div>
+    <div th:if="${param.verificationSent}" class="auth-message success-msg" th:text="#{auth.login.verificationSent}">If the address is eligible, a verification email has been sent.</div>
+    <div th:if="${param.verificationResendRequested}" class="auth-message success-msg" th:text="#{auth.login.verificationResendRequested}">If these details match an unverified account, a verification email has been sent.</div>
+    <div th:if="${param.verified}" class="auth-message success-msg" th:text="#{auth.login.verified}">Email verified. Your account is ready.</div>
+    <div th:if="${param.verificationError}" class="auth-message error-msg" th:text="#{auth.login.verificationError}">That verification link is invalid or has expired.</div>
+    <div th:if="${param.expired}" class="auth-message error-msg" th:text="#{auth.login.expired}">Your session expired. Please sign in again.</div>
+    <div th:if="${param.mfaRetry}" class="auth-message error-msg" th:text="#{auth.login.mfaRetry}">Too many wrong codes. Sign in with your password again.</div>
+    <div th:if="${param.mfaPaused}" class="auth-message error-msg" th:text="#{auth.login.mfaPaused}">Code entry is paused for an hour after repeated wrong codes. The account owner has been emailed.</div>
+    <div th:if="${param.locked}" class="auth-message error-msg" th:text="#{auth.login.locked}">Too many sign-in attempts for this account. Try again later.</div>
+    <div th:if="${param.passwordReset}" class="auth-message success-msg" th:text="#{auth.login.passwordReset}">Password reset. Sign in with your new password.</div>
+    <div th:if="${param.deletionScheduled}" class="auth-message success-msg" th:text="#{auth.login.deletionScheduled}">Your account is disabled and scheduled for deletion. Check your email if you need to cancel.</div>
+    <div th:if="${param.deletionCancelled}" class="auth-message success-msg" th:text="#{auth.login.deletionCancelled}">Account deletion cancelled. You can sign in again.</div>
+    <div th:if="${param.deletionCancelError}" class="auth-message error-msg" th:text="#{auth.login.deletionCancelError}">That cancellation link is invalid or expired.</div>
 
     <form th:action="@{/login}" method="post">
       <div class="form-group">
-        <label for="loginEmail">Email address</label>
-        <input id="loginEmail" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="you@example.com">
+        <label for="loginEmail" th:text="#{auth.email}">Email address</label>
+        <input id="loginEmail" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="you@example.com" th:placeholder="#{auth.email.placeholder}">
       </div>
       <div class="form-group">
-        <label for="loginPassword">Password</label>
-        <input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
+        <label for="loginPassword" th:text="#{auth.password}">Password</label>
+        <input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password" th:placeholder="#{auth.password.placeholder}">
       </div>
-      <button type="submit" class="btn-accent auth-btn">Sign in <span class="button-arrow" aria-hidden="true">→</span></button>
+      <button type="submit" class="btn-accent auth-btn"><span th:text="#{auth.signIn}">Sign in</span> <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
-    <p class="auth-switch">New to StockWatch? <a th:href="@{/signup}" class="text-link">Create an account</a></p>
-    <p class="auth-help"><a th:href="@{/forgot-password}" class="text-link">Forgot password?</a></p>
-    <p class="auth-help"><a th:href="@{/resend-verification}" class="text-link">Resend verification email</a></p>
+    <p class="auth-switch"><span th:text="#{auth.login.newHere}">New to StockWatch?</span> <a th:href="@{/signup}" class="text-link" th:text="#{auth.login.createAccount}">Create an account</a></p>
+    <p class="auth-help"><a th:href="@{/forgot-password}" class="text-link" th:text="#{auth.login.forgot}">Forgot password?</a></p>
+    <p class="auth-help"><a th:href="@{/resend-verification}" class="text-link" th:text="#{auth.login.resend}">Resend verification email</a></p>
   </section>
 </main>
 </body>

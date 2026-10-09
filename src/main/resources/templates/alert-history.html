@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Company signal board — StockWatch 24/7</title>
-  <script th:src="@{/js/theme.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <title th:text="#{alertHistory.pageTitle}">Company signal board — StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
@@ -20,54 +20,54 @@
 <main class="page-container company-history-page">
   <header class="page-header company-history-header">
     <div>
-      <div class="eyebrow">Company alerts</div>
-      <h1 class="title"><span th:text="${history.symbol()}">MARA</span> monitoring board</h1>
+      <div class="eyebrow" th:text="#{alertHistory.eyebrow}">Followed signals</div>
+      <h1 class="title" th:text="#{alertHistory.heading(${history.symbol()})}">MARA signal history</h1>
       <p class="subtitle" th:text="${history.companyName()}">MARA Holdings, Inc.</p>
-      <div class="history-tags" aria-label="Company monitoring summary">
-        <span class="history-tag"><span th:text="${history.ruleCount()}">6</span>&nbsp;followed rules</span>
-        <span class="history-tag"><span th:text="${history.eventCount()}">12</span>&nbsp;recorded signals</span>
-        <span class="history-tag live-tag">Monitoring active</span>
+      <div class="history-tags" aria-label="Followed signals summary" th:aria-label="#{alertHistory.summaryAria}">
+        <span class="history-tag" th:text="${#messages.msg(#tr.pluralKey('alertHistory.followedRules', history.ruleCount()), history.ruleCount())}">6 followed rules</span>
+        <span class="history-tag" th:text="${#messages.msg(#tr.pluralKey('alertHistory.recordedSignals', history.eventCount()), history.eventCount())}">12 recorded signals</span>
+        <span class="history-tag live-tag" th:text="#{alertHistory.alertsOn}">Alerts on</span>
       </div>
     </div>
-    <a th:href="@{/stock/{symbol}(symbol=${history.symbol()})}" class="btn-primary">Open stock chart <span class="button-arrow" aria-hidden="true">→</span></a>
+    <a th:href="@{/stock/{symbol}(symbol=${history.symbol()})}" class="btn-primary"><span th:text="#{alertHistory.openChart}">Open stock chart</span> <span class="button-arrow" aria-hidden="true">→</span></a>
   </header>
 
   <section class="history-board-shell">
     <div class="panel-heading history-board-heading">
       <div>
-        <h2 class="panel-title">Active alert rules</h2>
-        <p class="panel-meta">Each column shows one pattern, direction and interval.</p>
+        <h2 class="panel-title" th:text="#{alertHistory.activeRules}">Active alert rules</h2>
+        <p class="panel-meta" th:text="#{alertHistory.columnsHelp}">Each column shows one pattern, direction and interval.</p>
       </div>
-      <span class="board-scroll-hint">Scroll horizontally to explore →</span>
+      <span class="board-scroll-hint" th:text="#{alertHistory.scrollHint}">Scroll horizontally to explore →</span>
     </div>
 
-    <div class="history-board" aria-label="Followed alert rule columns">
+    <div class="history-board" aria-label="Followed alert rule columns" th:aria-label="#{alertHistory.columnsAria}">
       <article th:each="column, columnStatus : ${history.columns()}" class="history-rule-column">
         <header class="history-column-header">
-          <div class="history-column-index" th:text="${'RULE ' + #numbers.formatInteger(columnStatus.count, 2)}">RULE 01</div>
+          <div class="history-column-index" th:text="#{alertHistory.ruleIndex(${#numbers.formatInteger(columnStatus.count, 2)})}">RULE 01</div>
           <div class="history-column-title-row">
             <div>
-              <h2 th:text="${column.alert().familyLabel()}">Candlestick</h2>
-              <p>Alert rule</p>
+              <h2 th:text="${#tr.text(column.alert().familyLabel())}">Candlestick</h2>
+              <p th:text="#{alertHistory.alertRule}">Alert rule</p>
             </div>
             <span class="history-column-count" th:text="${column.events().size()}">3</span>
           </div>
           <div class="history-column-tags">
             <span class="column-tag signal"
                   th:classappend="${column.alert().tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-                  th:text="${column.alert().tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : column.alert().tradeSignal().name()}">BUY</span>
-            <span class="column-tag interval" th:text="${column.alert().intervalLabel()}">Weekly</span>
+                  th:text="${#messages.msgOrNull('alertHistory.signal.' + column.alert().tradeSignal().name()) ?: column.alert().tradeSignal().name()}">BUY</span>
+            <span class="column-tag interval" th:text="${#tr.text(column.alert().intervalLabel())}">Weekly</span>
             <span th:if="${column.alert().researchHorizonLabel() != null}"
                   class="column-tag horizon"
-                  th:title="${column.alert().researchHorizonSummary() + ' ' + column.alert().researchHorizonDisclaimer()}"
-                  th:text="${'Research horizon ' + column.alert().researchHorizonLabel()}">Research horizon 8&ndash;12 weeks</span>
+                  th:title="${#tr.text(column.alert().researchHorizonSummary()) + ' ' + #tr.text(column.alert().researchHorizonDisclaimer())}"
+                  th:text="#{alertHistory.researchHorizon(${#tr.text(column.alert().researchHorizonLabel())})}">Research horizon 8&ndash;12 weeks</span>
           </div>
         </header>
 
         <div th:if="${#lists.isEmpty(column.events())}" class="history-column-empty">
           <div class="column-empty-icon" aria-hidden="true">⌁</div>
-          <strong>Waiting for a match</strong>
-          <p>This rule has not found a matching pattern yet.</p>
+          <strong th:text="#{alertHistory.waitingTitle}">Waiting for a match</strong>
+          <p th:text="#{alertHistory.waitingText}">This rule has not found a matching pattern yet.</p>
         </div>
 
         <div th:if="${!#lists.isEmpty(column.events())}" class="history-event-list">
@@ -75,69 +75,67 @@
              th:href="@{/alerts/signals/{id}(id=${event.id()})}"
              class="signal-event-card signal-event-link"
              th:classappend="${event.hasBeenRead()} ? ' is-read' : ' is-unread'"
-             th:aria-label="${'Open score report for ' + event.patternLabel() + (event.hasBeenRead() ? ' (read)' : ' (unread)')}">
+             th:aria-label="${#messages.msg(event.hasBeenRead() ? 'alertHistory.openReportRead' : 'alertHistory.openReportUnread', #tr.text(event.patternLabel()))}">
             <div class="signal-event-topline">
-              <time th:text="${event.signalPeriodLabel() != null ? event.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</time>
+              <time th:text="${event.signalPeriodLabel() != null ? #tr.text(event.signalPeriodLabel()) : #messages.msg('alertHistory.periodUnavailable')}">13&ndash;17 Jul 2026</time>
               <div class="signal-event-badges">
-                <span class="signal-read-pill"
-                      th:classappend="${event.hasBeenRead()} ? ' read' : ' unread'"
-                      th:text="${event.hasBeenRead()} ? 'Read' : 'Unread'">Unread</span>
+                <span th:unless="${event.hasBeenRead()}" class="signal-read-pill unread" th:text="#{alertHistory.unread}">Unread</span>
                 <span class="label"
                       th:classappend="${' ' + event.setupBand()}"
-                      th:text="${event.setupStrengthLabel()}">Strong setup</span>
+                      th:text="${#tr.text(event.setupStrengthLabel())}">Strong setup</span>
               </div>
             </div>
-            <h3 th:text="${event.patternLabel()}">Bullish Engulfing</h3>
+            <h3 th:text="${#tr.text(event.patternLabel())}">Bullish Engulfing</h3>
             <div class="signal-event-lifecycle"
-                 th:title="${event.lifecycle().tracked() ? event.lifecycle().summary() : 'Lifecycle tracking is not available for this signal.'}">
+                 th:title="${event.lifecycle().tracked() ? #tr.text(event.lifecycle().summary()) : #messages.msg('alertHistory.lifecycleUnavailable')}">
               <div>
-                <span class="signal-event-lifecycle-label">Lifecycle status</span>
+                <span class="signal-event-lifecycle-label" th:text="#{alertHistory.lifecycleStatus}">Lifecycle status</span>
                 <time th:if="${event.lifecycle().terminal()}"
-                      th:text="${event.lifecycle().resolutionPeriodLabel() != null ? 'Resolved ' + event.lifecycle().resolutionPeriodLabel() : 'Resolution period unavailable'}">Resolved 20&ndash;24 Jul 2026</time>
+                      th:text="${event.lifecycle().resolutionPeriodLabel() != null ? #messages.msg('alertHistory.resolved', #tr.text(event.lifecycle().resolutionPeriodLabel())) : #messages.msg('alertHistory.resolutionUnavailable')}">Resolved 20&ndash;24 Jul 2026</time>
               </div>
               <span th:if="${event.lifecycle().harmonicStopStatus() != null}"
                     class="signal-lifecycle-pill"
                     th:classappend="${event.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : ' detected'}"
-                    th:text="${event.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : (event.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? 'Candle 8 complete' : 'Active outcome')}">Active outcome</span>
+                    th:text="${event.lifecycle().harmonicStopStatus() == 'STOPPED' ? #messages.msg('alertHistory.stopBreached') : (event.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? #messages.msg('alertHistory.candle8Complete') : #messages.msg('alertHistory.activeOutcome'))}">Active outcome</span>
               <span th:if="${event.lifecycle().harmonicStopStatus() == null and event.lifecycle().tracked()}"
                     class="signal-lifecycle-pill"
                     th:classappend="${' ' + event.lifecycle().cssClass()}"
-                    th:text="${event.lifecycle().label()}">Detected</span>
+                    th:text="${#tr.text(event.lifecycle().label())}">Detected</span>
               <span th:if="${event.lifecycle().harmonicStopStatus() == null and !event.lifecycle().tracked()}"
-                    class="lifecycle-unavailable">Not tracked</span>
+                    class="lifecycle-unavailable" th:text="#{alertHistory.notTracked}">Not tracked</span>
             </div>
             <div class="signal-event-metrics">
-              <div th:title="${'Score model: ' + event.scoreVersion()}">
-                <span>Score</span>
-                <strong th:text="${event.setupScore() != null ? event.setupScore() + '/100' : 'N/A'}">88/100</strong>
+              <div th:title="#{alertHistory.scoreModel(${event.scoreVersion()})}">
+                <span th:text="#{alertHistory.score}">Score</span>
+                <strong th:text="${event.setupScore() != null ? event.setupScore() + '/100' : #messages.msg('common.notAvailable')}">88/100</strong>
               </div>
               <div>
-                <span>Close</span>
-                <strong th:text="${event.closePrice() != null ? #numbers.formatDecimal(event.closePrice(), 1, 2) : 'N/A'}">125.50</strong>
+                <span th:text="#{alertHistory.close}">Close</span>
+                <strong th:text="${event.closePrice() != null ? #numbers.formatDecimal(event.closePrice(), 1, 2) : #messages.msg('common.notAvailable')}">125.50</strong>
               </div>
               <div th:if="${event.lifecycle().entryPrice() != null}">
-                <span>Trade entry</span>
+                <span th:text="#{alertHistory.entry}">Trade entry</span>
                 <strong th:text="${#numbers.formatDecimal(event.lifecycle().entryPrice(), 1, 2)}">125.50</strong>
               </div>
               <div th:if="${event.lifecycle().stopLossPrice() != null}">
-                <span>Stop loss</span>
+                <span th:text="#{alertHistory.stopLoss}">Stop loss</span>
                 <strong th:text="${#numbers.formatDecimal(event.lifecycle().stopLossPrice(), 1, 2)}">120.00</strong>
               </div>
               <div th:if="${event.lifecycle().profitTargetPrice() != null}">
-                <span th:text="${'Target · 1:' + #numbers.formatDecimal(event.lifecycle().rewardRiskRatio(), 1, 0)}">Target · 1:2</span>
+                <span th:text="#{alertHistory.targetRatio(${#numbers.formatDecimal(event.lifecycle().rewardRiskRatio(), 1, 0)})}">Target · 1:2</span>
                 <strong th:text="${#numbers.formatDecimal(event.lifecycle().profitTargetPrice(), 1, 2)}">136.50</strong>
               </div>
               <div th:if="${event.lifecycle().atrCircuitBreakerApplied()}">
-                <span>ATR circuit breaker</span>
-                <strong>Active</strong>
+                <span th:text="#{alertHistory.atrCircuitBreaker}">ATR circuit breaker</span>
+                <strong th:text="#{alertHistory.active}">Active</strong>
               </div>
             </div>
             <div class="signal-event-delivery">
               <span class="delivery-dot" aria-hidden="true"></span>
-              <span th:text="${event.lifecycle().terminal() ? 'Detection and lifecycle recorded' : 'Detection email sent'}">Detection email sent</span>
-              <time th:text="${event.sentAt() != null ? #temporals.format(event.sentAt(), 'yyyy-MM-dd HH:mm') : 'not available'}">2026-07-08 14:00</time>
+              <span th:text="${event.lifecycle().terminal() ? #messages.msg('alertHistory.lifecycleRecorded') : #messages.msg('alertHistory.detectionEmailSent')}">Detection email sent</span>
+              <time th:text="${event.sentAt() != null ? #temporals.format(event.sentAt(), 'yyyy-MM-dd HH:mm') : #messages.msg('alertHistory.sentUnavailable')}">2026-07-08 14:00</time>
             </div>
-            <div class="signal-event-open">View score details <span aria-hidden="true">&rarr;</span></div>
+            <div class="signal-event-open"><span th:text="#{alertHistory.viewDetails}">View score details</span> <span aria-hidden="true">&rarr;</span></div>
           </a>
         </div>
       </article>

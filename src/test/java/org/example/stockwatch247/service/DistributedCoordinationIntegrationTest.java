@@ -50,16 +50,39 @@ class DistributedCoordinationIntegrationTest {
     @Test
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void twelveDataBudgetStopsAtTheConfiguredDistributedMinuteLimit() {
-        jdbcTemplate.update("delete from market_data_provider_usage where provider = 'TWELVE_DATA'");
+        jdbcTemplate.update("delete from market_data_provider_usage where provider like 'TWELVE_DATA%'");
 
-        for (int request = 0; request < 7; request++) {
+        try (var ignored = MarketDataProviderRequestBudget.background()) {
+            for (int request = 0; request < 7; request++) {
+                providerRequestBudget.reserveTwelveDataRequest();
+            }
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            providerRequestBudget::reserveTwelveDataRequest)
+                    .isInstanceOf(MarketDataProviderRequestBudget.BudgetUnavailableException.class)
+                    .hasMessageContaining("minute request budget");
+        }
+    }
+
+    @Test
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    void pageRequestsCannotSpendTheMinuteBudgetThatScheduledChecksNeed() {
+        jdbcTemplate.update("delete from market_data_provider_usage where provider like 'TWELVE_DATA%'");
+
+        for (int request = 0; request < 3; request++) {
             providerRequestBudget.reserveTwelveDataRequest();
         }
-
         org.assertj.core.api.Assertions.assertThatThrownBy(
                         providerRequestBudget::reserveTwelveDataRequest)
-                .isInstanceOf(MarketDataProviderRequestBudget.BudgetUnavailableException.class)
-                .hasMessageContaining("minute request budget");
+                .isInstanceOf(MarketDataProviderRequestBudget.BudgetUnavailableException.class);
+
+        try (var ignored = MarketDataProviderRequestBudget.background()) {
+            providerRequestBudget.reserveTwelveDataRequest();
+        }
+        assertThat(jdbcTemplate.queryForObject("""
+                select request_count from market_data_provider_usage
+                where provider = 'TWELVE_DATA' and window_kind = 'MINUTE'
+                """, Integer.class)).isEqualTo(4);
     }
 
     @Test

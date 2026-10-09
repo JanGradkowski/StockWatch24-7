@@ -106,13 +106,36 @@ class HarmonicPatternPreferencesServiceTest {
 
         var migrated = service.get(user);
 
-        assertThat(migrated.version()).isEqualTo("USER_HARMONIC_RULES_V4");
+        assertThat(migrated.version()).isEqualTo(HarmonicPatternPreferencesService.PROFILE_VERSION);
         assertThat(migrated.rules().maximumPivotWindow()).isEqualTo(55);
         assertThat(migrated.rules().maximumSwingFraction()).isEqualTo(.34);
         assertThat(migrated.rules().maximumSkippedPivots()).isEqualTo(4);
         assertThat(migrated.rules().maximumFormations()).isEqualTo(250);
         assertThat(migrated.patternRules().profile(HarmonicPatternType.BUTTERFLY).ratios())
                 .containsEntry("completion", 1.27);
+    }
+
+    @Test
+    void versionFourProfilesOnTheOldWideBatFactoryRangeMoveToCarneysRangeAndCustomRangesAreKept() throws Exception {
+        assertThat(migratedBat(0.0, 61.8)).containsEntry("bMin", .382).containsEntry("bMax", .50);
+        assertThat(migratedBat(30.0, 55.0)).containsEntry("bMin", .30).containsEntry("bMax", .55);
+    }
+
+    private java.util.Map<String, Double> migratedBat(double bMin, double bMax) throws Exception {
+        service.save(user, factoryForm());
+        ObjectMapper mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        tools.jackson.databind.node.ObjectNode payload =
+                (tools.jackson.databind.node.ObjectNode) mapper.readTree(stored.get().getPreferencesPayload());
+        payload.put("version", "USER_HARMONIC_RULES_V4");
+        for (var pattern : payload.get("patterns")) {
+            if ("BAT".equals(pattern.get("pattern").asText())) {
+                ((tools.jackson.databind.node.ObjectNode) pattern.get("ratios")).put("bMin", bMin).put("bMax", bMax);
+            }
+        }
+        stored.get().setPreferencesPayload(mapper.writeValueAsString(payload));
+        var migrated = service.get(user);
+        assertThat(migrated.version()).isEqualTo(HarmonicPatternPreferencesService.PROFILE_VERSION);
+        return migrated.patternRules().profile(HarmonicPatternType.BAT).ratios();
     }
 
     private LinkedMultiValueMap<String, String> factoryForm() {

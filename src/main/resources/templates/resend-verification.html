@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Resend verification — StockWatch 24/7</title>
-  <script th:src="@{/js/theme.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <title th:text="|#{auth.resend.title} — StockWatch 24/7|">Resend verification — StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
@@ -17,38 +17,38 @@
 
 <main class="auth-shell">
   <section class="auth-showcase">
-    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7">
+    <a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7" th:aria-label="#{auth.backHome}">
       <span class="logo-mark" aria-hidden="true"></span>
       <span class="logo-word">StockWatch <span>24/7</span></span>
     </a>
     <div class="auth-pitch">
-      <div class="eyebrow">Account verification</div>
-      <h1>Verify your<br><span class="text-gradient">email address.</span></h1>
-      <p>Request a new link if the first email did not arrive or has expired.</p>
+      <div class="eyebrow" th:text="#{auth.resend.eyebrow}">Account verification</div>
+      <h1><span th:text="#{auth.resend.headline1}">Verify your</span><br><span class="text-gradient" th:text="#{auth.resend.headline2}">email address.</span></h1>
+      <p th:text="#{auth.resend.pitch}">Request a new link if the first email did not arrive or has expired.</p>
     </div>
     <div class="auth-signal-card" aria-hidden="true">
       <span class="auth-signal-icon">✦</span>
-      <span class="auth-signal-copy"><strong>Check your inbox</strong><span>The link completes email verification</span></span>
-      <span class="auth-signal-score">SECURE</span>
+      <span class="auth-signal-copy"><strong th:text="#{auth.resend.sampleTitle}">Check your inbox</strong><span th:text="#{auth.resend.sampleDetail}">The link completes email verification</span></span>
+      <span class="auth-signal-score" th:text="#{auth.resend.sampleBadge}">SECURE</span>
     </div>
   </section>
 
   <section class="auth-card">
-    <div class="auth-kicker">Email verification</div>
-    <h2>Request a new link</h2>
-    <p class="auth-description">Enter your account email and password to request a new link.</p>
+    <div class="auth-kicker" th:text="#{auth.resend.kicker}">Email verification</div>
+    <h2 th:text="#{auth.resend.heading}">Request a new link</h2>
+    <p class="auth-description" th:text="#{auth.resend.description}">Enter your account email and password to request a new link.</p>
     <form th:action="@{/resend-verification}" method="post">
       <div class="form-group">
-        <label for="resendEmail">Email address</label>
-        <input id="resendEmail" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="you@example.com">
+        <label for="resendEmail" th:text="#{auth.email}">Email address</label>
+        <input id="resendEmail" type="email" name="email" required maxlength="254" autocomplete="username" placeholder="you@example.com" th:placeholder="#{auth.email.placeholder}">
       </div>
       <div class="form-group">
-        <label for="resendPassword">Password</label>
-        <input id="resendPassword" type="password" name="password" required maxlength="72" autocomplete="current-password" placeholder="Enter your password">
+        <label for="resendPassword" th:text="#{auth.password}">Password</label>
+        <input id="resendPassword" type="password" name="password" required maxlength="72" autocomplete="current-password" placeholder="Enter your password" th:placeholder="#{auth.password.placeholder}">
       </div>
-      <button type="submit" class="btn-accent auth-btn">Send verification link <span class="button-arrow" aria-hidden="true">→</span></button>
+      <button type="submit" class="btn-accent auth-btn"><span th:text="#{auth.resend.submit}">Send verification link</span> <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
-    <p class="auth-switch"><a th:href="@{/login}" class="text-link">← Back to sign in</a></p>
+    <p class="auth-switch"><a th:href="@{/login}" class="text-link">← <span th:text="#{auth.backToSignIn}">Back to sign in</span></a></p>
   </section>
 </main>
 </body>

@@ -133,6 +133,54 @@ class TechnicalOutlookServiceTest {
     }
 
     @Test
+    void trackingReadsCorrectedCandlesAndBenchmarkWithoutInvalidatingPresentationCaches() {
+        List<Candle> candles = risingDailyCandles(320);
+        List<Candle> benchmark = risingDailyCandles(320);
+        stubLatest("AAPL", "1d", candles);
+        stubLatest("^GSPC", "1d", benchmark);
+        var original = service.getSummaryOutlook(user, "AAPL", "1d");
+        candles.getLast().setClosePrice(candles.getLast().getClosePrice() + 0.5);
+        benchmark.getLast().setClosePrice(benchmark.getLast().getClosePrice() + 0.8);
+        var fresh = service.getTrackingOutlook(user, "AAPL", "1d", false);
+        assertThat(fresh.candles().getLast().close()).isEqualTo(original.candles().getLast().close() + 0.5);
+        assertThat(fresh.marketComparison()).isNotEqualTo(original.marketComparison());
+        var detailed = service.getTrackingOutlook(user, "AAPL", "1d", true);
+        assertThat(detailed.headlineScore()).isEqualTo(fresh.headlineScore());
+        assertThat(detailed.rawScore()).isEqualTo(fresh.rawScore());
+        assertThat(detailed.categories()).isEqualTo(fresh.categories());
+    }
+
+    @Test
+    void monthlyOutlookWithSharedProfileAndTinyHistoricalBandwidthCompletes() {
+        List<Candle> candles = new ArrayList<>();
+        var first = java.time.LocalDate.of(1983, 6, 1);
+        for (int index = 0; index < 519; index++) {
+            double price = index == 0 ? 1 : 1 + index * 0.7 + Math.sin(index / 3.0) * 0.5;
+            candles.add(new Candle("SHW", "1mo", first.plusMonths(index).atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond(),
+                    price, price + 0.025, price - 0.025, price, 1000000L + index * 1000L));
+        }
+        stubLatest("SHW", "1mo", candles);
+        AnalysisPreferencesService preferences = mock(AnalysisPreferencesService.class);
+        when(preferences.get(user)).thenReturn(AnalysisPreferencesService.factoryPreferences());
+        when(preferences.technicalProfile(any())).thenCallRealMethod();
+        TechnicalOutlookService monthly = new TechnicalOutlookService(marketDataService, candleRepository,
+                stockAssetRepository, new TechnicalIndicatorEnrichmentService(), alertEventRepository,
+                mock(CongressionalTradeDeliveryRepository.class), mock(InsiderTradeDeliveryRepository.class), preferences);
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(10), () -> {
+            var summary = monthly.getTrackingOutlook(user, "SHW", "1mo", false);
+            var detailed = monthly.getTrackingOutlook(user, "SHW", "1mo", true);
+            assertThat(detailed.available()).isTrue();
+            assertThat(detailed.headlineScore()).isEqualTo(summary.headlineScore());
+            assertThat(detailed.rawScore()).isEqualTo(summary.rawScore());
+            assertThat(detailed.indicators()).filteredOn(indicator -> indicator.key().equals("volumeProfileKde"))
+                    .singleElement().satisfies(indicator -> {
+                        assertThat(indicator.currentValue()).isFinite();
+                        assertThat(indicator.scored()).isFalse();
+                    });
+        });
+    }
+
+    @Test
     void compactSummaryDefersResearchAndHistoricalIndicatorSeries() {
         List<Candle> candles = risingDailyCandles(260);
         stubLatest("AAPL", "1d", candles);
@@ -267,6 +315,11 @@ class TechnicalOutlookServiceTest {
                 .filteredOn(category -> category.key().equals("ELLIOTT"))
                 .singleElement()
                 .satisfies(category -> assertThat(category.vote()).isEqualTo(1));
+        when(alertEventRepository.findRecentForTechnicalOutlook(
+                any(), anyString(), any(), any(Long.class), any(Pageable.class))).thenReturn(List.of());
+        var refreshed = service.getTrackingOutlook(user, "AAPL", "1d", false);
+        assertThat(refreshed.recentSignals()).isEmpty();
+        assertThat(refreshed.categories()).noneMatch(category -> category.key().equals("ELLIOTT"));
     }
 
     private List<Candle> risingDailyCandles(int count) {

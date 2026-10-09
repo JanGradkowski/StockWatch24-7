@@ -15,6 +15,7 @@ import java.util.List;
  */
 final class ElliottProjectionPolicy {
     static final String VERSION = "ELLIOTT_SCENARIOS_V2";
+    static final String COMPRESSED_WAVE_IV = "COMPRESSED_WAVE_IV";
     private static final double TARGET_ZONE_PERCENT = 1.5;
 
     private ElliottProjectionPolicy() {
@@ -80,7 +81,54 @@ final class ElliottProjectionPolicy {
                     seed.scenarioInvalidationPrice(), seed.scenarioInvalidationSide(),
                     seed.evidence()));
         }
+        if (scenarios.isEmpty() && stage == ElliottSignalStage.WAVE_III_END) {
+            Scenario compressed = compressedWaveFour(expectedMove, sourceTimestamp, sourcePrice, cycleSign,
+                    wave1, wave2, point(points, "III"), spacing, atr, interval);
+            if (compressed != null && ElliottTargetRules.allowed(stage, bullish, points,
+                    compressed.targetZoneLow(), compressed.targetZoneHigh())) scenarios.add(compressed);
+        }
         return List.copyOf(scenarios);
+    }
+
+    /**
+     * Every Fibonacci Wave IV target overlaps Wave I, yet the count is still valid. Draw the
+     * remaining legal range instead of nothing: its zone is a structural boundary, not an
+     * objective, so the evaluator keeps it visible while price trades inside it.
+     */
+    private static Scenario compressedWaveFour(
+            TradeSignal expectedMove, long sourceTimestamp, double source, double sign,
+            Point wave1, Point wave2, Point wave3, long spacing, double atr, TimeInterval interval) {
+        if (wave3 == null) return null;
+        double room = Math.abs(wave3.price() - wave1.price());
+        double ratio = ElliottTargetRules.waveFourRoom(wave1.price(), wave2.price(), wave3.price());
+        if (!Double.isFinite(ratio) || ratio <= 0.0) return null;
+        double tick = TradeRiskPolicy.increment(wave1.price());
+        if (room <= 2 * tick) return null;
+        // End just inside the boundary: the deepest Wave IV the overlap rule still allows.
+        double buffer = Math.max(tick, TradeRiskPolicy.positive(atr) ? Math.min(room * .10, atr * .25) : room * .10);
+        double target = wave1.price() + sign * buffer;
+        double zoneLow = sign > 0 ? wave1.price() + tick : wave3.price();
+        double zoneHigh = sign > 0 ? wave3.price() : wave1.price() - tick;
+        int reference = legCandles(wave1, wave2, spacing);
+        int minimum = duration(reference, .6);
+        int maximum = Math.max(minimum + 1, duration(reference, 1.5));
+        String boundary = ElliottTargetRules.formatPrice(wave1.price());
+        String share = String.format(java.util.Locale.ROOT, "%.1f%%", ratio * 100);
+        return new Scenario(
+                COMPRESSED_WAVE_IV, "Preferred · compressed Wave IV",
+                "No textbook retracement fits: Wave IV can retrace only " + share
+                        + " of Wave III before overlapping Wave I at " + boundary
+                        + ", so a shallow, mostly sideways correction must stay inside that range.",
+                1, expectedMove, 30,
+                projectedPath(sourceTimestamp, source, target, spacing, maximum, PathShape.ZIGZAG, interval),
+                zoneLow, zoneHigh, target,
+                "Remaining legal Wave IV range before Wave I territory (" + share + " of Wave III)",
+                minimum, maximum,
+                wave1.price(), sign > 0 ? BoundarySide.BELOW : BoundarySide.ABOVE,
+                wave3.price(), sign > 0 ? BoundarySide.ABOVE : BoundarySide.BELOW,
+                List.of("Every standard Fibonacci Wave IV target zone, from 23.6% upward, would overlap Wave I.",
+                        "A fourth wave with little price room usually corrects through time instead.",
+                        "Trading through " + boundary + " breaks the standard impulse; a diagonal or A-B-C count then fits better."));
     }
 
     private static List<ScenarioSeed> waveThreeSeeds(

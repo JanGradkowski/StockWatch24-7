@@ -25,6 +25,8 @@ import java.security.Principal;
 public class TechnicalOutlookController {
     @org.springframework.beans.factory.annotation.Autowired
     private org.example.stockwatch247.service.WatchlistFollowService watchlistFollows;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.i18n.LocalizedJson localizedJson;
     private final UserRepository userRepository;
     private final TechnicalOutlookService outlookService;
     private final AnalysisPreferencesService preferencesService;
@@ -174,6 +176,11 @@ public class TechnicalOutlookController {
                 trackingService.detail(user, notificationId);
         model.addAttribute("firstName", user.getFirstName());
         model.addAttribute("change", change);
+        // The page script reads these; their display text follows the page language like API responses.
+        if (localizedJson != null) {
+            model.addAttribute("currentSnapshotJson", localizedJson.write(change.currentSnapshot()));
+            model.addAttribute("changeReportJson", localizedJson.write(change.report()));
+        }
         return "technical-outlook-change";
     }
 

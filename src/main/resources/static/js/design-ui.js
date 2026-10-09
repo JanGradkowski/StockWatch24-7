@@ -25,16 +25,16 @@
     function settingsChanges() {
         document.querySelectorAll('form').forEach(form => {
             const path = new URL(form.action, location.href).pathname;
-            if (!/^\/settings\/(appearance|analysis-alerts|detection|scoring|candlestick-patterns|elliott-waves|harmonic-formations)$/.test(path)) return;
+            if (!/^\/settings\/(appearance|language|analysis-alerts|detection|scoring|candlestick-patterns|elliott-waves|harmonic-formations)$/.test(path)) return;
             const fields = Array.from(form.elements).filter(field => field.name && !['hidden', 'submit', 'button'].includes(field.type));
             const original = fields.map(field => ({field, value: field.value, checked: field.checked}));
             const submitter = Array.from(form.elements).find(field => field.type === 'submit' && field.form === form);
             if (!submitter || !fields.length) return;
             const bar = document.createElement('div'); bar.className = 'design-save-state'; bar.hidden = true;
-            const message = document.createElement('span'); message.textContent = 'Unsaved changes'; message.setAttribute('role', 'status');
+            const message = document.createElement('span'); message.textContent = window.StockWatchI18n.t('settings.unsaved'); message.setAttribute('role', 'status');
             const actions = document.createElement('div'); actions.className = 'design-save-actions';
-            const discard = document.createElement('button'); discard.type = 'button'; discard.className = 'btn-secondary'; discard.textContent = 'Discard';
-            const save = document.createElement('button'); save.type = 'button'; save.className = 'btn-accent'; save.textContent = 'Apply changes';
+            const discard = document.createElement('button'); discard.type = 'button'; discard.className = 'btn-secondary'; discard.textContent = window.StockWatchI18n.t('settings.discard');
+            const save = document.createElement('button'); save.type = 'button'; save.className = 'btn-accent'; save.textContent = window.StockWatchI18n.t('settings.apply');
             actions.append(discard, save); bar.append(message, actions); form.append(bar);
             const changed = entry => ['checkbox', 'radio'].includes(entry.field.type)
                 ? entry.field.checked !== entry.checked : entry.field.value !== entry.value;
@@ -61,7 +61,7 @@
         const colors = Array.from(form.querySelectorAll('input[type="color"]'));
         if (!colors.length) return;
         const host = document.createElement('div'); host.className = 'appearance-chart-previews';
-        host.setAttribute('aria-label', 'Chart colour previews');
+        host.setAttribute('aria-label', window.StockWatchI18n.t('appearance.previewsAria'));
         const namespace = 'http://www.w3.org/2000/svg';
         const element = (tag, attrs) => {
             const item = document.createElementNS(namespace, tag);
@@ -69,8 +69,8 @@
         };
         for (const theme of ['dark', 'light']) {
             const card = document.createElement('div'); card.className = 'appearance-chart-preview'; card.dataset.previewTheme = theme;
-            const label = document.createElement('strong'); label.textContent = `${theme === 'dark' ? 'Dark' : 'Light'} chart preview`;
-            const svg = element('svg', {viewBox: '0 0 360 170', role: 'img', 'aria-label': 'Sample candles with your chosen overlay colours'});
+            const label = document.createElement('strong'); label.textContent = window.StockWatchI18n.t(theme === 'dark' ? 'appearance.previewDark' : 'appearance.previewLight');
+            const svg = element('svg', {viewBox: '0 0 360 170', role: 'img', 'aria-label': window.StockWatchI18n.t('appearance.previewSvgAria')});
             for (let i = 0; i < 14; i++) {
                 const x = 18 + i * 25, y = 120 - i * 5 + Math.sin(i * 1.3) * 17;
                 const color = i % 3 === 0 ? (theme === 'dark' ? '#ff7890' : '#bb2947') : (theme === 'dark' ? '#64e8bd' : '#08795d');
@@ -117,5 +117,104 @@
             message.remove(); errors.delete(field);
         });
     }
+    // The box a popover must stay inside: the viewport, narrowed by any ancestor that clips overflow.
+    function visibleBounds(element) {
+        const bounds = {top: 0, left: 0, right: window.innerWidth, bottom: window.innerHeight};
+        for (let node = element.parentElement; node && node !== document.body; node = node.parentElement) {
+            if (getComputedStyle(node).overflow === 'visible') continue;
+            const rect = node.getBoundingClientRect();
+            bounds.top = Math.max(bounds.top, rect.top); bounds.left = Math.max(bounds.left, rect.left);
+            bounds.right = Math.min(bounds.right, rect.right); bounds.bottom = Math.min(bounds.bottom, rect.bottom);
+        }
+        return bounds;
+    }
+    // A search box filters a menu's buttons; section labels hide when none of their items match.
+    function filterableMenus() {
+        document.querySelectorAll('[data-filter-target]').forEach(input => {
+            const panel = document.getElementById(input.dataset.filterTarget);
+            if (!panel) return;
+            const empty = panel.querySelector('[data-filter-empty]');
+            input.addEventListener('input', () => {
+                const query = input.value.trim().toLowerCase();
+                let label = null, labelHasMatch = false, matches = 0;
+                const closeSection = () => { if (label) label.hidden = !labelHasMatch; };
+                Array.from(panel.children).forEach(child => {
+                    if (child.classList.contains('chart-control-menu-section-label')) {
+                        closeSection(); label = child; labelHasMatch = false; return;
+                    }
+                    if (child.tagName !== 'BUTTON') return;
+                    const match = !query || child.textContent.toLowerCase().includes(query);
+                    child.hidden = !match;
+                    if (match) { labelHasMatch = true; matches++; }
+                });
+                closeSection();
+                if (empty) empty.hidden = matches > 0;
+            });
+        });
+    }
+    // "?" glossary buttons: hover or focus shows the definition, a click pins it for touch screens.
+    function termHelp() {
+        const helps = Array.from(document.querySelectorAll('.term-help'));
+        if (!helps.length) return;
+        const close = except => helps.forEach(help => {
+            if (help === except) return;
+            help.classList.remove('is-open');
+            help.querySelector('.term-help-button')?.setAttribute('aria-expanded', 'false');
+        });
+        helps.forEach(help => {
+            const button = help.querySelector('.term-help-button'), text = help.querySelector('.term-help-text');
+            if (!button || !text) return;
+            const place = () => {
+                help.classList.remove('align-start', 'align-end', 'align-below');
+                const bounds = visibleBounds(help), rect = text.getBoundingClientRect();
+                if (rect.right > bounds.right - 8) help.classList.add('align-end');
+                else if (rect.left < bounds.left + 8) help.classList.add('align-start');
+                if (rect.top < bounds.top + 8) help.classList.add('align-below');
+            };
+            help.addEventListener('mouseenter', place);
+            button.addEventListener('focus', place);
+            button.addEventListener('click', event => {
+                event.preventDefault();
+                const open = !help.classList.contains('is-open');
+                close(help);
+                help.classList.toggle('is-open', open);
+                button.setAttribute('aria-expanded', String(open));
+                if (open) place();
+            });
+        });
+        document.addEventListener('click', event => {
+            if (!(event.target instanceof Element) || !event.target.closest('.term-help')) close(null);
+        });
+        document.addEventListener('keydown', event => { if (event.key === 'Escape') close(null); });
+    }
+    // Row "more actions" menus close on outside click or Escape, and open upwards when clipped below.
+    function rowMenus() {
+        const menus = Array.from(document.querySelectorAll('details.row-menu'));
+        if (!menus.length) return;
+        menus.forEach(menu => menu.addEventListener('toggle', () => {
+            if (!menu.open) return;
+            menus.forEach(other => { if (other !== menu) other.open = false; });
+            menu.classList.remove('opens-up');
+            const panel = menu.querySelector('.row-menu-panel');
+            if (panel && panel.getBoundingClientRect().bottom > visibleBounds(menu).bottom - 8) menu.classList.add('opens-up');
+        }));
+        document.addEventListener('click', event => {
+            const inside = event.target instanceof Element ? event.target.closest('details.row-menu') : null;
+            menus.forEach(menu => { if (menu !== inside) menu.open = false; });
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') menus.forEach(menu => { menu.open = false; });
+        });
+    }
+    // One-line status chips: the full message is in the tooltip, and a click expands it in place.
+    function expandableStatus() {
+        document.querySelectorAll('[data-expandable-status]').forEach(status => {
+            const sync = () => { status.title = status.textContent.trim(); };
+            status.addEventListener('click', () => status.classList.toggle('is-expanded'));
+            new MutationObserver(sync).observe(status, {childList: true, characterData: true, subtree: true});
+            sync();
+        });
+    }
     labelRows(); settingsChanges(); appearancePreview(); fieldErrors();
+    filterableMenus(); termHelp(); rowMenus(); expandableStatus();
 })();

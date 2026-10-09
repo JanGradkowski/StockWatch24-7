@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { JSDOM } = require('jsdom');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 const pickerSource = fs.readFileSync('src/main/resources/static/js/watchlist-picker.js', 'utf8');
 const stockSource = fs.readFileSync('src/main/resources/static/js/stock-workspace.js', 'utf8');
 
@@ -11,6 +12,7 @@ function setup(lists = [], memberships = []) {
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new dom.window.Event('close')); };
   dom.window.fetch = async url => ({ ok: true, json: async () => url.includes('/memberships/') ? memberships : lists });
+  dom.window.StockWatchI18n = StockWatchI18n;
   dom.window.eval(pickerSource);
   return dom;
 }
@@ -73,7 +75,7 @@ function stockSave(selection, changes, responseOk = true, outlookChanges = []) {
     encodedTicker: 'AAPL', secureJsonHeaders: () => ({}), alertChangePayload: i => i,
     fetch: async (url, options) => { sent.push({ url, body: JSON.parse(options.body) }); return { ok: responseOk, json: async () => ({ error: 'Test failure' }) }; },
     hydrateAlertDraft: () => calls.push('hydrate'), trackedAlertSummary: '1 rule', technicalFollowAllBusy: false,
-    outlookFollowStateLoaded: true, alertStateLoaded: true, console, decodeURIComponent, alertSaveInProgress: false };
+    outlookFollowStateLoaded: true, alertStateLoaded: true, console, decodeURIComponent, alertSaveInProgress: false, i18n: StockWatchI18n };
   vm.createContext(context); vm.runInContext(stockSource.slice(start, end), context);
   return { run: () => context.performAlertDraftSave(), status, sent, calls, context };
 }
@@ -158,6 +160,7 @@ test('outlook star changes only mark the draft and activate Apply and the naviga
   w.updateTechnicalFollowAllButton = () => {};
   w.setAlertBeforeUnloadGuard = enabled => { w.guarded = enabled; };
   w.fetch = () => { throw new Error('Starring must not save'); };
+  w.i18n = StockWatchI18n;
   // Keep state and functions in one evaluation so lexical bindings remain available.
   const names = ['outlookFollowInputs', 'hydrateOutlookFollowState', 'changedOutlookInputs', 'hasUnappliedAlertChanges', 'updateAlertDraftUi', 'hasAnyTechnicalFollow', 'toggleAllTechnicalMonitoring'];
   const functions = names.map(name => {

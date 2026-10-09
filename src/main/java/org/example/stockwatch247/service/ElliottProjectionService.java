@@ -261,6 +261,10 @@ public class ElliottProjectionService {
         boolean beyondEndpoint = ElliottProjectionAdaptationPolicy.beyond(boundaryClose,
                 scenario.getScenarioInvalidationPrice(), scenario.getScenarioInvalidationSide());
         scenario.setBoundaryStreak(beyondEndpoint ? scenario.getBoundaryStreak() + 1 : 0);
+        if (ElliottProjectionPolicy.COMPRESSED_WAVE_IV.equals(scenario.getScenarioKey())) {
+            evaluateCompressedWaveFour(scenario, latest, elapsed);
+            return;
+        }
 
         // Existing rows may have passed their target before adaptive monitoring was deployed.
         // Recover the contact from available history without pretending a redraw occurred in the past.
@@ -332,6 +336,40 @@ public class ElliottProjectionService {
             scenario.setEvaluationNote("Current path retained after " + elapsed + " completed candles; no decisive revision evidence.");
         }
         scenario.setCurrentConfidence(confidence);
+    }
+
+    /**
+     * The compressed zone is the remaining legal Wave IV range, not an objective: price trading
+     * inside it is the scenario playing out, so contact never hides the path. It ends through the
+     * Wave I hard boundary, a sustained Wave III extension, the next validated stage, or old age.
+     */
+    private void evaluateCompressedWaveFour(ElliottProjectionScenario scenario, Candle latest, int elapsed) {
+        scenario.setTargetHistoryChecked(true);
+        if (scenario.getBoundaryStreak() >= ElliottProjectionAdaptationPolicy.REQUIRED_CLOSES) {
+            invalidate(scenario, latest,
+                    "Three completed closes extended beyond Wave III; the compressed Wave IV path no longer applies.");
+            return;
+        }
+        if (elapsed > ElliottProjectionAdaptationPolicy.lifetime(scenario)) {
+            scenario.setStatus(ElliottProjectionScenarioStatus.UNRESOLVED);
+            scenario.setCurrentConfidence(Math.min(scenario.getCurrentConfidence(), 20));
+            scenario.setEvaluationNote("No validated Wave IV endpoint within the bounded monitoring window; awaiting the next validated stage.");
+            return;
+        }
+        boolean overdue = elapsed > scenario.getMaximumCandles();
+        scenario.setStatus(overdue ? ElliottProjectionScenarioStatus.DISFAVORED : ElliottProjectionScenarioStatus.ACTIVE);
+        scenario.setCurrentConfidence(overdue
+                ? Math.min(scenario.getInitialConfidence(), 24) : scenario.getInitialConfidence());
+        double boundary = scenario.getHardInvalidationPrice() == null
+                ? Double.NaN : scenario.getHardInvalidationPrice();
+        scenario.setEvaluationNote(Double.isFinite(boundary)
+                ? "Close " + ElliottTargetRules.formatPrice(latest.getClosePrice()) + " is "
+                + ElliottTargetRules.formatPrice(Math.abs(boundary - latest.getClosePrice()))
+                + " from the Wave I boundary at " + ElliottTargetRules.formatPrice(boundary) + " after "
+                + elapsed + " completed candles" + (overdue
+                ? "; the candle window has passed, so this path is disfavored."
+                : "; Wave IV remains inside its legal range.")
+                : "Wave IV remains inside its legal range.");
     }
 
     private void invalidate(ElliottProjectionScenario scenario, Candle candle, String reason) {

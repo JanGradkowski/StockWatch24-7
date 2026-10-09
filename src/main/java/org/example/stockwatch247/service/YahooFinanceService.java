@@ -51,6 +51,14 @@ public class YahooFinanceService {
     private final ProviderSymbolRegistry providerSymbolRegistry;
     private final String baseUrl;
     private final boolean enabled;
+    private volatile long unavailableUntilNanos;
+    @Value("${yahoo-finance.failure-cooldown-seconds:60}")
+    private long failureCooldownSeconds = 60;
+
+    /** A transport/provider outage cannot be repaired by trying another ticker alias. */
+    static final class ProviderUnavailableException extends IllegalStateException {
+        ProviderUnavailableException(String message, Throwable cause) { super(message, cause); }
+    }
 
     @Autowired
     public YahooFinanceService(RestTemplate restTemplate,
@@ -111,8 +119,14 @@ public class YahooFinanceService {
             } catch (UnexpectedGranularityException e) {
                 throw e;
             } catch (RuntimeException e) {
+                if (e instanceof ProviderUnavailableException) throw e;
                 primaryFailure = firstFailure(primaryFailure, e);
             }
+        }
+
+        if (!listingDiscoveryAllowed(symbol, asset)) {
+            // Stored candles came from one listing; guessing another one would mix two price series.
+            throw noDataFailure("candle data", symbol, candidates, primaryFailure);
         }
 
         for (String candidate : searchCandidateSymbols(symbol, asset)) {
@@ -128,6 +142,7 @@ public class YahooFinanceService {
             } catch (UnexpectedGranularityException e) {
                 throw e;
             } catch (RuntimeException e) {
+                if (e instanceof ProviderUnavailableException) throw e;
                 primaryFailure = firstFailure(primaryFailure, e);
             }
         }
@@ -145,11 +160,30 @@ public class YahooFinanceService {
             } catch (UnexpectedGranularityException e) {
                 throw e;
             } catch (RuntimeException e) {
+                if (e instanceof ProviderUnavailableException) throw e;
                 primaryFailure = firstFailure(primaryFailure, e);
             }
         }
 
         throw noDataFailure("candle data", symbol, candidates, primaryFailure);
+    }
+
+    private org.example.stockwatch247.repository.CandleRepository candleRepository;
+
+    @Autowired
+    void configureCandleRepository(org.example.stockwatch247.repository.CandleRepository candleRepository) {
+        this.candleRepository = candleRepository;
+    }
+
+    /**
+     * Search and exchange-suffix guesses are discovery tools for a new ticker. Once candles are stored
+     * under an unconfirmed identity, only the listing that produced them may extend the series.
+     */
+    private boolean listingDiscoveryAllowed(String symbol, Optional<StockAsset> asset) {
+        if (asset.isEmpty() || hasReliableListingIdentity(asset.get()) || candleRepository == null) return true;
+        return candleRepository.countBySymbolAndTimeInterval(symbol, "1d") == 0
+                && candleRepository.countBySymbolAndTimeInterval(symbol, "1wk") == 0
+                && candleRepository.countBySymbolAndTimeInterval(symbol, "1mo") == 0;
     }
 
     public StockAsset refreshStockAssetMetadata(String rawSymbol) {
@@ -167,6 +201,7 @@ public class YahooFinanceService {
                 verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
                 return updateAssetMetadata(symbol, candidate, series.meta(), "DIRECT_OR_ALIAS");
             } catch (RuntimeException e) {
+                if (e instanceof ProviderUnavailableException) throw e;
                 lastFailure = e;
             }
         }
@@ -180,6 +215,7 @@ public class YahooFinanceService {
                 verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
                 return updateAssetMetadata(symbol, candidate, series.meta(), "VERIFIED_SEARCH");
             } catch (RuntimeException e) {
+                if (e instanceof ProviderUnavailableException) throw e;
                 lastFailure = e;
             }
         }
@@ -193,6 +229,7 @@ public class YahooFinanceService {
                 verifyCandidateCompatibility(asset.orElse(null), candidate, series.meta());
                 return updateAssetMetadata(symbol, candidate, series.meta(), "SUFFIX_FALLBACK");
             } catch (RuntimeException e) {
+                if (e instanceof ProviderUnavailableException) throw e;
                 lastFailure = e;
             }
         }
@@ -389,6 +426,7 @@ public class YahooFinanceService {
                     .distinct()
                     .toList();
         } catch (RuntimeException e) {
+            if (e instanceof ProviderUnavailableException) throw e;
             System.err.println("Yahoo Finance symbol search unavailable for " + searchQuery + ": " + e.getMessage());
             return List.of();
         }
@@ -413,6 +451,9 @@ public class YahooFinanceService {
     }
 
     private JsonNode query(URI uri) {
+        if (unavailableUntilNanos != 0 && System.nanoTime() - unavailableUntilNanos < 0) {
+            throw new ProviderUnavailableException("Yahoo Finance is temporarily unavailable; waiting before retrying the provider.", null);
+        }
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.set(HttpHeaders.USER_AGENT, USER_AGENT);
@@ -426,12 +467,24 @@ public class YahooFinanceService {
             }
             return objectMapper.readTree(response);
         } catch (RestClientResponseException e) {
+            int status = e.getStatusCode().value();
+            if (status == 429 || status == 401 || status == 403 || status >= 500) {
+                throw providerUnavailable("Yahoo Finance returned HTTP " + status + ".", e);
+            }
             throw new IllegalStateException("Yahoo Finance request failed: " + describeHttpError(e), e);
+        } catch (org.springframework.web.client.ResourceAccessException e) {
+            throw providerUnavailable("Yahoo Finance connection failed: " + e.getMessage(), e);
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("Yahoo Finance request failed.", e);
         }
+    }
+
+    private ProviderUnavailableException providerUnavailable(String message, RuntimeException cause) {
+        unavailableUntilNanos = System.nanoTime()
+                + java.util.concurrent.TimeUnit.SECONDS.toNanos(Math.max(1, failureCooldownSeconds));
+        return new ProviderUnavailableException(message, cause);
     }
 
     private StockAsset updateAssetMetadata(String requestedSymbol,
@@ -454,6 +507,9 @@ public class YahooFinanceService {
         asset.setCompanyName(name.isBlank() ? requestedSymbol : name);
         if (!preserveCanonicalListing) {
             asset.setExchange(exchange.isBlank() ? "UNKNOWN" : exchange);
+            // Record the venue so other providers request this same listing rather than a namesake.
+            String resolvedMic = yahooMic(meta);
+            if (asset.getMicCode() == null && resolvedMic != null) asset.setMicCode(resolvedMic);
         }
         asset.setCurrency(currency.isBlank() ? "USD" : currency);
         InstrumentType providerType = InstrumentType.fromProviderValue(firstNonBlank(
@@ -773,7 +829,7 @@ public class YahooFinanceService {
                 ? ""
                 : " Primary provider failure: " + cause.getMessage();
         return new IllegalStateException(
-                "Yahoo Finance has no " + dataType + " for " + symbol + "." + attempts + failureDetail,
+                "Yahoo Finance could not retrieve " + dataType + " for " + symbol + "." + attempts + failureDetail,
                 cause
         );
     }

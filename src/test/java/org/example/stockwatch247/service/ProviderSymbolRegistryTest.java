@@ -15,6 +15,20 @@ import static org.mockito.Mockito.when;
 
 class ProviderSymbolRegistryTest {
 
+    @Test void conflictingExchangeCannotOverrideCanonicalListing() {
+        var repository = mock(ProviderSymbolAliasRepository.class);
+        var asset = new StockAsset(); asset.setId(42L); asset.setMicCode("XNYS");
+        var alias = mock(ProviderSymbolAlias.class);
+        when(alias.getMicCode()).thenReturn("XLIM");
+        when(repository.findByStockAsset_IdAndProvider(42L,MarketDataProvider.TWELVE_DATA)).thenReturn(Optional.of(alias));
+        var registry = new ProviderSymbolRegistry(repository);
+        assertThat(registry.find(asset,MarketDataProvider.TWELVE_DATA)).isEmpty();
+        registry.remember(asset,MarketDataProvider.TWELVE_DATA,"HD","XLIM","PROVIDER_METADATA");
+        org.mockito.Mockito.verify(repository,org.mockito.Mockito.never()).upsert(
+                org.mockito.ArgumentMatchers.anyLong(),org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString());
+    }
+
     @Test
     void storesAndResolvesAProviderSpecificSymbolForAnInternalAsset() {
         ProviderSymbolAliasRepository repository = mock(ProviderSymbolAliasRepository.class);

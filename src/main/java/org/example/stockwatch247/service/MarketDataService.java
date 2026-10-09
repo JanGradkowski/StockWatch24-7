@@ -42,6 +42,18 @@ public class MarketDataService {
     private final CandleBatchStore candleBatchStore;
     private final ApplicationEventPublisher eventPublisher;
     private final BoundedTtlCache<SyncKey, FailedSync> recentFailedSyncs = new BoundedTtlCache<>(1024, 300);
+    private final BoundedTtlCache<SyncKey, Integer> bootstraps = new BoundedTtlCache<>(1024, 86_400);
+    @Autowired
+    private MarketDataAnalysisState analysisState;
+    private CorporateActionService corporateActions;
+    private CandleCompletionService candleCompletion;
+
+    @Autowired
+    void configureHistoryMaintenance(CorporateActionService corporateActions,
+                                     CandleCompletionService candleCompletion) {
+        this.corporateActions = corporateActions;
+        this.candleCompletion = candleCompletion;
+    }
 
     @Autowired
     public MarketDataService(CandleRepository candleRepository,
@@ -122,9 +134,79 @@ public class MarketDataService {
         String interval = SecurityInputValidator.requireInterval(rawInterval);
         int required = Math.max(2, Math.min(1_000, requiredCandles));
         long cached = candleRepository.countBySymbolAndTimeInterval(symbol, interval);
-        boolean bootstrapRequired = cached < required;
+        Integer attempted = bootstraps.get(new SyncKey(symbol, interval), java.time.Instant.now().getEpochSecond());
+        boolean covered = attempted != null && attempted >= required;
+        if (!covered && cached > 0 && cached < required && analysisState != null)
+            covered = analysisState.recentlyBootstrapped(symbol, interval, required);
+        boolean bootstrapRequired = cached == 0 || cached < required && !covered;
         int outputSize = bootstrapRequired ? required : 10;
+        if (!bootstrapRequired) {
+            // A fixed ten-bar delta cannot repair an outage or an interior hole.
+            int needed = barsNeededToCloseGaps(symbol, interval, required);
+            // A hole the providers cannot fill is retried at most once a day, not on every run.
+            if (needed > outputSize && (attempted == null || attempted < needed)) {
+                outputSize = Math.min(1_000, needed);
+                bootstrapRequired = true;
+            }
+        }
         return syncCandles(symbol, interval, null, false, outputSize, bootstrapRequired);
+    }
+
+    /**
+     * Bars to request so the newest {@code required} periods are contiguous: everything since the
+     * newest stored bar, or the whole window when expected trading periods are missing inside it.
+     * Weekends are not trading periods; up to two missing weekdays in a row are treated as holidays.
+     */
+    int barsNeededToCloseGaps(String symbol, String interval, int required) {
+        List<Candle> newest = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, interval, PageRequest.of(0, Math.max(2, required)));
+        if (newest.isEmpty()) return 10;
+        long now = java.time.Instant.now().getEpochSecond();
+        long sinceNewest = expectedPeriodsBetween(interval, newest.getFirst().getTimestamp(), now);
+        int needed = (int) Math.min(1_000, sinceNewest + 5);
+        // Intraday sessions have overnight and weekend breaks, so only calendar series are checked for holes.
+        if (!java.util.Set.of("1d", "1wk", "1mo").contains(interval)) return needed;
+        for (int index = 0; index + 1 < newest.size(); index++) {
+            long gap = expectedPeriodsBetween(interval, newest.get(index + 1).getTimestamp(),
+                    newest.get(index).getTimestamp());
+            if (gap > 3) {
+                needed = Math.max(needed, required);
+                break;
+            }
+        }
+        return needed;
+    }
+
+    /** Trading periods strictly after {@code from} and up to {@code to} (weekdays for daily bars). */
+    static long expectedPeriodsBetween(String interval, long from, long to) {
+        if (to <= from) return 0;
+        java.time.LocalDate start = java.time.Instant.ofEpochSecond(from).atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        java.time.LocalDate end = java.time.Instant.ofEpochSecond(to).atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        return switch (interval) {
+            case "1wk" -> java.time.temporal.ChronoUnit.WEEKS.between(start, end);
+            case "1mo" -> java.time.temporal.ChronoUnit.MONTHS.between(start.withDayOfMonth(1), end.withDayOfMonth(1));
+            case "1d" -> {
+                long weekdays = 0;
+                for (java.time.LocalDate day = start.plusDays(1); !day.isAfter(end) && weekdays <= 1_000; day = day.plusDays(1)) {
+                    if (day.getDayOfWeek().getValue() <= 5) weekdays++;
+                }
+                yield weekdays;
+            }
+            default -> Math.max(0, (to - from) / 3_600L);
+        };
+    }
+
+    private long completedBefore(String interval, List<MarketDataBar> bars) {
+        if (candleCompletion != null && java.util.Set.of("1d", "1wk", "1mo").contains(interval)) {
+            org.example.stockwatch247.model.enums.TimeInterval timeInterval = switch (interval) {
+                case "1wk" -> org.example.stockwatch247.model.enums.TimeInterval.WEEKLY;
+                case "1mo" -> org.example.stockwatch247.model.enums.TimeInterval.MONTHLY;
+                default -> org.example.stockwatch247.model.enums.TimeInterval.DAILY;
+            };
+            return candleCompletion.firstIncompleteCandleTimestamp(timeInterval);
+        }
+        // Without a calendar, the newest bar may still be forming.
+        return bars.stream().mapToLong(MarketDataBar::timestamp).max().orElse(Long.MAX_VALUE);
     }
 
     private CandleSyncResult syncCandles(String rawSymbol,
@@ -204,6 +286,13 @@ public class MarketDataService {
                 ensureAsset(symbol);
                 long persistenceStarted = System.nanoTime();
                 int persistedCandles = persistChangedCandles(symbol, interval, bars);
+                if (bootstrapRequired) {
+                    if (analysisState != null) analysisState.record(symbol, interval, outputSize, bars.size());
+                    bootstraps.put(syncKey, outputSize, java.time.Instant.now().getEpochSecond());
+                    if (bars.size() < outputSize) log.info(
+                            "Analysis history is partial: symbol={} interval={} requested={} received={} source={}; using available history and delta refreshes",
+                            symbol, interval, outputSize, bars.size(), source);
+                }
                 long persistenceMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
                         System.nanoTime() - persistenceStarted);
                 syncCoordinator.markSuccessful(claim);
@@ -402,7 +491,11 @@ public class MarketDataService {
     private int persistChangedCandles(String symbol, String interval, List<MarketDataBar> bars) {
         List<MarketDataBar> validBars = bars.stream()
                 .filter(this::hasValidTimestamp)
+                .filter(MarketDataBar::hasValidPrices)
                 .toList();
+        if (validBars.size() < bars.size()) {
+            log.warn("Skipped {} malformed {} {} bars from the provider", bars.size() - validBars.size(), symbol, interval);
+        }
         if (validBars.isEmpty()) {
             return 0;
         }
@@ -413,6 +506,15 @@ public class MarketDataService {
         Map<Long, Candle> existingByTimestamp = new LinkedHashMap<>();
         candleRepository.findBySymbolAndTimeIntervalAndTimestampIn(symbol, interval, timestamps)
                 .forEach(candle -> existingByTimestamp.put(candle.getTimestamp(), candle));
+        if (corporateActions != null) {
+            var split = CorporateActionService.detect(validBars, existingByTimestamp, completedBefore(interval, validBars));
+            if (split.isPresent() && corporateActions.apply(symbol, interval, split.get())) {
+                // Older stored bars are now on the provider's adjusted basis; compare against them.
+                existingByTimestamp.clear();
+                candleRepository.findBySymbolAndTimeIntervalAndTimestampIn(symbol, interval, timestamps)
+                        .forEach(candle -> existingByTimestamp.put(candle.getTimestamp(), candle));
+            }
+        }
 
         Map<Long, Candle> changedByTimestamp = new LinkedHashMap<>();
         for (MarketDataBar bar : validBars) {

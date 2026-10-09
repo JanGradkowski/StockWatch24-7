@@ -30,6 +30,7 @@ public class WatchlistService {
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.context.ApplicationEventPublisher events;
     @org.springframework.beans.factory.annotation.Autowired private WatchlistAllowedSignals permissions;
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private TrackedInstrumentGuard guard;
     private final JdbcTemplate db;
     private final StockAssetRepository assets;
     private final TwelveDataService market;
@@ -137,12 +138,13 @@ public class WatchlistService {
     public void attach(User user,String symbol,List<Long> ids,String newName) {
         lock(user);
         Set<Long> selected=new LinkedHashSet<>(ids==null?List.of():ids);
-        if(selected.stream().anyMatch(Objects::isNull)) throw new IllegalArgumentException("Choose valid watchlists.");
+        if(selected.stream().anyMatch(Objects::isNull)) throw new UserInputException("Choose valid watchlists.");
         selected.forEach(id->requireOwned(user,id));
         if(newName!=null && !newName.isBlank()) selected.add(create(user,newName,""));
-        if(selected.isEmpty()) throw new IllegalArgumentException("Select a watchlist or create one.");
+        if(selected.isEmpty()) throw new UserInputException("Select a watchlist or create one.");
         String canonical=SecurityInputValidator.requireMarketSymbol(symbol);
-        var asset=assets.findByTickerSymbolIgnoreCase(canonical).orElseGet(()->market.refreshStockAssetMetadata(canonical));
+        var asset=assets.findByTickerSymbolIgnoreCase(canonical).orElseGet(()->guard==null
+                ? market.refreshStockAssetMetadata(canonical) : guard.resolveListing(canonical));
         assets.flush();
         List<Long> added=new ArrayList<>();
         for(long id:selected) {
@@ -153,7 +155,7 @@ public class WatchlistService {
     }
 
     public void requireMembership(User user,String symbol) {
-        if(memberships(user,symbol).isEmpty()) throw new IllegalArgumentException("Choose a watchlist before enabling monitoring.");
+        if(memberships(user,symbol).isEmpty()) throw new UserInputException("Choose a watchlist before enabling monitoring.");
     }
 
     public Set<String> symbols(User user,long id) {
@@ -170,7 +172,7 @@ public class WatchlistService {
         requireOwned(user,id);
         int offset=Math.max(0,Math.min(page,100000))*50;
         String search=query==null?"":query.trim().toLowerCase(Locale.ROOT);
-        if(search.length()>100) throw new IllegalArgumentException("Search is too long.");
+        if(search.length()>100) throw new UserInputException("Search is too long.");
         String where="""
             from watchlist_members m join stock_assets a on a.id=m.stock_asset_id
             where m.watchlist_id=? and (?='' or lower(a.ticker_symbol) like ? or lower(a.company_name) like ?)
@@ -216,7 +218,7 @@ public class WatchlistService {
     private String validText(String text,int length,boolean required) {
         String value=text==null?"":text.strip();
         if((required && value.isEmpty()) || value.length()>length || value.chars().anyMatch(c->Character.isISOControl(c)))
-            throw new IllegalArgumentException("Use "+(required?"1–":"at most ")+length+" characters without control characters.");
+            throw new UserInputException("Use "+(required?"1–":"at most ")+length+" characters without control characters.");
         return value;
     }
     public record ListView(long id,String name,String description,boolean pinned,long instruments,long monitored,long unread,List<String> allowedTypes) {}

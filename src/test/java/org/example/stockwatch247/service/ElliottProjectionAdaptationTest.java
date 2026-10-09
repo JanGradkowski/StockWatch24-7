@@ -204,12 +204,7 @@ class ElliottProjectionAdaptationTest {
         assertThat(scenario.label()).isEqualTo("STANDARD_WAVE_III");
         assertThat(scenario.revisions()).hasSize(2);
 
-        var resolver = new org.thymeleaf.templateresolver.ClassLoaderTemplateResolver();
-        resolver.setPrefix("templates/");
-        resolver.setSuffix(".html");
-        resolver.setTemplateMode(org.thymeleaf.templatemode.TemplateMode.HTML);
-        var engine = new org.thymeleaf.spring6.SpringTemplateEngine();
-        engine.setTemplateResolver(resolver);
+        var engine = org.example.stockwatch247.template.TestTemplateEngines.create();
         var context = new org.thymeleaf.context.Context();
         context.setVariable("signal", new HistoryModel(history));
         String rendered = engine.process(new org.thymeleaf.TemplateSpec("signal-detail",
@@ -228,12 +223,7 @@ class ElliottProjectionAdaptationTest {
         User user = new User();
         when(f.sets.findOwnedHistory(7L, user)).thenReturn(List.of(f.set));
         f.evaluate(f.prices(103, 108, 118, 128, 136));
-        var resolver = new org.thymeleaf.templateresolver.ClassLoaderTemplateResolver();
-        resolver.setPrefix("templates/");
-        resolver.setSuffix(".html");
-        resolver.setTemplateMode(org.thymeleaf.templatemode.TemplateMode.HTML);
-        var engine = new org.thymeleaf.spring6.SpringTemplateEngine();
-        engine.setTemplateResolver(resolver);
+        var engine = org.example.stockwatch247.template.TestTemplateEngines.create();
         var context = new org.thymeleaf.context.Context();
         context.setVariable("signal", new ProjectionModel(f.service.latestVisible(7L, user).orElseThrow(), true));
         var spec = new org.thymeleaf.TemplateSpec("signal-detail",

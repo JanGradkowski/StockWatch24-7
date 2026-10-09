@@ -36,7 +36,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -158,6 +158,13 @@ public class AlertRuleService {
         this.elliottWavePreferencesService = elliottWavePreferencesService;
     }
 
+    private TrackedInstrumentGuard trackedInstrumentGuard;
+
+    @Autowired
+    void configureTrackedInstrumentGuard(TrackedInstrumentGuard trackedInstrumentGuard) {
+        this.trackedInstrumentGuard = trackedInstrumentGuard;
+    }
+
     @Autowired
     void configureElliottTradePlans(ElliottTradePlanService elliottTradePlanService) {
         this.elliottTradePlanService = elliottTradePlanService;
@@ -238,7 +245,31 @@ public class AlertRuleService {
             throw new IllegalArgumentException("User is required.");
         }
         int rules = alertRuleRepository.deactivateAllByUser(user);
+        forgetWatchlistMonitoring(user, null);
         return rules + (outlookSubscriptions == null ? 0 : outlookSubscriptions.unfollow(user, null, LocalDateTime.now()));
+    }
+
+    private static final String TECHNICAL_WATCHLIST_SIGNALS =
+            "('CANDLESTICK','ELLIOTT_WAVE','HARMONIC_FORMATION','OUTLOOK')";
+
+    /**
+     * Unfollowing must also remove the watchlist entries that asked for this monitoring; otherwise the
+     * next watchlist change re-applies them and quietly switches the rules back on.
+     */
+    private void forgetWatchlistMonitoring(User user, Long stockAssetId) {
+        if (jdbcTemplate == null || user == null || user.getId() == null) return;
+        jdbcTemplate.update("delete from watchlist_member_signals s using watchlists w"
+                        + " where s.watchlist_id = w.id and w.user_id = ? and s.signal_type in " + TECHNICAL_WATCHLIST_SIGNALS
+                        + " and (cast(? as bigint) is null or s.stock_asset_id = ?)",
+                user.getId(), stockAssetId, stockAssetId);
+    }
+
+    private void forgetWatchlistMonitoring(User user, long stockAssetId, String signalType, String interval, String direction) {
+        if (jdbcTemplate == null || user == null || user.getId() == null) return;
+        jdbcTemplate.update("delete from watchlist_member_signals s using watchlists w"
+                        + " where s.watchlist_id = w.id and w.user_id = ? and s.stock_asset_id = ?"
+                        + " and s.signal_type = ? and s.interval = ? and s.direction = ?",
+                user.getId(), stockAssetId, signalType, interval, direction);
     }
 
     @Transactional
@@ -257,6 +288,7 @@ public class AlertRuleService {
         if (!activeRules.isEmpty()) {
             alertRuleRepository.saveAll(activeRules);
         }
+        forgetWatchlistMonitoring(user, stockAsset.getId());
         return activeRules.size() + (outlookSubscriptions == null ? 0
                 : outlookSubscriptions.unfollow(user, symbol, LocalDateTime.now()));
     }
@@ -291,6 +323,19 @@ public class AlertRuleService {
         selectedRules.forEach(rule -> rule.setActive(false));
         if (!selectedRules.isEmpty()) {
             alertRuleRepository.saveAll(selectedRules);
+        }
+        if (stockAsset.getId() != null) {
+            for (AlertRule rule : selectedRules) {
+                forgetWatchlistMonitoring(user, stockAsset.getId(), normalizeFamily(rule.getPatternFamily()).name(),
+                        rule.getInterval().name(), rule.getTradeSignal().name());
+            }
+            if (!outlookIds.isEmpty() && jdbcTemplate != null) {
+                for (String interval : jdbcTemplate.queryForList(
+                        "select interval from technical_outlook_subscriptions where user_id = ? and id = any(?)",
+                        String.class, user.getId(), outlookIds.toArray(Long[]::new))) {
+                    forgetWatchlistMonitoring(user, stockAsset.getId(), "OUTLOOK", interval, "ANY");
+                }
+            }
         }
         return selectedRules.size() + (outlookSubscriptions == null || outlookIds.isEmpty() ? 0
                 : outlookSubscriptions.unfollowSelected(user, symbol, outlookIds, LocalDateTime.now()));
@@ -660,6 +705,10 @@ public class AlertRuleService {
         SignalLifecycleStatus status = event.getLifecycleStatus() == null
                 ? SignalLifecycleStatus.DETECTED
                 : event.getLifecycleStatus();
+        if (status == SignalLifecycleStatus.DETECTED && event.awaitingFill()) return SignalArchiveOutcome.unavailable(
+                "Awaiting entry", "The trade enters at the next candle's open");
+        if (status == SignalLifecycleStatus.REJECTED && event.notFilled()) return SignalArchiveOutcome.unavailable(
+                "Not filled", event.getLifecycleResolutionReason());
         return switch (status) {
             case CONFIRMED -> SignalArchiveOutcome.available(
                     "Sold at target",
@@ -682,11 +731,10 @@ public class AlertRuleService {
                                 exit,
                                 "Trade closed at the saved horizon close");
             }
-            case DETECTED -> SignalArchiveOutcome.available(
-                    "Potential at sell target",
-                    directionalReturnPercent(event.getTradeSignal(), entry, event.getProfitTargetPrice()),
-                    event.getProfitTargetPrice(),
-                    "Open trade · planned target return");
+            // An open trade is valued at the latest finished close; the planned target stays on the detail page.
+            case DETECTED -> pendingOutcome(
+                    event, closesCountedFrom(event), entry, event.getTradeSignal(),
+                    "Open · current return", "Current return since entry at the latest completed close");
             case POTENTIAL -> SignalArchiveOutcome.unavailable(
                     "Potential candidate", "Awaiting the mandatory next-candle detection gate");
             case REJECTED -> SignalArchiveOutcome.unavailable(
@@ -695,7 +743,7 @@ public class AlertRuleService {
     }
 
     private SignalArchiveOutcome harmonicArchiveOutcome(AlertEvent event) {
-        if (!("HARMONIC_STOP_V1".equals(event.getTradePlanVersion()) || HarmonicStopPlanPolicy.VERSION.equals(event.getTradePlanVersion()))
+        if (!("HARMONIC_STOP_V1".equals(event.getTradePlanVersion()) || HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion()))
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
                 || event.getHarmonicStopStatus() == null) {
@@ -710,8 +758,11 @@ public class AlertRuleService {
             return SignalArchiveOutcome.unavailable(
                     "Outcome unavailable", "The stored harmonic outcome status is not recognized");
         }
+        if (status == HarmonicStopStatus.ACTIVE && event.awaitingFill()) return SignalArchiveOutcome.unavailable(
+                "Awaiting entry", "The trade enters at the next candle's open");
         return switch (status) {
             case PROJECTION_ONLY -> SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
+            case NOT_FILLED -> SignalArchiveOutcome.unavailable("Not filled", event.getHarmonicStopResolutionReason());
             case TARGET_REACHED -> terminalOutcome(entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
                     "Harmonic target reached", "Modeled primary-target exit");
             case STOPPED -> SignalArchiveOutcome.available(
@@ -723,7 +774,7 @@ public class AlertRuleService {
                     entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
                     "Time stop", "Trade closed at the saved horizon close");
             case ACTIVE -> pendingOutcome(
-                    event, event.getSignalCandleTimestamp(), entry, event.getTradeSignal(),
+                    event, closesCountedFrom(event), entry, event.getTradeSignal(),
                     "Pending harmonic outcome", "Current return before the saved trade horizon");
         };
     }
@@ -754,10 +805,16 @@ public class AlertRuleService {
                     elliottStageLabel(notificationStage) + " projection only", latestPlan.qualification());
         }
         String stage = elliottStageLabel(notificationStage);
+        if (latestPlan.status() == ElliottTradePlanStatus.ACTIVE && latestPlan.awaitingFill()) {
+            return SignalArchiveOutcome.unavailable(stage + " awaiting entry", "The trade enters at the next candle's open");
+        }
+        // A plan filled at an open counts that candle's close; older plans entered at the notification close.
+        long countedFrom = "FILLED".equals(latestPlan.fillStatus()) ? notificationTimestamp - 1 : notificationTimestamp;
         return switch (latestPlan.status()) {
             case ACTIVE -> pendingOutcome(
-                    event, notificationTimestamp, notificationEntry, expectedMove,
-                    "Pending " + stage + " outcome", "Current return since the notification close");
+                    event, countedFrom, notificationEntry, expectedMove,
+                    "Pending " + stage + " outcome", "Current return since entry");
+            case NOT_FILLED -> SignalArchiveOutcome.unavailable(stage + " not filled", latestPlan.resolutionReason());
             case TARGET_REACHED -> terminalOutcome(
                     notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
                     stage + " target reached", "Resolved using the saved plan execution rules");
@@ -804,6 +861,12 @@ public class AlertRuleService {
                 event.getTradeEntryPrice(), event.getTradeSignal(), event.getElliottTradeResolutionClose(),
                 "Elliott " + status.name().toLowerCase(Locale.ROOT).replace('_', ' '),
                 event.getElliottTradeResolutionReason());
+    }
+
+    /** Closes after this timestamp count toward an open trade; a next-open fill counts its own candle. */
+    private static Long closesCountedFrom(AlertEvent event) {
+        return event.getTradeEntryTimestamp() != null && "FILLED".equals(event.getTradeFillStatus())
+                ? event.getTradeEntryTimestamp() - 1 : event.getSignalCandleTimestamp();
     }
 
     private SignalArchiveOutcome pendingOutcome(
@@ -868,6 +931,20 @@ public class AlertRuleService {
     }
 
     private MeasurementAnchor measurementAnchor(AlertEvent event, TimeInterval interval) {
+        if (event.awaitingFill() && event.getLifecycleStatus() == SignalLifecycleStatus.DETECTED) {
+            return MeasurementAnchor.unavailable("Awaiting the entry at the next candle's open");
+        }
+        if (event.notFilled()) {
+            return MeasurementAnchor.unavailable(
+                    "No result because the next candle opened beyond the stop or target, so no trade was entered");
+        }
+        if ("FILLED".equals(event.getTradeFillStatus()) && event.getTradeEntryTimestamp() != null
+                && event.getTradeEntryPrice() != null) {
+            // Entered at this candle's open, so its own close is the first measured result.
+            return new MeasurementAnchor(true, event.getTradeEntryTimestamp(), event.getTradeEntryPrice(),
+                    "From the next candle's open · " + signalPeriodLabel(interval, event.getTradeEntryTimestamp()),
+                    null, true);
+        }
         if (isOneCandleReversal(event)) {
             if (event.getLifecycleStatus() == SignalLifecycleStatus.POTENTIAL) {
                 return MeasurementAnchor.unavailable("Awaiting next-candle confirmation");
@@ -940,11 +1017,11 @@ public class AlertRuleService {
         );
     }
 
+    /** Viewing never changes state; the page marks the signal read with a separate POST. */
     @Transactional
     public SignalDetailView getSignalDetail(User user, Long alertEventId) {
         AlertEvent event = alertEventRepository.findOwnedByIdAndUser(alertEventId, user)
                 .orElseThrow(() -> new IllegalArgumentException("Signal event not found."));
-        event.markRead(LocalDateTime.now());
         AlertRule rule = event.getAlertRule();
         CandlestickHorizonGuidance.Guidance horizonGuidance = CandlestickHorizonGuidance
                 .forSignal(rule.getPatternFamily(), rule.getInterval())
@@ -976,7 +1053,6 @@ public class AlertRuleService {
             ));
         }
         SignalChartView chart = toSignalChartView(event, rule);
-        backfillExistingElliottProjection(event, rule, chart);
         ObservedPriceOutcomeView observedOutcome = toObservedPriceOutcome(event, rule, chart);
         SignalResultsView results = toSignalResults(event, rule, chart);
 
@@ -1029,6 +1105,25 @@ public class AlertRuleService {
                 List.copyOf(reasons),
                 !reasons.isEmpty()
         );
+    }
+
+    @Transactional
+    public boolean markSignalRead(User user, Long alertEventId) {
+        return alertEventRepository.findOwnedByIdAndUser(alertEventId, user)
+                .map(event -> {
+                    event.markRead(LocalDateTime.now());
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    /** Adds projections to Elliott signals recorded before projections were stored at detection time. */
+    @Transactional
+    public void backfillElliottProjection(Long alertEventId) {
+        AlertEvent event = alertEventRepository.findById(alertEventId).orElse(null);
+        if (event == null || event.getAlertRule() == null) return;
+        backfillExistingElliottProjection(event, event.getAlertRule(),
+                toSignalChartView(event, event.getAlertRule()));
     }
 
     private void backfillExistingElliottProjection(
@@ -1097,7 +1192,7 @@ public class AlertRuleService {
         int measurementIndex = -1;
         for (int index = 0; index < candles.size(); index++) {
             if (candles.get(index).timestamp() == anchor.timestamp()) {
-                measurementIndex = index;
+                measurementIndex = anchor.atOpen() ? index - 1 : index;
                 break;
             }
         }
@@ -1120,10 +1215,12 @@ public class AlertRuleService {
         }
 
         List<SignalResultPointView> points = new ArrayList<>(availableForwardCandles + 1);
+        // The start point sits on the candle before the first result, so chart times stay strictly ascending.
+        long startTimestamp = candles.get(measurementIndex).timestamp();
         points.add(new SignalResultPointView(
                 0,
-                anchor.timestamp(),
-                signalPeriodLabel(rule.getInterval(), anchor.timestamp()),
+                startTimestamp,
+                signalPeriodLabel(rule.getInterval(), startTimestamp),
                 anchor.close(),
                 0.0,
                 0.0
@@ -1215,7 +1312,7 @@ public class AlertRuleService {
         int measurementIndex = -1;
         for (int index = 0; index < candles.size(); index++) {
             if (candles.get(index).timestamp() == anchor.timestamp()) {
-                measurementIndex = index;
+                measurementIndex = anchor.atOpen() ? index - 1 : index;
                 break;
             }
         }
@@ -1400,7 +1497,7 @@ public class AlertRuleService {
         String summary = normalizeFamily(rule.getPatternFamily()) == AlertPatternFamily.ELLIOTT_WAVE
                 ? "The marker locates the recorded Elliott detection inside the complete cached interval history."
                 : harmonic != null
-                ? "The saved harmonic geometry is drawn from its first pivot through D/C, with the separate confirmation candle marking when the signal became knowable."
+                ? "The saved harmonic geometry is drawn from its first pivot through D, with the separate confirmation candle marking when the signal became knowable."
                 : "The highlighted region and amber guide trace the identified trend leg inside the detector's broader completed context; labeled arrows identify every candle that formed the pattern.";
 
         ElliottWaveChartView elliottWave = toSignalElliottWaveView(event, rule, candles, signalIndex);
@@ -1772,10 +1869,26 @@ public class AlertRuleService {
                 new AlertRuleChange(interval, signal, patternFamily, active));
 
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
-        StockAsset stockAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
-                .orElseGet(() -> twelveDataService.upsertStockAsset(symbol, symbol, "UNKNOWN", "USD"));
+        StockAsset existing = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
+        if (existing == null && !active) {
+            // Switching off an alert for an unknown listing creates nothing.
+            AlertRule untracked = new AlertRule();
+            StockAsset placeholder = new StockAsset();
+            placeholder.setTickerSymbol(symbol);
+            untracked.setUser(user);
+            untracked.setStockAsset(placeholder);
+            untracked.setInterval(change.interval());
+            untracked.setTradeSignal(change.signal());
+            untracked.setPatternFamily(change.patternFamily());
+            untracked.setTargetPattern(defaultTargetPattern(change.signal(), change.patternFamily()));
+            untracked.setActive(false);
+            return untracked;
+        }
+        StockAsset stockAsset = existing != null ? existing
+                : twelveDataService.upsertStockAsset(symbol, symbol, "UNKNOWN", "USD");
 
         if (active) {
+            stockAsset = requireMarketData(stockAsset);
             enforceTrackedStockLimit(user, stockAsset);
         }
 
@@ -1803,14 +1916,27 @@ public class AlertRuleService {
         }
 
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
-        StockAsset stockAsset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
-                .orElseGet(() -> twelveDataService.upsertStockAsset(symbol, symbol, "UNKNOWN", "USD"));
+        boolean activating = changesByRule.values().stream().anyMatch(AlertRuleChange::active);
+        StockAsset existing = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
+        if (existing == null && !activating) {
+            // Nothing can be switched off for a listing that was never tracked.
+            return;
+        }
+        StockAsset resolved = existing != null ? existing
+                : twelveDataService.upsertStockAsset(symbol, symbol, "UNKNOWN", "USD");
 
-        if (changesByRule.values().stream().anyMatch(AlertRuleChange::active)) {
-            enforceTrackedStockLimit(user, stockAsset);
+        if (activating) {
+            resolved = requireMarketData(resolved);
+            enforceTrackedStockLimit(user, resolved);
         }
 
+        StockAsset stockAsset = resolved;
         changesByRule.values().forEach(change -> upsertAlertRule(user, stockAsset, change));
+    }
+
+    private StockAsset requireMarketData(StockAsset asset) {
+        TrackedInstrumentGuard.requireExchangeSession(asset.getTickerSymbol());
+        return trackedInstrumentGuard == null ? asset : trackedInstrumentGuard.requireMarketData(asset);
     }
 
     /**
@@ -1841,7 +1967,7 @@ public class AlertRuleService {
                 .count();
         long globallyTracked = alertRuleRepository.countDistinctActiveStocks();
         if (globallyTracked + newlyGlobalSymbols > maxGlobalTrackedStocks) {
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "The temporary top-200 universe would exceed global market data capacity.");
         }
 
@@ -1964,12 +2090,13 @@ public class AlertRuleService {
         MarketDataService.CandleSyncResult syncResult = marketDataService
                 .syncCandles(symbol, apiInterval, null, true);
         if (!syncResult.successful()) {
-            throw new IllegalStateException("Candle refresh failed: " + syncResult.failureMessage());
+            throw new MarketDataUnavailableException(symbol, apiInterval, syncResult.failureMessage());
         }
 
         int signalCandleCount = signalCandleCount(interval);
+        // Same history and preparation as the scheduled check, so a manual check matches its alerts.
         int requiredHistory = family == AlertPatternFamily.ELLIOTT_WAVE
-                ? enrichmentService.requiredElliottInputCandles(signalCandleCount, interval)
+                ? SignalInputPreparation.elliottHistory(enrichmentService, interval)
                 : enrichmentService.requiredInputCandles(signalCandleCount, interval);
         long firstIncompleteTimestamp =
                 candleCompletionService.firstIncompleteCandleTimestamp(interval);
@@ -1987,7 +2114,7 @@ public class AlertRuleService {
                 ? TechnicalIndicatorProfile.forInterval(interval) : preferencesService.technicalProfile(profile);
         List<EnrichedCandle> enrichedCandles = enrichmentService.enrich(latest, signalCandleCount, technicalProfile);
         List<EnrichedCandle> elliottCandles = family == AlertPatternFamily.ELLIOTT_WAVE
-                ? enrichedCandles
+                ? SignalInputPreparation.elliottInput(enrichmentService, latest, interval)
                 : List.of();
         List<DetectedSignal> detectedSignals = detectSignals(
                 latest,
@@ -2110,11 +2237,18 @@ public class AlertRuleService {
                 .map(subscription -> new ActiveOutlookSummary(subscription.getId(), AUTOMATED_ANALYSIS_LABEL,
                         subscription.getInterval().name(), intervalLabel(subscription.getInterval())))
                 .toList());
-        response.put("trackedStocks", alertRuleRepository.countDistinctActiveStocksByUser(user));
+        response.put("trackedStocks", trackedInstrumentGuard == null
+                ? alertRuleRepository.countDistinctActiveStocksByUser(user)
+                : trackedInstrumentGuard.trackedCount(user));
         return response;
     }
 
     private void enforceTrackedStockLimit(User user, StockAsset stockAsset) {
+        if (trackedInstrumentGuard != null) {
+            // Alerts and automated outlooks share one definition of a tracked instrument.
+            trackedInstrumentGuard.enforceCapacity(user, stockAsset);
+            return;
+        }
         // Serialize quota decisions so concurrent requests cannot race past either cap.
         jdbcTemplate.queryForObject(
                 "select lock_name from security_resource_locks where lock_name = ? for update",
@@ -2125,12 +2259,12 @@ public class AlertRuleService {
             return;
         }
         if (alertRuleRepository.countDistinctActiveStocksByUser(user) >= maxTrackedStocksPerUser) {
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "Per-user tracked market instrument limit reached (" + maxTrackedStocksPerUser + ").");
         }
         if (!alertRuleRepository.existsByStockAssetAndIsActiveTrue(stockAsset)
                 && alertRuleRepository.countDistinctActiveStocks() >= maxGlobalTrackedStocks) {
-            throw new IllegalStateException("Global market data capacity has been reached.");
+            throw new ConflictException("Global market data capacity has been reached.");
         }
     }
 
@@ -2169,8 +2303,12 @@ public class AlertRuleService {
                             : patternPreferencesService.get(user));
         }
         if (family == AlertPatternFamily.HARMONIC_FORMATION) {
-            HarmonicPatternDetectionService detector = harmonicDetector(user);
-            return detector.detectHistorical(candles).stream()
+            HarmonicPatternDetectionService detector = harmonicDetector(user).forAlerts();
+            List<Candle> chronological = SignalInputPreparation.chronological(candles);
+            // Alerts fire only for recent formations newly available on the latest completed candle.
+            return detector.detectNewlyAvailable(chronological).stream()
+                    .filter(formation -> HarmonicPatternDetectionService.stillActionable(formation, chronological,
+                            interval, HarmonicPatternDetectionService.defaultAlertEndpointAge(interval)))
                     .map(formation -> {
                         Double closePrice = candles.stream()
                                 .filter(candle -> candle.getTimestamp() != null
@@ -2274,7 +2412,8 @@ public class AlertRuleService {
     private String scoreVersion(DetectedSignal signal) {
         if (isElliottPattern(signal.pattern())) return ElliottWaveDetectionService.SETUP_SCORE_VERSION;
         if (isHarmonicPattern(signal.pattern())) return HarmonicPatternDetectionService.RULE_VERSION;
-        return CandlePatternDetectionService.SETUP_SCORE_VERSION;
+        String active = detectionService == null ? null : detectionService.scoreVersion();
+        return active == null ? CandlePatternDetectionService.SETUP_SCORE_VERSION : active;
     }
 
     private boolean isActionableElliottTurningPoint(DetectedSignal signal) {
@@ -2545,7 +2684,10 @@ public class AlertRuleService {
                 elliottTransitionLabels(event.getElliottTransitionHistory()),
                 event.getTradeActionable(), event.getTradeQualification(), event.getTradeRiskAtr(),
                 event.getTradeRiskPercent(), event.getSecondaryTargetPrice(), event.getTradeHorizonCandles(),
-                event.getTradePlanVersion(), event.getTradeResolutionPrice()
+                event.getTradePlanVersion(), event.getTradeResolutionPrice(),
+                event.getTradeFillStatus(),
+                event.getTradeEntryTimestamp() == null ? null
+                        : signalPeriodLabel(interval, event.getTradeEntryTimestamp())
         );
     }
 
@@ -2618,7 +2760,7 @@ public class AlertRuleService {
         if (HarmonicPatternDetectionService.RULE_VERSION.equals(scoreVersion)) {
             return "Harmonic setup score: every hard structural rule passed. The base geometry score reflects accepted deviations from non-hard Fibonacci and proportion targets; same-ticker, same-interval Elliott and candlestick signals from the preceding eight candles then contribute cross-pattern confluence.";
         }
-        String validationNote = CandlePatternDetectionService.SETUP_SCORE_VERSION.equals(scoreVersion)
+        String validationNote = scoreVersion != null && scoreVersion.startsWith("CANDLE_V")
                 ? " This V4 score is experimental and has not demonstrated stable out-of-sample predictive ordering."
                 : "";
         if (setupScore >= 85) {
@@ -2742,7 +2884,12 @@ public class AlertRuleService {
             if (!label.isEmpty()) {
                 label.append(' ');
             }
-            label.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+            // Wave numbers (II, IV, V) and harmonic legs (AB, CD) stay upper case.
+            if (word.matches("i{2,3}|iv|v|ab|cd")) {
+                label.append(word.toUpperCase(Locale.ROOT));
+            } else {
+                label.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+            }
         }
         return label.toString();
     }
@@ -2763,18 +2910,20 @@ public class AlertRuleService {
                 case EXPIRED -> "Expired " + directionName;
             };
         }
-        return direction == TradeSignal.SELL ? "SELL/SHORT" : direction.name();
+        // Elliott and harmonic names describe the structure ("Bearish wave V end"), which can read
+        // as the opposite of the trade; say plainly which way price is expected to move.
+        return direction == TradeSignal.SELL ? "Sell/short · turn down expected" : "Buy · turn up expected";
     }
 
     private LocalDate signalDate(Long timestamp) {
         if (timestamp == null) {
             return null;
         }
-        return Instant.ofEpochSecond(timestamp).atZone(ZoneId.systemDefault()).toLocalDate();
+        return Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC).toLocalDate();
     }
 
     private String signalPeriodLabel(TimeInterval interval, Long timestamp) {
-        return SignalPeriodFormatter.format(timestamp, interval, ZoneId.systemDefault());
+        return SignalPeriodFormatter.format(timestamp, interval, ZoneOffset.UTC);
     }
 
     public record TrackedAlertView(
@@ -3056,11 +3205,18 @@ public class AlertRuleService {
         }
     }
 
+    /** {@code atOpen}: the entry is the open of the anchor candle, so that candle's close is the first result. */
     private record MeasurementAnchor(boolean available,
                                      Long timestamp,
                                      Double close,
                                      String measurementStartLabel,
-                                     String unavailableReason) {
+                                     String unavailableReason,
+                                     boolean atOpen) {
+        private MeasurementAnchor(boolean available, Long timestamp, Double close,
+                                  String measurementStartLabel, String unavailableReason) {
+            this(available, timestamp, close, measurementStartLabel, unavailableReason, false);
+        }
+
         private static MeasurementAnchor unavailable(String reason) {
             return new MeasurementAnchor(false, null, null, null, reason);
         }
@@ -3363,8 +3519,13 @@ public class AlertRuleService {
             String elliottForecastLabel,
             List<String> elliottTransitionHistory,
             Boolean tradeActionable, String tradeQualification, Double tradeRiskAtr, Double tradeRiskPercent,
-            Double secondaryTargetPrice, Integer tradeHorizonCandles, String tradePlanVersion, Double tradeResolutionPrice
+            Double secondaryTargetPrice, Integer tradeHorizonCandles, String tradePlanVersion, Double tradeResolutionPrice,
+            String tradeFillStatus, String entryPeriodLabel
     ) {
+        public boolean awaitingFill() { return "AWAITING_FILL".equals(tradeFillStatus); }
+        public boolean notFilled() { return "NOT_FILLED".equals(tradeFillStatus); }
+        public boolean filledAtOpen() { return "FILLED".equals(tradeFillStatus); }
+
         public SignalLifecycleView {
             elliottTransitionHistory = elliottTransitionHistory == null
                     ? List.of() : List.copyOf(elliottTransitionHistory);

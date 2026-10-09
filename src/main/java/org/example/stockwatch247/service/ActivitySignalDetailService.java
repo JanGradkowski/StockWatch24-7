@@ -68,7 +68,8 @@ public class ActivitySignalDetailService {
         this.alertEventRepository = alertEventRepository;
     }
 
-    @Transactional
+    /** Viewing never changes state; the page marks the delivery read with a separate POST. */
+    @Transactional(readOnly = true)
     public ActivitySignalDetailView getDetail(User user, String requestedSource, Long deliveryId) {
         String source = requestedSource == null ? "" : requestedSource.trim().toUpperCase(Locale.ROOT);
         return switch (source) {
@@ -92,7 +93,6 @@ public class ActivitySignalDetailService {
         CongressionalTradeDelivery delivery = congressionalDeliveryRepository
                 .findOwnedByIdAndUser(deliveryId, user)
                 .orElseThrow(() -> new IllegalArgumentException("Activity signal not found."));
-        delivery.markRead(Instant.now());
         return congressionalTradeDetail(user, delivery.getTrade(), delivery.getId(), delivery.getCreatedAt());
     }
 
@@ -134,7 +134,6 @@ public class ActivitySignalDetailService {
         InsiderTradeDelivery delivery = insiderDeliveryRepository
                 .findOwnedByIdAndUser(deliveryId, user)
                 .orElseThrow(() -> new IllegalArgumentException("Activity signal not found."));
-        delivery.markRead(Instant.now());
         return insiderTradeDetail(user, delivery.getTrade(), delivery.getId(), delivery.getCreatedAt());
     }
 
@@ -222,6 +221,18 @@ public class ActivitySignalDetailService {
                 signalIndex,
                 entryPrice,
                 "PURCHASE".equals(transactionType));
+        // The headline return starts at the first completed close after the filing became public;
+        // the return from the transaction itself stays available as a second figure.
+        int publicIndex = -1;
+        for (int index = 0; filingDate != null && index < completedCandles.size(); index++) {
+            if (epochDate(completedCandles.get(index).getTimestamp()).isAfter(filingDate)) {
+                publicIndex = index;
+                break;
+            }
+        }
+        BigDecimal publicReturn = publicIndex < 0 ? null : generalReturn(completedCandles, publicIndex,
+                completedCandles.get(publicIndex).getClosePrice(), "PURCHASE".equals(transactionType));
+        LocalDate publicEntryDate = publicIndex < 0 ? null : epochDate(completedCandles.get(publicIndex).getTimestamp());
         TechnicalSnapshotView technical = technicalSnapshot(completedCandles, signalIndex, asset.getCurrency());
         RelatedSignalsView related = relatedSignals(userEvents(user, asset, transactionDate));
 
@@ -251,7 +262,9 @@ public class ActivitySignalDetailService {
                 chart,
                 technical,
                 related,
-                results);
+                results,
+                publicReturn,
+                publicEntryDate);
     }
 
     private List<AlertEvent> userEvents(User user, StockAsset asset, LocalDate transactionDate) {
@@ -464,7 +477,9 @@ public class ActivitySignalDetailService {
         StringBuilder label = new StringBuilder();
         for (String word : words) {
             if (!label.isEmpty()) label.append(' ');
-            label.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+            // Wave numbers (II, IV, V) and harmonic legs (AB, CD) stay upper case.
+            if (word.matches("i{2,3}|iv|v|ab|cd")) label.append(word.toUpperCase(Locale.ROOT));
+            else label.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
         }
         return label.toString();
     }
@@ -519,7 +534,9 @@ public class ActivitySignalDetailService {
             ActivityChartView chart,
             TechnicalSnapshotView technical,
             RelatedSignalsView relatedSignals,
-            ActivityResultsView results) {
+            ActivityResultsView results,
+            BigDecimal publicReturnPercent,
+            LocalDate publicEntryDate) {
     }
 
     public record ActivityChartView(

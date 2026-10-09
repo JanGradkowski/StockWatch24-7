@@ -60,6 +60,62 @@ class ElliottProjectionPolicyTest {
         });
     }
 
+    @Test
+    void compressedWaveFourDrawsTheRemainingLegalRangeWhenNoFibonacciTargetFits() {
+        // HD daily, Oct 2026: only 14.6% of Wave III remains before Wave I territory at 289.10.
+        List<ElliottWaveDetectionService.ElliottWavePoint> points = List.of(
+                point("", 0, 397.63), point("I", 20, 289.10), point("II", 40, 358.85),
+                point("III", 60, 277.15));
+
+        List<ElliottProjectionPolicy.Scenario> scenarios = ElliottProjectionPolicy.generate(
+                ElliottSignalStage.WAVE_III_END, "BEARISH", TradeSignal.BUY,
+                60 * DAY, 277.15, points, candles(61), TimeInterval.DAILY);
+
+        assertThat(scenarios).singleElement().satisfies(scenario -> {
+            assertThat(scenario.key()).isEqualTo(ElliottProjectionPolicy.COMPRESSED_WAVE_IV);
+            assertThat(scenario.targetZoneLow()).isEqualTo(277.15);
+            assertThat(scenario.targetZoneHigh()).isCloseTo(289.09, org.assertj.core.data.Offset.offset(1e-9));
+            assertThat(scenario.targetMidpoint()).isBetween(277.15, 289.09);
+            assertThat(scenario.hardInvalidationPrice()).isEqualTo(289.10);
+            assertThat(scenario.hardInvalidationSide()).isEqualTo(ElliottProjectionPolicy.BoundarySide.ABOVE);
+            assertThat(scenario.scenarioInvalidationPrice()).isEqualTo(277.15);
+            assertThat(scenario.scenarioInvalidationSide()).isEqualTo(ElliottProjectionPolicy.BoundarySide.BELOW);
+            assertThat(scenario.description()).contains("14.6%", "289.10");
+            assertThat(scenario.path().getFirst().price()).isEqualTo(277.15);
+            assertThat(scenario.path().getLast().price()).isEqualTo(scenario.targetMidpoint());
+            assertThat(scenario.path()).allSatisfy(point -> assertThat(point.price()).isBetween(277.15, 289.09));
+            assertThat(scenario.path()).extracting(ElliottProjectionPolicy.ProjectedPoint::label)
+                    .containsSubsequence("A", "B", "C");
+        });
+    }
+
+    @Test
+    void bullishCompressedWaveFourStaysAboveWaveOne() {
+        List<ElliottWaveDetectionService.ElliottWavePoint> points = List.of(
+                point("", 0, 100), point("I", 1, 140), point("II", 2, 104), point("III", 5, 145));
+
+        List<ElliottProjectionPolicy.Scenario> scenarios = ElliottProjectionPolicy.generate(
+                ElliottSignalStage.WAVE_III_END, "BULLISH", TradeSignal.SELL,
+                5 * DAY, 145.0, points, candles(12), TimeInterval.DAILY);
+
+        assertThat(scenarios).singleElement().satisfies(scenario -> {
+            assertThat(scenario.key()).isEqualTo(ElliottProjectionPolicy.COMPRESSED_WAVE_IV);
+            assertThat(scenario.targetZoneLow()).isGreaterThan(140.0);
+            assertThat(scenario.targetZoneHigh()).isEqualTo(145.0);
+            assertThat(scenario.hardInvalidationSide()).isEqualTo(ElliottProjectionPolicy.BoundarySide.BELOW);
+            assertThat(scenario.path()).allSatisfy(point -> assertThat(point.price()).isGreaterThan(140.0));
+        });
+    }
+
+    @Test
+    void fibonacciWaveFourTargetsSuppressTheCompressedFallback() {
+        assertThat(ElliottProjectionPolicy.generate(
+                ElliottSignalStage.WAVE_III_END, "BULLISH", TradeSignal.SELL,
+                5 * DAY, 125.0, points("BULLISH"), candles(12), TimeInterval.DAILY))
+                .extracting(ElliottProjectionPolicy.Scenario::key)
+                .doesNotContain(ElliottProjectionPolicy.COMPRESSED_WAVE_IV);
+    }
+
     private List<ElliottWaveDetectionService.ElliottWavePoint> points(String direction) {
         boolean bullish = "BULLISH".equals(direction);
         double origin = bullish ? 100 : 200;

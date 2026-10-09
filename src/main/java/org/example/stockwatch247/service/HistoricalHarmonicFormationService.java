@@ -9,7 +9,7 @@ import org.example.stockwatch247.security.SecurityInputValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -129,11 +129,11 @@ public class HistoricalHarmonicFormationService {
                 endpoint.label(),
                 endpoint.timestamp(),
                 endpoint.price(),
-                SignalPeriodFormatter.format(endpoint.timestamp(), timeInterval, ZoneId.systemDefault()),
+                SignalPeriodFormatter.format(endpoint.timestamp(), timeInterval, ZoneOffset.UTC),
                 formation.confirmationTimestamp(),
                 confirmationCandle.getClosePrice(),
                 SignalPeriodFormatter.format(
-                        formation.confirmationTimestamp(), timeInterval, ZoneId.systemDefault()),
+                        formation.confirmationTimestamp(), timeInterval, ZoneOffset.UTC),
                 confluence.adjustedScore(),
                 formation.classificationError(),
                 formation.ruleVersion(),
@@ -184,15 +184,21 @@ public class HistoricalHarmonicFormationService {
             Candle signalCandle,
             TradeSignal tradeSignal) {
         int available = candles.size() - signalIndex - 1;
+        // Measured from the first tradable price after confirmation: the next candle's open.
+        double entry = available > 0 && candles.get(signalIndex + 1).getOpenPrice() != null
+                ? candles.get(signalIndex + 1).getOpenPrice() : signalCandle.getClosePrice();
         List<ResultPointView> points = new java.util.ArrayList<>();
-        points.add(resultPoint(0, signalCandle, signalCandle.getClosePrice(), tradeSignal));
+        points.add(new ResultPointView(0, signalCandle.getTimestamp(),
+                SignalPeriodFormatter.format(signalCandle.getTimestamp(),
+                        timeInterval(signalCandle.getTimeInterval()), ZoneOffset.UTC),
+                entry, 0.0, 0.0));
         for (int offset = 1; offset <= available; offset++) {
             points.add(resultPoint(
-                    offset, candles.get(signalIndex + offset), signalCandle.getClosePrice(), tradeSignal));
+                    offset, candles.get(signalIndex + offset), entry, tradeSignal));
         }
         if (available < RESULT_CANDLES) {
             return new ResultView(false, RESULT_CANDLES, available, null, null,
-                    signalCandle.getClosePrice(), signalCandle.getTimestamp(), tradeSignal,
+                    entry, signalCandle.getTimestamp(), tradeSignal,
                     outcomeLabel(tradeSignal), bestActionLabel(tradeSignal), List.copyOf(points),
                     "At least 10 completed candles after confirmation are required.");
         }
@@ -203,7 +209,7 @@ public class HistoricalHarmonicFormationService {
                 available,
                 window.stream().mapToDouble(ResultPointView::directionalReturnPercent).max().orElse(0.0),
                 window.getLast().directionalReturnPercent(),
-                signalCandle.getClosePrice(),
+                entry,
                 signalCandle.getTimestamp(),
                 tradeSignal,
                 outcomeLabel(tradeSignal),
@@ -225,7 +231,7 @@ public class HistoricalHarmonicFormationService {
                 offset,
                 candle.getTimestamp(),
                 SignalPeriodFormatter.format(
-                        candle.getTimestamp(), timeInterval(candle.getTimeInterval()), ZoneId.systemDefault()),
+                        candle.getTimestamp(), timeInterval(candle.getTimeInterval()), ZoneOffset.UTC),
                 candle.getClosePrice(),
                 directional,
                 directionalDifference);

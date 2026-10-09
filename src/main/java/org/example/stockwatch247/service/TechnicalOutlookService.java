@@ -67,6 +67,8 @@ public class TechnicalOutlookService {
             new BoundedTtlCache<>(OUTLOOK_CACHE_SIZE, OUTLOOK_CACHE_TTL_SECONDS);
     private final Set<RefreshKey> refreshesInFlight = ConcurrentHashMap.newKeySet();
     private final BoundedTtlCache<RefreshKey, RefreshStatusView> refreshStatuses = new BoundedTtlCache<>(1024, 600);
+    // Reloading the page or switching intervals must not queue another provider refresh straight away.
+    private final BoundedTtlCache<RefreshKey, Boolean> recentRefreshRequests = new BoundedTtlCache<>(4096, 120);
     private CandleRevisionService revisions;
     @org.springframework.beans.factory.annotation.Autowired
     void setRevisions(CandleRevisionService revisions) { this.revisions = revisions; }
@@ -117,6 +119,10 @@ public class TechnicalOutlookService {
         return buildOutlook(user, symbol, rawInterval, false);
     }
 
+    public OutlookView getTrackingOutlook(User user, String symbol, String rawInterval, boolean detailed) {
+        return buildOutlook(user, symbol, rawInterval, detailed, true);
+    }
+
     /**
      * Loads one older chart page and enriches it with the active user profile.
      * The extra candles requested before the visible page are indicator warm-up
@@ -164,6 +170,11 @@ public class TechnicalOutlookService {
                                      String symbol,
                                      String rawInterval,
                                      boolean detailed) {
+        return buildOutlook(user, symbol, rawInterval, detailed, false);
+    }
+
+    private OutlookView buildOutlook(User user, String symbol, String rawInterval,
+                                     boolean detailed, boolean tracking) {
         long totalStarted = System.nanoTime();
         IntervalDefinition interval = IntervalDefinition.parse(rawInterval);
         AnalysisPreferencesService.PreferencesView preferences = preferencesService == null
@@ -179,7 +190,7 @@ public class TechnicalOutlookService {
                 userKey(user), normalizedSymbol, interval.apiValue(), rules, detailed,
                 generation(normalizedSymbol, interval.apiValue()), generation(normalizedSymbol, "1d"), generation(benchmarkFor(asset).symbol(), "1d"));
         long now = Instant.now().getEpochSecond();
-        OutlookView cached = outlookCache.get(cacheKey, now);
+        OutlookView cached = tracking ? null : outlookCache.get(cacheKey, now);
         if (cached != null) {
             log.debug("Technical outlook cache hit symbol={} interval={} detail={} totalMs={}",
                     normalizedSymbol, interval.apiValue(), detailed, elapsedMillis(totalStarted));
@@ -195,6 +206,8 @@ public class TechnicalOutlookService {
         }
 
         long analysisStarted = System.nanoTime();
+        if (tracking) log.info("Technical outlook stage=indicators symbol={} interval={} detail={} inputBars={}",
+                normalizedSymbol, interval.apiValue(), detailed, rawCandles.size());
         TechnicalIndicatorEnrichmentService.AnalysisResult analysis = enrichmentService.analyze(
                 rawCandles,
                 Math.min(ANALYSIS_CANDLES, rawCandles.size()),
@@ -207,8 +220,10 @@ public class TechnicalOutlookService {
         }
 
         long relatedStarted = System.nanoTime();
+        if (tracking) log.info("Technical outlook stage=related-data symbol={} interval={} detail={} analysisMs={}",
+                normalizedSymbol, interval.apiValue(), detailed, analysisMs);
         MarketComparisonView market = marketComparison(
-                normalizedSymbol, asset, rules.marketRelativeThresholdPercent(), false);
+                normalizedSymbol, asset, rules.marketRelativeThresholdPercent(), false, tracking);
         List<RecentSignalView> recentSignals = recentSignals(user, normalizedSymbol, interval.timeInterval());
         long relatedMs = elapsedMillis(relatedStarted);
         long viewsStarted = System.nanoTime();
@@ -272,7 +287,7 @@ public class TechnicalOutlookService {
         outlookCache.put(cacheKey, outlook, now);
         long viewsMs = elapsedMillis(viewsStarted);
         long totalMs = elapsedMillis(totalStarted);
-        if (totalMs >= 500) {
+        if (tracking || totalMs >= 500) {
             log.info("Technical outlook built symbol={} interval={} detail={} rawCandles={} totalMs={} candlesMs={} analysisMs={} relatedDataMs={} viewsMs={}",
                     normalizedSymbol, interval.apiValue(), detailed, rawCandles.size(), totalMs,
                     candlesMs, analysisMs, relatedMs, viewsMs);
@@ -330,7 +345,7 @@ public class TechnicalOutlookService {
         if (technicalOutlookExecutor == null) return;
         String symbol = rawSymbol.trim().toUpperCase(Locale.ROOT);
         RefreshKey refreshKey = new RefreshKey(symbol, interval.apiValue());
-        if (!refreshesInFlight.add(refreshKey)) return;
+        if (!claimRefresh(refreshKey)) return;
         refreshStatuses.put(refreshKey, RefreshStatusView.queuedStatus(), Instant.now().getEpochSecond());
         try {
             technicalOutlookExecutor.execute(() -> {
@@ -365,7 +380,7 @@ public class TechnicalOutlookService {
         Benchmark benchmark = benchmarkFor(asset);
         if (benchmark.symbol().equalsIgnoreCase(symbol)) return;
         RefreshKey key = new RefreshKey(benchmark.symbol(), "1d");
-        if (!refreshesInFlight.add(key)) return;
+        if (!claimRefresh(key)) return;
         try {
             technicalOutlookExecutor.execute(() -> {
                 try {
@@ -382,6 +397,13 @@ public class TechnicalOutlookService {
         } catch (RejectedExecutionException exception) {
             refreshesInFlight.remove(key);
         }
+    }
+
+    private boolean claimRefresh(RefreshKey key) {
+        long now = Instant.now().getEpochSecond();
+        if (recentRefreshRequests.get(key, now) != null || !refreshesInFlight.add(key)) return false;
+        recentRefreshRequests.put(key, Boolean.TRUE, now);
+        return true;
     }
 
     public RefreshStatusView refreshStatus(String rawSymbol, String rawInterval) {
@@ -410,7 +432,8 @@ public class TechnicalOutlookService {
         String symbol = event.symbol().toUpperCase(Locale.ROOT);
         invalidate(symbol, event.interval());
         marketCache.removeIf(key -> key.symbol().equals(symbol));
-        if ("1d".equals(event.interval()) && MarketIndexCatalog.findBySymbol(symbol).isPresent()) {
+        if ("1d".equals(event.interval())
+                && (MarketIndexCatalog.findBySymbol(symbol).isPresent() || MarketBenchmarks.isBenchmark(symbol))) {
             // A benchmark update can affect many stock outlooks, so discard the
             // small bounded cache instead of serving stale relative scores.
             outlookCache.removeIf(key -> true);
@@ -951,11 +974,17 @@ public class TechnicalOutlookService {
     private MarketComparisonView marketComparison(String symbol, StockAsset asset,
                                                   double voteThresholdPercent,
                                                   boolean includeRatioSeries) {
+        return marketComparison(symbol, asset, voteThresholdPercent, includeRatioSeries, false);
+    }
+
+    private MarketComparisonView marketComparison(String symbol, StockAsset asset,
+                                                  double voteThresholdPercent,
+                                                  boolean includeRatioSeries, boolean tracking) {
         Benchmark benchmark = benchmarkFor(asset);
         MarketCacheKey cacheKey = new MarketCacheKey(
                 symbol, benchmark.symbol(), voteThresholdPercent, includeRatioSeries, generation(symbol, "1d"), generation(benchmark.symbol(), "1d"));
         long now = Instant.now().getEpochSecond();
-        MarketComparisonView cached = marketCache.get(cacheKey, now);
+        MarketComparisonView cached = tracking ? null : marketCache.get(cacheKey, now);
         if (cached != null) return cached;
         List<Candle> stock = latestCandles(symbol, "1d", MARKET_HISTORY_CANDLES);
         List<Candle> market = latestCandles(benchmark.symbol(), "1d", MARKET_HISTORY_CANDLES);
@@ -1051,15 +1080,8 @@ public class TechnicalOutlookService {
     }
 
     private Benchmark benchmarkFor(StockAsset asset) {
-        String country = asset == null || asset.getCountry() == null ? "" : asset.getCountry().toUpperCase(Locale.ROOT);
-        String currency = asset == null || asset.getCurrency() == null ? "" : asset.getCurrency().toUpperCase(Locale.ROOT);
-        if (country.contains("UNITED KINGDOM") || country.equals("UK") || currency.equals("GBP")) return new Benchmark("^FTSE", "FTSE 100");
-        if (country.contains("GERMAN")) return new Benchmark("^GDAXI", "DAX Performance Index");
-        if (country.contains("FRANCE")) return new Benchmark("^FCHI", "CAC 40");
-        if (country.contains("JAPAN") || currency.equals("JPY")) return new Benchmark("^N225", "Nikkei 225");
-        if (country.contains("HONG KONG") || currency.equals("HKD")) return new Benchmark("^HSI", "Hang Seng Index");
-        if (currency.equals("EUR") || country.contains("BELGI") || country.contains("NETHERLAND")) return new Benchmark("^STOXX50E", "EURO STOXX 50");
-        return new Benchmark("^GSPC", "S&P 500");
+        MarketBenchmarks.MarketBenchmark benchmark = MarketBenchmarks.forAsset(asset);
+        return new Benchmark(benchmark.symbol(), benchmark.name());
     }
 
     private static ScoreView score(List<Integer> votes,
@@ -1102,16 +1124,10 @@ public class TechnicalOutlookService {
     }
 
     private static String freshness(long timestamp, IntervalDefinition interval) {
-        long ageSeconds = Math.max(0, Instant.now().getEpochSecond() - timestamp);
-        long expected = switch (interval.timeInterval()) {
-            case DAILY -> 4L * 86_400;
-            case WEEKLY -> 12L * 86_400;
-            case MONTHLY -> 40L * 86_400;
-            default -> Long.MAX_VALUE;
-        };
         String date = Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC)
-                .format(DateTimeFormatter.ofPattern("d MMM uuuu, HH:mm 'UTC'"));
-        return (ageSeconds <= expected ? "Current completed candle · " : "Potentially stale · ") + date;
+                .format(DateTimeFormatter.ofPattern("d MMM uuuu, HH:mm 'UTC'", Locale.ENGLISH));
+        return (CandleFreshness.isStale(timestamp, interval.timeInterval(), Instant.now())
+                ? "Potentially stale · " : "Current completed candle · ") + date;
     }
 
     private static String voteLabel(int vote) {

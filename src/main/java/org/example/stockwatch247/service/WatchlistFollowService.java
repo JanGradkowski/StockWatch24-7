@@ -47,12 +47,12 @@ public class WatchlistFollowService {
             List<Long> ids, String name) {
         var outlookDraft = outlookChanges == null ? List.<OutlookChange>of() : outlookChanges;
         if (changes == null || (changes.isEmpty() && outlookDraft.isEmpty()) || outlookDraft.size() > 3) {
-            throw new IllegalArgumentException("Choose alert or outlook changes to apply.");
+            throw new UserInputException("Choose alert or outlook changes to apply.");
         }
         var intervals = new java.util.HashSet<TimeInterval>();
         for (var change : outlookDraft) {
             if (change == null || change.interval() == null || !intervals.add(change.interval())) {
-                throw new IllegalArgumentException("Choose each outlook interval once.");
+                throw new UserInputException("Choose each outlook interval once.");
             }
         }
         var selected=prepare(user, symbol, changes.stream().anyMatch(AlertRuleService.AlertRuleChange::active)

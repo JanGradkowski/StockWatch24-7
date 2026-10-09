@@ -1,3 +1,4 @@
+  const i18n = window.StockWatchI18n;
   const encodedTicker = encodeURIComponent(ticker);
   const csrfToken = document.querySelector('meta[name="_csrf"]').content;
   const csrfHeader = document.querySelector('meta[name="_csrf_header"]').content;
@@ -10,23 +11,51 @@
     : [];
   stockLoaderBackground.forEach(element => { element.inert = true; });
 
+  // Elliott structure labels stay English in the API (the script compares them); this shows their name.
+  const ELLIOTT_STRUCTURE_KEYS = {
+    'Motive 1-2-3-4-5': 'motive',
+    'Motive diagonal 1-2-3-4-5': 'diagonal',
+    'Motive leading diagonal 1-2-3-4-5': 'leadingDiagonal',
+    'Motive ending diagonal 1-2-3-4-5': 'endingDiagonal',
+    'Corrective zigzag A-B-C': 'zigzag',
+    'Corrective flat A-B-C': 'flat',
+    'Double zigzag W-X-Y': 'doubleZigzag',
+    'Double-three combination W-X-Y': 'doubleThree',
+    'Triple zigzag W-X-Y-X-Z': 'tripleZigzag',
+    'Triple-three combination W-X-Y-X-Z': 'tripleThree',
+    'Contracting triangle A-B-C-D-E': 'contractingTriangle',
+    'Barrier triangle A-B-C-D-E': 'barrierTriangle',
+    'Expanding triangle A-B-C-D-E': 'expandingTriangle',
+    'Provisional motive 1-2-3-4-5': 'provisionalMotive',
+    'Provisional corrective A-B-C': 'provisionalCorrective'
+  };
+
+  function structureName(label) {
+    const key = ELLIOTT_STRUCTURE_KEYS[label];
+    return key ? i18n.t(`sw.structure.${key}`) : label;
+  }
+
+  // Message-key suffix for a chart interval ('1d', '1wk', '1mo').
+  function apiIntervalEnum(interval) {
+    return ({ '1wk': 'WEEKLY', '1mo': 'MONTHLY' })[interval] || 'DAILY';
+  }
+
   function tradeSignalDisplayLabel(value, lowercase = false) {
     const normalized = String(value || '').toUpperCase();
-    if (normalized === 'SELL') return lowercase ? 'sell/short' : 'SELL/SHORT';
-    if (normalized === 'BUY') return lowercase ? 'buy' : 'BUY';
+    if (normalized === 'SELL' || normalized === 'BUY') return i18n.t(lowercase ? `signalSideLower.${normalized}` : `signalSide.${normalized}`);
     return String(value || '');
   }
 
   document.querySelectorAll('[data-alert-signal="SELL"]').forEach(input => {
     const label = input.closest('label');
     const copy = label?.querySelector('.alert-eye-label');
-    if (copy && copy.textContent.trim().toLowerCase() === 'sell') copy.textContent = 'Sell/Short';
+    if (copy && copy.textContent.trim().toLowerCase() === i18n.t('sw.sellWord').toLowerCase()) copy.textContent = i18n.t('sw.sellShortWord');
     const ariaLabel = input.getAttribute('aria-label');
-    if (ariaLabel) input.setAttribute('aria-label', ariaLabel.replace(/sell signals/gi, 'sell/short signals'));
+    if (ariaLabel) input.setAttribute('aria-label', ariaLabel.replace(new RegExp(i18n.t('sw.sellSignals'), 'gi'), i18n.t('sw.sellShortSignals')));
   });
   let stockLoaderFinished = false;
   const stockLoaderSafetyTimer = window.setTimeout(() => {
-    finishStockPageLoading('Data is taking longer than usual. Opening the workspace…');
+    finishStockPageLoading(i18n.t('sw.slowData'));
   }, 25000);
 
   function updateStockLoadingStatus(message) {
@@ -68,6 +97,7 @@
   let rsiGuideLines = [];
   let historicalElliottSeries = [];
   let historicalElliottGroups = new Map();
+  const ELLIOTT_CANDIDATE_COLOR = '#94a3b8';
   let harmonicFormationSeries = [];
   let harmonicFormationOverlays = [];
   let harmonicHitTargetFrame = null;
@@ -106,6 +136,53 @@
   let chartRequestSequence = 0;
   let elliottRequestSequence = 0;
   let harmonicRequestSequence = 0;
+  let patternRangeLoader = null;
+  let patternRangeTimer = null;
+  let patternRangeSignature = '';
+
+  function visiblePatternRange(paddingCandles = 20) {
+    if (!globalCandleData.length) return null;
+    const visible = priceChart?.timeScale().getVisibleLogicalRange();
+    const times = priceChart?.timeScale().getVisibleRange?.();
+    const boundary = (time, inclusive) => {
+      const date = chartTimeKey(time);
+      let low = 0;
+      let high = globalCandleData.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        const candleDate = chartTimeKey(globalCandleData[middle].time);
+        if (candleDate < date || inclusive && candleDate === date) low = middle + 1;
+        else high = middle;
+      }
+      return low;
+    };
+    const first = Math.max(0, (times ? boundary(times.from, false) : Math.floor(visible?.from ?? 0)) - paddingCandles);
+    const last = Math.min(globalCandleData.length - 1,
+            (times ? boundary(times.to, true) - 1 : Math.ceil(visible?.to ?? globalCandleData.length - 1)) + paddingCandles);
+    if (first > last) return null;
+    return {from: Number(globalCandleData[first].timestamp), to: Number(globalCandleData[last].timestamp)};
+  }
+
+  function loadPatternRange(family, interval) {
+    patternRangeLoader ||= new PatternRangeLoader(encodedTicker);
+    return patternRangeLoader.load(family, interval, visiblePatternRange());
+  }
+
+  function schedulePatternRangeRefresh() {
+    clearTimeout(patternRangeTimer);
+    patternRangeTimer = setTimeout(() => {
+      const range = visiblePatternRange();
+      if (!range || isFetching) return;
+      const signature = `${currentInterval}:${range.from}:${range.to}`;
+      if (signature === patternRangeSignature) return;
+      patternRangeSignature = signature;
+      void Promise.all([
+        refreshHistoricalElliottOverlays(currentInterval),
+        refreshHistoricalCandlestickOverlay(currentInterval),
+        refreshHarmonicOverlays(currentInterval)
+      ]);
+    }, 180);
+  }
   let historyRetryTimer = null;
   let historyRetryAttempts = 0;
   let anchoredVolumeProfileEnabled = false;
@@ -134,33 +211,33 @@
   ];
 
   const CHART_INDICATOR_SPECS = {
-    EMA: indicatorSpec('EMA', 'Exponential moving average on the price chart.', [periodField(20)]),
-    SMA: indicatorSpec('SMA', 'Simple moving average on the price chart.', [periodField(200)]),
-    BOLLINGER: indicatorSpec('Bollinger Bands', 'Population-standard-deviation envelope used by Automated Technical Analysis.', [periodField(20), numberField('deviation', 'Deviation multiplier', 2, 0.1, 10, 0.1)]),
-    VWAP: indicatorSpec('Rolling VWAP', 'Rolling typical-price volume-weighted average.', [periodField(20)]),
-    SUPPORT_RESISTANCE: indicatorSpec('Support / resistance', 'Rolling lowest low and highest high.', [periodField(20)]),
-    MACD: indicatorSpec('MACD', 'MACD line, signal line, and histogram in a synchronized panel.', [periodField(12, 'fast', 'Fast period'), periodField(26, 'slow', 'Slow period'), periodField(9, 'signal', 'Signal period')]),
-    CCI: indicatorSpec('CCI', 'Commodity Channel Index with ±100 guides.', [periodField(20)]),
-    ATR: indicatorSpec('ATR', 'Average True Range volatility panel.', [periodField(14)]),
-    RELATIVE_VOLUME: indicatorSpec('Relative volume', 'Signed candle volume divided by its rolling average.', [periodField(20)]),
-    ADX_DMI: indicatorSpec('ADX / DMI', 'ADX trend strength together with +DI and -DI.', [periodField(14)]),
-    STOCHASTIC: indicatorSpec('Stochastic oscillator', '%K and %D with 20/80 guides.', [periodField(14)]),
-    STOCHASTIC_RSI: indicatorSpec('Stochastic RSI', 'Stochastic RSI with 20/80 guides.', [periodField(14)]),
-    OBV: indicatorSpec('On-balance volume', 'Cumulative on-balance volume.', []),
-    MFI: indicatorSpec('Money Flow Index', 'Price-and-volume oscillator with 20/80 guides.', [periodField(14)]),
-    DONCHIAN: indicatorSpec('Donchian Channel', 'Rolling high/low channel on the price chart.', [periodField(20)]),
-    KELTNER: indicatorSpec('Keltner Channel', 'EMA and ATR volatility channel on the price chart.', [periodField(20), periodField(14, 'atrPeriod', 'ATR period'), numberField('multiplier', 'ATR multiplier', 2, 0.1, 10, 0.1)]),
-    TREND: indicatorSpec('TA4J trend state', 'Independent uptrend/downtrend state in a synchronized panel.', [periodField(20)]),
-    VOLUME_PROFILE: indicatorSpec('Rolling volume profile', 'Rolling OHLCV approximation of VAL, POC, and VAH.', [periodField(60), numberField('valueArea', 'Value area fraction', 0.7, 0.5, 0.95, 0.01)]),
-    KDE_VOLUME_PROFILE: indicatorSpec('KDE volume-profile mode', 'TA4J causal kernel-density volume-profile mode.', [periodField(60)])
+    EMA: indicatorSpec('EMA', [periodField(20)]),
+    SMA: indicatorSpec('SMA', [periodField(200)]),
+    BOLLINGER: indicatorSpec('BOLLINGER', [periodField(20), numberField('deviation', i18n.t('sw.field.deviation'), 2, 0.1, 10, 0.1)]),
+    VWAP: indicatorSpec('VWAP', [periodField(20)]),
+    SUPPORT_RESISTANCE: indicatorSpec('SUPPORT_RESISTANCE', [periodField(20)]),
+    MACD: indicatorSpec('MACD', [periodField(12, 'fast', i18n.t('sw.field.fast')), periodField(26, 'slow', i18n.t('sw.field.slow')), periodField(9, 'signal', i18n.t('sw.field.signal'))]),
+    CCI: indicatorSpec('CCI', [periodField(20)]),
+    ATR: indicatorSpec('ATR', [periodField(14)]),
+    RELATIVE_VOLUME: indicatorSpec('RELATIVE_VOLUME', [periodField(20)]),
+    ADX_DMI: indicatorSpec('ADX_DMI', [periodField(14)]),
+    STOCHASTIC: indicatorSpec('STOCHASTIC', [periodField(14)]),
+    STOCHASTIC_RSI: indicatorSpec('STOCHASTIC_RSI', [periodField(14)]),
+    OBV: indicatorSpec('OBV', []),
+    MFI: indicatorSpec('MFI', [periodField(14)]),
+    DONCHIAN: indicatorSpec('DONCHIAN', [periodField(20)]),
+    KELTNER: indicatorSpec('KELTNER', [periodField(20), periodField(14, 'atrPeriod', i18n.t('sw.field.atrPeriod')), numberField('multiplier', i18n.t('sw.field.atrMultiplier'), 2, 0.1, 10, 0.1)]),
+    TREND: indicatorSpec('TREND', [periodField(20)]),
+    VOLUME_PROFILE: indicatorSpec('VOLUME_PROFILE', [periodField(60), numberField('valueArea', i18n.t('sw.field.valueArea'), 0.7, 0.5, 0.95, 0.01)]),
+    KDE_VOLUME_PROFILE: indicatorSpec('KDE_VOLUME_PROFILE', [periodField(60)])
   };
 
-  function indicatorSpec(label, description, fields) {
-    return { label, description, fields };
+  function indicatorSpec(key, fields) {
+    return { label: i18n.t(`sw.indicator.${key}.label`), description: i18n.t(`sw.indicator.${key}.description`), fields };
   }
 
-  function periodField(value, key = 'period', label = 'Period') {
-    return numberField(key, label, value, 2, 500, 1, 'Whole number from 2 to 500.');
+  function periodField(value, key = 'period', label = i18n.t('sw.field.period')) {
+    return numberField(key, label, value, 2, 500, 1, i18n.t('sw.field.periodHelp'));
   }
 
   function numberField(key, label, value, min, max, step, help = '') {
@@ -285,15 +362,15 @@
   function formatRsiBoundary(value) {
     return Number.isInteger(value)
             ? String(value)
-            : value.toFixed(2).replace(/\.?0+$/, '');
+            : i18n.number(value, 2).replace(/[.,]?0+$/, '');
   }
 
   const chartOptions = chartThemeOptions();
 
   async function initCharts() {
-    let completionMessage = 'Workspace ready';
+    let completionMessage = i18n.t('sw.ready');
     try {
-      updateStockLoadingStatus('Preparing charts…');
+      updateStockLoadingStatus(i18n.t('sw.preparingCharts'));
       priceChart = StockWatchCharts.createChart(document.getElementById('priceChartContainer'), chartOptions);
       volumeChart = StockWatchCharts.createChart(document.getElementById('volumeChartContainer'), {
         ...chartOptions,
@@ -302,6 +379,7 @@
 
       priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
         maybeLoadOlderForVisibleRange(range);
+        schedulePatternRangeRefresh();
         if (range) {
           volumeChart.timeScale().setVisibleLogicalRange(range);
           if (rsiChart && rsiOverlayEnabled) {
@@ -380,7 +458,7 @@
       }
 
       // Load currency metadata first
-      updateStockLoadingStatus('Loading market details…');
+      updateStockLoadingStatus(i18n.t('sw.loadingMarket'));
       try {
         const micQuery = selectedMic ? `?micCode=${encodeURIComponent(selectedMic)}` : '';
         const metaRes = await fetch(`/api/stocks/${encodedTicker}/meta${micQuery}`);
@@ -389,9 +467,7 @@
           const instrumentType = String(metaJson.instrumentType || 'EQUITY').toUpperCase();
           const instrumentTypeDisplay = document.getElementById('instrumentTypeDisplay');
           instrumentTypeDisplay.dataset.instrumentType = instrumentType;
-          instrumentTypeDisplay.textContent = instrumentType === 'INDEX'
-                  ? 'Index'
-                  : (instrumentType === 'ETF' ? 'ETF' : 'Stock');
+          instrumentTypeDisplay.textContent = i18n.t(`sw.instrument.${instrumentType === 'INDEX' || instrumentType === 'ETF' ? instrumentType : 'EQUITY'}`);
           updateTickerAlertsEligibility(instrumentType);
           await Promise.all([
             configureCongressionalActivity(instrumentType),
@@ -400,24 +476,24 @@
           if (metaJson.currency) {
             stockCurrency = metaJson.currency;
             priceChart.applyOptions({
-              localization: { priceFormatter: price => `${price.toFixed(2)} ${stockCurrency}` }
+              localization: { priceFormatter: price => `${i18n.number(price, 2)} ${stockCurrency}` }
             });
           }
         }
       } catch (e) { console.warn("Currency fallback to USD"); }
 
-      updateStockLoadingStatus('Loading price history…');
+      updateStockLoadingStatus(i18n.t('sw.loadingHistory'));
       await loadChartData('1d');
-      updateStockLoadingStatus('Loading your alert settings…');
+      updateStockLoadingStatus(i18n.t('sw.loadingAlerts'));
       await Promise.all([loadAlertState(), loadOutlookFollowState()]);
 
       setChartMode('candle');
-      updateStockLoadingStatus('Preparing indicators…');
+      updateStockLoadingStatus(i18n.t('sw.preparingIndicators'));
       await reopenHistoricalCandlestickResultsFromUrl();
 
     } catch (err) {
       console.error("Initialization error:", err);
-      completionMessage = 'Some chart data is unavailable';
+      completionMessage = i18n.t('sw.someDataUnavailable');
     } finally {
       finishStockPageLoading(completionMessage);
     }
@@ -439,6 +515,8 @@
     historyRetryTimer = null;
     historyRetryAttempts = 0;
     elliottRequestSequence++;
+    patternRangeLoader?.reset();
+    patternRangeSignature = '';
     clearElliottOverlays();
     updateElliottOverlayToggle();
     harmonicRequestSequence++;
@@ -457,7 +535,7 @@
 
     try {
       document.querySelector('.ticker-name').nextElementSibling.innerText =
-              `Loading ${historicalCandlestickIntervalLabel(interval).toLowerCase()} data...`;
+              i18n.t(`sw.loadingData.${apiIntervalEnum(interval)}`);
 
       const response = await fetch(`/api/stocks/${encodedTicker}/candles?interval=${encodeURIComponent(interval)}&limit=${INITIAL_CANDLE_LIMIT}`, {
         signal: chartLoadController.signal
@@ -468,7 +546,7 @@
       const data = page.candles;
 
       if (!data || data.length === 0) {
-        document.querySelector('.ticker-name').nextElementSibling.innerText = page.failureMessage || 'No historical data found.';
+        document.querySelector('.ticker-name').nextElementSibling.innerText = page.failureMessage || i18n.t('sw.noHistoricalData');
         hasMoreHistory = false;
         return;
       }
@@ -479,8 +557,7 @@
       showNewestCandles(INITIAL_VISIBLE_CANDLES);
       updatePriceHeaderFromLatestCandle();
 
-      const intervalNames = {'1d': 'Daily Interval', '1wk': 'Weekly Interval', '1mo': 'Monthly Interval'};
-      document.querySelector('.ticker-name').nextElementSibling.innerText = intervalNames[interval];
+      document.querySelector('.ticker-name').nextElementSibling.innerText = i18n.t(`sw.intervalLabel.${apiIntervalEnum(interval)}`);
 
       // Candle pagination must become available as soon as the candle series is
       // rendered. Elliott analysis is a separate request and must not suppress
@@ -502,7 +579,7 @@
     } catch (err) {
       if (err.name === 'AbortError') return;
       console.error("Data load error:", err);
-      document.querySelector('.ticker-name').nextElementSibling.innerText = `Failed to load chart data`;
+      document.querySelector('.ticker-name').nextElementSibling.innerText = i18n.t('sw.chartLoadFailed');
     } finally {
       if (requestId === chartRequestSequence) {
         isFetching = false;
@@ -771,7 +848,7 @@
     });
     document.getElementById('rsiChartTitle').textContent = `RSI (${rsiPeriod})`;
     document.getElementById('rsiChartMeta').textContent =
-            `Wilder RSI · ${upperLabel} / ${lowerLabel} reference levels`;
+            i18n.t('sw.rsiMeta', upperLabel, lowerLabel);
 
     const status = document.getElementById('rsiChartStatus');
     status.classList.remove('overbought', 'oversold');
@@ -783,15 +860,15 @@
       }
     }
     if (!latestPoint) {
-      status.textContent = `RSI (${rsiPeriod}) needs at least ${rsiPeriod + 1} loaded candles.`;
+      status.textContent = i18n.plural('sw.rsiNeedsCandles', rsiPeriod + 1, rsiPeriod + 1, rsiPeriod);
       return;
     }
     const zone = latestPoint.value > rsiOverboughtBoundary
-            ? 'Overbought range'
-            : (latestPoint.value < rsiOversoldBoundary ? 'Oversold range' : 'Neutral range');
+            ? i18n.t('sw.rsiOverbought')
+            : i18n.t(latestPoint.value < rsiOversoldBoundary ? 'sw.rsiOversold' : 'sw.rsiNeutral');
     if (latestPoint.value > rsiOverboughtBoundary) status.classList.add('overbought');
     if (latestPoint.value < rsiOversoldBoundary) status.classList.add('oversold');
-    status.textContent = `Latest RSI (${rsiPeriod}): ${latestPoint.value.toFixed(2)} · ${zone}`;
+    status.textContent = i18n.t('sw.rsiLatest', rsiPeriod, i18n.number(latestPoint.value, 2), zone);
   }
 
   function updateRsiOverlayToggle() {
@@ -800,7 +877,7 @@
     button.setAttribute('aria-pressed', String(rsiOverlayEnabled));
     button.textContent = rsiOverlayEnabled
             ? `RSI · ${rsiPeriod} · ${formatRsiBoundary(rsiOverboughtBoundary)}/${formatRsiBoundary(rsiOversoldBoundary)}`
-            : 'RSI overlay';
+            : i18n.t('sw.rsiOverlay');
   }
 
   function openRsiPeriodDialog() {
@@ -858,7 +935,7 @@
     const button = document.getElementById('volumeChartToggle');
     button.classList.toggle('active', volumeChartEnabled);
     button.setAttribute('aria-pressed', String(volumeChartEnabled));
-    button.textContent = volumeChartEnabled ? 'Volume: on' : 'Volume';
+    button.textContent = i18n.t(volumeChartEnabled ? 'sw.volumeOn' : 'sw.volume');
   }
 
   function toggleVolumeChart() {
@@ -880,7 +957,7 @@
     const period = Number(input.value);
     if (!Number.isSafeInteger(period) || period < 1) {
       document.getElementById('rsiPeriodError').textContent =
-              'Enter a positive whole number, such as 14.';
+              i18n.t('sw.rsiPeriodInvalid');
       input.focus();
       return;
     }
@@ -892,7 +969,7 @@
             || oversoldBoundary <= 0 || overboughtBoundary >= 100
             || oversoldBoundary >= overboughtBoundary) {
       document.getElementById('rsiPeriodError').textContent =
-              'Choose boundaries inside 0–100, with the upper boundary greater than the lower boundary.';
+              i18n.t('sw.rsiBoundariesInvalid');
       if (!Number.isFinite(overboughtBoundary) || overboughtBoundary >= 100) {
         overboughtInput.focus();
       } else {
@@ -908,7 +985,7 @@
     const spec = CHART_INDICATOR_SPECS[type];
     if (!spec) return;
     pendingChartIndicatorType = type;
-    document.getElementById('chartIndicatorDialogTitle').textContent = `Add ${spec.label}`;
+    document.getElementById('chartIndicatorDialogTitle').textContent = i18n.t('sw.addIndicatorTitle', spec.label);
     document.getElementById('chartIndicatorDialogDescription').textContent = spec.description;
     document.getElementById('chartIndicatorError').textContent = '';
     const fields = document.getElementById('chartIndicatorFields');
@@ -958,7 +1035,8 @@
       if (!Number.isFinite(value) || value < field.min || value > field.max
               || (field.step === 1 && !Number.isSafeInteger(value))) {
         document.getElementById('chartIndicatorError').textContent =
-                `${field.label} must be between ${field.min} and ${field.max}${field.step === 1 ? ' and must be a whole number' : ''}.`;
+                i18n.t(field.step === 1 ? 'sw.fieldRangeWhole' : 'sw.fieldRange', field.label,
+                        Number(field.min).toLocaleString(i18n.tag), Number(field.max).toLocaleString(i18n.tag));
         input?.focus();
         return;
       }
@@ -966,7 +1044,7 @@
     }
     if (type === 'MACD' && parameters.fast >= parameters.slow) {
       document.getElementById('chartIndicatorError').textContent =
-              'The MACD fast period must be below the slow period.';
+              i18n.t('sw.macdOrder');
       event.currentTarget.elements.namedItem('fast')?.focus();
       return;
     }
@@ -982,9 +1060,9 @@
     const values = Object.values(parameters);
     if (!values.length) return spec.label;
     if (type === 'MACD') return `MACD ${parameters.fast}/${parameters.slow}/${parameters.signal}`;
-    if (type === 'BOLLINGER') return `Bollinger ${parameters.period} / ${parameters.deviation}σ`;
-    if (type === 'KELTNER') return `Keltner ${parameters.period} / ATR ${parameters.atrPeriod} × ${parameters.multiplier}`;
-    if (type === 'VOLUME_PROFILE') return `Rolling profile ${parameters.period}`;
+    if (type === 'BOLLINGER') return i18n.t('sw.label.bollinger', parameters.period, Number(parameters.deviation).toLocaleString(i18n.tag));
+    if (type === 'KELTNER') return i18n.t('sw.label.keltner', parameters.period, parameters.atrPeriod, Number(parameters.multiplier).toLocaleString(i18n.tag));
+    if (type === 'VOLUME_PROFILE') return i18n.t('sw.label.volumeProfile', parameters.period);
     return `${spec.label} ${values[0]}`;
   }
 
@@ -1014,11 +1092,11 @@
     const chip = document.createElement('span');
     chip.className = className;
     const label = document.createElement('span');
-    label.textContent = 'Candlestick signals';
+    label.textContent = i18n.t('sw.candlestickSignals');
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '\u00d7';
-    remove.setAttribute('aria-label', 'Remove candlestick signals');
+    remove.setAttribute('aria-label', i18n.t('sw.removeCandlestickSignals'));
     remove.addEventListener('click', event => {
       event.stopPropagation();
       disableHistoricalCandlestickOverlay();
@@ -1039,7 +1117,7 @@
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.textContent = '×';
-      remove.setAttribute('aria-label', `Remove ${config.displayLabel}`);
+      remove.setAttribute('aria-label', i18n.t('sw.removeIndicator', config.displayLabel));
       remove.addEventListener('click', event => {
         event.stopPropagation();
         removeChartIndicator(config.id);
@@ -1063,7 +1141,7 @@
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.textContent = '×';
-      remove.setAttribute('aria-label', `Remove ${config.displayLabel}`);
+      remove.setAttribute('aria-label', i18n.t('sw.removeIndicator', config.displayLabel));
       remove.addEventListener('click', () => removeChartIndicator(config.id));
       chip.append(label, remove);
       legend.append(chip);
@@ -1104,7 +1182,7 @@
               });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.message || body.detail || body.error || 'Indicator calculation failed.');
+        throw new Error(body.message || body.detail || body.error || i18n.t('sw.indicatorFailed'));
       }
       const batch = await response.json();
       if (requestId !== chartIndicatorRequestSequence || requestedInterval !== currentInterval) return;
@@ -1130,7 +1208,7 @@
       if (requestId !== chartIndicatorRequestSequence) return;
       console.warn('Chart indicators unavailable', error);
       const legend = document.getElementById('chartIndicatorOverlayLegend');
-      legend.textContent = error.message || 'Indicators could not be calculated.';
+      legend.textContent = error.message || i18n.t('sw.indicatorsFailed');
     }
   }
 
@@ -1174,11 +1252,11 @@
     actions.className = 'dynamic-indicator-panel-actions';
     const meta = document.createElement('span');
     meta.className = 'chart-panel-meta';
-    meta.textContent = 'Uses the chart time range';
+    meta.textContent = i18n.t('sw.usesChartRange');
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'dynamic-indicator-panel-remove';
-    remove.textContent = 'Remove';
+    remove.textContent = i18n.t('sw.remove');
     remove.addEventListener('click', () => removeChartIndicator(indicator.id));
     actions.append(meta, remove);
     heading.append(title, actions);
@@ -1286,45 +1364,47 @@
     const requestId = ++elliottRequestSequence;
     const status = document.getElementById('elliottOverlayStatus');
     status.classList.remove('error', 'warning');
-    clearElliottOverlays();
     const nativeEnabled = elliottOverlaysEnabled && ['1d', '1wk', '1mo'].includes(interval);
     const subwavesEnabled = elliottSubwavesEnabled && ['1d', '1wk'].includes(interval);
     if (!nativeEnabled && !subwavesEnabled) {
+      patternRangeLoader?.cancel('waves');
+      patternRangeLoader?.cancel('candidates');
+      clearElliottOverlays();
       status.textContent = '';
       return;
     }
+    if (!subwavesEnabled) clearElliottSubwaveOverlays();
+    if (!nativeEnabled) {
+      patternRangeLoader?.cancel('waves');
+      patternRangeLoader?.cancel('candidates');
+      clearIndependentElliottOverlays();
+    }
 
     status.textContent = nativeEnabled && subwavesEnabled
-            ? 'Analysing independent Elliott structures and Monthly-derived fractal subwaves...'
-            : (nativeEnabled
-                    ? 'Analysing independent Elliott structures detected on this interval...'
-                    : 'Building Monthly-derived fractal subwaves...');
+            ? i18n.t('sw.elliott.analysingBoth')
+            : i18n.t(nativeEnabled ? 'sw.elliott.analysingNative' : 'sw.elliott.buildingSubwaves');
     try {
-      const fromQuery = Number.isSafeInteger(oldestTimestamp) && oldestTimestamp > 0
-              ? `&from=${encodeURIComponent(oldestTimestamp)}`
-              : '';
       const cardInterval = interval === '1d' ? 'DAILY' : (interval === '1wk' ? 'WEEKLY' : 'MONTHLY');
       const hierarchyPromise = subwavesEnabled
               ? elliottHierarchyOverlay?.showInterval(interval) || Promise.resolve(0)
               : Promise.resolve(0);
-      const [response, cardResponse, subwaveCount, candidateResponse] = await Promise.all([
+      const [history, cardResponse, subwaveCount, candidateHistory] = await Promise.all([
         nativeEnabled
-                ? fetch(`/api/stocks/${encodedTicker}/elliott-waves/history?interval=${encodeURIComponent(interval)}${fromQuery}`)
-                : Promise.resolve(null),
+                ? loadPatternRange('waves', interval)
+                : Promise.resolve({structures: []}),
         nativeEnabled
                 ? fetch(`/api/alerts/${encodedTicker}/elliott-cards?interval=${encodeURIComponent(cardInterval)}`)
                         .catch(() => null)
                 : Promise.resolve(null),
         hierarchyPromise,
         nativeEnabled
-                ? fetch(`/api/stocks/${encodedTicker}/elliott-waves/candidates?interval=${encodeURIComponent(interval)}`).catch(() => null)
-                : Promise.resolve(null)
+                ? loadPatternRange('candidates', interval)
+                : Promise.resolve({candidates: []})
       ]);
-      if (response && !response.ok) throw new Error('Independent Elliott structure request failed');
-      const history = response ? await response.json() : { structures: [] };
       const cards = cardResponse?.ok ? await cardResponse.json() : [];
-      const candidates = candidateResponse?.ok ? await candidateResponse.json() : [];
+      const candidates = candidateHistory.candidates || [];
       if (requestId !== elliottRequestSequence || currentInterval !== interval) return;
+      clearIndependentElliottOverlays();
 
       elliottSignalCards = new Map((Array.isArray(cards) ? cards : []).map(card => [
         elliottSignalCardKey(card.cycleKey, card.stage),
@@ -1337,25 +1417,25 @@
       ])).values());
       uniqueStructures.forEach(structure => renderHistoricalElliottStructure(structure));
       const standalone = (Array.isArray(candidates) ? candidates : []).filter(candidate =>
-              candidate.structureLabel !== 'Motive 1-2-3-4-5' && candidate.points?.length >= 4
-              && (!oldestTimestamp || candidate.points[0].timestamp >= oldestTimestamp));
-      standalone.slice(-20).forEach(renderStandaloneElliottCandidate);
-      const candidateNotice = standalone.length
-              ? ` Showing ${Math.min(20, standalone.length)} of ${standalone.length} standalone pattern candidates; parent position and finer waves remain unverified.` : '';
+              candidate.structureLabel !== 'Motive 1-2-3-4-5' && candidate.points?.length >= 4);
+      const bestCandidate = bestOnScreenElliottCandidate(standalone);
+      if (bestCandidate) renderStandaloneElliottCandidate(bestCandidate);
+      const candidateNotice = bestCandidate
+              ? ` ${i18n.t('sw.elliott.bestCandidate', structureName(bestCandidate.structureLabel), bestCandidate.qualityScore)}` : '';
       setElliottConfirmationMarkers(uniqueStructures);
       rebuildElliottHitTargets();
 
       if (uniqueStructures.length === 0) {
-        if (standalone.length) { status.textContent = candidateNotice.trim(); return; }
+        if (bestCandidate) { status.textContent = candidateNotice.trim(); return; }
         if (Number(subwaveCount) > 0) {
-          status.textContent = `Showing ${subwaveCount} validated ${interval === '1d' ? 'Daily' : 'Weekly'} fractal subwaves derived from the Monthly hierarchy${nativeEnabled ? '; no independent structure was detected on this interval' : ''}.`;
+          status.textContent = `${i18n.plural(`sw.elliott.subwavesShown.${interval === '1d' ? 'DAILY' : 'WEEKLY'}`, Number(subwaveCount), subwaveCount)}${nativeEnabled ? i18n.t('sw.elliott.noIndependentSuffix') : ''}.`;
           return;
         }
         if (!nativeEnabled) {
-          status.textContent = 'No validated fractal subwaves are available from the Monthly hierarchy.';
+          status.textContent = i18n.t('sw.elliott.noSubwaves');
           return;
         }
-        status.textContent = 'No complete I–V or I–V, A–B–C Elliott structure detected in the loaded range.';
+        status.textContent = i18n.t('sw.elliott.noStructure');
         return;
       }
 
@@ -1369,21 +1449,23 @@
       const qualityNotice = qualityMin === null
               ? ''
               : (qualityMin === qualityMax
-                      ? ` Quality ${qualityMin}/100.`
-                      : ` Quality range ${qualityMin}–${qualityMax}/100.`);
+                      ? ` ${i18n.t('sw.elliott.quality', qualityMin)}`
+                      : ` ${i18n.t('sw.elliott.qualityRange', qualityMin, qualityMax)}`);
       const warningNotice = warnedStructureCount > 0
-              ? ` ${warnedStructureCount} ${warnedStructureCount === 1 ? 'has' : 'have'} reduced-confidence guideline warnings.`
+              ? ` ${i18n.plural('sw.elliott.warnings', warnedStructureCount, warnedStructureCount)}`
               : '';
       if (warnedStructureCount > 0) status.classList.add('warning');
       const subwaveNotice = subwavesEnabled && Number(subwaveCount) > 0
-              ? ` Plus ${subwaveCount} validated ${interval === '1d' ? 'Daily' : 'Weekly'} fractal subwaves from the Monthly hierarchy.`
+              ? ` ${i18n.plural(`sw.elliott.subwavesPlus.${interval === '1d' ? 'DAILY' : 'WEEKLY'}`, Number(subwaveCount), subwaveCount)}`
               : '';
-      status.textContent = `Showing ${uniqueStructures.length} independent Elliott Wave structure${uniqueStructures.length === 1 ? '' : 's'} in ${globalCandleData.length} loaded candles.${subwaveNotice}${qualityNotice}${warningNotice}`;
+      // Lead with the short summary; the status chip shows the rest when expanded.
+      status.textContent = `${i18n.plural('sw.elliott.structuresOnChart', uniqueStructures.length, uniqueStructures.length, globalCandleData.length)}${subwaveNotice}${qualityNotice}${warningNotice}`;
       status.textContent += candidateNotice;
     } catch (error) {
+      if (error.name === 'AbortError') return;
       if (requestId === elliottRequestSequence && currentInterval === interval) {
         status.classList.add('error');
-        status.textContent = 'Elliott Wave overlay unavailable.';
+        status.textContent = i18n.t('sw.elliott.unavailable');
       }
       console.warn('Elliott Wave overlay failed', error);
     }
@@ -1441,8 +1523,8 @@
     button.classList.toggle('active', supported && elliottOverlaysEnabled);
     button.setAttribute('aria-pressed', String(supported && elliottOverlaysEnabled));
     button.textContent = supported
-            ? `Independent Elliott structures: ${elliottOverlaysEnabled ? 'on' : 'off'}`
-            : 'Independent Elliott structures';
+            ? i18n.t(elliottOverlaysEnabled ? 'sw.toggle.elliottOn' : 'sw.toggle.elliottOff')
+            : i18n.t('sw.toggle.elliott');
     updateElliottSubwaveToggle();
   }
 
@@ -1453,8 +1535,8 @@
     button.classList.toggle('active', supported && elliottSubwavesEnabled);
     button.setAttribute('aria-pressed', String(supported && elliottSubwavesEnabled));
     button.textContent = supported
-            ? `Fractal subwaves: ${elliottSubwavesEnabled ? 'on' : 'off'}`
-            : 'Fractal subwaves';
+            ? i18n.t(elliottSubwavesEnabled ? 'sw.toggle.subwavesOn' : 'sw.toggle.subwavesOff')
+            : i18n.t('sw.toggle.subwaves');
   }
 
   async function toggleElliottOverlays() {
@@ -1485,8 +1567,8 @@
     button.classList.toggle('active', supported && harmonicOverlaysEnabled);
     button.setAttribute('aria-pressed', String(supported && harmonicOverlaysEnabled));
     button.textContent = supported && harmonicOverlaysEnabled
-            ? 'Harmonic formations overlay: on'
-            : 'Harmonic formations overlay';
+            ? i18n.t('sw.toggle.harmonicOn')
+            : i18n.t('sw.toggle.harmonic');
   }
 
   async function toggleHarmonicOverlays() {
@@ -1500,41 +1582,36 @@
     const requestId = ++harmonicRequestSequence;
     const status = document.getElementById('harmonicOverlayStatus');
     status.classList.remove('error', 'warning');
-    clearHarmonicOverlays();
     if (!harmonicOverlaysEnabled || !['1d', '1wk', '1mo'].includes(interval)) {
+      patternRangeLoader?.cancel('harmonics');
+      clearHarmonicOverlays();
       status.textContent = '';
       return;
     }
-    status.textContent = 'Scanning confirmed pivots for harmonic formations...';
+    status.textContent = i18n.t('sw.harmonic.scanning');
     try {
-      const fromQuery = Number.isSafeInteger(oldestTimestamp) && oldestTimestamp > 0
-              ? `&from=${encodeURIComponent(oldestTimestamp)}`
-              : '';
-      const response = await fetch(
-              `/api/stocks/${encodedTicker}/harmonic-formations/history?interval=${encodeURIComponent(interval)}${fromQuery}`
-      );
-      if (!response.ok) throw new Error('Harmonic formation request failed');
-      const history = await response.json();
+      const history = await loadPatternRange('harmonics', interval);
       if (requestId !== harmonicRequestSequence || currentInterval !== interval || !harmonicOverlaysEnabled) return;
+      clearHarmonicOverlays();
       const formations = Array.isArray(history.formations) ? history.formations : [];
       formations.forEach(renderHarmonicFormation);
       rebuildHarmonicHitTargets();
       if (formations.length === 0) {
-        status.textContent = 'No confirmed Gartley, Bat, Butterfly, Crab, Shark, or Cypher formation was found in the loaded range.';
+        status.textContent = i18n.t('sw.harmonic.none');
         return;
       }
       const bullish = formations.filter(formation => formation.direction === 'BULLISH').length;
       const bearish = formations.length - bullish;
       const minimumQuality = Math.min(...formations.map(formation => Number(formation.qualityScore) || 0));
       const maximumQuality = Math.max(...formations.map(formation => Number(formation.qualityScore) || 0));
-      status.textContent = `Showing ${formations.length} confirmed harmonic formation${formations.length === 1 ? '' : 's'} `
-              + `(${bullish} bullish, ${bearish} bearish). Quality ${minimumQuality}-${maximumQuality}/100.`;
+      status.textContent = i18n.plural('sw.harmonic.shown', formations.length, formations.length, bullish, bearish, minimumQuality, maximumQuality);
     } catch (error) {
+      if (error.name === 'AbortError') return;
       if (requestId === harmonicRequestSequence && currentInterval === interval) {
         status.classList.add('error');
-        status.textContent = 'Harmonic formations overlay unavailable.';
+        status.textContent = i18n.t('sw.harmonic.unavailable');
       }
-      console.warn('Harmonic formations overlay failed', error);
+      if (error.name !== 'AbortError') console.warn('Harmonic formations overlay failed', error);
     }
   }
 
@@ -1554,18 +1631,14 @@
       time: timestampToChartDate(Number(point.timestamp)),
       value: Number(point.price)
     })));
-    const directionLabel = formation.direction === 'BEARISH' ? 'Bearish' : 'Bullish';
-    const patternLabel = String(formation.pattern || '')
-            .toLowerCase()
-            .replaceAll('_', ' ')
-            .replace(/\b\w/g, letter => letter.toUpperCase());
+    const patternLabel = harmonicDisplayName(formation);
     series.setMarkers(points.map((point, index) => ({
       time: timestampToChartDate(Number(point.timestamp)),
       position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
       color: colors.marker,
       shape: index === points.length - 1 ? (formation.direction === 'BEARISH' ? 'arrowDown' : 'arrowUp') : 'circle',
       text: index === points.length - 1
-              ? `${point.label} · ${directionLabel} ${patternLabel} · Q${formation.qualityScore}`
+              ? `${point.label} · ${patternLabel} · Q${formation.qualityScore}`
               : point.label
     })));
     harmonicFormationSeries.push(series);
@@ -1593,8 +1666,8 @@
       button.className = `elliott-wave-hit-target harmonic-formation-hit-target ${overlay.formation.direction === 'BEARISH' ? 'sell' : 'buy'}`;
       button.style.borderColor = HARMONIC_FORMATION_COLOR;
       button.style.color = HARMONIC_FORMATION_COLOR;
-      button.setAttribute('aria-label', `${endpoint.label} point, ${overlay.formation.direction} ${overlay.formation.pattern} harmonic formation`);
-      button.title = 'Open harmonic signal summary';
+      button.setAttribute('aria-label', i18n.t('sw.harmonic.pointAria', endpoint.label, harmonicDisplayName(overlay.formation)));
+      button.title = i18n.t('sw.harmonic.openSummary');
       button._harmonicOverlay = overlay;
       button.addEventListener('mouseenter', () => showHarmonicFormationCard(overlay, false));
       button.addEventListener('mouseleave', scheduleHarmonicFormationCardHide);
@@ -1639,11 +1712,9 @@
     }));
     const formation = overlay.formation;
     const endpoint = formation.points.at(-1);
-    const title = String(formation.pattern || '').toLowerCase()
-            .replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
-    document.getElementById('harmonicFormationCardTitle').textContent = `${formation.direction === 'BEARISH' ? 'Bearish' : 'Bullish'} ${title}`;
+    document.getElementById('harmonicFormationCardTitle').textContent = harmonicDisplayName(formation);
     document.getElementById('harmonicFormationCardStage').textContent =
-            `${tradeSignalDisplayLabel(formation.tradeSignal)} signal Â· ${formatHistoricalElliottPeriod(formation.confirmationTimestamp)} Â· score ${formation.qualityScore}/100`;
+            i18n.t('sw.harmonic.cardStage', tradeSignalDisplayLabel(formation.tradeSignal), formatHistoricalElliottPeriod(formation.confirmationTimestamp), formation.qualityScore);
     const confirmationIndex = globalCandleData.findIndex(
             candle => Number(candle.timestamp) === Number(formation.confirmationTimestamp));
     const signalClose = confirmationIndex < 0 ? NaN : Number(globalCandleData[confirmationIndex].close);
@@ -1659,29 +1730,39 @@
       outcome.hidden = false;
       message.hidden = true;
       document.getElementById('harmonicFormationCardOutcomeLabel').textContent =
-              formation.tradeSignal === 'SELL' ? 'Largest close-based loss avoided' : 'Best close-based return';
+              i18n.t(formation.tradeSignal === 'SELL' ? 'sw.lossAvoided' : 'sw.bestReturn');
       const best = Math.max(...returns);
       const value = document.getElementById('harmonicFormationCardOutcomeValue');
       value.textContent = formatSignedPercent(best);
       value.classList.toggle('positive', best >= 0);
       value.classList.toggle('negative', best < 0);
       document.getElementById('harmonicFormationCardWindowEnd').textContent =
-              `At candle 10: ${formatSignedPercent(returns[9])}`;
+              i18n.t('sw.atCandle10', formatSignedPercent(returns[9]));
     } else {
       outcome.hidden = true;
       message.hidden = false;
       const count = confirmationIndex < 0 ? 0 : globalCandleData.length - confirmationIndex - 1;
       message.textContent = confirmationIndex < 0
-              ? 'The confirmation candle is outside the currently loaded chart range.'
-              : `Waiting for ${Math.max(0, 10 - count)} more completed candle${10 - count === 1 ? '' : 's'}.`;
+              ? i18n.t('sw.confirmationOutside')
+              : i18n.plural('sw.waitingCandles', Math.max(0, 10 - count), Math.max(0, 10 - count));
     }
     document.getElementById('harmonicFormationCardNote').textContent =
-            `${endpoint.label} completed at ${Number(endpoint.price).toFixed(4)}. Hard rules passed; only tolerated soft-ratio deviations reduce the score.`;
+            i18n.t('sw.harmonic.cardNote', endpoint.label, i18n.number(endpoint.price, 4));
     document.getElementById('harmonicFormationCardLink').href =
             `/stock/${encodedTicker}/harmonic-formations/${encodeURIComponent(currentInterval)}/${encodeURIComponent(formation.pattern)}/${encodeURIComponent(endpoint.timestamp)}`;
     const card = document.getElementById('harmonicFormationHoverCard');
     card.hidden = false;
     positionHarmonicFormationCard(overlay);
+  }
+
+  function harmonicPatternName(pattern) {
+    const key = `harmonicPattern.${String(pattern || '').toUpperCase()}`;
+    if (i18n.has(key)) return i18n.t(key);
+    return String(pattern || '').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+  }
+
+  function harmonicDisplayName(formation) {
+    return i18n.t(formation.direction === 'BEARISH' ? 'sw.harmonic.bearish' : 'sw.harmonic.bullish', harmonicPatternName(formation.pattern));
   }
 
   function positionHarmonicFormationCard(overlay) {
@@ -1761,8 +1842,8 @@
             'aria-pressed',
             String(anchoredVolumeProfileEnabled && hasCandles));
     button.textContent = anchoredVolumeProfileEnabled
-            ? 'Anchored volume profile: on'
-            : 'Anchored volume profile';
+            ? i18n.t('sw.toggle.profileOn')
+            : i18n.t('sw.toggle.profile');
   }
 
   function handleAnchoredVolumeProfileChartClick(parameter) {
@@ -1804,7 +1885,7 @@
               + `&anchor=${encodeURIComponent(requestedAnchor)}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.error || 'Anchored volume profile request failed');
+        throw new Error(payload.error || i18n.t('sw.profile.requestFailed'));
       }
       if (requestId !== anchoredVolumeProfileRequestSequence
               || !anchoredVolumeProfileEnabled
@@ -1822,7 +1903,7 @@
       document.getElementById('anchoredVolumeProfileSummary')
               .classList.add('active');
       status.classList.add('error');
-      status.textContent = error.message || 'Anchored volume profile unavailable.';
+      status.textContent = error.message || i18n.t('sw.profile.unavailable');
       console.warn('Anchored volume profile failed', error);
     }
   }
@@ -1831,22 +1912,21 @@
     document.getElementById('anchoredVolumeProfileSummary')
             .classList.add('active');
     document.getElementById('anchoredVolumeProfileRange').textContent =
-            `Anchored ${formatProfileDate(anchorTimestamp)} · Loading profile…`;
+            i18n.t('sw.profile.loading', formatProfileDate(anchorTimestamp));
     document.getElementById('anchoredVolumeProfilePoc').textContent = '—';
     document.getElementById('anchoredVolumeProfileVah').textContent = '—';
     document.getElementById('anchoredVolumeProfileVal').textContent = '—';
     const status = document.getElementById('anchoredVolumeProfileStatus');
     status.classList.remove('error', 'locked');
-    status.textContent = 'Loading available price data…';
+    status.textContent = i18n.t('sw.profile.loadingData');
   }
 
   function updateAnchoredVolumeProfileSummary(profile) {
     const anchor = formatProfileDate(profile.anchorTimestamp);
     const end = formatProfileDate(profile.endTimestamp);
-    const range = anchor === end ? `Anchored ${anchor}` : `${anchor} → ${end}`;
+    const range = anchor === end ? i18n.t('sw.profile.anchored', anchor) : `${anchor} → ${end}`;
     const source = formatProfileCalculationInterval(profile.calculationInterval);
-    const candleCount = `${profile.candlesIncluded} candle`
-            + `${profile.candlesIncluded === 1 ? '' : 's'}`;
+    const candleCount = i18n.plural('results.candles', profile.candlesIncluded, profile.candlesIncluded);
     document.getElementById('anchoredVolumeProfileSummary')
             .classList.add('active');
     document.getElementById('anchoredVolumeProfileRange').textContent =
@@ -1861,31 +1941,29 @@
     const status = document.getElementById('anchoredVolumeProfileStatus');
     status.classList.toggle('locked', Boolean(profile.liveRefreshLocked));
     if (profile.liveRefreshLocked) {
-      const unlock = profile.liveRefreshAvailableAt
-              ? ` until ${formatProfileDateTime(profile.liveRefreshAvailableAt)}`
-              : '';
-      status.textContent = `Live updates paused${unlock}. The saved snapshot remains visible.`;
+      status.textContent = profile.liveRefreshAvailableAt
+              ? i18n.t('sw.profile.pausedUntil', formatProfileDateTime(profile.liveRefreshAvailableAt))
+              : i18n.t('sw.profile.paused');
       return;
     }
     const updated = profile.liveDataRefreshedAt
-            ? `Updated ${formatProfileDateTime(profile.liveDataRefreshedAt)}`
-            : 'Using cached candles';
-    status.textContent = `${updated} · ${profile.liveRefreshesRemaining} live refresh`
-            + `${profile.liveRefreshesRemaining === 1 ? '' : 'es'} remaining`;
+            ? i18n.t('sw.profile.updated', formatProfileDateTime(profile.liveDataRefreshedAt))
+            : i18n.t('sw.profile.cached');
+    status.textContent = `${updated} · ${i18n.plural('sw.profile.refreshesRemaining', profile.liveRefreshesRemaining, profile.liveRefreshesRemaining)}`;
   }
 
   function formatProfileCalculationInterval(interval) {
-    if (interval === '15min') return '15-minute source';
-    if (interval === '1d+15min') return 'daily + active-day 15-minute source';
-    if (interval === '1wk') return 'weekly source';
-    if (interval === '1mo') return 'monthly source';
-    return 'daily source';
+    if (interval === '15min') return i18n.t('sw.profile.source.15min');
+    if (interval === '1d+15min') return i18n.t('sw.profile.source.mixed');
+    if (interval === '1wk') return i18n.t('sw.profile.source.weekly');
+    if (interval === '1mo') return i18n.t('sw.profile.source.monthly');
+    return i18n.t('sw.profile.source.daily');
   }
 
   function formatProfileDate(timestamp) {
-    if (!timestamp) return 'latest';
+    if (!timestamp) return i18n.t('sw.profile.latest');
     const date = new Date(Number(timestamp) * 1000);
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(i18n.tag, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -1896,7 +1974,7 @@
   function formatProfileDateTime(timestamp) {
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(i18n.tag, {
       dateStyle: 'medium',
       timeStyle: 'short'
     }).format(date);
@@ -1905,8 +1983,8 @@
   function formatProfilePrice(price) {
     const numeric = Number(price);
     return Number.isFinite(numeric)
-            ? `${numeric.toFixed(2)} ${stockCurrency}`
-            : 'n/a';
+            ? `${i18n.number(numeric, 2)} ${stockCurrency}`
+            : i18n.t('sw.na');
   }
 
   function scheduleAnchoredVolumeProfileRender() {
@@ -2088,7 +2166,7 @@
     context.lineTo(anchorCoordinate, height - 24);
     context.stroke();
     context.setLineDash([]);
-    context.font = '600 10px Inter, sans-serif';
+    context.font = '600 12px "Inter Variable", Inter, sans-serif';
     const labelWidth = context.measureText('ANCHOR').width + 12;
     const labelLeft = Math.max(4, Math.min(
             anchorCoordinate + 6,
@@ -2115,18 +2193,51 @@
     context.clearRect(0, 0, canvas.width, canvas.height);
   }
 
+  // Only the endpoint has to be on screen: it carries the signal and its click target.
+  function bestOnScreenElliottCandidate(candidates) {
+    const onScreen = visiblePatternRange(0);
+    if (!onScreen) return null;
+    return candidates
+            .filter(candidate => {
+              const endpoint = Number(candidate.points[candidate.points.length - 1]?.timestamp);
+              return endpoint >= onScreen.from && endpoint <= onScreen.to;
+            })
+            .reduce((best, candidate) => !best
+                    || Number(candidate.qualityScore) > Number(best.qualityScore)
+                    || Number(candidate.qualityScore) === Number(best.qualityScore)
+                    && Number(candidate.confirmationTimestamp) > Number(best.confirmationTimestamp)
+                    ? candidate : best, null);
+  }
+
   function renderStandaloneElliottCandidate(candidate) {
+    const groupId = `candidate:${candidate.candidateKey || elliottStructureFallbackId(candidate)}`;
+    const structure = { ...candidate, candidate: true };
     const points = candidate.points;
     const series = priceChart.addLineSeries({
-      color: '#94a3b8', lineWidth: 1, lineStyle: 2,
+      color: ELLIOTT_CANDIDATE_COLOR, lineWidth: 1, lineStyle: 2,
       crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false
     });
     series.setData(points.map(point => ({ time: timestampToChartDate(point.timestamp), value: point.price })));
-    const endpoint = points[points.length - 1];
-    series.setMarkers([{ time: timestampToChartDate(endpoint.timestamp),
-      position: endpoint.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar', color: '#94a3b8', shape: 'circle',
-      text: `Candidate: ${candidate.structureLabel}` }]);
+    series.setMarkers(points
+            .filter(point => point.label)
+            .map(point => ({
+              time: timestampToChartDate(point.timestamp),
+              position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
+              color: ELLIOTT_CANDIDATE_COLOR,
+              shape: 'circle',
+              text: point.label
+            })));
     historicalElliottSeries.push(series);
+    historicalElliottGroups.set(groupId, { structure, segments: [{
+      structure,
+      groupId,
+      stage: 'CANDIDATE',
+      points,
+      color: ELLIOTT_CANDIDATE_COLOR,
+      series,
+      lineWidth: 1,
+      activeLineWidth: 3
+    }] });
   }
 
   function renderHistoricalElliottStructure(structure) {
@@ -2182,7 +2293,9 @@
       stage,
       points,
       color,
-      series
+      series,
+      lineWidth: 2,
+      activeLineWidth: 4
     });
   }
 
@@ -2192,7 +2305,7 @@
 
   function formatWaveTwoRetracement(retracement) {
     const percentage = Number(retracement) * 100;
-    return Number.isFinite(percentage) ? `${percentage.toFixed(1)}%` : '';
+    return Number.isFinite(percentage) ? `${i18n.number(percentage, 1)}%` : '';
   }
 
   function elliottQualityWarnings(structure) {
@@ -2200,21 +2313,21 @@
       return structure.qualityWarnings;
     }
     return structure.deepWaveTwo
-            ? [`Deep Wave II ${formatWaveTwoRetracement(structure.waveTwoRetracement)} — reduced confidence`]
+            ? [i18n.t('sw.elliott.deepWaveTwo', formatWaveTwoRetracement(structure.waveTwoRetracement))]
             : [];
   }
 
   function elliottPointWarningLabel(structure, point) {
     const label = point.label.toUpperCase();
     if (label === 'II' && (structure.waveTwoRetracement < 0.236 || structure.waveTwoRetracement > 0.786)) {
-      return structure.waveTwoRetracement > 0.786 ? 'deep' : 'shallow';
+      return i18n.t(structure.waveTwoRetracement > 0.786 ? 'signalDetail.wave.deep' : 'signalDetail.wave.shallow');
     }
     if (label === 'IV' && (structure.waveFourRetracement < 0.146 || structure.waveFourRetracement > 0.618)) {
-      return structure.waveFourRetracement > 0.618 ? 'deep' : 'shallow';
+      return i18n.t(structure.waveFourRetracement > 0.618 ? 'signalDetail.wave.deep' : 'signalDetail.wave.shallow');
     }
-    if (label === 'V' && structure.impulseVariant === 'TRUNCATED_FIFTH') return 'truncated';
-    if (label === 'C' && structure.correctionVariant === 'EXPANDED_FLAT') return 'expanded flat';
-    if (label === 'C' && structure.correctionVariant === 'RUNNING_FLAT') return 'running flat';
+    if (label === 'V' && structure.impulseVariant === 'TRUNCATED_FIFTH') return i18n.t('signalDetail.wave.truncated');
+    if (label === 'C' && structure.correctionVariant === 'EXPANDED_FLAT') return i18n.t('signalDetail.wave.expandedFlat');
+    if (label === 'C' && structure.correctionVariant === 'RUNNING_FLAT') return i18n.t('signalDetail.wave.runningFlat');
     return '';
   }
 
@@ -2273,14 +2386,18 @@
     if (!targetLayer) return;
     targetLayer.replaceChildren();
     historicalElliottGroups.forEach(group => group.segments.forEach(segment => {
-      const card = trackedElliottCard(segment);
+      const candidate = Boolean(segment.structure.candidate);
+      const card = candidate ? null : trackedElliottCard(segment);
       elliottInteractivePoints(segment).forEach(point => {
         const button = document.createElement('button');
-        const pointLabel = String(point.label || 'origin').toUpperCase();
+        const pointLabel = String(point.label || i18n.t('sw.origin')).toUpperCase();
         button.type = 'button';
-        button.className = 'elliott-wave-hit-target';
-        button.setAttribute('aria-label', `${pointLabel} point, ${segment.structure.direction || ''} Elliott Wave, ${elliottStageLabel(segment.stage)}, ${card?.status || 'historical signal'}`);
-        button.title = `Open ${elliottStageLabel(segment.stage)} details`;
+        button.className = candidate ? 'elliott-wave-hit-target candidate' : 'elliott-wave-hit-target';
+        button.setAttribute('aria-label', candidate
+                ? i18n.t('sw.elliott.candidatePointAria', pointLabel, structureName(segment.structure.structureLabel))
+                : i18n.t('sw.elliott.pointAria', pointLabel, i18n.has(`sw.direction.${segment.structure.direction}`) ? i18n.t(`sw.direction.${segment.structure.direction}`) : (segment.structure.direction || ''),
+                        elliottStageLabel(segment.stage), card?.status ? formatElliottStatus(card.status) : i18n.t('sw.elliott.historicalSignal')));
+        button.title = candidate ? i18n.t('sw.elliott.openCandidateSummary') : i18n.t('sw.elliott.openStageDetails', elliottStageLabel(segment.stage));
         button._elliottSegment = segment;
         button._elliottPoint = point;
         button.addEventListener('click', event => {
@@ -2409,24 +2526,23 @@
     setActiveElliottSegment(null);
     activeElliottSegment = { hierarchyWave: wave };
 
-    const direction = Number(wave.endPrice) >= Number(wave.startPrice) ? 'Bullish' : 'Bearish';
+    const direction = i18n.t(Number(wave.endPrice) >= Number(wave.startPrice) ? 'sw.hierarchy.bullish' : 'sw.hierarchy.bearish');
     const childCount = Array.isArray(wave.subwaves) ? wave.subwaves.length : 0;
     document.getElementById('elliottWaveCardEyebrow').textContent =
-            `${String(wave.timeframe || '').toUpperCase()} · ${String(wave.nature || '').toUpperCase()}`;
-    document.getElementById('elliottWaveCardTitle').textContent = `Wave ${wave.degreeLabel}`;
+            `${hierarchyWord('interval', wave.timeframe)} · ${hierarchyWord('sw.hierarchy.nature', wave.nature)}`;
+    document.getElementById('elliottWaveCardTitle').textContent = i18n.t('sw.hierarchy.wave', wave.degreeLabel);
     document.getElementById('elliottWaveCardStage').textContent =
             `${direction} · ${formatHierarchyWavePeriod(wave.startTime)} → ${formatHierarchyWavePeriod(wave.endTime)}`;
 
     const status = document.getElementById('elliottWaveCardStatus');
     status.className = 'elliott-wave-card-status confirmed';
-    status.textContent = 'Validated';
+    status.textContent = i18n.t('sw.hierarchy.validated');
     document.getElementById('elliottWaveCardOutcome').hidden = true;
     const message = document.getElementById('elliottWaveCardMessage');
     message.hidden = false;
-    message.textContent = `${Number(wave.startPrice).toFixed(2)} → ${Number(wave.endPrice).toFixed(2)}`
-            + (childCount > 0 ? ` · ${childCount} validated lower-timeframe subwaves` : '');
-    document.getElementById('elliottWaveCardNote').textContent =
-            'Top-down hierarchy validated inside the parent time boundary using the Elliott retracement, wave 3, and overlap rules.';
+    message.textContent = `${i18n.number(wave.startPrice, 2)} → ${i18n.number(wave.endPrice, 2)}`
+            + (childCount > 0 ? ` · ${i18n.plural('sw.hierarchy.lowerSubwaves', childCount, childCount)}` : '');
+    document.getElementById('elliottWaveCardNote').textContent = i18n.t('sw.hierarchy.note');
     document.getElementById('elliottWaveCardLink').hidden = true;
 
     const card = document.getElementById('elliottWaveHoverCard');
@@ -2434,26 +2550,36 @@
     positionElliottWaveCardAt(point);
   }
 
+  // Upper-case label for a hierarchy constant (MONTHLY, MOTIVE), translated where a message exists.
+  function hierarchyWord(prefix, value) {
+    const key = `${prefix}.${String(value || '').toUpperCase()}`;
+    return (i18n.has(key) ? i18n.t(key) : String(value || '')).toUpperCase();
+  }
+
   function formatHierarchyWavePeriod(timestamp) {
-    if (!timestamp) return 'unavailable';
-    return new Date(Number(timestamp) * 1000).toLocaleDateString(undefined, {
+    if (!timestamp) return i18n.t('sw.unavailable');
+    return new Date(Number(timestamp) * 1000).toLocaleDateString(i18n.tag, {
       year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
     });
   }
 
   function renderElliottWaveCard(segment) {
     const structure = segment.structure;
-    const tracked = trackedElliottCard(segment);
-    const cardData = tracked || historicalElliottCard(segment);
-    const titleDirection = structure.direction === 'BEARISH' ? 'Bearish' : 'Bullish';
-    document.getElementById('elliottWaveCardEyebrow').textContent = 'ELLIOTT WAVE';
-    document.getElementById('elliottWaveCardTitle').textContent = `${titleDirection} structure`;
+    const candidate = Boolean(structure.candidate);
+    const tracked = candidate ? null : trackedElliottCard(segment);
+    const cardData = candidate ? candidateElliottCard(segment) : (tracked || historicalElliottCard(segment));
+    document.getElementById('elliottWaveCardEyebrow').textContent =
+            i18n.t(candidate ? 'sw.elliott.eyebrowCandidate' : 'sw.elliott.eyebrow');
+    document.getElementById('elliottWaveCardTitle').textContent =
+            candidate ? structureName(structure.structureLabel) : i18n.t(structure.direction === 'BEARISH' ? 'sw.elliott.structureBearish' : 'sw.elliott.structureBullish');
     document.getElementById('elliottWaveCardStage').textContent =
-            `${cardData.stageLabel} · ${tradeSignalDisplayLabel(cardData.tradeSignal)} signal · ${cardData.signalPeriodLabel}`;
+            i18n.t('sw.elliott.cardStage', cardData.stageLabel, tradeSignalDisplayLabel(cardData.tradeSignal), cardData.signalPeriodLabel);
 
     const status = document.getElementById('elliottWaveCardStatus');
     status.className = `elliott-wave-card-status ${cardData.statusClass}`;
-    status.textContent = formatElliottStatus(cardData.status);
+    status.textContent = candidate
+            ? i18n.t('sw.elliott.candidateScore', structure.qualityScore)
+            : formatElliottStatus(cardData.status);
 
     const outcome = document.getElementById('elliottWaveCardOutcome');
     const message = document.getElementById('elliottWaveCardMessage');
@@ -2462,10 +2588,12 @@
     link.hidden = !cardData.detailUrl;
     if (cardData.detailUrl) {
       link.href = cardData.detailUrl;
-      link.textContent = tracked ? 'Open signal details' : 'Open historical signal details';
+      link.textContent = candidate
+              ? i18n.t('sw.elliott.openCandidate')
+              : i18n.t(tracked ? 'sw.elliott.openSignal' : 'sw.elliott.openHistorical');
     }
     note.textContent = `${cardData.outcomeNote
-            || 'Historical results based on closing prices.'} Measured from the confirmation candle close on ${cardData.signalPeriodLabel}.`;
+            || i18n.t('sw.elliott.historicalResults')} ${i18n.t('sw.elliott.measuredFrom', cardData.signalPeriodLabel)}`;
     if (cardData.outcomeAvailable) {
       outcome.hidden = false;
       message.hidden = true;
@@ -2474,12 +2602,12 @@
       outcomeValue.textContent = formatSignedPercent(cardData.bestDirectionalReturnPercent);
       outcomeValue.classList.toggle('positive', Number(cardData.bestDirectionalReturnPercent) >= 0);
       outcomeValue.classList.toggle('negative', Number(cardData.bestDirectionalReturnPercent) < 0);
-      document.getElementById('elliottWaveCardWindowEnd').textContent = `At candle 10: ${formatSignedPercent(cardData.windowEndDirectionalReturnPercent)}`;
+      document.getElementById('elliottWaveCardWindowEnd').textContent = i18n.t('sw.atCandle10', formatSignedPercent(cardData.windowEndDirectionalReturnPercent));
     } else {
       outcome.hidden = true;
       message.hidden = false;
       message.textContent = cardData.unavailableReason
-              || 'Ten completed candles are required before a result can be shown.';
+              || i18n.t('sw.elliott.tenCandlesRequired');
     }
   }
 
@@ -2487,6 +2615,53 @@
     const structure = segment.structure;
     const tradeSignal = historicalElliottTradeSignal(structure.direction, segment.stage);
     const signalTimestamp = historicalElliottConfirmationTimestamp(segment);
+    const endpoint = segment.points[segment.points.length - 1];
+    const historicalDetailUrl = endpoint?.timestamp
+            ? `/stock/${encodedTicker}/elliott-waves/${encodeURIComponent(currentInterval)}/${encodeURIComponent(segment.stage)}/${encodeURIComponent(endpoint.timestamp)}`
+              + `?cycleKey=${encodeURIComponent(structure.cycleKey || '')}`
+            : null;
+    return {
+      ...elliottForwardOutcome(signalTimestamp, tradeSignal,
+              i18n.t('sw.elliott.noConfirmationStage')),
+      stageLabel: elliottStageLabel(segment.stage),
+      tradeSignal,
+      status: signalTimestamp === null ? 'DETECTED' : 'CONFIRMED',
+      statusClass: signalTimestamp === null ? 'detected' : 'confirmed',
+      signalTimestamp,
+      signalPeriodLabel: signalTimestamp === null
+              ? formatHistoricalElliottPeriod(endpoint?.timestamp)
+              : formatHistoricalElliottPeriod(signalTimestamp),
+      outcomeNote: i18n.t('sw.elliott.firstTenResults'),
+      detailUrl: historicalDetailUrl
+    };
+  }
+
+  function candidateElliottCard(segment) {
+    const candidate = segment.structure;
+    const endpoint = segment.points[segment.points.length - 1];
+    // The detector confirms a candidate by a reversal away from its final pivot.
+    const tradeSignal = endpoint?.pivotType === 'LOW' ? 'BUY' : 'SELL';
+    const signalTimestamp = Number(candidate.confirmationTimestamp) > 0
+            ? Number(candidate.confirmationTimestamp) : null;
+    const detailUrl = endpoint?.timestamp && candidate.candidateKey
+            ? `/stock/${encodedTicker}/elliott-waves/${encodeURIComponent(currentInterval)}/candidate/${encodeURIComponent(endpoint.timestamp)}`
+              + `?key=${encodeURIComponent(candidate.candidateKey)}`
+            : null;
+    return {
+      ...elliottForwardOutcome(signalTimestamp, tradeSignal,
+              i18n.t('sw.elliott.noConfirmationCandidate')),
+      stageLabel: i18n.t(candidate.direction === 'RISING' ? 'sw.elliott.risingPattern' : 'sw.elliott.fallingPattern'),
+      tradeSignal,
+      status: 'CANDIDATE',
+      statusClass: 'candidate',
+      signalTimestamp,
+      signalPeriodLabel: formatHistoricalElliottPeriod(signalTimestamp ?? endpoint?.timestamp),
+      outcomeNote: i18n.t('sw.elliott.shapeOnlyNote'),
+      detailUrl
+    };
+  }
+
+  function elliottForwardOutcome(signalTimestamp, tradeSignal, missingConfirmationReason) {
     const signalIndex = signalTimestamp === null
             ? -1
             : globalCandleData.findIndex(candle => Number(candle.timestamp) === Number(signalTimestamp));
@@ -2511,34 +2686,17 @@
     const availableForwardCandles = signalIndex < 0
             ? 0
             : Math.min(10, globalCandleData.length - signalIndex - 1);
-    const endpoint = segment.points[segment.points.length - 1];
-    const historicalDetailUrl = endpoint?.timestamp
-            ? `/stock/${encodedTicker}/elliott-waves/${encodeURIComponent(currentInterval)}/${encodeURIComponent(segment.stage)}/${encodeURIComponent(endpoint.timestamp)}`
-              + `?cycleKey=${encodeURIComponent(structure.cycleKey || '')}`
-            : null;
     const unavailableReason = signalTimestamp === null
-            ? 'A confirmation candle is not available for this historical wave stage.'
+            ? missingConfirmationReason
             : (signalIndex < 0
-                    ? 'The historical confirmation candle is outside the candles currently loaded on this chart.'
-                    : `Waiting for ${10 - availableForwardCandles} more completed candle${10 - availableForwardCandles === 1 ? '' : 's'}.`);
+                    ? i18n.t('sw.elliott.confirmationOutside')
+                    : i18n.plural('sw.waitingCandles', 10 - availableForwardCandles, 10 - availableForwardCandles));
     return {
-      stageLabel: elliottStageLabel(segment.stage),
-      tradeSignal,
-      status: signalTimestamp === null ? 'DETECTED' : 'CONFIRMED',
-      statusClass: signalTimestamp === null ? 'detected' : 'confirmed',
-      signalTimestamp,
-      signalPeriodLabel: signalTimestamp === null
-              ? formatHistoricalElliottPeriod(segment.points[segment.points.length - 1]?.timestamp)
-              : formatHistoricalElliottPeriod(signalTimestamp),
       outcomeAvailable,
       bestDirectionalReturnPercent,
       windowEndDirectionalReturnPercent,
-      outcomeLabel: tradeSignal === 'SELL'
-              ? 'Largest close-based loss avoided'
-              : 'Best close-based return',
-      outcomeNote: 'Historical results from the first 10 completed candles.',
-      unavailableReason,
-      detailUrl: historicalDetailUrl
+      outcomeLabel: i18n.t(tradeSignal === 'SELL' ? 'sw.lossAvoided' : 'sw.bestReturn'),
+      unavailableReason
     };
   }
 
@@ -2573,29 +2731,31 @@
   }
 
   function formatHistoricalElliottPeriod(timestamp) {
-    if (!timestamp) return 'unavailable';
+    if (!timestamp) return i18n.t('sw.unavailable');
     const date = new Date(Number(timestamp) * 1000);
     if (currentInterval === '1mo') {
-      return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      return date.toLocaleDateString(i18n.tag, { month: 'long', year: 'numeric', timeZone: 'UTC' });
     }
     if (currentInterval === '1d') {
-      return date.toLocaleDateString(undefined, {
+      return date.toLocaleDateString(i18n.tag, {
         year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
       });
     }
-    return `week of ${date.toLocaleDateString(undefined, {
+    return i18n.t('sw.weekOf', date.toLocaleDateString(i18n.tag, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       timeZone: 'UTC'
-    })}`;
+    }));
   }
 
   function elliottStageLabel(stage) {
-    return stage === 'CORRECTION_END' ? 'ABC correction ending' : 'Wave V ending';
+    return i18n.t(stage === 'CORRECTION_END' ? 'sw.stage.CORRECTION_END' : 'sw.stage.WAVE_V_END');
   }
 
   function formatElliottStatus(status) {
+    const key = `sw.elliottStatus.${String(status || 'DETECTED').toUpperCase()}`;
+    if (i18n.has(key)) return i18n.t(key);
     const value = String(status || 'DETECTED').toLowerCase();
     return value.charAt(0).toUpperCase() + value.slice(1);
   }
@@ -2603,7 +2763,7 @@
   function formatSignedPercent(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return '—';
-    return `${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}%`;
+    return `${numeric > 0 ? '+' : ''}${i18n.number(numeric, 2)}%`;
   }
 
   function positionElliottWaveCard(segment, point) {
@@ -2639,7 +2799,9 @@
       return;
     }
     historicalElliottGroups.forEach(group => group.segments.forEach(item => {
-      item.series.applyOptions({ lineWidth: item.groupId === segment?.groupId ? 4 : 2 });
+      item.series.applyOptions({
+        lineWidth: item.groupId === segment?.groupId ? item.activeLineWidth : item.lineWidth
+      });
     }));
     activeElliottSegment = segment;
   }
@@ -2656,7 +2818,7 @@
     elliottCardPinned = false;
     elliottCardHovered = false;
     historicalElliottGroups.forEach(group => group.segments.forEach(item => {
-      item.series.applyOptions({ lineWidth: 2 });
+      item.series.applyOptions({ lineWidth: item.lineWidth });
     }));
     activeElliottSegment = null;
     const card = document.getElementById('elliottWaveHoverCard');
@@ -2683,12 +2845,12 @@
   function updatePriceHeaderFromLatestCandle() {
     if (!latestCandle) return;
 
-    document.getElementById('livePriceDisplay').innerText = `${latestCandle.close.toFixed(2)} ${stockCurrency}`;
+    document.getElementById('livePriceDisplay').innerText = `${i18n.number(latestCandle.close, 2)} ${stockCurrency}`;
 
     const previous = globalCandleData.length > 1 ? globalCandleData[globalCandleData.length - 2].close : latestCandle.open;
     const changePercent = previous > 0 ? ((latestCandle.close - previous) / previous) * 100 : 0;
     const changeEl = document.getElementById('liveChangeDisplay');
-    changeEl.innerText = `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(2)}%`;
+    changeEl.innerText = `${changePercent > 0 ? '+' : ''}${i18n.number(changePercent, 2)}%`;
     changeEl.className = 'price-change ' + (changePercent >= 0 ? 'positive' : 'negative');
   }
 
@@ -2728,10 +2890,10 @@
       const update = await response.json();
 
       if (update && update.price !== undefined) {
-        document.getElementById('livePriceDisplay').innerText = `${update.price.toFixed(2)} ${stockCurrency}`;
+        document.getElementById('livePriceDisplay').innerText = `${i18n.number(update.price, 2)} ${stockCurrency}`;
 
         const changeEl = document.getElementById('liveChangeDisplay');
-        changeEl.innerText = `${update.changePercent > 0 ? '+' : ''}${update.changePercent.toFixed(2)}%`;
+        changeEl.innerText = `${update.changePercent > 0 ? '+' : ''}${i18n.number(update.changePercent, 2)}%`;
         changeEl.className = 'price-change ' + (update.changePercent >= 0 ? 'positive' : 'negative');
 
         if (latestCandle) {
@@ -2778,7 +2940,7 @@
       alertStateLoaded = false;
       updateAlertDraftUi();
       updateTechnicalFollowAllButton();
-      status.innerText = 'Alerts unavailable';
+      status.innerText = i18n.t('sw.alertsUnavailable');
       console.warn("Alert state failed", err);
     }
   }
@@ -2814,10 +2976,10 @@
       const state = await response.json();
       hydrateOutlookFollowState(state);
       setOutlookFollowInputsDisabled(technicalFollowAllBusy);
-      status.textContent = 'Outlook monitoring ready';
+      status.textContent = i18n.t('sw.outlookAlertsReady');
     } catch (error) {
       outlookFollowStateLoaded = false;
-      status.textContent = 'Outlook monitoring unavailable';
+      status.textContent = i18n.t('sw.outlookAlertsUnavailable');
       outlookFollowInputs().forEach(input => input.disabled = true);
       updateTechnicalFollowAllButton();
       console.warn('Outlook follow state failed', error);
@@ -2845,10 +3007,10 @@
     try {
       const response = await fetch(`/api/congressional-activity/${encodedTicker}/state`);
       const state = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(state.error || 'Congressional activity is unavailable');
+      if (!response.ok) throw new Error(state.error || i18n.t('sw.congressUnavailable'));
       applyCongressionalActivityState(state);
     } catch (error) {
-      status.textContent = error.message || 'Congressional activity is unavailable';
+      status.textContent = error.message || i18n.t('sw.congressUnavailable');
       console.warn('Congressional activity state failed', error);
     } finally {
       setCongressionalControlsDisabled(false);
@@ -2860,13 +3022,11 @@
     const followButton = document.getElementById('followCongressionalActivityBtn');
     followButton.setAttribute('aria-pressed', String(congressionalFollowing));
     followButton.classList.toggle('following', congressionalFollowing);
-    followButton.textContent = congressionalFollowing
-            ? 'Stop following activity'
-            : 'Follow congressional activity';
+    followButton.textContent = i18n.t(congressionalFollowing ? 'sw.congressStopFollowing' : 'sw.congressFollow');
     const status = document.getElementById('congressionalActivityStatus');
     status.textContent = state.baselinePending
-            ? 'Preparing alerts; past filings will not trigger emails'
-            : `${state.followedStocks}/${state.maximumFollowedStocks} congressional stocks followed`;
+            ? i18n.t('sw.preparingActivityAlerts')
+            : i18n.t('sw.congressFollowedCount', state.followedStocks, state.maximumFollowedStocks);
     if (state.relevanceNotice) {
       document.getElementById('congressionalRelevanceNotice').textContent = state.relevanceNotice;
     }
@@ -2895,10 +3055,10 @@
     try {
       const response = await fetch(`/api/insider-activity/${encodedTicker}/state`);
       const state = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(state.error || 'Insider activity is unavailable');
+      if (!response.ok) throw new Error(state.error || i18n.t('sw.insiderUnavailable'));
       applyInsiderActivityState(state);
     } catch (error) {
-      status.textContent = error.message || 'Insider activity is unavailable';
+      status.textContent = error.message || i18n.t('sw.insiderUnavailable');
       console.warn('Insider activity state failed', error);
     } finally {
       setInsiderControlsDisabled(false);
@@ -2910,12 +3070,10 @@
     const followButton = document.getElementById('followInsiderActivityBtn');
     followButton.setAttribute('aria-pressed', String(insiderFollowing));
     followButton.classList.toggle('following', insiderFollowing);
-    followButton.textContent = insiderFollowing
-            ? 'Stop following insider activity'
-            : 'Follow insider activity';
+    followButton.textContent = i18n.t(insiderFollowing ? 'sw.insiderStopFollowing' : 'sw.insiderFollow');
     document.getElementById('insiderActivityStatus').textContent = state.baselinePending
-            ? 'Preparing alerts; past filings will not trigger emails'
-            : `${state.followedStocks}/${state.maximumFollowedStocks} insider stocks followed`;
+            ? i18n.t('sw.preparingActivityAlerts')
+            : i18n.t('sw.insiderFollowedCount', state.followedStocks, state.maximumFollowedStocks);
   }
 
   function showHistoricalCandlestickViewPicker() {
@@ -2938,6 +3096,7 @@
 
   function disableHistoricalCandlestickOverlay() {
     historicalCandlestickOverlayEnabled = false;
+    patternRangeLoader?.cancel('candles');
     historicalCandlestickOverlayRequestSequence++;
     historicalCandlestickOverlayHistory = null;
     historicalCandlestickOverlaySignals = [];
@@ -2950,9 +3109,7 @@
     const button = document.getElementById('candlestickOverlayToggle');
     button.classList.toggle('active', historicalCandlestickOverlayEnabled);
     button.setAttribute('aria-pressed', String(historicalCandlestickOverlayEnabled));
-    button.textContent = historicalCandlestickOverlayEnabled
-            ? 'Candlestick signals: on'
-            : 'Candlestick signals';
+    button.textContent = i18n.t(historicalCandlestickOverlayEnabled ? 'sw.toggle.candlesOn' : 'sw.candlestickSignals');
     renderActiveChartIndicatorControls();
     renderChartIndicatorOverlayLegend();
   }
@@ -2961,38 +3118,25 @@
     if (!historicalCandlestickOverlayEnabled) return;
     const requestId = ++historicalCandlestickOverlayRequestSequence;
     const status = document.getElementById('candlestickOverlayStatus');
-    historicalCandlestickOverlayHistory = null;
-    historicalCandlestickOverlaySignals = [];
-    clearHistoricalCandlestickOverlayVisuals();
     status.classList.remove('error', 'warning');
-    status.textContent = `Calculating every ${historicalCandlestickIntervalLabel(interval).toLowerCase()} pattern in the stored archive...`;
+    status.textContent = i18n.t(`sw.candles.loading.${apiIntervalEnum(interval)}`);
     try {
-      const response = await fetch(
-              `/api/stocks/${encodedTicker}/candlestick-patterns/history?interval=${encodeURIComponent(interval)}`
-              + '&fullHistory=true',
-              { cache: 'no-store', headers: {'Cache-Control': 'no-cache'} }
-      );
-      const history = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(history.error || 'Historical candlestick overlay could not be calculated');
-      }
+      const history = await loadPatternRange('candles', interval);
       if (requestId !== historicalCandlestickOverlayRequestSequence
               || !historicalCandlestickOverlayEnabled
               || currentInterval !== interval) return;
+      clearHistoricalCandlestickOverlayVisuals();
       historicalCandlestickOverlayHistory = history;
       historicalCandlestickOverlaySignals = Array.isArray(history.signals) ? history.signals : [];
       rebuildHistoricalCandlestickHitTargets();
       updateHistoricalCandlestickOverlayStatus();
     } catch (error) {
+      if (error.name === 'AbortError') return;
       if (requestId !== historicalCandlestickOverlayRequestSequence) return;
       status.classList.add('error');
-      status.textContent = error.message || 'Historical candlestick overlay could not be calculated';
+      status.textContent = error.message || i18n.t('sw.candles.overlayFailed');
       console.warn('Historical candlestick overlay failed', error);
     }
-  }
-
-  function historicalCandlestickIntervalLabel(interval) {
-    return {'1d': 'Daily', '1wk': 'Weekly', '1mo': 'Monthly'}[interval] || 'Historical';
   }
 
   function updateHistoricalCandlestickOverlayStatus() {
@@ -3001,13 +3145,12 @@
     const loadedSignalCount = historicalCandlestickOverlaySignals
             .filter(signal => loadedTimestamps.has(Number(signal.signalTimestamp))).length;
     const total = historicalCandlestickOverlaySignals.length;
-    const archiveCandles = Number(historicalCandlestickOverlayHistory.completedCandlesLoaded || 0);
     const olderNotice = loadedSignalCount < total
-            ? ` ${loadedSignalCount} are currently inside the loaded chart; scroll left to reveal older candles.`
-            : ' Every signal is currently inside the loaded chart.';
+            ? i18n.plural('sw.candles.partlyLoaded', loadedSignalCount, loadedSignalCount)
+            : i18n.t('sw.candles.allLoaded');
     document.getElementById('candlestickOverlayStatus').textContent = total === 0
-            ? `No valid ${historicalCandlestickIntervalLabel(currentInterval).toLowerCase()} candlestick signals were found across ${archiveCandles} completed candles.`
-            : `Showing ${total} historical signal${total === 1 ? '' : 's'} across all ${archiveCandles} completed candles.${olderNotice}`;
+            ? i18n.t(`sw.candles.none.${apiIntervalEnum(currentInterval)}`)
+            : `${i18n.plural('sw.candles.shown', total, total)} ${olderNotice}`;
   }
 
   function clearHistoricalCandlestickOverlayVisuals() {
@@ -3031,7 +3174,7 @@
               const direction = String(signal.tradeSignal || '').toLowerCase();
               button.type = 'button';
               button.className = `historical-candlestick-hit-target ${direction}`;
-              button.textContent = direction === 'sell' ? 'S/S' : 'B';
+              button.textContent = i18n.t(direction === 'sell' ? 'sw.marker.sellShort' : 'sw.marker.buy');
               button._historicalCandlestickSignal = signal;
               button._historicalCandlestickCluster = [signal];
               button.setAttribute('aria-label', `${signal.patternLabel}, ${signal.typeLabel}, ${signal.signalPeriodLabel}`);
@@ -3105,11 +3248,11 @@
       representative.button._historicalCandlestickCluster = signals;
       representative.button.textContent = signals.length > 1
               ? String(signals.length)
-              : (cluster.buy ? 'B' : 'S');
+              : i18n.t(cluster.buy ? 'sw.marker.buy' : 'sw.marker.sell');
       representative.button.classList.toggle('cluster', signals.length > 1);
       representative.button.title = signals.length > 1
-              ? `${signals.length} nearby ${cluster.buy ? 'buy' : 'sell/short'} signals - open and cycle through them`
-              : `Open ${signals[0].patternLabel} details`;
+              ? i18n.plural(cluster.buy ? 'sw.cluster.BUY' : 'sw.cluster.SELL', signals.length, signals.length)
+              : i18n.t('sw.openDetails', signals[0].patternLabel);
       representative.button.style.left = `${averageX}px`;
       representative.button.style.top = `${edgeY}px`;
     });
@@ -3147,7 +3290,7 @@
             `${signal.signalPeriodLabel} - ${signal.typeLabel || tradeSignalDisplayLabel(signal.tradeSignal)} - ${signal.formationLabel}`;
     const status = document.getElementById('historicalCandlestickCardStatus');
     status.className = `elliott-wave-card-status ${signal.statusClass || 'pending'}`;
-    status.textContent = signal.statusLabel || 'Awaiting outcome';
+    status.textContent = signal.statusLabel || i18n.t('sw.awaitingOutcome');
     const outcome = historicalCandlestickCardOutcome(signal);
     const outcomeValue = document.getElementById('historicalCandlestickCardOutcomeValue');
     outcomeValue.textContent = outcome.value;
@@ -3155,16 +3298,25 @@
     document.getElementById('historicalCandlestickCardOutcomeLabel').textContent = outcome.label;
     document.getElementById('historicalCandlestickCardOutcomeWindow').textContent = outcome.detail;
     document.getElementById('historicalCandlestickCardTrend').textContent =
-            `${signal.trendLabel || (String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'Required downtrend' : 'Required uptrend')} before the ${signal.formationLabel || 'pattern formation'}.`;
+            historicalCandlestickTrendSentence(signal);
     document.getElementById('historicalCandlestickCardNote').textContent =
-            signal.outcomeSummary || 'The result uses completed closing prices.';
+            signal.outcomeSummary || i18n.t('sw.candles.closingPrices');
     document.getElementById('historicalCandlestickCardLink').href =
             historicalCandlestickDetailUrl(signal, null, true);
     const navigation = document.getElementById('historicalCandlestickCardClusterNavigation');
     navigation.hidden = activeHistoricalCandlestickSignals.length <= 1;
     document.getElementById('historicalCandlestickCardClusterPosition').textContent =
-            `${activeHistoricalCandlestickSignalIndex + 1} of ${activeHistoricalCandlestickSignals.length} nearby signals`;
+            i18n.t('sw.cluster.position', activeHistoricalCandlestickSignalIndex + 1, activeHistoricalCandlestickSignals.length);
     highlightHistoricalCandlestickSignal(signal);
+  }
+
+  function historicalCandlestickTrendSentence(signal) {
+    const trend = signal.trendLabel
+            || i18n.t(String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'sw.candles.requiredDowntrend' : 'sw.candles.requiredUptrend');
+    const candles = Number(signal.formationCandles);
+    return Number.isInteger(candles) && candles > 0
+            ? i18n.t('sw.candles.trendBeforeFormation', trend, candles)
+            : i18n.t('sw.candles.trendBeforePattern', trend);
   }
 
   function historicalCandlestickCardOutcome(signal) {
@@ -3183,54 +3335,59 @@
     const rewardRiskRatio = configuredRewardRisk == null
             ? null
             : configuredRewardRisk.toFixed(0);
-    const entryLabel = entry == null ? 'n/a' : formatProfilePrice(entry);
+    const entryLabel = entry == null ? i18n.t('sw.na') : formatProfilePrice(entry);
+    const rewardRiskSuffix = rewardRiskRatio == null ? '' : ` - ${i18n.t('sw.rr', rewardRiskRatio)}`;
 
     if (lifecycleStatus === 'CONFIRMED') {
       return {
-        label: 'Return at sell target',
-        value: targetReturn == null ? 'Target reached' : formatSignedPercent(targetReturn),
+        label: i18n.t('sw.outcome.targetReturn'),
+        value: targetReturn == null ? i18n.t('signalDetail.targetReached') : formatSignedPercent(targetReturn),
         valueClass: targetReturn == null ? 'positive' : candlestickReturnClass(targetReturn),
-        detail: `Sold at ${target == null ? 'the profit target' : formatProfilePrice(target)} from entry ${entryLabel}${rewardRiskRatio == null ? '' : ` - 1:${rewardRiskRatio} R:R`}`
+        detail: (target == null ? i18n.t('sw.outcome.soldAtTarget', entryLabel) : i18n.t('sw.outcome.soldAt', formatProfilePrice(target), entryLabel)) + rewardRiskSuffix
       };
     }
     if (lifecycleStatus === 'INVALIDATED') {
-      const stopPriceLabel = stop == null ? 'Stop reached' : formatProfilePrice(stop);
+      const stopPriceLabel = stop == null ? i18n.t('sw.outcome.stopReached') : formatProfilePrice(stop);
       return {
-        label: 'Stop loss reached',
+        label: i18n.t('sw.outcome.stopLossReached'),
         value: stopReturn == null ? stopPriceLabel : `${stopPriceLabel} (${formatSignedPercent(stopReturn)})`,
         valueClass: 'negative',
-        detail: `Trade closed at the configured stop loss from entry ${entryLabel}`
+        detail: i18n.t('sw.outcome.closedAtStop', entryLabel)
       };
     }
     if (lifecycleStatus === 'EXPIRED') {
       return {
-        label: `Return at candle ${timeStopCandles} time stop`,
-        value: recordedReturn == null ? 'Unavailable' : formatSignedPercent(recordedReturn),
+        label: i18n.t('sw.outcome.timeStopReturn', timeStopCandles),
+        value: recordedReturn == null ? i18n.t('sw.unavailableCap') : formatSignedPercent(recordedReturn),
         valueClass: recordedReturn == null ? '' : candlestickReturnClass(recordedReturn),
-        detail: `Trade closed at ${exit == null ? 'the completed time-stop close' : formatProfilePrice(exit)}${signal.evaluationPeriodLabel ? ` on ${signal.evaluationPeriodLabel}` : ''}`
+        detail: exit == null
+                ? i18n.t(signal.evaluationPeriodLabel ? 'sw.outcome.closedAtTimeStopOn' : 'sw.outcome.closedAtTimeStop', signal.evaluationPeriodLabel)
+                : i18n.t(signal.evaluationPeriodLabel ? 'sw.outcome.closedAtOn' : 'sw.outcome.closedAt', formatProfilePrice(exit), signal.evaluationPeriodLabel)
       };
     }
     if (lifecycleStatus === 'DETECTED') {
       return {
-        label: 'Potential return at sell target',
-        value: targetReturn == null ? 'Target pending' : formatSignedPercent(targetReturn),
+        label: i18n.t('sw.outcome.potentialTargetReturn'),
+        value: targetReturn == null ? i18n.t('sw.outcome.targetPending') : formatSignedPercent(targetReturn),
         valueClass: targetReturn == null ? '' : candlestickReturnClass(targetReturn),
-        detail: `Entry ${entryLabel} - target ${target == null ? 'n/a' : formatProfilePrice(target)} - stop ${stop == null ? 'n/a' : formatProfilePrice(stop)}${rewardRiskRatio == null ? '' : ` - 1:${rewardRiskRatio} R:R`} - candle ${timeStopCandles} time stop`
+        detail: i18n.t('sw.outcome.plan', entryLabel, target == null ? i18n.t('sw.na') : formatProfilePrice(target), stop == null ? i18n.t('sw.na') : formatProfilePrice(stop))
+                + `${rewardRiskSuffix} - ${i18n.t('sw.outcome.timeStopCandle', timeStopCandles)}`
       };
     }
     if (lifecycleStatus === 'REJECTED') {
       return {
-        label: 'Rejected candidate',
-        value: 'No trade',
+        label: i18n.t('sw.outcome.rejected'),
+        value: i18n.t('sw.outcome.noTrade'),
         valueClass: '',
-        detail: 'The next candle did not confirm the pattern, so no trade opened.'
+        detail: i18n.t('sw.outcome.rejectedDetail')
       };
     }
     return {
-      label: 'Potential candidate',
-      value: 'Not opened',
+      label: i18n.t('sw.outcome.potential'),
+      value: i18n.t('sw.outcome.notOpened'),
       valueClass: '',
-      detail: `Waiting for next-candle confirmation - ${Number(signal.setupScore || 0)}/100 setup score`
+      detail: signal.setupScore == null ? i18n.t('sw.outcome.awaitingConfirmation')
+              : i18n.t('sw.outcome.awaitingConfirmationScore', Number(signal.setupScore))
     };
   }
 
@@ -3324,7 +3481,7 @@
       position: String(signal.tradeSignal).toUpperCase() === 'BUY' ? 'belowBar' : 'aboveBar',
       color: '#ffbd59',
       shape: 'circle',
-      text: signal.trendLabel || 'Required trend'
+      text: signal.trendLabel || i18n.t('sw.candles.requiredTrend')
     }] : []);
     historicalCandlestickFormationSeries.setMarkers(formationCandles.length ? [{
       time: formationCandles[formationCandles.length - 1].time,
@@ -3388,8 +3545,7 @@
     const resultsDialog = document.getElementById('historicalCandlestickResultsDialog');
     if (resultsDialog.open) resultsDialog.close();
     document.getElementById('historicalScanInterval').value = interval;
-    const labels = {'1d': 'Daily interval', '1wk': 'Weekly interval', '1mo': 'Monthly interval'};
-    document.getElementById('historicalCandlestickLookbackInterval').textContent = labels[interval];
+    document.getElementById('historicalCandlestickLookbackInterval').textContent = i18n.t(`sw.intervalName.${apiIntervalEnum(interval)}`);
     const input = document.getElementById('historicalCandlestickLookbackInput');
     input.value = String(initialLookback ?? HISTORICAL_CANDLESTICK_DEFAULT_LOOKBACKS[interval]);
     updateHistoricalCandlestickLookbackPreview();
@@ -3420,11 +3576,11 @@
     const preview = document.getElementById('historicalCandlestickLookbackDate');
     const lookback = selectedHistoricalCandlestickLookback();
     const valid = lookback !== null;
-    input.setCustomValidity(valid ? '' : 'Enter a whole number from 1 to 750.');
-    error.textContent = input.value && !valid ? 'Enter a whole number from 1 to 750.' : '';
+    input.setCustomValidity(valid ? '' : i18n.t('sw.lookbackInvalid'));
+    error.textContent = input.value && !valid ? i18n.t('sw.lookbackInvalid') : '';
     preview.textContent = valid && selectedHistoricalCandlestickInterval
             ? formatHistoricalCandlestickLookbackDate(selectedHistoricalCandlestickInterval, lookback)
-            : 'Enter a candle count';
+            : i18n.t('sw.lookbackPrompt');
   }
 
   function formatHistoricalCandlestickLookbackDate(interval, lookback) {
@@ -3433,10 +3589,10 @@
     if (interval === '1mo') {
       estimatedDate.setDate(1);
       estimatedDate.setMonth(estimatedDate.getMonth() - lookback);
-      return `Around ${new Intl.DateTimeFormat(undefined, {
+      return i18n.t('sw.around', new Intl.DateTimeFormat(i18n.tag, {
         month: 'long',
         year: 'numeric'
-      }).format(estimatedDate)}`;
+      }).format(estimatedDate));
     }
     if (interval === '1wk') {
       estimatedDate.setDate(estimatedDate.getDate() - lookback * 7);
@@ -3448,11 +3604,11 @@
         if (day !== 0 && day !== 6) sessionsRemaining--;
       }
     }
-    return `Around ${new Intl.DateTimeFormat(undefined, {
+    return i18n.t('sw.around', new Intl.DateTimeFormat(i18n.tag, {
       day: 'numeric',
       month: 'short',
       year: 'numeric'
-    }).format(estimatedDate)}`;
+    }).format(estimatedDate));
   }
 
   async function submitHistoricalCandlestickLookback(event) {
@@ -3494,7 +3650,7 @@
     const empty = document.getElementById('historicalCandlestickResultsEmpty');
     rows.replaceChildren();
     empty.hidden = true;
-    status.textContent = 'Calculating patterns from completed candles…';
+    status.textContent = i18n.t('sw.results.calculating');
     if (!resultsDialog.open) resultsDialog.showModal();
 
     if (historicalCandlestickRequestController) {
@@ -3512,12 +3668,12 @@
               }
       );
       const history = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(history.error || 'Historical candle patterns could not be calculated');
+      if (!response.ok) throw new Error(history.error || i18n.t('sw.results.failed'));
       selectedHistoricalCandlestickInterval = interval;
       renderHistoricalCandlestickResults(history);
     } catch (error) {
       if (error.name === 'AbortError') return;
-      status.textContent = error.message || 'Historical candle patterns could not be calculated';
+      status.textContent = error.message || i18n.t('sw.results.failed');
       console.warn('Historical candlestick scan failed', error);
     } finally {
       historicalCandlestickRequestController = null;
@@ -3534,14 +3690,14 @@
     )));
     empty.hidden = signals.length > 0;
     document.getElementById('historicalCandlestickResultsTitle').textContent =
-            `${history.intervalLabel || 'Historical'} candle patterns`;
+            history.interval ? i18n.t(`sw.results.title.${apiIntervalEnum(history.interval)}`) : i18n.t('sw.results.title');
     document.getElementById('historicalCandlestickResultsWindow').textContent =
-            `${history.lookbackLabel || 'Recent completed candles'} · `
-            + `8-candle close-based time stop · `
-            + `1:${history.interval === '1wk' || history.interval === '1mo' ? 3 : 2} R:R`;
+            `${history.lookbackLabel || i18n.t('sw.results.recent')} · `
+            + `${i18n.t('sw.results.timeStop')} · `
+            + i18n.t('sw.rr', history.interval === '1wk' || history.interval === '1mo' ? 3 : 2);
     document.getElementById('historicalCandlestickResultsStatus').textContent =
-            `${signals.length} signal${signals.length === 1 ? '' : 's'} calculated now · `
-            + 'No signal results are available';
+            `${i18n.plural('sw.results.calculated', signals.length, signals.length)} · `
+            + i18n.t('sw.results.noResults');
   }
 
   function createHistoricalCandlestickRow(signal, lookbackCandles) {
@@ -3560,11 +3716,11 @@
       window.requestStockWatchNavigation(detailUrl);
     });
     row.append(
-            historyCell('Signal date', signal.signalPeriodLabel),
+            historyCell(i18n.t('sw.col.signalDate'), signal.signalPeriodLabel),
             historicalCandlestickTypeCell(signal),
             historicalCandlestickStatusCell(signal),
-            historyCell('Confidence', `${signal.setupScore}/100`, signal.setupStrengthLabel),
-            historyCell('Formation', signal.patternLabel, signal.formationLabel),
+            historyCell(i18n.t('sw.col.confidence'), `${signal.setupScore}/100`, signal.setupStrengthLabel),
+            historyCell(i18n.t('sw.col.formation'), signal.patternLabel, signal.formationLabel),
             historicalCandlestickImpactCell(signal),
             historicalCandlestickDetailCell(detailUrl)
     );
@@ -3573,7 +3729,7 @@
 
   function historicalCandlestickTypeCell(signal) {
     const cell = document.createElement('td');
-    cell.dataset.label = 'Type';
+    cell.dataset.label = i18n.t('sw.col.type');
     const badge = document.createElement('span');
     badge.className = `historical-candlestick-type ${String(signal.tradeSignal || '').toLowerCase()}`;
     badge.textContent = signal.typeLabel || tradeSignalDisplayLabel(signal.tradeSignal);
@@ -3583,40 +3739,40 @@
 
   function historicalCandlestickStatusCell(signal) {
     const cell = document.createElement('td');
-    cell.dataset.label = 'Status';
+    cell.dataset.label = i18n.t('sw.col.status');
     const badge = document.createElement('span');
     badge.className = `historical-candlestick-status ${signal.statusClass || 'pending'}`;
-    badge.textContent = signal.statusLabel || 'Awaiting outcome';
+    badge.textContent = signal.statusLabel || i18n.t('sw.awaitingOutcome');
     cell.append(badge);
     return cell;
   }
 
   function historicalCandlestickImpactCell(signal) {
     const cell = document.createElement('td');
-    cell.dataset.label = 'Trade return';
+    cell.dataset.label = i18n.t('sw.col.tradeReturn');
     const strong = document.createElement('strong');
     const value = Number(signal.directionalReturnPercent);
     strong.textContent = Number.isFinite(value)
-            ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
-            : 'Pending';
+            ? `${value >= 0 ? '+' : ''}${i18n.number(value, 2)}%`
+            : i18n.t('sw.pending');
     strong.className = Number.isFinite(value) ? (value >= 0 ? 'positive' : 'negative') : '';
     const detail = document.createElement('span');
-    detail.textContent = signal.impactLabel || 'Trade return pending';
+    detail.textContent = signal.impactLabel || i18n.t('sw.tradeReturnPending');
     const basis = document.createElement('small');
     basis.textContent = signal.tradeEntryPrice == null
-            ? 'Trade has not opened'
-            : `From trade entry at ${Number(signal.tradeEntryPrice).toFixed(4)}`;
+            ? i18n.t('sw.tradeNotOpened')
+            : i18n.t('sw.fromEntry', i18n.number(signal.tradeEntryPrice, 4));
     cell.append(strong, detail, basis);
     return cell;
   }
 
   function historicalCandlestickDetailCell(detailUrl) {
     const cell = document.createElement('td');
-    cell.dataset.label = 'Details';
+    cell.dataset.label = i18n.t('sw.col.details');
     const link = document.createElement('a');
     link.href = detailUrl;
     link.className = 'historical-candlestick-detail-link';
-    link.textContent = 'View signal';
+    link.textContent = i18n.t('sw.viewSignal');
     cell.append(link);
     return cell;
   }
@@ -3659,22 +3815,20 @@
     const desiredState = !congressionalFollowing;
     const status = document.getElementById('congressionalActivityStatus');
     setCongressionalControlsDisabled(true);
-    status.textContent = desiredState
-            ? 'Enabling alerts for new filings…'
-            : 'Stopping congressional activity alerts…';
+    status.textContent = i18n.t(desiredState ? 'sw.congressEnabling' : 'sw.congressStopping');
     try {
       const selection = desiredState ? await window.StockWatchLists.choose(decodeURIComponent(encodedTicker), { signalTypes: ['CONGRESS'] }) : {};
-      if (selection === null) { status.textContent = 'Follow cancelled.'; return; }
+      if (selection === null) { status.textContent = i18n.t('sw.followCancelled'); return; }
       const response = await fetch(`/api/congressional-activity/${encodedTicker}/subscription`, {
         method: 'PUT',
         headers: secureJsonHeaders(),
         body: JSON.stringify({ active: desiredState, ...selection })
       });
       const state = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(state.error || 'The follow setting could not be changed');
+      if (!response.ok) throw new Error(state.error || i18n.t('sw.followChangeFailed'));
       applyCongressionalActivityState(state);
     } catch (error) {
-      status.textContent = error.message || 'The follow setting could not be changed';
+      status.textContent = error.message || i18n.t('sw.followChangeFailed');
       console.warn('Congressional activity follow update failed', error);
     } finally {
       setCongressionalControlsDisabled(false);
@@ -3686,22 +3840,20 @@
     const desiredState = !insiderFollowing;
     const status = document.getElementById('insiderActivityStatus');
     setInsiderControlsDisabled(true);
-    status.textContent = desiredState
-            ? 'Enabling daily alerts for new filings…'
-            : 'Stopping insider activity alerts…';
+    status.textContent = i18n.t(desiredState ? 'sw.insiderEnabling' : 'sw.insiderStopping');
     try {
       const selection = desiredState ? await window.StockWatchLists.choose(decodeURIComponent(encodedTicker), { signalTypes: ['INSIDER'] }) : {};
-      if (selection === null) { status.textContent = 'Follow cancelled.'; return; }
+      if (selection === null) { status.textContent = i18n.t('sw.followCancelled'); return; }
       const response = await fetch(`/api/insider-activity/${encodedTicker}/subscription`, {
         method: 'PUT',
         headers: secureJsonHeaders(),
         body: JSON.stringify({ active: desiredState, ...selection })
       });
       const state = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(state.error || 'The follow setting could not be changed');
+      if (!response.ok) throw new Error(state.error || i18n.t('sw.followChangeFailed'));
       applyInsiderActivityState(state);
     } catch (error) {
-      status.textContent = error.message || 'The follow setting could not be changed';
+      status.textContent = error.message || i18n.t('sw.followChangeFailed');
       console.warn('Insider activity follow update failed', error);
     } finally {
       setInsiderControlsDisabled(false);
@@ -3722,7 +3874,7 @@
     const empty = document.getElementById('insiderHistoryEmpty');
     rows.replaceChildren();
     empty.hidden = true;
-    status.textContent = 'Loading insider filings…';
+    status.textContent = i18n.t('sw.insider.loading');
     if (!dialog.open) dialog.showModal();
     setInsiderControlsDisabled(true);
     let hasCachedTrades = false;
@@ -3730,14 +3882,14 @@
       const cacheResponse = await fetch(`/api/insider-activity/${encodedTicker}/history`);
       const cachedHistory = await cacheResponse.json().catch(() => ({}));
       if (!cacheResponse.ok) {
-        throw new Error(cachedHistory.error || 'Insider filings could not be loaded');
+        throw new Error(cachedHistory.error || i18n.t('sw.insider.loadFailed'));
       }
       renderInsiderHistory(cachedHistory);
       applyInsiderActivityState(cachedHistory);
       hasCachedTrades = Array.isArray(cachedHistory.trades) && cachedHistory.trades.length > 0;
       status.textContent = hasCachedTrades
-              ? 'Stored archive loaded · Checking API Ninjas for newly observed rows…'
-              : 'No stored observations yet · Checking API Ninjas latest rows…';
+              ? i18n.t('sw.insider.checkingNew')
+              : i18n.t('sw.insider.checkingLatest');
 
       const refreshResponse = await fetch(
               `/api/insider-activity/${encodedTicker}/history/refresh`,
@@ -3747,17 +3899,16 @@
               });
       const refreshedHistory = await refreshResponse.json().catch(() => ({}));
       if (!refreshResponse.ok) {
-        throw new Error(refreshedHistory.error || 'New insider rows could not be loaded');
+        throw new Error(refreshedHistory.error || i18n.t('sw.insider.newRowsFailed'));
       }
       renderInsiderHistory(refreshedHistory);
       applyInsiderActivityState(refreshedHistory);
     } catch (error) {
-      status.textContent = error.message || 'Insider history could not be loaded';
+      status.textContent = error.message || i18n.t('sw.insider.historyFailed');
       status.dataset.state = 'unavailable';
       if (!hasCachedTrades) {
         empty.hidden = false;
-        empty.textContent = 'No insider history is available. '
-                + 'See the data availability message above.';
+        empty.textContent = i18n.t('sw.insider.noHistory');
       }
       console.warn('Insider activity history failed', error);
     } finally {
@@ -3769,22 +3920,17 @@
     const trades = Array.isArray(history.trades) ? history.trades : [];
     document.getElementById('insiderHistoryStatus').removeAttribute('data-state');
     const empty = document.getElementById('insiderHistoryEmpty');
-    empty.textContent =
-            'No relevant purchase or sale disclosures were found for this stock in the current window.';
+    empty.textContent = i18n.t('sw.insider.noneInWindow');
     document.getElementById('insiderHistoryRows')
             .replaceChildren(...trades.map(createInsiderHistoryRow));
     empty.hidden = trades.length > 0;
-    const cacheLabels = {
-      CACHE: 'Loaded the stored StockWatch insider archive',
-      REFRESHED: 'Merged newly observed API Ninjas rows into the stored archive',
-      STALE: 'Insider data is temporarily unavailable · Showing the last update'
-    };
-    const cachedDate = history.cachedAt ? ` · Updated ${formatDateTime(history.cachedAt)}` : '';
-    document.getElementById('insiderHistoryStatus').textContent =
-            (cacheLabels[history.refreshStatus] || 'Insider history loaded') + cachedDate;
-    document.getElementById('insiderHistoryWindow').textContent =
-            `Stored purchase and sale observations from ${formatCongressionalDate(history.windowStart)} `
-            + `through ${formatCongressionalDate(history.windowEnd)}. Each refresh checks the latest 10 rows.`;
+    const cacheLabel = ['CACHE', 'REFRESHED', 'STALE'].includes(history.refreshStatus)
+            ? i18n.t(`sw.insider.cache.${history.refreshStatus}`)
+            : i18n.t('sw.insider.loaded');
+    const cachedDate = history.cachedAt ? ` · ${i18n.t('sw.profile.updated', formatDateTime(history.cachedAt))}` : '';
+    document.getElementById('insiderHistoryStatus').textContent = cacheLabel + cachedDate;
+    document.getElementById('insiderHistoryWindow').textContent = i18n.t('sw.insider.window',
+            formatCongressionalDate(history.windowStart), formatCongressionalDate(history.windowEnd));
     document.getElementById('insiderHistoryDisclaimer').textContent =
             `${history.returnMethodology || ''} ${history.alertBaselineNotice || ''}`.trim();
   }
@@ -3793,20 +3939,20 @@
     const row = document.createElement('tr');
     const detailUrl = activityHistoryDetailUrl(trade, 'insider');
     row.append(
-            historyCell('Insider', trade.insiderName, trade.ownerRole || 'Role not reported'),
+            historyCell(i18n.t('sw.col.insider'), trade.insiderName, trade.ownerRole || i18n.t('sw.insider.roleMissing')),
             historyActivityCell(trade),
             historyCell(
-                    'Shares / price',
+                    i18n.t('sw.col.sharesPrice'),
                     formatInsiderShares(trade.shares),
                     trade.transactionPrice == null
-                            ? 'Filed price unavailable'
-                            : `at ${formatInsiderMoney(trade.transactionPrice)}`),
-            historyCell('Trade value', formatInsiderMoney(trade.transactionValue)),
+                            ? i18n.t('sw.insider.priceMissing')
+                            : i18n.t('sw.insider.atPrice', formatInsiderMoney(trade.transactionPrice))),
+            historyCell(i18n.t('sw.col.tradeValue'), formatInsiderMoney(trade.transactionValue)),
             historyCell(
-                    'Effective date*',
+                    i18n.t('sw.col.effectiveDate'),
                     formatCongressionalDate(trade.transactionDate),
-                    'Filing date shown; trade date unavailable'),
-            historyCell('Filed', formatCongressionalDate(trade.filingDate)),
+                    i18n.t('sw.insider.filingDateShown')),
+            historyCell(i18n.t('sw.col.filed'), formatCongressionalDate(trade.filingDate)),
             insiderReturnCell(trade),
             historySourceCell(trade, detailUrl)
     );
@@ -3816,35 +3962,35 @@
 
   function insiderReturnCell(trade) {
     const cell = document.createElement('td');
-    cell.dataset.label = 'Directional return';
+    cell.dataset.label = i18n.t('sw.col.directionalReturn');
     if (trade.returnPercent == null) {
       const unavailable = document.createElement('span');
       unavailable.className = 'insider-return unavailable';
-      unavailable.textContent = 'Awaiting completed price data';
+      unavailable.textContent = i18n.t('sw.insider.awaitingPrices');
       cell.append(unavailable);
       return cell;
     }
     const value = Number(trade.returnPercent);
     const label = document.createElement('strong');
     label.className = `insider-return ${value >= 0 ? 'positive' : 'negative'}`;
-    label.textContent = `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+    label.textContent = `${value >= 0 ? '+' : ''}${i18n.number(value, 2)}%`;
     cell.append(label);
     if (trade.returnAsOf) {
       const asOf = document.createElement('span');
-      asOf.textContent = `from filed price on ${formatCongressionalDate(trade.transactionDate)} · through ${formatCongressionalDate(trade.returnAsOf)}`;
+      asOf.textContent = i18n.t('sw.insider.returnWindow', formatCongressionalDate(trade.transactionDate), formatCongressionalDate(trade.returnAsOf));
       cell.append(asOf);
     }
     return cell;
   }
 
   function formatInsiderShares(value) {
-    if (value == null) return 'Shares unavailable';
-    return `${new Intl.NumberFormat(undefined, {maximumFractionDigits: 2}).format(Number(value))} shares`;
+    if (value == null) return i18n.t('sw.insider.sharesMissing');
+    return i18n.plural('sw.insider.shares', Number(value), new Intl.NumberFormat(i18n.tag, {maximumFractionDigits: 2}).format(Number(value)));
   }
 
   function formatInsiderMoney(value) {
-    if (value == null) return 'Unavailable';
-    return new Intl.NumberFormat(undefined, {
+    if (value == null) return i18n.t('sw.unavailableCap');
+    return new Intl.NumberFormat(i18n.tag, {
       style: 'currency',
       currency: stockCurrency || 'USD',
       maximumFractionDigits: 2
@@ -3859,17 +4005,17 @@
     const empty = document.getElementById('congressionalHistoryEmpty');
     rows.replaceChildren();
     empty.hidden = true;
-    status.textContent = 'Loading filings…';
+    status.textContent = i18n.t('sw.congress.loading');
     if (!dialog.open) dialog.showModal();
     setCongressionalControlsDisabled(true);
     try {
       const response = await fetch(`/api/congressional-activity/${encodedTicker}/history`);
       const history = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(history.error || 'Congressional history could not be loaded');
+      if (!response.ok) throw new Error(history.error || i18n.t('sw.congress.historyFailed'));
       renderCongressionalHistory(history);
       applyCongressionalActivityState(history);
     } catch (error) {
-      status.textContent = error.message || 'Congressional history could not be loaded';
+      status.textContent = error.message || i18n.t('sw.congress.historyFailed');
       console.warn('Congressional activity history failed', error);
     } finally {
       setCongressionalControlsDisabled(false);
@@ -3883,18 +4029,13 @@
     rows.replaceChildren(...trades.map(createCongressionalHistoryRow));
     empty.hidden = trades.length > 0;
 
-    const cacheLabels = {
-      CACHE: 'Saved filings loaded',
-      REFRESHED: 'Filings updated',
-      REFRESHING: 'Showing saved filings while updates load',
-      COOLDOWN: 'Filings are up to date; the next refresh is after midnight UTC',
-      STALE: 'Congressional data is temporarily unavailable · Showing the last update'
-    };
-    const cachedDate = history.cachedAt ? ` · Updated ${formatDateTime(history.cachedAt)}` : '';
-    document.getElementById('congressionalHistoryStatus').textContent =
-            (cacheLabels[history.cacheStatus] || 'History loaded') + cachedDate;
+    const cacheLabel = ['CACHE', 'REFRESHED', 'REFRESHING', 'COOLDOWN', 'STALE'].includes(history.cacheStatus)
+            ? i18n.t(`sw.congress.cache.${history.cacheStatus}`)
+            : i18n.t('sw.congress.loaded');
+    const cachedDate = history.cachedAt ? ` · ${i18n.t('sw.profile.updated', formatDateTime(history.cachedAt))}` : '';
+    document.getElementById('congressionalHistoryStatus').textContent = cacheLabel + cachedDate;
     document.getElementById('congressionalHistoryWindow').textContent =
-            history.relevanceNotice || `Relevant purchase and sale disclosures from the last ${history.historyDays || 365} days.`;
+            history.relevanceNotice || i18n.plural('sw.congress.window', history.historyDays || 365, history.historyDays || 365);
     if (history.attribution?.disclaimer) {
       document.getElementById('congressionalHistoryDisclaimer').textContent =
               `${history.attribution.disclaimer} ${history.alertBaselineNotice || ''}`.trim();
@@ -3905,11 +4046,11 @@
     const row = document.createElement('tr');
     const detailUrl = activityHistoryDetailUrl(trade, 'congressional');
     row.append(
-            historyCell('Member', trade.memberName, trade.chamber),
+            historyCell(i18n.t('sw.col.member'), trade.memberName, trade.chamber),
             historyActivityCell(trade),
-            historyCell('Reported value', trade.amountRange),
-            historyCell('Transaction date', formatCongressionalDate(trade.transactionDate)),
-            historyCell('Disclosure date', formatCongressionalDate(trade.disclosureDate)),
+            historyCell(i18n.t('sw.col.reportedValue'), trade.amountRange),
+            historyCell(i18n.t('sw.col.transactionDate'), formatCongressionalDate(trade.transactionDate)),
+            historyCell(i18n.t('sw.col.disclosureDate'), formatCongressionalDate(trade.disclosureDate)),
             historySourceCell(trade, detailUrl)
     );
     makeActivityHistoryRowInteractive(row, detailUrl, trade.memberName);
@@ -3931,7 +4072,7 @@
     row.classList.add('activity-history-row-link');
     row.tabIndex = 0;
     row.setAttribute('role', 'link');
-    row.setAttribute('aria-label', `View activity signal for ${actorName || 'this trade'}`);
+    row.setAttribute('aria-label', actorName ? i18n.t('sw.viewActivityFor', actorName) : i18n.t('sw.viewActivityThis'));
     const navigate = () => window.requestStockWatchNavigation(detailUrl);
     row.addEventListener('click', event => {
       if (event.target.closest('a, button')) return;
@@ -3948,7 +4089,7 @@
     const cell = document.createElement('td');
     cell.dataset.label = label;
     const strong = document.createElement('strong');
-    strong.textContent = primary || 'Unavailable';
+    strong.textContent = primary || i18n.t('sw.unavailableCap');
     cell.append(strong);
     if (secondary) {
       const detail = document.createElement('span');
@@ -3960,22 +4101,22 @@
 
   function historyActivityCell(trade) {
     const cell = document.createElement('td');
-    cell.dataset.label = 'Activity';
+    cell.dataset.label = i18n.t('sw.col.activity');
     const badge = document.createElement('span');
     badge.className = `congressional-history-type ${trade.transactionType === 'PURCHASE' ? 'purchase' : 'sale'}`;
-    badge.textContent = trade.transactionTypeLabel || trade.transactionType || 'Activity';
+    badge.textContent = trade.transactionTypeLabel || trade.transactionType || i18n.t('sw.col.activity');
     cell.append(badge);
     return cell;
   }
 
   function historySourceCell(trade, detailUrl) {
     const cell = document.createElement('td');
-    cell.dataset.label = 'Filing';
+    cell.dataset.label = i18n.t('sw.col.filing');
     if (detailUrl) {
       const signalLink = document.createElement('a');
       signalLink.href = detailUrl;
       signalLink.className = 'history-signal-detail-link';
-      signalLink.textContent = 'View signal';
+      signalLink.textContent = i18n.t('sw.viewSignal');
       cell.append(signalLink);
     }
     const sourceUrl = trade?.sourceUrl;
@@ -3984,19 +4125,19 @@
       link.href = sourceUrl;
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
-      link.textContent = 'Official filing';
+      link.textContent = i18n.t('sw.officialFiling');
       cell.append(link);
     } else if (!detailUrl) {
-      cell.textContent = 'Unavailable';
+      cell.textContent = i18n.t('sw.unavailableCap');
     }
     return cell;
   }
 
   function formatCongressionalDate(value) {
-    if (!value) return 'Unavailable';
+    if (!value) return i18n.t('sw.unavailableCap');
     const date = new Date(`${value}T00:00:00Z`);
     if (Number.isNaN(date.getTime())) return value;
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(i18n.tag, {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -4007,7 +4148,7 @@
   function formatDateTime(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat(i18n.tag, {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -4043,7 +4184,7 @@
         input.dataset.listenerBound = 'true';
       }
     });
-    trackedAlertSummary = `${state.trackedStocks}/${state.maxTrackedStocks} tracked`;
+    trackedAlertSummary = i18n.t('sw.trackedStocks', state.trackedStocks, state.maxTrackedStocks);
     document.getElementById('alertStatus').innerText = trackedAlertSummary;
     alertStateLoaded = true;
     updateAlertDraftUi();
@@ -4071,22 +4212,22 @@
     const draftStatus = document.getElementById('alertDraftStatus');
     const alertPanel = document.querySelector('.alert-panel');
     if (outlookFollowStateLoaded) document.getElementById('outlookFollowStatus').textContent = changedOutlookInputs().length
-            ? 'Outlook selections changed. Click Apply changes to save.' : 'Outlook monitoring ready';
+            ? i18n.t('sw.outlookChanged') : i18n.t('sw.outlookAlertsReady');
 
     applyButton.disabled = !alertStateLoaded || alertSaveInProgress
             || technicalFollowAllBusy || changedCount === 0;
     alertPanel.classList.toggle('has-unapplied-changes', changedCount > 0);
     setAlertBeforeUnloadGuard(!pageExitAllowed && changedCount > 0);
     if (alertSaveInProgress) {
-      applyButton.textContent = 'Applying...';
-      draftStatus.textContent = 'Saving your changes';
+      applyButton.textContent = i18n.t('sw.applying');
+      draftStatus.textContent = i18n.t('sw.savingChanges');
       updateTechnicalFollowAllButton();
       return;
     }
-    applyButton.textContent = 'Apply changes';
+    applyButton.textContent = i18n.t('watchlistPicker.apply');
     draftStatus.textContent = changedCount === 0
-            ? 'No unapplied changes'
-            : `${changedCount} unapplied change${changedCount === 1 ? '' : 's'}`;
+            ? i18n.t('sw.noUnapplied')
+            : i18n.plural('sw.unappliedChanges', changedCount, changedCount);
     updateTechnicalFollowAllButton();
   }
 
@@ -4122,7 +4263,7 @@
     alertSaveInProgress = true;
     setAlertInputsDisabled(true);
     setOutlookFollowInputsDisabled(true);
-    status.innerText = 'Applying alert changes...';
+    status.innerText = i18n.t('sw.applyingAlertChanges');
     updateAlertDraftUi();
 
     try {
@@ -4130,7 +4271,7 @@
               ? await window.StockWatchLists.choose(decodeURIComponent(encodedTicker), { signalTypes: [...new Set([
                   ...changedInputs.filter(input => input.checked).map(input => input.dataset?.alertFamily || 'CANDLESTICK'),
                   ...outlookInputs.filter(input => input.checked).map(() => 'OUTLOOK')])] }) : {};
-      if (selection === null) { status.textContent = 'Changes not applied. Your selections are still here.'; return false; }
+      if (selection === null) { status.textContent = i18n.t('sw.changesNotApplied'); return false; }
       const response = await fetch(`/api/alerts/${encodedTicker}`, {
         method: 'PUT',
         headers: secureJsonHeaders(),
@@ -4141,16 +4282,16 @@
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        status.innerText = payload.error || 'Could not apply alert changes';
+        status.innerText = payload.error || i18n.t('sw.applyFailed');
         return false;
       }
 
       hydrateAlertDraft(payload);
       if (payload.outlookState) hydrateOutlookFollowState(payload.outlookState);
-      status.innerText = `${trackedAlertSummary} · Changes applied`;
+      status.innerText = `${trackedAlertSummary} · ${i18n.t('sw.changesApplied')}`;
       return true;
     } catch (err) {
-      status.innerText = 'Could not apply alert changes';
+      status.innerText = i18n.t('sw.applyFailed');
       console.warn("Alert batch update failed", err);
       return false;
     } finally {
@@ -4177,8 +4318,8 @@
     button.setAttribute('aria-pressed', String(anyFollowed));
     button.classList.toggle('following', anyFollowed);
     button.textContent = technicalFollowAllBusy
-            ? (anyFollowed ? 'Unfollowing all...' : 'Following all...')
-            : (!stateReady ? 'Loading follow state...' : (anyFollowed ? 'Unfollow all' : 'Follow all'));
+            ? i18n.t(anyFollowed ? 'sw.unfollowingAll' : 'sw.followingAll')
+            : i18n.t(!stateReady ? 'sw.loadingFollowState' : (anyFollowed ? 'sw.unfollowAll' : 'sw.followAll'));
   }
 
   function toggleAllTechnicalMonitoring() {
@@ -4226,16 +4367,16 @@
     const saveButton = document.getElementById('saveAlertChangesBeforeLeaveBtn');
     const dialogStatus = document.getElementById('unsavedAlertDialogStatus');
     saveButton.disabled = true;
-    saveButton.textContent = 'Saving...';
-    dialogStatus.textContent = 'Applying your alert changes...';
+    saveButton.textContent = i18n.t('sw.saving');
+    dialogStatus.textContent = i18n.t('sw.applyingYourChanges');
     const saved = await persistAlertDraft();
     saveButton.disabled = false;
-    saveButton.textContent = 'Save and leave';
+    saveButton.textContent = i18n.t('sw.saveAndLeave');
     if (saved) {
       continuePendingNavigation();
       return;
     }
-    dialogStatus.textContent = 'The changes could not be saved. Your draft is still available.';
+    dialogStatus.textContent = i18n.t('sw.saveFailedDraft');
   }
 
   window.requestStockWatchNavigation = destination => {
@@ -4492,7 +4633,6 @@
     const sizeInput = document.getElementById('stockDemoTradeSizeInput');
     const sizeField = document.getElementById('stockDemoTradeSizeField');
     const confirmButton = document.getElementById('confirmStockDemoTrade');
-    const intervalLabel = interval => ({ '1d': 'Daily', '1wk': 'Weekly', '1mo': 'Monthly' })[interval] || interval;
 
     document.querySelectorAll('[data-stock-demo-trade]').forEach(button => {
       button.addEventListener('click', () => {
@@ -4506,13 +4646,12 @@
         sizeField.hidden = true;
         sizeInput.value = '';
         document.getElementById('stockDemoTradeDialogTitle').textContent =
-                pendingStockDemoTradeSide === 'BUY' ? `Demo buy ${ticker}` : `Demo sell ${ticker}`;
-        document.getElementById('stockDemoTradeExplanation').textContent = pendingStockDemoTradeSide === 'BUY'
-                ? 'This tracks the return from hypothetically buying at the captured current quote.'
-                : 'This tracks avoided loss if price falls and missed upside if it rises. It is not a short sale.';
-        status.textContent = `${intervalLabel(pendingStockDemoTradeInterval)} analysis will be saved when the trade opens.`;
+                i18n.t(pendingStockDemoTradeSide === 'BUY' ? 'outlook.demoBuyTitle' : 'outlook.demoSellTitle', ticker);
+        document.getElementById('stockDemoTradeExplanation').textContent =
+                i18n.t(pendingStockDemoTradeSide === 'BUY' ? 'outlook.demoBuyText' : 'outlook.demoSellText');
+        status.textContent = i18n.t(`sw.demo.analysisSaved.${apiIntervalEnum(pendingStockDemoTradeInterval)}`);
         confirmButton.disabled = false;
-        confirmButton.textContent = 'Create demo trade';
+        confirmButton.textContent = i18n.t('outlook.createDemoTrade');
         dialog.showModal();
       });
     });
@@ -4526,21 +4665,20 @@
         });
         sizeField.hidden = stockDemoTradeSizeMode === 'none';
         document.getElementById('stockDemoTradeSizeLabel').textContent =
-                stockDemoTradeSizeMode === 'quantity' ? 'Number of shares' : 'Virtual investment amount';
-        document.getElementById('stockDemoTradeSizeHelp').textContent = stockDemoTradeSizeMode === 'quantity'
-                ? 'The virtual amount will be calculated from the captured price.'
-                : 'The virtual share quantity will be calculated from the captured price.';
+                i18n.t(stockDemoTradeSizeMode === 'quantity' ? 'outlook.numberOfShares' : 'outlook.virtualAmount');
+        document.getElementById('stockDemoTradeSizeHelp').textContent =
+                i18n.t(stockDemoTradeSizeMode === 'quantity' ? 'outlook.amountFromPrice' : 'outlook.quantityFromPrice');
       });
     });
 
     confirmButton.addEventListener('click', async () => {
       const size = sizeInput.value;
       if (stockDemoTradeSizeMode !== 'none' && (!size || Number(size) <= 0)) {
-        status.textContent = 'Enter a positive virtual size.';
+        status.textContent = i18n.t('outlook.positiveSize');
         return;
       }
       confirmButton.disabled = true;
-      confirmButton.textContent = 'Capturing quote...';
+      confirmButton.textContent = i18n.t('outlook.capturingQuote');
       try {
         const response = await fetch(`/api/virtual-trades/${encodedTicker}`, {
           method: 'POST',
@@ -4555,14 +4693,14 @@
         });
         if (!response.ok) {
           const error = await response.json().catch(() => ({}));
-          throw new Error(error.message || error.detail || error.error || 'The demo trade could not be created.');
+          throw new Error(error.message || error.detail || error.error || i18n.t('outlook.createFailed'));
         }
         const trade = await response.json();
         window.location.assign(trade.detailUrl);
       } catch (error) {
-        status.textContent = error.message || 'The demo trade could not be created.';
+        status.textContent = error.message || i18n.t('outlook.createFailed');
         confirmButton.disabled = false;
-        confirmButton.textContent = 'Create demo trade';
+        confirmButton.textContent = i18n.t('outlook.createDemoTrade');
       }
     });
   }

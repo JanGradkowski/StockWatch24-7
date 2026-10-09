@@ -22,6 +22,9 @@ import java.util.Optional;
 
 @Repository
 public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
+    @Query(value = "select id from alert_rules where id = :id for update", nativeQuery = true)
+    Long lockPublicationRule(@Param("id") Long id);
+
     boolean existsByAlertRuleAndPatternAndHarmonicEndpointTimestamp(
             AlertRule alertRule, CandlePattern pattern, Long harmonicEndpointTimestamp);
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"alertRule", "alertRule.user", "alertRule.stockAsset"})
@@ -244,7 +247,7 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             where lower(asset.tickerSymbol) = lower(:symbol)
               and rule.interval = :interval
               and rule.patternFamily = org.example.stockwatch247.model.enums.AlertPatternFamily.HARMONIC_FORMATION
-              and event.tradePlanVersion in ('HARMONIC_STOP_V1', 'HARMONIC_TRADE_V2')
+              and event.tradePlanVersion in ('HARMONIC_STOP_V1', 'HARMONIC_TRADE_V2', 'HARMONIC_TRADE_V3')
               and event.harmonicStopStatus = 'ACTIVE'
               and event.deletedAt is null
             order by event.signalCandleTimestamp, event.id

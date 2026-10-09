@@ -37,7 +37,10 @@ class ElliottTradePlanPolicyTest {
 
         assertThat(plan.structuralStopPrice()).isEqualTo(100.0);
         assertThat(plan.stopLossPrice()).isEqualTo(100.4);
-        assertThat(plan.targetMidpoint()).isEqualTo(79.82);
+        // Weekly ratios are measured on a log scale: Wave III falls by 1.618 times Wave I's percentage drop.
+        assertThat(plan.targetMidpoint()).isCloseTo(96.0 * Math.pow(90.0 / 100.0, 1.618),
+                org.assertj.core.api.Assertions.within(1e-9));
+        assertThat(plan.targetBasis()).contains("log scale");
         assertThat(plan.targetTriggerPrice()).isEqualTo(plan.targetZoneHigh());
         assertThat(plan.requiredRewardRiskRatio()).isEqualTo(3.0);
         assertThat(plan.actualRewardRiskRatio()).isGreaterThan(3.0);

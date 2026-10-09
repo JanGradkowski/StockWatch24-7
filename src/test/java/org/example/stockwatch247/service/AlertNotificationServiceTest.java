@@ -310,7 +310,7 @@ class AlertNotificationServiceTest {
         assertThat(message.getSubject()).contains("BULLISH_ENGULFING", "SAP.DE");
         assertThat(message.getText()).contains(
                 "Heuristic setup score: 91/100",
-                "Score model: CANDLE_V5_TEXTBOOK",
+                "Score model: " + CandlePatternDetectionService.SETUP_SCORE_VERSION,
                 "has not demonstrated stable out-of-sample predictive ordering",
                 "Score breakdown\n- Evidence\n  - Observation: Bullish body engulfs",
                 "Research horizon: 10 trading sessions",
@@ -404,7 +404,8 @@ class AlertNotificationServiceTest {
                 "candidate is REJECTED and never becomes a signal",
                 "Planned stop loss: 95.0000",
                 "Planned risk-to-reward: 1:2",
-                "next candle's close becomes entry / candle 0",
+                "the trade enters at the open of the candle after the confirming candle",
+                "closes after 8 candles at the latest",
                 "only completed-candle closes count");
     }
 
@@ -778,7 +779,7 @@ class AlertNotificationServiceTest {
         assertThat(messageCaptor.getValue().getText()).doesNotContain("Research horizon:");
     }
 
-    private AlertRule dailyRule(TradeSignal direction) {
+    AlertRule dailyRule(TradeSignal direction) {
         StockAsset asset = new StockAsset();
         asset.setTickerSymbol("AAPL");
         User user = new User();
@@ -792,7 +793,7 @@ class AlertNotificationServiceTest {
         return rule;
     }
 
-    private AlertEvent trackedEvent(AlertRule rule, SignalLifecycleStatus status) {
+    AlertEvent trackedEvent(AlertRule rule, SignalLifecycleStatus status) {
         AlertEvent event = new AlertEvent();
         event.setAlertRule(rule);
         event.setPattern(CandlePattern.HAMMER);

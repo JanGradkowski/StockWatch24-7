@@ -9,6 +9,7 @@ import org.example.stockwatch247.service.CandlePatternDetectionService;
 import org.example.stockwatch247.service.CandlestickPatternPreferencesService;
 import org.example.stockwatch247.service.HistoricalCandlestickService;
 import org.example.stockwatch247.service.HistoricalCandlestickService.HistoricalScan;
+import org.example.stockwatch247.service.HistoricalCandlestickService.HistoricalOverlayScan;
 import org.example.stockwatch247.service.HistoricalSignalCacheService;
 import org.example.stockwatch247.service.MarketDataService;
 import org.springframework.http.CacheControl;
@@ -31,6 +32,31 @@ public class HistoricalCandlestickController {
     private final CandlestickPatternPreferencesService patternPreferences;
     private HistoricalSignalCacheService historicalSignalCacheService;
     private MarketDataService marketDataService;
+    @Autowired
+    private org.example.stockwatch247.service.HistoricalPatternInputs patternInputs;
+
+    @GetMapping("/{symbol}/candlestick-patterns/history/range")
+    public ResponseEntity<HistoricalOverlayScan> historicalCandlestickRange(@PathVariable String symbol,
+            @RequestParam String interval, @RequestParam long from, @RequestParam long to, Principal principal) {
+        String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        String validInterval = SecurityInputValidator.requireInterval(interval);
+        org.example.stockwatch247.service.HistoricalPatternInputs.validateRange(from, to);
+        TimeInterval timeframe = switch (validInterval) {
+            case "1d" -> TimeInterval.DAILY;
+            case "1wk" -> TimeInterval.WEEKLY;
+            case "1mo" -> TimeInterval.MONTHLY;
+            default -> throw new IllegalArgumentException("Pattern overlays require daily, weekly or monthly candles.");
+        };
+        var trend = trendRules(principal, validInterval);
+        var definitions = patternDefinitions(principal);
+        java.util.function.Supplier<HistoricalOverlayScan> calculation = () -> historicalCandlestickService.scanOverlayRange(
+                validSymbol, validInterval, from, to, trend, definitions, patternInputs.load(validSymbol, validInterval, timeframe).raw());
+        HistoricalOverlayScan scan = historicalSignalCacheService == null ? calculation.get()
+                : historicalSignalCacheService.getOrCompute(HistoricalSignalCacheService.Family.CANDLESTICK,
+                        validSymbol, validInterval, "OVERLAY_RANGE_V1:" + HistoricalCandlestickService.SCORE_VERSION,
+                        java.util.List.of(from, to, trend, definitions, patternInputs.cutoff(timeframe)), HistoricalOverlayScan.class, calculation);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(scan);
+    }
 
     @Autowired
     public HistoricalCandlestickController(HistoricalCandlestickService historicalCandlestickService,

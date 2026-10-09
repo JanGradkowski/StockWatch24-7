@@ -16,6 +16,28 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class HarmonicPatternDetectionServiceTest {
+    @Test void rangeResultsMatchFullRecognitionIncludingFormationsStartingBeforeTheViewport() {
+        List<Candle> candles = pivotCandles(1_700_000_000L, 86400);
+        var all = detector.detectAll(candles);
+        assertThat(all).isNotEmpty();
+        long from = candles.get(3).getTimestamp();
+        long to = candles.get(4).getTimestamp();
+        assertThat(detector.detectRange(candles, from, to)).containsExactlyElementsOf(all.stream()
+                .filter(formation -> formation.points().getLast().timestamp() >= from
+                        && formation.points().getFirst().timestamp() <= to).toList());
+        assertThat(detector.detectRange(candles, from, to)).anySatisfy(formation ->
+                assertThat(formation.points().getFirst().timestamp()).isLessThan(from));
+    }
+
+    @Test void cachedScansInvalidateOnMutableCandleCorrectionsAndSurviveRewinds() {
+        var candles = pivotCandles(1_700_900_000L, 86400);
+        var before = detector.detectAll(candles);
+        assertThat(before).isNotEmpty();
+        assertThat(detector.detectAll(candles.subList(0, 6))).isEmpty();
+        candles.get(5).setLowPrice(1.0);
+        candles.get(5).setClosePrice(1.0);
+        assertThat(detector.detectAll(candles)).isNotEqualTo(before);
+    }
     private final HarmonicPatternDetectionService detector = new HarmonicPatternDetectionService(
             new Rules(.04, .08, .10, 0.0, 1, 40));
 
@@ -79,18 +101,19 @@ class HarmonicPatternDetectionServiceTest {
     }
 
     @Test
-    void usesOfficialSharkCompletionWhereBullishTerminalCIsBelowA() {
+    void usesOfficialSharkCompletionWhereBullishTerminalDIsBelowB() {
         HarmonicFormation shark = detector.classify(
                 bullish(100, 200, 150, 210, 111.4)).orElseThrow();
 
         assertThat(shark.pattern()).isEqualTo(HarmonicPatternType.SHARK);
         assertThat(shark.points()).extracting(point -> point.label())
-                .containsExactly("0", "X", "A", "B", "C");
+                .containsExactly("X", "A", "B", "C", "D");
         assertThat(shark.points().getLast().price()).isLessThan(shark.points().get(2).price());
-        assertThat(shark.measurements().get("C_0X_COMPLETION")).isCloseTo(.886,
+        assertThat(shark.measurements()).doesNotContainKeys("A_0X", "AB_XA", "BC_AB", "C_0X_COMPLETION");
+        assertThat(shark.measurements().get("AD_XA")).isCloseTo(.886,
                 org.assertj.core.data.Offset.offset(.000001));
         assertThat(shark.reasons()).anySatisfy(reason -> assertThat(reason)
-                .startsWith("Primary B ratio +35/35:"));
+                .startsWith("Primary C ratio +35/35:"));
         assertThat(shark.reasons()).anySatisfy(reason -> assertThat(reason)
                 .startsWith("Completion ratio +45/45:"));
         assertThat(shark.reasons()).anySatisfy(reason -> assertThat(reason)

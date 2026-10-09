@@ -25,6 +25,9 @@ import java.util.List;
 
 @Service
 public class AccountSecurityService {
+    static final int MFA_FAILURES_BEFORE_PAUSE = 20;
+    private static final java.time.Duration MFA_FAILURE_WINDOW = java.time.Duration.ofHours(24);
+    private static final java.time.Duration MFA_PAUSE = java.time.Duration.ofHours(1);
     private final UserRepository users;
     private final MfaRecoveryCodeRepository recoveryCodes;
     private final SecurityEventRepository events;
@@ -82,12 +85,16 @@ public class AccountSecurityService {
     @Transactional
     public PasswordChangeResult resetPassword(Long userId, String code, String newPassword,
                               PasswordSecurityCodeService codeService) {
-        User user = locked(userId);
         SecurityInputValidator.requirePassword(newPassword);
+        User user = locked(userId);
         if (!user.isVerified() || user.getDeletionRequestedAt() != null) return PasswordChangeResult.rejected();
-        if (!codeService.consume(userId, PasswordSecurityCodeService.RESET, code))
+        if (!codeService.verify(userId, PasswordSecurityCodeService.RESET, code))
             return PasswordChangeResult.rejected();
-        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) return PasswordChangeResult.rejected();
+        // Only someone holding a valid code gets this far, so the specific message reveals nothing new,
+        // and the code stays usable for a second attempt with a different password.
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash()))
+            throw new UserInputException("Choose a password different from your current password.");
+        codeService.discard(userId, PasswordSecurityCodeService.RESET);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setPasswordChangedAt(LocalDateTime.now(clock));
         user.setSecurityVersion(user.getSecurityVersion() + 1);
@@ -152,8 +159,47 @@ public class AccountSecurityService {
         if (user == null || startedAt > now || now - startedAt >= 300
                 || user.getSecurityVersion() != expectedVersion || user.getDeletionRequestedAt() != null
                 || verificationRequired && !user.isVerified() || !user.isMfaEnabled()) return Optional.empty();
-        if (!verifyFactorLocked(user, factorCode, true)) return Optional.empty();
+        if (paused(user)) return Optional.empty();
+        if (!verifyFactorLocked(user, factorCode, true)) {
+            recordFailedLoginFactor(user);
+            return Optional.empty();
+        }
+        user.setMfaFailureCount(0);
+        user.setMfaFailureWindowStartedAt(null);
+        users.save(user);
         return Optional.of(new AcceptedLogin(user.getEmail(), user.getSecurityVersion()));
+    }
+
+    /** Code entry is paused after repeated wrong codes; the password step must not reveal this. */
+    public boolean loginFactorPaused(Long userId) {
+        return users.findById(userId).map(this::paused).orElse(false);
+    }
+
+    private boolean paused(User user) {
+        return user.getMfaPausedUntil() != null && user.getMfaPausedUntil().isAfter(clock.instant());
+    }
+
+    private void recordFailedLoginFactor(User user) {
+        java.time.Instant now = clock.instant();
+        if (user.getMfaFailureWindowStartedAt() == null
+                || !user.getMfaFailureWindowStartedAt().isAfter(now.minus(MFA_FAILURE_WINDOW))) {
+            user.setMfaFailureWindowStartedAt(now);
+            user.setMfaFailureCount(0);
+        }
+        user.setMfaFailureCount(user.getMfaFailureCount() + 1);
+        if (user.getMfaFailureCount() >= MFA_FAILURES_BEFORE_PAUSE) {
+            user.setMfaPausedUntil(now.plus(MFA_PAUSE));
+            user.setMfaFailureCount(0);
+            user.setMfaFailureWindowStartedAt(null);
+            users.save(user);
+            record(user, "MFA_PAUSED", MFA_FAILURES_BEFORE_PAUSE
+                    + " wrong authenticator codes within 24 hours; code entry paused for 1 hour.");
+            notice(user, "Repeated wrong authenticator codes",
+                    "Someone entered your correct password but " + MFA_FAILURES_BEFORE_PAUSE
+                            + " wrong authenticator or recovery codes within 24 hours. Code entry is paused for 1 hour.");
+            return;
+        }
+        users.save(user);
     }
 
     public record AcceptedLogin(String email, long securityVersion) { }

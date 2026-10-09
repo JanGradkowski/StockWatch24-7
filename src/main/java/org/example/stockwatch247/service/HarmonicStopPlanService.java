@@ -18,6 +18,8 @@ import java.util.Optional;
 public class HarmonicStopPlanService {
     @org.springframework.beans.factory.annotation.Autowired
     private TradeExecutionService executionService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private CandlestickPatternPreferencesService tradePreferences;
 
     static final int OUTCOME_WINDOW_CANDLES = 8;
 
@@ -44,12 +46,15 @@ public class HarmonicStopPlanService {
             long entryTimestamp, double entryPrice, List<Candle> candles, TimeInterval interval) {
         if (event == null) return Optional.empty();
         double atr = ElliottTradePlanService.averageTrueRange(candles, entryTimestamp, 14);
-        return HarmonicStopPlanPolicy.calculate(formation, entryPrice, atr, interval)
+        return HarmonicStopPlanPolicy.calculate(formation, entryPrice, atr, interval,
+                        ElliottTradePlanService.userRequiredRewardRisk(tradePreferences, event, interval))
                 .map(plan -> {
                     apply(event, entryTimestamp, plan);
                     return plan;
                 }).or(() -> {
                     event.setTradeActionable(false);
+                    event.setTradeFillStatus(null);
+                    event.setTradeEntryTimestamp(null);
                     event.setTradeQualification("Projection only: no valid positive harmonic stop and target at this entry.");
                     return Optional.empty();
                 });
@@ -92,6 +97,44 @@ public class HarmonicStopPlanService {
         event.setHarmonicStopResolutionTimestamp(null);
         event.setHarmonicStopResolutionPrice(null);
         event.setHarmonicStopResolutionReason(null);
+        event.setTradeFillStatus(HarmonicStopPlanPolicy.entersAtNextOpen(plan.version()) ? TradeRiskPolicy.AWAITING_FILL : null);
+        event.setTradeEntryTimestamp(null);
+    }
+
+    /**
+     * Enters at the open of the first candle after confirmation. The stop and the Fibonacci targets do
+     * not depend on the entry, so they are kept; reward/risk and qualification are recomputed at the real
+     * entry. Returns false when that open is already beyond the stop or the primary target.
+     */
+    private boolean fillAtNextOpen(AlertEvent event, Candle fill, List<Candle> candles, TimeInterval interval) {
+        double open = fill.getOpenPrice() == null ? Double.NaN : fill.getOpenPrice();
+        String unfilled = TradeRiskPolicy.unfilledReason(event.getTradeSignal(), open,
+                event.getStopLossPrice(), event.getProfitTargetPrice());
+        event.setTradeEntryTimestamp(fill.getTimestamp());
+        if (unfilled != null) {
+            event.setTradeFillStatus(TradeRiskPolicy.NOT_FILLED);
+            event.setHarmonicStopStatus(HarmonicStopStatus.NOT_FILLED.name());
+            event.setHarmonicStopResolutionTimestamp(fill.getTimestamp());
+            event.setHarmonicStopResolutionPrice(Double.isFinite(open) && open > 0 ? open : fill.getClosePrice());
+            event.setHarmonicStopResolutionReason(unfilled);
+            markResolved(event);
+            return false;
+        }
+        double atr = ElliottTradePlanService.averageTrueRange(candles, event.getDetectionCandleTimestamp(), 14);
+        double blended = HarmonicStopPlanPolicy.blendedTarget(event.getProfitTargetPrice(), event.getSecondaryTargetPrice());
+        var qualification = TradeRiskPolicy.qualify(event.getTradeSignal(), open, event.getStopLossPrice(),
+                blended, atr, interval, requiredRewardRisk(event, interval));
+        double risk = TradeRiskPolicy.risk(event.getTradeSignal(), open, event.getStopLossPrice());
+        event.setTradeEntryPrice(open);
+        event.setRewardRiskRatio(TradeRiskPolicy.reward(event.getTradeSignal(), open, blended) / risk);
+        event.setTradeActionable(qualification.actionable());
+        event.setTradeQualification(qualification.reason());
+        event.setTradeRiskAtr(qualification.riskAtr());
+        event.setTradeRiskPercent(qualification.riskPercent());
+        event.setHarmonicStopDistancePercent(risk / open * 100.0);
+        event.setTradeFillStatus(TradeRiskPolicy.FILLED);
+        if (!qualification.actionable()) event.setHarmonicStopStatus(HarmonicStopStatus.PROJECTION_ONLY.name());
+        return true;
     }
 
     @Transactional
@@ -110,10 +153,47 @@ public class HarmonicStopPlanService {
                 .toList();
         int resolved = 0;
         for (AlertEvent event : eventRepository.findActiveHarmonicStopPlans(symbol, interval)) {
-            if (HarmonicStopPlanPolicy.VERSION.equals(event.getTradePlanVersion())) {
+            if (HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())) {
                 if (!Boolean.TRUE.equals(event.getTradeActionable())) continue;
+                if (event.awaitingFill()) {
+                    Candle fill = candles.stream().filter(c -> c.getTimestamp() > event.getDetectionCandleTimestamp())
+                            .findFirst().orElse(null);
+                    if (fill == null) continue;
+                    boolean filled = fillAtNextOpen(event, fill, candles, interval);
+                    if (!filled && notificationService.sendHarmonicStopOutcomeEmail(event, fill)
+                            && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
+                    eventRepository.save(event);
+                    if (!filled) { resolved++; continue; }
+                    if (!Boolean.TRUE.equals(event.getTradeActionable())) continue;
+                }
                 int horizon = event.getTradeHorizonCandles();
-                List<Candle> following = candles.stream().filter(c -> c.getTimestamp() > event.getDetectionCandleTimestamp())
+                if (HarmonicStopPlanPolicy.scalesOut(event.getTradePlanVersion())
+                        && TradeRiskPolicy.FILLED.equals(event.getTradeFillStatus()) && event.getTradeEntryTimestamp() != null) {
+                    List<Candle> sinceEntry = candles.stream()
+                            .filter(c -> c.getTimestamp() >= event.getTradeEntryTimestamp()).limit(horizon).toList();
+                    ScaleOutExit exit = replayScaleOut(event.getTradeSignal(), event.getTradeEntryPrice(),
+                            event.getStopLossPrice(), event.getProfitTargetPrice(), event.getSecondaryTargetPrice(),
+                            sinceEntry, horizon);
+                    if (exit == null) continue;
+                    event.setHarmonicStopStatus(exit.status().name());
+                    event.setHarmonicStopResolutionTimestamp(exit.candle().getTimestamp());
+                    event.setHarmonicStopResolutionPrice(exit.averageExit());
+                    event.setTradeResolutionPrice(exit.averageExit());
+                    event.setHarmonicStopResolutionReason(exit.reason());
+                    markResolved(event);
+                    if (exit.status() != HarmonicStopStatus.TIME_STOPPED
+                            && notificationService.sendHarmonicStopOutcomeEmail(event, exit.candle())
+                            && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
+                    eventRepository.save(event);
+                    resolved++;
+                    continue;
+                }
+                // A next-open fill is exposed for the rest of its entry candle, so that candle counts as the first.
+                boolean includesEntryCandle = TradeRiskPolicy.FILLED.equals(event.getTradeFillStatus())
+                        && event.getTradeEntryTimestamp() != null;
+                List<Candle> following = candles.stream().filter(c -> includesEntryCandle
+                                ? c.getTimestamp() >= event.getTradeEntryTimestamp()
+                                : c.getTimestamp() > event.getDetectionCandleTimestamp())
                         .limit(horizon).toList();
                 boolean done = false;
                 boolean invalidData = false;
@@ -129,7 +209,7 @@ public class HarmonicStopPlanService {
                     event.setTradeResolutionPrice(outcome.price());
                     event.setHarmonicStopResolutionReason(outcome.reason());
                     markResolved(event);
-                    if (notificationService.sendHarmonicStopOutcomeEmail(event, bar)) event.setFollowUpSentAt(LocalDateTime.now());
+                    if (notificationService.sendHarmonicStopOutcomeEmail(event, bar) && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
                     done = true;
                     break;
                 }
@@ -164,7 +244,7 @@ public class HarmonicStopPlanService {
         event.setHarmonicStopResolutionPrice(event.getStopLossPrice());
         event.setHarmonicStopResolutionReason(stopReason(event, breached, observedExtreme));
         markResolved(event);
-        if (notificationService.sendHarmonicStopOutcomeEmail(event, breached)) {
+        if (notificationService.sendHarmonicStopOutcomeEmail(event, breached) && !notificationService.usesDurableDelivery()) {
             event.setFollowUpSentAt(LocalDateTime.now());
         }
     }
@@ -173,10 +253,70 @@ public class HarmonicStopPlanService {
         event.setHarmonicStopStatus(HarmonicStopStatus.TIME_STOPPED.name());
         event.setHarmonicStopResolutionTimestamp(eighthCandle.getTimestamp());
         event.setHarmonicStopResolutionPrice(eighthCandle.getClosePrice());
-        if (HarmonicStopPlanPolicy.VERSION.equals(event.getTradePlanVersion())) event.setTradeResolutionPrice(eighthCandle.getClosePrice());
+        if (HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())) event.setTradeResolutionPrice(eighthCandle.getClosePrice());
         event.setHarmonicStopResolutionReason(
                 "The saved harmonic trade horizon ended at the completed close.");
         markResolved(event);
+    }
+
+    private double requiredRewardRisk(AlertEvent event, TimeInterval interval) {
+        Double user = ElliottTradePlanService.userRequiredRewardRisk(tradePreferences, event, interval);
+        return user != null && user > 0 ? user : HarmonicStopPlanPolicy.scaleOutRequiredRewardRisk(interval);
+    }
+
+    record ScaleOutExit(HarmonicStopStatus status, Candle candle, double averageExit, String reason) {
+    }
+
+    /**
+     * Replays a scale-out plan from its entry candle: half exits at the first target and the stop moves
+     * to the entry; the other half exits at the second target, at breakeven, or at the horizon close.
+     * Within one candle the order of touches is unknown, so the less favourable order is assumed.
+     * Returns null while the plan is still open.
+     */
+    static ScaleOutExit replayScaleOut(TradeSignal side, double entry, double stop, double first, Double second,
+                                       List<Candle> following, int horizon) {
+        boolean buy = side == TradeSignal.BUY;
+        boolean firstTaken = false;
+        for (int index = 0; index < following.size() && index < horizon; index++) {
+            Candle bar = following.get(index);
+            if (!TradeRiskPolicy.valid(bar)) return null;
+            if (!firstTaken) {
+                var outcome = TradeOutcomePolicy.evaluate(side, stop, first, bar);
+                if (outcome == null) continue;
+                if (outcome.kind() == TradeOutcomePolicy.Kind.STOPPED) {
+                    return new ScaleOutExit(HarmonicStopStatus.STOPPED, bar, outcome.price(), outcome.reason());
+                }
+                if (second == null) {
+                    return new ScaleOutExit(HarmonicStopStatus.TARGET_REACHED, bar, first, outcome.reason());
+                }
+                firstTaken = true;
+                // Rest of the same candle after the first target: assume a return to breakeven came first.
+                boolean backToEntry = buy ? bar.getLowPrice() <= entry : bar.getHighPrice() >= entry;
+                boolean secondTouched = buy ? bar.getHighPrice() >= second : bar.getLowPrice() <= second;
+                if (backToEntry) {
+                    return new ScaleOutExit(HarmonicStopStatus.TARGET_REACHED, bar, (first + entry) / 2.0,
+                            "First target reached; the remaining half returned to breakeven in the same candle.");
+                }
+                if (secondTouched) {
+                    return new ScaleOutExit(HarmonicStopStatus.TARGET_REACHED, bar, (first + second) / 2.0,
+                            "Both targets reached in the same candle; half exited at each.");
+                }
+                continue;
+            }
+            var outcome = TradeOutcomePolicy.evaluate(side, entry, second, bar);
+            if (outcome == null) continue;
+            return outcome.kind() == TradeOutcomePolicy.Kind.STOPPED
+                    ? new ScaleOutExit(HarmonicStopStatus.TARGET_REACHED, bar, (first + outcome.price()) / 2.0,
+                            "First target reached; the remaining half was stopped at breakeven.")
+                    : new ScaleOutExit(HarmonicStopStatus.TARGET_REACHED, bar, (first + second) / 2.0,
+                            "Both targets reached; half exited at each.");
+        }
+        if (following.size() < horizon) return null;
+        Candle last = following.get(horizon - 1);
+        double close = last.getClosePrice();
+        return new ScaleOutExit(HarmonicStopStatus.TIME_STOPPED, last, firstTaken ? (first + close) / 2.0 : close,
+                firstTaken ? "First target reached; the remaining half closed at the end of the saved horizon."
+                        : "The saved harmonic trade horizon ended at the completed close.");
     }
 
     private void markResolved(AlertEvent event) {

@@ -638,6 +638,12 @@ public class AlertEvent {
     private Integer tradeHorizonCandles;
     @Column(name = "trade_resolution_price")
     private Double tradeResolutionPrice;
+    /** AWAITING_FILL, FILLED or NOT_FILLED for plans that enter at the next candle's open. */
+    @Column(name = "trade_fill_status", length = 16)
+    private String tradeFillStatus;
+    /** The candle whose open filled the entry; null while the plan awaits its fill. */
+    @Column(name = "trade_entry_timestamp")
+    private Long tradeEntryTimestamp;
 
     public Boolean getTradeActionable() { return tradeActionable; }
     public void setTradeActionable(Boolean value) { tradeActionable = value; }
@@ -653,12 +659,19 @@ public class AlertEvent {
     public void setTradeHorizonCandles(Integer value) { tradeHorizonCandles = value; }
     public Double getTradeResolutionPrice() { return tradeResolutionPrice; }
     public void setTradeResolutionPrice(Double value) { tradeResolutionPrice = value; }
+    public String getTradeFillStatus() { return tradeFillStatus; }
+    public void setTradeFillStatus(String value) { tradeFillStatus = value; }
+    public Long getTradeEntryTimestamp() { return tradeEntryTimestamp; }
+    public void setTradeEntryTimestamp(Long value) { tradeEntryTimestamp = value; }
+    public boolean awaitingFill() { return "AWAITING_FILL".equals(tradeFillStatus); }
+    public boolean notFilled() { return "NOT_FILLED".equals(tradeFillStatus); }
 
     public boolean hasCandlestickRiskRewardPlan() {
         return ("CANDLE_RR_V1".equals(tradePlanVersion)
                 || "CANDLE_RR_V2".equals(tradePlanVersion)
                 || "CANDLE_RR_V3".equals(tradePlanVersion)
-                || "CANDLE_RR_V4".equals(tradePlanVersion))
+                || "CANDLE_RR_V4".equals(tradePlanVersion)
+                || "CANDLE_RR_V5".equals(tradePlanVersion))
                 && stopLossPrice != null
                 && rewardRiskRatio != null;
     }
@@ -778,7 +791,8 @@ public class AlertEvent {
     public void setHarmonicStopResolutionReason(String value) { this.harmonicStopResolutionReason = normalizedText(value, 255); }
 
     public boolean hasHarmonicStopPlan() {
-        return ("HARMONIC_STOP_V1".equals(tradePlanVersion) || "HARMONIC_TRADE_V2".equals(tradePlanVersion))
+        return ("HARMONIC_STOP_V1".equals(tradePlanVersion) || "HARMONIC_TRADE_V2".equals(tradePlanVersion)
+                || "HARMONIC_TRADE_V3".equals(tradePlanVersion))
                 && tradeEntryPrice != null && structuralStopPrice != null && stopLossPrice != null;
     }
 

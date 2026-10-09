@@ -31,6 +31,10 @@ public class SecurityConfig {
     private final long absoluteSessionTimeoutSeconds;
     private final long maximumJsonBodyBytes;
     private final RequestRateLimiter requestRateLimiter;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.security.KnownDeviceCookies knownDevices;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.service.LoginThrottleNotices loginThrottleNotices;
 
     public SecurityConfig(@Value("${security.require-https:false}") boolean requireHttps,
                            @Value("${server.port:8080}") int serverPort,
@@ -53,7 +57,7 @@ public class SecurityConfig {
         http
                 .authorizeHttpRequests(auth -> auth
                         // 1. Public Routes (Added /login here explicitly)
-                        .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/webjars/**",
+                        .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/i18n/**", "/webjars/**",
                                 "/images/**", "/signup", "/login", "/login/2fa", "/login/2fa/cancel", "/verify-email", "/resend-verification",
                                 "/forgot-password", "/reset-password", "/cancel-account-deletion", "/about").permitAll()
 
@@ -82,14 +86,16 @@ public class SecurityConfig {
                 )
                 .headers(headers -> headers
                         .referrerPolicy(referrer -> referrer
-                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.SAME_ORIGIN))
                         .permissionsPolicyHeader(permissions -> permissions.policy(
                                 "camera=(), microphone=(), geolocation=(), payment=(), usb=()"))
                 )
                 .addFilterAfter(new AbsoluteSessionTimeoutFilter(
                         Duration.ofSeconds(Math.max(300L, absoluteSessionTimeoutSeconds))), SecurityContextHolderFilter.class)
                 .addFilterAfter(accountSessionFilter, AbsoluteSessionTimeoutFilter.class)
-                .addFilterAfter(new RateLimitFilter(requestRateLimiter), AccountSessionValidationFilter.class)
+                .addFilterAfter(new RateLimitFilter(requestRateLimiter, knownDevices,
+                        account -> { if (loginThrottleNotices != null) loginThrottleNotices.accountLimitReached(account); }),
+                        AccountSessionValidationFilter.class)
                 .addFilterAfter(new RequestBodySizeLimitFilter(maximumJsonBodyBytes), RateLimitFilter.class)
                 .addFilterAfter(new CspNonceFilter(), RequestBodySizeLimitFilter.class);
 

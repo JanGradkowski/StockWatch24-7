@@ -2,8 +2,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 function setup() {
   const dom = new JSDOM('<body></body>', { runScripts: 'outside-only', url: 'https://watchlist.test' });
+  dom.window.StockWatchI18n = StockWatchI18n;
   dom.window.eval(fs.readFileSync('src/main/resources/static/js/watchlist-picker.js', 'utf8'));
   dom.window.eval(fs.readFileSync('src/main/resources/static/js/watchlist-settings.js', 'utf8'));
   let changes = 0;

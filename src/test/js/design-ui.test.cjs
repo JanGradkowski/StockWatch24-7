@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 
 function element(properties = {}) {
     const listeners = new Map(), classes = new Set();
@@ -27,7 +28,7 @@ function settings() {
     const document = {querySelector: () => null, querySelectorAll: selector => selector === 'form' ? [form] : [],
         createElement: () => element(), addEventListener() {}};
     let notifyDisabled;
-    const context = {document, location: {href: 'https://example.test/settings/scoring'}, URL, Event,
+    const context = {document, window: {StockWatchI18n}, location: {href: 'https://example.test/settings/scoring'}, URL, Event,
         MutationObserver: class {constructor(callback) {notifyDisabled = callback;} observe(target) {assert.equal(target, apply);}}};
     vm.runInNewContext(fs.readFileSync('src/main/resources/static/js/design-ui.js', 'utf8'), context);
     const bar = form.children[0], [discard, save] = bar.children[1].children;

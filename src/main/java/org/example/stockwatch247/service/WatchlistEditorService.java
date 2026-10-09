@@ -24,7 +24,7 @@ public class WatchlistEditorService {
     public record Saved(long id,Long importId) {}
     @Transactional
     public Saved save(User user,SaveRequest request) {
-        if(request==null || request.symbols()==null || request.indexIds()==null) throw new IllegalArgumentException("Choose valid watchlist changes.");
+        if(request==null || request.symbols()==null || request.indexIds()==null) throw new UserInputException("Choose valid watchlist changes.");
         lists.lock(user);
         boolean created=request.id()==null;
         if(!created) lists.requireOwned(user,request.id());

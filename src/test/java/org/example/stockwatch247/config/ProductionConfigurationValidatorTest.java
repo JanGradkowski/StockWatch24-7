@@ -59,6 +59,28 @@ class ProductionConfigurationValidatorTest {
                 .hasMessageContaining("migration credentials");
     }
 
+    @Test
+    void startingWithoutAProfileExplainsHowToChooseOne() {
+        ProductionConfigurationValidator validator = new ProductionConfigurationValidator(
+                false, "http://localhost:8080", "none", "", false, false, "", "", "", "",
+                true, true, true, "", "");
+        validator.setEnvironment(new org.springframework.mock.env.MockEnvironment());
+
+        assertThatThrownBy(validator::afterPropertiesSet)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SPRING_PROFILES_ACTIVE=prod")
+                .hasMessageContaining("dev for local development");
+    }
+
+    @Test
+    void productionRejectsSessionCookiesWithoutTheSecureFlag() {
+        ProductionConfigurationValidator validator = validator(
+                "https://stockwatch.example", "127\\.0\\.0\\.1", true, "secret");
+        validator.setSessionCookieSecure(false);
+
+        assertThatThrownBy(validator::afterPropertiesSet).hasMessageContaining("Secure");
+    }
+
     private ProductionConfigurationValidator validator(String publicUrl,
                                                         String trustedProxies,
                                                         boolean emailEnabled,

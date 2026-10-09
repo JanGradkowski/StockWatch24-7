@@ -307,7 +307,7 @@ class AlertRuleServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.YAHOO_FINANCE, 76, null));
         when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                symbol, "1mo", MONTHLY_COMPLETION_CUTOFF, PageRequest.of(0, 299)))
+                symbol, "1mo", MONTHLY_COMPLETION_CUTOFF, elliottPage(TimeInterval.MONTHLY)))
                 .thenReturn(syntheticElliottCandles(symbol).reversed());
 
         Map<String, Object> response = service.checkLatestSignal(
@@ -378,7 +378,7 @@ class AlertRuleServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                symbol, "1wk", WEEKLY_COMPLETION_CUTOFF, PageRequest.of(0, 299)))
+                symbol, "1wk", WEEKLY_COMPLETION_CUTOFF, elliottPage(TimeInterval.WEEKLY)))
                 .thenReturn(syntheticElliottCandles(symbol, "1wk").reversed());
 
         Map<String, Object> response = service.checkLatestSignal(
@@ -399,7 +399,7 @@ class AlertRuleServiceTest {
                 .thenReturn(new MarketDataService.CandleSyncResult(
                         MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                symbol, "1d", DAILY_COMPLETION_CUTOFF, PageRequest.of(0, 299)))
+                symbol, "1d", DAILY_COMPLETION_CUTOFF, elliottPage(TimeInterval.DAILY)))
                 .thenReturn(syntheticElliottCandles(symbol, "1d").reversed());
 
         Map<String, Object> response = service.checkLatestSignal(
@@ -418,7 +418,7 @@ class AlertRuleServiceTest {
         when(marketDataService.syncCandles(symbol, "1mo", null, true))
                 .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.CACHE, 0, null));
         when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
-                symbol, "1mo", MONTHLY_COMPLETION_CUTOFF, PageRequest.of(0, 299)))
+                symbol, "1mo", MONTHLY_COMPLETION_CUTOFF, elliottPage(TimeInterval.MONTHLY)))
                 .thenReturn(syntheticWaveVEndCandles(symbol, "1mo").reversed());
 
         Map<String, Object> response = service.checkLatestSignal(
@@ -702,6 +702,46 @@ class AlertRuleServiceTest {
         assertThat(entry.outcome().label()).isEqualTo("Sold at target");
         assertThat(entry.outcome().returnPercent()).isCloseTo(12.1212, within(0.0001));
         assertThat(entry.outcome().price()).isEqualTo(87.0);
+    }
+
+    @Test
+    void anOpenCandlestickTradeShowsItsCurrentReturnRatherThanThePlannedTarget() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository, candleRepository);
+        User user = new User();
+        user.setEmail("open-candlestick@example.com");
+        AlertRule rule = rule(24L, user, stock(3L, "AAPL", "Apple Inc."),
+                TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        long signalTimestamp = Instant.parse("2026-07-20T00:00:00Z").getEpochSecond();
+        AlertEvent event = new AlertEvent();
+        event.setId(306L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.HAMMER);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(signalTimestamp);
+        event.setClosePrice(100.0);
+        event.setLifecycleStatus(SignalLifecycleStatus.DETECTED);
+        event.setTradeEntryPrice(100.0);
+        event.setStopLossPrice(95.0);
+        event.setProfitTargetPrice(110.0);
+        event.setRewardRiskRatio(2.0);
+        event.setTradePlanVersion(CandlestickSignalLifecyclePolicy.RISK_REWARD_VERSION);
+        event.setSentAt(LocalDateTime.of(2026, 7, 20, 22, 15));
+        when(alertEventRepository.findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
+        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc("AAPL", "1d"))
+                .thenReturn(List.of(new Candle("AAPL", "1d", signalTimestamp + 86_400L, 101.0, 104.0, 100.5, 103.0, 1_000L)));
+
+        AlertRuleService.SignalArchiveEntry entry =
+                service.getSignalArchive(user, "date", "desc", 0).signals().getFirst();
+
+        assertThat(entry.outcome().label()).isEqualTo("Open · current return");
+        assertThat(entry.outcome().price()).isEqualTo(103.0);
+        assertThat(entry.outcome().returnPercent()).isCloseTo(3.0, within(0.0001));
     }
 
     @Test
@@ -1042,6 +1082,9 @@ class AlertRuleServiceTest {
 
         AlertRuleService.SignalDetailView detail = service.getSignalDetail(user, 301L);
 
+        // Viewing is a GET; the page marks the signal read with a separate POST.
+        assertThat(event.isRead()).isFalse();
+        assertThat(service.markSignalRead(user, 301L)).isTrue();
         assertThat(event.isRead()).isTrue();
         assertThat(event.getReadAt()).isNotNull();
         assertThat(detail.id()).isEqualTo(301L);
@@ -1406,6 +1449,11 @@ class AlertRuleServiceTest {
         assertThat(detail.chart().elliottWave().points())
                 .extracting(AlertRuleService.ElliottWaveChartPointView::timestamp)
                 .containsExactly(waveZeroTimestamp, waveOneTimestamp, waveTwoTimestamp);
+        // Opening the page stores nothing; the scheduled backfill adds the missing projection.
+        verify(projectionService, org.mockito.Mockito.never()).backfillIfMissing(
+                any(), any(), any(), any(), anyLong(), anyDouble(), any(), any(), any());
+        when(alertEventRepository.findById(306L)).thenReturn(Optional.of(event));
+        service.backfillElliottProjection(306L);
         verify(projectionService).backfillIfMissing(
                 org.mockito.ArgumentMatchers.eq(event),
                 org.mockito.ArgumentMatchers.eq(ElliottSignalStage.WAVE_II_END),
@@ -1594,5 +1642,9 @@ class AlertRuleServiceTest {
     }
 
     private record Anchor(int index, double price) {
+    }
+
+    private static PageRequest elliottPage(TimeInterval interval) {
+        return PageRequest.of(0, SignalInputPreparation.elliottHistory(new TechnicalIndicatorEnrichmentService(), interval));
     }
 }

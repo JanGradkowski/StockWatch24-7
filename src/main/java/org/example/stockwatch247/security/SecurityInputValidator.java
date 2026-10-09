@@ -1,6 +1,7 @@
 package org.example.stockwatch247.security;
 
 import org.example.stockwatch247.market.MarketIndexCatalog;
+import org.example.stockwatch247.service.UserInputException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -25,7 +26,7 @@ public final class SecurityInputValidator {
     public static String requireMarketSymbol(String rawSymbol) {
         String symbol = rawSymbol == null ? "" : rawSymbol.trim().toUpperCase(Locale.ROOT);
         if (!MARKET_SYMBOL.matcher(symbol).matches()) {
-            throw new IllegalArgumentException("Invalid market symbol.");
+            throw new UserInputException("Invalid market symbol.");
         }
         return MarketIndexCatalog.canonicalTickerSymbol(symbol);
     }
@@ -33,7 +34,7 @@ public final class SecurityInputValidator {
     public static String requireSearchQuery(String rawQuery) {
         String query = rawQuery == null ? "" : rawQuery.trim();
         if (!SEARCH_QUERY.matcher(query).matches()) {
-            throw new IllegalArgumentException("Invalid search query.");
+            throw new UserInputException("Invalid search query.");
         }
         return query;
     }
@@ -44,14 +45,14 @@ public final class SecurityInputValidator {
         }
         String micCode = rawMicCode.trim().toUpperCase(Locale.ROOT);
         if (!MIC_CODE.matcher(micCode).matches()) {
-            throw new IllegalArgumentException("Invalid market identifier code.");
+            throw new UserInputException("Invalid market identifier code.");
         }
         return micCode;
     }
 
     public static String requireInterval(String interval) {
         if (interval == null || !INTERVALS.contains(interval)) {
-            throw new IllegalArgumentException("Unsupported candle interval.");
+            throw new UserInputException("Unsupported candle interval.");
         }
         return interval;
     }
@@ -59,7 +60,7 @@ public final class SecurityInputValidator {
     public static String requirePersonName(String rawName) {
         String name = rawName == null ? "" : rawName.trim();
         if (!PERSON_NAME.matcher(name).matches()) {
-            throw new IllegalArgumentException("Name contains unsupported characters.");
+            throw new UserInputException("Name contains unsupported characters.");
         }
         return name;
     }
@@ -67,7 +68,7 @@ public final class SecurityInputValidator {
     public static String requireEmail(String rawEmail) {
         String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase(Locale.ROOT);
         if (email.length() > 254 || !EMAIL.matcher(email).matches()) {
-            throw new IllegalArgumentException("Enter a valid email address.");
+            throw new UserInputException("Enter a valid email address.");
         }
         return email;
     }
@@ -75,7 +76,7 @@ public final class SecurityInputValidator {
     public static String requirePassword(String password) {
         if (password == null || password.length() < 15
                 || password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new IllegalArgumentException("Password must be at least 15 characters and at most 72 UTF-8 bytes.");
+            throw new UserInputException("Password must be at least 15 characters and at most 72 UTF-8 bytes.");
         }
         return password;
     }
@@ -83,14 +84,14 @@ public final class SecurityInputValidator {
     public static String requireHexColor(String rawColor) {
         String color = rawColor == null ? "" : rawColor.trim().toUpperCase(Locale.ROOT);
         if (!HEX_COLOR.matcher(color).matches()) {
-            throw new IllegalArgumentException("Choose a valid six-digit color.");
+            throw new UserInputException("Choose a valid six-digit color.");
         }
         return color;
     }
 
     public static Long requireBeforeTimestamp(Long before) {
         if (before != null && before <= 0L) {
-            throw new IllegalArgumentException("Invalid candle timestamp.");
+            throw new UserInputException("Invalid candle timestamp.");
         }
         return before;
     }

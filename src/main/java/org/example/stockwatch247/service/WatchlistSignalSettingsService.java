@@ -31,12 +31,12 @@ public class WatchlistSignalSettingsService {
     }
 
     public static List<Selection> validate(List<Selection> values) {
-        if (values == null || values.size() > 23) throw new IllegalArgumentException("Choose valid watchlist settings.");
+        if (values == null || values.size() > 23) throw new UserInputException("Choose valid watchlist settings.");
         Set<String> allowed = new HashSet<>(), seen = new HashSet<>();
         empty().forEach(value -> allowed.add(value.key()));
         for (Selection value : values) {
             if (value == null || !allowed.contains(value.key()) || !seen.add(value.key()))
-                throw new IllegalArgumentException("Choose each signal type, direction and interval once.");
+                throw new UserInputException("Choose each signal type, direction and interval once.");
         }
         return List.copyOf(values);
     }

@@ -76,12 +76,13 @@ class CandlestickSignalLifecyclePolicyTest {
                         CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY,
                         105.0, bullishEngulfing, TimeInterval.MONTHLY);
 
-        assertThat(daily.stopLossPrice()).isEqualTo(95.89);
-        assertThat(daily.profitTargetPrice()).isCloseTo(123.22, within(1e-8));
+        // The factory 0% buffer is the textbook structural low itself; no volatility buffer is added.
+        assertThat(daily.stopLossPrice()).isEqualTo(96.0);
+        assertThat(daily.profitTargetPrice()).isCloseTo(123.0, within(1e-8));
         assertThat(daily.rewardRiskRatio()).isEqualTo(2.0);
-        assertThat(weekly.profitTargetPrice()).isCloseTo(132.33, within(1e-8));
+        assertThat(weekly.profitTargetPrice()).isCloseTo(132.0, within(1e-8));
         assertThat(weekly.rewardRiskRatio()).isEqualTo(3.0);
-        assertThat(monthly.profitTargetPrice()).isCloseTo(132.33, within(1e-8));
+        assertThat(monthly.profitTargetPrice()).isCloseTo(132.0, within(1e-8));
         assertThat(monthly.rewardRiskRatio()).isEqualTo(3.0);
         assertThat(monthly.timeStopCandles()).isEqualTo(6);
     }
@@ -103,11 +104,13 @@ class CandlestickSignalLifecyclePolicyTest {
                 CandlestickPatternPreferencesService.StopLossMode.FIXED_ENTRY_PERCENT,
                 4.0, 1.5);
 
-        assertThat(buffered.stopLossPrice()).isEqualTo(94.84);
-        assertThat(buffered.profitTargetPrice()).isCloseTo(130.4, within(1e-8));
+        // Structural low 96 minus the chosen 1% of entry, and nothing else.
+        assertThat(buffered.stopLossPrice()).isEqualTo(94.95);
+        assertThat(buffered.profitTargetPrice()).isCloseTo(130.125, within(1e-8));
         assertThat(buffered.rewardRiskRatio()).isEqualTo(2.5);
-        assertThat(fixed.stopLossPrice()).isEqualTo(95.89);
-        assertThat(fixed.profitTargetPrice()).isCloseTo(118.665, within(0.0000001));
+        // A fixed 4% stop is exactly 4% below entry, even though the structural low is further away.
+        assertThat(fixed.stopLossPrice()).isEqualTo(100.8);
+        assertThat(fixed.profitTargetPrice()).isCloseTo(111.3, within(0.0000001));
         assertThat(fixed.rewardRiskRatio()).isEqualTo(1.5);
     }
 

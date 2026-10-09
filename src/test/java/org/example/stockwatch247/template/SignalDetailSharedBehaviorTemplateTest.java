@@ -5,7 +5,6 @@ import org.thymeleaf.TemplateSpec;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 import org.thymeleaf.templatemode.TemplateMode;
-import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
 
 import java.util.Set;
 
@@ -15,13 +14,7 @@ class SignalDetailSharedBehaviorTemplateTest {
 
     @Test
     void sharedBehaviorRendersWithoutANormalSignalModel() {
-        ClassLoaderTemplateResolver resolver = new ClassLoaderTemplateResolver();
-        resolver.setPrefix("templates/");
-        resolver.setSuffix(".html");
-        resolver.setTemplateMode(TemplateMode.HTML);
-
-        SpringTemplateEngine engine = new SpringTemplateEngine();
-        engine.setTemplateResolver(resolver);
+        SpringTemplateEngine engine = TestTemplateEngines.create();
         var request = new org.springframework.mock.web.MockHttpServletRequest();
         var response = new org.springframework.mock.web.MockHttpServletResponse();
         var application = org.thymeleaf.web.servlet.JakartaServletWebApplication.buildApplication(request.getServletContext());

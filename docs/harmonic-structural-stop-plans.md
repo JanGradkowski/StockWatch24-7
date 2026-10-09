@@ -1,5 +1,7 @@
 # Harmonic structural stop plans
 
+> This page describes the original `HARMONIC_STOP_V1` stop-only plans, which stay attached to the signals that received them. New harmonic signals use `HARMONIC_TRADE_V3`: entry at the next candle's open, two objectives with a half-position scale-out and a breakeven stop. See [Qualified trade plans](trade-plan-risk-model.md).
+
 ## Scope
 
 `HARMONIC_STOP_V1` is a downstream trade-plan layer for already confirmed harmonic signals. It does not participate in pivot discovery, pattern classification, Fibonacci validation, setup scoring, confluence, deduplication, or signal eligibility. The existing harmonic detector remains the sole owner of whether a formation exists.
@@ -23,7 +25,7 @@ The plan is attached to the same saved alert event that appears in Latest signal
 | Cypher | Point X / 1.0 XC boundary | BUY: X − 0.5% of X; SELL: X + 0.5% of X |
 | Butterfly | 1.414 XA: `A + (X − A) × 1.414` | Buffer outside that level |
 | Crab | 2.0 XA: `A + (X − A) × 2.0` | Buffer outside that level |
-| Shark | 1.27 OX: `X + (0 − X) × 1.27` | Buffer outside that level |
+| Shark | 1.27 XA: `A + (X − A) × 1.27` | Buffer outside that level |
 
 The detector currently has no Alternate Bat, Deep Crab, 5-0, or AB=CD formation type. No stop policy was added for those names because manufacturing those signals would change detection scope.
 

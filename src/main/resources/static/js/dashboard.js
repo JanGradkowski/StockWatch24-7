@@ -1,13 +1,22 @@
 (() => {
     "use strict";
+    const i18n = window.StockWatchI18n;
 
     function initializeDashboardViews() {
         const viewSections = Array.from(document.querySelectorAll("[data-dashboard-view]"));
         const viewLayout = document.querySelector("[data-dashboard-view-layout]");
         if (viewSections.length === 0) return;
 
+        // Ticker alerts is its own page now; old /home#ticker-alerts links and bookmarks go there.
+        function redirectLegacyTickerAlertsLink() {
+            if (window.location.hash !== "#ticker-alerts" || viewLayout?.dataset.activeView === "alerts") return false;
+            window.location.replace("/ticker-alerts");
+            return true;
+        }
+
         function activateView() {
-            const view = window.location.hash === "#ticker-alerts" ? "alerts" : "technical";
+            if (redirectLegacyTickerAlertsLink()) return;
+            const view = viewLayout?.dataset.activeView || "technical";
             viewSections.forEach(section => {
                 section.hidden = section.dataset.dashboardView !== view;
             });
@@ -63,9 +72,7 @@
             }
 
             if (announcement) {
-                const singular = group === "stocks" ? "followed stock" : "followed index or ETF";
-                const plural = group === "stocks" ? "followed stocks" : "followed indexes or ETFs";
-                announcement.textContent = `Showing ${visibleCount} ${visibleCount === 1 ? singular : plural}`;
+                announcement.textContent = i18n.plural(group === "stocks" ? "dashboard.showing.stocks" : "dashboard.showing.funds", visibleCount, visibleCount);
             }
 
             if (moveFocus) {
@@ -134,9 +141,6 @@
         }
 
         function reloadTickerAlerts() {
-            const url = new URL(window.location.href);
-            url.hash = "ticker-alerts";
-            window.history.replaceState(null, "", url);
             window.location.reload();
         }
 
@@ -162,7 +166,7 @@
                         credentials: "same-origin"
                     });
                     if (!response.ok) {
-                        throw new Error("Notification could not be marked as read.");
+                        throw new Error(i18n.t("dashboard.markReadFailed"));
                     }
 
                     const affectedPanels = new Set();
@@ -179,7 +183,7 @@
                         .map(panel => refreshPanel(panel))
                         .some(Boolean);
                     if (status) {
-                        status.textContent = "Notification marked as read. It remains available in All ticker alerts.";
+                        status.textContent = i18n.t("dashboard.markedRead");
                     }
                     if (needsBackfill) {
                         reloadTickerAlerts();
@@ -190,7 +194,7 @@
                         candidate.removeAttribute("aria-busy");
                     });
                     if (status) {
-                        status.textContent = error.message || "Notification could not be marked as read.";
+                        status.textContent = error.message || i18n.t("dashboard.markReadFailed");
                     }
                 }
             });
@@ -213,14 +217,14 @@
                         credentials: "same-origin"
                     })));
                     if (responses.some(response => !response.ok)) {
-                        throw new Error("Notifications could not all be marked as read.");
+                        throw new Error(i18n.t("dashboard.markAllFailed"));
                     }
                     reloadTickerAlerts();
                 } catch (error) {
                     button.disabled = false;
                     button.removeAttribute("aria-busy");
                     if (status) {
-                        status.textContent = error.message || "Notifications could not all be marked as read.";
+                        status.textContent = error.message || i18n.t("dashboard.markAllFailed");
                     }
                 }
             });
@@ -259,8 +263,8 @@
             const selectedCount = selectedRuleIds().length + selectedOutlookSubscriptionIds().length;
             deleteSelectedButton.disabled = selectedCount === 0;
             deleteSelectedButton.textContent = selectedCount === 0
-                ? "Delete selected"
-                : `Delete selected (${selectedCount})`;
+                ? i18n.t("dashboard.deleteSelected")
+                : i18n.t("dashboard.deleteSelectedCount", selectedCount);
         }
 
         function resetDialog() {
@@ -269,9 +273,9 @@
             ruleList.replaceChildren();
             status.textContent = "";
             deleteSelectedButton.disabled = true;
-            deleteSelectedButton.textContent = "Delete selected";
+            deleteSelectedButton.textContent = i18n.t("dashboard.deleteSelected");
             deleteAllButton.disabled = false;
-            deleteAllButton.textContent = "Delete all";
+            deleteAllButton.textContent = i18n.t("dashboard.deleteAll");
         }
 
         function appendRuleOption(rule, automatedAnalysis = false) {
@@ -282,14 +286,16 @@
             input.type = "checkbox";
             if (automatedAnalysis) input.dataset.outlookSubscriptionId = String(rule.id);
             else input.dataset.ruleId = String(rule.id);
-            const tradeSignalLabel = rule.tradeSignal === "SELL" ? "SELL/SHORT" : rule.tradeSignal;
-            input.setAttribute("aria-label", `Select ${rule.familyLabel} ${rule.intervalLabel}${automatedAnalysis ? "" : ` ${tradeSignalLabel}`}`);
+            const tradeSignalLabel = i18n.has(`signalSide.${rule.tradeSignal}`) ? i18n.t(`signalSide.${rule.tradeSignal}`) : rule.tradeSignal;
+            input.setAttribute("aria-label", automatedAnalysis
+                ? i18n.t("dashboard.selectRule", rule.familyLabel, rule.intervalLabel)
+                : i18n.t("dashboard.selectRuleSide", rule.familyLabel, rule.intervalLabel, tradeSignalLabel));
             const copy = document.createElement("span");
             copy.className = "company-unfollow-rule-copy";
             const title = document.createElement("strong");
             title.textContent = automatedAnalysis ? rule.familyLabel : `${rule.familyLabel} · ${tradeSignalLabel}`;
             const interval = document.createElement("small");
-            interval.textContent = `${rule.intervalLabel} interval`;
+            interval.textContent = i18n.t("dashboard.intervalSuffix", rule.intervalLabel);
             copy.append(title, interval);
             label.append(input, copy);
             item.append(label);
@@ -306,7 +312,7 @@
                         credentials: "same-origin"
                     });
                     if (!response.ok) {
-                        throw new Error("The followed rules could not be loaded.");
+                        throw new Error(i18n.t("dashboard.rulesLoadFailed"));
                     }
                     const payload = await response.json();
                     const activeRules = Array.isArray(payload.activeRules) ? payload.activeRules : [];
@@ -320,7 +326,7 @@
                     if (activeRuleCount === 0) {
                         const item = document.createElement("li");
                         item.className = "company-unfollow-empty-rule";
-                        item.textContent = "No active technical rules remain for this company.";
+                        item.textContent = i18n.t("dashboard.noRules");
                         ruleList.append(item);
                         deleteAllButton.disabled = true;
                     }
@@ -328,7 +334,7 @@
                 } catch (error) {
                     resetDialog();
                     companyName.textContent = button.dataset.companyName || symbol;
-                    status.textContent = error.message || "The followed rules could not be loaded.";
+                    status.textContent = error.message || i18n.t("dashboard.rulesLoadFailed");
                     deleteAllButton.disabled = true;
                     dialog.showModal();
                 } finally {
@@ -359,11 +365,11 @@
             deleteSelectedButton.disabled = true;
             deleteAllButton.disabled = true;
             if (deleteAll) {
-                deleteAllButton.textContent = "Deleting all...";
-                status.textContent = "Switching off every listed technical rule...";
+                deleteAllButton.textContent = i18n.t("dashboard.deletingAll");
+                status.textContent = i18n.t("dashboard.switchingOffAll");
             } else {
-                deleteSelectedButton.textContent = "Deleting selected...";
-                status.textContent = `Switching off ${selectedCount} selected rule${selectedCount === 1 ? "" : "s"}...`;
+                deleteSelectedButton.textContent = i18n.t("dashboard.deletingSelected");
+                status.textContent = i18n.plural("dashboard.switchingOffSelected", selectedCount, selectedCount);
             }
             try {
                 const endpoint = deleteAll
@@ -381,13 +387,13 @@
                 const response = await fetch(endpoint, request);
                 if (!response.ok) {
                     const error = await response.json().catch(() => ({}));
-                    throw new Error(error.error || "The selected rules could not be deleted.");
+                    throw new Error(error.error || i18n.t("dashboard.deleteFailed"));
                 }
                 window.location.reload();
             } catch (error) {
-                status.textContent = error.message || "The selected rules could not be deleted.";
+                status.textContent = error.message || i18n.t("dashboard.deleteFailed");
                 deleteAllButton.disabled = activeRuleCount === 0;
-                deleteAllButton.textContent = "Delete all";
+                deleteAllButton.textContent = i18n.t("dashboard.deleteAll");
                 updateSelectionAction();
             }
         }
@@ -407,19 +413,19 @@
 
         followButton?.addEventListener("click", async () => {
             if (!csrfToken) {
-                status.textContent = "The security token is unavailable. Refresh the dashboard and try again.";
+                status.textContent = i18n.t("dashboard.tokenUnavailable");
                 return;
             }
             const confirmed = window.confirm(
-                "Temporary load test: follow 200 U.S. companies with all 18 technical rule combinations per company (3,600 active rules). Continue?"
+                i18n.t("dashboard.loadTestConfirm")
             );
             if (!confirmed) {
                 return;
             }
             followButton.disabled = true;
             followButton.setAttribute("aria-busy", "true");
-            followButton.textContent = "Activating 3,600 rules...";
-            status.textContent = "Creating or restoring the test universe. This can take several seconds.";
+            followButton.textContent = i18n.t("dashboard.activatingRules");
+            status.textContent = i18n.t("dashboard.creatingUniverse");
             try {
                 const response = await fetch("/api/alerts/testing/top-us-200", {
                     method: "POST",
@@ -428,33 +434,33 @@
                 });
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    throw new Error(payload.error || "The top-200 test universe could not be followed.");
+                    throw new Error(payload.error || i18n.t("dashboard.universeFailed"));
                 }
-                status.textContent = `Active: ${payload.companies} companies and ${payload.activeRules} rules. Reloading dashboard...`;
+                status.textContent = i18n.t("dashboard.universeActive", payload.companies, payload.activeRules);
                 window.location.reload();
             } catch (error) {
                 followButton.disabled = false;
                 followButton.removeAttribute("aria-busy");
-                followButton.textContent = "Follow top 200 U.S. (test)";
-                status.textContent = error.message || "The top-200 test universe could not be followed.";
+                followButton.textContent = i18n.t("dashboard.followTop200");
+                status.textContent = error.message || i18n.t("dashboard.universeFailed");
             }
         });
 
         unfollowButton?.addEventListener("click", async () => {
             if (!csrfToken) {
-                status.textContent = "The security token is unavailable. Refresh the dashboard and try again.";
+                status.textContent = i18n.t("dashboard.tokenUnavailable");
                 return;
             }
             const confirmed = window.confirm(
-                "Unfollow every ticker? This switches off all active technical rules for your followed stocks, indexes, and ETFs. Existing signal history remains available. Insider and Congress alerts are not affected."
+                i18n.t("dashboard.unfollowAllConfirm")
             );
             if (!confirmed) {
                 return;
             }
             unfollowButton.disabled = true;
             unfollowButton.setAttribute("aria-busy", "true");
-            unfollowButton.textContent = "Unfollowing all...";
-            status.textContent = "Switching off all followed technical rules...";
+            unfollowButton.textContent = i18n.t("dashboard.unfollowingAll");
+            status.textContent = i18n.t("dashboard.switchingOffFollowed");
             try {
                 const response = await fetch("/api/alerts", {
                     method: "DELETE",
@@ -463,15 +469,15 @@
                 });
                 const payload = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    throw new Error(payload.error || "The followed tickers could not be unfollowed.");
+                    throw new Error(payload.error || i18n.t("dashboard.unfollowFailed"));
                 }
-                status.textContent = `${payload.unfollowedRules} technical rules switched off. Reloading dashboard...`;
+                status.textContent = i18n.t("dashboard.rulesSwitchedOff", payload.unfollowedRules);
                 window.location.reload();
             } catch (error) {
                 unfollowButton.disabled = false;
                 unfollowButton.removeAttribute("aria-busy");
-                unfollowButton.textContent = "Unfollow all tickers";
-                status.textContent = error.message || "The followed tickers could not be unfollowed.";
+                unfollowButton.textContent = i18n.t("dashboard.unfollowAllTickers");
+                status.textContent = error.message || i18n.t("dashboard.unfollowFailed");
             }
         });
     }

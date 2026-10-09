@@ -6,11 +6,14 @@
      th:href="${fallbackUrl}"
      data-history-back
      aria-label="Go back to the previous page"
-     title="Go back">
+     title="Go back to the previous page"
+     th:aria-label="#{common.back.aria}"
+     th:title="#{common.back.aria}">
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M14.5 5 7.5 12l7 7"></path>
       <path d="M8 12h10"></path>
     </svg>
+    <span class="history-back-label" aria-hidden="true" th:text="#{common.back}">Back</span>
   </a>
   <script defer th:src="@{/js/history-back.js}"></script>
 </th:block>

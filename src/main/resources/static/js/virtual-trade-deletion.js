@@ -24,8 +24,8 @@
         }
         event.preventDefault();
         pendingForm = form;
-        const label = form.dataset.tradeLabel || "this demo trade";
-        message.textContent = `“${label}” will be permanently removed from your account. This cannot be undone.`;
+        const label = form.dataset.tradeLabel || window.StockWatchI18n.t("virtualTrades.thisTrade");
+        message.textContent = window.StockWatchI18n.t("virtualTrades.deleteMessage", label);
         dialog.showModal();
         confirmButton.focus();
     }));

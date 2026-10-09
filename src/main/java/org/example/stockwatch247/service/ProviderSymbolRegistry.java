@@ -24,6 +24,7 @@ public class ProviderSymbolRegistry {
             return Optional.empty();
         }
         return aliasRepository.findByStockAsset_IdAndProvider(asset.getId(), provider)
+                .filter(alias -> !conflictsWithListing(asset, provider, alias.getMicCode()))
                 .map(this::toReference);
     }
 
@@ -37,7 +38,7 @@ public class ProviderSymbolRegistry {
             return;
         }
         String symbol = normalizeSymbol(providerSymbol);
-        if (symbol.isBlank()) {
+        if (symbol.isBlank() || conflictsWithListing(asset, provider, micCode)) {
             return;
         }
         aliasRepository.upsert(
@@ -51,6 +52,12 @@ public class ProviderSymbolRegistry {
 
     private ProviderSymbolReference toReference(ProviderSymbolAlias alias) {
         return new ProviderSymbolReference(alias.getProviderSymbol(), alias.getMicCode());
+    }
+
+    private boolean conflictsWithListing(StockAsset asset, MarketDataProvider provider, String micCode) {
+        String expected = normalizeMic(asset.getMicCode()), actual = normalizeMic(micCode);
+        return provider == MarketDataProvider.TWELVE_DATA && expected != null && actual != null
+                && !expected.equals(actual);
     }
 
     private String normalizeSymbol(String rawSymbol) {

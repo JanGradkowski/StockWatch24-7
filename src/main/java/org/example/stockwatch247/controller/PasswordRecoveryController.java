@@ -7,6 +7,7 @@ import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.security.RequestRateLimiter;
 import org.example.stockwatch247.service.AccountSecurityService;
 import org.example.stockwatch247.service.PasswordSecurityCodeService;
+import org.example.stockwatch247.service.UserInputException;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -30,15 +31,23 @@ public class PasswordRecoveryController {
 
     @GetMapping("/forgot-password") public String forgotPage() { return "forgot-password"; }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.service.PasswordResetRequestQueue resetQueue;
+
     @PostMapping("/forgot-password")
     public String request(@RequestParam String email, HttpServletRequest request) {
         if (!rateLimiter.tryAcquire("forgot-password:client:" + request.getRemoteAddr(), 5, Duration.ofMinutes(15)))
             return "redirect:/reset-password?requested=true";
         try {
             String normalized = SecurityInputValidator.requireEmail(email);
-            User user = users.findByEmailIgnoreCase(normalized).orElse(null);
-            if (user != null && user.isVerified() && user.getDeletionRequestedAt() == null)
-                codes.issue(user, PasswordSecurityCodeService.RESET, request.getRemoteAddr());
+            if (resetQueue != null) {
+                // Account lookup, hashing and mail all happen in the worker, so timing reveals nothing.
+                resetQueue.enqueue(normalized, request.getRemoteAddr());
+            } else {
+                User user = users.findByEmailIgnoreCase(normalized).orElse(null);
+                if (user != null && user.isVerified() && user.getDeletionRequestedAt() == null)
+                    codes.issue(user, PasswordSecurityCodeService.RESET, request.getRemoteAddr());
+            }
         } catch (RuntimeException ignored) {
             // Always return the same response; this endpoint must not reveal account existence or mail state.
         }
@@ -52,6 +61,12 @@ public class PasswordRecoveryController {
                         @RequestParam String newPassword, @RequestParam String confirmPassword, Model model) {
         if (!newPassword.equals(confirmPassword)) { model.addAttribute("error", "The new passwords do not match."); return "reset-password"; }
         try {
+            // The password rules are public, so a weak password is reported as such before any account lookup.
+            SecurityInputValidator.requirePassword(newPassword);
+        } catch (UserInputException exception) {
+            model.addAttribute("error", exception.getMessage()); return "reset-password";
+        }
+        try {
             User user = users.findByEmailIgnoreCase(SecurityInputValidator.requireEmail(email))
                     .orElseThrow(() -> new IllegalArgumentException("The code or account details are invalid."));
             if (!security.resetPassword(user.getId(), code, newPassword, codes).successful()) {
@@ -59,6 +74,9 @@ public class PasswordRecoveryController {
                 return "reset-password";
             }
             return "redirect:/login?passwordReset=true";
+        } catch (UserInputException exception) {
+            // Raised only for a malformed email or, after a valid code, a reused password.
+            model.addAttribute("error", exception.getMessage()); return "reset-password";
         } catch (IllegalArgumentException exception) {
             model.addAttribute("error", "The code or account details are invalid."); return "reset-password";
         }

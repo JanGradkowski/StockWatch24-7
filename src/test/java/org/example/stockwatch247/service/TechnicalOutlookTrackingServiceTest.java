@@ -29,6 +29,65 @@ import static org.mockito.Mockito.when;
 class TechnicalOutlookTrackingServiceTest {
 
     @Test
+    void realOutlookPipelineNotifiesOneClassificationChangeAndSkipsAnIdenticalRetry() {
+        User user = new User();
+        user.setId(61L);
+        user.setEmail("pipeline@example.com");
+        StockAsset asset = new StockAsset();
+        asset.setTickerSymbol("PIPE");
+        TechnicalOutlookSubscription subscription = new TechnicalOutlookSubscription();
+        subscription.setId(62L);
+        subscription.setUser(user);
+        subscription.setStockAsset(asset);
+        subscription.setInterval(TimeInterval.MONTHLY);
+        var subscriptions = mock(TechnicalOutlookSubscriptionRepository.class);
+        when(subscriptions.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndActiveTrue("PIPE", TimeInterval.MONTHLY))
+                .thenReturn(List.of(subscription));
+        var notifications = mock(TechnicalOutlookNotificationRepository.class);
+        when(notifications.save(any())).thenAnswer(invocation -> {
+            TechnicalOutlookNotification notification = invocation.getArgument(0);
+            notification.setId(63L);
+            return notification;
+        });
+        var candleRepository = mock(org.example.stockwatch247.repository.CandleRepository.class);
+        var market = new java.util.concurrent.atomic.AtomicReference<>(pipelineCandles(false));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(anyString(), anyString(), any()))
+                .thenAnswer(invocation -> {
+                    if (!"PIPE".equals(invocation.getArgument(0)) || !"1mo".equals(invocation.getArgument(1))) return List.of();
+                    org.springframework.data.domain.Pageable page = invocation.getArgument(2);
+                    return market.get().reversed().stream().limit(page.getPageSize()).toList();
+                });
+        var assets = mock(StockAssetRepository.class);
+        when(assets.findByTickerSymbolIgnoreCase("PIPE")).thenReturn(Optional.of(asset));
+        var preferences = new AnalysisPreferencesService(
+                mock(org.example.stockwatch247.repository.UserAnalysisPreferencesRepository.class), new ObjectMapper());
+        var outlooks = new TechnicalOutlookService(null, candleRepository, assets, new TechnicalIndicatorEnrichmentService(),
+                mock(org.example.stockwatch247.repository.AlertEventRepository.class),
+                mock(org.example.stockwatch247.repository.CongressionalTradeDeliveryRepository.class),
+                mock(org.example.stockwatch247.repository.InsiderTradeDeliveryRepository.class), preferences);
+        var email = mock(AlertNotificationService.class);
+        var tracking = new TechnicalOutlookTrackingService(subscriptions, notifications, assets, null,
+                outlooks, preferences, email, new ObjectMapper(), mock(JdbcTemplate.class), 50, 500, 90, "http://localhost:8080");
+        assertThat(tracking.evaluate("PIPE", TimeInterval.MONTHLY).baselinesEstablished()).isEqualTo(1);
+        String baselineClassification = subscription.getCurrentClassification();
+        market.set(pipelineCandles(true));
+        var changed = tracking.evaluate("PIPE", TimeInterval.MONTHLY);
+        assertThat(subscription.getCurrentClassification()).isNotEqualTo(baselineClassification);
+        assertThat(changed.changesCreated()).isEqualTo(1);
+        assertThat(tracking.evaluate("PIPE", TimeInterval.MONTHLY).changesCreated()).isZero();
+        verify(notifications).save(any(TechnicalOutlookNotification.class));
+    }
+
+    private List<org.example.stockwatch247.model.Candle> pipelineCandles(boolean falling) {
+        return java.util.stream.IntStream.range(0, falling ? 321 : 320).mapToObj(index -> {
+            double price = falling ? 500 - index : 100 + index;
+            return new org.example.stockwatch247.model.Candle("PIPE", "1mo", 86400L * 30 * (index + 1),
+                    falling && index == 320 ? price + 0.01 : price, price + 0.025, price - 0.025,
+                    price, falling && index == 320 ? 1000000000L : 1000000L);
+        }).toList();
+    }
+
+    @Test
     void accountBelowThreeHundredCompanyQuotaCanAddAnOutlookCompany() {
         SubscriptionFixture fixture = subscriptionFixture(201, 300);
 
@@ -73,9 +132,9 @@ class TechnicalOutlookTrackingServiceTest {
         when(preferences.get(user)).thenReturn(AnalysisPreferencesService.factoryPreferences());
         TechnicalOutlookService.OutlookView slightBuy = outlook(1_000L, "Slight buy outlook", 0.20, 1);
         TechnicalOutlookService.OutlookView neutral = outlook(2_000L, "Neutral outlook", 0.0, 0);
-        when(outlooks.getSummaryOutlook(user, "AAPL", "1d")).thenReturn(slightBuy, neutral, outlook(3_000L, "Neutral outlook", 0.1, 0),
+        when(outlooks.getTrackingOutlook(user, "AAPL", "1d", false)).thenReturn(slightBuy, neutral, outlook(3_000L, "Neutral outlook", 0.1, 0),
                         outlook(4_000L, "Neutral outlook", 0.1, 0));
-        when(outlooks.getOutlook(user, "AAPL", "1d")).thenReturn(neutral);
+        when(outlooks.getTrackingOutlook(user, "AAPL", "1d", true)).thenReturn(neutral);
         when(notifications.existsBySubscriptionAndCurrentCandleTimestamp(any(), anyLong())).thenReturn(false);
         when(notifications.save(any())).thenAnswer(invocation -> {
             TechnicalOutlookNotification notification = invocation.getArgument(0);
@@ -120,6 +179,8 @@ class TechnicalOutlookTrackingServiceTest {
         assertThat(subscription.getLastChangePrice()).isNull();
         assertThat(subscription.getCurrentPrice()).isEqualTo(140.0);
         verify(notifications).save(any(TechnicalOutlookNotification.class));
+        verify(outlooks).getTrackingOutlook(user, "AAPL", "1d", true);
+        verify(outlooks, never()).invalidate(any(), anyString(), anyString());
     }
 
     private TechnicalOutlookService.OutlookView outlook(
@@ -173,7 +234,7 @@ class TechnicalOutlookTrackingServiceTest {
         when(subscriptions.findByUserAndStockAsset(user, asset)).thenReturn(List.of());
         when(subscriptions.save(any(TechnicalOutlookSubscription.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(outlooks.getSummaryOutlook(user, "MARA", "1d"))
+        when(outlooks.getTrackingOutlook(user, "MARA", "1d", false))
                 .thenReturn(outlook(3_000L, "Neutral outlook", 0, 0));
         when(preferences.get(user)).thenReturn(AnalysisPreferencesService.factoryPreferences());
         when(jdbc.queryForObject(anyString(), any(Class.class), any(Object[].class)))

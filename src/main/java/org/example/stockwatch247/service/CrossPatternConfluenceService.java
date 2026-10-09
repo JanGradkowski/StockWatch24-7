@@ -47,12 +47,6 @@ public class CrossPatternConfluenceService {
             HarmonicPatternDetectionService harmonicDetector) {
         List<Candle> candles = normalizeCandles(rawCandles);
         List<Observation> observations = new ArrayList<>();
-        observations.addAll(candlestickObservations(
-                rawCandles,
-                candlestickCandles,
-                trendRules == null ? CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval) : trendRules,
-                candlestickDefinitions == null
-                        ? CandlestickPatternPreferencesService.factoryPreferences() : candlestickDefinitions));
         ElliottWaveDetectionService waves = elliottDetector == null
                 ? new ElliottWaveDetectionService() : elliottDetector;
         HarmonicPatternDetectionService harmonics = harmonicDetector == null
@@ -63,45 +57,122 @@ public class CrossPatternConfluenceService {
                 .sorted(Comparator.comparing(EnrichedCandle::timestamp)).toList();
         // Prefixes are evaluated lazily: a live score needs only the previous eight bars.
         // The cached keys describe everything observable at a prefix, not a final chart layout.
-        Map<Integer, Map<String, Observation>> prefixCache = new java.util.HashMap<>();
-        return new Timeline(candles.stream().map(Candle::getTimestamp).toList(), observations, index -> {
-            Map<String, Observation> current = prefixCache.computeIfAbsent(index,
-                    i -> prefixObservations(candles, enriched, i, waves, harmonics));
-            Map<String, Observation> previous = index == 0 ? Map.of()
-                    : prefixCache.computeIfAbsent(index - 1,
-                    i -> prefixObservations(candles, enriched, i, waves, harmonics));
+        Map<AlertPatternFamily, ReplayWindow> windows = new EnumMap<>(AlertPatternFamily.class);
+        CausalCandlePrefixes wavePrefixes = new CausalCandlePrefixes(enriched);
+        Map<Object, Integer> pointIds = new java.util.HashMap<>();
+        return new Timeline(candles.stream().map(Candle::getTimestamp).toList(), observations, (index, family) -> {
+            if (family == AlertPatternFamily.CANDLESTICK) {
+                long timestamp = candles.get(index).getTimestamp();
+                long prior = index == 0 ? timestamp : candles.get(index - 1).getTimestamp();
+                return candlestickObservations(rawCandles, candlestickCandles,
+                        trendRules == null ? CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval) : trendRules,
+                        candlestickDefinitions == null ? CandlestickPatternPreferencesService.factoryPreferences() : candlestickDefinitions,
+                        prior, timestamp).stream().filter(item -> item.timestamp() == timestamp).toList();
+            }
+            ReplayWindow window = windows.computeIfAbsent(family, ignored -> new ReplayWindow());
+            if (family == AlertPatternFamily.ELLIOTT_WAVE) {
+                long timestamp = candles.get(index).getTimestamp();
+                long priorTimestamp = index == 0 ? Long.MIN_VALUE : candles.get(index - 1).getTimestamp();
+                var currentPrefix = wavePrefixes.at(timestamp);
+                var priorPrefix = wavePrefixes.at(priorTimestamp);
+                var result = new java.util.LinkedHashSet<Observation>();
+                var oldSignals = new java.util.HashSet<SignalKey>();
+                for (var signal : waves.detect(priorPrefix)) {
+                    if (signal.candleTimestamp() == priorTimestamp) oldSignals.add(
+                            new SignalKey(signal.pattern(), signal.tradeSignal(), signal.trendStartTimestamp()));
+                }
+                for (var signal : waves.detect(currentPrefix)) {
+                    if (signal.candleTimestamp() == timestamp && !oldSignals.contains(
+                            new SignalKey(signal.pattern(), signal.tradeSignal(), signal.trendStartTimestamp()))) {
+                        result.add(new Observation(family, signal.tradeSignal(), timestamp, signal.pattern()));
+                    }
+                }
+                for (var candidate : waves.newConfluenceObservations(currentPrefix, priorPrefix, window.waveContext))
+                    result.add(new Observation(family, candidate.expectedMove(), timestamp, candidate.pattern()));
+                return List.copyOf(result);
+            }
+            if (window.index != index - 1) {
+                window.keys = java.util.Set.of();
+                if (index > 0) {
+                    var previous = new java.util.HashSet<Object>();
+                    prefixObservations(candles, enriched, index - 1, family, waves, harmonics, pointIds, window.waveContext,
+                            (key, observation) -> previous.add(key));
+                    window.keys = previous;
+                }
+            }
+            var previous = window.keys;
+            var current = new java.util.HashSet<Object>();
+            var newlyAvailable = new java.util.LinkedHashSet<Observation>();
             long availableAt = candles.get(index).getTimestamp();
-            return current.entrySet().stream().filter(entry -> !previous.containsKey(entry.getKey()))
-                    .map(entry -> new Observation(entry.getValue().family(), entry.getValue().direction(),
-                            availableAt, entry.getValue().pattern())).distinct().toList();
+            prefixObservations(candles, enriched, index, family, waves, harmonics, pointIds, window.waveContext, (key, observation) -> {
+                current.add(key);
+                if (!previous.contains(key)) newlyAvailable.add(new Observation(observation.family(),
+                        observation.direction(), availableAt, observation.pattern()));
+            });
+            window.index = index;
+            window.keys = current;
+            return List.copyOf(newlyAvailable);
         });
     }
 
-    private Map<String, Observation> prefixObservations(List<Candle> raw, List<EnrichedCandle> enriched,
-                                                       int index, ElliottWaveDetectionService waves,
-                                                       HarmonicPatternDetectionService harmonics) {
+    private void prefixObservations(List<Candle> raw, List<EnrichedCandle> enriched,
+                                                       int index, AlertPatternFamily family, ElliottWaveDetectionService waves,
+                                                       HarmonicPatternDetectionService harmonics,
+                                                       Map<Object, Integer> pointIds,
+                                                       ElliottWaveDetectionService.DevelopingScanContext context,
+                                                       java.util.function.BiConsumer<Object, Observation> sink) {
         long timestamp = raw.get(index).getTimestamp();
         List<Candle> prefix = raw.subList(0, index + 1);
         List<EnrichedCandle> wavePrefix = enriched.stream().filter(c -> c.timestamp() <= timestamp).toList();
-        Map<String, Observation> observations = new LinkedHashMap<>();
-        for (var signal : waves.detect(wavePrefix)) {
-            if (signal.candleTimestamp() != timestamp) continue;
-            observations.put("signal:" + signal.pattern() + ':' + signal.tradeSignal() + ':'
-                            + signal.trendStartTimestamp(),
-                    new Observation(AlertPatternFamily.ELLIOTT_WAVE, signal.tradeSignal(), timestamp, signal.pattern()));
+        if (family == AlertPatternFamily.ELLIOTT_WAVE) {
+            for (var signal : waves.detect(wavePrefix)) {
+                if (signal.candleTimestamp() != timestamp) continue;
+                sink.accept(new SignalKey(signal.pattern(), signal.tradeSignal(), signal.trendStartTimestamp()),
+                        new Observation(AlertPatternFamily.ELLIOTT_WAVE, signal.tradeSignal(), timestamp, signal.pattern()));
+            }
+            waves.forEachDevelopingObservation(wavePrefix, context, candidate -> {
+                var key = new GeometryKey(candidate.pattern(), candidate.points(), pointIds);
+                sink.accept(key, new Observation(AlertPatternFamily.ELLIOTT_WAVE,
+                        candidate.expectedMove(), candidate.confirmationTimestamp(), candidate.pattern()));
+            });
         }
-        for (var candidate : waves.findDevelopingImpulseHypotheses(wavePrefix)) {
-            String key = candidate.pattern() + ":" + candidate.points();
-            observations.put(key, new Observation(AlertPatternFamily.ELLIOTT_WAVE,
-                    candidate.expectedMove(), candidate.confirmationTimestamp(), candidate.pattern()));
-        }
-        for (var formation : harmonics.detectAll(prefix)) {
-            String key = formation.pattern() + ":" + formation.points();
-            observations.put(key, new Observation(AlertPatternFamily.HARMONIC_FORMATION,
+        if (family == AlertPatternFamily.HARMONIC_FORMATION) for (var formation : harmonics.detectAll(prefix)) {
+            var key = new GeometryKey(formation.pattern(), formation.points(), pointIds);
+            sink.accept(key, new Observation(AlertPatternFamily.HARMONIC_FORMATION,
                     formation.tradeSignal(), formation.confirmationTimestamp(),
                     HarmonicPatternDetectionService.signalPattern(formation.pattern())));
         }
-        return observations;
+    }
+
+    // Only two adjacent sets coexist. Timeline.cache stores small availability deltas,
+    // never every alternative from every historical prefix. Point interning preserves
+    // exact timestamp/price/label/type identity without giant geometry strings.
+    private static final class ReplayWindow {
+        int index = -1;
+        java.util.Set<Object> keys = java.util.Set.of();
+        final ElliottWaveDetectionService.DevelopingScanContext waveContext =
+                new ElliottWaveDetectionService.DevelopingScanContext();
+    }
+
+    private record SignalKey(CandlePattern pattern, TradeSignal direction, Long trendStart) { }
+
+    private static final class GeometryKey {
+        private final Object pattern;
+        private final int[] points;
+        private final int hash;
+        GeometryKey(Object pattern, List<?> geometry, Map<Object, Integer> ids) {
+            this.pattern = pattern;
+            points = new int[geometry.size()];
+            for (int i = 0; i < points.length; i++) {
+                points[i] = ids.computeIfAbsent(geometry.get(i), ignored -> ids.size());
+            }
+            hash = 31 * pattern.hashCode() + java.util.Arrays.hashCode(points);
+        }
+        @Override public int hashCode() { return hash; }
+        @Override public boolean equals(Object other) {
+            return other instanceof GeometryKey key && pattern.equals(key.pattern)
+                    && java.util.Arrays.equals(points, key.points);
+        }
     }
 
     public Assessment assess(int baseScore,
@@ -135,7 +206,7 @@ public class CrossPatternConfluenceService {
         }
 
         Map<AlertPatternFamily, List<Observation>> mostRecentByFamily = new EnumMap<>(AlertPatternFamily.class);
-        for (Observation observation : timeline.observationsBetween(firstIndex, targetIndex)) {
+        for (Observation observation : timeline.latestObservationsBetween(firstIndex, targetIndex, targetFamily)) {
             Integer observationIndex = candleIndexes.get(observation.timestamp());
             if (observation.family() == targetFamily || observationIndex == null
                     || !directional(observation.direction())) {
@@ -203,7 +274,7 @@ public class CrossPatternConfluenceService {
             List<Candle> rawCandles,
             List<EnrichedCandle> enrichedCandles,
             CandlePatternDetectionService.TrendDetectionRules trendRules,
-            CandlestickPatternPreferencesService.PreferencesView definitions) {
+            CandlestickPatternPreferencesService.PreferencesView definitions, long firstTimestamp, long lastTimestamp) {
         if (enrichedCandles == null || enrichedCandles.size() < 2) return List.of();
         List<EnrichedCandle> enriched = enrichedCandles.stream()
                 .sorted(Comparator.comparing(EnrichedCandle::timestamp)).toList();
@@ -213,6 +284,8 @@ public class CrossPatternConfluenceService {
         for (Candle candle : rawCandles) rawByTimestamp.put(candle.getTimestamp(), candle);
         List<Observation> result = new ArrayList<>();
         for (int index = 1; index < enriched.size(); index++) {
+            if (enriched.get(index).timestamp() < firstTimestamp) continue;
+            if (enriched.get(index).timestamp() > lastTimestamp) break;
             int contextStart = Math.max(0, index - 99);
             List<DetectedSignal> signals = candlestickDetector.detectAlertSignals(
                     integrity.context(enriched.subList(contextStart, index + 1)), trendRules, definitions);
@@ -312,18 +385,20 @@ public class CrossPatternConfluenceService {
         return org.example.stockwatch247.model.enums.SignalStength.WEAK_IGNORE;
     }
 
+    private record ReplayKey(int index, AlertPatternFamily family) {}
+
     public static final class Timeline {
         private final List<Long> candleTimestamps;
         private final List<Observation> supplied;
-        private final java.util.function.IntFunction<List<Observation>> replay;
-        private final Map<Integer, List<Observation>> cache = new java.util.HashMap<>();
+        private final java.util.function.BiFunction<Integer, AlertPatternFamily, List<Observation>> replay;
+        private final Map<ReplayKey, List<Observation>> cache = new java.util.HashMap<>();
 
         public Timeline(List<Long> timestamps, List<Observation> observations) {
             this(timestamps, observations, null);
         }
 
         private Timeline(List<Long> timestamps, List<Observation> observations,
-                         java.util.function.IntFunction<List<Observation>> replay) {
+                         java.util.function.BiFunction<Integer, AlertPatternFamily, List<Observation>> replay) {
             candleTimestamps = timestamps == null ? List.of() : List.copyOf(timestamps);
             supplied = observations == null ? List.of() : List.copyOf(observations);
             this.replay = replay;
@@ -332,16 +407,43 @@ public class CrossPatternConfluenceService {
         public List<Long> candleTimestamps() { return candleTimestamps; }
 
         public List<Observation> observations() {
-            return observationsBetween(0, candleTimestamps.size());
+            return observationsBetween(0, candleTimestamps.size(), null);
         }
 
-        private synchronized List<Observation> observationsBetween(int from, int to) {
+        private synchronized List<Observation> observationsBetween(int from, int to, AlertPatternFamily excluded) {
             List<Observation> result = new ArrayList<>(supplied);
-            if (replay != null) for (int i = from; i < to; i++) {
-                result.addAll(cache.computeIfAbsent(i, replay::apply));
+            if (replay != null) for (AlertPatternFamily family : List.of(
+                    AlertPatternFamily.CANDLESTICK, AlertPatternFamily.ELLIOTT_WAVE, AlertPatternFamily.HARMONIC_FORMATION)) {
+                // A family never contributes to its own score. Do not run its detector.
+                if (family == excluded) continue;
+                for (int i = from; i < to; i++) {
+                    result.addAll(cache.computeIfAbsent(new ReplayKey(i, family),
+                            key -> replay.apply(key.index(), key.family())));
+                }
             }
             return result.stream().distinct().sorted(Comparator.comparingLong(Observation::timestamp)
                     .thenComparing(item -> item.pattern().name())).toList();
+        }
+
+        /** Scoring only uses the latest directional observation from each family.
+         * Walk backwards and stop at its first complete timestamp, retaining all ties. */
+        private synchronized List<Observation> latestObservationsBetween(int from, int to, AlertPatternFamily excluded) {
+            List<Observation> result = new ArrayList<>();
+            for (AlertPatternFamily family : AlertPatternFamily.values()) {
+                if (family == excluded) continue;
+                for (int index = to - 1; index >= from; index--) {
+                    long timestamp = candleTimestamps.get(index);
+                    List<Observation> at = new ArrayList<>();
+                    for (Observation item : supplied) if (item.family() == family && item.timestamp() == timestamp
+                            && (item.direction() == TradeSignal.BUY || item.direction() == TradeSignal.SELL)) at.add(item);
+                    if (replay != null) for (Observation item : cache.computeIfAbsent(new ReplayKey(index, family),
+                            key -> replay.apply(key.index(), key.family()))) {
+                        if (item.direction() == TradeSignal.BUY || item.direction() == TradeSignal.SELL) at.add(item);
+                    }
+                    if (!at.isEmpty()) { result.addAll(at); break; }
+                }
+            }
+            return result.stream().distinct().toList();
         }
     }
 

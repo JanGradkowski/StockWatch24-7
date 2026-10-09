@@ -37,4 +37,13 @@ public class WatchlistEmailPolicy {
                 """,(r,n)->allows(r.getLong(1),r.getString(2),r.getString(3),r.getString(4),r.getString(5)),eventId);
         return !events.isEmpty() && events.getFirst();
     }
+
+    public boolean allowsQueuedOutlook(long notificationId) {
+        var notifications = db.query("""
+                select s.user_id,a.ticker_symbol,s.interval
+                from technical_outlook_notifications n join technical_outlook_subscriptions s on s.id=n.subscription_id
+                join stock_assets a on a.id=s.stock_asset_id where n.id=?
+                """, (r,n) -> allows(r.getLong(1), r.getString(2), "OUTLOOK", r.getString(3), "ANY"), notificationId);
+        return !notifications.isEmpty() && notifications.getFirst();
+    }
 }

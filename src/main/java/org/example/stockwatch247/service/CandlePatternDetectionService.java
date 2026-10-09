@@ -24,7 +24,8 @@ import java.util.Map;
 
 @Service
 public class CandlePatternDetectionService {
-    public static final String SETUP_SCORE_VERSION = "CANDLE_V5_TEXTBOOK";
+    /** V6: harami and harami cross require a first candle against the trend (Nison). */
+    public static final String SETUP_SCORE_VERSION = "CANDLE_V6_TEXTBOOK";
     private static final int MIN_SETUP_SCORE = 75;
     private static final int STRONG_SETUP_SCORE = 85;
     private static final int BODY_COMPARISON_LOOKBACK = 20;
@@ -45,6 +46,31 @@ public class CandlePatternDetectionService {
     private static final int VOLUME_MAX_TENTHS = 100;
     private final CandlestickAdaptiveTrendService adaptiveTrendService =
             new CandlestickAdaptiveTrendService();
+    /**
+     * Experimental score model: replaces same-timeframe "Trend indicators" (which reward trend in the
+     * trade's direction and so penalise every valid reversal) with "Turn confirmation". Off until a
+     * backtest shows it separates outcomes at least as well as the current model.
+     */
+    public static final String TURN_CONFIRMATION_SCORE_VERSION = "CANDLE_V6_TURN";
+    private boolean turnConfirmation;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureScoringModel(
+            @org.springframework.beans.factory.annotation.Value("${alerts.candlestick.scoring.turn-confirmation:false}")
+            boolean turnConfirmation) {
+        this.turnConfirmation = turnConfirmation;
+    }
+
+    /** A detector with the same rules and the chosen score model, for research comparisons. */
+    public CandlePatternDetectionService withTurnConfirmation(boolean enabled) {
+        CandlePatternDetectionService copy = new CandlePatternDetectionService();
+        copy.turnConfirmation = enabled;
+        return copy;
+    }
+
+    public String scoreVersion() {
+        return turnConfirmation ? TURN_CONFIRMATION_SCORE_VERSION : SETUP_SCORE_VERSION;
+    }
 
     public List<DetectedSignal> detect(List<EnrichedCandle> recentCandles) {
         return detect(recentCandles, TrendDetectionRules.factory(),
@@ -91,7 +117,7 @@ public class CandlePatternDetectionService {
         EnrichedCandle previous = candles.get(last - 1);
 
         TrendContext singleCandleBuyTrend = trendBefore(candles, last, trendRules, TradeSignal.BUY);
-        TrendContext singleCandleSellTrend = trendBefore(candles, last, trendRules, TradeSignal.SELL);
+        TrendContext singleCandleSellTrend = sellTrend(candles, last, trendRules, singleCandleBuyTrend);
         PatternProfile doji = definitions.profile(CandlePattern.DOJI);
         if (matchesTrend(doji, singleCandleBuyTrend, singleCandleSellTrend)
                 && isGeometricDoji(current, doji)) {
@@ -133,8 +159,7 @@ public class CandlePatternDetectionService {
         int twoCandleStart = last - 1;
         TrendContext twoCandleBuyTrend = trendBefore(
                 candles, twoCandleStart, trendRules, TradeSignal.BUY);
-        TrendContext twoCandleSellTrend = trendBefore(
-                candles, twoCandleStart, trendRules, TradeSignal.SELL);
+        TrendContext twoCandleSellTrend = sellTrend(candles, twoCandleStart, trendRules, twoCandleBuyTrend);
         CandleStatistics twoCandleStatistics = statisticsBefore(candles, twoCandleStart);
 
         PatternProfile bullishEngulfing = definitions.profile(CandlePattern.BULLISH_ENGULFING);
@@ -167,7 +192,7 @@ public class CandlePatternDetectionService {
         }
         PatternProfile bullishCross = definitions.profile(CandlePattern.BULLISH_HARAMI_CROSS);
         boolean bullishHaramiCross = matchesTrend(bullishCross, twoCandleBuyTrend, twoCandleSellTrend)
-                && isGeometricHaramiCross(previous, current, twoCandleStatistics, bullishCross);
+                && isGeometricBullishHaramiCross(previous, current, twoCandleStatistics, bullishCross);
         PatternProfile bullishHarami = definitions.profile(CandlePattern.BULLISH_HARAMI);
         if (!bullishHaramiCross && matchesTrend(bullishHarami, twoCandleBuyTrend, twoCandleSellTrend)
                 && isGeometricBullishHarami(previous, current, twoCandleStatistics, bullishHarami)) {
@@ -177,7 +202,7 @@ public class CandlePatternDetectionService {
         }
         PatternProfile bearishCross = definitions.profile(CandlePattern.BEARISH_HARAMI_CROSS);
         boolean bearishHaramiCross = matchesTrend(bearishCross, twoCandleBuyTrend, twoCandleSellTrend)
-                && isGeometricHaramiCross(previous, current, twoCandleStatistics, bearishCross);
+                && isGeometricBearishHaramiCross(previous, current, twoCandleStatistics, bearishCross);
         PatternProfile bearishHarami = definitions.profile(CandlePattern.BEARISH_HARAMI);
         if (!bearishHaramiCross && matchesTrend(bearishHarami, twoCandleBuyTrend, twoCandleSellTrend)
                 && isGeometricBearishHarami(previous, current, twoCandleStatistics, bearishHarami)) {
@@ -186,14 +211,15 @@ public class CandlePatternDetectionService {
                             TradeSignal.SELL, twoCandleSellTrend, twoCandleStatistics));
         }
 
-        for (CandlePattern cross : List.of(CandlePattern.BULLISH_HARAMI_CROSS, CandlePattern.BEARISH_HARAMI_CROSS)) {
-            PatternProfile profile = definitions.profile(cross);
-            TradeSignal direction = cross == CandlePattern.BULLISH_HARAMI_CROSS ? TradeSignal.BUY : TradeSignal.SELL;
-            if (matchesTrend(profile, twoCandleBuyTrend, twoCandleSellTrend)
-                    && isGeometricHaramiCross(previous, current, twoCandleStatistics, profile)) {
-                addSignal(signals, cross, direction, evaluateSetup(cross, candles, last, twoCandleStart,
-                        direction, direction == TradeSignal.BUY ? twoCandleBuyTrend : twoCandleSellTrend, twoCandleStatistics));
-            }
+        if (bullishHaramiCross) {
+            addSignal(signals, CandlePattern.BULLISH_HARAMI_CROSS, TradeSignal.BUY,
+                    evaluateSetup(CandlePattern.BULLISH_HARAMI_CROSS, candles, last, twoCandleStart,
+                            TradeSignal.BUY, twoCandleBuyTrend, twoCandleStatistics));
+        }
+        if (bearishHaramiCross) {
+            addSignal(signals, CandlePattern.BEARISH_HARAMI_CROSS, TradeSignal.SELL,
+                    evaluateSetup(CandlePattern.BEARISH_HARAMI_CROSS, candles, last, twoCandleStart,
+                            TradeSignal.SELL, twoCandleSellTrend, twoCandleStatistics));
         }
 
         if (candles.size() >= 3) {
@@ -202,8 +228,7 @@ public class CandlePatternDetectionService {
             EnrichedCandle middle = candles.get(last - 1);
             TrendContext threeCandleBuyTrend = trendBefore(
                     candles, threeCandleStart, trendRules, TradeSignal.BUY);
-            TrendContext threeCandleSellTrend = trendBefore(
-                    candles, threeCandleStart, trendRules, TradeSignal.SELL);
+            TrendContext threeCandleSellTrend = sellTrend(candles, threeCandleStart, trendRules, threeCandleBuyTrend);
             CandleStatistics threeCandleStatistics = statisticsBefore(candles, threeCandleStart);
 
             PatternProfile morningStar = definitions.profile(CandlePattern.MORNING_STAR);
@@ -387,18 +412,18 @@ public class CandlePatternDetectionService {
             candidates.add(candidate(CandlePattern.DARK_CLOUD_COVER, TradeSignal.SELL, TrendDirection.UP, 2));
         }
         if (isGeometricBullishHarami(previous, current, twoStatistics)
-                && !isGeometricHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BULLISH_HARAMI_CROSS))) {
+                && !isGeometricBullishHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BULLISH_HARAMI_CROSS))) {
             candidates.add(candidate(CandlePattern.BULLISH_HARAMI, TradeSignal.BUY, TrendDirection.DOWN, 2));
         }
         if (isGeometricBearishHarami(previous, current, twoStatistics)
-                && !isGeometricHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BEARISH_HARAMI_CROSS))) {
+                && !isGeometricBearishHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BEARISH_HARAMI_CROSS))) {
             candidates.add(candidate(CandlePattern.BEARISH_HARAMI, TradeSignal.SELL, TrendDirection.UP, 2));
         }
 
-        if (isGeometricHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BULLISH_HARAMI_CROSS))) {
+        if (isGeometricBullishHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BULLISH_HARAMI_CROSS))) {
             candidates.add(candidate(CandlePattern.BULLISH_HARAMI_CROSS, TradeSignal.BUY, TrendDirection.DOWN, 2));
         }
-        if (isGeometricHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BEARISH_HARAMI_CROSS))) {
+        if (isGeometricBearishHaramiCross(previous, current, twoStatistics, factoryProfile(CandlePattern.BEARISH_HARAMI_CROSS))) {
             candidates.add(candidate(CandlePattern.BEARISH_HARAMI_CROSS, TradeSignal.SELL, TrendDirection.UP, 2));
         }
 
@@ -532,7 +557,9 @@ public class CandlePatternDetectionService {
                         + rawGeometryPoints + "/25, trend " + trend.scorePoints()
                         + "/25); " + trend.description()
         ));
-        components.add(trendIndicatorComponent(candles, signalIndex, direction));
+        components.add(turnConfirmation
+                ? turnConfirmationComponent(candles, signalIndex, direction)
+                : trendIndicatorComponent(candles, signalIndex, direction));
         components.add(higherTimeframeComponent(candles, current.timestamp(), direction));
         components.add(momentumComponent(candles, signalIndex, direction));
         components.add(bollingerComponent(candles, setupIndex, signalIndex, direction));
@@ -627,6 +654,100 @@ public class CandlePatternDetectionService {
                 TREND_MAX_TENTHS,
                 profile.shortLabel() + " profile: " + String.join("; ", details)
         );
+    }
+
+    /**
+     * Evidence that the prior trend is turning in the signal direction: the MACD histogram turning
+     * toward zero from the prior-trend side, the fast EMA slope improving, a close back across the
+     * fast EMA, and RSI divergence against the last swing extreme.
+     */
+    private ScoreComponent turnConfirmationComponent(List<EnrichedCandle> candles,
+                                                     int signalIndex,
+                                                     TradeSignal direction) {
+        EnrichedCandle current = candles.get(signalIndex);
+        EnrichedCandle previous = candles.get(Math.max(0, signalIndex - 1));
+        EnrichedCandle earlier = candles.get(Math.max(0, signalIndex - 2));
+        TechnicalIndicatorProfile profile = indicatorProfile(candles);
+        boolean buy = direction == TradeSignal.BUY;
+        int points = 0;
+        List<String> details = new ArrayList<>();
+
+        if (isAvailable(current.macdHistogram()) && isAvailable(previous.macdHistogram())) {
+            boolean fromTrendSide = buy ? previous.macdHistogram() < 0.0 : previous.macdHistogram() > 0.0;
+            boolean turning = fromTrendSide
+                    && directionalDelta(current.macdHistogram() - previous.macdHistogram(), direction);
+            if (turning) points += 6;
+            details.add("MACD histogram " + (turning
+                    ? "turned toward zero from the prior-trend side (+6)"
+                    : "did not turn toward zero from the prior-trend side"));
+        } else {
+            details.add("MACD histogram was unavailable");
+        }
+
+        if (isAvailable(current.fastEma()) && isAvailable(previous.fastEma()) && isAvailable(earlier.fastEma())) {
+            double slope = current.fastEma() - previous.fastEma();
+            double priorSlope = previous.fastEma() - earlier.fastEma();
+            boolean improving = directionalDelta(slope - priorSlope, direction);
+            if (improving) points += 4;
+            details.add("EMA(" + profile.fastEmaPeriod() + ") slope " + (improving
+                    ? "turned in the signal direction (+4)" : "did not turn in the signal direction"));
+        } else {
+            details.add("EMA(" + profile.fastEmaPeriod() + ") slope was unavailable");
+        }
+
+        if (isAvailable(current.fastEma())) {
+            boolean beyondNow = directionalDelta(current.close() - current.fastEma(), direction);
+            boolean beyondBefore = isAvailable(previous.fastEma())
+                    && directionalDelta(previous.close() - previous.fastEma(), direction);
+            int crossPoints = beyondNow ? (beyondBefore ? 2 : 5) : 0;
+            points += crossPoints;
+            details.add(beyondNow && !beyondBefore
+                    ? "close crossed back over EMA(" + profile.fastEmaPeriod() + ") (+5)"
+                    : beyondNow ? "close held beyond EMA(" + profile.fastEmaPeriod() + ") (+2)"
+                    : "close stayed on the prior-trend side of EMA(" + profile.fastEmaPeriod() + ")");
+        } else {
+            details.add("EMA(" + profile.fastEmaPeriod() + ") was unavailable");
+        }
+
+        int divergence = rsiDivergence(candles, signalIndex, direction);
+        if (divergence > 0) points += 5;
+        details.add(divergence > 0
+                ? (buy ? "bullish" : "bearish") + " RSI divergence against the last swing extreme (+5)"
+                : divergence == 0 ? "no RSI divergence" : "RSI divergence could not be assessed");
+
+        return weightedComponent(
+                "Turn confirmation",
+                points,
+                20,
+                TREND_MAX_TENTHS,
+                profile.shortLabel() + " profile: " + String.join("; ", details)
+        );
+    }
+
+    /**
+     * 1 when price reached a new or matching extreme against the signal while RSI did not (a lower or
+     * equal low with a higher RSI for a buy), 0 when it did not, -1 when RSI history is unavailable.
+     */
+    private int rsiDivergence(List<EnrichedCandle> candles, int signalIndex, TradeSignal direction) {
+        boolean buy = direction == TradeSignal.BUY;
+        int start = Math.max(0, signalIndex - 20);
+        int end = signalIndex - 3;
+        EnrichedCandle current = candles.get(signalIndex);
+        if (end <= start || !isAvailable(current.rsi())) return -1;
+        int extreme = -1;
+        for (int index = start; index <= end; index++) {
+            EnrichedCandle candle = candles.get(index);
+            if (!isAvailable(candle.rsi())) continue;
+            if (extreme < 0 || (buy ? candle.low() < candles.get(extreme).low()
+                    : candle.high() > candles.get(extreme).high())) {
+                extreme = index;
+            }
+        }
+        if (extreme < 0) return -1;
+        EnrichedCandle prior = candles.get(extreme);
+        boolean priceExtended = buy ? current.low() <= prior.low() * 1.005 : current.high() >= prior.high() * 0.995;
+        boolean rsiDiverged = buy ? current.rsi() > prior.rsi() + 2.0 : current.rsi() < prior.rsi() - 2.0;
+        return priceExtended && rsiDiverged ? 1 : 0;
     }
 
     private ScoreComponent higherTimeframeComponent(List<EnrichedCandle> candles,
@@ -1307,9 +1428,10 @@ public class CandlePatternDetectionService {
                                              CandleStatistics statistics) {
         return isGeometricBullishHarami(previous, current, statistics, factoryProfile(CandlePattern.BULLISH_HARAMI));
     }
+    /** A bullish harami starts with a long bearish candle; the inside candle's colour is free (Nison). */
     private boolean isGeometricBullishHarami(EnrichedCandle previous, EnrichedCandle current,
                                              CandleStatistics statistics, PatternProfile profile) {
-        return isGeometricHarami(previous, current, statistics, profile);
+        return isBearish(previous) && isGeometricHarami(previous, current, statistics, profile);
     }
 
     private boolean isGeometricBearishHarami(EnrichedCandle previous,
@@ -1317,9 +1439,20 @@ public class CandlePatternDetectionService {
                                              CandleStatistics statistics) {
         return isGeometricBearishHarami(previous, current, statistics, factoryProfile(CandlePattern.BEARISH_HARAMI));
     }
+    /** A bearish harami starts with a long bullish candle. */
     private boolean isGeometricBearishHarami(EnrichedCandle previous, EnrichedCandle current,
                                              CandleStatistics statistics, PatternProfile profile) {
-        return isGeometricHarami(previous, current, statistics, profile);
+        return isBullish(previous) && isGeometricHarami(previous, current, statistics, profile);
+    }
+
+    private boolean isGeometricBullishHaramiCross(EnrichedCandle first, EnrichedCandle second,
+                                                  CandleStatistics statistics, PatternProfile profile) {
+        return isBearish(first) && isGeometricHaramiCross(first, second, statistics, profile);
+    }
+
+    private boolean isGeometricBearishHaramiCross(EnrichedCandle first, EnrichedCandle second,
+                                                  CandleStatistics statistics, PatternProfile profile) {
+        return isBullish(first) && isGeometricHaramiCross(first, second, statistics, profile);
     }
 
     private boolean isGeometricHarami(EnrichedCandle first, EnrichedCandle second,
@@ -1498,6 +1631,14 @@ public class CandlePatternDetectionService {
 
     private static String formatThreshold(double value) {
         return value == Math.rint(value) ? Long.toString((long) value) : Double.toString(value);
+    }
+
+    private TrendContext sellTrend(List<EnrichedCandle> candles, int start, TrendDetectionRules rules, TrendContext buy) {
+        // The factory currently uses the same causal trend model in both directions.
+        // Retain separate evaluation automatically if direction-specific settings differ.
+        return !rules.adaptiveFactory() || java.util.Objects.equals(
+                factoryAdaptiveParameters(rules, TradeSignal.BUY), factoryAdaptiveParameters(rules, TradeSignal.SELL))
+                ? buy : trendBefore(candles, start, rules, TradeSignal.SELL);
     }
 
     private TrendContext trendBefore(List<EnrichedCandle> candles,

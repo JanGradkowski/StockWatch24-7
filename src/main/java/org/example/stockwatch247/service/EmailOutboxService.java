@@ -17,6 +17,7 @@ import java.util.UUID;
 /** SMTP runs outside account/event transactions. Sensitive bodies are encrypted and erased on completion. */
 @Service
 public class EmailOutboxService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(EmailOutboxService.class);
     @org.springframework.beans.factory.annotation.Autowired
     private WatchlistEmailPolicy watchlistEmails;
     @org.springframework.beans.factory.annotation.Autowired
@@ -29,6 +30,7 @@ public class EmailOutboxService {
     private final ObjectMapper mapper;
     private final ObjectProvider<JavaMailSender> senders;
     private final TransactionTemplate transactions;
+    private final RetryBackoff smtpBackoff = new RetryBackoff();
 
     public EmailOutboxService(JdbcTemplate jdbc, SecurityCryptoService crypto, ObjectMapper mapper,
                               ObjectProvider<JavaMailSender> senders, PlatformTransactionManager manager) {
@@ -43,17 +45,33 @@ public class EmailOutboxService {
 
     @Transactional
     public void enqueue(SimpleMailMessage message, Long eventId, Duration lifetime, String deduplicationKey, String receipt) {
+        enqueueNotification(message, eventId, null, lifetime, deduplicationKey, receipt);
+    }
+
+    @Transactional
+    public void enqueueOutlook(SimpleMailMessage message, long notificationId, Duration lifetime) {
+        enqueueNotification(message, null, notificationId, lifetime, "outlook:" + notificationId, "INITIAL");
+    }
+
+    private void enqueueNotification(SimpleMailMessage message, Long eventId, Long outlookId,
+                                     Duration lifetime, String deduplicationKey, String receipt) {
         if (senders.getIfAvailable() == null) throw new IllegalStateException("Email delivery is not configured.");
         UUID id = UUID.randomUUID();
         try {
             var payload = new Payload(message.getFrom(), message.getTo(), message.getSubject(), message.getText());
             var encrypted = crypto.encrypt(mapper.writeValueAsString(payload), "email-outbox:" + id);
-            jdbc.update("""
-                insert into email_outbox(id, deduplication_key, ciphertext, iv, alert_event_id, expires_at, receipt)
-                values (?, ?, ?, ?, ?, current_timestamp + (? * interval '1 second'), ?)
+            int inserted = jdbc.update("""
+                insert into email_outbox(id, deduplication_key, ciphertext, iv, alert_event_id, outlook_notification_id, expires_at, receipt)
+                values (?, ?, ?, ?, ?, ?, current_timestamp + (? * interval '1 second'), ?)
                 on conflict (deduplication_key) do nothing
                 """, id, deduplicationKey,
-                    encrypted.ciphertext(), encrypted.iv(), eventId, lifetime.toSeconds(), receipt);
+                    encrypted.ciphertext(), encrypted.iv(), eventId, outlookId, lifetime.toSeconds(), receipt);
+            if (inserted > 0 && eventId != null) {
+                log.info("Technical signal email queued: eventId={} receipt={} outboxId={}", eventId, receipt, id);
+            }
+            if (inserted > 0 && outlookId != null) {
+                log.info("Technical outlook email queued: notificationId={} outboxId={}", outlookId, id);
+            }
         } catch (tools.jackson.core.JacksonException e) {
             throw new IllegalStateException("Could not queue email.", e);
         }
@@ -63,7 +81,7 @@ public class EmailOutboxService {
     public void dispatchPending() { dispatcher.submit("email", this::deliverPending); }
 
     public void deliverPending() {
-        if (!workerEnabled) return;
+        if (!workerEnabled || !smtpBackoff.ready()) return;
         JavaMailSender sender = senders.getIfAvailable();
         if (sender == null) return;
         // A bounded batch prevents this worker monopolizing the scheduler. SMTP timeouts are configured.
@@ -77,43 +95,71 @@ public class EmailOutboxService {
                     order by available_at for update skip locked limit 1
                 ) update email_outbox e set owner = ?, lease_until = current_timestamp + interval '2 minutes',
                     attempts = attempts + 1 from candidate where e.id = candidate.id
-                returning e.id, e.ciphertext, e.iv, e.alert_event_id, e.receipt
+                returning e.id, e.ciphertext, e.iv, e.alert_event_id, e.receipt, e.outlook_notification_id, e.attempts
                 """, (rs, row) -> new Claim(rs.getObject(1, UUID.class), rs.getString(2),
-                    rs.getString(3), rs.getObject(4, Long.class), rs.getString(5)), owner);
+                    rs.getString(3), rs.getObject(4, Long.class), rs.getString(5), rs.getObject(6, Long.class), rs.getInt(7)), owner);
             if (claims.isEmpty()) break;
             Claim claim = claims.getFirst();
+            long started = System.nanoTime();
+            boolean accepted = false;
             try {
-                if (claim.eventId()!=null && watchlistEmails!=null && !watchlistEmails.allowsQueuedEvent(claim.eventId())) {
+                if (watchlistEmails != null && (claim.eventId() != null && !watchlistEmails.allowsQueuedEvent(claim.eventId())
+                        || claim.outlookId() != null && !watchlistEmails.allowsQueuedOutlook(claim.outlookId()))) {
                     jdbc.update("update email_outbox set expired_at=current_timestamp,ciphertext=null,iv=null,owner=null,lease_until=null where id=? and owner=?",claim.id(),owner);
                     continue;
                 }
                 Payload payload = mapper.readValue(crypto.decrypt(claim.body(), claim.iv(),
                         "email-outbox:" + claim.id()), Payload.class);
-                var message = sender.createMimeMessage();
+                // Generate the stable ID directly. The default updateMessageID
+                // resolves the local host, even when its random ID is overwritten.
+                var message = new jakarta.mail.internet.MimeMessage(sender.createMimeMessage().getSession()) {
+                    @Override protected void updateMessageID() throws jakarta.mail.MessagingException {
+                        setHeader("Message-ID", "<" + claim.id() + "@stockwatch.local>");
+                    }
+                };
                 var helper = new MimeMessageHelper(message, "UTF-8");
                 helper.setFrom(payload.from()); helper.setTo(payload.to());
                 helper.setSubject(payload.subject()); helper.setText(payload.text());
                 message.saveChanges();
-                message.setHeader("Message-ID", "<" + claim.id() + "@stockwatch.local>");
+                // Recheck after payload/policy work or a process pause, before touching SMTP.
+                if (jdbc.update("update email_outbox set lease_until=current_timestamp + interval '2 minutes' "
+                        + "where id=? and owner=? and lease_until > current_timestamp", claim.id(), owner) != 1) {
+                    defer(claim, owner);
+                    continue;
+                }
                 sender.send(message);
+                accepted = true;
+                smtpBackoff.succeeded();
                 transactions.executeWithoutResult(status -> {
                     int updated = jdbc.update("""
                         update email_outbox set delivered_at = current_timestamp, ciphertext = null, iv = null,
                         owner = null, lease_until = null where id = ? and owner = ? and lease_until > current_timestamp
                         """, claim.id(), owner);
+                    if (updated != 1) throw new IllegalStateException("SMTP accepted but delivery ownership expired.");
                     if (updated == 1 && claim.eventId() != null) jdbc.update("""
                         update alert_events set
                         initial_email_sent_at = case when ? = 'INITIAL' then coalesce(initial_email_sent_at, current_timestamp) else initial_email_sent_at end,
                         follow_up_sent_at = case when ? = 'FOLLOW_UP' then current_timestamp else follow_up_sent_at end where id = ?
                         """, claim.receipt(), claim.receipt(), claim.eventId());
+                    if (updated == 1 && claim.outlookId() != null) jdbc.update("""
+                        update technical_outlook_notifications set email_sent_at = coalesce(email_sent_at, current_timestamp)
+                        where id = ?
+                        """, claim.outlookId());
                 });
+                log.info("Email accepted by SMTP: outboxId={} eventId={} outlookId={} receipt={}",
+                        claim.id(), claim.eventId(), claim.outlookId(), claim.receipt());
             } catch (Exception failure) {
-                // Do not persist/log provider exceptions: they can contain recipient addresses or message bodies.
-                jdbc.update("""
-                    update email_outbox set owner = null, lease_until = null,
-                    available_at = current_timestamp + (least(3600, 15 * power(2, least(attempts, 8))) * interval '1 second')
-                    where id = ? and owner = ? and lease_until > current_timestamp
-                    """, claim.id(), owner);
+                MailFailureCategory category = accepted ? MailFailureCategory.DATABASE_ACKNOWLEDGEMENT : MailFailureCategory.of(failure);
+                long cooldown = category.providerOutage() ? smtpBackoff.failed() : 0;
+                log.warn("Email delivery deferred: outboxId={} eventId={} outlookId={} attempt={} category={} smtpAccepted={} elapsedMs={} providerRetryInSeconds={}",
+                        claim.id(), claim.eventId(), claim.outlookId(), claim.attempts(), category, accepted,
+                        (System.nanoTime() - started) / 1_000_000, cooldown);
+                // Owner fencing is sufficient here: an expired, unclaimed attempt still needs backoff.
+                // If another worker reclaimed it, its different owner prevents this write.
+                defer(claim, owner);
+                if (InfrastructureRecovery.isDatabaseUnavailable(failure))
+                    throw failure instanceof RuntimeException runtime ? runtime : new IllegalStateException(failure);
+                if (category.providerOutage()) break;
             }
         }
         jdbc.update("""
@@ -124,6 +170,14 @@ public class EmailOutboxService {
         jdbc.update("delete from email_outbox where coalesce(delivered_at, expired_at) < current_timestamp - interval '30 days'");
     }
 
+    private void defer(Claim claim, UUID owner) {
+        jdbc.update("""
+            update email_outbox set owner = null, lease_until = null,
+            available_at = current_timestamp + ((least(3600, 15 * power(2, least(attempts, 8))) + floor(random() * 6)) * interval '1 second')
+            where id = ? and owner = ? and delivered_at is null
+            """, claim.id(), owner);
+    }
+
     public record Payload(String from, String[] to, String subject, String text) { }
-    private record Claim(UUID id, String body, String iv, Long eventId, String receipt) { }
+    private record Claim(UUID id, String body, String iv, Long eventId, String receipt, Long outlookId, int attempts) { }
 }

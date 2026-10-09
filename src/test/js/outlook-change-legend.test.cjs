@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 
 function render(snapshot, report = {}) {
     class Node extends EventTarget {
@@ -32,6 +33,7 @@ function render(snapshot, report = {}) {
         }
     }};
     context.window = context;
+    context.StockWatchI18n = StockWatchI18n;
     context.StockWatchCharts = {...context.LightweightCharts, color: value => value};
     vm.createContext(context);
     vm.runInContext(fs.readFileSync('src/main/resources/static/js/chart-legend.js', 'utf8'), context);

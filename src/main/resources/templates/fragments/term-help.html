@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<!-- A "?" beside a technical term. Hover or focus shows the definition; a tap pins it (design-ui.js). -->
+<span th:fragment="termHelp(id, term, text)" class="term-help">
+  <button type="button" class="term-help-button" aria-expanded="false"
+          th:attr="aria-label=${#messages.msg('common.termHelp.aria', term)},aria-describedby=${id}">?</button>
+  <span class="term-help-text" role="tooltip" th:id="${id}" th:text="${text}">Definition</span>
+</span>
+</body>
+</html>

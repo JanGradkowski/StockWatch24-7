@@ -7,6 +7,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BoundedTtlCacheTest {
 
     @Test
+    void failedComputationCanBeRetriedWithoutPoisoningTheCache() {
+        BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> cache.getOrCompute("one", () -> {
+            throw new IllegalStateException("failed");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(cache.getOrCompute("one", () -> "recovered")).isEqualTo("recovered");
+        assertThat(cache.getOrCompute("one", () -> "wrong")).isEqualTo("recovered");
+    }
+
+    @Test
     void enforcesStrictMaximumAndExpiresEntries() {
         BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
         cache.put("one", "1", 100);

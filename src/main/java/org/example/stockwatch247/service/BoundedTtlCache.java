@@ -4,11 +4,14 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /** Small synchronized LRU/TTL cache with a strict maximum entry count. */
 final class BoundedTtlCache<K, V> {
     private final int maximumSize;
     private final long ttlSeconds;
+    private final Object[] computations = java.util.stream.IntStream.range(0, 32)
+            .mapToObj(index -> new Object()).toArray();
     private final LinkedHashMap<K, Entry<V>> entries = new LinkedHashMap<>(128, 0.75f, true);
 
     BoundedTtlCache(int maximumSize, long ttlSeconds) {
@@ -40,6 +43,18 @@ final class BoundedTtlCache<K, V> {
 
     synchronized int size() {
         return entries.size();
+    }
+
+    V getOrCompute(K key, Supplier<V> supplier) {
+        V cached = get(key, java.time.Instant.now().getEpochSecond());
+        if (cached != null) return cached;
+        synchronized (computations[Math.floorMod(key.hashCode(), computations.length)]) {
+            cached = get(key, java.time.Instant.now().getEpochSecond());
+            if (cached != null) return cached;
+            V value = supplier.get();
+            put(key, value, java.time.Instant.now().getEpochSecond());
+            return value;
+        }
     }
 
     synchronized void removeIf(Predicate<K> predicate) {

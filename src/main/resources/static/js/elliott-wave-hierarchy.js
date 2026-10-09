@@ -1,6 +1,7 @@
 (() => {
     'use strict';
 
+    const i18n = window.StockWatchI18n;
     const TIMEFRAME_BY_INTERVAL = { '1mo': 'MONTHLY', '1wk': 'WEEKLY', '1d': 'DAILY' };
 
     class ElliottWaveHierarchyOverlay {
@@ -47,21 +48,21 @@
             this.request = controller;
             const query = this.asOfTimestamp
                 ? `?asOfExclusive=${encodeURIComponent(this.asOfTimestamp)}` : '';
-            this.setStatus('Building top-down Elliott hierarchy…');
+            this.setStatus(i18n.t('elliottHierarchy.building'));
             try {
                 const response = await fetch(
                     `/api/stocks/${encodeURIComponent(this.symbol)}/elliott-waves/hierarchy${query}`,
                     { signal: controller.signal, headers: { Accept: 'application/json' } }
                 );
-                if (!response.ok) throw new Error(`Hierarchy request failed (${response.status})`);
+                if (!response.ok) throw new Error(i18n.t('elliottHierarchy.requestFailed', response.status));
                 this.hierarchy = await response.json();
                 if (!this.hierarchy?.available) {
-                    this.setStatus(this.hierarchy?.unavailableReason || 'No fully validated Elliott hierarchy is available.');
+                    this.setStatus(this.hierarchy?.unavailableReason || i18n.t('elliottHierarchy.unavailable'));
                 }
             } catch (error) {
                 if (error.name === 'AbortError') return;
                 this.hierarchy = { available: false, waves: [], unavailableReason: error.message };
-                this.setStatus(error.message || 'Elliott hierarchy could not be loaded.');
+                this.setStatus(error.message || i18n.t('elliottHierarchy.loadFailed'));
             } finally {
                 if (this.request === controller) this.request = null;
             }
@@ -75,8 +76,8 @@
             groups.forEach(group => this.renderGroup(group));
             const waveCount = groups.reduce((total, group) => total + group.length, 0);
             this.setStatus(waveCount > 0
-                ? `${waveCount} validated ${this.intervalName().toLowerCase()} subwaves from the monthly hierarchy`
-                : `No validated ${this.intervalName().toLowerCase()} branch exists in the current hierarchy.`);
+                ? i18n.plural(`elliottHierarchy.subwaves.${timeframe}`, waveCount, waveCount)
+                : i18n.t(`elliottHierarchy.noBranch.${timeframe}`));
             return waveCount;
         }
 
@@ -156,9 +157,6 @@
             if (this.statusElement) this.statusElement.textContent = message || '';
         }
 
-        intervalName() {
-            return { '1mo': 'Monthly', '1wk': 'Weekly', '1d': 'Daily' }[this.interval] || 'Selected';
-        }
     }
 
     function groupsAtTimeframe(roots, timeframe) {

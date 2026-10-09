@@ -5,5 +5,7 @@ public enum HarmonicStopStatus {
     PROJECTION_ONLY,
     TARGET_REACHED,
     STOPPED,
-    TIME_STOPPED
+    TIME_STOPPED,
+    /** The next candle opened beyond the stop or target, so the entry was never filled. */
+    NOT_FILLED
 }

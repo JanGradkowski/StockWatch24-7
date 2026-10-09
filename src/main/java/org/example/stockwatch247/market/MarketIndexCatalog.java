@@ -43,7 +43,21 @@ public final class MarketIndexCatalog {
                     List.of("HSI")),
             index("^STOXX50E", "EURO STOXX 50", "STOXX", "EUR",
                     List.of("EURO STOXX", "EURO STOXX 50", "STOXX 50", "STOXX50E"),
-                    List.of("STOXX50E"))
+                    List.of("STOXX50E")),
+            // Local relative-strength benchmarks; search aliases only, so no stock ticker is shadowed.
+            index("^GSPTSE", "S&P/TSX Composite", "TSX", "CAD", List.of("S&P/TSX", "TSX COMPOSITE", "GSPTSE"), List.of()),
+            index("^AXJO", "S&P/ASX 200", "ASX", "AUD", List.of("ASX 200", "S&P/ASX 200", "AXJO"), List.of()),
+            index("^SSMI", "Swiss Market Index", "SIX", "CHF", List.of("SMI", "SWISS MARKET INDEX", "SSMI"), List.of()),
+            index("^OMX", "OMX Stockholm 30", "OMX STOCKHOLM", "SEK", List.of("OMXS30", "OMX STOCKHOLM 30"), List.of()),
+            index("^AEX", "AEX", "EURONEXT AMSTERDAM", "EUR", List.of("AEX INDEX", "AMSTERDAM EXCHANGE INDEX"), List.of()),
+            index("^BFX", "BEL 20", "EURONEXT BRUSSELS", "EUR", List.of("BEL 20", "BEL20"), List.of()),
+            index("FTSEMIB.MI", "FTSE MIB", "BORSA ITALIANA", "EUR", List.of("FTSE MIB", "FTSEMIB"), List.of()),
+            index("^IBEX", "IBEX 35", "BME", "EUR", List.of("IBEX", "IBEX 35"), List.of()),
+            index("^OMXC25", "OMX Copenhagen 25", "OMX COPENHAGEN", "DKK", List.of("OMXC25", "OMX COPENHAGEN 25"), List.of()),
+            index("^OMXH25", "OMX Helsinki 25", "OMX HELSINKI", "EUR", List.of("OMXH25", "OMX HELSINKI 25"), List.of()),
+            index("^ATX", "ATX", "WIENER BOERSE", "EUR", List.of("ATX INDEX", "AUSTRIAN TRADED INDEX"), List.of()),
+            index("PSI20.LS", "PSI", "EURONEXT LISBON", "EUR", List.of("PSI 20", "PSI20"), List.of()),
+            index("^ISEQ", "ISEQ All Share", "EURONEXT DUBLIN", "EUR", List.of("ISEQ", "ISEQ ALL SHARE"), List.of())
     );
 
     private static final Map<String, IndexDefinition> BY_SYMBOL = buildBySymbol();

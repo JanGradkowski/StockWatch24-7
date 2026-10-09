@@ -375,8 +375,11 @@ public class CongressionalActivityService {
         if (candles.isEmpty()) {
             return ActivityReturn.unavailable();
         }
+        // Followers learn of a trade only when it is disclosed, so the return they could have caught
+        // starts at the first completed close after the disclosure date.
+        LocalDate publicDate = trade.getDisclosureDate() == null ? trade.getTransactionDate() : trade.getDisclosureDate();
         Candle entry = candles.stream()
-                .filter(candle -> !candleDate(candle).isBefore(trade.getTransactionDate()))
+                .filter(candle -> candleDate(candle).isAfter(publicDate))
                 .findFirst()
                 .orElse(null);
         Candle latest = candles.getLast();

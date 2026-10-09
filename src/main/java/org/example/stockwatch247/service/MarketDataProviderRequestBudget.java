@@ -17,18 +17,25 @@ import java.util.Locale;
 @Service
 public class MarketDataProviderRequestBudget {
     private static final String TWELVE_DATA = "TWELVE_DATA";
+    private static final String TWELVE_DATA_INTERACTIVE = "TWELVE_DATA_INTERACTIVE";
+    private static final ThreadLocal<Boolean> BACKGROUND = ThreadLocal.withInitial(() -> false);
 
     private final JdbcTemplate jdbcTemplate;
     private final int twelveDataMinuteLimit;
     private final int twelveDataDailyLimit;
+    private final int interactiveMinuteLimit;
+    private final int interactiveDailyLimit;
     private final Clock clock;
 
     @Autowired
     public MarketDataProviderRequestBudget(
             JdbcTemplate jdbcTemplate,
             @Value("${market-data.twelve-data.minute-request-limit:7}") int twelveDataMinuteLimit,
-            @Value("${market-data.twelve-data.daily-request-limit:760}") int twelveDataDailyLimit) {
-        this(jdbcTemplate, twelveDataMinuteLimit, twelveDataDailyLimit, Clock.systemUTC());
+            @Value("${market-data.twelve-data.daily-request-limit:760}") int twelveDataDailyLimit,
+            @Value("${market-data.twelve-data.interactive-minute-request-limit:3}") int interactiveMinuteLimit,
+            @Value("${market-data.twelve-data.interactive-daily-request-limit:250}") int interactiveDailyLimit) {
+        this(jdbcTemplate, twelveDataMinuteLimit, twelveDataDailyLimit, interactiveMinuteLimit,
+                interactiveDailyLimit, Clock.systemUTC());
     }
 
     MarketDataProviderRequestBudget(
@@ -36,10 +43,42 @@ public class MarketDataProviderRequestBudget {
             int twelveDataMinuteLimit,
             int twelveDataDailyLimit,
             Clock clock) {
+        this(jdbcTemplate, twelveDataMinuteLimit, twelveDataDailyLimit,
+                twelveDataMinuteLimit, twelveDataDailyLimit, clock);
+    }
+
+    MarketDataProviderRequestBudget(
+            JdbcTemplate jdbcTemplate,
+            int twelveDataMinuteLimit,
+            int twelveDataDailyLimit,
+            int interactiveMinuteLimit,
+            int interactiveDailyLimit,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.twelveDataMinuteLimit = Math.max(1, twelveDataMinuteLimit);
         this.twelveDataDailyLimit = Math.max(1, twelveDataDailyLimit);
+        this.interactiveMinuteLimit = Math.clamp(interactiveMinuteLimit, 1, this.twelveDataMinuteLimit);
+        this.interactiveDailyLimit = Math.clamp(interactiveDailyLimit, 1, this.twelveDataDailyLimit);
         this.clock = clock;
+    }
+
+    /**
+     * Marks the current thread as scheduled analysis. Work started by people (page views, searches,
+     * imports) uses a capped share so browsing cannot starve the alert pipeline of provider calls.
+     */
+    public static Scope background() {
+        boolean previous = BACKGROUND.get();
+        BACKGROUND.set(true);
+        return () -> BACKGROUND.set(previous);
+    }
+
+    public interface Scope extends AutoCloseable {
+        @Override
+        void close();
+    }
+
+    static boolean isBackground() {
+        return BACKGROUND.get();
     }
 
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
@@ -48,6 +87,10 @@ public class MarketDataProviderRequestBudget {
         Instant dayStart = ZonedDateTime.ofInstant(now, ZoneOffset.UTC)
                 .truncatedTo(ChronoUnit.DAYS).toInstant();
         Instant minuteStart = now.truncatedTo(ChronoUnit.MINUTES);
+        if (!BACKGROUND.get()) {
+            consumeWindow(TWELVE_DATA_INTERACTIVE, "DAY", dayStart, interactiveDailyLimit);
+            consumeWindow(TWELVE_DATA_INTERACTIVE, "MINUTE", minuteStart, interactiveMinuteLimit);
+        }
         consumeWindow(TWELVE_DATA, "DAY", dayStart, twelveDataDailyLimit);
         consumeWindow(TWELVE_DATA, "MINUTE", minuteStart, twelveDataMinuteLimit);
     }

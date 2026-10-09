@@ -118,8 +118,12 @@ public class AuthController {
             return "signup";
         }
 
+        // Both outcomes hash the password and queue one email, so response time does not reveal
+        // whether the address already has an account.
+        String passwordHash = passwordEncoder.encode(password);
         User existing = userRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
         if (existing != null) {
+            notifyExistingAccountOwner(existing);
             return registrationRedirect();
         }
 
@@ -127,17 +131,42 @@ public class AuthController {
         user.setFirstName(normalizedFirstName);
         user.setLastName(normalizedLastName);
         user.setEmail(normalizedEmail);
-        user.setPasswordHash(passwordEncoder.encode(password));
+        user.setPasswordHash(passwordHash);
         user.setElliottMotiveColor(normalizedMotiveColor);
         user.setElliottCorrectiveColor(normalizedCorrectiveColor);
         user.setVerified(false);
+        // The verification email is sent before any signed-in visit, so remember the signup page's language.
+        user.setDetectedLanguage(org.example.stockwatch247.i18n.AppLanguage.of(
+                org.example.stockwatch247.i18n.Messages.current()).code());
         try {
             emailVerificationService.registerNewUser(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException concurrentSignup) {
+            // Another request registered this address first; answer exactly as for an existing account.
+            return registrationRedirect();
         } catch (IllegalStateException ignored) {
             model.addAttribute("error", "Verification email could not be sent. Please try again later.");
             return "signup";
         }
         return registrationRedirect();
+    }
+
+    @Autowired(required = false)
+    private org.example.stockwatch247.security.RequestRateLimiter rateLimiter;
+    @Autowired(required = false)
+    private org.example.stockwatch247.service.AlertNotificationService notificationService;
+    @org.springframework.beans.factory.annotation.Value("${app.public-base-url:http://localhost:8080}")
+    private String publicBaseUrl = "http://localhost:8080";
+
+    private void notifyExistingAccountOwner(User existing) {
+        if (notificationService == null) return;
+        if (rateLimiter != null && !rateLimiter.tryAcquire(
+                "signup-existing:" + existing.getId(), 1, java.time.Duration.ofHours(1))) return;
+        try {
+            notificationService.sendExistingAccountSignupNotice(existing,
+                    publicBaseUrl.replaceAll("/+$", "") + "/login");
+        } catch (RuntimeException unavailable) {
+            // The response must not differ when mail delivery is unavailable.
+        }
     }
 
     @PostMapping("/resend-verification")
@@ -176,8 +205,16 @@ public class AuthController {
                 ? "redirect:/login?verified=true"
                 : "redirect:/login?verificationError=true";
     }
+    /** Insider and congressional filings get their own page, built from the same dashboard data. */
+    @GetMapping("/ticker-alerts")
+    public String tickerAlertsPage(Model model, Principal principal) {
+        model.addAttribute("dashboardView", "alerts");
+        return homePage(model, principal);
+    }
+
     @GetMapping("/home")
     public String homePage(Model model, Principal principal) {
+        if (!model.containsAttribute("dashboardView")) model.addAttribute("dashboardView", "technical");
         // We can fetch the full user object using the email from Principal
         User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
 

@@ -31,7 +31,7 @@ public class WatchlistIndexCatalog {
     public List<PresetView> all() {
         return presets.stream().map(p->new PresetView(p.id(),p.name(),p.region(),p.country(),p.symbol(),p.source(),p.asOf(),p.constituents().size())).toList();
     }
-    public Preset get(String id) { return presets.stream().filter(p->p.id().equals(id)).findFirst().orElseThrow(()->new IllegalArgumentException("Unknown index preset.")); }
+    public Preset get(String id) { return presets.stream().filter(p->p.id().equals(id)).findFirst().orElseThrow(()->new UserInputException("Unknown index preset.")); }
     public Instrument instrument(String symbol) { return instruments.get(symbol); }
     public record Instrument(String symbol,String name,String exchange,String currency,String type) {}
     public record Preset(String id,String name,String region,String country,String symbol,String exchange,String currency,String source,String asOf,List<Instrument> constituents) {}

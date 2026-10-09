@@ -137,25 +137,11 @@ public class InsiderActivityCheckJobStore {
             int maximumAttempts,
             Duration retryDelay) {
         String safeError = safeError(error);
-        if (job.attempts() >= Math.max(1, maximumAttempts)) {
-            jdbcTemplate.update(
-                    """
-                    update insider_activity_check_jobs
-                    set status = 'FAILED',
-                        lease_until = null,
-                        last_error = ?,
-                        updated_at = current_timestamp
-                    where id = ?
-                      and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
-                    """,
-                    safeError,
-                    job.id(), job.attempts());
-            return;
-        }
         jdbcTemplate.update(
                 """
                 update insider_activity_check_jobs
-                set status = 'PENDING',
+                set status = case when calculation_failures + 1 >= ? then 'FAILED' else 'PENDING' end,
+                    calculation_failures = calculation_failures + 1,
                     lease_until = null,
                     last_error = ?,
                     available_at = current_timestamp + (? * interval '1 second'),
@@ -163,7 +149,7 @@ public class InsiderActivityCheckJobStore {
                 where id = ?
                   and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
                 """,
-                safeError,
+                Math.max(1, maximumAttempts), safeError,
                 Math.max(1L, retryDelay.toSeconds()),
                 job.id(), job.attempts());
     }

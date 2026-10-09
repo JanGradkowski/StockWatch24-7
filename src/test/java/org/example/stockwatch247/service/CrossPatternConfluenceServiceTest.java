@@ -12,6 +12,19 @@ import java.util.stream.LongStream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CrossPatternConfluenceServiceTest {
+
+    @Test
+    void scoringElliottDoesNotInvokeElliottReplay() {
+        var waves = org.mockito.Mockito.mock(ElliottWaveDetectionService.class);
+        var harmonics = org.mockito.Mockito.mock(HarmonicPatternDetectionService.class);
+        var raw = java.util.stream.LongStream.rangeClosed(1, 12).mapToObj(time ->
+                new org.example.stockwatch247.model.Candle("TEST", "1d", time, 10.0, 11.0, 9.0, 10.0, 100L)).toList();
+        var timeline = service.buildTimeline(raw, List.of(), List.of(),
+                org.example.stockwatch247.model.enums.TimeInterval.DAILY, null, null, waves, harmonics);
+        service.assess(80, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY, 12, timeline);
+        org.mockito.Mockito.verifyNoInteractions(waves);
+        org.mockito.Mockito.verify(harmonics, org.mockito.Mockito.atLeastOnce()).detectAll(org.mockito.ArgumentMatchers.any());
+    }
     private final CrossPatternConfluenceService service =
             new CrossPatternConfluenceService(new CandlePatternDetectionService());
     private final List<Long> candles = LongStream.rangeClosed(1, 20).boxed().toList();

@@ -19,6 +19,8 @@ public class InsiderActivityPollingService {
 
     private org.example.stockwatch247.service.JobLeaseGuard leaseGuard;
     @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.service.InfrastructureRecovery infrastructureRecovery;
+    @org.springframework.beans.factory.annotation.Autowired
     void setLeaseGuard(org.example.stockwatch247.service.JobLeaseGuard leaseGuard) { this.leaseGuard = leaseGuard; }
 
     private static final Logger log = LoggerFactory.getLogger(InsiderActivityPollingService.class);
@@ -97,6 +99,7 @@ public class InsiderActivityPollingService {
                         job.tickerSymbol());
             }
         } catch (RuntimeException exception) {
+            if (org.example.stockwatch247.service.InfrastructureRecovery.isDatabaseUnavailable(exception)) throw exception;
             jobStore.retryOrFail(
                     job,
                     exception.getClass().getSimpleName()
@@ -123,11 +126,20 @@ public class InsiderActivityPollingService {
     @Scheduled(cron = "${insider-activity.cleanup-cron:0 45 2 * * *}")
     public void cleanupFinishedJobs() {
         if (enabled) {
-            jobStore.removeFinishedBefore(Duration.ofDays(30));
+            runWithRecovery(() -> jobStore.removeFinishedBefore(Duration.ofDays(30)));
         }
     }
 
     private void enqueueLatestDueCheck() {
+        runWithRecovery(this::enqueueLatestDueCheckScoped);
+    }
+
+    private void runWithRecovery(Runnable operation) {
+        if (infrastructureRecovery == null) operation.run();
+        else infrastructureRecovery.run("insider-schedule", operation);
+    }
+
+    private void enqueueLatestDueCheckScoped() {
         if (!enabled) {
             return;
         }

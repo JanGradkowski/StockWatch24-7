@@ -197,7 +197,8 @@ public class CandlestickPatternPreferencesService {
                     .findFirst().orElseThrow();
             List<NumericSetting> settings = definition.settings().stream().map(item -> new NumericSetting(
                     item.key(), item.label(), item.description(), item.unit(), item.effect(), item.min(), item.max(),
-                    item.step(), stored.values().get(item.key()), item.factoryValue())).toList();
+                    item.step(), stored.values().get(item.key()), item.factoryValue(),
+                    item.group() + "." + item.key())).toList();
             boolean factory = stored.trendRequirement() == definition.factoryTrendRequirement()
                     && definition.settings().stream().allMatch(item ->
                     Double.compare(stored.values().get(item.key()), item.factoryValue()) == 0)
@@ -386,65 +387,71 @@ public class CandlestickPatternPreferencesService {
     private static String display(double value) { return value == Math.rint(value) ? Long.toString((long) value) : Double.toString(value); }
 
     private static NumericDefinition percent(String key, String label, String description, String effect, double value) {
-        return new NumericDefinition(key, label, description, "%", effect, 0, 100, 0.5, value);
+        return new NumericDefinition(key, label, description, "%", effect, 0, 100, 0.5, value, null);
     }
     private static NumericDefinition multiple(String key, String label, String description, String effect, double value) {
-        return new NumericDefinition(key, label, description, "×", effect, 0, 10, 0.05, value);
+        return new NumericDefinition(key, label, description, "×", effect, 0, 10, 0.05, value, null);
+    }
+    /** Measurements shared by a pattern group carry the group in their text key ("wick.minBodyPercent"). */
+    private static List<NumericDefinition> grouped(String group, List<NumericDefinition> settings) {
+        return settings.stream().map(item -> item.group() != null ? item : new NumericDefinition(item.key(), item.label(),
+                item.description(), item.unit(), item.effect(), item.min(), item.max(), item.step(), item.factoryValue(), group))
+                .toList();
     }
     private static List<NumericDefinition> wick(double min, double longMultiple, double shortMultiple, double max) {
-        return List.of(
+        return grouped("wick", List.of(
                 percent("minBodyPercent", "Smallest permitted real body", "The distance from open to close, divided by the candle's full high-to-low range.", "Raise this to reject extremely thin, doji-like bodies.", min),
                 multiple("minLongShadowBodyMultiple", "Minimum long-shadow length", "The defining long shadow must be at least this many times the real-body height.", "Raise this to demand a more pronounced rejection wick.", longMultiple),
                 multiple("maxShortShadowBodyMultiple", "Maximum opposite-shadow length", "The short shadow on the opposite side may be no more than this many times the real-body height.", "Lower this to require a cleaner candle with less wick on the opposite side.", shortMultiple),
-                percent("maxBodyPercent", "Largest permitted real body", "The distance from open to close, divided by the candle's full high-to-low range.", "Lower this to require a smaller body relative to the candle's complete range.", max));
+                percent("maxBodyPercent", "Largest permitted real body", "The distance from open to close, divided by the candle's full high-to-low range.", "Lower this to require a smaller body relative to the candle's complete range.", max)));
     }
     private static List<NumericDefinition> engulfing() {
-        return List.of(
+        return grouped("engulfing", List.of(
                 percent("previousMinBodyPercent", "Minimum first-candle body", "The first candle's open-to-close body as a percentage of its full high-to-low range.", "Raise this to require a more decisive first candle.", 0),
                 multiple("currentMinPreviousBodyMultiple", "Minimum second body versus first body", "The second candle's real body must be at least this many times the first candle's real body.", "Raise this to require the engulfing candle to overpower the first candle by a larger margin.", 1),
-                percent("currentMinBodyPercent", "Minimum second-candle body", "The engulfing candle's open-to-close body as a percentage of its own full high-to-low range.", "Raise this to require a stronger directional engulfing candle.", 0));
+                percent("currentMinBodyPercent", "Minimum second-candle body", "The engulfing candle's open-to-close body as a percentage of its own full high-to-low range.", "Raise this to require a stronger directional engulfing candle.", 0)));
     }
     private static List<NumericDefinition> reversalPair() {
-        return List.of(
+        return grouped("reversalPair", List.of(
                 percent("previousMinBodyPercent", "Minimum first-candle body", "The first candle's real body as a percentage of its full range.", "Raise this to require a stronger first candle.", 55),
                 multiple("previousMinMedianMultiple", "First body versus recent median", "The first body must be at least this many times the median real-body size in the preceding candles.", "Raise this to make 'long first candle' more selective.", 1.1),
                 percent("currentMinBodyPercent", "Minimum reversal-candle body", "The second candle's real body as a percentage of its own full range.", "Raise this to require a more forceful reversal candle.", 50),
                 multiple("currentMinMedianMultiple", "Reversal body versus recent median", "The second body must be at least this many times the recent median real-body size.", "Raise this to demand a larger reversal body.", .9),
-                percent("penetrationPercent", "Minimum close into the first body", "How far the second close must travel through the first candle's real body, measured from the reversal side.", "Raise this to require deeper reversal confirmation.", 50));
+                percent("penetrationPercent", "Minimum close into the first body", "How far the second close must travel through the first candle's real body, measured from the reversal side.", "Raise this to require deeper reversal confirmation.", 50)));
     }
     private static List<NumericDefinition> harami() {
-        return List.of(
+        return grouped("harami", List.of(
                 percent("firstMinBodyPercent", "Minimum outside-candle body", "The first candle's real body as a percentage of its full range.", "Raise this to require a stronger outside candle.", 55),
                 multiple("firstMinMedianMultiple", "Outside body versus recent median", "The first body must be at least this many times the median body of preceding candles.", "Raise this to make the required outside candle more exceptional.", 1.1),
                 percent("secondMaxFirstBodyPercent", "Maximum inside body versus outside body", "The inside candle's body may be no more than this percentage of the first candle's body.", "Lower this to demand a more compact inside candle.", 45),
-                multiple("secondMaxMedianMultiple", "Maximum inside body versus recent median", "The inside body may be no more than this many times the recent median body.", "Lower this to make the inside candle smaller relative to recent trading.", .75));
+                multiple("secondMaxMedianMultiple", "Maximum inside body versus recent median", "The inside body may be no more than this many times the recent median body.", "Lower this to make the inside candle smaller relative to recent trading.", .75)));
     }
     private static List<NumericDefinition> haramiCross() {
         List<NumericDefinition> settings = new ArrayList<>(harami());
-        settings.add(percent("maxBodyPercent", "Maximum doji body", "The inside candle's body as a percentage of its full range.", "Lower this to require a thinner doji.", 10));
+        settings.addAll(grouped("haramiCross", List.of(percent("maxBodyPercent", "Maximum doji body", "The inside candle's body as a percentage of its full range.", "Lower this to require a thinner doji.", 10))));
         return List.copyOf(settings);
     }
     private static List<NumericDefinition> star() {
-        return List.of(
+        return grouped("star", List.of(
                 percent("firstMinBodyPercent", "Minimum first-candle body", "The first candle's body as a percentage of its complete high-to-low range.", "Raise this to require a more decisive opening candle.", 55),
                 multiple("firstMinMedianMultiple", "First body versus recent median", "The first body must be at least this many times the median body in preceding candles.", "Raise this to make the first candle more exceptional.", 1.1),
                 percent("middleMaxBodyPercent", "Maximum star-candle body", "The middle candle's body as a percentage of its own full range.", "Lower this to require a smaller, more indecisive middle candle.", 30),
                 multiple("middleMaxMedianMultiple", "Star body versus recent median", "The middle body may be no more than this many times the preceding median body.", "Lower this to require stronger contraction in the middle candle.", .75),
                 percent("currentMinBodyPercent", "Minimum confirmation-candle body", "The final candle's body as a percentage of its own full range.", "Raise this to require stronger reversal confirmation.", 50),
                 multiple("currentMinMedianMultiple", "Confirmation body versus recent median", "The final body must be at least this many times the preceding median body.", "Raise this to demand a larger confirmation candle.", .9),
-                percent("penetrationPercent", "Minimum close into the first body", "How far the final close must travel through the first candle's real body.", "Raise this to require deeper confirmation into the first candle.", 50));
+                percent("penetrationPercent", "Minimum close into the first body", "How far the final close must travel through the first candle's real body.", "Raise this to require deeper confirmation into the first candle.", 50)));
     }
     private static List<NumericDefinition> threeCandleRun() {
-        return List.of(
+        return grouped("threeCandleRun", List.of(
                 percent("candleMinBodyPercent", "Minimum body for each of the three candles", "Every candle's real body as a percentage of that candle's full high-to-low range.", "Raise this to require all three candles to close more decisively.", 50),
                 multiple("candleMinMedianMultiple", "Each body versus recent median", "Every body must be at least this many times the median body in preceding candles.", "Raise this to require consistently larger candles.", .8),
-                multiple("maxDirectionalShadowBodyMultiple", "Maximum wick beyond each close", "The wick past each candle's close, in the direction opposite the run, may be no more than this many times its body.", "Lower this to require closes nearer each candle's extreme.", .3));
+                multiple("maxDirectionalShadowBodyMultiple", "Maximum wick beyond each close", "The wick past each candle's close, in the direction of the run, may be no more than this many times its body.", "Lower this to require closes nearer each candle's extreme.", .3)));
     }
 
     private static List<PatternDefinition> factoryDefinitions() {
         return List.of(
                 p(CandlePattern.DOJI, "Doji", "One-candle indecision", "Open and close are nearly equal.", "The candle must have a non-zero high-to-low range.", TrendRequirement.NONE,
-                        List.of(percent("maxBodyPercent", "Maximum real-body size", "The open-to-close distance as a percentage of the candle's full high-to-low range.", "Lower this to accept only thinner, more indecisive bodies.", 10))),
+                        grouped("doji", List.of(percent("maxBodyPercent", "Maximum real-body size", "The open-to-close distance as a percentage of the candle's full high-to-low range.", "Lower this to accept only thinner, more indecisive bodies.", 10)))),
                 p(CandlePattern.HAMMER, "Hammer", "One-candle bullish rejection", "A small body near the high with a long lower shadow after weakness.", "Body color is unrestricted; the lower shadow is the defining wick.", TrendRequirement.DOWN, wick(2,2,.5,30)),
                 p(CandlePattern.INVERTED_HAMMER, "Inverted Hammer", "One-candle bullish rejection", "A small body near the low with a long upper shadow after weakness.", "Body color is unrestricted; the upper shadow is the defining wick.", TrendRequirement.DOWN, wick(2,2,.5,30)),
                 p(CandlePattern.HANGING_MAN, "Hanging Man", "One-candle bearish warning", "A small body near the high with a long lower shadow after strength.", "Body color is unrestricted; the lower shadow is the defining wick.", TrendRequirement.UP, wick(2,2,.5,30)),
@@ -453,10 +460,10 @@ public class CandlestickPatternPreferencesService {
                 p(CandlePattern.BEARISH_ENGULFING, "Bearish Engulfing", "Two-candle bearish reversal", "A bearish second real body fully contains the prior bullish real body.", "The first candle must close above its open, the second below its open, and the second body must contain both first-body edges and be strictly larger.", TrendRequirement.UP, engulfing()),
                 p(CandlePattern.PIERCING_LINE, "Piercing Line", "Two-candle bullish reversal", "A bullish candle opens below a long bearish candle and closes deeply inside its body.", "The first candle must be bearish; the second must be bullish and open below the first low and close past the body midpoint, but below the first open.", TrendRequirement.DOWN, reversalPair()),
                 p(CandlePattern.DARK_CLOUD_COVER, "Dark Cloud Cover", "Two-candle bearish reversal", "A bearish candle opens above a long bullish candle and closes deeply inside its body.", "The first candle must be bullish; the second must be bearish and open above the first high and close past the body midpoint, but above the first open.", TrendRequirement.UP, reversalPair()),
-                p(CandlePattern.BULLISH_HARAMI, "Bullish Harami", "Two-candle bullish reversal", "A small body sits completely inside a long real body after a decline.", "Either candle may have either body color; both second-body edges must stay inside the first body. A qualifying doji is classified as Harami Cross.", TrendRequirement.DOWN, harami()),
-                p(CandlePattern.BEARISH_HARAMI, "Bearish Harami", "Two-candle bearish reversal", "A small body sits completely inside a long real body after a rise.", "Either candle may have either body color; both second-body edges must stay inside the first body. A qualifying doji is classified as Harami Cross.", TrendRequirement.UP, harami()),
-                p(CandlePattern.BULLISH_HARAMI_CROSS, "Bullish Harami Cross", "Two-candle bullish reversal", "A doji body sits inside a long real body after a decline.", "Body colors are unrestricted; the doji body must lie strictly inside the first real body.", TrendRequirement.DOWN, haramiCross()),
-                p(CandlePattern.BEARISH_HARAMI_CROSS, "Bearish Harami Cross", "Two-candle bearish reversal", "A doji body sits inside a long real body after a rise.", "Body colors are unrestricted; the doji body must lie strictly inside the first real body.", TrendRequirement.UP, haramiCross()),
+                p(CandlePattern.BULLISH_HARAMI, "Bullish Harami", "Two-candle bullish reversal", "A small body sits completely inside a long real body after a decline.", "The first candle must be bearish; the inside candle may be either color. Both second-body edges must stay inside the first body. A qualifying doji is classified as Harami Cross.", TrendRequirement.DOWN, harami()),
+                p(CandlePattern.BEARISH_HARAMI, "Bearish Harami", "Two-candle bearish reversal", "A small body sits completely inside a long real body after a rise.", "The first candle must be bullish; the inside candle may be either color. Both second-body edges must stay inside the first body. A qualifying doji is classified as Harami Cross.", TrendRequirement.UP, harami()),
+                p(CandlePattern.BULLISH_HARAMI_CROSS, "Bullish Harami Cross", "Two-candle bullish reversal", "A doji body sits inside a long real body after a decline.", "The first candle must be bearish; the doji body must lie strictly inside the first real body.", TrendRequirement.DOWN, haramiCross()),
+                p(CandlePattern.BEARISH_HARAMI_CROSS, "Bearish Harami Cross", "Two-candle bearish reversal", "A doji body sits inside a long real body after a rise.", "The first candle must be bullish; the doji body must lie strictly inside the first real body.", TrendRequirement.UP, haramiCross()),
                 p(CandlePattern.MORNING_STAR, "Morning Star", "Three-candle bullish reversal", "A long bearish candle, a small star, then a strong bullish close into the first body.", "The first candle must be bearish and the final candle bullish; the middle real body must gap entirely below the first real body.", TrendRequirement.DOWN, star()),
                 p(CandlePattern.EVENING_STAR, "Evening Star", "Three-candle bearish reversal", "A long bullish candle, a small star, then a strong bearish close into the first body.", "The first candle must be bullish and the final candle bearish; the middle real body must gap entirely above the first real body.", TrendRequirement.UP, star()),
                 p(CandlePattern.THREE_WHITE_SOLDIERS, "Three White Soldiers", "Three-candle bullish sequence", "Three strong bullish candles with rising closes and compact upper shadows.", "All three candles must be bullish; closes must rise and each later open must remain inside the preceding real body.", TrendRequirement.DOWN_OR_BASE, threeCandleRun()),
@@ -479,7 +486,7 @@ public class CandlestickPatternPreferencesService {
         STRUCTURAL_BUFFER("Textbook structural price + buffer",
                 "Starts at the pattern's textbook invalidation high or low, then moves farther away by the selected percentage of entry price."),
         FIXED_ENTRY_PERCENT("Fixed percentage from entry",
-                "Places the stop the selected adverse percentage away from the detection entry close.");
+                "Places the stop the selected percentage away from the entry price, against the trade.");
         private final String label;
         private final String description;
         StopLossMode(String label, String description) {
@@ -489,8 +496,10 @@ public class CandlestickPatternPreferencesService {
         public String label() { return label; }
         public String description() { return description; }
     }
+    /** {@code textKey} names the measurement's interface text (messages: candlestick.setting.&lt;textKey&gt;.*). */
     public record NumericSetting(String key, String label, String description, String unit, String effect,
-                                 double min, double max, double step, double value, double factoryValue) {}
+                                 double min, double max, double step, double value, double factoryValue,
+                                 String textKey) {}
     public record PatternProfile(CandlePattern pattern, String key, String label, String formation,
                                  String description, String fixedRules, TrendRequirement trendRequirement,
                                  TrendRequirement factoryTrendRequirement, List<NumericSetting> settings,
@@ -570,7 +579,7 @@ public class CandlestickPatternPreferencesService {
                                         double activationThresholdPercent,
                                         CircuitBreakerSettings factory) {}
     private record NumericDefinition(String key, String label, String description, String unit, String effect,
-                                     double min, double max, double step, double factoryValue) {}
+                                     double min, double max, double step, double factoryValue, String group) {}
     private record PatternDefinition(CandlePattern pattern, String key, String label, String formation,
                                      String description, String fixedRules, TrendRequirement factoryTrendRequirement,
                                      List<NumericDefinition> settings) {}

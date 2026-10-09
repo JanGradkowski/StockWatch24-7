@@ -20,6 +20,17 @@ import static org.mockito.Mockito.when;
 @ExtendWith(OutputCaptureExtension.class)
 class InsiderActivityPollingServiceTest {
 
+    @Test void databaseOutageDoesNotConsumeProcessingRetries() {
+        Fixture fixture=fixture();
+        var job=new InsiderActivityCheckJob(21L,7L,"AAPL",Instant.now(),12);
+        when(fixture.jobStore().claimNext(any())).thenReturn(Optional.of(job));
+        when(fixture.activityService().pollScheduledActivity(7L,"AAPL"))
+                .thenThrow(new org.springframework.jdbc.CannotGetJdbcConnectionException("offline"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(fixture.service()::processNextQueuedCheck)
+                .isInstanceOf(org.springframework.jdbc.CannotGetJdbcConnectionException.class);
+        org.mockito.Mockito.verify(fixture.jobStore(),org.mockito.Mockito.never()).retryOrFail(any(),any(),org.mockito.ArgumentMatchers.anyInt(),any());
+    }
+
     @Test
     void startupRecoveryQueuesTheLatestMissedCheck(CapturedOutput output) {
         Fixture fixture = fixture();

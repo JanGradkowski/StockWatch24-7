@@ -31,6 +31,11 @@ public class SettingsController {
     @org.springframework.beans.factory.annotation.Autowired
     void setClock(java.time.Clock clock) { this.clock = clock; }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.i18n.LanguagePreferenceService languagePreferences;
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.example.stockwatch247.i18n.Messages messages;
+
     private final UserRepository users;
     private final AlertRuleRepository alertRules;
     private final AccountSecurityService security;
@@ -65,10 +70,11 @@ public class SettingsController {
 
     @GetMapping({"/settings", "/settings/appearance", "/settings/analysis-alerts", "/settings/detection",
             "/settings/scoring", "/settings/candlestick-patterns", "/settings/elliott-waves",
-            "/settings/harmonic-formations"})
+            "/settings/harmonic-formations", "/settings/language"})
     public String page(Model model, Principal principal, HttpSession session, HttpServletRequest request) {
         User user = current(principal);
         String settingsTab = request.getRequestURI().endsWith("/appearance") ? "appearance"
+                : request.getRequestURI().endsWith("/language") ? "language"
                 : request.getRequestURI().endsWith("/analysis-alerts") ? "analysis"
                 : request.getRequestURI().endsWith("/scoring") ? "scoring"
                 : request.getRequestURI().endsWith("/candlestick-patterns") ? "candlestick-patterns"
@@ -104,6 +110,11 @@ public class SettingsController {
         }
         if ("harmonic-formations".equals(settingsTab)) {
             model.addAttribute("harmonicPatternPreferences", harmonicPatternPreferences.get(user));
+        }
+        if ("language".equals(settingsTab)) {
+            model.addAttribute("languageChoice", org.example.stockwatch247.i18n.LanguagePreferenceService.settingsChoice(user));
+            model.addAttribute("browserLanguageName", messages.get("language.name."
+                    + org.example.stockwatch247.i18n.AppLanguage.fromBrowser(request).code()));
         }
         Object setup = session.getAttribute(AccountSession.MFA_SETUP_SECRET);
         Object setupAt = session.getAttribute(AccountSession.MFA_SETUP_AT);
@@ -307,6 +318,13 @@ public class SettingsController {
             redirect.addFlashAttribute("error", exception.getMessage());
         }
         return "redirect:/settings/appearance";
+    }
+
+    @PostMapping("/settings/language")
+    public String language(@RequestParam String language, Principal principal) {
+        languagePreferences.save(current(principal).getId(), language);
+        // The confirmation is rendered after the redirect, so it already appears in the new language.
+        return "redirect:/settings/language?languageSaved=true";
     }
 
     @PostMapping(path = "/api/settings/theme", produces = MediaType.APPLICATION_JSON_VALUE)

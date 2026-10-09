@@ -10,7 +10,7 @@ import org.example.stockwatch247.security.SecurityInputValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 
@@ -72,24 +72,12 @@ public class HistoricalElliottWaveService {
             ElliottWaveDetectionService.DetectionRules rules) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         String interval = SecurityInputValidator.requireInterval(rawInterval);
-        TimeInterval timeInterval = switch (interval) {
-            case "1d" -> TimeInterval.DAILY;
-            case "1wk" -> TimeInterval.WEEKLY;
-            case "1mo" -> TimeInterval.MONTHLY;
-            default -> throw new IllegalArgumentException(
-                    "Historical Elliott details require a daily, weekly, or monthly interval.");
-        };
+        TimeInterval timeInterval = elliottInterval(interval);
         if (stage == null || endpointTimestamp <= 0L) {
             throw new IllegalArgumentException("A valid Elliott stage and endpoint are required.");
         }
 
-        long firstIncompleteTimestamp = candleCompletionService.firstIncompleteCandleTimestamp(timeInterval);
-        List<Candle> completedCandles = candleRepository
-                .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
-                .stream()
-                .filter(candle -> candle == null || candle.getTimestamp() == null
-                        || candle.getTimestamp() < firstIncompleteTimestamp)
-                .toList();
+        List<Candle> completedCandles = completedCandles(symbol, interval, timeInterval);
         List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
                 completedCandles,
                 completedCandles.size(),
@@ -152,16 +140,8 @@ public class HistoricalElliottWaveService {
                 .toList();
         int signalIndex = candleIndex(candles, confirmationTimestamp);
         ResultView result = result(candles, signalIndex, tradeSignal);
-        int firstPointIndex = candleIndex(candles, structure.points().getFirst().timestamp());
-        int lastPointIndex = candleIndex(candles, structure.points().getLast().timestamp());
-        int chartStart = Math.max(0, firstPointIndex - 5);
-        int chartEnd = Math.min(
-                candles.size(),
-                Math.max(lastPointIndex + 1, signalIndex < 0 ? 0 : signalIndex + RESULT_CANDLES + 1)
-        );
-        List<CandleView> chartCandles = chartStart < chartEnd
-                ? candles.subList(chartStart, chartEnd).stream().map(this::toCandleView).toList()
-                : List.of();
+        List<CandleView> chartCandles = chartCandles(candles, structure.points().getFirst().timestamp(),
+                structure.points().getLast().timestamp(), signalIndex);
 
         String cycleKey = detector.lifecycleCycleKey(structure).orElse(null);
         return new HistoricalElliottWaveDetail(
@@ -176,12 +156,12 @@ public class HistoricalElliottWaveService {
                 confirmationTimestamp == null ? "DETECTED" : "CONFIRMED",
                 confirmationTimestamp == null ? "Detected" : "Confirmed",
                 endpointTimestamp,
-                SignalPeriodFormatter.format(endpointTimestamp, timeInterval, ZoneId.systemDefault()),
+                SignalPeriodFormatter.format(endpointTimestamp, timeInterval, ZoneOffset.UTC),
                 confirmationTimestamp,
                 SignalPeriodFormatter.format(
                         confirmationTimestamp == null ? endpointTimestamp : confirmationTimestamp,
                         timeInterval,
-                        ZoneId.systemDefault()),
+                        ZoneOffset.UTC),
                 confluence.adjustedScore(),
                 ElliottWaveDetectionService.SETUP_SCORE_VERSION,
                 scoreSections,
@@ -195,8 +175,131 @@ public class HistoricalElliottWaveService {
                         .map(point -> new PointView(point.label(), point.timestamp(), point.price(), point.pivotType()))
                         .toList(),
                 chartCandles,
-                result
+                result,
+                false
         );
+    }
+
+    /**
+     * Shape-only counts found without a parent impulse. The detector confirms them with a reversal
+     * from the final pivot, so that pivot alone sets the trade direction.
+     */
+    public HistoricalElliottWaveDetail findCandidateDetail(
+            String rawSymbol,
+            String rawInterval,
+            long endpointTimestamp,
+            String candidateKey,
+            ElliottWaveDetectionService.DetectionRules rules) {
+        String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
+        String interval = SecurityInputValidator.requireInterval(rawInterval);
+        TimeInterval timeInterval = elliottInterval(interval);
+        if (endpointTimestamp <= 0L || candidateKey == null || candidateKey.isBlank()
+                || candidateKey.length() > 512) {
+            throw new IllegalArgumentException("A valid Elliott candidate and endpoint are required.");
+        }
+
+        List<Candle> completedCandles = completedCandles(symbol, interval, timeInterval);
+        List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
+                completedCandles,
+                completedCandles.size(),
+                timeInterval
+        );
+        ElliottWaveDetectionService detector = rules == null
+                ? detectionService
+                : detectionService.configured(rules);
+        ElliottWaveDetectionService.ElliottPatternCandidate candidate = detector
+                .findPatternCandidates(enriched, endpointTimestamp, endpointTimestamp)
+                .stream()
+                .filter(item -> candidateKey.equals(item.candidateKey())
+                        && item.points().getLast().timestamp() == endpointTimestamp)
+                .max(Comparator.comparingInt(ElliottWaveDetectionService.ElliottPatternCandidate::qualityScore))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "The Elliott pattern candidate is no longer available in the completed candle cache."));
+
+        List<Candle> candles = PatternCandleIntegrity.rawSegments(completedCandles).stream()
+                .filter(segment -> candleIndex(segment, candidate.points().getFirst().timestamp()) >= 0)
+                .findFirst().orElse(List.of());
+        TradeSignal tradeSignal = "LOW".equals(candidate.points().getLast().pivotType())
+                ? TradeSignal.BUY : TradeSignal.SELL;
+        long confirmationTimestamp = candidate.confirmationTimestamp();
+        int signalIndex = candleIndex(candles, confirmationTimestamp);
+        List<String> evidence = candidate.evidence() == null ? List.of() : candidate.evidence();
+        List<ScoreSectionView> scoreSections = List.of(
+                new ScoreSectionView("Pattern geometry", null, "Shape-only evidence", evidence.stream()
+                        .map(text -> new ScoreDetailView("Observation", text, null))
+                        .toList()),
+                new ScoreSectionView("Parent count", null, "Unverified", List.of(new ScoreDetailView(
+                        "Legal positions",
+                        "This shape can occupy " + String.join(", ", candidate.legalParentPositions())
+                                + " in a larger count; no detected parent structure confirms which.",
+                        null))));
+
+        return new HistoricalElliottWaveDetail(
+                symbol,
+                interval,
+                timeInterval,
+                null,
+                null,
+                candidate.structureLabel(),
+                candidate.direction(),
+                tradeSignal,
+                "CONFIRMED",
+                "Confirmed",
+                endpointTimestamp,
+                SignalPeriodFormatter.format(endpointTimestamp, timeInterval, ZoneOffset.UTC),
+                confirmationTimestamp,
+                SignalPeriodFormatter.format(confirmationTimestamp, timeInterval, ZoneOffset.UTC),
+                candidate.qualityScore(),
+                "Candidate quality",
+                scoreSections,
+                0.0,
+                0.0,
+                0.0,
+                "",
+                "",
+                List.of(),
+                candidate.points().stream()
+                        .map(point -> new PointView(point.label(), point.timestamp(), point.price(), point.pivotType()))
+                        .toList(),
+                chartCandles(candles, candidate.points().getFirst().timestamp(),
+                        candidate.points().getLast().timestamp(), signalIndex),
+                result(candles, signalIndex, tradeSignal),
+                true
+        );
+    }
+
+    private TimeInterval elliottInterval(String interval) {
+        return switch (interval) {
+            case "1d" -> TimeInterval.DAILY;
+            case "1wk" -> TimeInterval.WEEKLY;
+            case "1mo" -> TimeInterval.MONTHLY;
+            default -> throw new IllegalArgumentException(
+                    "Historical Elliott details require a daily, weekly, or monthly interval.");
+        };
+    }
+
+    private List<Candle> completedCandles(String symbol, String interval, TimeInterval timeInterval) {
+        long firstIncompleteTimestamp = candleCompletionService.firstIncompleteCandleTimestamp(timeInterval);
+        return candleRepository
+                .findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
+                .stream()
+                .filter(candle -> candle == null || candle.getTimestamp() == null
+                        || candle.getTimestamp() < firstIncompleteTimestamp)
+                .toList();
+    }
+
+    private List<CandleView> chartCandles(List<Candle> candles, Long firstTimestamp, Long lastTimestamp,
+                                          int signalIndex) {
+        int firstPointIndex = candleIndex(candles, firstTimestamp);
+        int lastPointIndex = candleIndex(candles, lastTimestamp);
+        int chartStart = Math.max(0, firstPointIndex - 5);
+        int chartEnd = Math.min(
+                candles.size(),
+                Math.max(lastPointIndex + 1, signalIndex < 0 ? 0 : signalIndex + RESULT_CANDLES + 1)
+        );
+        return chartStart < chartEnd
+                ? candles.subList(chartStart, chartEnd).stream().map(this::toCandleView).toList()
+                : List.of();
     }
 
     private ElliottWaveDetectionService.ElliottWavePoint endpoint(
@@ -272,13 +375,15 @@ public class HistoricalElliottWaveService {
                             : "At least 10 completed candles after confirmation are required."
             );
         }
-        double signalClose = candles.get(signalIndex).getClosePrice();
+        // Measured from the first tradable price after confirmation: the next candle's open.
+        double signalClose = candles.get(signalIndex + 1).getOpenPrice() != null
+                ? candles.get(signalIndex + 1).getOpenPrice() : candles.get(signalIndex).getClosePrice();
         List<ResultPointView> points = new java.util.ArrayList<>(available + 1);
         Candle signalCandle = candles.get(signalIndex);
         points.add(new ResultPointView(
                 0,
                 signalCandle.getTimestamp(),
-                SignalPeriodFormatter.format(signalCandle.getTimestamp(), intervalFor(signalCandle), ZoneId.systemDefault()),
+                SignalPeriodFormatter.format(signalCandle.getTimestamp(), intervalFor(signalCandle), ZoneOffset.UTC),
                 signalClose,
                 0.0,
                 0.0
@@ -290,7 +395,7 @@ public class HistoricalElliottWaveService {
             points.add(new ResultPointView(
                     offset,
                     candle.getTimestamp(),
-                    SignalPeriodFormatter.format(candle.getTimestamp(), intervalFor(candle), ZoneId.systemDefault()),
+                    SignalPeriodFormatter.format(candle.getTimestamp(), intervalFor(candle), ZoneOffset.UTC),
                     candle.getClosePrice(),
                     directionalDifference / signalClose * 100.0,
                     directionalDifference
@@ -383,7 +488,8 @@ public class HistoricalElliottWaveService {
             List<String> qualityWarnings,
             List<PointView> points,
             List<CandleView> candles,
-            ResultView result) {
+            ResultView result,
+            boolean candidate) {
 
         public String intervalLabel() {
             return switch (timeInterval) {

@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 
 async function setup(selected = '') {
   const dom = new JSDOM(`<body><div data-named-watchlists data-selected-id="${selected}"></div></body>`,
@@ -14,6 +15,7 @@ async function setup(selected = '') {
       ] }] }
     : [ { id: 1, name: 'Research', instruments: 1, monitored: 1, unread: 3 },
         { id: 2, name: 'Other list', instruments: 0, monitored: 0, unread: 0 } ] });
+  dom.window.StockWatchI18n = StockWatchI18n;
   for (const file of ['watchlist-picker', 'watchlists']) {
     dom.window.eval(fs.readFileSync(`src/main/resources/static/js/${file}.js`, 'utf8'));
   }
@@ -66,6 +68,7 @@ test('selection persists across pages and filters and bulk follows/removal send 
     } else value = [{ id: 1, name: 'Research', instruments: 2 }];
     return { ok: true, status: 200, text: async () => JSON.stringify(value), json: async () => value };
   };
+  dom.window.StockWatchI18n = StockWatchI18n;
   for (const file of ['watchlist-picker','watchlist-settings','watchlists']) dom.window.eval(fs.readFileSync(`src/main/resources/static/js/${file}.js`, 'utf8'));
   const settle = () => new Promise(resolve => setTimeout(resolve, 35));
   const button = (text, root = doc) => [...root.querySelectorAll('button')].find(b => b.textContent === text);

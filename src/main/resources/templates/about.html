@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description"
-          content="Learn how StockWatch 24/7 detects candlestick patterns, classifies Elliott Wave structures, scores technical evidence, and monitors completed candles.">
-    <title>About StockWatch — StockWatch 24/7</title>
-    <script th:src="@{/js/theme.js}"></script>
-    <link rel="stylesheet" th:href="@{/css/style.css}">
+          content="Learn how StockWatch 24/7 detects candlestick patterns, classifies Elliott Wave structures, scores technical evidence, and monitors completed candles." th:content="#{about.learnHowStockwatch247Detects}">
+    <title th:text="#{about.aboutStockwatchStockwatch247}">About StockWatch — StockWatch 24/7</title>
+    <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+    <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
@@ -21,36 +21,36 @@
     <div th:replace="~{fragments/navbar :: navbar}"></div>
 </th:block>
 <div class="about-shell">
-    <nav th:unless="${showAppNavigation == true}" class="navbar landing-nav about-nav" aria-label="Main navigation">
-        <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home">
+    <nav th:unless="${showAppNavigation == true}" class="navbar landing-nav about-nav" aria-label="Main navigation" th:aria-label="#{sidebar.mainAria}">
+        <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home" th:aria-label="#{sidebar.logoHome}">
             <span class="logo-mark" aria-hidden="true"></span>
             <span class="logo-word">StockWatch <span>24/7</span></span>
         </a>
         <div class="nav-links">
-            <a th:href="@{/}" class="btn-secondary">Home</a>
-            <a href="#contents" class="btn-secondary">Contents</a>
-            <a th:href="@{/login}" class="btn-primary">Sign in</a>
-            <a th:href="@{/signup}" class="btn-accent">Start monitoring</a>
+            <a th:href="@{/}" class="btn-secondary" th:text="#{sidebar.home}">Home</a>
+            <a href="#contents" class="btn-secondary" th:text="#{about.contents}">Contents</a>
+            <a th:href="@{/login}" class="btn-primary" th:text="#{auth.signIn}">Sign in</a>
+            <a th:href="@{/signup}" class="btn-accent" th:text="#{landing.startMonitoring}">Start monitoring</a>
         </div>
     </nav>
 
     <main>
         <header class="about-hero">
             <div class="about-hero-copy">
-                <div class="eyebrow">About StockWatch</div>
-                <h1>Technical analysis,<br><span class="text-gradient">with the details.</span></h1>
-                <p>
+                <div class="eyebrow" th:text="#{about.aboutStockwatch}">About StockWatch</div>
+                <h1><span th:text="#{about.technicalAnalysis}">Technical analysis,</span><br><span class="text-gradient" th:text="#{about.withTheDetails}">with the details.</span></h1>
+                <p th:text="#{about.stockwatch247IsAMarket}">
                     StockWatch 24/7 is a market-research and monitoring workspace. It turns completed
                     price candles into named patterns, explainable evidence scores, Elliott Wave
                     structures, historical measurements, and user-controlled alerts.
                 </p>
                 <div class="about-hero-actions">
-                    <a href="#how-it-works" class="btn-accent large">See how it works <span aria-hidden="true">↓</span></a>
-                    <a href="#candlesticks" class="btn-primary large">Read the detector rules</a>
+                    <a href="#how-it-works" class="btn-accent large"><span th:text="#{about.seeHowItWorks}">See how it works</span> <span aria-hidden="true">↓</span></a>
+                    <a href="#candlesticks" class="btn-primary large" th:text="#{about.readTheDetectorRules}">Read the detector rules</a>
                 </div>
                 <div class="about-trust-note">
                     <span aria-hidden="true">i</span>
-                    <p>
+                    <p th:text="#{about.theApplicationIsAResearchTool}">
                         The application is a research tool, not an investment adviser. A detected
                         setup or high score is not a prediction, recommendation, or probability of profit.
                     </p>
@@ -60,34 +60,98 @@
                 <img th:src="@{/images/about/analysis-hero.png}"
                      alt="Conceptual candlestick analysis flowing into a five-wave market structure"
                      width="1717"
-                     height="916">
-                <figcaption>An example of a chart pattern and its score.</figcaption>
+                     height="916" th:alt="#{about.conceptualCandlestickAnalysisFlowingIntoA}">
+                <figcaption th:text="#{about.anExampleOfAChartPattern}">An example of a chart pattern and its score.</figcaption>
             </figure>
         </header>
 
         <section id="contents" class="about-contents" aria-labelledby="contents-title">
             <div>
-                <span class="about-section-number">Guide / 00</span>
-                <h2 id="contents-title">On this page</h2>
+                <span class="about-section-number" th:text="#{about.guide00}">Guide / 00</span>
+                <h2 id="contents-title" th:text="#{about.onThisPage}">On this page</h2>
             </div>
-            <nav class="about-contents-grid" aria-label="About page contents">
-                <a href="#how-it-works"><span>01</span><strong>How it works</strong><small>How analysis works</small></a>
-                <a href="#workspace"><span>02</span><strong>Workspace</strong><small>Charts, history, and alerts</small></a>
-                <a href="#candlesticks"><span>03</span><strong>Candlesticks</strong><small>Exact formation rules</small></a>
-                <a href="#scoring"><span>04</span><strong>Scoring</strong><small>Every weighted component</small></a>
-                <a href="#elliott"><span>05</span><strong>Elliott Wave</strong><small>Pivots, waves, and confirmation</small></a>
-                <a href="#monitoring"><span>06</span><strong>Monitoring</strong><small>Checks, lifecycle, and delivery</small></a>
-                <a href="#history"><span>07</span><strong>Historical research</strong><small>Outcomes and limitations</small></a>
-                <a href="#limitations"><span>08</span><strong>Limitations</strong><small>What the system cannot claim</small></a>
+            <nav class="about-contents-grid" aria-label="About page contents" th:aria-label="#{about.aboutPageContents}">
+                <a href="#glossary"><span>00</span><strong th:text="#{about.glossary}">Glossary</strong><small th:text="#{about.theWordsStockwatchUses}">The words StockWatch uses</small></a>
+                <a href="#how-it-works"><span>01</span><strong th:text="#{about.howItWorks}">How it works</strong><small th:text="#{about.howAnalysisWorks}">How analysis works</small></a>
+                <a href="#workspace"><span>02</span><strong th:text="#{about.workspace}">Workspace</strong><small th:text="#{about.chartsHistoryAndAlerts}">Charts, history, and alerts</small></a>
+                <a href="#candlesticks"><span>03</span><strong th:text="#{about.candlesticks}">Candlesticks</strong><small th:text="#{about.exactFormationRules}">Exact formation rules</small></a>
+                <a href="#scoring"><span>04</span><strong th:text="#{about.scoring}">Scoring</strong><small th:text="#{about.everyWeightedComponent}">Every weighted component</small></a>
+                <a href="#elliott"><span>05</span><strong th:text="#{about.elliottWave}">Elliott Wave</strong><small th:text="#{about.pivotsWavesAndConfirmation}">Pivots, waves, and confirmation</small></a>
+                <a href="#monitoring"><span>06</span><strong th:text="#{about.monitoring}">Monitoring</strong><small th:text="#{about.checksLifecycleAndDelivery}">Checks, lifecycle, and delivery</small></a>
+                <a href="#history"><span>07</span><strong th:text="#{about.historicalResearch}">Historical research</strong><small th:text="#{about.outcomesAndLimitations}">Outcomes and limitations</small></a>
+                <a href="#limitations"><span>08</span><strong th:text="#{about.limitations}">Limitations</strong><small th:text="#{about.whatTheSystemCannotClaim}">What the system cannot claim</small></a>
             </nav>
+        </section>
+
+        <!-- One vocabulary for the whole app; page copy uses these words with these meanings. -->
+        <section id="glossary" class="about-section" aria-labelledby="glossary-title">
+            <div class="about-section-heading">
+                <span class="about-section-number" th:text="#{about.guide00}">Guide / 00</span>
+                <div>
+                    <h2 id="glossary-title" th:text="#{about.glossary}">Glossary</h2>
+                    <p th:text="#{about.theWordsUsedAcrossStockwatchAnd}">The words used across StockWatch, and what each one means.</p>
+                </div>
+            </div>
+            <div class="about-definition-grid">
+                <article>
+                    <span th:text="#{about.organising}">Organising</span>
+                    <h3 th:text="#{about.watchlist}">Watchlist</h3>
+                    <p th:text="#{about.aNamedListOfStocksEtfs}">A named list of stocks, ETFs or indexes. A stock can be in several watchlists; alerts are shared, so you never receive the same alert twice.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.organising}">Organising</span>
+                    <h3 th:text="#{about.follow}">Follow</h3>
+                    <p th:text="#{about.switchingOnAlertsForSomethingA}">Switching on alerts for something: a pattern on a stock, its outlook, or its insider and congressional trades. Unfollow switches them off.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.whatStockwatchFinds}">What StockWatch finds</span>
+                    <h3 th:text="#{about.signal}">Signal</h3>
+                    <p th:text="#{about.aChartPatternCandlestickElliottWave}">A chart pattern (candlestick, Elliott Wave or harmonic) detected on a completed candle for a stock you follow. Every signal stays in Technical signals.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.whatStockwatchFinds}">What StockWatch finds</span>
+                    <h3 th:text="#{about.tickerAlert}">Ticker alert</h3>
+                    <p th:text="#{about.aNewlyFiledPurchaseOrSale}">A newly filed purchase or sale by a company insider or a member of Congress, for a stock you follow.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.whatStockwatchFinds}">What StockWatch finds</span>
+                    <h3 th:text="#{about.outlook}">Outlook</h3>
+                    <p th:text="#{about.theAutomatedTechnicalOutlookOneOverall}">The automated technical outlook: one overall buy, neutral or sell reading built from many indicators, per interval.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.howYouAreTold}">How you are told</span>
+                    <h3 th:text="#{about.alert}">Alert</h3>
+                    <p th:text="#{about.theNotificationYouReceiveAboutA}">The notification you receive about a signal, outlook change or ticker alert: in Latest signals and, if switched on, by email.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.readingASignal}">Reading a signal</span>
+                    <h3 th:text="#{about.setupScore}">Setup score</h3>
+                    <p th:text="#{about.howMuchTechnicalEvidenceSupportsA}">How much technical evidence supports a pattern, out of 100. It is not the chance of a profitable trade.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.readingASignal}">Reading a signal</span>
+                    <h3 th:text="#{about.tradeOutcome}">Trade outcome</h3>
+                    <p th:text="#{about.whatPriceDidAfterTheSignal}">What price did after the signal, measured with the pattern's stop, target and time limit. It is tracked separately from the score.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.readingASignal}">Reading a signal</span>
+                    <h3 th:text="#{about.status}">Status</h3>
+                    <p th:text="#{about.whereASignalIsInIts}">Where a signal is in its life: potential or detected, then confirmed, invalidated or expired once later candles decide it.</p>
+                </article>
+                <article>
+                    <span th:text="#{about.practice}">Practice</span>
+                    <h3 th:text="#{about.demoTrade}">Demo trade</h3>
+                    <p th:text="#{about.aPracticeBuyOrSellRecorded}">A practice buy or sell recorded at the current quote. No real order is placed and no money moves.</p>
+                </article>
+            </div>
         </section>
 
         <section id="how-it-works" class="about-section" aria-labelledby="how-title">
             <div class="about-section-heading">
-                <span class="about-section-number">Guide / 01</span>
+                <span class="about-section-number" th:text="#{about.guide01}">Guide / 01</span>
                 <div>
-                    <h2 id="how-title">How a signal is detected</h2>
-                    <p>
+                    <h2 id="how-title" th:text="#{about.howASignalIsDetected}">How a signal is detected</h2>
+                    <p th:text="#{about.aPatternMustMeetItsDetection}">
                         A pattern must meet its detection rules before it receives a score. Analysis uses completed candles.
                     </p>
                 </div>
@@ -96,58 +160,58 @@
             <ol class="about-pipeline">
                 <li>
                     <span>01</span>
-                    <strong>Find the stock</strong>
-                    <p>Search by company name or ticker and choose the correct listing.</p>
+                    <strong th:text="#{about.findTheStock}">Find the stock</strong>
+                    <p th:text="#{about.searchByCompanyNameOrTicker}">Search by company name or ticker and choose the correct listing.</p>
                 </li>
                 <li>
                     <span>02</span>
-                    <strong>Load price history</strong>
-                    <p>Load available price history from market-data providers.</p>
+                    <strong th:text="#{about.loadPriceHistory}">Load price history</strong>
+                    <p th:text="#{about.loadAvailablePriceHistoryFromMarket}">Load available price history from market-data providers.</p>
                 </li>
                 <li>
                     <span>03</span>
-                    <strong>Use completed candles</strong>
-                    <p>Exclude the still-forming daily, weekly, or monthly candle before running any detector.</p>
+                    <strong th:text="#{about.useCompletedCandles}">Use completed candles</strong>
+                    <p th:text="#{about.excludeTheStillFormingDailyWeekly}">Exclude the still-forming daily, weekly, or monthly candle before running any detector.</p>
                 </li>
                 <li>
                     <span>04</span>
-                    <strong>Calculate indicators</strong>
-                    <p>Calculate interval-specific RSI, CCI, EMA, SMA, MACD, ATR, Bollinger, VWAP, and volume context.</p>
+                    <strong th:text="#{about.calculateIndicators}">Calculate indicators</strong>
+                    <p th:text="#{about.calculateIntervalSpecificRsiCciEma}">Calculate interval-specific RSI, CCI, EMA, SMA, MACD, ATR, Bollinger, VWAP, and volume context.</p>
                 </li>
                 <li>
                     <span>05</span>
-                    <strong>Apply structural rules</strong>
-                    <p>Require exact candle geometry and prior trend, or alternating Elliott pivots and wave constraints.</p>
+                    <strong th:text="#{about.applyStructuralRules}">Apply structural rules</strong>
+                    <p th:text="#{about.requireExactCandleGeometryAndPrior}">Require exact candle geometry and prior trend, or alternating Elliott pivots and wave constraints.</p>
                 </li>
                 <li>
                     <span>06</span>
-                    <strong>Explain and monitor</strong>
-                    <p>Return the evidence breakdown, evaluate follow-through, and notify only the combinations the user chose.</p>
+                    <strong th:text="#{about.explainAndMonitor}">Explain and monitor</strong>
+                    <p th:text="#{about.returnTheEvidenceBreakdownEvaluateFollow}">Return the evidence breakdown, evaluate follow-through, and notify only the combinations the user chose.</p>
                 </li>
             </ol>
 
             <div class="about-definition-grid">
                 <article>
-                    <span>Completed-candle policy</span>
-                    <h3>When candles become available</h3>
-                    <p>
+                    <span th:text="#{about.completedCandlePolicy}">Completed-candle policy</span>
+                    <h3 th:text="#{about.whenCandlesBecomeAvailable}">When candles become available</h3>
+                    <p th:text="#{about.dailyCandlesBecomeEligibleOnThe}">
                         Daily candles become eligible on the next configured local day. Weekly candles
                         remain protected during the trading week and become eligible from Saturday.
                         Monthly candles become eligible on the first day of the next month.
                     </p>
                 </article>
                 <article>
-                    <span>Supported analysis intervals</span>
-                    <h3>Periods follow the chart interval</h3>
-                    <p>
+                    <span th:text="#{about.supportedAnalysisIntervals}">Supported analysis intervals</span>
+                    <h3 th:text="#{about.periodsFollowTheChartInterval}">Periods follow the chart interval</h3>
+                    <p th:text="#{about.candlestickAndElliottAnalysisSupportDaily}">
                         Candlestick and Elliott analysis support daily, weekly and monthly bars. Indicator periods are expressed in those native bars,
                         not silently converted from days.
                     </p>
                 </article>
                 <article>
-                    <span>Explainability</span>
-                    <h3>What each signal records</h3>
-                    <p>
+                    <span th:text="#{about.explainability}">Explainability</span>
+                    <h3 th:text="#{about.whatEachSignalRecords}">What each signal records</h3>
+                    <p th:text="#{about.eachSignalRecordsItsFormationDirection}">
                         Each signal records its formation, direction, score version, component evidence,
                         signal candle, close, and lifecycle state so the result can be inspected later.
                     </p>
@@ -157,10 +221,10 @@
 
         <section id="workspace" class="about-section" aria-labelledby="workspace-title">
             <div class="about-section-heading">
-                <span class="about-section-number">Guide / 02</span>
+                <span class="about-section-number" th:text="#{about.guide02}">Guide / 02</span>
                 <div>
-                    <h2 id="workspace-title">What the website can do</h2>
-                    <p>
+                    <h2 id="workspace-title" th:text="#{about.whatTheWebsiteCanDo}">What the website can do</h2>
+                    <p th:text="#{about.theInterfaceSeparatesMarketExplorationTechnical}">
                         The interface separates market exploration, technical monitoring, and
                         company-event monitoring while keeping every result connected to its source ticker.
                     </p>
@@ -168,82 +232,82 @@
             </div>
 
             <div class="about-function-grid">
-                <article><span>Search</span><h3>Find stocks, ETFs, and indexes</h3><p>Search by name or ticker to find the right listing.</p></article>
-                <article><span>Charts</span><h3>Explore price and volume</h3><p>Switch line or candlestick mode, change intervals, zoom, and load older history as the chart scrolls.</p></article>
-                <article><span>Checks</span><h3>Run an immediate scan</h3><p>Refresh the selected interval and evaluate the newest completed candle without enabling an alert.</p></article>
-                <article><span>Alerts</span><h3>Choose the exact combinations</h3><p>Follow BUY or SELL/SHORT candlestick and Elliott families independently for supported intervals.</p></article>
-                <article><span>History</span><h3>Research earlier detections</h3><p>Select the interval and number of candles, then inspect recalculated outcomes and detailed evidence.</p></article>
-                <article><span>Lifecycle</span><h3>Follow a setup after detection</h3><p>See whether a subsequent close confirms, invalidates, or lets the setup expire.</p></article>
-                <article><span>Dashboard</span><h3>Review companies and signals</h3><p>Separate technical instruments, active rule combinations, recent signals, and recovery status.</p></article>
-                <article><span>Company events</span><h3>Follow public transaction filings</h3><p>Monitor congressional disclosures and corporate insider purchases or sales separately from technical chart signals. Past filings are kept in history. Coverage is limited to 10 filings per check, so some filings may be missed.</p></article>
+                <article><span th:text="#{about.search}">Search</span><h3 th:text="#{about.findStocksEtfsAndIndexes}">Find stocks, ETFs, and indexes</h3><p th:text="#{about.searchByNameOrTickerTo}">Search by name or ticker to find the right listing.</p></article>
+                <article><span th:text="#{about.charts}">Charts</span><h3 th:text="#{about.explorePriceAndVolume}">Explore price and volume</h3><p th:text="#{about.switchLineOrCandlestickModeChange}">Switch line or candlestick mode, change intervals, zoom, and load older history as the chart scrolls.</p></article>
+                <article><span th:text="#{about.checks}">Checks</span><h3 th:text="#{about.runAnImmediateScan}">Run an immediate scan</h3><p th:text="#{about.refreshTheSelectedIntervalAndEvaluate}">Refresh the selected interval and evaluate the newest completed candle without enabling an alert.</p></article>
+                <article><span th:text="#{about.alerts}">Alerts</span><h3 th:text="#{about.chooseTheExactCombinations}">Choose the exact combinations</h3><p th:text="#{about.followBuyOrSellShortCandlestick}">Follow BUY or SELL/SHORT candlestick and Elliott families independently for supported intervals.</p></article>
+                <article><span th:text="#{about.history}">History</span><h3 th:text="#{about.researchEarlierDetections}">Research earlier detections</h3><p th:text="#{about.selectTheIntervalAndNumberOf}">Select the interval and number of candles, then inspect recalculated outcomes and detailed evidence.</p></article>
+                <article><span th:text="#{about.lifecycle}">Lifecycle</span><h3 th:text="#{about.followASetupAfterDetection}">Follow a setup after detection</h3><p th:text="#{about.seeWhetherASubsequentCloseConfirms}">See whether a subsequent close confirms, invalidates, or lets the setup expire.</p></article>
+                <article><span th:text="#{common.dashboard}">Dashboard</span><h3 th:text="#{about.reviewCompaniesAndSignals}">Review companies and signals</h3><p th:text="#{about.separateTechnicalInstrumentsActiveRuleCombinations}">Separate technical instruments, active rule combinations, recent signals, and recovery status.</p></article>
+                <article><span th:text="#{about.companyEvents}">Company events</span><h3 th:text="#{about.followPublicTransactionFilings}">Follow public transaction filings</h3><p th:text="#{about.monitorCongressionalDisclosuresAndCorporateInsider}">Monitor congressional disclosures and corporate insider purchases or sales separately from technical chart signals. Past filings are kept in history. Coverage is limited to 10 filings per check, so some filings may be missed.</p></article>
             </div>
 
             <div class="about-screenshot-grid">
                 <figure class="about-screenshot wide">
                     <img th:src="@{/images/about/market-workspace.png}"
                          alt="Stock workspace with candlestick price chart and synchronized volume chart"
-                         loading="lazy">
-                    <figcaption><strong>Market workspace</strong><span>Price action and volume share one navigable timeline.</span></figcaption>
+                         loading="lazy" th:alt="#{about.stockWorkspaceWithCandlestickPriceChart}">
+                    <figcaption><strong th:text="#{about.marketWorkspace}">Market workspace</strong><span th:text="#{about.priceActionAndVolumeShareOne}">Price action and volume share one navigable timeline.</span></figcaption>
                 </figure>
                 <figure class="about-screenshot">
                     <img th:src="@{/images/about/latest-signals.png}"
                          alt="Dashboard list of recent candlestick signals with interval, period, horizon, and score"
-                         loading="lazy">
-                    <figcaption><strong>Latest signals</strong><span>Every row exposes its family, direction, interval, candle period, research horizon, and setup score.</span></figcaption>
+                         loading="lazy" th:alt="#{about.dashboardListOfRecentCandlestickSignals}">
+                    <figcaption><strong th:text="#{home.latestSignals}">Latest signals</strong><span th:text="#{about.everyRowExposesItsFamilyDirection}">Every row exposes its family, direction, interval, candle period, research horizon, and setup score.</span></figcaption>
                 </figure>
                 <figure class="about-screenshot">
                     <img th:src="@{/images/about/monitoring-board.png}"
                          alt="Company monitoring board with separate alert rule combinations"
-                         loading="lazy">
-                    <figcaption><strong>Company monitoring board</strong><span>Each column represents one pattern family, direction, and interval combination.</span></figcaption>
+                         loading="lazy" th:alt="#{about.companyMonitoringBoardWithSeparateAlert}">
+                    <figcaption><strong th:text="#{about.companyMonitoringBoard}">Company monitoring board</strong><span th:text="#{about.eachColumnRepresentsOnePatternFamily}">Each column represents one pattern family, direction, and interval combination.</span></figcaption>
                 </figure>
                 <figure class="about-screenshot wide">
                     <img th:src="@{/images/about/disclosure-history.png}"
                          alt="Congressional trading disclosure history with reported value and filing links"
-                         loading="lazy">
-                    <figcaption><strong>Company-event research</strong><span>Congressional disclosures remain visibly separate from technical signals.</span></figcaption>
+                         loading="lazy" th:alt="#{about.congressionalTradingDisclosureHistoryWithReported}">
+                    <figcaption><strong th:text="#{about.companyEventResearch}">Company-event research</strong><span th:text="#{about.congressionalDisclosuresRemainVisiblySeparateFrom}">Congressional disclosures remain visibly separate from technical signals.</span></figcaption>
                 </figure>
             </div>
         </section>
 
         <section id="candlesticks" class="about-section" aria-labelledby="candlestick-title">
             <div class="about-section-heading">
-                <span class="about-section-number">Guide / 03</span>
+                <span class="about-section-number" th:text="#{about.guide03}">Guide / 03</span>
                 <div>
-                    <h2 id="candlestick-title">Candlestick detection: exact requirements</h2>
-                    <p>
+                    <h2 id="candlestick-title" th:text="#{about.candlestickDetectionExactRequirements}">Candlestick detection: exact requirements</h2>
+                    <p th:text="#{about.aPatternMustMeetItsShape}">
                         A pattern must meet its shape and prior-trend rules before it receives a score. Detailed defaults are listed below; your settings may differ.
                     </p>
                 </div>
             </div>
-            <details class="about-rule-details"><summary>View candlestick rules and formulas</summary>
+            <details class="about-rule-details"><summary th:text="#{about.viewCandlestickRulesAndFormulas}">View candlestick rules and formulas</summary>
 
             <div class="about-formula-row">
                 <article>
-                    <span>Real body</span>
-                    <strong>| close − open |</strong>
-                    <p>The directional portion between open and close.</p>
+                    <span th:text="#{about.realBody}">Real body</span>
+                    <strong th:text="#{about.closeOpen}">| close − open |</strong>
+                    <p th:text="#{about.theDirectionalPortionBetweenOpenAnd}">The directional portion between open and close.</p>
                 </article>
                 <article>
-                    <span>Full range</span>
-                    <strong>high − low</strong>
-                    <p>The complete candle, including both shadows.</p>
+                    <span th:text="#{about.fullRange}">Full range</span>
+                    <strong th:text="#{about.highLow}">high − low</strong>
+                    <p th:text="#{about.theCompleteCandleIncludingBothShadows}">The complete candle, including both shadows.</p>
                 </article>
                 <article>
-                    <span>Upper shadow</span>
-                    <strong>high − max(open, close)</strong>
-                    <p>Price explored above the real body.</p>
+                    <span th:text="#{about.upperShadow}">Upper shadow</span>
+                    <strong th:text="#{about.highMaxOpenClose}">high − max(open, close)</strong>
+                    <p th:text="#{about.priceExploredAboveTheRealBody}">Price explored above the real body.</p>
                 </article>
                 <article>
-                    <span>Lower shadow</span>
-                    <strong>min(open, close) − low</strong>
-                    <p>Price explored below the real body.</p>
+                    <span th:text="#{about.lowerShadow}">Lower shadow</span>
+                    <strong th:text="#{about.minOpenCloseLow}">min(open, close) − low</strong>
+                    <p th:text="#{about.priceExploredBelowTheRealBody}">Price explored below the real body.</p>
                 </article>
             </div>
 
             <div class="about-callout">
-                <strong>The prior-trend gate</strong>
-                <p>
+                <strong th:text="#{about.thePriorTrendGate}">The prior-trend gate</strong>
+                <p th:text="#{about.upToFiveCompletedCandlesImmediately}">
                     Up to five completed candles immediately before the formation are examined; at
                     least three are required. A trend needs a net move of at least 1.5%, at least 60%
                     directional close or high/low transitions, and—when close-only structure is used—
@@ -253,8 +317,8 @@
             </div>
 
             <div class="about-callout">
-                <strong>Separate Elliott Wave analysis</strong>
-                <p>
+                <strong th:text="#{about.separateElliottWaveAnalysis}">Separate Elliott Wave analysis</strong>
+                <p th:text="#{about.elliottWaveStructuresRemainAvailableAs}">
                     Elliott Wave structures remain available as an independent weekly and monthly
                     detector. They do not add to or subtract from the candlestick V4 setup score.
                     Keeping the two analyses separate makes each signal explainable and avoids
@@ -266,101 +330,101 @@
                 <table class="about-rule-table">
                     <thead>
                     <tr>
-                        <th scope="col">Pattern</th>
-                        <th scope="col">Required context</th>
-                        <th scope="col">Mandatory geometry</th>
-                        <th scope="col">Output</th>
+                        <th scope="col" th:text="#{about.pattern}">Pattern</th>
+                        <th scope="col" th:text="#{about.requiredContext}">Required context</th>
+                        <th scope="col" th:text="#{about.mandatoryGeometry}">Mandatory geometry</th>
+                        <th scope="col" th:text="#{about.output}">Output</th>
                     </tr>
                     </thead>
                     <tbody>
                     <tr>
-                        <th scope="row">Doji</th>
-                        <td>No directional trend requirement</td>
-                        <td>Real body ≤ 10% of the full range.</td>
+                        <th scope="row" th:text="#{about.doji}">Doji</th>
+                        <td th:text="#{about.noDirectionalTrendRequirement}">No directional trend requirement</td>
+                        <td th:text="#{about.realBody10OfTheFull}">Real body ≤ 10% of the full range.</td>
                         <td><span class="about-signal neutral">HOLD</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Hammer</th>
-                        <td>Established downtrend</td>
-                        <td>Body is 2–30% of range; lower shadow ≥ 2× body; upper shadow ≤ 0.5× body.</td>
+                        <th scope="row" th:text="#{about.hammer}">Hammer</th>
+                        <td th:text="#{about.establishedDowntrend}">Established downtrend</td>
+                        <td th:text="#{about.bodyIs230OfRange}">Body is 2–30% of range; lower shadow ≥ 2× body; upper shadow ≤ 0.5× body.</td>
                         <td><span class="about-signal buy">BUY</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Hanging Man</th>
-                        <td>Established uptrend</td>
-                        <td>Same mandatory shape as Hammer; trend context changes its interpretation.</td>
+                        <th scope="row" th:text="#{about.hangingMan}">Hanging Man</th>
+                        <td th:text="#{about.establishedUptrend}">Established uptrend</td>
+                        <td th:text="#{about.sameMandatoryShapeAsHammerTrend}">Same mandatory shape as Hammer; trend context changes its interpretation.</td>
                         <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Inverted Hammer</th>
-                        <td>Established downtrend</td>
-                        <td>Body is 2–30% of range; upper shadow ≥ 2× body; lower shadow ≤ 0.5× body.</td>
+                        <th scope="row" th:text="#{about.invertedHammer}">Inverted Hammer</th>
+                        <td th:text="#{about.establishedDowntrend}">Established downtrend</td>
+                        <td th:text="#{about.bodyIs230OfRange2}">Body is 2–30% of range; upper shadow ≥ 2× body; lower shadow ≤ 0.5× body.</td>
                         <td><span class="about-signal buy">BUY</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Shooting Star</th>
-                        <td>Established uptrend</td>
-                        <td>Same mandatory shape as Inverted Hammer; trend context changes its interpretation.</td>
+                        <th scope="row" th:text="#{about.shootingStar}">Shooting Star</th>
+                        <td th:text="#{about.establishedUptrend}">Established uptrend</td>
+                        <td th:text="#{about.sameMandatoryShapeAsInvertedHammer}">Same mandatory shape as Inverted Hammer; trend context changes its interpretation.</td>
                         <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Bullish Engulfing</th>
-                        <td>Established downtrend</td>
-                        <td>Bearish candle then bullish candle; first body ≥ 20% of range; second body ≥ first body and ≥ 45% of its range; second body fully covers the first body.</td>
+                        <th scope="row" th:text="#{about.bullishEngulfing}">Bullish Engulfing</th>
+                        <td th:text="#{about.establishedDowntrend}">Established downtrend</td>
+                        <td th:text="#{about.bearishCandleThenBullishCandleFirst}">Bearish candle then bullish candle; first body ≥ 20% of range; second body ≥ first body and ≥ 45% of its range; second body fully covers the first body.</td>
                         <td><span class="about-signal buy">BUY</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Bearish Engulfing</th>
-                        <td>Established uptrend</td>
-                        <td>Bullish candle then bearish candle; the same body-size and complete body-engulfing rules apply in reverse.</td>
+                        <th scope="row" th:text="#{about.bearishEngulfing}">Bearish Engulfing</th>
+                        <td th:text="#{about.establishedUptrend}">Established uptrend</td>
+                        <td th:text="#{about.bullishCandleThenBearishCandleThe}">Bullish candle then bearish candle; the same body-size and complete body-engulfing rules apply in reverse.</td>
                         <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Piercing Line</th>
-                        <td>Established downtrend</td>
-                        <td>Long bearish candle then strong bullish candle; second opens below the first close, closes above its midpoint, but remains below its open.</td>
+                        <th scope="row" th:text="#{about.piercingLine}">Piercing Line</th>
+                        <td th:text="#{about.establishedDowntrend}">Established downtrend</td>
+                        <td th:text="#{about.longBearishCandleThenStrongBullish}">Long bearish candle then strong bullish candle; second opens below the first close, closes above its midpoint, but remains below its open.</td>
                         <td><span class="about-signal buy">BUY</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Dark Cloud Cover</th>
-                        <td>Established uptrend</td>
-                        <td>Long bullish candle then strong bearish candle; second opens above the first close, closes below its midpoint, but remains above its open.</td>
+                        <th scope="row" th:text="#{about.darkCloudCover}">Dark Cloud Cover</th>
+                        <td th:text="#{about.establishedUptrend}">Established uptrend</td>
+                        <td th:text="#{about.longBullishCandleThenStrongBearish}">Long bullish candle then strong bearish candle; second opens above the first close, closes below its midpoint, but remains above its open.</td>
                         <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Bullish Harami</th>
-                        <td>Established downtrend</td>
-                        <td>Long bearish candle contains a bullish body; second body ≤ 45% of first and ≤ 75% of the recent median body.</td>
+                        <th scope="row" th:text="#{about.bullishHarami}">Bullish Harami</th>
+                        <td th:text="#{about.establishedDowntrend}">Established downtrend</td>
+                        <td th:text="#{about.longBearishCandleContainsABullish}">Long bearish candle contains a bullish body; second body ≤ 45% of first and ≤ 75% of the recent median body.</td>
                         <td><span class="about-signal buy">BUY</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Bearish Harami</th>
-                        <td>Established uptrend</td>
-                        <td>Long bullish candle contains a bearish body; the same relative small-body limits apply.</td>
+                        <th scope="row" th:text="#{about.bearishHarami}">Bearish Harami</th>
+                        <td th:text="#{about.establishedUptrend}">Established uptrend</td>
+                        <td th:text="#{about.longBullishCandleContainsABearish}">Long bullish candle contains a bearish body; the same relative small-body limits apply.</td>
                         <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Morning Star</th>
-                        <td>Established downtrend</td>
-                        <td>Long bearish first candle, small middle body, strong bullish third candle, and third close above the first candle’s midpoint.</td>
+                        <th scope="row" th:text="#{about.morningStar}">Morning Star</th>
+                        <td th:text="#{about.establishedDowntrend}">Established downtrend</td>
+                        <td th:text="#{about.longBearishFirstCandleSmallMiddle}">Long bearish first candle, small middle body, strong bullish third candle, and third close above the first candle’s midpoint.</td>
                         <td><span class="about-signal buy">BUY</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Evening Star</th>
-                        <td>Established uptrend</td>
-                        <td>Long bullish first candle, small middle body, strong bearish third candle, and third close below the first candle’s midpoint.</td>
+                        <th scope="row" th:text="#{about.eveningStar}">Evening Star</th>
+                        <td th:text="#{about.establishedUptrend}">Established uptrend</td>
+                        <td th:text="#{about.longBullishFirstCandleSmallMiddle}">Long bullish first candle, small middle body, strong bearish third candle, and third close below the first candle’s midpoint.</td>
                         <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Three White Soldiers</th>
-                        <td>Downtrend or compact base</td>
-                        <td>Three bullish bodies, each ≥ 50% of range and ≥ 80% of recent median; rising closes; opens inside prior bodies; upper shadows ≤ 30% of body.</td>
+                        <th scope="row" th:text="#{about.threeWhiteSoldiers}">Three White Soldiers</th>
+                        <td th:text="#{about.downtrendOrCompactBase}">Downtrend or compact base</td>
+                        <td th:text="#{about.threeBullishBodiesEach50Of}">Three bullish bodies, each ≥ 50% of range and ≥ 80% of recent median; rising closes; opens inside prior bodies; upper shadows ≤ 30% of body.</td>
                         <td><span class="about-signal buy">BUY</span></td>
                     </tr>
                     <tr>
-                        <th scope="row">Three Black Crows</th>
-                        <td>Established uptrend</td>
-                        <td>Three bearish bodies with the same relative-body rules; falling closes; opens inside prior bodies; lower shadows ≤ 30% of body.</td>
+                        <th scope="row" th:text="#{about.threeBlackCrows}">Three Black Crows</th>
+                        <td th:text="#{about.establishedUptrend}">Established uptrend</td>
+                        <td th:text="#{about.threeBearishBodiesWithTheSame}">Three bearish bodies with the same relative-body rules; falling closes; opens inside prior bodies; lower shadows ≤ 30% of body.</td>
                         <td><span class="about-signal sell">SELL/SHORT</span></td>
                     </tr>
                     </tbody>
@@ -368,80 +432,80 @@
             </div>
 
             <div class="about-footnotes">
-                <p><strong>Relative-body baseline:</strong> “long,” “strong,” and “small” compare the formation with the median body of up to 20 earlier completed candles.</p>
-                <p><strong>Long:</strong> ≥ 55% of its range and ≥ 110% of median body. <strong>Strong:</strong> ≥ 50% of range and ≥ 90% of median. <strong>Small:</strong> ≤ 30% of range and ≤ 75% of median.</p>
-                <p><strong>Important:</strong> a technically aligned RSI or large volume value cannot create a named pattern when these mandatory geometry and context rules fail.</p>
+                <p><strong th:text="#{about.relativeBodyBaseline}">Relative-body baseline:</strong> <span th:text="#{about.longStrongAndSmallCompareThe}">“long,” “strong,” and “small” compare the formation with the median body of up to 20 earlier completed candles.</span></p>
+                <p><strong th:text="#{about.long}">Long:</strong> <span th:text="#{about.55OfItsRangeAnd110}">≥ 55% of its range and ≥ 110% of median body.</span> <strong th:text="#{about.strong}">Strong:</strong> <span th:text="#{about.50OfRangeAnd90Of}">≥ 50% of range and ≥ 90% of median.</span> <strong th:text="#{about.small}">Small:</strong> <span th:text="#{about.30OfRangeAnd75Of}">≤ 30% of range and ≤ 75% of median.</span></p>
+                <p><strong th:text="#{about.important}">Important:</strong> <span th:text="#{about.aTechnicallyAlignedRsiOrLarge}">a technically aligned RSI or large volume value cannot create a named pattern when these mandatory geometry and context rules fail.</span></p>
             </div>
         </details>
         </section>
 
         <section id="scoring" class="about-section" aria-labelledby="scoring-title">
             <div class="about-section-heading">
-                <span class="about-section-number">Guide / 04</span>
+                <span class="about-section-number" th:text="#{about.guide04}">Guide / 04</span>
                 <div>
-                    <h2 id="scoring-title">How the candlestick setup score is built</h2>
-                    <p>
+                    <h2 id="scoring-title" th:text="#{about.howTheCandlestickSetupScoreIs}">How the candlestick setup score is built</h2>
+                    <p th:text="#{about.theScoreCombinesSupportingIndicatorsUp}">
                         The score combines supporting indicators, up to 100 points. Related indicators share a category limit. Missing data adds no points.
                     </p>
                 </div>
             </div>
-            <details class="about-rule-details"><summary>View score components and defaults</summary>
+            <details class="about-rule-details"><summary th:text="#{about.viewScoreComponentsAndDefaults}">View score components and defaults</summary>
 
             <div class="about-score-layout">
-                <div class="about-score-ring" aria-label="Maximum setup score 100">
-                    <span>Maximum</span>
+                <div class="about-score-ring" aria-label="Maximum setup score 100" th:aria-label="#{about.maximumSetupScore100}">
+                    <span th:text="#{about.maximum}">Maximum</span>
                     <strong>100</strong>
-                    <small>points</small>
+                    <small th:text="#{about.points}">points</small>
                 </div>
                 <div class="about-score-components">
-                    <article><span><strong>25</strong> Pattern quality</span><p>Mandatory geometry quality plus the quality of the required raw-price prior trend.</p></article>
-                    <article><span><strong>20</strong> Trend indicators</span><p>Fast/slow EMA order and slopes, close versus long SMA, MACD line/signal, and histogram change.</p></article>
-                    <article><span><strong>5</strong> Higher timeframe</span><p>Completed higher-period closes versus a short mean and the direction of that mean.</p></article>
-                    <article><span><strong>15</strong> Momentum</span><p>Directional RSI and CCI location plus whether each oscillator is turning with the signal.</p></article>
-                    <article><span><strong>10</strong> Bollinger context</span><p>Relevant band test, %B location, and whether price closes back inside the band.</p></article>
-                    <article><span><strong>15</strong> Support or resistance</span><p>ATR-scaled proximity, repeated touches, and rejection through the formation range.</p></article>
-                    <article><span><strong>10</strong> Volume participation</span><p>Relative volume, rolling VWAP position and slope, plus an OHLCV volume-profile approximation.</p></article>
+                    <article><span><strong>25</strong> <span th:text="#{scoring.component.CANDLESTICK.patternQuality.label}">Pattern quality</span></span><p th:text="#{about.mandatoryGeometryQualityPlusTheQuality}">Mandatory geometry quality plus the quality of the required raw-price prior trend.</p></article>
+                    <article><span><strong>20</strong> <span th:text="#{scoring.component.CANDLESTICK.trendIndicators.label}">Trend indicators</span></span><p th:text="#{about.fastSlowEmaOrderAndSlopes}">Fast/slow EMA order and slopes, close versus long SMA, MACD line/signal, and histogram change.</p></article>
+                    <article><span><strong>5</strong> <span th:text="#{about.higherTimeframe}">Higher timeframe</span></span><p th:text="#{about.completedHigherPeriodClosesVersusA}">Completed higher-period closes versus a short mean and the direction of that mean.</p></article>
+                    <article><span><strong>15</strong> <span th:text="#{scoring.component.CANDLESTICK.momentum.label}">Momentum</span></span><p th:text="#{about.directionalRsiAndCciLocationPlus}">Directional RSI and CCI location plus whether each oscillator is turning with the signal.</p></article>
+                    <article><span><strong>10</strong> <span th:text="#{about.bollingerContext}">Bollinger context</span></span><p th:text="#{about.relevantBandTestBLocationAnd}">Relevant band test, %B location, and whether price closes back inside the band.</p></article>
+                    <article><span><strong>15</strong> <span th:text="#{about.supportOrResistance}">Support or resistance</span></span><p th:text="#{about.atrScaledProximityRepeatedTouchesAnd}">ATR-scaled proximity, repeated touches, and rejection through the formation range.</p></article>
+                    <article><span><strong>10</strong> <span th:text="#{scoring.component.CANDLESTICK.volume.label}">Volume participation</span></span><p th:text="#{about.relativeVolumeRollingVwapPositionAnd}">Relative volume, rolling VWAP position and slope, plus an OHLCV volume-profile approximation.</p></article>
                 </div>
             </div>
 
             <div class="about-profile-table-wrap">
                 <table class="about-profile-table">
                     <thead>
-                    <tr><th>Profile</th><th>RSI / ATR</th><th>EMA fast / slow</th><th>Long SMA</th><th>MACD</th><th>CCI</th><th>Bollinger</th><th>Volume / VWAP / profile</th></tr>
+                    <tr><th th:text="#{about.profile}">Profile</th><th th:text="#{about.rsiAtr}">RSI / ATR</th><th th:text="#{about.emaFastSlow}">EMA fast / slow</th><th th:text="#{about.longSma}">Long SMA</th><th>MACD</th><th>CCI</th><th th:text="#{about.bollinger}">Bollinger</th><th th:text="#{about.volumeVwapProfile}">Volume / VWAP / profile</th></tr>
                     </thead>
                     <tbody>
-                    <tr><th>Daily</th><td>14 / 14</td><td>20 / 50</td><td>200</td><td>12 / 26 / 9</td><td>20</td><td>20, 2.0σ</td><td>20 / 20 / 60</td></tr>
-                    <tr><th>Weekly</th><td>10 / 10</td><td>8 / 21</td><td>40</td><td>8 / 21 / 5</td><td>14</td><td>13, 2.0σ</td><td>13 / 13 / 26</td></tr>
-                    <tr><th>Monthly</th><td>9 / 9</td><td>6 / 12</td><td>24</td><td>6 / 12 / 4</td><td>12</td><td>12, 2.0σ</td><td>12 / 12 / 24</td></tr>
+                    <tr><th th:text="#{about.daily}">Daily</th><td>14 / 14</td><td>20 / 50</td><td>200</td><td>12 / 26 / 9</td><td>20</td><td th:text="#{about.num.bollingerDaily}">20, 2.0σ</td><td>20 / 20 / 60</td></tr>
+                    <tr><th th:text="#{about.weekly}">Weekly</th><td>10 / 10</td><td>8 / 21</td><td>40</td><td>8 / 21 / 5</td><td>14</td><td th:text="#{about.num.bollingerWeekly}">13, 2.0σ</td><td>13 / 13 / 26</td></tr>
+                    <tr><th th:text="#{about.monthly}">Monthly</th><td>9 / 9</td><td>6 / 12</td><td>24</td><td>6 / 12 / 4</td><td>12</td><td th:text="#{about.num.bollingerMonthly}">12, 2.0σ</td><td>12 / 12 / 24</td></tr>
                     </tbody>
                 </table>
             </div>
 
             <div class="about-band-grid">
-                <article class="low"><span>Below 75</span><strong>Low support</strong><p>The formation is still valid; supporting evidence is limited or unavailable.</p></article>
-                <article class="medium"><span>75–84</span><strong>Moderate support</strong><p>Several independent evidence families align with the detected direction.</p></article>
-                <article class="high"><span>85–100</span><strong>High support</strong><p>Broad alignment across the recorded evidence—not an 85–100% success probability.</p></article>
+                <article class="low"><span th:text="#{about.below75}">Below 75</span><strong th:text="#{about.lowSupport}">Low support</strong><p th:text="#{about.theFormationIsStillValidSupporting}">The formation is still valid; supporting evidence is limited or unavailable.</p></article>
+                <article class="medium"><span>75–84</span><strong th:text="#{about.moderateSupport}">Moderate support</strong><p th:text="#{about.severalIndependentEvidenceFamiliesAlignWith}">Several independent evidence families align with the detected direction.</p></article>
+                <article class="high"><span>85–100</span><strong th:text="#{about.highSupport}">High support</strong><p th:text="#{about.broadAlignmentAcrossTheRecordedEvidence}">Broad alignment across the recorded evidence—not an 85–100% success probability.</p></article>
             </div>
         </details>
         </section>
 
         <section id="elliott" class="about-section" aria-labelledby="elliott-title">
             <div class="about-section-heading">
-                <span class="about-section-number">Guide / 05</span>
+                <span class="about-section-number" th:text="#{about.guide05}">Guide / 05</span>
                 <div>
-                    <h2 id="elliott-title">Elliott Wave detection rules</h2>
-                    <p>
+                    <h2 id="elliott-title" th:text="#{about.elliottWaveDetectionRules}">Elliott Wave detection rules</h2>
+                    <p th:text="#{about.theDetectorFindsTurningPointsOn}">
                         The detector finds turning points on daily, weekly and monthly charts, checks them against Elliott Wave rules, and waits for confirmation.
                     </p>
                 </div>
             </div>
-            <details class="about-rule-details"><summary>View Elliott Wave rules</summary>
-            <p>Detection model: <code>ELLIOTT_V1</code>.</p>
+            <details class="about-rule-details"><summary th:text="#{about.viewElliottWaveRules}">View Elliott Wave rules</summary>
+            <p><span th:text="#{about.detectionModel}">Detection model:</span> <code th:text="#{about.elliottV1}">ELLIOTT_V1</code>.</p>
 
             <figure class="about-wave-diagram">
                 <svg viewBox="0 0 1000 390" role="img" aria-labelledby="wave-title wave-description">
-                    <title id="wave-title">Bullish five-wave impulse followed by an A-B-C correction</title>
-                    <desc id="wave-description">Alternating pivots labeled zero through five, followed by corrective pivots A, B, and C.</desc>
+                    <title id="wave-title" th:text="#{about.bullishFiveWaveImpulseFollowedBy}">Bullish five-wave impulse followed by an A-B-C correction</title>
+                    <desc id="wave-description" th:text="#{about.alternatingPivotsLabeledZeroThroughFive}">Alternating pivots labeled zero through five, followed by corrective pivots A, B, and C.</desc>
                     <line x1="40" y1="340" x2="960" y2="340" class="about-wave-axis"/>
                     <path d="M70 310 L200 225 L300 270 L485 105 L600 180 L750 55 L835 170 L900 120 L955 245"
                           class="about-wave-path"/>
@@ -457,80 +521,80 @@
                         <circle cx="955" cy="245" r="7"/><text x="944" y="280">C</text>
                     </g>
                     <path d="M200 360 H750" class="about-wave-bracket"/>
-                    <text x="405" y="382" class="about-wave-caption">Five-wave impulse</text>
+                    <text x="405" y="382" class="about-wave-caption" th:text="#{about.fiveWaveImpulse}">Five-wave impulse</text>
                     <path d="M750 315 H955" class="about-wave-bracket correction"/>
                     <text x="795" y="337" class="about-wave-caption">A-B-C</text>
                 </svg>
-                <figcaption>
+                <figcaption th:text="#{about.bullishExampleTheBearishDetectorMirrors}">
                     Bullish example. The bearish detector mirrors the high/low ordering and confirmation direction.
                 </figcaption>
             </figure>
 
             <div class="about-elliott-grid">
                 <article>
-                    <span>1 / Price history</span>
-                    <h3>At least 34 completed candles</h3>
-                    <p>Incomplete or invalid OHLCV bars are removed and the remaining candles are sorted before structural analysis.</p>
+                    <span th:text="#{about.1PriceHistory}">1 / Price history</span>
+                    <h3 th:text="#{about.atLeast34CompletedCandles}">At least 34 completed candles</h3>
+                    <p th:text="#{about.incompleteOrInvalidOhlcvBarsAre}">Incomplete or invalid OHLCV bars are removed and the remaining candles are sorted before structural analysis.</p>
                 </article>
                 <article>
-                    <span>2 / Turning points</span>
-                    <h3>Four volatility sensitivities</h3>
-                    <p>Sensitivities 0.75, 1.25, 2.0, and 3.0 seek alternating highs and lows. A reversal must exceed the greater of ATR × sensitivity or 1.25% of close × sensitivity.</p>
+                    <span th:text="#{about.2TurningPoints}">2 / Turning points</span>
+                    <h3 th:text="#{about.fourVolatilitySensitivities}">Four volatility sensitivities</h3>
+                    <p th:text="#{about.sensitivities0751252}">Sensitivities 0.75, 1.25, 2.0, and 3.0 seek alternating highs and lows. A reversal must exceed the greater of ATR × sensitivity or 1.25% of close × sensitivity.</p>
                 </article>
                 <article>
-                    <span>3 / Impulse ordering</span>
-                    <h3>Higher or lower pivot structure</h3>
-                    <p>A bullish impulse requires higher wave I and III highs, wave II above origin, wave IV above waves II and I, and positive wave II/IV retracements below 100%. Bearish rules mirror this.</p>
+                    <span th:text="#{about.3ImpulseOrdering}">3 / Impulse ordering</span>
+                    <h3 th:text="#{about.higherOrLowerPivotStructure}">Higher or lower pivot structure</h3>
+                    <p th:text="#{about.aBullishImpulseRequiresHigherWave}">A bullish impulse requires higher wave I and III highs, wave II above origin, wave IV above waves II and I, and positive wave II/IV retracements below 100%. Bearish rules mirror this.</p>
                 </article>
                 <article>
-                    <span>4 / Timing</span>
-                    <h3>Distinct legs</h3>
-                    <p>Each pivot leg must span at least two candles. A 15-candle impulse is preferred; compressed structures receive a quality penalty.</p>
+                    <span th:text="#{about.4Timing}">4 / Timing</span>
+                    <h3 th:text="#{about.distinctLegs}">Distinct legs</h3>
+                    <p th:text="#{about.eachPivotLegMustSpanAt}">Each pivot leg must span at least two candles. A 15-candle impulse is preferred; compressed structures receive a quality penalty.</p>
                 </article>
                 <article>
-                    <span>5 / Wave III rule</span>
-                    <h3>Not the shortest motive wave</h3>
-                    <p>For a completed impulse, Wave III must be at least the shorter of Waves I and V. A Wave III below 80% of Wave I is penalized during preliminary scoring.</p>
+                    <span th:text="#{about.5WaveIiiRule}">5 / Wave III rule</span>
+                    <h3 th:text="#{about.notTheShortestMotiveWave}">Not the shortest motive wave</h3>
+                    <p th:text="#{about.forACompletedImpulseWaveIii}">For a completed impulse, Wave III must be at least the shorter of Waves I and V. A Wave III below 80% of Wave I is penalized during preliminary scoring.</p>
                 </article>
                 <article>
-                    <span>6 / Present relevance</span>
-                    <h3>Recent confirmations</h3>
-                    <p>Impulse breakout, Wave V reversal, or Wave C confirmation must occur on the latest candle or remain active with follow-through inside the configured one-candle present window.</p>
+                    <span th:text="#{about.6PresentRelevance}">6 / Present relevance</span>
+                    <h3 th:text="#{about.recentConfirmations}">Recent confirmations</h3>
+                    <p th:text="#{about.impulseBreakoutWaveVReversalOr}">Impulse breakout, Wave V reversal, or Wave C confirmation must occur on the latest candle or remain active with follow-through inside the configured one-candle present window.</p>
                 </article>
             </div>
 
             <div class="about-elliott-details">
                 <article>
-                    <h3>Impulse and Wave V outputs</h3>
+                    <h3 th:text="#{about.impulseAndWaveVOutputs}">Impulse and Wave V outputs</h3>
                     <ul>
-                        <li><strong>Developing impulse:</strong> price closes 0.3% beyond Wave III from the Wave IV pivot, or below it for bearish structure.</li>
-                        <li><strong>Wave V end:</strong> a complete impulse is followed by a current reversal beyond the previous candle’s low/high.</li>
-                        <li><strong>Truncated Wave V:</strong> Wave V fails to exceed Wave III and receives an 18-point confidence penalty.</li>
-                        <li><strong>Action direction:</strong> impulse continuation follows the impulse; a Wave V end points in the reversal direction.</li>
+                        <li><strong th:text="#{about.developingImpulse}">Developing impulse:</strong> <span th:text="#{about.priceCloses03BeyondWave}">price closes 0.3% beyond Wave III from the Wave IV pivot, or below it for bearish structure.</span></li>
+                        <li><strong th:text="#{about.waveVEnd}">Wave V end:</strong> <span th:text="#{about.aCompleteImpulseIsFollowedBy}">a complete impulse is followed by a current reversal beyond the previous candle’s low/high.</span></li>
+                        <li><strong th:text="#{about.truncatedWaveV}">Truncated Wave V:</strong> <span th:text="#{about.waveVFailsToExceedWave}">Wave V fails to exceed Wave III and receives an 18-point confidence penalty.</span></li>
+                        <li><strong th:text="#{about.actionDirection}">Action direction:</strong> <span th:text="#{about.impulseContinuationFollowsTheImpulseA}">impulse continuation follows the impulse; a Wave V end points in the reversal direction.</span></li>
                     </ul>
                 </article>
                 <article>
-                    <h3>A-B-C correction outputs</h3>
+                    <h3 th:text="#{about.aBCCorrectionOutputs}">A-B-C correction outputs</h3>
                     <ul>
-                        <li>A complete five-wave impulse must precede three distinct A, B, and C legs.</li>
-                        <li>Wave A moves against the impulse but must remain beyond the original Wave 0.</li>
-                        <li>Wave B recovers toward the impulse direction; recovery is limited to 2× Wave A.</li>
-                        <li>Wave C moves against B; the complete correction must retrace more than 0% and less than 100% of the impulse.</li>
-                        <li>A bullish correction requires a close back above the previous candle high; bearish requires a close below the previous low.</li>
+                        <li th:text="#{about.aCompleteFiveWaveImpulseMust}">A complete five-wave impulse must precede three distinct A, B, and C legs.</li>
+                        <li th:text="#{about.waveAMovesAgainstTheImpulse}">Wave A moves against the impulse but must remain beyond the original Wave 0.</li>
+                        <li th:text="#{about.waveBRecoversTowardTheImpulse}">Wave B recovers toward the impulse direction; recovery is limited to 2× Wave A.</li>
+                        <li th:text="#{about.waveCMovesAgainstBThe}">Wave C moves against B; the complete correction must retrace more than 0% and less than 100% of the impulse.</li>
+                        <li th:text="#{about.aBullishCorrectionRequiresAClose}">A bullish correction requires a close back above the previous candle high; bearish requires a close below the previous low.</li>
                     </ul>
                 </article>
             </div>
 
             <div class="about-fibonacci-grid">
-                <article><span>Wave II normal</span><strong>23.6–78.6%</strong><small>Common zone: 38.2–61.8%</small></article>
-                <article><span>Wave IV normal</span><strong>14.6–61.8%</strong><small>Common zone: 23.6–50.0%</small></article>
-                <article><span>Correction normal</span><strong>23.6–78.6%</strong><small>Common zone: 38.2–61.8%</small></article>
-                <article><span>Wave C / Wave A</span><strong>0.5–2.0×</strong><small>Common zone: 0.8–1.25×</small></article>
+                <article><span th:text="#{about.waveIiNormal}">Wave II normal</span><strong th:text="#{about.num.retracementRange}">23.6–78.6%</strong><small th:text="#{about.commonZone382618}">Common zone: 38.2–61.8%</small></article>
+                <article><span th:text="#{about.waveIvNormal}">Wave IV normal</span><strong th:text="#{about.num.waveFourRange}">14.6–61.8%</strong><small th:text="#{about.commonZone236500}">Common zone: 23.6–50.0%</small></article>
+                <article><span th:text="#{about.correctionNormal}">Correction normal</span><strong th:text="#{about.num.retracementRange}">23.6–78.6%</strong><small th:text="#{about.commonZone382618}">Common zone: 38.2–61.8%</small></article>
+                <article><span th:text="#{about.waveCWaveA}">Wave C / Wave A</span><strong th:text="#{about.num.waveCRatio}">0.5–2.0×</strong><small th:text="#{about.commonZone08125}">Common zone: 0.8–1.25×</small></article>
             </div>
 
             <div class="about-callout violet">
-                <strong>Variants and quality</strong>
-                <p>
+                <strong th:text="#{about.variantsAndQuality}">Variants and quality</strong>
+                <p th:text="#{about.standardExpandedFlatAndRunningFlat}">
                     Standard, expanded-flat, and running-flat corrections are classified from Waves B
                     and C. Expanded flats lose 4 points; running flats lose 14. Historical overlays
                     require structure quality ≥ 68 and suppress candidates that overlap a better
@@ -542,42 +606,42 @@
 
         <section id="monitoring" class="about-section" aria-labelledby="monitoring-title">
             <div class="about-section-heading">
-                <span class="about-section-number">Guide / 06</span>
+                <span class="about-section-number" th:text="#{about.guide06}">Guide / 06</span>
                 <div>
-                    <h2 id="monitoring-title">Checks, alerts and outcomes</h2>
-                    <p>
+                    <h2 id="monitoring-title" th:text="#{about.checksAlertsAndOutcomes}">Checks, alerts and outcomes</h2>
+                    <p th:text="#{about.openingAChartShowsTheAvailable}">
                         Opening a chart shows the available analysis. Follow an alert rule to receive future matches.
                     </p>
                 </div>
             </div>
 
             <div class="about-monitoring-flow">
-                <article><span>Check now</span><strong>Update price history</strong><p>Load enough indicator history and inspect the newest completed candle for the selected family and direction.</p></article>
-                <article><span>Apply rules</span><strong>Save alert settings</strong><p>Alert toggles remain drafts until the user applies the batch of changes.</p></article>
-                <article><span>Scheduled scan</span><strong>Daily, weekly, and monthly jobs</strong><p>Default schedule: daily at midnight Tuesday–Saturday, weekly on Saturday, and monthly on day one in Europe/Brussels.</p></article>
-                <article><span>Recovery</span><strong>Resume missed work</strong><p>Missed checks resume after an interruption.</p></article>
-                <article><span>Delivery</span><strong>Email the matched direction</strong><p>Notifications contain the pattern, interval, close, score version, and recorded evidence.</p></article>
+                <article><span th:text="#{about.checkNow}">Check now</span><strong th:text="#{about.updatePriceHistory}">Update price history</strong><p th:text="#{about.loadEnoughIndicatorHistoryAndInspect}">Load enough indicator history and inspect the newest completed candle for the selected family and direction.</p></article>
+                <article><span th:text="#{about.applyRules}">Apply rules</span><strong th:text="#{about.saveAlertSettings}">Save alert settings</strong><p th:text="#{about.alertTogglesRemainDraftsUntilThe}">Alert toggles remain drafts until the user applies the batch of changes.</p></article>
+                <article><span th:text="#{about.scheduledScan}">Scheduled scan</span><strong th:text="#{about.dailyWeeklyAndMonthlyJobs}">Daily, weekly, and monthly jobs</strong><p th:text="#{about.defaultScheduleDailyAtMidnightTuesday}">Default schedule: daily at midnight Tuesday–Saturday, weekly on Saturday, and monthly on day one in Europe/Brussels.</p></article>
+                <article><span th:text="#{about.recovery}">Recovery</span><strong th:text="#{about.resumeMissedWork}">Resume missed work</strong><p th:text="#{about.missedChecksResumeAfterAnInterruption}">Missed checks resume after an interruption.</p></article>
+                <article><span th:text="#{about.delivery}">Delivery</span><strong th:text="#{about.emailTheMatchedDirection}">Email the matched direction</strong><p th:text="#{about.notificationsContainThePatternIntervalClose}">Notifications contain the pattern, interval, close, score version, and recorded evidence.</p></article>
             </div>
 
             <div class="about-lifecycle">
                 <div class="about-lifecycle-line" aria-hidden="true"></div>
-                <article><span>1</span><strong>Detected</strong><p>The candlestick trade opens at the detection close; single-candle candidates first need their mandatory next-candle gate.</p></article>
-                <article><span>2</span><strong>Confirmed</strong><p>A completed candle closes at or beyond the interval R:R profit target, successfully closing the candlestick trade.</p></article>
-                <article><span>3</span><strong>Invalidated</strong><p>A completed candle closes at or beyond the configured stop loss, closing the candlestick trade at a loss.</p></article>
-                <article><span>4</span><strong>Expired</strong><p>Neither level closed by candle 8, so candle 8&rsquo;s close ends the candlestick trade. Elliott retains its own configured window.</p></article>
+                <article><span>1</span><strong th:text="#{about.detected}">Detected</strong><p th:text="#{about.theCandlestickTradeOpensAtThe}">The candlestick trade opens at the detection close; single-candle candidates first need their mandatory next-candle gate.</p></article>
+                <article><span>2</span><strong th:text="#{about.confirmed}">Confirmed</strong><p th:text="#{about.aCompletedCandleClosesAtOr}">A completed candle closes at or beyond the interval R:R profit target, successfully closing the candlestick trade.</p></article>
+                <article><span>3</span><strong th:text="#{about.invalidated}">Invalidated</strong><p th:text="#{about.aCompletedCandleClosesAtOr2}">A completed candle closes at or beyond the configured stop loss, closing the candlestick trade at a loss.</p></article>
+                <article><span>4</span><strong th:text="#{about.expired}">Expired</strong><p th:text="#{about.neitherLevelWasReachedWithinThe}">Neither level was reached within the saved horizon (8 candles daily and weekly, 6 monthly), so that candle&rsquo;s close ends the candlestick trade. Elliott retains its own configured window.</p></article>
             </div>
 
             <div class="about-callout">
-                <strong>Close-based, not intraday</strong>
-                <p>
+                <strong th:text="#{about.closeBasedNotIntraday}">Close-based, not intraday</strong>
+                <p th:text="#{about.intradayHighLowTouchesDoNot}">
                     Intraday high/low touches do not resolve lifecycle state. Only a completed candle&rsquo;s
                     close is evaluated; a close exactly on the target or stop counts as reaching that level.
                 </p>
             </div>
 
             <div class="about-callout">
-                <strong>Elliott Wave boundaries</strong>
-                <p>
+                <strong th:text="#{about.elliottWaveBoundaries}">Elliott Wave boundaries</strong>
+                <p th:text="#{about.aWaveVSetupConfirmsBeyond}">
                     A Wave V setup confirms beyond Wave IV, while a completed correction confirms beyond
                     Wave B. A later Wave V or C extension revises the same cycle and restarts its observation
                     window without another detection email. Invalidation is reserved for a hard Elliott rule
@@ -588,10 +652,10 @@
 
         <section id="history" class="about-section" aria-labelledby="history-title">
             <div class="about-section-heading">
-                <span class="about-section-number">Guide / 07</span>
+                <span class="about-section-number" th:text="#{about.guide07}">Guide / 07</span>
                 <div>
-                    <h2 id="history-title">Historical outcomes</h2>
-                    <p>
+                    <h2 id="history-title" th:text="#{about.historicalOutcomes}">Historical outcomes</h2>
+                    <p th:text="#{about.historicalScansAreRecalculatedOnDemand}">
                         Historical scans are recalculated on demand and are not persisted as alert
                         events. The selected candle count controls the visible research window.
                     </p>
@@ -600,40 +664,40 @@
 
             <div class="about-history-grid">
                 <article>
-                    <span>1–750 candles</span>
-                    <h3>User-selected lookback</h3>
-                    <p>The interval picker is followed by a candle-count picker and an estimated earliest date. If the ticker has less history, all available completed candles are analyzed.</p>
+                    <span th:text="#{about.1750Candles}">1–750 candles</span>
+                    <h3 th:text="#{about.userSelectedLookback}">User-selected lookback</h3>
+                    <p th:text="#{about.theIntervalPickerIsFollowedBy}">The interval picker is followed by a candle-count picker and an estimated earliest date. If the ticker has less history, all available completed candles are analyzed.</p>
                 </article>
                 <article>
-                    <span>Daily</span>
-                    <h3>Default: 1:2</h3>
-                    <p>The daily target uses the account's configured reward-to-risk ratio. Both the ratio and each pattern's stop-loss rule can be changed in settings.</p>
+                    <span th:text="#{about.daily}">Daily</span>
+                    <h3 th:text="#{about.default12}">Default: 1:2</h3>
+                    <p th:text="#{about.theDailyTargetUsesTheAccount}">The daily target uses the account's configured reward-to-risk ratio. Both the ratio and each pattern's stop-loss rule can be changed in settings.</p>
                 </article>
                 <article>
-                    <span>Weekly</span>
-                    <h3>Default: 1:3</h3>
-                    <p>The weekly target uses its own account-level ratio and the selected pattern's configured stop loss.</p>
+                    <span th:text="#{about.weekly}">Weekly</span>
+                    <h3 th:text="#{about.default13}">Default: 1:3</h3>
+                    <p th:text="#{about.theWeeklyTargetUsesItsOwn}">The weekly target uses its own account-level ratio and the selected pattern's configured stop loss.</p>
                 </article>
                 <article>
-                    <span>Monthly</span>
-                    <h3>Default: 1:3</h3>
-                    <p>The monthly target is configured independently from the daily and weekly ratios.</p>
+                    <span th:text="#{about.monthly}">Monthly</span>
+                    <h3 th:text="#{about.default13}">Default: 1:3</h3>
+                    <p th:text="#{about.theMonthlyTargetIsConfiguredIndependently}">The monthly target is configured independently from the daily and weekly ratios.</p>
                 </article>
                 <article>
-                    <span>ATR circuit breaker</span>
-                    <h3>25% daily · 50% weekly/monthly</h3>
-                    <p>If the configured stop implies a larger target move, the default plan switches to frozen ATR(14) × 1.5 risk, capped again at the interval percentage. Every value and the enable switch can be changed in candlestick settings.</p>
+                    <span th:text="#{about.atrCircuitBreaker}">ATR circuit breaker</span>
+                    <h3 th:text="#{about.25Daily50WeeklyMonthly}">25% daily · 50% weekly/monthly</h3>
+                    <p th:text="#{about.ifTheConfiguredStopImpliesA}">If the configured stop implies a larger target move, the default plan switches to frozen ATR(14) × 1.5 risk, capped again at the interval percentage. Every value and the enable switch can be changed in candlestick settings.</p>
                 </article>
             </div>
 
             <div class="about-outcome-grid">
-                <article class="success"><strong>Confirmed</strong><p>A completed close reaches the R:R profit target.</p></article>
-                <article class="failure"><strong>Invalidated</strong><p>A completed close reaches the configured stop loss.</p></article>
-                <article class="inconclusive"><strong>Expired</strong><p>Neither level wins, so candle 8&rsquo;s close ends the trade.</p></article>
-                <article class="pending"><strong>Pending</strong><p>The trade is still open and fewer than eight outcome candles are complete.</p></article>
+                <article class="success"><strong th:text="#{about.confirmed}">Confirmed</strong><p th:text="#{about.aCompletedCloseReachesTheR}">A completed close reaches the R:R profit target.</p></article>
+                <article class="failure"><strong th:text="#{about.invalidated}">Invalidated</strong><p th:text="#{about.aCompletedCloseReachesTheConfigured}">A completed close reaches the configured stop loss.</p></article>
+                <article class="inconclusive"><strong th:text="#{about.expired}">Expired</strong><p th:text="#{about.neitherLevelWinsSoTheClose}">Neither level wins, so the close at the end of the saved horizon ends the trade.</p></article>
+                <article class="pending"><strong th:text="#{about.pending}">Pending</strong><p th:text="#{about.theTradeIsStillOpenAnd}">The trade is still open and fewer than eight outcome candles are complete.</p></article>
             </div>
 
-            <p class="about-method-note">
+            <p class="about-method-note" th:text="#{about.historicalLifecycleUsesCompletedClosesAs}">
                 Historical lifecycle uses completed closes as deterministic entry and exit observations.
                 It does not model spread, slippage, fees, taxes, borrow availability, dividends,
                 position sizing, capital limits, or overlapping trades.
@@ -642,33 +706,33 @@
 
         <section id="limitations" class="about-section about-limitations" aria-labelledby="limitations-title">
             <div class="about-section-heading">
-                <span class="about-section-number">Guide / 08</span>
+                <span class="about-section-number" th:text="#{about.guide08}">Guide / 08</span>
                 <div>
-                    <h2 id="limitations-title">Limits of the analysis</h2>
-                    <p>
+                    <h2 id="limitations-title" th:text="#{about.limitsOfTheAnalysis}">Limits of the analysis</h2>
+                    <p th:text="#{about.keepTheseLimitationsInMindWhen}">
                         Keep these limitations in mind when reviewing signals.
                     </p>
                 </div>
             </div>
 
             <div class="about-limit-grid">
-                <article><span>01</span><h3>Scores are not probabilities</h3><p>The candlestick score orders recorded confluence. Existing validation does not support reading 88/100 as an 88% chance of success.</p></article>
-                <article><span>02</span><h3>Pattern names are classifications</h3><p>Correct geometric classification does not prove that the following price move will match the assigned BUY or SELL/SHORT direction.</p></article>
-                <article><span>03</span><h3>Elliott interpretation remains heuristic</h3><p>Volatility-scaled pivots improve repeatability, but different sensitivity choices can still produce competing valid structures.</p></article>
-                <article><span>04</span><h3>Market data can be incomplete</h3><p>Listings have finite histories, providers can differ, and recently formed candles may be revised before their period completes.</p></article>
-                <article><span>05</span><h3>Historical outcomes are simplified</h3><p>Fixed close-to-close measurements are not executable portfolio simulations and do not include trading frictions.</p></article>
-                <article><span>06</span><h3>Company disclosures arrive later</h3><p>Congressional filings can be reported up to 45 days after a transaction. The temporary API Ninjas free response omits the insider transaction date, so StockWatch labels the filing date as a fallback; returns still use filed prices and completed closes, not an investor's actual execution.</p></article>
+                <article><span>01</span><h3 th:text="#{about.scoresAreNotProbabilities}">Scores are not probabilities</h3><p th:text="#{about.theCandlestickScoreOrdersRecordedConfluence}">The candlestick score orders recorded confluence. Existing validation does not support reading 88/100 as an 88% chance of success.</p></article>
+                <article><span>02</span><h3 th:text="#{about.patternNamesAreClassifications}">Pattern names are classifications</h3><p th:text="#{about.correctGeometricClassificationDoesNotProve}">Correct geometric classification does not prove that the following price move will match the assigned BUY or SELL/SHORT direction.</p></article>
+                <article><span>03</span><h3 th:text="#{about.elliottInterpretationRemainsHeuristic}">Elliott interpretation remains heuristic</h3><p th:text="#{about.volatilityScaledPivotsImproveRepeatabilityBut}">Volatility-scaled pivots improve repeatability, but different sensitivity choices can still produce competing valid structures.</p></article>
+                <article><span>04</span><h3 th:text="#{about.marketDataCanBeIncomplete}">Market data can be incomplete</h3><p th:text="#{about.listingsHaveFiniteHistoriesProvidersCan}">Listings have finite histories, providers can differ, and recently formed candles may be revised before their period completes.</p></article>
+                <article><span>05</span><h3 th:text="#{about.historicalOutcomesAreSimplified}">Historical outcomes are simplified</h3><p th:text="#{about.fixedCloseToCloseMeasurementsAre}">Fixed close-to-close measurements are not executable portfolio simulations and do not include trading frictions.</p></article>
+                <article><span>06</span><h3 th:text="#{about.companyDisclosuresArriveLater}">Company disclosures arrive later</h3><p th:text="#{about.congressionalFilingsCanBeReportedUp}">Congressional filings can be reported up to 45 days after a transaction. The temporary API Ninjas free response omits the insider transaction date, so StockWatch labels the filing date as a fallback; returns are measured from the first completed close after the filing became public, the earliest price a follower could act on, not from the insider's own execution.</p></article>
             </div>
 
             <div class="about-final-cta">
                 <div>
-                    <span class="eyebrow">Explore the charts</span>
-                    <h2>Review the signals<br>and their supporting data.</h2>
-                    <p>Inspect the evidence, compare intervals, and decide which combinations deserve monitoring.</p>
+                    <span class="eyebrow" th:text="#{about.exploreTheCharts}">Explore the charts</span>
+                    <h2><span th:text="#{about.reviewTheSignals}">Review the signals</span><br><span th:text="#{about.andTheirSupportingData}">and their supporting data.</span></h2>
+                    <p th:text="#{about.inspectTheEvidenceCompareIntervalsAnd}">Inspect the evidence, compare intervals, and decide which combinations deserve monitoring.</p>
                 </div>
                 <div class="about-hero-actions">
-                    <a th:href="@{/signup}" class="btn-accent large">Create an account</a>
-                    <a th:href="@{/}" class="btn-primary large">Return home</a>
+                    <a th:href="@{/signup}" class="btn-accent large" th:text="#{auth.login.createAccount}">Create an account</a>
+                    <a th:href="@{/}" class="btn-primary large" th:text="#{about.returnHome}">Return home</a>
                 </div>
             </div>
         </section>
@@ -679,8 +743,8 @@
             <span class="logo-mark" aria-hidden="true"></span>
             <span class="logo-word">StockWatch <span>24/7</span></span>
         </a>
-        <span class="footer-tagline">Stock charts and technical alerts.</span>
-        <a href="#contents">Back to contents ↑</a>
+        <span class="footer-tagline" th:text="#{about.stockChartsAndTechnicalAlerts}">Stock charts and technical alerts.</span>
+        <a href="#contents" th:text="#{about.backToContents}">Back to contents ↑</a>
         <span>© 2026 StockWatch 24/7</span>
     </footer>
 </div>

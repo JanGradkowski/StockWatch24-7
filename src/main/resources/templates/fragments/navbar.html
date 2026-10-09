@@ -10,19 +10,22 @@
     <script th:src="@{/js/notifications-read.js}" defer></script>
     <th:block th:replace="~{fragments/app-sidebar :: sidebar}"></th:block>
   </th:block>
-  <nav class="navbar" aria-label="Application navigation">
+  <nav class="navbar" aria-label="Application navigation" th:aria-label="#{nav.aria}">
     <button th:if="${showAppNavigation == true}" id="appMenuToggle" type="button" class="app-nav-icon-button app-menu-toggle"
-            aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false">
+            aria-label="Open navigation" th:aria-label="#{nav.openMenu}" aria-controls="appSidebar" aria-expanded="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
-    <a class="logo app-header-logo" th:href="@{/home}" aria-label="StockWatch 24/7 dashboard">
+    <th:block th:if="${firstName != null}">
+      <div th:replace="~{fragments/history-back :: historyBack(@{/home})}"></div>
+    </th:block>
+    <a class="logo app-header-logo" th:href="@{/home}" aria-label="StockWatch 24/7 dashboard" th:aria-label="#{nav.logoDashboard}">
       <span class="logo-mark" aria-hidden="true"></span>
       <span class="logo-word">StockWatch <span>24/7</span></span>
     </a>
 
     <div class="search-container">
-      <label for="globalTickerSearch" hidden>Search stocks or indexes</label>
-      <input type="search" id="globalTickerSearch" placeholder="Search stocks or indexes — AAPL, S&amp;P 500..."
+      <label for="globalTickerSearch" hidden th:text="#{nav.search.label}">Search stocks or indexes</label>
+      <input type="search" id="globalTickerSearch" placeholder="Search stocks or indexes — AAPL, S&amp;P 500..." th:placeholder="#{nav.search.placeholder}"
              class="global-ticker-search" autocomplete="off" aria-controls="globalSuggestionsDropdown"
              aria-autocomplete="list" aria-expanded="false">
       <div id="globalSuggestionsDropdown" class="global-suggestions" role="listbox" hidden></div>
@@ -31,19 +34,15 @@
     <div class="nav-links">
       <span th:if="${firstName != null}" class="nav-user"><span class="nav-user-dot" aria-hidden="true"></span><span th:text="${firstName}">Trader</span></span>
       <form th:if="${firstName != null}" th:action="@{/logout}" method="post" class="logout-form">
-        <button type="submit" class="logout-btn">Sign out</button>
+        <button type="submit" class="logout-btn" th:text="#{nav.signOut}">Sign out</button>
       </form>
 
-      <a th:if="${firstName == null}" href="/login" class="btn-primary">Sign In</a>
-      <a th:if="${firstName == null}" href="/signup" class="btn-accent">Get started</a>
+      <a th:if="${firstName == null}" href="/login" class="btn-primary" th:text="#{nav.signIn}">Sign In</a>
+      <a th:if="${firstName == null}" href="/signup" class="btn-accent" th:text="#{nav.getStarted}">Get started</a>
     </div>
     <span th:if="${firstName != null}" id="accountThemeSync" hidden
           th:attr="data-theme-endpoint=@{/api/settings/theme},data-csrf-token=${_csrf.token}"></span>
   </nav>
-
-  <th:block th:if="${firstName != null}">
-    <div th:replace="~{fragments/history-back :: historyBack(@{/home})}"></div>
-  </th:block>
 
   <script th:if="${showAppNavigation == true}" th:src="@{/js/app-navigation.js}"></script>
 
@@ -150,7 +149,9 @@
               symbolLabel.textContent = symbol;
               const typeLabel = document.createElement('span');
               typeLabel.className = 'suggestion-type';
-              typeLabel.textContent = instrumentType === 'INDEX' ? 'INDEX' : instrumentType;
+              const typeKey = 'instrumentType.' + instrumentType;
+              const translatedType = window.StockWatchI18n ? window.StockWatchI18n.t(typeKey) : typeKey;
+              typeLabel.textContent = translatedType === typeKey ? instrumentType : translatedType;
               typeLabel.hidden = instrumentType === 'EQUITY';
               const nameLabel = document.createElement('span');
               nameLabel.className = 'suggestion-name';

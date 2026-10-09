@@ -1,6 +1,6 @@
 # Secure deployment checklist
 
-The default configuration is for local development. A public deployment must use the `prod` profile and a trusted TLS reverse proxy. The production profile now fails fast when HTTPS, the public URL, trusted-proxy handling, or required SMTP security is missing.
+A public deployment must use the `prod` profile and a trusted TLS reverse proxy. The production checks run under every profile except `dev` and `test`, so starting without a profile fails closed: the app refuses to start when HTTPS, Secure session cookies, the public URL, trusted-proxy handling, required SMTP security or a strong `MFA_ENCRYPTION_KEY` is missing. Local development uses the `dev` profile, which only makes sense on `http://localhost`.
 
 ## 1. Secrets and database roles
 
@@ -45,6 +45,7 @@ SMTP_PASSWORD=<secret>
 SMTP_AUTH=true
 SMTP_STARTTLS=true
 SMTP_STARTTLS_REQUIRED=true
+MFA_ENCRYPTION_KEY=<unique random secret, at least 32 characters>
 ```
 
 The production profile itself fixes `REQUIRE_HTTPS=true`, `EMAIL_VERIFICATION_REQUIRED=true`, and mandatory SMTP STARTTLS. Configure DNS SPF, DKIM, and DMARC for the sender domain.

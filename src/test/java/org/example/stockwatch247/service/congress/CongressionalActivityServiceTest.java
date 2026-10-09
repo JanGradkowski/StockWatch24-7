@@ -194,7 +194,7 @@ class CongressionalActivityServiceTest {
     }
 
     @Test
-    void dashboardAndArchiveCalculateDirectionalReturnFromTransactionDateCloseProxy() {
+    void dashboardAndArchiveMeasureTheReturnFromTheFirstCloseAfterDisclosure() {
         Fixture fixture = new Fixture();
         LocalDate transactionDate = LocalDate.now(java.time.ZoneOffset.UTC).minusDays(4);
         CongressionalTrade trade = new CongressionalTrade();
@@ -212,22 +212,25 @@ class CongressionalActivityServiceTest {
         delivery.setTrade(trade);
         delivery.setStatus(CongressionalDeliveryStatus.SENT);
         delivery.setCreatedAt(Instant.now());
-        long entryTimestamp = transactionDate.atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond();
-        long latestTimestamp = transactionDate.plusDays(3)
+        long transactionTimestamp = transactionDate.atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond();
+        long entryTimestamp = transactionDate.plusDays(3).atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond();
+        long latestTimestamp = transactionDate.plusDays(4)
                 .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond();
-        Candle entry = new Candle("AAPL", "1d", entryTimestamp, 100, 102, 98, 100.0, 1000L);
-        Candle latest = new Candle("AAPL", "1d", latestTimestamp, 120, 122, 118, 120.0, 1000L);
+        // The move between the transaction and its disclosure was not available to followers.
+        Candle transactionDay = new Candle("AAPL", "1d", transactionTimestamp, 100, 102, 98, 100.0, 1000L);
+        Candle entry = new Candle("AAPL", "1d", entryTimestamp, 110, 112, 108, 110.0, 1000L);
+        Candle latest = new Candle("AAPL", "1d", latestTimestamp, 121, 122, 118, 121.0, 1000L);
         when(fixture.deliveryRepository.findAllForUser(fixture.user)).thenReturn(List.of(delivery));
         when(fixture.candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc("AAPL", "1d"))
-                .thenReturn(List.of(entry, latest));
-        when(fixture.candleCompletionService.isComplete(entryTimestamp, TimeInterval.DAILY)).thenReturn(true);
-        when(fixture.candleCompletionService.isComplete(latestTimestamp, TimeInterval.DAILY)).thenReturn(true);
+                .thenReturn(List.of(transactionDay, entry, latest));
+        when(fixture.candleCompletionService.isComplete(org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.eq(TimeInterval.DAILY))).thenReturn(true);
 
         var activity = fixture.service.getAllActivity(fixture.user);
 
         assertThat(activity).singleElement().satisfies(view -> {
-            assertThat(view.returnPercent()).isEqualByComparingTo("20.00");
-            assertThat(view.returnAsOf()).isEqualTo(transactionDate.plusDays(3));
+            assertThat(view.returnPercent()).isEqualByComparingTo("10.00");
+            assertThat(view.returnAsOf()).isEqualTo(transactionDate.plusDays(4));
         });
     }
 

@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title th:text="${symbol + ' — Technical Outlook'}">Technical Outlook</title>
-  <script th:src="@{/js/theme.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <title th:text="#{outlook.pageTitle(${symbol})}">Technical Outlook</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
@@ -52,12 +52,12 @@
       <span class="stock-loader-scan-line"></span>
     </div>
     <div class="stock-loader-copy">
-      <span class="stock-loader-kicker">Loading analysis</span>
-      <h1 id="technicalOutlookLoaderTitle">Building <span th:text="${symbol}">AAPL</span> outlook</h1>
-      <p id="technicalOutlookLoaderStatus">Calculating indicators…</p>
+      <span class="stock-loader-kicker" th:text="#{outlook.loaderKicker}">Loading analysis</span>
+      <h1 id="technicalOutlookLoaderTitle" th:text="#{outlook.loaderTitle(${symbol})}">Building AAPL outlook</h1>
+      <p id="technicalOutlookLoaderStatus" th:text="#{outlook.calculatingIndicators}">Calculating indicators…</p>
     </div>
     <div class="stock-loader-progress" aria-hidden="true"><span></span></div>
-    <p class="stock-loader-note">Based on completed candles</p>
+    <p class="stock-loader-note" th:text="#{outlook.basedOnCompleted}">Based on completed candles</p>
   </div>
 </div>
 <div class="bg-animation" aria-hidden="true">
@@ -72,98 +72,98 @@
       aria-busy="true">
   <header class="signal-report-header technical-outlook-header">
     <div class="signal-report-heading">
-      <div class="signal-report-eyebrow">Technical analysis</div>
-      <h1><span th:text="${symbol}">AAPL</span> Technical Outlook</h1>
-      <p>Review the outlook, its indicators and performance against the market.</p>
+      <div class="signal-report-eyebrow" th:text="#{activityDetail.tab.technical}">Technical analysis</div>
+      <h1 th:text="#{outlook.heading(${symbol})}">AAPL Technical Outlook</h1>
+      <p th:text="#{outlook.subtitle}">Review the outlook, its indicators and performance against the market.</p>
     </div>
   </header>
 
-  <section class="technical-outlook-controlbar" aria-label="Technical outlook controls">
+  <section class="technical-outlook-controlbar" aria-label="Technical outlook controls" th:aria-label="#{outlook.controlsAria}">
     <div>
-      <span class="technical-outlook-control-label">Analysis interval</span>
-      <div class="signal-view-tabs outlook-interval-tabs" role="group" aria-label="Analysis interval">
-        <button type="button" class="signal-view-tab active" data-outlook-interval="1d">Daily</button>
-        <button type="button" class="signal-view-tab" data-outlook-interval="1wk">Weekly</button>
-        <button type="button" class="signal-view-tab" data-outlook-interval="1mo">Monthly</button>
+      <span class="technical-outlook-control-label" th:text="#{outlook.analysisInterval}">Analysis interval</span>
+      <div class="signal-view-tabs outlook-interval-tabs" role="group" aria-label="Analysis interval" th:aria-label="#{outlook.analysisInterval}">
+        <button type="button" class="signal-view-tab active" data-outlook-interval="1d" th:text="#{common.interval.DAILY}">Daily</button>
+        <button type="button" class="signal-view-tab" data-outlook-interval="1wk" th:text="#{common.interval.WEEKLY}">Weekly</button>
+        <button type="button" class="signal-view-tab" data-outlook-interval="1mo" th:text="#{common.interval.MONTHLY}">Monthly</button>
       </div>
     </div>
     <div class="technical-outlook-control-actions">
-      <div id="outlookFreshness" class="technical-outlook-freshness" aria-live="polite">Loading completed candles…</div>
-      <button id="editIndicatorPeriods" type="button" class="btn-secondary" disabled>Edit indicator periods</button>
+      <div id="outlookFreshness" class="technical-outlook-freshness" aria-live="polite" th:text="#{js.virtualTrade.loadingCandles}">Loading completed candles…</div>
+      <button id="editIndicatorPeriods" type="button" class="btn-secondary" disabled th:text="#{outlook.editPeriods}">Edit indicator periods</button>
     </div>
   </section>
 
   <nav class="signal-view-tabs signal-four-view-tabs technical-outlook-tabs"
-       role="tablist" aria-label="Technical outlook sections">
+       role="tablist" aria-label="Technical outlook sections" th:aria-label="#{outlook.tabsAria}">
     <button id="generalOutlookTab" type="button" class="signal-view-tab active" role="tab"
-            aria-selected="true" aria-controls="generalOutlookPanel" data-outlook-tab="general">General outlook</button>
+            aria-selected="true" aria-controls="generalOutlookPanel" data-outlook-tab="general" th:text="#{outlook.tab.general}">General outlook</button>
     <button id="scoreReportTab" type="button" class="signal-view-tab" role="tab"
-            aria-selected="false" aria-controls="scoreReportPanel" data-outlook-tab="score">Score report</button>
+            aria-selected="false" aria-controls="scoreReportPanel" data-outlook-tab="score" th:text="#{detail.tab.score}">Score report</button>
     <button id="marketComparisonTab" type="button" class="signal-view-tab" role="tab"
-            aria-selected="false" aria-controls="marketComparisonPanel" data-outlook-tab="market">Market comparison</button>
+            aria-selected="false" aria-controls="marketComparisonPanel" data-outlook-tab="market" th:text="#{outlook.tab.market}">Market comparison</button>
     <button id="virtualTradesTab" type="button" class="signal-view-tab" role="tab"
-            aria-selected="false" aria-controls="virtualTradesPanel" data-outlook-tab="trades">Demo Trading</button>
+            aria-selected="false" aria-controls="virtualTradesPanel" data-outlook-tab="trades" th:text="#{virtualTrades.heading}">Demo Trading</button>
   </nav>
 
   <div id="outlookError" class="technical-outlook-error" role="alert" hidden>
     <span id="outlookErrorMessage"></span>
-    <button id="retryOutlook" type="button" class="btn-secondary">Try again</button>
+    <button id="retryOutlook" type="button" class="btn-secondary" th:text="#{outlook.tryAgain}">Try again</button>
   </div>
   <div id="outlookLoading" class="technical-outlook-loading" role="status">
     <span class="technical-outlook-loader" aria-hidden="true"></span>
-    <span>Building the technical outlook…</span>
+    <span th:text="#{outlook.building}">Building the technical outlook…</span>
   </div>
 
   <section id="generalOutlookPanel" class="technical-outlook-panel" role="tabpanel"
            aria-labelledby="generalOutlookTab" data-outlook-panel="general">
     <section class="technical-outlook-summary" aria-labelledby="headlineOutlookTitle">
       <div class="technical-outlook-summary-main">
-        <span class="signal-report-eyebrow">Overall outlook</span>
-        <h2 id="headlineOutlookTitle">Awaiting completed candles</h2>
-        <p id="headlineOutlookScore">The score will appear when analysis is ready.</p>
+        <span class="signal-report-eyebrow" th:text="#{outlook.overall}">Overall outlook</span>
+        <h2 id="headlineOutlookTitle" th:text="#{outlook.awaitingCandles}">Awaiting completed candles</h2>
+        <p id="headlineOutlookScore" th:text="#{outlook.scorePending}">The score will appear when analysis is ready.</p>
       </div>
-      <div class="technical-outlook-votes" aria-label="Headline votes">
-        <div class="technical-vote buy"><span>Buy</span><strong id="headlineBuy">—</strong></div>
-        <div class="technical-vote neutral"><span>Neutral</span><strong id="headlineNeutral">—</strong></div>
-        <div class="technical-vote sell"><span>Sell/Short</span><strong id="headlineSell">—</strong></div>
+      <div class="technical-outlook-votes" aria-label="Headline votes" th:aria-label="#{outlook.votesAria}">
+        <div class="technical-vote buy"><span th:text="#{technicalWatchlist.filter.buy}">Buy</span><strong id="headlineBuy">—</strong></div>
+        <div class="technical-vote neutral"><span th:text="#{technicalWatchlist.filter.neutral}">Neutral</span><strong id="headlineNeutral">—</strong></div>
+        <div class="technical-vote sell"><span th:text="#{analysis.email.sell}">Sell/Short</span><strong id="headlineSell">—</strong></div>
       </div>
       <div id="categoryVoteGrid" class="technical-category-grid"></div>
     </section>
 
     <section class="virtual-trade-launch-card" aria-labelledby="virtualTradeLaunchTitle">
       <div>
-        <span class="signal-report-eyebrow">Paper decision &middot; no real order</span>
-        <h2 id="virtualTradeLaunchTitle">Record a demo trade at the current quote</h2>
-        <p>A demo buy tracks gains or losses. A demo sell tracks avoided losses or missed gains; it is not a short position. The entry price and analysis are saved.</p>
+        <span class="signal-report-eyebrow" th:text="#{virtualTrade.eyebrow}">Paper decision &middot; no real order</span>
+        <h2 id="virtualTradeLaunchTitle" th:text="#{outlook.recordDemoTrade}">Record a demo trade at the current quote</h2>
+        <p th:text="#{outlook.demoTradeHelp}">A demo buy tracks gains or losses. A demo sell tracks avoided losses or missed gains; it is not a short position. The entry price and analysis are saved.</p>
       </div>
       <div class="virtual-trade-launch-actions">
-        <button type="button" class="btn-accent virtual-buy-button" data-create-virtual-trade="BUY">Demo buy</button>
-        <button type="button" class="btn-secondary virtual-sell-button" data-create-virtual-trade="SELL">Demo sell</button>
+        <button type="button" class="btn-accent virtual-buy-button" data-create-virtual-trade="BUY" th:text="#{js.virtualTrade.marker.buy}">Demo buy</button>
+        <button type="button" class="btn-secondary virtual-sell-button" data-create-virtual-trade="SELL" th:text="#{js.virtualTrade.marker.sell}">Demo sell</button>
       </div>
     </section>
 
     <section class="signal-chart-card technical-outlook-chart-card" aria-labelledby="outlookChartTitle">
       <div class="signal-chart-card-heading technical-outlook-chart-heading">
         <div>
-          <span class="signal-report-eyebrow">Price chart</span>
-          <h2 id="outlookChartTitle">Price action and technical overlays</h2>
+          <span class="signal-report-eyebrow" th:text="#{outlook.priceChart}">Price chart</span>
+          <h2 id="outlookChartTitle" th:text="#{outlook.priceChartTitle}">Price action and technical overlays</h2>
         </div>
-        <div class="technical-overlay-controls" aria-label="Price overlays">
-          <label><input type="checkbox" data-price-overlay="ema" checked> <span id="emaOverlayLabel">EMA 20 / 50</span></label>
-          <label><input type="checkbox" data-price-overlay="bollinger" checked> <span id="bollingerOverlayLabel">Bollinger Bands 20, 2σ</span></label>
-          <label><input type="checkbox" data-price-overlay="vwap" checked> <span id="vwapOverlayLabel">VWAP 20</span></label>
-          <label><input type="checkbox" data-price-overlay="levels" checked> <span id="levelsOverlayLabel">Support / resistance 20</span></label>
-          <label><input type="checkbox" data-price-overlay="elliott" checked> Independent Elliott structures</label>
+        <div class="technical-overlay-controls" aria-label="Price overlays" th:aria-label="#{outlook.overlaysAria}">
+          <label><input type="checkbox" data-price-overlay="ema" checked> <span id="emaOverlayLabel" th:text="#{outlook.overlayEma}">EMA 20 / 50</span></label>
+          <label><input type="checkbox" data-price-overlay="bollinger" checked> <span id="bollingerOverlayLabel" th:text="#{outlook.overlayBollingerBands}">Bollinger Bands 20, 2σ</span></label>
+          <label><input type="checkbox" data-price-overlay="vwap" checked> <span id="vwapOverlayLabel" th:text="#{outlook.overlayVwap}">VWAP 20</span></label>
+          <label><input type="checkbox" data-price-overlay="levels" checked> <span id="levelsOverlayLabel" th:text="#{outlook.overlayLevels}">Support / resistance 20</span></label>
+          <label><input type="checkbox" data-price-overlay="elliott" checked> <span th:text="#{outlook.overlayElliott}">Independent Elliott structures</span></label>
         </div>
       </div>
       <div class="technical-chart-legend">
-        <span id="fastEmaLegend" class="legend-fast">EMA 20</span><span id="slowEmaLegend" class="legend-slow">EMA 50</span>
-        <span id="longSmaLegend" class="legend-long">SMA 200</span><span id="bollingerLegend" class="legend-band">Bollinger 20, 2σ</span>
-        <span id="vwapLegend" class="legend-vwap">VWAP 20</span><span id="levelLegend" class="legend-level">Support / resistance 20</span>
+        <span id="fastEmaLegend" class="legend-fast" th:text="#{outlook.legendFastEma}">EMA 20</span><span id="slowEmaLegend" class="legend-slow" th:text="#{outlook.legendSlowEma}">EMA 50</span>
+        <span id="longSmaLegend" class="legend-long" th:text="#{outlook.legendLongSma}">SMA 200</span><span id="bollingerLegend" class="legend-band" th:text="#{outlook.legendBollinger}">Bollinger 20, 2σ</span>
+        <span id="vwapLegend" class="legend-vwap" th:text="#{outlook.overlayVwap}">VWAP 20</span><span id="levelLegend" class="legend-level" th:text="#{outlook.overlayLevels}">Support / resistance 20</span>
       </div>
       <p id="technicalOutlookHistoryStatus" class="technical-outlook-freshness" role="status" aria-live="polite"></p>
-      <div id="technicalOutlookPriceChart" class="technical-outlook-price-chart" aria-label="Candlestick technical outlook chart"></div>
-      <p class="technical-chart-note">Markers identify demo trades, recent technical signals, <span id="rsiMarkerLabel">RSI 14</span> state changes, and followed congressional or insider activity. Elliott signals use the selected interval. Hover-only subwaves do not affect the outlook.</p>
+      <div id="technicalOutlookPriceChart" class="technical-outlook-price-chart" aria-label="Candlestick technical outlook chart" th:aria-label="#{outlook.chartAria}"></div>
+      <p class="technical-chart-note"><span th:text="#{outlook.markersPrefix}">Markers identify demo trades, recent technical signals,</span> <span id="rsiMarkerLabel" th:text="#{outlook.markersRsi}">RSI 14</span> <span th:text="#{outlook.markersSuffix}">state changes, and followed congressional or insider activity. Elliott signals use the selected interval. Hover-only subwaves do not affect the outlook.</span></p>
     </section>
   </section>
 
@@ -171,33 +171,33 @@
            aria-labelledby="scoreReportTab" data-outlook-panel="score" hidden>
     <section class="signal-evidence-section technical-raw-score" aria-labelledby="rawScoreTitle">
       <div class="signal-section-heading">
-        <div><span class="signal-report-eyebrow">Indicator scores</span><h2 id="rawScoreTitle">Individual indicator votes</h2></div>
+        <div><span class="signal-report-eyebrow" th:text="#{outlook.indicatorScores}">Indicator scores</span><h2 id="rawScoreTitle" th:text="#{outlook.indicatorVotes}">Individual indicator votes</h2></div>
         <strong id="rawScoreClassification">—</strong>
       </div>
       <div class="technical-raw-score-line">
         <span id="rawVoteCounts">—</span><span id="rawNetScore">—</span>
       </div>
-      <p>Every available input receives exactly +1, 0, or -1. Missing data is excluded rather than treated as neutral.</p>
+      <p th:text="#{outlook.voteRule}">Every available input receives exactly +1, 0, or -1. Missing data is excluded rather than treated as neutral.</p>
     </section>
 
     <section class="signal-evidence-section" aria-labelledby="indicatorAnalysisTitle">
       <div class="signal-section-heading">
-        <div><span class="signal-report-eyebrow">Indicator details</span><h2 id="indicatorAnalysisTitle">Indicator analysis</h2></div>
+        <div><span class="signal-report-eyebrow" th:text="#{outlook.indicatorDetails}">Indicator details</span><h2 id="indicatorAnalysisTitle" th:text="#{outlook.indicatorAnalysis}">Indicator analysis</h2></div>
       </div>
       <div id="indicatorCardGrid" class="technical-indicator-grid"></div>
     </section>
 
     <section class="signal-lifecycle-section" aria-labelledby="recentTechnicalSignalsTitle">
       <div class="signal-section-heading">
-        <div><span class="signal-report-eyebrow">Latest signals</span><h2 id="recentTechnicalSignalsTitle">Recent technical signals</h2></div>
-        <span id="recentSignalCount">0 signals</span>
+        <div><span class="signal-report-eyebrow" th:text="#{home.latestSignals}">Latest signals</span><h2 id="recentTechnicalSignalsTitle" th:text="#{outlook.recentSignals}">Recent technical signals</h2></div>
+        <span id="recentSignalCount" th:text="#{outlook.zeroSignals}">0 signals</span>
       </div>
-      <p>Signals from the last ten candles on each signal's interval.</p>
+      <p th:text="#{outlook.recentSignalsHelp}">Signals from the last ten candles on each signal's interval.</p>
       <div id="recentTechnicalSignals" class="technical-recent-signal-grid"></div>
     </section>
 
     <details class="technical-methodology">
-      <summary>Scoring methodology and thresholds</summary>
+      <summary th:text="#{outlook.methodology}">Scoring methodology and thresholds</summary>
       <div id="technicalMethodologyCopy"></div>
     </details>
   </section>
@@ -206,16 +206,16 @@
            aria-labelledby="marketComparisonTab" data-outlook-panel="market" hidden>
     <section class="signal-results-section technical-market-section" aria-labelledby="relativeStrengthTitle">
       <div class="signal-section-heading">
-        <div><span class="signal-report-eyebrow">Stock versus its broad market</span><h2 id="relativeStrengthTitle">Relative strength</h2></div>
-        <span id="relativeTrendBadge" class="technical-relative-badge">Loading</span>
+        <div><span class="signal-report-eyebrow" th:text="#{outlook.marketKicker}">Stock versus its broad market</span><h2 id="relativeStrengthTitle" th:text="#{outlook.relativeStrength}">Relative strength</h2></div>
+        <span id="relativeTrendBadge" class="technical-relative-badge" th:text="#{js.outlook.loading}">Loading</span>
       </div>
-      <p id="benchmarkDescription">Resolving the appropriate regional benchmark…</p>
+      <p id="benchmarkDescription" th:text="#{outlook.resolvingBenchmark}">Resolving the appropriate regional benchmark…</p>
       <div id="marketHorizonGrid" class="technical-market-horizon-grid"></div>
       <div class="technical-relative-chart-card">
-        <div><h3>Normalized stock / market ratio</h3><p>100 is the starting ratio for the visible history. A rising line means the stock is outperforming the benchmark.</p></div>
-        <div id="relativeStrengthChart" class="technical-relative-chart" aria-label="Normalized stock versus market ratio chart"></div>
+        <div><h3 th:text="#{outlook.ratioTitle}">Normalized stock / market ratio</h3><p th:text="#{outlook.ratioHelp}">100 is the starting ratio for the visible history. A rising line means the stock is outperforming the benchmark.</p></div>
+        <div id="relativeStrengthChart" class="technical-relative-chart" aria-label="Normalized stock versus market ratio chart" th:aria-label="#{outlook.ratioChartAria}"></div>
       </div>
-      <p class="technical-chart-note">Market-relative strength is one descriptive input in the category-balanced outlook. It is not a forecast.</p>
+      <p class="technical-chart-note" th:text="#{outlook.marketNote}">Market-relative strength is one descriptive input in the category-balanced outlook. It is not a forecast.</p>
     </section>
   </section>
 
@@ -223,10 +223,10 @@
            aria-labelledby="virtualTradesTab" data-outlook-panel="trades" hidden>
     <section class="signal-lifecycle-section technical-outlook-trades-section">
       <div class="signal-section-heading">
-        <div><span class="signal-report-eyebrow">Demo trades for this stock</span><h2>Demo Trading</h2></div>
-        <a th:href="@{/virtual-trades}" class="btn-secondary">All demo trades</a>
+        <div><span class="signal-report-eyebrow" th:text="#{outlook.demoTradesKicker}">Demo trades for this stock</span><h2 th:text="#{virtualTrades.heading}">Demo Trading</h2></div>
+        <a th:href="@{/virtual-trades}" class="btn-secondary" th:text="#{outlook.allDemoTrades}">All demo trades</a>
       </div>
-      <p>Open trades update with prices. Closing a trade saves its final price and analysis.</p>
+      <p th:text="#{outlook.demoTradesHelp}">Open trades update with prices. Closing a trade saves its final price and analysis.</p>
       <div id="companyVirtualTrades" class="company-virtual-trades-grid"></div>
     </section>
   </section>
@@ -234,87 +234,88 @@
 
 <dialog id="indicatorPeriodDialog" class="unsaved-alert-dialog indicator-period-dialog" aria-labelledby="indicatorPeriodDialogTitle">
   <form id="indicatorPeriodForm" class="unsaved-alert-dialog-content">
-    <span class="unsaved-alert-kicker">Saved analysis profile</span>
-    <h2 id="indicatorPeriodDialogTitle">Indicator periods</h2>
-    <p>These periods are shared with Settings and apply to all analysis intervals.</p>
+    <span class="unsaved-alert-kicker" th:text="#{outlook.profileKicker}">Saved analysis profile</span>
+    <h2 id="indicatorPeriodDialogTitle" th:text="#{outlook.periodsTitle}">Indicator periods</h2>
+    <p th:text="#{outlook.periodsHelp}">These periods are shared with Settings and apply to all analysis intervals.</p>
     <div class="indicator-period-groups">
       <fieldset>
-        <legend>Momentum and volatility</legend>
+        <legend th:text="#{outlook.group.momentum}">Momentum and volatility</legend>
         <div class="indicator-period-grid">
-          <label><span>RSI period</span><input type="number" min="2" max="500" step="1" required data-period-field="rsiPeriod"></label>
-          <label><span>ATR period</span><input type="number" min="2" max="500" step="1" required data-period-field="atrPeriod"></label>
-          <label><span>CCI period</span><input type="number" min="2" max="500" step="1" required data-period-field="cciPeriod"></label>
-          <label><span>Bollinger period</span><input type="number" min="2" max="500" step="1" required data-period-field="bollingerPeriod"></label>
+          <label><span th:text="#{outlook.period.rsi}">RSI period</span><input type="number" min="2" max="500" step="1" required data-period-field="rsiPeriod"></label>
+          <label><span th:text="#{outlook.period.atr}">ATR period</span><input type="number" min="2" max="500" step="1" required data-period-field="atrPeriod"></label>
+          <label><span th:text="#{outlook.period.cci}">CCI period</span><input type="number" min="2" max="500" step="1" required data-period-field="cciPeriod"></label>
+          <label><span th:text="#{outlook.period.bollinger}">Bollinger period</span><input type="number" min="2" max="500" step="1" required data-period-field="bollingerPeriod"></label>
         </div>
       </fieldset>
       <fieldset>
-        <legend>Trend</legend>
+        <legend th:text="#{outlook.group.trend}">Trend</legend>
         <div class="indicator-period-grid">
-          <label><span>Fast EMA</span><input type="number" min="2" max="500" step="1" required data-period-field="fastEmaPeriod"></label>
-          <label><span>Slow EMA</span><input type="number" min="2" max="500" step="1" required data-period-field="slowEmaPeriod"></label>
-          <label><span>Long SMA</span><input type="number" min="2" max="500" step="1" required data-period-field="longSmaPeriod"></label>
-          <label><span>MACD fast</span><input type="number" min="2" max="500" step="1" required data-period-field="macdFastPeriod"></label>
-          <label><span>MACD slow</span><input type="number" min="2" max="500" step="1" required data-period-field="macdSlowPeriod"></label>
-          <label><span>MACD signal</span><input type="number" min="2" max="500" step="1" required data-period-field="macdSignalPeriod"></label>
+          <label><span th:text="#{js.chart.fastEma}">Fast EMA</span><input type="number" min="2" max="500" step="1" required data-period-field="fastEmaPeriod"></label>
+          <label><span th:text="#{js.chart.slowEma}">Slow EMA</span><input type="number" min="2" max="500" step="1" required data-period-field="slowEmaPeriod"></label>
+          <label><span th:text="#{js.chart.longSma}">Long SMA</span><input type="number" min="2" max="500" step="1" required data-period-field="longSmaPeriod"></label>
+          <label><span th:text="#{outlook.period.macdFast}">MACD fast</span><input type="number" min="2" max="500" step="1" required data-period-field="macdFastPeriod"></label>
+          <label><span th:text="#{outlook.period.macdSlow}">MACD slow</span><input type="number" min="2" max="500" step="1" required data-period-field="macdSlowPeriod"></label>
+          <label><span th:text="#{outlook.period.macdSignal}">MACD signal</span><input type="number" min="2" max="500" step="1" required data-period-field="macdSignalPeriod"></label>
         </div>
       </fieldset>
       <fieldset>
-        <legend>Volume and price location</legend>
+        <legend th:text="#{outlook.group.volume}">Volume and price location</legend>
         <div class="indicator-period-grid">
-          <label><span>Volume average</span><input type="number" min="2" max="500" step="1" required data-period-field="volumePeriod"></label>
-          <label><span>Rolling VWAP</span><input type="number" min="2" max="500" step="1" required data-period-field="vwapPeriod"></label>
-          <label><span>Volume profile</span><input type="number" min="2" max="500" step="1" required data-period-field="volumeProfilePeriod"></label>
-          <label><span>Support / resistance</span><input type="number" min="2" max="500" step="1" required data-period-field="supportResistancePeriod"></label>
+          <label><span th:text="#{outlook.period.volume}">Volume average</span><input type="number" min="2" max="500" step="1" required data-period-field="volumePeriod"></label>
+          <label><span th:text="#{outlook.period.vwap}">Rolling VWAP</span><input type="number" min="2" max="500" step="1" required data-period-field="vwapPeriod"></label>
+          <label><span th:text="#{outlook.period.volumeProfile}">Volume profile</span><input type="number" min="2" max="500" step="1" required data-period-field="volumeProfilePeriod"></label>
+          <label><span th:text="#{outlook.period.levels}">Support / resistance</span><input type="number" min="2" max="500" step="1" required data-period-field="supportResistancePeriod"></label>
         </div>
       </fieldset>
     </div>
     <p id="indicatorPeriodStatus" class="indicator-period-status" role="status"></p>
     <div class="unsaved-alert-dialog-actions indicator-period-dialog-actions">
-      <a th:href="@{/settings/analysis-alerts}" class="btn-secondary">Open all analysis settings</a>
-      <button id="cancelIndicatorPeriods" type="button" class="btn-secondary">Cancel</button>
-      <button id="saveIndicatorPeriods" type="submit" class="btn-accent">Save and recalculate</button>
+      <a th:href="@{/settings/analysis-alerts}" class="btn-secondary" th:text="#{outlook.openSettings}">Open all analysis settings</a>
+      <button id="cancelIndicatorPeriods" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+      <button id="saveIndicatorPeriods" type="submit" class="btn-accent" th:text="#{js.outlook.saveAndRecalculate}">Save and recalculate</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="createVirtualTradeDialog" class="unsaved-alert-dialog virtual-trade-create-dialog" aria-labelledby="createVirtualTradeTitle">
   <div class="unsaved-alert-dialog-content">
-    <span class="unsaved-alert-kicker">Demo trading &middot; no real order</span>
-    <h2 id="createVirtualTradeTitle">Create demo trade</h2>
-    <p id="createVirtualTradeExplanation">Confirm to save the current price and analysis.</p>
-    <div class="virtual-trade-size-mode" role="group" aria-label="Demo trade sizing">
-      <button type="button" class="active" data-virtual-size-mode="none">Percentage only</button>
-      <button type="button" data-virtual-size-mode="quantity">Quantity</button>
-      <button type="button" data-virtual-size-mode="notional">Virtual amount</button>
+    <span class="unsaved-alert-kicker" th:text="#{outlook.createKicker}">Demo trading &middot; no real order</span>
+    <h2 id="createVirtualTradeTitle" th:text="#{js.outlook.createDemoTrade}">Create demo trade</h2>
+    <p id="createVirtualTradeExplanation" th:text="#{outlook.createHelp}">Confirm to save the current price and analysis.</p>
+    <div class="virtual-trade-size-mode" role="group" aria-label="Demo trade sizing" th:aria-label="#{outlook.sizingAria}">
+      <button type="button" class="active" data-virtual-size-mode="none" th:text="#{virtualTrades.percentageOnly}">Percentage only</button>
+      <button type="button" data-virtual-size-mode="quantity" th:text="#{outlook.sizeQuantity}">Quantity</button>
+      <button type="button" data-virtual-size-mode="notional" th:text="#{outlook.sizeAmount}">Virtual amount</button>
     </div>
     <label id="virtualTradeSizeField" class="virtual-trade-size-field" hidden>
-      <span id="virtualTradeSizeLabel">Quantity</span>
+      <span id="virtualTradeSizeLabel" th:text="#{outlook.sizeQuantity}">Quantity</span>
       <input id="virtualTradeSizeInput" type="number" min="0.00000001" max="1000000000000" step="any" inputmode="decimal">
-      <small id="virtualTradeSizeHelp">Enter a positive virtual size.</small>
+      <small id="virtualTradeSizeHelp" th:text="#{js.outlook.positiveSize}">Enter a positive virtual size.</small>
     </label>
     <div id="createVirtualTradeStatus" class="technical-outlook-freshness" role="status"></div>
     <div class="unsaved-alert-dialog-actions">
-      <button id="cancelCreateVirtualTrade" type="button" class="btn-secondary">Cancel</button>
-      <button id="confirmCreateVirtualTrade" type="button" class="btn-accent">Create demo trade</button>
+      <button id="cancelCreateVirtualTrade" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+      <button id="confirmCreateVirtualTrade" type="button" class="btn-accent" th:text="#{js.outlook.createDemoTrade}">Create demo trade</button>
     </div>
   </div>
 </dialog>
 
 <dialog id="deleteVirtualTradeDialog" class="unsaved-alert-dialog signal-delete-dialog" aria-labelledby="deleteVirtualTradeTitle">
   <div class="unsaved-alert-dialog-content">
-    <span class="unsaved-alert-kicker">Delete from history</span>
-    <h2 id="deleteVirtualTradeTitle">Delete demo trade?</h2>
-    <p id="deleteVirtualTradeExplanation">This removes the demo trade from your account and cannot be undone.</p>
+    <span class="unsaved-alert-kicker" th:text="#{virtualTrades.dialogKicker}">Delete from history</span>
+    <h2 id="deleteVirtualTradeTitle" th:text="#{virtualTrades.dialogTitle}">Delete demo trade?</h2>
+    <p id="deleteVirtualTradeExplanation" th:text="#{virtualTrades.dialogText}">This removes the demo trade from your account and cannot be undone.</p>
     <p id="deleteVirtualTradeStatus" class="technical-outlook-freshness" role="status"></p>
     <div class="unsaved-alert-dialog-actions">
-      <button id="cancelDeleteVirtualTrade" type="button" class="btn-secondary">Cancel</button>
-      <button id="confirmDeleteVirtualTrade" type="button" class="signal-delete-confirm-button">Delete</button>
+      <button id="cancelDeleteVirtualTrade" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+      <button id="confirmDeleteVirtualTrade" type="button" class="signal-delete-confirm-button" th:text="#{virtualTrades.delete}">Delete</button>
     </div>
   </div>
 </dialog>
 
 <script th:attr="nonce=${cspNonce}">
 (() => {
+  const i18n = window.StockWatchI18n;
   const page = document.getElementById('technicalOutlookPage');
   const symbol = page.dataset.symbol;
   const encodedSymbol = encodeURIComponent(symbol);
@@ -373,8 +374,8 @@
   outlookLoaderSafetyTimer = window.setTimeout(() => {
     requestController?.abort();
     document.getElementById('outlookLoading').hidden = true;
-    showOutlookError('The outlook is still being refreshed. You can retry without leaving this page.');
-    finishOutlookPageLoading('The report is ready. Prices are still updating.');
+    showOutlookError(i18n.t('outlook.stillRefreshing'));
+    finishOutlookPageLoading(i18n.t('outlook.reportReady'));
   }, 60000);
 
   function wait(milliseconds, signal) {
@@ -415,16 +416,21 @@
 
   function formatNumber(value, digits = 2) {
     const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric.toLocaleString(undefined, { maximumFractionDigits: digits }) : '—';
+    return Number.isFinite(numeric) ? numeric.toLocaleString(i18n.tag, { maximumFractionDigits: digits }) : '—';
   }
 
   function signed(value, suffix = '') {
     const numeric = Number(value);
-    return Number.isFinite(numeric) ? `${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}${suffix}` : '—';
+    return Number.isFinite(numeric) ? `${numeric > 0 ? '+' : ''}${i18n.number(numeric, 2)}${suffix}` : '—';
   }
 
+  // Classifications and votes arrive as English constants; show them in the page language.
   function recommendationDisplayLabel(value) {
-    return String(value ?? '')
+    const text = String(value ?? '');
+    const classKey = `outlookClassFull.${text.replace(/ outlook$/i, '').toLowerCase().replace(/\s+(\w)/g, (match, letter) => letter.toUpperCase())}`;
+    if (i18n.has(classKey)) return i18n.t(classKey);
+    if (i18n.has(`vote.${text.toUpperCase()}`)) return i18n.t(`vote.${text.toUpperCase()}`);
+    return text
             .replace(/\bSELL\b/g, 'SELL/SHORT')
             .replace(/\bSell\b/g, 'Sell/Short')
             .replace(/\bsell\b/g, 'sell/short');
@@ -493,43 +499,43 @@
     }, 50000);
     document.getElementById('outlookLoading').hidden = false;
     document.getElementById('outlookError').hidden = true;
-    updateOutlookLoadingStatus(`Building the ${interval === '1wk' ? 'weekly' : interval === '1mo' ? 'monthly' : 'daily'} outlook…`);
+    updateOutlookLoadingStatus(i18n.t(`outlook.building.${intervalEnum(interval)}`));
     document.querySelectorAll('[data-outlook-interval]').forEach(button =>
             button.classList.toggle('active', button.dataset.outlookInterval === interval));
     try {
       let response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook?interval=${encodeURIComponent(interval)}`,
               { signal: controller.signal });
-      if (!response.ok) throw new Error('The technical outlook could not be loaded.');
+      if (!response.ok) throw new Error(i18n.t('outlook.loadFailed'));
       let outlook = await response.json();
       for (let attempt = 0; !outlook.available && attempt < 60; attempt++) {
-        updateOutlookLoadingStatus('Updating price history…');
+        updateOutlookLoadingStatus(i18n.t('outlook.updatingHistory'));
         await wait(750, controller.signal);
         const statusResponse = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook/refresh-status?interval=${encodeURIComponent(interval)}`,
                 { signal: controller.signal });
         if (!statusResponse.ok) continue;
         const status = await statusResponse.json();
-        if (status.state === 'FAILED') throw new Error('Price history could not be updated for this interval.');
+        if (status.state === 'FAILED') throw new Error(i18n.t('outlook.historyFailed'));
         if (!status.ready) continue;
         response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook?interval=${encodeURIComponent(interval)}`,
                 { signal: controller.signal });
-        if (!response.ok) throw new Error('The technical outlook could not be loaded.');
+        if (!response.ok) throw new Error(i18n.t('outlook.loadFailed'));
         outlook = await response.json();
       }
-      if (!outlook?.available) throw new Error('No completed candles are available for this interval yet.');
+      if (!outlook?.available) throw new Error(i18n.t('outlook.noCandles'));
       if (generation !== requestGeneration) return;
       outlook = restoreIntervalHistory(outlook);
       lastOutlook = outlook;
       render(outlook);
-      finishOutlookPageLoading(`${outlook.intervalLabel} technical outlook ready.`);
+      finishOutlookPageLoading(i18n.t(`outlook.ready.${intervalEnum(outlook.interval)}`));
       loadCompanyTrades(generation, controller.signal);
     } catch (error) {
       if (error.name === 'AbortError' && !timedOut) return;
       if (generation !== requestGeneration) return;
       showOutlookError(timedOut
-              ? 'Analysis took too long. Please try again; prices are still updating.'
-              : error.message || 'The technical outlook is temporarily unavailable.');
+              ? i18n.t('outlook.tooLong')
+              : error.message || i18n.t('outlook.temporarilyUnavailable'));
       clearCharts();
-      finishOutlookPageLoading('Analysis could not be loaded. Please try again.');
+      finishOutlookPageLoading(i18n.t('outlook.analysisFailed'));
     } finally {
       window.clearTimeout(timeout);
       if (generation === requestGeneration) document.getElementById('outlookLoading').hidden = true;
@@ -552,7 +558,7 @@
   function render(outlook) {
     clearCharts();
     document.getElementById('outlookFreshness').textContent =
-            `${outlook.intervalLabel} · ${outlook.profileLabel || 'Default profile'} · ${outlook.freshness}`;
+            `${i18n.t(`interval.${intervalEnum(outlook.interval)}`)} · ${outlook.profileLabel || i18n.t('outlook.defaultProfile')} · ${outlook.freshness}`;
     renderIndicatorPeriodLabels(outlook);
     renderSummary(outlook);
     renderPriceChart(outlook);
@@ -567,15 +573,16 @@
     if (!settings) return;
     const text = (id, value) => { document.getElementById(id).textContent = value; };
     text('emaOverlayLabel', `EMA ${settings.fastEmaPeriod} / ${settings.slowEmaPeriod}`);
-    text('bollingerOverlayLabel', `Bollinger Bands ${settings.bollingerPeriod}, ${settings.bollingerDeviation}σ`);
+    const deviation = Number(settings.bollingerDeviation).toLocaleString(i18n.tag);
+    text('bollingerOverlayLabel', i18n.t('outlook.overlay.bollingerBands', settings.bollingerPeriod, deviation));
     text('vwapOverlayLabel', `VWAP ${settings.vwapPeriod}`);
-    text('levelsOverlayLabel', `Support / resistance ${settings.supportResistancePeriod}`);
+    text('levelsOverlayLabel', i18n.t('outlook.overlay.levels', settings.supportResistancePeriod));
     text('fastEmaLegend', `EMA ${settings.fastEmaPeriod}`);
     text('slowEmaLegend', `EMA ${settings.slowEmaPeriod}`);
     text('longSmaLegend', `SMA ${settings.longSmaPeriod}`);
-    text('bollingerLegend', `Bollinger ${settings.bollingerPeriod}, ${settings.bollingerDeviation}σ`);
+    text('bollingerLegend', i18n.t('outlook.overlay.bollinger', settings.bollingerPeriod, deviation));
     text('vwapLegend', `VWAP ${settings.vwapPeriod}`);
-    text('levelLegend', `Support / resistance ${settings.supportResistancePeriod}`);
+    text('levelLegend', i18n.t('outlook.overlay.levels', settings.supportResistancePeriod));
     text('rsiMarkerLabel', `RSI ${settings.rsiPeriod}`);
     document.querySelectorAll('[data-period-field]').forEach(input => {
       input.value = settings[input.dataset.periodField];
@@ -587,7 +594,7 @@
     const score = outlook.headlineScore;
     document.getElementById('headlineOutlookTitle').textContent = recommendationDisplayLabel(score.classification);
     document.getElementById('headlineOutlookScore').textContent =
-            `${score.buy} buy · ${score.neutral} neutral · ${score.sell} sell/short · Net technical score: ${score.net > 0 ? '+' : ''}${score.net} / ${score.denominator}`;
+            i18n.t('outlook.headlineScore', score.buy, score.neutral, score.sell, `${score.net > 0 ? '+' : ''}${score.net}`, score.denominator);
     document.getElementById('headlineBuy').textContent = score.buy;
     document.getElementById('headlineNeutral').textContent = score.neutral;
     document.getElementById('headlineSell').textContent = score.sell;
@@ -656,9 +663,9 @@
     addOverlay('ema', 'fastEma', { color: palette.fast, lineWidth: 2, title: `EMA ${settings.fastEmaPeriod}` }, lineData(candles, 'fastEma'));
     addOverlay('ema', 'slowEma', { color: palette.slow, lineWidth: 2, title: `EMA ${settings.slowEmaPeriod}` }, lineData(candles, 'slowEma'));
     addOverlay('ema', 'longSma', { color: palette.long, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: `SMA ${settings.longSmaPeriod}` }, lineData(candles, 'longSma'));
-    addOverlay('bollinger', 'bollingerLower', { color: palette.band, lineWidth: 1, title: `Bollinger ${settings.bollingerPeriod} lower` }, lineData(candles, 'bollingerLower'));
-    addOverlay('bollinger', 'bollingerMiddle', { color: palette.band, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, title: `Bollinger ${settings.bollingerPeriod} middle` }, lineData(candles, 'bollingerMiddle'));
-    addOverlay('bollinger', 'bollingerUpper', { color: palette.band, lineWidth: 1, title: `Bollinger ${settings.bollingerPeriod} upper` }, lineData(candles, 'bollingerUpper'));
+    addOverlay('bollinger', 'bollingerLower', { color: palette.band, lineWidth: 1, title: i18n.t('outlook.overlay.bollingerLower', settings.bollingerPeriod) }, lineData(candles, 'bollingerLower'));
+    addOverlay('bollinger', 'bollingerMiddle', { color: palette.band, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, title: i18n.t('outlook.overlay.bollingerMiddle', settings.bollingerPeriod) }, lineData(candles, 'bollingerMiddle'));
+    addOverlay('bollinger', 'bollingerUpper', { color: palette.band, lineWidth: 1, title: i18n.t('outlook.overlay.bollingerUpper', settings.bollingerPeriod) }, lineData(candles, 'bollingerUpper'));
     addOverlay('vwap', 'vwap', { color: palette.vwap, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: `VWAP ${settings.vwapPeriod}` }, lineData(candles, 'vwap'));
     addOverlay('levels', 'support', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'support', settings.supportResistancePeriod));
     addOverlay('levels', 'resistance', { color: palette.level, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed }, rollingLevels(candles, 'resistance', settings.supportResistancePeriod));
@@ -722,7 +729,7 @@
     history.loading = true;
     const generation = requestGeneration;
     const status = document.getElementById('technicalOutlookHistoryStatus');
-    status.textContent = 'Loading earlier completed candles...';
+    status.textContent = i18n.t('outlook.loadingEarlier');
     historyRequestController?.abort();
     historyRequestController = new AbortController();
     const controller = historyRequestController;
@@ -731,7 +738,7 @@
       const response = await fetch(
               `/api/stocks/${encodedSymbol}/technical-outlook/history?interval=${encodeURIComponent(interval)}&before=${encodeURIComponent(cursor)}&limit=${HISTORY_PAGE_LIMIT}`,
               { signal: controller.signal });
-      if (!response.ok) throw new Error('Earlier candles could not be loaded.');
+      if (!response.ok) throw new Error(i18n.t('outlook.earlierFailed'));
       const page = await response.json();
       if (generation !== requestGeneration || interval !== currentInterval
               || priceHistoryByInterval.get(interval) !== history) return;
@@ -771,11 +778,11 @@
           }, delay);
         }
       }
-      status.textContent = history.hasMore ? '' : 'Beginning of available history reached.';
+      status.textContent = history.hasMore ? '' : i18n.t('outlook.historyStart');
     } catch (error) {
       if (error.name !== 'AbortError') {
         console.warn('Earlier technical-outlook candles unavailable', error);
-        status.textContent = 'Earlier candles could not be loaded. Scroll away and back to retry.';
+        status.textContent = i18n.t('outlook.earlierRetry');
       }
     } finally {
       history.loading = false;
@@ -795,7 +802,7 @@
               position: signal.direction === 'BUY' ? 'belowBar' : 'aboveBar',
               color: signal.direction === 'BUY' ? colors().up : colors().down,
               shape: signal.direction === 'BUY' ? 'arrowUp' : 'arrowDown',
-              text: `${signal.family === 'ELLIOTT_WAVE' ? 'EW' : 'C'} ${recommendationDisplayLabel(signal.direction)}`
+              text: `${i18n.t(signal.family === 'ELLIOTT_WAVE' ? 'outlook.marker.elliott' : 'outlook.marker.candlestick')} ${recommendationDisplayLabel(signal.direction)}`
             }));
   }
 
@@ -807,7 +814,7 @@
       time: matchedDate,
       position: marker.direction === 'BUY' ? 'belowBar' : 'aboveBar',
       color: marker.source === 'CONGRESSIONAL' ? '#b696ff' : '#47d4df',
-      shape: 'circle', text: marker.source === 'CONGRESSIONAL' ? 'Congress' : 'Insider'
+      shape: 'circle', text: i18n.t(marker.source === 'CONGRESSIONAL' ? 'outlook.marker.congress' : 'outlook.marker.insider')
       };
     }).filter(marker => marker.time);
   }
@@ -821,7 +828,7 @@
       return [{
         time: chartDate(point.timestamp), position: point.vote > 0 ? 'belowBar' : 'aboveBar',
         color: point.vote > 0 ? colors().up : colors().down, shape: 'square',
-        text: point.vote > 0 ? `${rsi.label} oversold` : `${rsi.label} overbought`
+        text: i18n.t(point.vote > 0 ? 'outlook.marker.oversold' : 'outlook.marker.overbought', rsi.label)
       }];
     });
   }
@@ -835,11 +842,11 @@
         position: trade.side === 'BUY' ? 'belowBar' : 'aboveBar',
         color: trade.side === 'BUY' ? colors().up : colors().down,
         shape: trade.side === 'BUY' ? 'arrowUp' : 'arrowDown',
-        text: trade.side === 'BUY' ? 'Demo buy' : 'Demo sell'
+        text: i18n.t(trade.side === 'BUY' ? 'virtualTrade.marker.buy' : 'virtualTrade.marker.sell')
       }];
       if (trade.status === 'CLOSED' && trade.evaluationAt) {
         markers.push({ time: nearest(Date.parse(trade.evaluationAt) / 1000), position: 'aboveBar',
-          color: colors().line, shape: 'circle', text: 'Trade closed' });
+          color: colors().line, shape: 'circle', text: i18n.t('outlook.marker.closed') });
       }
       return markers;
     }).filter(marker => marker.time);
@@ -889,9 +896,9 @@
 
   function renderScoreReport(outlook) {
     const raw = outlook.rawScore;
-    document.getElementById('rawScoreClassification').textContent = raw.classification;
-    document.getElementById('rawVoteCounts').textContent = `${raw.buy} buy · ${raw.neutral} neutral · ${raw.sell} sell/short`;
-    document.getElementById('rawNetScore').textContent = `Net ${raw.net > 0 ? '+' : ''}${raw.net} / ${raw.denominator}`;
+    document.getElementById('rawScoreClassification').textContent = recommendationDisplayLabel(raw.classification);
+    document.getElementById('rawVoteCounts').textContent = i18n.t('outlook.voteCounts', raw.buy, raw.neutral, raw.sell);
+    document.getElementById('rawNetScore').textContent = i18n.t('outlook.net', `${raw.net > 0 ? '+' : ''}${raw.net}`, raw.denominator);
     renderIndicators(outlook.indicators);
     renderRecentSignals(outlook.recentSignals);
     const method = document.getElementById('technicalMethodologyCopy');
@@ -912,24 +919,24 @@
       const card = element('article', `technical-indicator-card ${researchOnly ? 'neutral research-only' : indicator.classification.toLowerCase()}`);
       const header = element('div', 'technical-indicator-card-head');
       const titleWrap = element('div');
-      titleWrap.append(element('span', '', indicator.category.replaceAll('_', ' ')));
+      titleWrap.append(element('span', '', i18n.has(`outlookCategory.${indicator.category}`) ? i18n.t(`outlookCategory.${indicator.category}`) : indicator.category.replaceAll('_', ' ')));
       titleWrap.append(element('h3', '', indicator.label));
       header.append(titleWrap, element('strong', `indicator-vote ${researchOnly ? 'neutral' : indicator.classification.toLowerCase()}`, recommendationDisplayLabel(classification)));
       const value = element('div', 'technical-indicator-value', indicator.currentValue === null
-              ? 'Unavailable' : `${formatNumber(indicator.currentValue)} ${indicator.unit}`);
+              ? i18n.t('common.unavailable') : `${formatNumber(indicator.currentValue)} ${indicator.unit}`);
       const explanation = element('p', 'technical-indicator-explanation', indicator.explanation);
-      const rule = element('p', 'technical-indicator-rule', `Rule: ${indicator.rule}`);
+      const rule = element('p', 'technical-indicator-rule', i18n.t('outlookChange.rule', indicator.rule));
       const change = indicator.stateChangedAt
-              ? `Latest state began ${indicator.candlesSinceStateChange} completed candle${indicator.candlesSinceStateChange === 1 ? '' : 's'} ago · ${chartDate(indicator.stateChangedAt)}`
-              : 'State-change candle unavailable';
+              ? i18n.plural('outlook.stateBegan', indicator.candlesSinceStateChange, indicator.candlesSinceStateChange, chartDate(indicator.stateChangedAt))
+              : i18n.t('outlook.stateChangeUnavailable');
       const state = element('p', 'technical-indicator-state', change);
       const chartContainer = element('div', 'technical-indicator-mini-chart');
       chartContainer.id = `indicatorMiniChart${index}`;
-      const expand = element('button', 'technical-indicator-expand', 'Expand chart');
+      const expand = element('button', 'technical-indicator-expand', i18n.t('outlook.expandChart'));
       expand.type = 'button';
       expand.addEventListener('click', () => {
         const expanded = card.classList.toggle('expanded');
-        expand.textContent = expanded ? 'Collapse chart' : 'Expand chart';
+        expand.textContent = i18n.t(expanded ? 'outlook.collapseChart' : 'outlook.expandChart');
         window.setTimeout(() => {
           const chart = miniCharts[index];
           if (chart) chart.applyOptions({ width: chartContainer.clientWidth, height: expanded ? 300 : 150 });
@@ -965,24 +972,24 @@
   }
 
   function renderRecentSignals(signals) {
-    document.getElementById('recentSignalCount').textContent = `${signals.length} signal${signals.length === 1 ? '' : 's'}`;
+    document.getElementById('recentSignalCount').textContent = i18n.plural('outlook.signalCount', signals.length, signals.length);
     const grid = document.getElementById('recentTechnicalSignals');
     grid.replaceChildren();
     if (!signals.length) {
-      grid.append(element('p', 'technical-empty-state', 'None of your saved signals were detected in the last ten candles of their interval.'));
+      grid.append(element('p', 'technical-empty-state', i18n.t('outlook.noRecentSignals')));
       return;
     }
     signals.forEach(signal => {
       const card = element('a', `technical-recent-signal ${signal.direction.toLowerCase()}`);
       card.href = signal.detailUrl;
       const meta = element('div', 'technical-recent-signal-meta');
-      meta.append(element('span', '', signal.family === 'ELLIOTT_WAVE' ? 'Elliott Wave' : 'Candlestick'));
-      meta.append(element('span', '', signal.intervalLabel));
+      meta.append(element('span', '', i18n.t(signal.family === 'ELLIOTT_WAVE' ? 'followType.ELLIOTT_WAVE' : 'followType.CANDLESTICK')));
+      meta.append(element('span', '', i18n.has(`interval.${signal.interval}`) ? i18n.t(`interval.${signal.interval}`) : signal.intervalLabel));
       meta.append(element('span', '', chartDate(signal.timestamp)));
       const heading = element('div', 'technical-recent-signal-heading');
       heading.append(element('h3', '', signal.label), element('strong', '', recommendationDisplayLabel(signal.direction)));
       const details = element('p', '', `${signal.lifecycle} · ${signal.score === null ? signal.strength : `${signal.score}/100`} · ${signal.observedResult}`);
-      card.append(meta, heading, details, element('span', 'technical-recent-signal-open', 'Open signal details →'));
+      card.append(meta, heading, details, element('span', 'technical-recent-signal-open', i18n.t('outlookChange.openSignal')));
       grid.append(card);
     });
   }
@@ -993,23 +1000,25 @@
     const grid = document.getElementById('marketHorizonGrid');
     grid.replaceChildren();
     if (!market.available) {
-      badge.textContent = 'Data unavailable';
+      badge.textContent = i18n.t('outlook.dataUnavailable');
       badge.dataset.trend = 'unavailable';
-      description.textContent = `${market.benchmarkName} (${market.benchmarkSymbol}) is the selected broad-market benchmark, but there is not enough aligned daily history yet.`;
+      description.textContent = i18n.t('outlook.benchmarkNoHistory', market.benchmarkName, market.benchmarkSymbol);
       document.getElementById('relativeStrengthChart').replaceChildren();
       return;
     }
-    badge.textContent = `${market.relativeTrend.toLowerCase()} · ${signed(market.ratioChange, '%')}`;
+    const trendKey = `outlook.relativeTrend.${market.relativeTrend}`;
+    badge.textContent = `${i18n.has(trendKey) ? i18n.t(trendKey) : market.relativeTrend.toLowerCase()} · ${signed(market.ratioChange, '%')}`;
     badge.dataset.trend = market.relativeTrend.toLowerCase();
-    description.textContent = `${symbol} is compared with ${market.benchmarkName} (${market.benchmarkSymbol}). Excess return is the stock return minus benchmark return.`;
+    description.textContent = i18n.t('outlook.benchmarkDescription', symbol, market.benchmarkName, market.benchmarkSymbol);
     market.horizons.forEach(horizon => {
       const card = element('article', 'technical-market-horizon');
-      card.append(element('span', '', horizon.label));
+      const horizonKey = `outlook.horizon.${String(horizon.label).replace(/\s+/g, '_')}`;
+      card.append(element('span', '', i18n.has(horizonKey) ? i18n.t(horizonKey) : horizon.label));
       if (!horizon.available) {
-        card.append(element('strong', '', 'Insufficient history'));
+        card.append(element('strong', '', i18n.t('outlook.insufficientHistory')));
       } else {
-        card.append(element('strong', Number(horizon.excessReturn) >= 0 ? 'positive' : 'negative', `${signed(horizon.excessReturn, '%')} excess`));
-        card.append(element('small', '', `${symbol} ${signed(horizon.stockReturn, '%')} · Market ${signed(horizon.benchmarkReturn, '%')}`));
+        card.append(element('strong', Number(horizon.excessReturn) >= 0 ? 'positive' : 'negative', i18n.t('outlook.excess', signed(horizon.excessReturn, '%'))));
+        card.append(element('small', '', i18n.t('outlook.stockVersusMarket', symbol, signed(horizon.stockReturn, '%'), signed(horizon.benchmarkReturn, '%'))));
       }
       grid.append(card);
     });
@@ -1021,7 +1030,7 @@
     const line = ratioChart.addLineSeries({ color: colors().line, lineWidth: 3, priceLineVisible: false });
     line.setData(market.ratioSeries.map(point => ({ time: chartDate(point.timestamp), value: point.value })));
     line.createPriceLine({ price: 100, color: colors().border, lineWidth: 1,
-      lineStyle: LightweightCharts.LineStyle.Dashed, title: 'Start 100' });
+      lineStyle: LightweightCharts.LineStyle.Dashed, title: i18n.t('outlook.start100') });
     ratioChart.timeScale().fitContent();
   }
 
@@ -1029,7 +1038,7 @@
     const grid = document.getElementById('companyVirtualTrades');
     grid.replaceChildren();
     if (!companyTrades.length) {
-      grid.append(element('p', 'technical-empty-state', `No demo trades have been recorded for ${symbol} yet.`));
+      grid.append(element('p', 'technical-empty-state', i18n.t('outlook.noDemoTrades', symbol)));
       return;
     }
     companyTrades.forEach(trade => {
@@ -1038,21 +1047,21 @@
       card.href = trade.detailUrl;
       const heading = element('div', 'company-virtual-trade-heading');
       heading.append(element('strong', '', trade.sideLabel), element('span', `virtual-trade-status-pill ${trade.status.toLowerCase()}`, trade.statusLabel));
-      const price = element('p', '', `Entry ${formatNumber(trade.entryPrice, 4)} ${trade.currency} · ${trade.intervalLabel}`);
+      const price = element('p', '', i18n.t('outlook.tradeEntry', formatNumber(trade.entryPrice, 4), trade.currency, trade.intervalLabel));
       const outcome = element('div', `company-virtual-trade-outcome ${trade.resultPercent >= 0 ? 'positive' : 'negative'}`);
-      outcome.append(element('strong', '', `${trade.resultPercent >= 0 ? '+' : ''}${Number(trade.resultPercent).toFixed(2)}%`), element('span', '', trade.outcomeLabel));
+      outcome.append(element('strong', '', `${trade.resultPercent >= 0 ? '+' : ''}${i18n.number(trade.resultPercent, 2)}%`), element('span', '', trade.outcomeLabel));
       const entryDate = new Date(trade.entryAt);
       outcome.append(element('small', '', Number.isNaN(entryDate.getTime())
-              ? 'Measured from the captured virtual entry'
-              : `From captured entry · ${entryDate.toLocaleString()}`));
+              ? i18n.t('outlook.measuredFromEntry')
+              : i18n.t('outlook.fromCapturedEntry', entryDate.toLocaleString(i18n.tag))));
       if (trade.monetaryResult !== null) outcome.append(element('small', '', `${Number(trade.monetaryResult) >= 0 ? '+' : ''}${formatNumber(trade.monetaryResult, 2)} ${trade.currency}`));
-      card.append(heading, price, outcome, element('span', 'technical-recent-signal-open', 'Open demo trade →'));
-      const deleteButton = element('button', 'signal-archive-delete-button company-virtual-trade-delete', 'Delete');
+      card.append(heading, price, outcome, element('span', 'technical-recent-signal-open', i18n.t('outlook.openDemoTrade')));
+      const deleteButton = element('button', 'signal-archive-delete-button company-virtual-trade-delete', i18n.t('common.delete'));
       deleteButton.type = 'button';
-      deleteButton.setAttribute('aria-label', `Delete ${trade.sideLabel} for ${trade.symbol}`);
+      deleteButton.setAttribute('aria-label', i18n.t('outlook.deleteTradeAria', trade.sideLabel, trade.symbol));
       deleteButton.addEventListener('click', () => {
         pendingTradeToDelete = trade;
-        document.getElementById('deleteVirtualTradeExplanation').textContent = `${trade.sideLabel} for ${trade.symbol} will be permanently removed from your account. This cannot be undone.`;
+        document.getElementById('deleteVirtualTradeExplanation').textContent = i18n.t('outlook.deleteTradeText', trade.sideLabel, trade.symbol);
         document.getElementById('deleteVirtualTradeStatus').textContent = '';
         document.getElementById('deleteVirtualTradeDialog').showModal();
       });
@@ -1065,11 +1074,11 @@
     const interval = currentInterval;
     const generation = requestGeneration;
     document.getElementById('indicatorCardGrid').replaceChildren(
-            element('p', 'technical-empty-state', 'Calculating detailed indicator histories...'));
+            element('p', 'technical-empty-state', i18n.t('outlook.calculatingHistories')));
     try {
       const response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook/score-report?interval=${encodeURIComponent(interval)}`,
               { signal: requestController?.signal });
-      if (!response.ok) throw new Error('Score report unavailable.');
+      if (!response.ok) throw new Error(i18n.t('outlook.scoreReportUnavailable'));
       const report = await response.json();
       if (generation !== requestGeneration || interval !== currentInterval) return;
       renderScoreReport(report);
@@ -1077,26 +1086,26 @@
     } catch (error) {
       if (error.name === 'AbortError') return;
       document.getElementById('indicatorCardGrid').replaceChildren(
-              element('p', 'technical-empty-state', error.message || 'Score report unavailable.'));
+              element('p', 'technical-empty-state', error.message || i18n.t('outlook.scoreReportUnavailable')));
     }
   }
 
   async function loadMarketReport() {
     const interval = currentInterval;
     const generation = requestGeneration;
-    document.getElementById('relativeTrendBadge').textContent = 'Loading';
+    document.getElementById('relativeTrendBadge').textContent = i18n.t('outlook.loading');
     try {
       const response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook/market-comparison?interval=${encodeURIComponent(interval)}`,
               { signal: requestController?.signal });
-      if (!response.ok) throw new Error('Market comparison unavailable.');
+      if (!response.ok) throw new Error(i18n.t('outlook.marketUnavailable'));
       const market = await response.json();
       if (generation !== requestGeneration || interval !== currentInterval) return;
       renderMarketComparison(market);
       marketReportOutlook = interval;
     } catch (error) {
       if (error.name === 'AbortError') return;
-      document.getElementById('relativeTrendBadge').textContent = 'Unavailable';
-      document.getElementById('benchmarkDescription').textContent = error.message || 'Market comparison unavailable.';
+      document.getElementById('relativeTrendBadge').textContent = i18n.t('common.unavailable');
+      document.getElementById('benchmarkDescription').textContent = error.message || i18n.t('outlook.marketUnavailable');
     }
   }
 
@@ -1155,17 +1164,17 @@
       payload[input.dataset.periodField] = Number(input.value);
     });
     if (payload.fastEmaPeriod >= payload.slowEmaPeriod || payload.slowEmaPeriod > payload.longSmaPeriod) {
-      indicatorPeriodStatus.textContent = 'Use fast EMA < slow EMA ≤ long SMA.';
+      indicatorPeriodStatus.textContent = i18n.t('outlook.emaOrder');
       return;
     }
     if (payload.macdFastPeriod >= payload.macdSlowPeriod) {
-      indicatorPeriodStatus.textContent = 'The MACD fast period must be below the MACD slow period.';
+      indicatorPeriodStatus.textContent = i18n.t('outlook.macdOrder');
       return;
     }
 
     saveIndicatorPeriods.disabled = true;
-    saveIndicatorPeriods.textContent = 'Saving and recalculating…';
-    indicatorPeriodStatus.textContent = `Updating the ${lastOutlook.intervalLabel.toLowerCase()} profile…`;
+    saveIndicatorPeriods.textContent = i18n.t('outlook.savingPeriods');
+    indicatorPeriodStatus.textContent = i18n.t(`outlook.updatingProfile.${intervalEnum(currentInterval)}`);
     try {
       const response = await fetch(`/api/stocks/${encodedSymbol}/technical-outlook/indicator-periods`, {
         method: 'POST',
@@ -1177,7 +1186,7 @@
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || 'The indicator periods could not be saved.');
+        throw new Error(error.error || i18n.t('outlook.periodsFailed'));
       }
       const outlook = await response.json();
       priceHistoryByInterval.delete(currentInterval);
@@ -1185,10 +1194,10 @@
       render(lastOutlook);
       indicatorPeriodDialog.close();
     } catch (error) {
-      indicatorPeriodStatus.textContent = error.message || 'The indicator periods could not be saved.';
+      indicatorPeriodStatus.textContent = error.message || i18n.t('outlook.periodsFailed');
     } finally {
       saveIndicatorPeriods.disabled = false;
-      saveIndicatorPeriods.textContent = 'Save and recalculate';
+      saveIndicatorPeriods.textContent = i18n.t('outlook.saveAndRecalculate');
     }
   });
 
@@ -1196,11 +1205,11 @@
   document.querySelectorAll('[data-create-virtual-trade]').forEach(button => button.addEventListener('click', () => {
     pendingTradeSide = button.dataset.createVirtualTrade;
     pendingTradeRequestId = crypto.randomUUID();
-    document.getElementById('createVirtualTradeTitle').textContent = pendingTradeSide === 'BUY' ? `Demo buy ${symbol}` : `Demo sell ${symbol}`;
+    document.getElementById('createVirtualTradeTitle').textContent = i18n.t(pendingTradeSide === 'BUY' ? 'outlook.demoBuyTitle' : 'outlook.demoSellTitle', symbol);
     document.getElementById('createVirtualTradeExplanation').textContent = pendingTradeSide === 'BUY'
-            ? 'This tracks the return from hypothetically buying at the captured current quote.'
-            : 'This tracks avoided loss if price falls and missed upside if it rises. It is not a short sale.';
-    document.getElementById('createVirtualTradeStatus').textContent = `${lastOutlook?.intervalLabel || 'Daily'} technical state will be frozen at entry.`;
+            ? i18n.t('outlook.demoBuyText')
+            : i18n.t('outlook.demoSellText');
+    document.getElementById('createVirtualTradeStatus').textContent = i18n.t(`outlook.frozenAtEntry.${intervalEnum(currentInterval)}`);
     document.getElementById('virtualTradeSizeInput').value = '';
     createDialog.showModal();
   }));
@@ -1210,19 +1219,19 @@
     document.querySelectorAll('[data-virtual-size-mode]').forEach(option => option.classList.toggle('active', option === button));
     const field = document.getElementById('virtualTradeSizeField');
     field.hidden = virtualSizeMode === 'none';
-    document.getElementById('virtualTradeSizeLabel').textContent = virtualSizeMode === 'quantity' ? 'Number of shares' : 'Virtual investment amount';
-    document.getElementById('virtualTradeSizeHelp').textContent = virtualSizeMode === 'quantity'
-            ? 'The virtual amount will be calculated from the captured price.'
-            : 'The virtual share quantity will be calculated from the captured price.';
+    document.getElementById('virtualTradeSizeLabel').textContent = i18n.t(virtualSizeMode === 'quantity' ? 'outlook.numberOfShares' : 'outlook.virtualAmount');
+    document.getElementById('virtualTradeSizeHelp').textContent = i18n.t(virtualSizeMode === 'quantity'
+            ? 'outlook.amountFromPrice'
+            : 'outlook.quantityFromPrice');
   }));
   document.getElementById('confirmCreateVirtualTrade').addEventListener('click', async event => {
     const size = document.getElementById('virtualTradeSizeInput').value;
     if (virtualSizeMode !== 'none' && (!size || Number(size) <= 0)) {
-      document.getElementById('createVirtualTradeStatus').textContent = 'Enter a positive virtual size.';
+      document.getElementById('createVirtualTradeStatus').textContent = i18n.t('outlook.positiveSize');
       return;
     }
     event.currentTarget.disabled = true;
-    event.currentTarget.textContent = 'Capturing quote…';
+    event.currentTarget.textContent = i18n.t('outlook.capturingQuote');
     const body = { side: pendingTradeSide, interval: currentInterval,
       quantity: virtualSizeMode === 'quantity' ? size : null,
       notionalValue: virtualSizeMode === 'notional' ? size : null,
@@ -1235,14 +1244,14 @@
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || 'The demo trade could not be created.');
+        throw new Error(error.message || i18n.t('outlook.createFailed'));
       }
       const trade = await response.json();
       window.location.assign(trade.detailUrl);
     } catch (error) {
       document.getElementById('createVirtualTradeStatus').textContent = error.message;
       event.currentTarget.disabled = false;
-      event.currentTarget.textContent = 'Create demo trade';
+      event.currentTarget.textContent = i18n.t('outlook.createDemoTrade');
     }
   });
 
@@ -1258,7 +1267,7 @@
     }
     const tradeId = pendingTradeToDelete.id;
     event.currentTarget.disabled = true;
-    event.currentTarget.textContent = 'Deleting…';
+    event.currentTarget.textContent = i18n.t('outlook.deleting');
     try {
       const response = await fetch(`/api/virtual-trades/${encodeURIComponent(tradeId)}/delete`, {
         method: 'POST',
@@ -1266,17 +1275,17 @@
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || error.error || 'The demo trade could not be deleted.');
+        throw new Error(error.message || error.error || i18n.t('outlook.deleteFailed'));
       }
       companyTrades = companyTrades.filter(trade => trade.id !== tradeId);
       pendingTradeToDelete = null;
       deleteDialog.close();
       if (lastOutlook) render(lastOutlook);
     } catch (error) {
-      document.getElementById('deleteVirtualTradeStatus').textContent = error.message || 'The demo trade could not be deleted.';
+      document.getElementById('deleteVirtualTradeStatus').textContent = error.message || i18n.t('outlook.deleteFailed');
     } finally {
       event.currentTarget.disabled = false;
-      event.currentTarget.textContent = 'Delete';
+      event.currentTarget.textContent = i18n.t('common.delete');
     }
   });
 

@@ -47,6 +47,15 @@ public class VirtualTradeService {
     private final LivePricingService livePricingService;
     private final TechnicalOutlookService outlookService;
     private final ObjectMapper objectMapper;
+    private static final Duration MAX_LIVE_QUOTE_AGE = Duration.ofMinutes(20);
+    private CandleCompletionService completion;
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setCompletion(CandleCompletionService completion) { this.completion = completion; }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setClock(java.time.Clock clock) { this.clock = clock; }
 
     public VirtualTradeService(VirtualTradeRepository tradeRepository,
                                StockAssetRepository stockAssetRepository,
@@ -78,7 +87,7 @@ public class VirtualTradeService {
         TechnicalOutlookService.OutlookView outlook = outlookService.getOutlook(
                 user, asset.getTickerSymbol(), interval.apiValue());
         if (!outlook.available() || outlook.candleTimestamp() == null) {
-            throw new IllegalStateException("Completed technical data is not available for this demo trade.");
+            throw new ConflictException("Completed technical data is not available for this demo trade.");
         }
         BigDecimal quantity = optionalPositive(command.quantity(), "Quantity");
         BigDecimal notional = optionalPositive(command.notionalValue(), "Virtual investment");
@@ -303,24 +312,56 @@ public class VirtualTradeService {
                 .orElseThrow(() -> new IllegalArgumentException("Demo trade was not found."));
     }
 
+    /**
+     * Opening and closing use only prices a trader could have dealt at: a fresh quote while the market
+     * trades, the session close while it is shut, or the latest finished daily close when no quote exists.
+     * Anything older is refused rather than silently filling at a stale price.
+     */
     private Quote liveQuote(String symbol) {
         Map<String, Object> values = livePricingService.getLatestPrice(symbol);
         Object rawPrice = values.get("price");
         if (!(rawPrice instanceof Number price) || !Double.isFinite(price.doubleValue()) || price.doubleValue() <= 0) {
-            throw new IllegalStateException("A reliable current price is not available for this demo trade.");
+            throw new ConflictException("A reliable current price is not available for this demo trade.");
         }
-        long timestamp = values.get("timestamp") instanceof Number value
-                ? value.longValue() : Instant.now().getEpochSecond();
+        long now = clock.instant().getEpochSecond();
+        long timestamp = values.get("timestamp") instanceof Number value ? value.longValue() : now;
         String source = String.valueOf(values.getOrDefault("source", "Current market quote"));
-        return new Quote(BigDecimal.valueOf(price.doubleValue()).setScale(8, RoundingMode.HALF_UP), timestamp, source);
+        BigDecimal amount = BigDecimal.valueOf(price.doubleValue()).setScale(8, RoundingMode.HALF_UP);
+        if ("Stored candle".equals(source)) {
+            if (timestamp < oldestAcceptableSessionStart()) {
+                throw new ConflictException("Only an outdated stored price is available for this demo trade. Try again later.");
+            }
+            return new Quote(amount, timestamp, "Latest stored daily close (no live quote)");
+        }
+        if (Boolean.FALSE.equals(values.get("marketOpen"))) {
+            return new Quote(amount, timestamp, "Last close (market closed)");
+        }
+        if (now - timestamp > MAX_LIVE_QUOTE_AGE.toSeconds()) {
+            throw new ConflictException("The latest quote for this demo trade is out of date. Try again in a minute.");
+        }
+        return new Quote(amount, timestamp, source);
     }
 
+    /** Values open trades at the latest finished daily close, never at a candle that is still forming. */
     private Quote cachedQuote(String symbol) {
-        List<Candle> candles = candleRepository.findTop1BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1d");
-        if (candles.isEmpty()) return new Quote(BigDecimal.ZERO, Instant.now().getEpochSecond(), "Price unavailable");
+        List<Candle> candles = completion == null
+                ? candleRepository.findTop1BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, "1d")
+                : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                        symbol, "1d", completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY),
+                        org.springframework.data.domain.PageRequest.of(0, 1));
+        if (candles.isEmpty()) return new Quote(BigDecimal.ZERO, clock.instant().getEpochSecond(), "Price unavailable");
         Candle candle = candles.getFirst();
         return new Quote(BigDecimal.valueOf(candle.getClosePrice()).setScale(8, RoundingMode.HALF_UP),
                 candle.getTimestamp(), "Latest completed daily candle");
+    }
+
+    /**
+     * A stored daily close is acceptable only for the latest finished session. Up to three earlier
+     * days are tolerated so that weekends and single holidays do not block demo trades.
+     */
+    private long oldestAcceptableSessionStart() {
+        if (completion == null) return Long.MIN_VALUE;
+        return completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY) - Duration.ofDays(4).toSeconds();
     }
 
     private Quote exitQuote(VirtualTrade trade) {
@@ -413,7 +454,7 @@ public class VirtualTradeService {
 
     private static String periodLabel(long timestamp) {
         return Instant.ofEpochSecond(timestamp).atZone(ZoneOffset.UTC)
-                .format(DateTimeFormatter.ofPattern("d MMM uuuu, HH:mm 'UTC'"));
+                .format(DateTimeFormatter.ofPattern("d MMM uuuu, HH:mm 'UTC'", Locale.ENGLISH));
     }
 
     private record Quote(BigDecimal price, long timestamp, String source) { }
@@ -461,7 +502,7 @@ public class VirtualTradeService {
                 case "status" -> trade.statusLabel();
                 case "return" -> trade.resultPercent() >= 0 ? "Favorable outcomes" : "Adverse outcomes";
                 default -> trade.entryAt().atZone(ZoneOffset.UTC).toLocalDate()
-                        .format(DateTimeFormatter.ofPattern("dd MMMM uuuu"));
+                        .format(DateTimeFormatter.ofPattern("dd MMMM uuuu", Locale.ENGLISH));
             };
         }
     }

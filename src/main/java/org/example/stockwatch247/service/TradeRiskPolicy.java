@@ -39,6 +39,33 @@ final class TradeRiskPolicy {
     static double zoneWidth(double target, double atr) {
         return Math.min(target * .015, Math.max(increment(target), positive(atr) ? atr * .25 : target * .001));
     }
+    static final String AWAITING_FILL = "AWAITING_FILL";
+    static final String FILLED = "FILLED";
+    static final String NOT_FILLED = "NOT_FILLED";
+
+    /**
+     * Signals are found after the signal candle has closed, so the first tradable price is the next
+     * candle's open. That open fills the entry unless it is already at or beyond the stop (the trade
+     * would be stopped before it existed) or the target (the move happened before any entry).
+     * Returns the reason the plan was not filled, or null when the open is a valid fill.
+     */
+    static String unfilledReason(TradeSignal side, double open, double stop, Double target) {
+        if (!Double.isFinite(open) || open <= 0) return "Not filled: the next candle has no valid opening price.";
+        boolean buy = side == TradeSignal.BUY;
+        if (buy ? open <= stop : open >= stop)
+            return "Not filled: the next candle opened at or beyond the stop, so no entry was taken.";
+        if (positive(target) && (buy ? open >= target : open <= target))
+            return "Not filled: the next candle opened at or beyond the target, so the move happened before any entry.";
+        return null;
+    }
+
+    /** Stop below and target above the entry for a buy; the reverse for a sell. */
+    static boolean validSides(TradeSignal side, double entry, double stop, double target) {
+        if (!Double.isFinite(entry) || !Double.isFinite(stop) || !Double.isFinite(target)) return false;
+        if (side == TradeSignal.BUY) return stop < entry && entry < target;
+        if (side == TradeSignal.SELL) return target < entry && entry < stop;
+        return false;
+    }
     static double risk(TradeSignal side, double entry, double stop) {
         return side == TradeSignal.BUY ? entry - stop : stop - entry;
     }

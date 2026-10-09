@@ -18,11 +18,15 @@ to TA4J.
 - `classifyAll` retains compatible interpretations of five pivots; the older
   `classify` wrapper returns the best fit. `detectAll` retains detected geometries,
   while `detectHistorical` applies the display count cap.
-- Bat B is below 0.618 and CD may exceed AB; preferred ratios affect ranking.
+- Bat B is 0.382-0.50 of XA by default (Carney), keeping it apart from the Gartley's 0.618 and the Alternate Bat's 0.382-or-less; CD may exceed AB. The looser 0-0.618 range can be chosen in the harmonic settings. Profiles still on the earlier 0-0.618 factory range were moved to the new default; ranges users set themselves were kept.
   Butterfly supports BC projections through 2.618.
-- Shark points are displayed as `0-X-A-B-C`; AB=CD families use `A-B-C-D`;
-  the other patterns use `X-A-B-C-D`.
-  The bullish Shark terminal C completes below A (mirrored above A for bearish),
+- Every five-point pattern, the Shark included, is labelled `X-A-B-C-D`; the
+  four-point AB=CD families use `A-B-C-D`. Carney writes the Shark as `0-X-A-B-C`;
+  here each Shark point moves up one letter (0→X, X→A, A→B, B→C, C→D), so its
+  rules read: B retraces 32–61.8% of XA, C extends 113–161.8% of AB, D extends
+  161.8–224% of BC and completes at 0.886–1.13 of XA. Signals saved under the old
+  letters were relabelled by migration V83.
+  The bullish Shark terminal D completes below B (mirrored above B for bearish),
   consistent with the official 0.886 retracement to 1.13 extension completion
   zone: <https://harmonictrader.com/harmonic-patterns/shark-pattern/>.
 - Finite pivot windows, volatility scales and hierarchical grouping search for

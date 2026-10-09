@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { ranked, filtered, signed } = require('../../main/resources/static/js/technical-watchlist.js');
+const { StockWatchI18n } = require('./i18n-stub.cjs');
 
 function ticker(symbol, score, overrides = {}) {
   return { symbol, companyName: `${symbol} Company`, intervals: [{ apiInterval: '1d', available: true,
@@ -71,7 +72,7 @@ function page(initialTickers, failDelete = false) {
     querySelector: selector => ({ content: selector.includes('_csrf_header') ? 'X-CSRF-TOKEN' : 'test-csrf-token' }),
     querySelectorAll: selector => selector === '[data-ranking-interval]' ? tabs
       : descendants(get('watchlistRows')).filter(item => item.className === 'watchlist-unfollow') };
-  const context = { document, Intl, Date, URL, AbortSignal, setInterval() {},
+  const context = { document, window: { StockWatchI18n }, Intl, Date, URL, AbortSignal, setInterval() {},
     async fetch(url, options) {
       requests.push({ url, ...options });
       if (options.method === 'DELETE') {

@@ -8,6 +8,7 @@
   const SNAPSHOT_PREFIX = 'stockwatch:page-state:';
   const originalReplaceState = window.history.replaceState.bind(window.history);
   const originalPushState = window.history.pushState.bind(window.history);
+  let signingOut = false;
 
   function newEntryId() {
     return window.crypto?.randomUUID?.()
@@ -45,11 +46,22 @@
     return `${SNAPSHOT_PREFIX}${entryId}`;
   }
 
+  // Snapshots live in sessionStorage, so anything that works as a credential must never be saved:
+  // passwords, one-time and recovery codes, confirmation phrases and payment details.
+  const SENSITIVE_NAME = /password|token|secret|csrf|otp|totp|mfa|recovery|confirm|(^|[-_\s])code([-_\s]|$)/i;
+  const SENSITIVE_AUTOCOMPLETE = /one-time-code|current-password|new-password|^cc-|\scc-/i;
+
+  function isSensitive(control) {
+    if (control.closest('[data-history-ignore]')) return true;
+    if (SENSITIVE_NAME.test(control.name || '') || SENSITIVE_NAME.test(control.id || '')) return true;
+    return SENSITIVE_AUTOCOMPLETE.test(control.getAttribute('autocomplete') || '');
+  }
+
   function controlValue(control) {
+    if (isSensitive(control)) return null;
     if (control instanceof HTMLInputElement) {
       const type = control.type.toLowerCase();
       if (['password', 'file', 'hidden'].includes(type)) return null;
-      if (/password|token|secret|csrf/i.test(control.name || control.id)) return null;
       if (type === 'checkbox' || type === 'radio') {
         return { id: control.id, checked: control.checked };
       }
@@ -58,7 +70,19 @@
     return { id: control.id, value: control.value };
   }
 
+  function clearSnapshots() {
+    try {
+      for (let index = window.sessionStorage.length - 1; index >= 0; index--) {
+        const key = window.sessionStorage.key(index);
+        if (key?.startsWith(SNAPSHOT_PREFIX)) window.sessionStorage.removeItem(key);
+      }
+    } catch (error) {
+      // Storage may be unavailable; there is then nothing to clear.
+    }
+  }
+
   function capturePageState() {
+    if (signingOut) return;
     const controls = [...document.querySelectorAll('input[id], select[id], textarea[id]')]
       .map(controlValue)
       .filter(Boolean);
@@ -168,6 +192,17 @@
 
     event.preventDefault();
     navigateBack(button.href);
+  });
+
+  // Signing out must not leave the previous account's page state for the next person on this tab.
+  document.addEventListener('submit', event => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const action = form.getAttribute('action') || '';
+    if (/\/logout(?:[?#]|$)/.test(action)) {
+      signingOut = true;
+      clearSnapshots();
+    }
   });
 
   // pagehide runs for both normal navigation and bfcache navigation without

@@ -8,6 +8,9 @@ import org.example.stockwatch247.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -66,15 +69,42 @@ public class AccountDeletionService {
         return true;
     }
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AccountDeletionService.class);
+    private static final int DELETIONS_PER_RUN = 200;
+    private TransactionTemplate transactions;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTransactionManager(PlatformTransactionManager manager) {
+        transactions = new TransactionTemplate(manager);
+        transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    /**
+     * Each account is deleted in its own transaction: one account whose data cannot be removed is
+     * logged and skipped, instead of rolling back the whole batch and blocking every later run.
+     */
     @Scheduled(cron = "${security.account-deletion.cleanup-cron:0 30 3 * * *}")
-    @Transactional
     public void deleteExpiredAccounts() {
         LocalDateTime cutoff = LocalDateTime.now(clock).minusDays(7);
-        users.findExpiredDeletionBatch(cutoff).forEach(user -> {
-            try { notifications.sendAccountDeletedNotice(user); }
-            catch (RuntimeException ignored) { System.err.println("Final account deletion notice could not be sent."); }
-            users.delete(user);
-        });
+        for (Long userId : users.findExpiredDeletionIds(cutoff, DELETIONS_PER_RUN)) {
+            try {
+                if (transactions == null) deleteIfStillExpired(userId, cutoff);
+                else transactions.executeWithoutResult(status -> deleteIfStillExpired(userId, cutoff));
+            } catch (RuntimeException failure) {
+                log.error("Scheduled deletion of account {} failed; it will be retried on the next run.", userId, failure);
+            }
+        }
+    }
+
+    private void deleteIfStillExpired(Long userId, LocalDateTime cutoff) {
+        User user = users.findByIdForUpdate(userId).orElse(null);
+        // Re-checked under the lock: the owner may have cancelled since the ids were read.
+        if (user == null || user.getDeletionRequestedAt() == null || user.getDeletionRequestedAt().isAfter(cutoff))
+            return;
+        try { notifications.sendAccountDeletedNotice(user); }
+        catch (RuntimeException ignored) { log.warn("Final account deletion notice could not be queued for account {}.", userId); }
+        users.delete(user);
+        users.flush();
     }
 
     private String hash(String value) {

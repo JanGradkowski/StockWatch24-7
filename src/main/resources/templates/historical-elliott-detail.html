@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title th:text="${wave.symbol() + ' Elliott Wave — Historical signal'}">Historical Elliott Wave</title>
-  <script th:src="@{/js/theme.js}"></script>
+  <title th:text="${#messages.msg(wave.candidate() ? 'elliottHistory.pageTitle.candidate' : 'elliottHistory.pageTitle.signal', wave.symbol())}">Historical Elliott Wave</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
   <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
@@ -24,35 +24,35 @@
 <main class="page-container signal-detail-page historical-elliott-detail-page">
   <header class="signal-report-header">
     <div>
-      <div class="signal-report-eyebrow">Historical Elliott Wave signal</div>
-      <h1 th:text="${wave.stageLabel()}">Wave V ending</h1>
+      <div class="signal-report-eyebrow" th:text="${wave.candidate() ? #messages.msg('elliottHistory.eyebrow.candidate') : #messages.msg('elliottHistory.eyebrow.signal')}">Historical Elliott Wave signal</div>
+      <h1 th:text="${#tr.text(wave.stageLabel())}">Wave V ending</h1>
       <p class="signal-report-identity">
         <strong th:text="${wave.symbol()}">MARA</strong>
         <span aria-hidden="true">&middot;</span>
-        <span th:text="${wave.direction() + ' structure'}">Bullish structure</span>
+        <span th:text="${#messages.msgOrNull('elliottHistory.shape.' + wave.direction()) ?: wave.direction()}">Bullish structure</span>
       </p>
-      <div class="signal-report-tags" aria-label="Historical Elliott signal classification">
-        <span class="signal-report-tag">Historical Elliott Wave</span>
+      <div class="signal-report-tags" aria-label="Historical Elliott signal classification" th:aria-label="#{elliottHistory.tagsAria}">
+        <span class="signal-report-tag" th:text="${wave.candidate() ? #messages.msg('elliottHistory.tag.candidate') : #messages.msg('elliottHistory.tag.signal')}">Historical Elliott Wave</span>
         <span class="signal-report-tag direction"
               th:classappend="${wave.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-              th:text="${wave.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : wave.tradeSignal().name()}">SELL/SHORT</span>
-        <span class="signal-report-tag interval" th:text="${wave.intervalLabel()}">Weekly</span>
+              th:text="${#messages.msg('alertHistory.signal.' + wave.tradeSignal().name())}">SELL/SHORT</span>
+        <span class="signal-report-tag interval" th:text="${#tr.text(wave.intervalLabel())}">Weekly</span>
         <span class="signal-report-tag historical-outcome-pill"
               th:classappend="${wave.status() == 'CONFIRMED'} ? ' confirmed' : ' pending'"
-              th:text="${wave.statusLabel()}">Confirmed</span>
-        <span class="signal-report-tag" th:text="${wave.signalPeriodLabel()}">Week of 1 Jan 2018</span>
+              th:text="${#tr.text(wave.statusLabel())}">Confirmed</span>
+        <span class="signal-report-tag" th:text="${#tr.text(wave.signalPeriodLabel())}">Week of 1 Jan 2018</span>
         <span class="signal-report-tag" th:text="${wave.scoreVersion() + ' ' + displayScore.score() + '/100'}">ELLIOTT_V1 90/100</span>
-        <span th:if="${displayScore.customApplied()}" class="signal-report-tag">Custom scoring weights</span>
+        <span th:if="${displayScore.customApplied()}" class="signal-report-tag" th:text="#{detail.customWeights}">Custom scoring weights</span>
       </div>
     </div>
     <div class="signal-report-actions">
       <a th:href="@{/stock/{symbol}(symbol=${wave.symbol()})}" class="btn-primary">
-        Open workspace <span class="button-arrow" aria-hidden="true">&rarr;</span>
+        <span th:text="#{detail.openWorkspace}">Open workspace</span> <span class="button-arrow" aria-hidden="true">&rarr;</span>
       </a>
     </div>
   </header>
 
-  <nav class="signal-view-tabs signal-three-view-tabs" aria-label="Historical Elliott signal detail views" role="tablist">
+  <nav class="signal-view-tabs signal-three-view-tabs" aria-label="Historical Elliott signal detail views" role="tablist" th:aria-label="#{elliottHistory.tabsAria}">
     <button id="graphicalOutlookTab"
             class="signal-view-tab active"
             type="button"
@@ -61,7 +61,7 @@
             aria-controls="graphicalOutlookPanel"
             data-signal-tab="graphical">
       <span class="signal-tab-icon" aria-hidden="true">&#9650;</span>
-      <span><strong>Chart</strong><small>See the complete wave on its chart</small></span>
+      <span><strong th:text="#{outlookChange.tab.chart}">Chart</strong><small th:text="#{elliottHistory.tab.chartHelp}">See the complete wave on its chart</small></span>
     </button>
     <button id="scoreReportTab"
             class="signal-view-tab"
@@ -71,7 +71,7 @@
             aria-controls="scoreReportPanel"
             data-signal-tab="score">
       <span class="signal-tab-icon score" aria-hidden="true">&#35;</span>
-      <span><strong>Score report</strong><small>Review lifecycle and Elliott evidence</small></span>
+      <span><strong th:text="#{detail.tab.score}">Score report</strong><small th:text="#{elliottHistory.tab.scoreHelp}">Review lifecycle and Elliott evidence</small></span>
     </button>
     <button id="resultsTab"
             class="signal-view-tab"
@@ -82,7 +82,7 @@
             data-signal-tab="results"
             th:attr="data-results-available=${wave.result().available()}">
       <span class="signal-tab-icon results" aria-hidden="true">%</span>
-      <span><strong>Results</strong><small>See price changes after the signal</small></span>
+      <span><strong th:text="#{virtualTrade.tab.results}">Results</strong><small th:text="#{detail.tab.resultsHelp}">See price changes after the signal</small></span>
     </button>
   </nav>
 
@@ -94,11 +94,11 @@
       <article class="signal-score-card" th:classappend="${' ' + displayScore.band()}">
         <div class="signal-score-card-topline">
           <div>
-            <span class="signal-section-kicker">Score at detection</span>
-            <h2 id="elliott-setup-heading">Setup score</h2>
+            <span class="signal-section-kicker" th:text="#{detail.scoreAtDetection}">Score at detection</span>
+            <h2 id="elliott-setup-heading" th:text="#{signals.column.setupScore}">Setup score</h2>
           </div>
           <span class="signal-confidence-pill"
-                th:text="${displayScore.strengthLabel()}">
+                th:text="${#tr.text(displayScore.strengthLabel())}">
             Strong support
           </span>
         </div>
@@ -109,18 +109,19 @@
             </div>
           </div>
           <div class="signal-score-summary">
-            <p th:text="${displayScore.explanation()}">The score combines structural Elliott rules, wave proportions, pivot quality, and confirmation evidence.</p>
+            <p th:text="${#tr.text(displayScore.explanation())}">The score combines structural Elliott rules, wave proportions, pivot quality, and confirmation evidence.</p>
             <p th:if="${displayScore.customApplied() and displayScore.score() != wave.qualityScore()}"
-               class="signal-factory-score-note">Original reconstructed score:
-              <strong th:text="${wave.qualityScore() + '/100'}">82/100</strong>. Your current weights only change this displayed report.
+               class="signal-factory-score-note"><span th:text="#{detail.originalReconstructedScore}">Original reconstructed score:</span>
+              <strong th:text="${wave.qualityScore() + '/100'}">82/100</strong><span th:text="#{detail.weightsOnlyDisplay}">. Your current weights only change this displayed report.</span>
             </p>
-            <p>It measures technical confluence, not probability of profit.</p>
-            <p>The base Elliott score is adjusted by same-ticker, same-interval candlestick and harmonic signals detected during the preceding eight completed candles.</p>
+            <p th:text="#{detail.confluenceNotProbability}">It measures technical confluence, not probability of profit.</p>
+            <p th:if="${wave.candidate()}" th:text="#{elliottHistory.candidateNote}">This is a shape-only candidate. Its place in a larger Elliott count is unverified, so treat it with more caution than a confirmed structure.</p>
+            <p th:unless="${wave.candidate()}" th:text="#{elliottHistory.scoreAdjustment}">The base Elliott score is adjusted by same-ticker, same-interval candlestick and harmonic signals detected during the preceding eight completed candles.</p>
             <div class="signal-score-rail"
                  role="meter"
                  aria-valuemin="0"
                  aria-valuemax="100"
-                 th:attr="aria-valuenow=${displayScore.score()},aria-label=${'Setup score ' + displayScore.score() + ' out of 100'}">
+                 th:attr="aria-valuenow=${displayScore.score()}" th:aria-label="#{signals.setupScoreAria(${displayScore.score()})}">
               <span th:each="segment : ${#numbers.sequence(1, 20)}"
                     class="signal-score-segment"
                     th:classappend="${displayScore.score() >= segment * 5} ? ' active' : ''"></span>
@@ -130,22 +131,22 @@
       </article>
 
       <aside class="signal-snapshot-card" aria-labelledby="elliott-snapshot-heading">
-        <div class="signal-section-kicker">At historical detection</div>
-        <h2 id="elliott-snapshot-heading">Signal snapshot</h2>
+        <div class="signal-section-kicker" th:text="#{elliottHistory.snapshotKicker}">At historical detection</div>
+        <h2 id="elliott-snapshot-heading" th:text="#{detail.snapshot}">Signal snapshot</h2>
         <div class="signal-snapshot-grid">
           <div class="signal-snapshot-item">
-            <span>Type</span>
+            <span th:text="#{detail.type}">Type</span>
             <strong class="snapshot-direction"
                     th:classappend="${wave.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-                    th:text="${(wave.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : wave.tradeSignal().name()) + ' signal'}">SELL/SHORT signal</strong>
+                    th:text="${#messages.msgOrNull('elliottHistory.signalType.' + wave.tradeSignal().name()) ?: wave.tradeSignal().name()}">SELL/SHORT signal</strong>
           </div>
-          <div class="signal-snapshot-item"><span>Stage</span><strong th:text="${wave.stageLabel()}">Wave V ending</strong></div>
-          <div class="signal-snapshot-item"><span>Signal period</span><strong th:text="${wave.signalPeriodLabel()}">Jan 2018</strong></div>
-          <div class="signal-snapshot-item"><span>Status</span><strong th:text="${wave.statusLabel()}">Confirmed</strong></div>
+          <div class="signal-snapshot-item"><span th:text="#{detail.stage}">Stage</span><strong th:text="${#tr.text(wave.stageLabel())}">Wave V ending</strong></div>
+          <div class="signal-snapshot-item"><span th:text="#{detail.signalPeriod}">Signal period</span><strong th:text="${#tr.text(wave.signalPeriodLabel())}">Jan 2018</strong></div>
+          <div class="signal-snapshot-item"><span th:text="#{virtualTrades.column.status}">Status</span><strong th:text="${#tr.text(wave.statusLabel())}">Confirmed</strong></div>
         </div>
         <div class="historical-calculation-note">
           <span aria-hidden="true">&#8635;</span>
-          <div><strong>Calculated on demand</strong><small>Calculated from completed candles.</small></div>
+          <div><strong th:text="#{detail.calculatedOnDemand}">Calculated on demand</strong><small th:text="#{detail.calculatedFromCandles}">Calculated from completed candles.</small></div>
         </div>
       </aside>
     </section>
@@ -153,22 +154,24 @@
     <section class="signal-chart-card" aria-labelledby="elliott-chart-heading">
       <div class="signal-chart-heading">
         <div>
-          <div class="signal-section-kicker">Wave pattern</div>
-          <h2 id="elliott-chart-heading">Price action and Elliott pivots</h2>
-          <p>Blue marks the motive I&ndash;V structure; purple marks A&ndash;B&ndash;C when present.</p>
+          <div class="signal-section-kicker" th:text="#{elliottHistory.chartKicker}">Wave pattern</div>
+          <h2 id="elliott-chart-heading" th:text="#{elliottHistory.chartTitle}">Price action and Elliott pivots</h2>
+          <p th:if="${wave.candidate()}" th:text="#{elliottHistory.chartCandidateNote}">The gray dashed line marks the candidate pattern and its labelled pivots.</p>
+          <p th:unless="${wave.candidate()}" th:text="#{detail.elliottColours}">Blue marks the motive I&ndash;V structure; purple marks A&ndash;B&ndash;C when present.</p>
         </div>
-        <span class="signal-chart-cache-badge">Hover a parent wave to reveal its lower-degree count</span>
+        <span class="signal-chart-cache-badge" th:text="#{detail.elliottHoverHint}">Hover a parent wave to reveal its lower-degree count</span>
       </div>
-      <div class="signal-chart-legend" aria-label="Elliott chart legend">
-        <span><i class="signal-chart-key motive" aria-hidden="true"></i>Motive I&ndash;V</span>
-        <span><i class="signal-chart-key corrective" aria-hidden="true"></i>Corrective A&ndash;B&ndash;C</span>
-        <span><i class="signal-chart-key subwave" aria-hidden="true"></i>Subwaves on hover</span>
-        <span><i class="signal-chart-key detection" aria-hidden="true"></i>Confirmation candle</span>
+      <div class="signal-chart-legend" aria-label="Elliott chart legend" th:aria-label="#{detail.elliottLegendAria}">
+        <span th:if="${wave.candidate()}"><i class="signal-chart-key candidate" aria-hidden="true"></i><span th:text="#{elliottHistory.legend.candidate}">Pattern candidate</span></span>
+        <span th:unless="${wave.candidate()}"><i class="signal-chart-key motive" aria-hidden="true"></i><span th:text="#{detail.legend.motive}">Motive I&ndash;V</span></span>
+        <span th:unless="${wave.candidate()}"><i class="signal-chart-key corrective" aria-hidden="true"></i><span th:text="#{detail.legend.corrective}">Corrective A&ndash;B&ndash;C</span></span>
+        <span><i class="signal-chart-key subwave" aria-hidden="true"></i><span th:text="#{detail.legend.subwaves}">Subwaves on hover</span></span>
+        <span><i class="signal-chart-key detection" aria-hidden="true"></i><span th:text="#{harmonicHistory.legend.confirmation}">Confirmation candle</span></span>
       </div>
       <div id="historicalElliottDetailChart"
            class="historical-elliott-detail-chart"
            role="group"
-           th:attr="aria-label=${wave.stageLabel() + ' historical Elliott chart for ' + wave.symbol()}"></div>
+           th:aria-label="#{elliottHistory.chartAria(${#tr.text(wave.stageLabel())}, ${wave.symbol()})}"></div>
     </section>
   </div>
 
@@ -180,45 +183,45 @@
     <section class="signal-lifecycle-section" aria-labelledby="elliott-lifecycle-heading">
       <div class="signal-lifecycle-heading">
         <div>
-          <div class="signal-section-kicker">Historical follow-through</div>
-          <h2 id="elliott-lifecycle-heading">Signal lifecycle</h2>
+          <div class="signal-section-kicker" th:text="#{elliottHistory.lifecycleKicker}">Historical follow-through</div>
+          <h2 id="elliott-lifecycle-heading" th:text="#{detail.lifecycle}">Signal lifecycle</h2>
         </div>
-        <span class="signal-lifecycle-pill lifecycle-heading-pill confirmed" th:text="${wave.statusLabel()}">Confirmed</span>
+        <span class="signal-lifecycle-pill lifecycle-heading-pill confirmed" th:text="${#tr.text(wave.statusLabel())}">Confirmed</span>
       </div>
-      <p class="signal-lifecycle-summary">
+      <p class="signal-lifecycle-summary" th:text="#{elliottHistory.lifecycleSummary}">
         The historical result uses the detector's completed-candle confirmation rules.
       </p>
-      <ol class="signal-lifecycle-timeline" aria-label="Historical Elliott lifecycle timeline">
+      <ol class="signal-lifecycle-timeline" aria-label="Historical Elliott lifecycle timeline" th:aria-label="#{elliottHistory.timelineAria}">
         <li class="signal-lifecycle-step detected">
           <span class="lifecycle-step-marker" aria-hidden="true">1</span>
           <div class="lifecycle-step-copy">
-            <span class="lifecycle-step-label">Structure endpoint</span>
-            <strong th:text="${wave.stageLabel()}">Wave V ending</strong>
-            <time th:text="${wave.endpointPeriodLabel()}">Endpoint period</time>
-            <small>The completed V or C pivot identified by the detector</small>
+            <span class="lifecycle-step-label" th:text="#{elliottHistory.structureEndpoint}">Structure endpoint</span>
+            <strong th:text="${#tr.text(wave.stageLabel())}">Wave V ending</strong>
+            <time th:text="${#tr.text(wave.endpointPeriodLabel())}">Endpoint period</time>
+            <small th:text="${wave.candidate() ? #messages.msg('elliottHistory.endpoint.candidate') : #messages.msg('elliottHistory.endpoint.signal')}">The completed V or C pivot identified by the detector</small>
           </div>
         </li>
         <li th:if="${wave.confirmationTimestamp() != null}"
             class="signal-lifecycle-step lifecycle-resolution-step confirmed">
           <span class="lifecycle-step-marker" aria-hidden="true">2</span>
           <div class="lifecycle-step-copy">
-            <span class="lifecycle-step-label">Follow-through</span>
-            <strong th:text="${wave.statusLabel()}">Confirmed</strong>
-            <time th:text="${wave.signalPeriodLabel()}">Jan 2018</time>
-            <small>Confirmed using a completed candle after the Elliott endpoint</small>
+            <span class="lifecycle-step-label" th:text="#{elliottHistory.followThrough}">Follow-through</span>
+            <strong th:text="${#tr.text(wave.statusLabel())}">Confirmed</strong>
+            <time th:text="${#tr.text(wave.signalPeriodLabel())}">Jan 2018</time>
+            <small th:text="#{elliottHistory.confirmedAfterEndpoint}">Confirmed using a completed candle after the Elliott endpoint</small>
           </div>
         </li>
         <li th:unless="${wave.confirmationTimestamp() != null}" class="signal-lifecycle-step pending">
           <span class="lifecycle-step-marker" aria-hidden="true">2</span>
           <div class="lifecycle-step-copy">
-            <span class="lifecycle-step-label">Follow-through</span>
-            <strong>Awaiting confirmation</strong>
-            <span>Confirmation candle unavailable</span>
-            <small>There are not enough later candles to confirm the pattern</small>
+            <span class="lifecycle-step-label" th:text="#{elliottHistory.followThrough}">Follow-through</span>
+            <strong th:text="#{elliottHistory.awaitingConfirmation}">Awaiting confirmation</strong>
+            <span th:text="#{elliottHistory.confirmationUnavailable}">Confirmation candle unavailable</span>
+            <small th:text="#{elliottHistory.notEnoughCandles}">There are not enough later candles to confirm the pattern</small>
           </div>
         </li>
       </ol>
-      <p class="signal-lifecycle-note">
+      <p class="signal-lifecycle-note" th:text="#{elliottHistory.reconstructionNote}">
         This reconstruction does not imply that an alert or follow-up email was sent at that historical date.
       </p>
     </section>
@@ -226,60 +229,60 @@
     <section class="signal-evidence-section" aria-labelledby="elliott-evidence-heading">
       <div class="signal-evidence-heading">
         <div>
-          <div class="signal-section-kicker">Score breakdown</div>
-          <h2 id="elliott-evidence-heading">Why this score</h2>
-          <p>The score breakdown uses data available at the time.</p>
+          <div class="signal-section-kicker" th:text="#{detail.scoreBreakdown}">Score breakdown</div>
+          <h2 id="elliott-evidence-heading" th:text="#{detail.whyThisScore}">Why this score</h2>
+          <p th:text="#{detail.breakdownAtTime}">The score breakdown uses data available at the time.</p>
         </div>
-        <span class="evidence-count"><span th:text="${displayScore.sections().size()}">7</span>&nbsp;categories</span>
+        <span class="evidence-count" th:text="${#messages.msg(#tr.pluralKey('detail.categories', displayScore.sections().size()), displayScore.sections().size())}">7 categories</span>
       </div>
       <div class="signal-evidence-grid">
         <article class="signal-evidence-card" th:each="section, sectionStat : ${displayScore.sections()}">
           <div class="evidence-card-topline">
             <span class="evidence-number" th:text="${#numbers.formatInteger(sectionStat.count, 2)}">01</span>
-            <span class="evidence-category" th:text="${section.category()}">Structural / pivot quality</span>
-            <span class="evidence-score-badge" th:text="${section.scoreLabel()}">24/30</span>
-            <span class="evidence-impact" th:text="${section.statusLabel()}">Partial support</span>
+            <span class="evidence-category" th:text="${#tr.text(section.category())}">Structural / pivot quality</span>
+            <span class="evidence-score-badge" th:text="${#tr.text(section.scoreLabel())}">24/30</span>
+            <span class="evidence-impact" th:text="${#tr.text(section.statusLabel())}">Partial support</span>
           </div>
           <ul class="evidence-detail-list">
             <li th:each="detail : ${section.details()}">
               <div class="evidence-detail-heading">
-                <strong th:text="${detail.label()}">Observation</strong>
-                <span th:if="${detail.scoreLabel() != null}" th:text="${detail.scoreLabel() + ' pts'}">3/5 pts</span>
+                <strong th:text="${#tr.text(detail.label())}">Observation</strong>
+                <span th:if="${detail.scoreLabel() != null}" th:text="#{outlookChange.points(${#tr.text(detail.scoreLabel())})}">3/5 pts</span>
               </div>
-              <p th:text="${detail.text()}">Evidence detail.</p>
+              <p th:text="${#tr.text(detail.text())}">Evidence detail.</p>
             </li>
           </ul>
         </article>
         <article class="signal-evidence-card" th:if="${false}">
           <div class="evidence-card-topline">
-            <span class="evidence-number">01</span><span class="evidence-category">Impulse proportions</span>
-            <span class="evidence-impact">Structural evidence</span>
+            <span class="evidence-number">01</span><span class="evidence-category" th:text="#{detail.impulseProportions}">Impulse proportions</span>
+            <span class="evidence-impact" th:text="#{detail.structuralEvidence}">Structural evidence</span>
           </div>
           <ul class="evidence-detail-list">
-            <li><div class="evidence-detail-heading"><strong>Wave II retracement</strong></div><p th:text="${#numbers.formatDecimal(wave.waveTwoRetracement() * 100, 1, 1) + '%'}">50.0%</p></li>
-            <li><div class="evidence-detail-heading"><strong>Wave III / Wave I</strong></div><p th:text="${#numbers.formatDecimal(wave.waveThreeToOneRatio(), 1, 2) + '×'}">1.62×</p></li>
-            <li><div class="evidence-detail-heading"><strong>Wave IV retracement</strong></div><p th:text="${#numbers.formatDecimal(wave.waveFourRetracement() * 100, 1, 1) + '%'}">38.2%</p></li>
+            <li><div class="evidence-detail-heading"><strong th:text="#{detail.waveTwoRetracement}">Wave II retracement</strong></div><p th:text="${#numbers.formatDecimal(wave.waveTwoRetracement() * 100, 1, 1) + '%'}">50.0%</p></li>
+            <li><div class="evidence-detail-heading"><strong th:text="#{detail.waveThreeToOne}">Wave III / Wave I</strong></div><p th:text="${#numbers.formatDecimal(wave.waveThreeToOneRatio(), 1, 2) + '×'}">1.62×</p></li>
+            <li><div class="evidence-detail-heading"><strong th:text="#{detail.waveFourRetracement}">Wave IV retracement</strong></div><p th:text="${#numbers.formatDecimal(wave.waveFourRetracement() * 100, 1, 1) + '%'}">38.2%</p></li>
           </ul>
         </article>
         <article class="signal-evidence-card" th:if="${false}">
           <div class="evidence-card-topline">
-            <span class="evidence-number">02</span><span class="evidence-category">Wave classification</span>
-            <span class="evidence-impact">Detector variant</span>
+            <span class="evidence-number">02</span><span class="evidence-category" th:text="#{detail.waveClassification}">Wave classification</span>
+            <span class="evidence-impact" th:text="#{detail.detectorVariant}">Detector variant</span>
           </div>
           <ul class="evidence-detail-list">
-            <li><div class="evidence-detail-heading"><strong>Impulse</strong></div><p th:text="${wave.impulseVariant()}">STANDARD</p></li>
-            <li><div class="evidence-detail-heading"><strong>Correction</strong></div><p th:text="${wave.correctionVariant()}">STANDARD</p></li>
-            <li><div class="evidence-detail-heading"><strong>Detected stage</strong></div><p th:text="${wave.stageLabel()}">ABC correction ending</p></li>
+            <li><div class="evidence-detail-heading"><strong th:text="#{detail.impulse}">Impulse</strong></div><p th:text="${#messages.msgOrNull('elliott.variant.' + wave.impulseVariant()) ?: wave.impulseVariant()}">STANDARD</p></li>
+            <li><div class="evidence-detail-heading"><strong th:text="#{detail.correction}">Correction</strong></div><p th:text="${#messages.msgOrNull('elliott.variant.' + wave.correctionVariant()) ?: wave.correctionVariant()}">STANDARD</p></li>
+            <li><div class="evidence-detail-heading"><strong th:text="#{detail.detectedStage}">Detected stage</strong></div><p th:text="${#tr.text(wave.stageLabel())}">ABC correction ending</p></li>
           </ul>
         </article>
         <article class="signal-evidence-card" th:if="${false}" th:classappend="${wave.qualityWarnings().isEmpty()} ? '' : ' caution'">
           <div class="evidence-card-topline">
-            <span class="evidence-number">03</span><span class="evidence-category">Quality review</span>
-            <span class="evidence-impact" th:text="${wave.qualityWarnings().isEmpty() ? 'No guideline warnings' : 'Reduced-confidence warnings'}">No guideline warnings</span>
+            <span class="evidence-number">03</span><span class="evidence-category" th:text="#{detail.qualityReview}">Quality review</span>
+            <span class="evidence-impact" th:text="${wave.qualityWarnings().isEmpty() ? #messages.msg('elliottHistory.noWarnings') : #messages.msg('elliottHistory.reducedConfidence')}">No guideline warnings</span>
           </div>
           <ul class="evidence-detail-list">
-            <li th:if="${wave.qualityWarnings().isEmpty()}"><div class="evidence-detail-heading"><strong>Detector review</strong></div><p>No reduced-confidence Elliott guideline warnings were recorded.</p></li>
-            <li th:each="warning : ${wave.qualityWarnings()}"><div class="evidence-detail-heading"><strong>Guideline warning</strong></div><p th:text="${warning}">Deep Wave II</p></li>
+            <li th:if="${wave.qualityWarnings().isEmpty()}"><div class="evidence-detail-heading"><strong th:text="#{detail.detectorReview}">Detector review</strong></div><p th:text="#{detail.noElliottWarnings}">No reduced-confidence Elliott guideline warnings were recorded.</p></li>
+            <li th:each="warning : ${wave.qualityWarnings()}"><div class="evidence-detail-heading"><strong th:text="#{detail.guidelineWarning}">Guideline warning</strong></div><p th:text="${#tr.text(warning)}">Deep Wave II</p></li>
           </ul>
         </article>
       </div>
@@ -288,9 +291,9 @@
     <section class="signal-method-note" aria-labelledby="elliott-method-heading">
       <div class="method-note-index" aria-hidden="true">01</div>
       <div>
-        <div class="signal-section-kicker">Reading this report</div>
-        <h2 id="elliott-method-heading">Understanding the score</h2>
-        <p>The Elliott score evaluates internal structure and confirmation. It is not a probability of profit or financial advice.</p>
+        <div class="signal-section-kicker" th:text="#{detail.readingReport}">Reading this report</div>
+        <h2 id="elliott-method-heading" th:text="#{detail.understandingScore}">Understanding the score</h2>
+        <p th:text="#{detail.elliottScoreMeaning}">The Elliott score evaluates internal structure and confirmation. It is not a probability of profit or financial advice.</p>
       </div>
     </section>
   </div>
@@ -305,44 +308,44 @@
              class="signal-results-section"
              th:attr="data-trade-signal=${wave.result().tradeSignal().name()},
                       data-signal-close=${wave.result().signalClose()},
-                      data-outcome-label=${wave.result().outcomeLabel()},
-                      data-best-action-label=${wave.result().bestActionLabel()}">
+                      data-outcome-label=${#tr.text(wave.result().outcomeLabel())},
+                      data-best-action-label=${#tr.text(wave.result().bestActionLabel())}">
       <div class="signal-results-heading">
         <div>
-          <div class="signal-section-kicker">Price history after the signal</div>
-          <h2>Price change after the Elliott signal</h2>
-          <p>The line starts at the reconstructed confirmation close and measures every subsequent completed close in the signal direction.</p>
+          <div class="signal-section-kicker" th:text="#{results.kicker}">Price history after the signal</div>
+          <h2 th:text="#{elliottHistory.resultsTitle}">Price change after the Elliott signal</h2>
+          <p th:text="#{results.lineFromNextOpenReconstructed}">The line starts at the next candle&rsquo;s open, the first price you could trade after the reconstructed confirmation, and measures every subsequent completed close in the signal direction.</p>
         </div>
-        <span class="signal-chart-cache-badge">Completed closing prices</span>
+        <span class="signal-chart-cache-badge" th:text="#{results.completedCloses}">Completed closing prices</span>
       </div>
       <div class="signal-results-metrics" aria-live="polite">
-        <article><span id="resultHorizonLabel" th:text="${wave.result().outcomeLabel()}">Gain / loss</span><strong id="resultHorizonReturn">+0.00%</strong><small id="resultHorizonDifference">+0.0000 per share</small></article>
-        <article><span>Closing price</span><strong id="resultHorizonClose">0.0000</strong><small id="resultHorizonPeriod">Period unavailable</small></article>
-        <article class="best-result"><span id="resultBestActionLabel" th:text="${wave.result().bestActionLabel()}">Best sell close</span><strong id="resultBestClose">0.0000</strong><small id="resultBestPeriod">Period unavailable</small></article>
-        <article class="best-result"><span>Best result in this period</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference">+0.0000 per share</small></article>
+        <article><span id="resultHorizonLabel" th:text="${#tr.text(wave.result().outcomeLabel())}">Gain / loss</span><strong id="resultHorizonReturn">+0.00%</strong><small id="resultHorizonDifference" th:text="#{virtualTrade.perSharePlaceholder}">+0.0000 per share</small></article>
+        <article><span th:text="#{results.closingPrice}">Closing price</span><strong id="resultHorizonClose">0.0000</strong><small id="resultHorizonPeriod" th:text="#{alertHistory.periodUnavailable}">Period unavailable</small></article>
+        <article class="best-result"><span id="resultBestActionLabel" th:text="${#tr.text(wave.result().bestActionLabel())}">Best sell close</span><strong id="resultBestClose">0.0000</strong><small id="resultBestPeriod" th:text="#{alertHistory.periodUnavailable}">Period unavailable</small></article>
+        <article class="best-result"><span th:text="#{virtualTrade.bestResult}">Best result in this period</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference" th:text="#{virtualTrade.perSharePlaceholder}">+0.0000 per share</small></article>
       </div>
       <div id="signalResultsChart"
            class="signal-results-chart"
            role="img"
-           th:attr="aria-label=${'Historical return chart for the ' + (wave.tradeSignal().name() == 'SELL' ? 'SELL/SHORT' : wave.tradeSignal().name()) + ' Elliott signal on ' + wave.symbol()}"></div>
-      <div class="signal-results-legend" aria-label="Results chart color legend">
-        <span><i class="signal-results-key positive" aria-hidden="true"></i>Favorable move in the signal direction</span>
-        <span><i class="signal-results-key negative" aria-hidden="true"></i>Adverse move against the signal</span>
-        <span><i class="signal-results-key start" aria-hidden="true"></i>Signal start at the confirmation close</span>
-        <span><i class="signal-results-key best" aria-hidden="true"></i>Best price in this period</span>
+           th:aria-label="${#messages.msg('elliottHistory.resultsChartAria', #messages.msg('alertHistory.signal.' + wave.tradeSignal().name()), wave.symbol())}"></div>
+      <div class="signal-results-legend" aria-label="Results chart color legend" th:aria-label="#{results.legendAria}">
+        <span><i class="signal-results-key positive" aria-hidden="true"></i><span th:text="#{results.legend.favorable}">Favorable move in the signal direction</span></span>
+        <span><i class="signal-results-key negative" aria-hidden="true"></i><span th:text="#{results.legend.adverse}">Adverse move against the signal</span></span>
+        <span><i class="signal-results-key start" aria-hidden="true"></i><span th:text="#{results.legend.entryNextOpen}">Entry at the next candle&rsquo;s open</span></span>
+        <span><i class="signal-results-key best" aria-hidden="true"></i><span th:text="#{results.legend.bestPrice}">Best price in this period</span></span>
       </div>
       <ol id="signalResultsData" hidden aria-hidden="true">
         <li th:each="point : ${wave.result().points()}"
             th:attr="data-candle-number=${point.candleNumber()},
                      data-time=${point.timestamp()},
-                     data-period-label=${point.periodLabel()},
+                     data-period-label=${#tr.text(point.periodLabel())},
                      data-close=${point.close()},
                      data-directional-return=${point.directionalReturnPercent()},
                      data-directional-difference=${point.directionalPriceDifference()}"></li>
       </ol>
       <div class="signal-results-window-control">
-        <div class="signal-results-window-copy"><label for="resultWindowSlider">Results period</label><p>Choose how many completed candles after this historical Elliott signal to include.</p></div>
-        <output id="resultWindowValue" for="resultWindowSlider" th:text="${wave.result().requiredForwardCandles() + ' candles'}">10 candles</output>
+        <div class="signal-results-window-copy"><label for="resultWindowSlider" th:text="#{results.period}">Results period</label><p th:text="#{elliottHistory.periodHelp}">Choose how many completed candles after this historical Elliott signal to include.</p></div>
+        <output id="resultWindowValue" for="resultWindowSlider" th:text="${#messages.msg(#tr.pluralKey('results.candles', wave.result().requiredForwardCandles()), wave.result().requiredForwardCandles())}">10 candles</output>
         <input id="resultWindowSlider"
                type="range"
                th:min="${wave.result().requiredForwardCandles()}"
@@ -352,7 +355,7 @@
                th:attr="aria-valuemin=${wave.result().requiredForwardCandles()},aria-valuemax=${wave.result().availableForwardCandles()},aria-valuenow=${wave.result().requiredForwardCandles()}">
         <div class="signal-results-range-labels" aria-hidden="true"><span th:text="${wave.result().requiredForwardCandles()}">10</span><span th:text="${wave.result().availableForwardCandles()}">42</span></div>
       </div>
-      <p class="signal-results-disclaimer">
+      <p class="signal-results-disclaimer" th:text="#{results.historicalDisclaimer}">
         Historical closing-price changes, excluding fees, slippage, taxes, dividends and position sizing. These are not actual trade returns.
       </p>
     </section>
@@ -363,10 +366,10 @@
           class="unsaved-alert-dialog signal-results-unavailable-dialog"
           aria-labelledby="signalResultsUnavailableTitle">
     <div class="unsaved-alert-dialog-content">
-      <span class="unsaved-alert-kicker">More price history needed</span>
-      <h2 id="signalResultsUnavailableTitle">Not enough price history yet</h2>
-      <p th:text="${wave.result().unavailableReason()}">At least 10 completed candles are required.</p>
-      <div class="unsaved-alert-dialog-actions"><button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary">Understood</button></div>
+      <span class="unsaved-alert-kicker" th:text="#{results.moreHistoryNeeded}">More price history needed</span>
+      <h2 id="signalResultsUnavailableTitle" th:text="#{results.notEnoughHistory}">Not enough price history yet</h2>
+      <p th:text="${#tr.text(wave.result().unavailableReason())}">At least 10 completed candles are required.</p>
+      <div class="unsaved-alert-dialog-actions"><button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary" th:text="#{results.understood}">Understood</button></div>
     </div>
   </dialog>
 </main>
@@ -385,6 +388,8 @@
     StockWatchCharts.preserveColors([correctiveColor]);
     const subwaveColor = /*[[${elliottSubwaveColor}]]*/ '#F59E0B';
     StockWatchCharts.preserveColors([subwaveColor]);
+    const candidate = /*[[${wave.candidate()}]]*/ false;
+    const candidateColor = '#94a3b8';
     const container = document.getElementById('historicalElliottDetailChart');
     if (!container || !Array.isArray(candles) || candles.length === 0) return;
     const light = document.documentElement.dataset.theme === 'light';
@@ -406,9 +411,9 @@
     const chartDate = timestamp => new Date(Number(timestamp) * 1000).toISOString().slice(0, 10);
     candleSeries.setData(candles.map(candle => ({ time: chartDate(candle.timestamp), open: candle.open, high: candle.high, low: candle.low, close: candle.close })));
     const rootSeries = [];
-    const renderWave = (wavePoints, color) => {
+    const renderWave = (wavePoints, color, lineStyle = 0) => {
       if (wavePoints.length < 2) return null;
-      const series = chart.addLineSeries({ color, lineWidth: 3, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
+      const series = chart.addLineSeries({ color, lineWidth: 3, lineStyle, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
       series.setData(wavePoints.map(point => ({ time: chartDate(point.timestamp), value: point.price })));
       series.setMarkers(wavePoints.filter(point => point.label).map(point => ({
         time: chartDate(point.timestamp), position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar', color, shape: 'circle', text: point.label
@@ -416,8 +421,14 @@
       rootSeries.push(series);
       return series;
     };
-    renderWave(points.slice(0, 6), motiveColor);
-    if (points.length > 6) renderWave(points.slice(5), correctiveColor);
+    if (candidate) {
+      // Candidate labels (a-b-c, w-x-y, ...) describe one pattern, not an I-V impulse followed by A-B-C.
+      renderWave(points, candidateColor, 2);
+    } else {
+      renderWave(points.slice(0, 6), motiveColor);
+      if (points.length > 6) renderWave(points.slice(5), correctiveColor);
+    }
+    document.querySelectorAll('.signal-chart-key.candidate').forEach(key => { key.style.backgroundColor = candidateColor; });
     document.querySelectorAll('.signal-chart-key.motive').forEach(key => { key.style.backgroundColor = motiveColor; });
     document.querySelectorAll('.signal-chart-key.corrective').forEach(key => { key.style.backgroundColor = correctiveColor; });
     document.querySelectorAll('.signal-chart-key.subwave').forEach(key => { key.style.backgroundColor = subwaveColor; });

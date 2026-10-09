@@ -22,6 +22,7 @@ import java.time.Instant;
 
 @Controller
 public class MfaLoginController {
+    static final int FAILURES_PER_PASSWORD_ENTRY = 5;
     private java.time.Clock clock = java.time.Clock.systemUTC();
     @org.springframework.beans.factory.annotation.Autowired
     void setClock(java.time.Clock clock) { this.clock = clock; }
@@ -31,6 +32,8 @@ public class MfaLoginController {
     private final UserDetailsService userDetails;
     private final RequestRateLimiter rateLimiter;
     private final HttpSessionSecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.security.KnownDeviceCookies knownDevices;
 
     public MfaLoginController(UserRepository users, AccountSecurityService security,
                               UserDetailsService userDetails, RequestRateLimiter rateLimiter) {
@@ -58,8 +61,21 @@ public class MfaLoginController {
             request.getSession().invalidate();
             return "redirect:/login?expired=true";
         }
+        if (security.loginFactorPaused(userId)) {
+            clearPendingLogin(request.getSession());
+            return "redirect:/login?mfaPaused=true";
+        }
         var accepted = security.verifyLoginFactor(userId, version, started, code);
         if (accepted.isEmpty()) {
+            Object previous = request.getSession().getAttribute(AccountSession.MFA_PENDING_FAILURES);
+            int failures = (previous instanceof Integer count ? count : 0) + 1;
+            boolean paused = security.loginFactorPaused(userId);
+            if (paused || failures >= FAILURES_PER_PASSWORD_ENTRY) {
+                // A fresh password entry is required, so a stolen session cannot keep guessing codes.
+                clearPendingLogin(request.getSession());
+                return paused ? "redirect:/login?mfaPaused=true" : "redirect:/login?mfaRetry=true";
+            }
+            request.getSession().setAttribute(AccountSession.MFA_PENDING_FAILURES, failures);
             model.addAttribute("error", "That authenticator or recovery code is invalid."); return "login-2fa";
         }
         var identity = accepted.get();
@@ -73,11 +89,10 @@ public class MfaLoginController {
         var authentication = UsernamePasswordAuthenticationToken.authenticated(details, null, details.getAuthorities());
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication); SecurityContextHolder.setContext(context);
-        request.getSession().removeAttribute(AccountSession.MFA_PENDING_USER_ID);
-        request.getSession().removeAttribute(AccountSession.MFA_PENDING_AT);
-        request.getSession().removeAttribute(AccountSession.MFA_PENDING_VERSION);
+        clearPendingLogin(request.getSession());
         request.getSession().setAttribute(AccountSession.SECURITY_VERSION, identity.securityVersion());
         contextRepository.saveContext(context, request, response);
+        if (knownDevices != null) knownDevices.remember(request, response, identity.email());
         return "redirect:/home";
     }
 
@@ -89,11 +104,16 @@ public class MfaLoginController {
         Object at = session.getAttribute(AccountSession.MFA_PENDING_AT);
         if (!(id instanceof Long userId) || !(at instanceof Long started)
                 || started < clock.instant().minusSeconds(300).getEpochSecond()) {
-            session.removeAttribute(AccountSession.MFA_PENDING_USER_ID);
-            session.removeAttribute(AccountSession.MFA_PENDING_AT);
-            session.removeAttribute(AccountSession.MFA_PENDING_VERSION);
+            clearPendingLogin(session);
             return null;
         }
         return userId;
+    }
+
+    private void clearPendingLogin(HttpSession session) {
+        session.removeAttribute(AccountSession.MFA_PENDING_USER_ID);
+        session.removeAttribute(AccountSession.MFA_PENDING_AT);
+        session.removeAttribute(AccountSession.MFA_PENDING_VERSION);
+        session.removeAttribute(AccountSession.MFA_PENDING_FAILURES);
     }
 }

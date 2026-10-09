@@ -89,12 +89,12 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 5. Start the application:
 
    ```powershell
-   .\mvnw.cmd spring-boot:run
+   .\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"
    ```
 
 6. Open [http://localhost:8080](http://localhost:8080).
 
-Flyway applies pending migrations automatically in the default development profile.
+The `dev` profile is for `http://localhost` only: it turns off HTTPS enforcement and allows the built-in MFA key. Without a profile the app runs the production checks and refuses to start until they pass. Flyway applies pending migrations automatically in development.
 
 ## Email alerts
 
@@ -190,7 +190,6 @@ The complete development template is in [`.env.example`](.env.example). Importan
 | `ALERT_SCHEDULE_ENABLED` | Enables scheduled alert recovery and workers |
 | `ALERT_JOB_LEASE_SECONDS` | Worker lease before abandoned work can be reclaimed |
 | `ALERT_CATCH_UP_BATCH_SIZE` | Maximum missed schedule occurrences recovered per pass |
-| `ALERT_CANDLESTICK_LIFECYCLE_WINDOW_CANDLES` | Completed candles observed before an unresolved candlestick setup expires (default `3`, range `1-20`) |
 | `CONGRESSIONAL_ACTIVITY_ENABLED` | Enables stock-only congressional history and follows |
 | `CONGRESSIONAL_ACTIVITY_MAX_UNCACHED_REFRESHES_PER_USER_PER_MINUTE` | Per-user uncached ticker refresh ceiling (default `2`); cache hits do not count |
 | `CONGRESS_INVESTS_DAILY_REQUEST_BUDGET` | Shared UTC daily call ceiling (default `90`) |

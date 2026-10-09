@@ -6,22 +6,36 @@ New candlestick, Elliott and harmonic plans preserve structural levels and expli
 
 | Family | New version | Previous records |
 |---|---|---|
-| Candlesticks | `CANDLE_RR_V4` | V1–V3 retain their existing close-based resolution |
-| Elliott | `ELLIOTT_FIB_RR_V3` | Previous stage plans retain their original resolution logic |
-| Harmonics | `HARMONIC_TRADE_V2` | `HARMONIC_STOP_V1` retains its stop-only, eight-bar model |
+| Candlesticks | `CANDLE_RR_V5` | V4 and earlier keep their signal-close entry and original resolution |
+| Elliott | `ELLIOTT_FIB_RR_V4` | V3 and earlier keep their signal-close entry and original resolution |
+| Harmonics | `HARMONIC_TRADE_V3` | V2 keeps its single-target model; `HARMONIC_STOP_V1` retains its stop-only, eight-bar model |
 | Elliott scenarios | `ELLIOTT_SCENARIOS_V2` | New scenarios enforce the same standard-impulse boundaries as plans |
 
-Migration V68 adds qualification, risk, horizon, secondary-target and modeled-fill fields. It does not rewrite historical prices or results. New stage revisions receive new snapshots. Retired Elliott revisions remain in stage history. Historical candlestick scans are recomputed under the new policy with a separate cache key; they are not persisted legacy alert outcomes.
+Migration V81 adds the fill status (`AWAITING_FILL`, `FILLED`, `NOT_FILLED`) and entry timestamp used by the current versions. Migration V68 adds qualification, risk, horizon, secondary-target and modeled-fill fields. It does not rewrite historical prices or results. New stage revisions receive new snapshots. Retired Elliott revisions remain in stage history. Historical candlestick scans are recomputed under the new policy with a separate cache key; they are not persisted legacy alert outcomes.
+
+## Entry at the next open
+
+A signal is known only once its candle has closed, so no one could have bought or sold at that close. Current plans therefore enter at the **open of the next candle**. The plan is calculated at detection and waits as `AWAITING_FILL` until that candle exists:
+
+- If the next open is still on the right side of the stop and short of the target, the plan is `FILLED` at that open, and the entry candle itself is checked for a stop or target touch.
+- If the market gaps through the stop or beyond the target, the plan is `NOT_FILLED`: the trade never happened and has no result. Candlestick alerts send a short "not entered" email.
+- Results, the archive and the virtual-trade helpers measure from the modeled fill, not from the signal close.
+
+Historical scans and the historical Elliott and harmonic pages apply the same rule.
 
 ## Stops, targets and eligibility
 
-Candlestick stops use the more adverse of the configured stop and the formation's structural stop, plus a volatility buffer. A fixed percentage can widen the stop but cannot move it inside the structure. The previous ATR circuit breaker no longer tightens new stops to manufacture a better reward/risk ratio. Existing preference fields remain readable for historical compatibility; the settings panel exposes the ATR lookback instead.
+Candlestick stops are exactly the configured stop: the structural price moved by the configured buffer percentage, or the entry moved by the configured fixed percentage. No further ATR buffer is added, so the factory "textbook structural price (0% buffer)" setting places the stop at the pattern's own high or low. The previous ATR circuit breaker no longer tightens new stops to manufacture a better reward/risk ratio. The ATR risk ceiling below still applies.
 
 The configured candlestick reward/risk target is capped by nearer confirmed support/resistance: a two-bar pivot on either side, confirmed by the entry timestamp, within 60 bars. A nearer obstacle can therefore make the setup projection only. This is intentionally conservative; the pivot is not assumed to guarantee a reversal.
 
 Elliott targets enforce standard impulse constraints: Wave III must pass Wave I; projected Wave IV cannot overlap Wave I; projected Wave V cannot make Wave III the shortest motive wave. Detector origins labeled either `0` or an empty string are accepted. The nearest eligible objective is primary. A more distant objective is a separate scenario and cannot rescue an inadequate primary reward/risk ratio. Diagonal counts need a separate explicit policy and do not silently bypass these checks. Analytical count invalidation stays separate from the new protective-order trade outcome.
 
-Harmonic plans retain their pattern-specific structural boundaries. Gartley, Bat and Cypher use X; Butterfly uses the 1.414 XA extension; Crab uses 2.0 XA; Shark uses the 1.27 OX extension. Conventional XABCD plans show 38.2%/61.8% AD objectives; Cypher uses CD; Shark uses a 50% BC reaction objective and a shorter horizon. These are modeled objectives, not promises of a price move.
+Weekly and monthly Elliott objectives are projected on a logarithmic price scale, as is conventional for long-horizon wave counts; daily objectives stay arithmetic.
+
+Harmonic plans retain their pattern-specific structural boundaries. Gartley, Bat and Cypher use X; Butterfly uses the 1.414 XA extension; Crab uses 2.0 XA; Shark uses the 1.27 XA extension. Conventional XABCD plans show 38.2%/61.8% AD objectives; Cypher uses CD; Shark uses a 50% CD reaction objective and a shorter horizon. These are modeled objectives, not promises of a price move.
+
+Harmonic trades scale out in the traditional way: half the position closes at the first objective, the stop on the remainder moves to the entry, and the rest closes at the second objective, the breakeven stop or the horizon. When the first objective and a return to the entry fall in the same bar, the order is unknown and the remainder is treated as stopped at breakeven. The plan qualifies on the reward/risk of the blended objective (the midpoint of the two), with a minimum of 1.5 daily and 2.0 weekly/monthly.
 
 All families use causal Wilder ATR, normally 14 bars (candlestick ATR period remains configurable). Missing/invalid ATR makes the plan projection only. Stops, targets and entry must be finite and positive, with a stop on the adverse side. Stop rounding is adverse to the entry, using a decimal precision floor of 0.01 above one currency unit and 0.0001 below it. This is not an exchange-specific tick-size database; these informational plans do not submit broker orders.
 
@@ -35,7 +49,7 @@ These safeguards are engineering defaults, not parameters proven optimal by back
 | Weekly | 4 | 20% | 0.20 | 8 | 10 | 4 | 16 |
 | Monthly | 5 | 30% | 0.25 | 6 | 8 | 3 | 12 |
 
-Horizons count completed bars after the reference entry bar. Elliott/harmonic minimum primary reward/risk is 2 daily and 3 weekly/monthly; candlesticks retain the user's interval preference. Elliott zone half-width is the lesser of 1.5% of target and the greater of 0.25 ATR or the price precision floor. Missing ATR permits an explanatory projection, not a qualified trade.
+Horizons count completed bars from the entry bar. Elliott minimum primary reward/risk is 2 daily and 3 weekly/monthly; harmonic plans use the blended minimum above. A user's own reward/risk preference replaces these minimums only when it differs from the factory value. Candlesticks use the user's interval preference. Elliott zone half-width is the lesser of 1.5% of target and the greater of 0.25 ATR or the price precision floor. Missing ATR permits an explanatory projection, not a qualified trade.
 
 ## Modeled outcomes
 

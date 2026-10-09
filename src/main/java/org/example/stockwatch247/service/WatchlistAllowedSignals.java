@@ -20,7 +20,7 @@ public class WatchlistAllowedSignals {
     }
     public boolean allows(long id, String type) { return allowed(id).contains(type); }
     public void requireAllowed(long id, String type) {
-        if (!allows(id, type)) throw new IllegalArgumentException("This watchlist does not allow " + type.replace('_', ' ').toLowerCase(Locale.ROOT) + " signals. Choose another list or edit its allowed signal types.");
+        if (!allows(id, type)) throw new UserInputException("This watchlist does not allow " + type.replace('_', ' ').toLowerCase(Locale.ROOT) + " signals. Choose another list or edit its allowed signal types.");
     }
     public Map<String, Long> followCounts(long id) {
         Map<String, Long> counts = new LinkedHashMap<>();
@@ -33,7 +33,7 @@ public class WatchlistAllowedSignals {
         if (allowed == null) return; // Older callers preserve the current permissions.
         if (allowed.size() > TYPES.size() || allowed.stream().anyMatch(Objects::isNull)
                 || new HashSet<>(allowed).size() != allowed.size() || !TYPES.containsAll(allowed))
-            throw new IllegalArgumentException("Choose valid allowed signal types.");
+            throw new UserInputException("Choose valid allowed signal types.");
         db.queryForObject("select id from users where id=? for update",Long.class,user.getId());
         if (!Boolean.TRUE.equals(db.queryForObject("select exists(select 1 from watchlists where id=? and user_id=?)",Boolean.class,id,user.getId())))
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND,"Watchlist not found.");

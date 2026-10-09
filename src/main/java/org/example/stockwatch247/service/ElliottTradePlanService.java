@@ -22,6 +22,25 @@ import java.util.Optional;
 public class ElliottTradePlanService {
     @org.springframework.beans.factory.annotation.Autowired
     private TradeExecutionService executionService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private CandlestickPatternPreferencesService tradePreferences;
+
+    /**
+     * The user's shared minimum reward/risk, also used by candlestick plans. Null, which keeps each
+     * family's own default, unless the user has personalised their trade-plan settings.
+     */
+    static Double userRequiredRewardRisk(CandlestickPatternPreferencesService preferences,
+                                         AlertEvent event, TimeInterval interval) {
+        if (preferences == null || event == null || event.getAlertRule() == null
+                || event.getAlertRule().getUser() == null) return null;
+        try {
+            var view = preferences.get(event.getAlertRule().getUser());
+            double chosen = view.rewardRiskRatio(interval);
+            return Double.compare(chosen, view.factoryRewardRiskRatio(interval)) == 0 ? null : chosen;
+        } catch (RuntimeException unavailable) {
+            return null;
+        }
+    }
 
     private static final int ATR_PERIOD = 14;
 
@@ -49,7 +68,8 @@ public class ElliottTradePlanService {
             TimeInterval interval) {
         double atr = averageTrueRange(candles, entryTimestamp, ATR_PERIOD);
         var result = ElliottTradePlanPolicy.calculate(
-                        stage, cycleDirection, expectedMove, entryPrice, points, atr, interval)
+                        stage, cycleDirection, expectedMove, entryPrice, points, atr, interval,
+                        userRequiredRewardRisk(tradePreferences, event, interval))
                 .map(plan -> {
                     applyLatestPlan(event, plan);
                     return new PreparedPlan(entryTimestamp, plan);
@@ -71,15 +91,33 @@ public class ElliottTradePlanService {
             event.setElliottTradeResolutionClose(null);
             event.setElliottTradeResolutionReason(null);
             event.setTradePlanVersion(null);
+            event.setTradeFillStatus(null);
+            event.setTradeEntryTimestamp(null);
             event.setStopLossPrice(null);
             event.setProfitTargetPrice(null);
             event.setSecondaryTargetPrice(null);
             event.setTradeActionable(false);
             event.setElliottTradeActionable(false);
             event.setElliottTradePlanStatus("PROJECTION_ONLY");
-            event.setTradeQualification("Projection only: no valid target within the standard Elliott structural boundaries.");
+            event.setTradeQualification(projectionOnlyReason(stage, points));
         }
         return result;
+    }
+
+    static String projectionOnlyReason(
+            ElliottSignalStage stage,
+            List<ElliottWaveDetectionService.ElliottWavePoint> points) {
+        double room = stage == ElliottSignalStage.WAVE_III_END && points != null
+                ? ElliottTargetRules.waveFourRoom(points) : Double.NaN;
+        Double waveOne = points == null ? null : ElliottTargetRules.price(points, "I");
+        if (Double.isFinite(room) && room > 0.0 && waveOne != null
+                && room < ElliottTargetRules.COMMON_WAVE_FOUR_MIN_RETRACEMENT) {
+            return String.format(java.util.Locale.ROOT,
+                    "Projection only: Wave IV has %.1f%% of Wave III left before Wave I territory at %s; "
+                            + "no standard Fibonacci Wave IV target fits, so no trade plan is offered.",
+                    room * 100, ElliottTargetRules.formatPrice(waveOne));
+        }
+        return "Projection only: no valid target within the standard Elliott structural boundaries.";
     }
 
     private void applyLatestPlan(AlertEvent event, ElliottTradePlanPolicy.TradePlan plan) {
@@ -115,6 +153,9 @@ public class ElliottTradePlanService {
         event.setElliottTradeResolutionTimestamp(null);
         event.setElliottTradeResolutionClose(null);
         event.setElliottTradeResolutionReason(plan.qualification());
+        boolean nextOpen = ElliottTradePlanPolicy.entersAtNextOpen(plan.version());
+        event.setTradeFillStatus(nextOpen ? TradeRiskPolicy.AWAITING_FILL : null);
+        event.setTradeEntryTimestamp(null);
     }
 
     @Transactional
@@ -155,6 +196,8 @@ public class ElliottTradePlanService {
         plan.setActualRewardRiskRatio(projection.actualRewardRiskRatio());
         plan.setActionable(projection.actionable());
         plan.setQualification(projection.qualification());
+        plan.setFillStatus(ElliottTradePlanPolicy.entersAtNextOpen(projection.version())
+                ? TradeRiskPolicy.AWAITING_FILL : null);
         plan.setCreatedAt(now);
         plan.setUpdatedAt(now);
         return planRepository.save(plan);
@@ -168,6 +211,17 @@ public class ElliottTradePlanService {
         for (ElliottStageTradePlan previous : history) {
             if (previous.getStatus() != ElliottTradePlanStatus.ACTIVE
                     && previous.getStatus() != ElliottTradePlanStatus.PROJECTION_ONLY) continue;
+            if (TradeRiskPolicy.AWAITING_FILL.equals(previous.getFillStatus())) {
+                // Superseded before its entry candle opened: there was never a trade to measure.
+                previous.setStatus(ElliottTradePlanStatus.NOT_FILLED);
+                previous.setFillStatus(TradeRiskPolicy.NOT_FILLED);
+                previous.setResolutionTimestamp(timestamp);
+                previous.setResolutionClosePrice(entry);
+                previous.setResolutionFillPrice(entry);
+                previous.setResolutionReason("Not filled: the Elliott count changed before this plan's entry candle opened.");
+                previous.setUpdatedAt(now);
+                continue;
+            }
             previous.setStatus(previous.getStage() == stage
                     ? ElliottTradePlanStatus.REVISED : ElliottTradePlanStatus.STAGE_COMPLETED);
             previous.setResolutionTimestamp(timestamp);
@@ -199,32 +253,101 @@ public class ElliottTradePlanService {
         int resolved = 0;
         for (ElliottStageTradePlan plan : planRepository.findOpenPlans(
                 symbol, interval, List.of(ElliottTradePlanStatus.ACTIVE))) {
+            if (TradeRiskPolicy.AWAITING_FILL.equals(plan.getFillStatus())) {
+                Candle fill = candles.stream().filter(c -> c.getTimestamp() > plan.getEntryTimestamp())
+                        .findFirst().orElse(null);
+                if (fill == null) continue;
+                Resolution notFilled = fillAtNextOpen(plan, fill, candles, interval);
+                if (notFilled != null) {
+                    close(plan, notFilled);
+                    resolved++;
+                    continue;
+                }
+                planRepository.save(plan);
+                eventRepository.save(plan.getAlertEvent());
+                if (plan.getStatus() != ElliottTradePlanStatus.ACTIVE) continue;
+            }
             Resolution resolution = resolve(plan, candles);
             if (resolution == null) continue;
-            plan.setStatus(resolution.status());
-            plan.setResolutionTimestamp(resolution.candle().getTimestamp());
-            plan.setResolutionClosePrice(resolution.candle().getClosePrice());
-            plan.setResolutionFillPrice(resolution.fillPrice());
-            plan.setResolutionReason(resolution.reason());
-            plan.setUpdatedAt(LocalDateTime.now());
-            planRepository.save(plan);
-            mirrorResolution(plan.getAlertEvent(), plan, resolution);
-            if (resolution.status() != ElliottTradePlanStatus.STRUCTURE_INVALIDATED
-                    && notificationService.sendElliottTradePlanOutcomeEmail(plan)) {
-                plan.getAlertEvent().setFollowUpSentAt(LocalDateTime.now());
-            }
-            eventRepository.save(plan.getAlertEvent());
+            close(plan, resolution);
             resolved++;
         }
         return resolved;
     }
 
+    private void close(ElliottStageTradePlan plan, Resolution resolution) {
+        plan.setStatus(resolution.status());
+        plan.setResolutionTimestamp(resolution.candle().getTimestamp());
+        plan.setResolutionClosePrice(resolution.candle().getClosePrice());
+        plan.setResolutionFillPrice(resolution.fillPrice());
+        plan.setResolutionReason(resolution.reason());
+        plan.setUpdatedAt(LocalDateTime.now());
+        planRepository.save(plan);
+        mirrorResolution(plan.getAlertEvent(), plan, resolution);
+        if (resolution.status() != ElliottTradePlanStatus.STRUCTURE_INVALIDATED
+                && notificationService.sendElliottTradePlanOutcomeEmail(plan) && !notificationService.usesDurableDelivery()) {
+            plan.getAlertEvent().setFollowUpSentAt(LocalDateTime.now());
+        }
+        eventRepository.save(plan.getAlertEvent());
+    }
+
+    /**
+     * Enters at the open of the first candle after the notification. The Fibonacci target zone and the
+     * structural stop do not depend on the entry, so they are kept; the reward/risk and qualification are
+     * recomputed at the real entry. Returns the not-filled resolution, or null when the plan was filled.
+     */
+    private Resolution fillAtNextOpen(ElliottStageTradePlan plan, Candle fill, List<Candle> candles, TimeInterval interval) {
+        double open = fill.getOpenPrice() == null ? Double.NaN : fill.getOpenPrice();
+        String unfilled = TradeRiskPolicy.unfilledReason(plan.getExpectedMove(), open,
+                plan.getStopLossPrice(), plan.getTargetTriggerPrice());
+        AlertEvent event = plan.getAlertEvent();
+        boolean currentStage = event != null && event.getElliottSignalStage() == plan.getStage();
+        if (unfilled != null) {
+            plan.setFillStatus(TradeRiskPolicy.NOT_FILLED);
+            if (currentStage) {
+                event.setTradeFillStatus(TradeRiskPolicy.NOT_FILLED);
+                event.setTradeEntryTimestamp(fill.getTimestamp());
+            }
+            return new Resolution(ElliottTradePlanStatus.NOT_FILLED, fill, unfilled,
+                    Double.isFinite(open) && open > 0 ? open : fill.getClosePrice());
+        }
+        double atr = averageTrueRange(candles, plan.getEntryTimestamp(), ATR_PERIOD);
+        var qualification = TradeRiskPolicy.qualify(plan.getExpectedMove(), open, plan.getStopLossPrice(),
+                plan.getTargetTriggerPrice(), atr, interval, plan.getRequiredRewardRiskRatio());
+        double risk = TradeRiskPolicy.risk(plan.getExpectedMove(), open, plan.getStopLossPrice());
+        double rewardRisk = TradeRiskPolicy.reward(plan.getExpectedMove(), open, plan.getTargetTriggerPrice()) / risk;
+        plan.setEntryTimestamp(fill.getTimestamp());
+        plan.setEntryPrice(open);
+        plan.setActualRewardRiskRatio(rewardRisk);
+        plan.setActionable(qualification.actionable());
+        plan.setQualification(qualification.reason());
+        plan.setFillStatus(TradeRiskPolicy.FILLED);
+        if (!qualification.actionable()) plan.setStatus(ElliottTradePlanStatus.PROJECTION_ONLY);
+        plan.setUpdatedAt(LocalDateTime.now());
+        if (currentStage) {
+            event.setTradeFillStatus(TradeRiskPolicy.FILLED);
+            event.setTradeEntryTimestamp(fill.getTimestamp());
+            event.setTradeEntryPrice(open);
+            event.setRewardRiskRatio(rewardRisk);
+            event.setTradeActionable(qualification.actionable());
+            event.setElliottTradeActionable(qualification.actionable());
+            event.setTradeQualification(qualification.reason());
+            event.setTradeRiskAtr(qualification.riskAtr());
+            event.setTradeRiskPercent(qualification.riskPercent());
+            event.setElliottTradePlanStatus(plan.getStatus().name());
+        }
+        return null;
+    }
+
     private Resolution resolve(ElliottStageTradePlan plan, List<Candle> candles) {
         int observed = 0;
+        // A plan filled at an open is exposed for the rest of that candle, so it is evaluated too.
+        boolean includesEntryCandle = TradeRiskPolicy.FILLED.equals(plan.getFillStatus());
         for (Candle candle : candles) {
-            if (candle.getTimestamp() <= plan.getEntryTimestamp()) continue;
+            if (includesEntryCandle ? candle.getTimestamp() < plan.getEntryTimestamp()
+                    : candle.getTimestamp() <= plan.getEntryTimestamp()) continue;
             observed++;
-            if (ElliottTradePlanPolicy.VERSION.equals(plan.getPlanVersion())) {
+            if (ElliottTradePlanPolicy.qualifiedPlan(plan.getPlanVersion())) {
                 if (!TradeRiskPolicy.valid(candle)) return null;
                 var outcome = executionService == null
                         ? TradeOutcomePolicy.evaluate(plan.getExpectedMove(), plan.getStopLossPrice(), plan.getTargetTriggerPrice(), candle)
@@ -324,7 +447,8 @@ public class ElliottTradePlanService {
                 plan.getTargetTriggerPrice(), plan.getTargetBasis(), plan.getFibonacciRatio(),
                 plan.getRequiredRewardRiskRatio(), plan.getActualRewardRiskRatio(),
                 plan.isActionable(), plan.getQualification(), plan.getResolutionTimestamp(),
-                plan.getResolutionFillPrice() == null ? plan.getResolutionClosePrice() : plan.getResolutionFillPrice(), plan.getResolutionReason(), plan.getSecondaryTargetPrice(), plan.getHorizonCandles());
+                plan.getResolutionFillPrice() == null ? plan.getResolutionClosePrice() : plan.getResolutionFillPrice(), plan.getResolutionReason(), plan.getSecondaryTargetPrice(), plan.getHorizonCandles(),
+                plan.getFillStatus());
     }
 
     static double averageTrueRange(List<Candle> candles, long throughTimestamp, int period) {
@@ -368,7 +492,23 @@ public class ElliottTradePlanService {
             String qualification,
             Long resolutionTimestamp,
             Double resolutionClosePrice,
-            String resolutionReason, Double secondaryTargetPrice, Integer horizonCandles) {
+            String resolutionReason, Double secondaryTargetPrice, Integer horizonCandles, String fillStatus) {
+        public StagePlanView(ElliottSignalStage stage, int revision, TradeSignal expectedMove,
+                             ElliottTradePlanStatus status, long entryTimestamp, double entryPrice,
+                             double structuralStopPrice, double stopLossPrice, Double hardInvalidationPrice,
+                             double targetMidpoint, double targetZoneLow, double targetZoneHigh,
+                             double targetTriggerPrice, String targetBasis, Double fibonacciRatio,
+                             double requiredRewardRiskRatio, double actualRewardRiskRatio, boolean actionable,
+                             String qualification, Long resolutionTimestamp, Double resolutionClosePrice,
+                             String resolutionReason, Double secondaryTargetPrice, Integer horizonCandles) {
+            this(stage, revision, expectedMove, status, entryTimestamp, entryPrice, structuralStopPrice, stopLossPrice,
+                    hardInvalidationPrice, targetMidpoint, targetZoneLow, targetZoneHigh, targetTriggerPrice, targetBasis,
+                    fibonacciRatio, requiredRewardRiskRatio, actualRewardRiskRatio, actionable, qualification,
+                    resolutionTimestamp, resolutionClosePrice, resolutionReason, secondaryTargetPrice, horizonCandles, null);
+        }
+
+        public boolean awaitingFill() { return TradeRiskPolicy.AWAITING_FILL.equals(fillStatus); }
+
         public StagePlanView(ElliottSignalStage stage,
             int revision,
             TradeSignal expectedMove,
@@ -391,7 +531,7 @@ public class ElliottTradePlanService {
             Long resolutionTimestamp,
             Double resolutionClosePrice,
             String resolutionReason) {
-            this(stage, revision, expectedMove, status, entryTimestamp, entryPrice, structuralStopPrice, stopLossPrice, hardInvalidationPrice, targetMidpoint, targetZoneLow, targetZoneHigh, targetTriggerPrice, targetBasis, fibonacciRatio, requiredRewardRiskRatio, actualRewardRiskRatio, actionable, qualification, resolutionTimestamp, resolutionClosePrice, resolutionReason, null, null);
+            this(stage, revision, expectedMove, status, entryTimestamp, entryPrice, structuralStopPrice, stopLossPrice, hardInvalidationPrice, targetMidpoint, targetZoneLow, targetZoneHigh, targetTriggerPrice, targetBasis, fibonacciRatio, requiredRewardRiskRatio, actualRewardRiskRatio, actionable, qualification, resolutionTimestamp, resolutionClosePrice, resolutionReason, null, null, null);
         }
 
     }

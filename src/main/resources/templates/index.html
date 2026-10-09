@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Automate technical analysis, detect candlestick, harmonic, and Elliott Wave patterns, track signals, and test ideas with demo trades.">
-    <title>StockWatch 24/7 — Stock charts and alerts</title>
-    <script th:src="@{/js/theme.js}"></script>
-    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <meta name="description" content="Automate technical analysis, detect candlestick, harmonic, and Elliott Wave patterns, track signals, and test ideas with demo trades." th:content="#{landing.meta}">
+    <title th:text="#{landing.title}">StockWatch 24/7 — Stock charts and alerts</title>
+    <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+    <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
@@ -17,28 +17,28 @@
 </div>
 
 <div class="landing-shell">
-    <nav class="navbar landing-nav" aria-label="Main navigation">
-        <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home">
+    <nav class="navbar landing-nav" aria-label="Main navigation" th:aria-label="#{sidebar.mainAria}">
+        <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home" th:aria-label="#{sidebar.logoHome}">
             <span class="logo-mark" aria-hidden="true"></span>
             <span class="logo-word">StockWatch <span>24/7</span></span>
         </a>
         <div class="nav-links">
-            <a href="#platform" class="btn-secondary">Platform</a>
-            <a th:href="@{/about}" class="btn-secondary">About</a>
-            <a th:href="@{/login}" class="btn-primary">Sign in</a>
-            <a th:href="@{/signup}" class="btn-accent">Start monitoring</a>
+            <a href="#platform" class="btn-secondary" th:text="#{landing.nav.platform}">Platform</a>
+            <a th:href="@{/about}" class="btn-secondary" th:text="#{landing.nav.about}">About</a>
+            <a th:href="@{/login}" class="btn-primary" th:text="#{auth.signIn}">Sign in</a>
+            <a th:href="@{/signup}" class="btn-accent" th:text="#{landing.startMonitoring}">Start monitoring</a>
         </div>
     </nav>
 
     <main>
         <section class="landing-hero">
             <div class="hero-copy">
-                <div class="eyebrow">Stock analysis and alerts</div>
-                <h1>Follow the market.<br><span class="text-gradient">Track the signals.</span></h1>
-                <p>Automate your technical analysis across candlestick, harmonic, and Elliott Wave patterns. Track every signal, test ideas with demo trades, and get the updates that matter straight to your inbox.</p>
+                <div class="eyebrow" th:text="#{landing.eyebrow}">Stock analysis and alerts</div>
+                <h1><span th:text="#{landing.headline1}">Follow the market.</span><br><span class="text-gradient" th:text="#{landing.headline2}">Track the signals.</span></h1>
+                <p th:text="#{landing.pitch}">Automate your technical analysis across candlestick, harmonic, and Elliott Wave patterns. Track every signal, test ideas with demo trades, and get the updates that matter straight to your inbox.</p>
                 <div class="hero-actions">
-                    <a th:href="@{/signup}" class="btn-accent large">Build your watchlist <span class="button-arrow" aria-hidden="true">→</span></a>
-                    <a th:href="@{/login}" class="btn-primary large">Open dashboard</a>
+                    <a th:href="@{/signup}" class="btn-accent large"><span th:text="#{landing.buildWatchlist}">Build your watchlist</span> <span class="button-arrow" aria-hidden="true">→</span></a>
+                    <a th:href="@{/login}" class="btn-primary large" th:text="#{landing.openDashboard}">Open dashboard</a>
                 </div>
                 <div class="hero-proof">
                     <div class="proof-avatars" aria-hidden="true">
@@ -46,11 +46,11 @@
                         <span class="proof-avatar">AI</span>
                         <span class="proof-avatar">24</span>
                     </div>
-                    <span>Analysis, signal tracking, and demo trades in one focused workspace.</span>
+                    <span th:text="#{landing.proof}">Analysis, signal tracking, and demo trades in one focused workspace.</span>
                 </div>
             </div>
 
-            <div class="market-stage" aria-label="StockWatch market workspace preview">
+            <div class="market-stage" aria-label="StockWatch market workspace preview" th:aria-label="#{landing.previewAria}">
                 <div class="terminal-card">
                     <div class="terminal-topbar">
                         <div class="window-dots" aria-hidden="true">
@@ -58,8 +58,8 @@
                             <span class="window-dot"></span>
                             <span class="window-dot"></span>
                         </div>
-                        <span class="terminal-label">Market overview</span>
-                        <span class="terminal-live">Monitoring</span>
+                        <span class="terminal-label" th:text="#{landing.preview.overview}">Market overview</span>
+                        <span class="terminal-live" th:text="#{landing.preview.monitoring}">Monitoring</span>
                     </div>
                     <div class="terminal-body">
                         <div class="terminal-quote">
@@ -72,7 +72,7 @@
                                 <span class="market-up">+2.84%</span>
                             </div>
                         </div>
-                        <svg class="hero-chart" viewBox="0 0 620 245" role="img" aria-label="Illustrative rising market chart" preserveAspectRatio="none">
+                        <svg class="hero-chart" viewBox="0 0 620 245" role="img" aria-label="Illustrative rising market chart" th:aria-label="#{landing.preview.chartAria}" preserveAspectRatio="none">
                             <defs>
                                 <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="0%" stop-color="#b7f34a" stop-opacity="0.23"/>
@@ -88,26 +88,26 @@
                             <circle class="chart-dot" cx="620" cy="22" r="4"/>
                         </svg>
                         <div class="terminal-stats">
-                            <div class="terminal-stat"><span>Analysis</span><strong>Automated outlook</strong></div>
-                            <div class="terminal-stat"><span>Setup score</span><strong class="market-up">Strong · 88/100</strong></div>
-                            <div class="terminal-stat"><span>Tracking</span><strong>Active</strong></div>
+                            <div class="terminal-stat"><span th:text="#{landing.preview.analysis}">Analysis</span><strong th:text="#{landing.preview.automatedOutlook}">Automated outlook</strong></div>
+                            <div class="terminal-stat"><span th:text="#{landing.preview.setupScore}">Setup score</span><strong class="market-up" th:text="#{landing.preview.strongScore}">Strong · 88/100</strong></div>
+                            <div class="terminal-stat"><span th:text="#{landing.preview.tracking}">Tracking</span><strong th:text="#{landing.preview.active}">Active</strong></div>
                         </div>
                     </div>
                 </div>
 
                 <div class="floating-insight" aria-hidden="true">
                     <span class="insight-icon">⌁</span>
-                    <span><strong>Harmonic formation found</strong><span>Daily · bullish Gartley</span></span>
+                    <span><strong th:text="#{landing.preview.harmonicFound}">Harmonic formation found</strong><span th:text="#{landing.preview.harmonicDetail}">Daily · bullish Gartley</span></span>
                 </div>
                 <div class="floating-signal" aria-hidden="true">
-                    <div class="floating-signal-head"><span>Signal delivered</span><span class="signal-pill">BUY</span></div>
-                    <strong>Daily candle confirmed</strong>
-                    <p>Email notification queued for delivery.</p>
+                    <div class="floating-signal-head"><span th:text="#{landing.preview.signalDelivered}">Signal delivered</span><span class="signal-pill" th:text="#{landing.preview.buy}">BUY</span></div>
+                    <strong th:text="#{landing.preview.candleConfirmed}">Daily candle confirmed</strong>
+                    <p th:text="#{landing.preview.emailQueued}">Email notification queued for delivery.</p>
                 </div>
             </div>
         </section>
 
-        <div class="market-strip" aria-label="Illustrative market ticker">
+        <div class="market-strip" aria-label="Illustrative market ticker" th:aria-label="#{landing.tickerAria}">
             <div class="market-track">
                 <div class="market-item"><strong>S&amp;P 500</strong><span class="market-up">+0.72%</span></div>
                 <div class="market-item"><strong>NASDAQ</strong><span class="market-up">+1.14%</span></div>
@@ -126,30 +126,30 @@
 
         <section id="platform" class="landing-section">
             <div class="section-heading">
-                <div class="eyebrow">Charts, alerts and demo trading</div>
-                <h2>Less chart watching.<br>More signal clarity.</h2>
-                <p>View charts, find technical patterns, track outcomes and test ideas with demo trades. Get alerts for the stocks you follow.</p>
+                <div class="eyebrow" th:text="#{landing.platform.eyebrow}">Charts, alerts and demo trading</div>
+                <h2><span th:text="#{landing.platform.headline1}">Less chart watching.</span><br><span th:text="#{landing.platform.headline2}">More signal clarity.</span></h2>
+                <p th:text="#{landing.platform.pitch}">View charts, find technical patterns, track outcomes and test ideas with demo trades. Get alerts for the stocks you follow.</p>
             </div>
 
             <div class="bento-grid">
                 <article class="feature-card large">
                     <div class="feature-content">
-                        <span class="feature-number">01 / TECHNICAL OUTLOOK</span>
-                        <h3>Automated analysis, clearly explained</h3>
-                        <p>Compare trend, momentum, volume and recent signals in one report.</p>
+                        <span class="feature-number" th:text="#{landing.feature1.number}">01 / TECHNICAL OUTLOOK</span>
+                        <h3 th:text="#{landing.feature1.title}">Automated analysis, clearly explained</h3>
+                        <p th:text="#{landing.feature1.text}">Compare trend, momentum, volume and recent signals in one report.</p>
                     </div>
                     <div class="feature-visual signal-stack" aria-hidden="true">
-                        <div class="signal-chip"><span>Trend</span><strong class="market-up">Bullish</strong></div>
-                        <div class="signal-chip"><span>Momentum</span><strong>Neutral</strong></div>
-                        <div class="signal-chip"><span>Setup score</span><strong class="market-up">Strong · 88/100</strong></div>
+                        <div class="signal-chip"><span th:text="#{landing.feature1.trend}">Trend</span><strong class="market-up" th:text="#{landing.feature1.bullish}">Bullish</strong></div>
+                        <div class="signal-chip"><span th:text="#{landing.feature1.momentum}">Momentum</span><strong th:text="#{landing.feature1.neutral}">Neutral</strong></div>
+                        <div class="signal-chip"><span th:text="#{landing.preview.setupScore}">Setup score</span><strong class="market-up" th:text="#{landing.preview.strongScore}">Strong · 88/100</strong></div>
                     </div>
                 </article>
 
                 <article class="feature-card medium">
                     <div class="feature-content">
-                        <span class="feature-number">02 / PATTERN ENGINE</span>
-                        <h3>Read more than one kind of pattern</h3>
-                        <p>Detect candlestick setups, harmonic formations, and Elliott Wave structures across their supported intervals.</p>
+                        <span class="feature-number" th:text="#{landing.feature2.number}">02 / PATTERN ENGINE</span>
+                        <h3 th:text="#{landing.feature2.title}">Read more than one kind of pattern</h3>
+                        <p th:text="#{landing.feature2.text}">Detect candlestick setups, harmonic formations, and Elliott Wave structures across their supported intervals.</p>
                     </div>
                     <div class="feature-visual wave-visual" aria-hidden="true">
                         <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
@@ -158,17 +158,17 @@
 
                 <article class="feature-card third">
                     <div class="feature-content">
-                        <span class="feature-number">03 / DEMO TRADING</span>
-                        <h3>Test the idea without risking capital</h3>
-                        <p>Record hypothetical buys and sells at the current quote, preserve the entry analysis, and follow the result—without placing a real order.</p>
+                        <span class="feature-number" th:text="#{landing.feature3.number}">03 / DEMO TRADING</span>
+                        <h3 th:text="#{landing.feature3.title}">Test the idea without risking capital</h3>
+                        <p th:text="#{landing.feature3.text}">Record hypothetical buys and sells at the current quote, preserve the entry analysis, and follow the result—without placing a real order.</p>
                     </div>
                 </article>
 
                 <article class="feature-card third">
                     <div class="feature-content">
-                        <span class="feature-number">04 / OUTCOME TRACKING</span>
-                        <h3>See what happened after the signal</h3>
-                        <p>Follow confirmations, invalidations, targets, stops, and demo-trade performance from detection through resolution.</p>
+                        <span class="feature-number" th:text="#{landing.feature4.number}">04 / OUTCOME TRACKING</span>
+                        <h3 th:text="#{landing.feature4.title}">See what happened after the signal</h3>
+                        <p th:text="#{landing.feature4.text}">Follow confirmations, invalidations, targets, stops, and demo-trade performance from detection through resolution.</p>
                     </div>
                     <div class="feature-visual recovery-timeline" aria-hidden="true">
                         <span class="recovery-node">✓</span><span class="recovery-line"></span><span class="recovery-node">↻</span><span class="recovery-line"></span><span class="recovery-node">✓</span>
@@ -177,9 +177,9 @@
 
                 <article class="feature-card third">
                     <div class="feature-content">
-                        <span class="feature-number">05 / ALERTS &amp; HISTORY</span>
-                        <h3>Receive email alerts</h3>
-                        <p>Choose the market, interval, pattern family, and direction to monitor, receive matching emails, and review every alert later.</p>
+                        <span class="feature-number" th:text="#{landing.feature5.number}">05 / ALERTS &amp; HISTORY</span>
+                        <h3 th:text="#{landing.feature5.title}">Receive email alerts</h3>
+                        <p th:text="#{landing.feature5.text}">Choose the market, interval, pattern family, and direction to monitor, receive matching emails, and review every alert later.</p>
                     </div>
                 </article>
             </div>
@@ -187,11 +187,11 @@
 
         <section class="landing-section">
             <div class="cta-panel">
-                <div class="eyebrow">Get started</div>
-                <h2>Follow the stocks<br><span class="text-gradient">that matter to you.</span></h2>
-                <p>Create your account, run a full technical outlook, test an idea with a demo trade, or turn the setups you care about into automated monitoring.</p>
+                <div class="eyebrow" th:text="#{landing.cta.eyebrow}">Get started</div>
+                <h2><span th:text="#{landing.cta.headline1}">Follow the stocks</span><br><span class="text-gradient" th:text="#{landing.cta.headline2}">that matter to you.</span></h2>
+                <p th:text="#{landing.cta.pitch}">Create your account, run a full technical outlook, test an idea with a demo trade, or turn the setups you care about into automated monitoring.</p>
                 <div class="hero-actions">
-                    <a th:href="@{/signup}" class="btn-accent large">Start monitoring <span class="button-arrow" aria-hidden="true">→</span></a>
+                    <a th:href="@{/signup}" class="btn-accent large"><span th:text="#{landing.startMonitoring}">Start monitoring</span> <span class="button-arrow" aria-hidden="true">→</span></a>
                 </div>
             </div>
         </section>
@@ -202,8 +202,8 @@
             <span class="logo-mark" aria-hidden="true"></span>
             <span class="logo-word">StockWatch <span>24/7</span></span>
         </a>
-        <span class="footer-tagline">Automated technical market monitoring.</span>
-        <a th:href="@{/about}">About</a>
+        <span class="footer-tagline" th:text="#{landing.footer.tagline}">Automated technical market monitoring.</span>
+        <a th:href="@{/about}" th:text="#{landing.nav.about}">About</a>
         <span>© 2026 StockWatch 24/7</span>
     </footer>
 </div>

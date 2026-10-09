@@ -632,7 +632,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(header().string("Content-Security-Policy", containsString("frame-ancestors 'none'")))
                 .andExpect(header().string("Content-Security-Policy", containsString("style-src-attr 'none'")))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
-                .andExpect(header().string("Referrer-Policy", "no-referrer"));
+                .andExpect(header().string("Referrer-Policy", "same-origin"));
     }
 
     @Test
@@ -803,12 +803,35 @@ class StockWatch247ApplicationTests {
                                 {"changes":[
                                   {"interval":"DAILY","signal":"BUY","patternFamily":"CANDLESTICK","active":true},
                                   {"interval":"MONTHLY","signal":"SELL","patternFamily":"ELLIOTT_WAVE","active":true}
-                                ]}
+                                ],"newWatchlistName":"Draft list"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.families.CANDLESTICK.DAILY.BUY").value(true))
                 .andExpect(jsonPath("$.families.ELLIOTT_WAVE.MONTHLY.SELL").value(true))
                 .andExpect(jsonPath("$.trackedStocks").value(1));
+    }
+
+    @Test
+    void alertDraftWithoutAWatchlistExplainsWhatToChoose() throws Exception {
+        String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
+        String email = "nolist-" + suffix.toLowerCase() + "@example.com";
+        User userEntity = new User();
+        userEntity.setEmail(email);
+        userEntity.setPasswordHash("test-only-password-hash");
+        userEntity.setFirstName("No");
+        userEntity.setLastName("List");
+        userEntity.setVerified(true);
+        userRepository.save(userEntity);
+
+        mockMvc.perform(put("/api/alerts/{symbol}", "N" + suffix)
+                        .with(user(email))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {"changes":[{"interval":"DAILY","signal":"BUY","patternFamily":"CANDLESTICK","active":true}]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Choose a watchlist before enabling monitoring."));
     }
 
     @Test
@@ -830,7 +853,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(org.hamcrest.Matchers.not(containsString("showHistoricalCandlestickPatternsBtn"))))
                 .andExpect(content().string(containsString("class=\"alert-eye-input\"")))
                 .andExpect(content().string(containsString("class=\"alert-panel alert-star-panel\"")))
-                .andExpect(content().string(containsString("Filled stars indicate alerts you follow.")))
+                .andExpect(content().string(containsString("Switch on the signals you want to follow, then click Apply changes.")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(containsString("check-alert-btn"))))
                 .andExpect(content().string(containsString("id=\"rsiOverlayToggle\"")))
                 .andExpect(content().string(containsString("id=\"volumeChartToggle\"")))
@@ -973,7 +996,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("aria-pressed=\"true\"")))
                 .andExpect(content().string(containsString("Latest signals")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
-                .andExpect(content().string(containsString("CANDLE_V5_TEXTBOOK")))
+                .andExpect(content().string(containsString(CandlePatternDetectionService.SETUP_SCORE_VERSION)))
                 .andExpect(content().string(containsString("13\u201317 Jul 2026")))
                 .andExpect(content().string(containsString("Lifecycle status")))
                 .andExpect(content().string(containsString("Confirmed")))
@@ -1062,7 +1085,7 @@ class StockWatch247ApplicationTests {
         mockMvc.perform(get("/home").with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("data-unread-signal-count=\"0\"")))
-                .andExpect(content().string(containsString("No unread signals")))
+                .andExpect(content().string(containsString("You're all caught up")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         containsString("/alerts/signals/" + event.getId()))));
 

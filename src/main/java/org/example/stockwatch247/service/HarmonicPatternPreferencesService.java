@@ -21,7 +21,8 @@ import java.util.Map;
 
 @Service
 public class HarmonicPatternPreferencesService {
-    public static final String PROFILE_VERSION = "USER_HARMONIC_RULES_V4";
+    public static final String PROFILE_VERSION = "USER_HARMONIC_RULES_V5";
+    private static final String LEGACY_PROFILE_VERSION_V4 = "USER_HARMONIC_RULES_V4";
     private static final String LEGACY_PROFILE_VERSION_V1 = "USER_HARMONIC_RULES_V1";
     private static final String LEGACY_PROFILE_VERSION_V2 = "USER_HARMONIC_RULES_V2";
 
@@ -121,7 +122,8 @@ public class HarmonicPatternPreferencesService {
         try {
             StoredPreferences stored = objectMapper.readValue(entity.getPreferencesPayload(), StoredPreferences.class);
             if (LEGACY_PROFILE_VERSION_V1.equals(stored.version())) stored = migrateLegacy(stored, true);
-            else if (LEGACY_PROFILE_VERSION_V2.equals(stored.version()) || "USER_HARMONIC_RULES_V3".equals(stored.version()))
+            else if (LEGACY_PROFILE_VERSION_V2.equals(stored.version()) || "USER_HARMONIC_RULES_V3".equals(stored.version())
+                    || LEGACY_PROFILE_VERSION_V4.equals(stored.version()))
                 stored = migrateLegacy(stored, false);
             stored.validate();
             return view(stored, entity.getUpdatedAt());
@@ -150,8 +152,11 @@ public class HarmonicPatternPreferencesService {
             Map<String, Double> ratios = new LinkedHashMap<>();
             for (NumericDefinition ratio : definition.ratios()) {
                 double value = old.ratios().getOrDefault(ratio.key(), ratio.factoryValue());
-                if (definition.pattern() == HarmonicPatternType.BAT && ratio.key().equals("bMin") && value == 38.2
-                        || definition.pattern() == HarmonicPatternType.BAT && ratio.key().equals("bMax") && value == 50
+                // Users still on the earlier wide Bat factory range (0-61.8) move to Carney's 38.2-50;
+                // a range the user chose themselves is kept.
+                boolean oldWideBatFactory = definition.pattern() == HarmonicPatternType.BAT
+                        && old.ratios().getOrDefault("bMin", -1.0) == 0.0 && old.ratios().getOrDefault("bMax", -1.0) == 61.8;
+                if (oldWideBatFactory && (ratio.key().equals("bMin") || ratio.key().equals("bMax"))
                         || definition.pattern() == HarmonicPatternType.BUTTERFLY
                         && ratio.key().equals("extensionMax") && value == 224) value = ratio.factoryValue();
                 if (correctV1Ratios && correctedLegacyKey(definition.pattern(), ratio.key())) {
@@ -283,8 +288,8 @@ public class HarmonicPatternPreferencesService {
                         ratio("extensionMin", "CD extension minimum of BC", 113), ratio("extensionMax", "CD extension maximum of BC", 161.8),
                         ratio("legPrimary", "AB=CD target", 100), ratio("legAlternate", "Alternate AB=CD target", 127)), true));
         result.put(HarmonicPatternType.BAT, pattern(HarmonicPatternType.BAT,
-                "B below 0.618 (0.382-0.50 preferred), 0.886 XA completion, and at least AB=CD.", List.of(
-                        ratio("bMin", "B retracement minimum of XA", 0), ratio("bMax", "B retracement maximum of XA", 61.8),
+                "B at 0.382-0.50 of XA (Carney), 0.886 XA completion, and at least AB=CD. For the looser range, set the B minimum to 0 and the maximum to 61.8.", List.of(
+                        ratio("bMin", "B retracement minimum of XA", 38.2), ratio("bMax", "B retracement maximum of XA", 50),
                         ratio("completion", "D completion of XA", 88.6),
                         ratio("cMin", "C retracement minimum of AB", 38.2), ratio("cMax", "C retracement maximum of AB", 88.6),
                         ratio("cdBcMin", "CD/BC minimum", 161.8), ratio("cdBcMax", "CD/BC maximum", 261.8),
@@ -303,11 +308,12 @@ public class HarmonicPatternPreferencesService {
                         ratio("cMin", "C retracement minimum of AB", 38.2), ratio("cMax", "C retracement maximum of AB", 88.6),
                         ratio("extensionMin", "CD extension minimum of BC", 261.8), ratio("extensionMax", "CD extension maximum of BC", 361.8)), true));
         result.put(HarmonicPatternType.SHARK, pattern(HarmonicPatternType.SHARK,
-                "Official 0-X-A-B-C notation mapped to the common five-pivot structure.", List.of(
-                        ratio("aMin", "A retracement minimum of 0X", 32), ratio("aMax", "A retracement maximum of 0X", 61.8),
-                        ratio("bMin", "B extension minimum of XA", 113), ratio("bMax", "B extension maximum of XA", 161.8),
-                        ratio("extensionMin", "C extension minimum of AB", 161.8), ratio("extensionMax", "C extension maximum of AB", 224),
-                        ratio("completionPrimary", "Primary C completion of 0X", 88.6), ratio("completionStretch", "Stretched C completion of 0X", 113)), false));
+                "Labelled X-A-B-C-D like the other patterns (Carney writes it 0-X-A-B-C); D retests X.", List.of(
+                        // Keys keep their original names so saved settings still apply.
+                        ratio("aMin", "B retracement minimum of XA", 32), ratio("aMax", "B retracement maximum of XA", 61.8),
+                        ratio("bMin", "C extension minimum of AB", 113), ratio("bMax", "C extension maximum of AB", 161.8),
+                        ratio("extensionMin", "D extension minimum of BC", 161.8), ratio("extensionMax", "D extension maximum of BC", 224),
+                        ratio("completionPrimary", "Primary D completion of XA", 88.6), ratio("completionStretch", "Stretched D completion of XA", 113)), false));
         result.put(HarmonicPatternType.CYPHER, pattern(HarmonicPatternType.CYPHER,
                 "C extends beyond A while D completes near the 0.786 retracement of XC.", List.of(
                         ratio("bMin", "B retracement minimum of XA", 38.2), ratio("bMax", "B retracement maximum of XA", 61.8),
@@ -333,8 +339,10 @@ public class HarmonicPatternPreferencesService {
     private static PatternDefinition pattern(HarmonicPatternType pattern, String description,
                                              List<NumericDefinition> ratios, boolean legRelationship) {
         List<HardRuleDefinition> hard = new ArrayList<>(List.of(
-                hard(HarmonicPatternDetectionService.RuleGroup.PRIMARY_B, "B-point ratio is hard", "Reject when B exceeds the base tolerance."),
-                hard(HarmonicPatternDetectionService.RuleGroup.COMPLETION, "Completion ratio is hard", "Reject when D/C exceeds the base tolerance."),
+                pattern == HarmonicPatternType.SHARK
+                        ? hard(HarmonicPatternDetectionService.RuleGroup.PRIMARY_B, "C-point ratio is hard", "Reject when C exceeds the base tolerance.")
+                        : hard(HarmonicPatternDetectionService.RuleGroup.PRIMARY_B, "B-point ratio is hard", "Reject when B exceeds the base tolerance."),
+                hard(HarmonicPatternDetectionService.RuleGroup.COMPLETION, "Completion ratio is hard", "Reject when D exceeds the base tolerance."),
                 hard(HarmonicPatternDetectionService.RuleGroup.SECONDARY_RATIOS, "Secondary ratios are hard", "Reject when supporting retracements or extensions exceed their ranges.")));
         if (legRelationship) hard.add(hard(HarmonicPatternDetectionService.RuleGroup.LEG_RELATIONSHIP,
                 "AB/CD relationship is hard", "Reject when equality or visual-difference rules exceed their base tolerance."));
@@ -446,23 +454,30 @@ public class HarmonicPatternPreferencesService {
                     if (value == null || !Double.isFinite(value) || value < ratio.min() || value > ratio.max())
                         throw new IllegalArgumentException("Stored harmonic ratio is invalid.");
                 }
-                validateRange(pattern.ratios(), "bMin", "bMax");
-                validateRange(pattern.ratios(), "bMin", "bPreferredMax");
-                validateRange(pattern.ratios(), "bPreferredMax", "bStretchMax");
-                validateRange(pattern.ratios(), "cMin", "cMax");
-                validateRange(pattern.ratios(), "aMin", "aMax");
-                validateRange(pattern.ratios(), "extensionMin", "extensionMax");
-                validateRange(pattern.ratios(), "completionMin", "completionMax");
-                validateRange(pattern.ratios(), "cdAbMin", "cdAbMax");
-                validateRange(pattern.ratios(), "cdBcMin", "cdBcMax");
+                validateRange(definition, pattern.ratios(), "bMin", "bMax");
+                validateRange(definition, pattern.ratios(), "bMin", "bPreferredMax");
+                validateRange(definition, pattern.ratios(), "bPreferredMax", "bStretchMax");
+                validateRange(definition, pattern.ratios(), "cMin", "cMax");
+                validateRange(definition, pattern.ratios(), "aMin", "aMax");
+                validateRange(definition, pattern.ratios(), "extensionMin", "extensionMax");
+                validateRange(definition, pattern.ratios(), "completionMin", "completionMax");
+                validateRange(definition, pattern.ratios(), "cdAbMin", "cdAbMax");
+                validateRange(definition, pattern.ratios(), "cdBcMin", "cdBcMax");
             }
             new HarmonicPatternDetectionService(rules(globals));
         }
-        private static void validateRange(Map<String, Double> values, String minimum, String maximum) {
+        private static void validateRange(PatternDefinition definition, Map<String, Double> values,
+                                          String minimum, String maximum) {
             if (values.containsKey(minimum) && values.containsKey(maximum)
                     && values.get(minimum) > values.get(maximum)) {
-                throw new IllegalArgumentException(minimum + " must not exceed " + maximum + ".");
+                throw new IllegalArgumentException(definition.pattern().displayName() + ": " + ratioLabel(definition, minimum)
+                        + " must not exceed " + ratioLabel(definition, maximum) + ".");
             }
+        }
+
+        private static String ratioLabel(PatternDefinition definition, String key) {
+            return definition.ratios().stream().filter(ratio -> ratio.key().equals(key))
+                    .map(NumericDefinition::label).findFirst().orElse(key);
         }
     }
 }

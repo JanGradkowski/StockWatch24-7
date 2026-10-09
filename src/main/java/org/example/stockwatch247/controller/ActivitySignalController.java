@@ -35,6 +35,9 @@ public class ActivitySignalController {
         }
         model.addAttribute("firstName", user.getFirstName());
         model.addAttribute("signal", detailService.getDetail(user, source, deliveryId));
+        model.addAttribute("markReadEndpoint", "insider".equalsIgnoreCase(source)
+                ? "/api/insider-activity/notifications/" + deliveryId + "/read"
+                : "/api/congressional-activity/notifications/" + deliveryId + "/read");
         if (returnTo.length() <= 1024 && returnTo.matches("^/signals(\\?[^\\r\\n#]*)?$")) model.addAttribute("archiveReturnUrl",returnTo);
         return "activity-signal-detail";
     }

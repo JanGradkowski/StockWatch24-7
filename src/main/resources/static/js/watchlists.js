@@ -1,6 +1,15 @@
 (() => {
   'use strict';
   const { api, node: n } = window.StockWatchLists;
+  const i18n = window.StockWatchI18n;
+  const geo = name => {
+    const key = 'geo.' + String(name).replace(/[^A-Za-z]/g, ''), text = i18n.t(key);
+    return text === key ? name : text;
+  };
+  const byLocalName = (a, b) => geo(a).localeCompare(geo(b), i18n.tag);
+  const listSummary = list => [i18n.plural('watchlists.instruments', list.instruments, list.instruments),
+    i18n.plural('watchlists.followed', list.monitored, list.monitored), i18n.plural('watchlists.unread', list.unread, list.unread)].join(' · ');
+  const stockCount = count => i18n.plural('watchlists.stocks', count, count);
   const root = document.querySelector('[data-named-watchlists]');
   let lists = [];
   const selections = new Map();
@@ -44,7 +53,7 @@
         shortcuts.replaceChildren();
         lists.slice(0, 5).forEach(list => shortcuts.append(link(list.name, `/watchlists/${list.id}`)));
       }
-    } catch (error) { if (root) { root.replaceChildren(n('p', error.message, 'wl-status'), button('Retry', refresh)); } }
+    } catch (error) { if (root) { root.replaceChildren(n('p', error.message, 'wl-status'), button(i18n.t('common.retry'), refresh)); } }
   }
   function render() {
     if (!root) return;
@@ -53,24 +62,24 @@
     root.replaceChildren();
     if (!lists.length) {
       const empty = n('div', null, 'wl-empty');
-      empty.append(n('h3', 'Create your first watchlist'), n('p', 'Add individual instruments or start with the companies in a market index.', 'wl-muted'), button('Create watchlist', () => edit(), 'btn-accent'));
+      empty.append(n('h3', i18n.t('watchlists.emptyTitle')), n('p', i18n.t('watchlists.emptyText'), 'wl-muted'), button(i18n.t('watchlists.create'), () => edit(), 'btn-accent'));
       root.append(empty); return;
     }
     const visible = lists.filter(list => (!root.dataset.selectedId || String(list.id) === root.dataset.selectedId)
       && `${list.name} ${list.description}`.toLowerCase().includes(search));
-    if (!visible.length) root.append(n('p', 'No matching watchlists.', 'wl-muted'));
+    if (!visible.length) root.append(n('p', i18n.t('watchlists.noMatches'), 'wl-muted'));
     for (const list of visible) {
       if (root.dataset.selectedId) {
         const title = document.querySelector('.app-hero h1');
         if (title) title.textContent = list.name;
         const overview = n('div', null, 'wl-overview');
-        overview.append(n('p', `${list.instruments} instruments · ${list.monitored} monitored · ${list.unread} unread`, 'wl-muted'));
+        overview.append(n('p', listSummary(list), 'wl-muted'));
         if (list.description) overview.append(n('p', list.description, 'wl-muted'));
         root.append(overview); memberTable(list, overview); continue;
       }
       const details = n('details', null, 'wl-accordion'); details.dataset.id = String(list.id);
       const summary = n('summary'); const heading = n('div', null, 'wl-heading');
-      heading.append(n('strong', `${list.pinned ? '★ ' : ''}${list.name}`), n('small', `${list.instruments} instruments · ${list.monitored} monitored · ${list.unread} unread`));
+      heading.append(n('strong', `${list.pinned ? '★ ' : ''}${list.name}`), n('small', listSummary(list)));
       if (list.description) heading.append(n('small', list.description));
       summary.append(heading); details.append(summary);
       const body = n('div', null, 'wl-body'); details.append(body);
@@ -84,39 +93,39 @@
     if (!selections.has(list.id)) selections.set(list.id, new Set());
     const selected = selections.get(list.id);
     const actions = n('div', null, 'wl-actions');
-    if (!root.dataset.selectedId) actions.append(link('Open watchlist', `/watchlists/${list.id}`));
-    const markRead = n('button', 'Mark all as read', 'btn-secondary'); markRead.type = 'button';
+    if (!root.dataset.selectedId) actions.append(link(i18n.t('watchlists.open'), `/watchlists/${list.id}`));
+    const markRead = n('button', i18n.t('watchlists.markAllRead'), 'btn-secondary'); markRead.type = 'button';
     markRead.dataset.notificationsReadAll = ''; markRead.dataset.readWatchlist = String(list.id);
-    markRead.title = 'Mark every notification in this watchlist as read, across all pages and filters';
+    markRead.title = i18n.t('watchlists.markAllReadTitle');
     const readStatus = n('span', '', 'wl-status'); readStatus.dataset.notificationsReadStatus = ''; readStatus.setAttribute('role', 'status');
-    actions.append(link('View all signals', `/signals?watchlistId=${list.id}`), markRead, button('Add instruments / edit', () => edit(list)), button(list.pinned ? 'Unpin' : 'Pin', async () => {
+    actions.append(link(i18n.t('watchlists.viewAllSignals'), `/signals?watchlistId=${list.id}`), markRead, button(i18n.t('watchlists.addOrEdit'), () => edit(list)), button(i18n.t(list.pinned ? 'watchlists.unpin' : 'watchlists.pin'), async () => {
       try { await api(`/api/watchlists/${list.id}`, { method: 'PUT', body: JSON.stringify({ ...list, pinned: !list.pinned }) }); await refresh(); }
       catch (error) { status.textContent = error.message; }
-    }), button('Delete watchlist', () => confirmDelete(list), 'danger-outline-button'));
+    }), button(i18n.t('watchlists.delete'), () => confirmDelete(list), 'danger-outline-button'));
     actions.append(readStatus);
     const toolbar = n('div', null, 'wl-toolbar');
-    const searchField = field('Search', 'search'), search = searchField.input;
-    search.placeholder = 'Ticker or company'; search.setAttribute('aria-label', `Search ${list.name}`);
-    const group = select('Instrument type', [['all', 'All instruments'], ['stocks', 'Stocks'], ['funds', 'Indexes / ETFs']]);
+    const searchField = field(i18n.t('watchlists.search'), 'search'), search = searchField.input;
+    search.placeholder = i18n.t('watchlists.searchPlaceholder'); search.setAttribute('aria-label', i18n.t('watchlists.searchAria', list.name));
+    const group = select(i18n.t('watchlists.instrumentType'), ['all', 'stocks', 'funds'].map(value => [value, i18n.t(`watchlists.group.${value}`)]));
     toolbar.append(searchField.label, group.label);
     const status = n('p', '', 'wl-status'); status.setAttribute('role', 'status');
     const tableArea = n('div', null, 'wl-table-wrap'), pages = n('div', null, 'wl-actions');
-    tableArea.tabIndex = 0; tableArea.setAttribute('role', 'region'); tableArea.setAttribute('aria-label', `Instruments in ${list.name}`);
-    const bulk = n('div', null, 'wl-actions wl-bulk-actions'); bulk.setAttribute('aria-label', 'Selected instrument actions');
+    tableArea.tabIndex = 0; tableArea.setAttribute('role', 'region'); tableArea.setAttribute('aria-label', i18n.t('watchlists.tableAria', list.name));
+    const bulk = n('div', null, 'wl-actions wl-bulk-actions'); bulk.setAttribute('aria-label', i18n.t('watchlists.bulkAria'));
     const selectedCount = n('span', '', 'wl-muted'); selectedCount.setAttribute('role', 'status');
-    const viewSelected = link('View signals', '#'); viewSelected.className = 'btn-accent';
+    const viewSelected = link(i18n.t('watchlists.viewSignals'), '#'); viewSelected.className = 'btn-accent';
     viewSelected.addEventListener('click', event => { if (!selected.size) event.preventDefault(); });
-    const manageSelected = button('Manage follows', () => manageFollows(list, [...selected]));
-    const removeSelected = button('Remove', () => removeMembers(list, [...selected]), 'danger-outline-button');
-    const clear = button('Clear selection', () => { selected.clear(); updateSelection(); });
-    const selectPage = n('input'); selectPage.type = 'checkbox'; selectPage.setAttribute('aria-label', 'Select all instruments on this page');
-    const pageLabel = n('label', null, 'wl-check'); pageLabel.append(selectPage, n('span', 'Select page'));
+    const manageSelected = button(i18n.t('watchlists.manageFollows'), () => manageFollows(list, [...selected]));
+    const removeSelected = button(i18n.t('watchlists.remove'), () => removeMembers(list, [...selected]), 'danger-outline-button');
+    const clear = button(i18n.t('watchlists.clearSelection'), () => { selected.clear(); updateSelection(); });
+    const selectPage = n('input'); selectPage.type = 'checkbox'; selectPage.setAttribute('aria-label', i18n.t('watchlists.selectPageAria'));
+    const pageLabel = n('label', null, 'wl-check'); pageLabel.append(selectPage, n('span', i18n.t('watchlists.selectPage')));
     let visibleSymbols = [];
     selectPage.addEventListener('change', () => {
       visibleSymbols.forEach(symbol => selectPage.checked ? selected.add(symbol) : selected.delete(symbol)); updateSelection();
     });
     function updateSelection() {
-      selectedCount.textContent = `${selected.size} selected`;
+      selectedCount.textContent = i18n.plural('watchlists.selected', selected.size, selected.size);
       viewSelected.href = `/signals?${new URLSearchParams({ watchlistId: list.id, ticker: [...selected].join(',') })}`;
       viewSelected.setAttribute('aria-disabled', String(!selected.size)); viewSelected.tabIndex = selected.size ? 0 : -1;
       manageSelected.disabled = removeSelected.disabled = clear.disabled = !selected.size;
@@ -130,35 +139,37 @@
         const view = row.querySelector('.wl-view-action');
         view.href = selected.size ? viewSelected.href : `/signals?${new URLSearchParams({ watchlistId: list.id, ticker: input.dataset.selectSymbol })}`;
         row.querySelector('.wl-row-actions').setAttribute('aria-label', selected.size
-          ? `Actions for ${selected.size} selected instruments` : `Actions for ${input.dataset.selectSymbol}`);
+          ? i18n.plural('watchlists.selectedActionsAria', selected.size, selected.size) : i18n.t('watchlists.rowActionsAria', input.dataset.selectSymbol));
       });
     }
     bulk.append(pageLabel, selectedCount, viewSelected, manageSelected, removeSelected, clear);
     body.append(actions, toolbar, bulk, status, tableArea, pages); updateSelection();
     let page = 0, sequence = 0, timer;
     async function load() {
-      const request = ++sequence; status.textContent = 'Loading instruments…';
+      const request = ++sequence; status.textContent = i18n.t('watchlists.loadingInstruments');
       try {
         const data = await api(`/api/watchlists/${list.id}/members?${new URLSearchParams({ page, group: group.input.value, q: search.value })}`);
         if (request !== sequence || !body.isConnected) return;
         tableArea.replaceChildren(); pages.replaceChildren();
-        status.textContent = data.total ? `${data.total} instruments · Page ${page + 1} of ${Math.ceil(data.total / data.pageSize)}` : 'No instruments in this view.';
+        status.textContent = data.total
+          ? `${i18n.plural('watchlists.instruments', data.total, data.total)} · ${i18n.t('watchlists.pageOf', page + 1, Math.ceil(data.total / data.pageSize))}`
+          : i18n.t('watchlists.noInstruments');
         visibleSymbols = data.items.map(item => item.symbol);
         const table = n('table', null, 'wl-table'), head = n('thead'), row = n('tr'), tbody = n('tbody');
-        for (const text of ['Instrument', 'Following', 'Unread signals', 'Actions']) { const th = n('th', text); th.scope = 'col'; row.append(th); }
+        for (const column of ['instrument', 'following', 'unread', 'actions']) { const th = n('th', i18n.t(`watchlists.column.${column}`)); th.scope = 'col'; row.append(th); }
         head.append(row); table.append(head, tbody);
         for (const item of data.items) {
           const tr = n('tr'), instrument = n('td', null, 'wl-instrument-cell');
           const check = n('input'); check.type = 'checkbox'; check.dataset.selectSymbol = item.symbol;
-          check.setAttribute('aria-label', `Select ${item.symbol}`);
+          check.setAttribute('aria-label', i18n.t('watchlists.selectSymbolAria', item.symbol));
           check.addEventListener('change', () => { check.checked ? selected.add(item.symbol) : selected.delete(item.symbol); updateSelection(); });
-          const selectionLabel = n('label', null, 'wl-member-select'); selectionLabel.append(check, n('span', 'Select'));
+          const selectionLabel = n('label', null, 'wl-member-select'); selectionLabel.append(check, n('span', i18n.t('watchlists.select')));
           instrument.append(selectionLabel);
           const signalsUrl = `/signals?${new URLSearchParams({ watchlistId: list.id, ticker: item.symbol })}`;
           instrument.append(link(item.symbol, signalsUrl), n('small', item.companyName), n('small', `${item.exchange} · ${item.currency}`)); tr.append(instrument);
           const follows = item.signals || [];
-          const types = { CANDLESTICK: 'Candlestick', ELLIOTT_WAVE: 'Elliott Wave', HARMONIC_FORMATION: 'Harmonic', OUTLOOK: 'Automated outlook', CONGRESS: 'Congressional trades', INSIDER: 'Insider trades' };
-          const following = n('td', null, 'wl-following-cell'); following.dataset.label = 'Following';
+          const types = ['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION', 'OUTLOOK', 'CONGRESS', 'INSIDER'];
+          const following = n('td', null, 'wl-following-cell'); following.dataset.label = i18n.t('watchlists.column.following');
           const groups = new Map();
           follows.forEach(value => {
             const key = `${value.type}:${value.direction}`;
@@ -167,89 +178,89 @@
           });
           groups.forEach(({ type, direction, intervals }) => {
             const group = n('div', null, 'wl-follow-group'); group.setAttribute('role', 'group');
-            const label = types[type] || type;
-            group.setAttribute('aria-label', `${label}${direction === 'ANY' ? '' : ` ${direction.toLowerCase()}`} follows`);
+            const label = types.includes(type) ? i18n.t(`watchlists.type.${type}`) : type;
+            group.setAttribute('aria-label', i18n.t(direction === 'BUY' || direction === 'SELL' ? `watchlists.followsAria.${direction}` : 'watchlists.followsAria', label));
             const tone = { CANDLESTICK: 'candle', ELLIOTT_WAVE: 'elliott', HARMONIC_FORMATION: 'harmonic', OUTLOOK: 'outlook', CONGRESS: 'congress', INSIDER: 'insider' }[type] || 'other';
             group.append(n('span', label, `dashboard-chip wl-type-chip wl-type-${tone}`));
-            if (direction !== 'ANY') group.append(n('span', direction, `dashboard-chip wl-direction-chip ${direction === 'BUY' ? 'buy' : 'sell'}`));
+            if (direction !== 'ANY') group.append(n('span', direction === 'BUY' || direction === 'SELL' ? i18n.t(`watchlists.direction.${direction}`) : direction, `dashboard-chip wl-direction-chip ${direction === 'BUY' ? 'buy' : 'sell'}`));
             const periods = n('div', null, 'wl-intervals');
             ['DAILY', 'WEEKLY', 'MONTHLY'].filter(interval => intervals.has(interval)).forEach(interval => {
-              periods.append(n('span', interval[0] + interval.slice(1).toLowerCase(), 'dashboard-chip wl-interval-chip'));
+              periods.append(n('span', i18n.t(`interval.${interval}`), 'dashboard-chip wl-interval-chip'));
             });
             group.append(periods); following.append(group);
           });
-          if (!groups.size) following.append(n('span', 'No follows in this list', 'wl-no-follows'));
+          if (!groups.size) following.append(n('span', i18n.t('watchlists.noFollows'), 'wl-no-follows'));
           const unread = n('td', null, 'wl-unread-cell'), count = item.unreadSignalCount || 0;
           const badge = n('span', null, `wl-unread-badge${count > 0 ? ' has-unread' : ''}`);
-          badge.append(n('strong', String(count)), n('span', 'unread')); unread.append(badge);
+          badge.append(n('strong', String(count)), n('span', i18n.plural('watchlists.unreadBadge', count))); unread.append(badge);
           tr.append(following, unread);
           const action = n('td', null, 'wl-actions-cell'), actionGroup = n('div', null, 'wl-row-actions');
-          actionGroup.setAttribute('role', 'group'); actionGroup.setAttribute('aria-label', `Actions for ${item.symbol}`);
-          const view = link('View signals', signalsUrl); view.className = 'wl-row-action wl-view-action'; view.prepend(actionIcon('signals'));
-          const manage = button('Manage follows', () => manageFollows(list, selected.size ? [...selected] : [item.symbol]), 'wl-row-action'); manage.prepend(actionIcon('manage'));
-          const remove = button('Remove', async () => {
+          actionGroup.setAttribute('role', 'group'); actionGroup.setAttribute('aria-label', i18n.t('watchlists.rowActionsAria', item.symbol));
+          const view = link(i18n.t('watchlists.viewSignals'), signalsUrl); view.className = 'wl-row-action wl-view-action'; view.prepend(actionIcon('signals'));
+          const manage = button(i18n.t('watchlists.manageFollows'), () => manageFollows(list, selected.size ? [...selected] : [item.symbol]), 'wl-row-action'); manage.prepend(actionIcon('manage'));
+          const remove = button(i18n.t('watchlists.remove'), async () => {
             if (selected.size) { removeMembers(list, [...selected]); return; }
-            const d = modal(`Remove ${item.symbol}?`);
-            d.append(n('p', 'Other watchlists keep this instrument. If this is its last list, new monitoring stops; signal history remains.', 'wl-muted'));
+            const d = modal(i18n.t('watchlists.removeSymbolTitle', item.symbol));
+            d.append(n('p', i18n.t('watchlists.removeSymbolText'), 'wl-muted'));
             const errorText = n('p', '', 'wl-status'), buttons = n('div', null, 'wl-actions');
-            const confirm = button('Remove from this list', async () => {
+            const confirm = button(i18n.t('watchlists.removeFromList'), async () => {
               confirm.disabled = true;
               try { await api(`/api/watchlists/${list.id}/members/${encodeURIComponent(item.symbol)}`, { method: 'DELETE' }); d.close(); await refresh(); }
               catch (error) { errorText.textContent = error.message; confirm.disabled = false; }
             }, 'danger-outline-button');
-            buttons.append(button('Cancel', () => d.close()), confirm); d.append(errorText, buttons);
+            buttons.append(button(i18n.t('common.cancel'), () => d.close()), confirm); d.append(errorText, buttons);
           }, 'wl-row-action wl-remove-action'); remove.prepend(actionIcon('remove'));
           actionGroup.append(view, manage, remove); action.append(actionGroup); tr.append(action); tbody.append(tr);
         }
         if (data.items.length) tableArea.append(table);
         updateSelection();
-        const previous = button('Previous', () => { page--; load(); }), next = button('Next', () => { page++; load(); });
+        const previous = button(i18n.t('watchlists.previous'), () => { page--; load(); }), next = button(i18n.t('watchlists.next'), () => { page++; load(); });
         previous.disabled = page === 0; next.disabled = (page + 1) * data.pageSize >= data.total; pages.append(previous, next);
-      } catch (error) { if (request === sequence) { status.textContent = error.message; pages.replaceChildren(button('Retry', load)); } }
+      } catch (error) { if (request === sequence) { status.textContent = error.message; pages.replaceChildren(button(i18n.t('common.retry'), load)); } }
     }
     search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { page = 0; load(); }, 250); });
     group.input.addEventListener('change', () => { page = 0; load(); }); load();
   }
   async function manageFollows(list, symbols) {
-    const d = modal(`Manage follows · ${symbols.length} selected`);
+    const d = modal(i18n.t('watchlists.manageFollowsTitle', i18n.plural('watchlists.selected', symbols.length, symbols.length)));
     d.append(n('p', symbols.join(', '), 'wl-selected-symbols'));
-    const status = n('p', 'Loading follows…', 'wl-status'); status.setAttribute('role', 'status');
+    const status = n('p', i18n.t('watchlists.loadingFollows'), 'wl-status'); status.setAttribute('role', 'status');
     const settings = window.StockWatchListSettings.create(() => { save.disabled = !settings.readChanges().length; }, { members: true });
     settings.root.disabled = true;
     const actions = n('div', null, 'wl-actions');
-    const save = button('Apply to selected', async () => {
+    const save = button(i18n.t('watchlists.applyToSelected'), async () => {
       save.disabled = true; settings.root.disabled = true;
       try {
         await api(`/api/watchlists/${list.id}/members/follows`, { method: 'POST', body: JSON.stringify({ symbols, changes: settings.readChanges() }) });
         d.close(); await refresh();
       } catch (error) { status.textContent = error.message; save.disabled = false; settings.root.disabled = false; }
     }, 'btn-accent'); save.disabled = true;
-    actions.append(button('Cancel', () => d.close()), save); d.append(settings.root, status, actions);
+    actions.append(button(i18n.t('common.cancel'), () => d.close()), save); d.append(settings.root, status, actions);
     try {
       const view = await api(`/api/watchlists/${list.id}/members/follows/preview`, { method: 'POST', body: JSON.stringify({ symbols }) });
       if (!d.isConnected) return;
       settings.set(view); settings.root.disabled = false;
-      status.textContent = view.nonStocks ? `${view.nonStocks} indexes or ETFs will be skipped for insider and congressional follows.` : '';
+      status.textContent = view.nonStocks ? i18n.plural('watchlists.nonStocksSkipped', view.nonStocks, view.nonStocks) : '';
     } catch (error) { status.textContent = error.message; }
   }
   function removeMembers(list, symbols) {
-    const d = modal(`Remove ${symbols.length} selected instruments?`);
-    d.append(n('p', symbols.join(', '), 'wl-selected-symbols'), n('p', 'Remove these instruments from this watchlist. Other watchlists and signal history are preserved.', 'wl-muted'));
+    const d = modal(i18n.plural('watchlists.removeSelectedTitle', symbols.length, symbols.length));
+    d.append(n('p', symbols.join(', '), 'wl-selected-symbols'), n('p', i18n.t('watchlists.removeSelectedText'), 'wl-muted'));
     const status = n('p', '', 'wl-status'), actions = n('div', null, 'wl-actions'); status.setAttribute('role', 'status');
-    const confirm = button('Remove selected', async () => {
+    const confirm = button(i18n.t('watchlists.removeSelected'), async () => {
       confirm.disabled = true;
       try {
         await api(`/api/watchlists/${list.id}/members/remove`, { method: 'POST', body: JSON.stringify({ symbols }) });
         symbols.forEach(symbol => selections.get(list.id)?.delete(symbol)); d.close(); await refresh();
       } catch (error) { status.textContent = error.message; confirm.disabled = false; }
     }, 'danger-outline-button');
-    actions.append(button('Cancel', () => d.close()), confirm); d.append(status, actions);
+    actions.append(button(i18n.t('common.cancel'), () => d.close()), confirm); d.append(status, actions);
   }
   function confirmDelete(list) {
-    const d = modal(`Delete “${list.name}”?`);
-    d.append(n('p', 'Instruments in other watchlists stay monitored. Instruments only in this list stop new monitoring. Notification history is preserved.', 'wl-muted'));
+    const d = modal(i18n.t('watchlists.deleteTitle', list.name));
+    d.append(n('p', i18n.t('watchlists.deleteText'), 'wl-muted'));
     const status = n('p', '', 'wl-status'), actions = n('div', null, 'wl-actions');
-    const remove = button('Delete watchlist', async () => {
+    const remove = button(i18n.t('watchlists.delete'), async () => {
       remove.disabled = true;
       try {
         await api(`/api/watchlists/${list.id}`, { method: 'DELETE' }); d.close();
@@ -257,49 +268,49 @@
         await refresh();
       }
       catch (error) { status.textContent = error.message; remove.disabled = false; }
-    }, 'danger-outline-button'); actions.append(button('Cancel', () => d.close()), remove); d.append(status, actions);
+    }, 'danger-outline-button'); actions.append(button(i18n.t('common.cancel'), () => d.close()), remove); d.append(status, actions);
   }
   async function edit(list) {
-    const d = modal(list ? `Manage ${list.name}` : 'Create watchlist'), form = n('form', null, 'wl-editor-form');
+    const d = modal(list ? i18n.t('watchlists.manageTitle', list.name) : i18n.t('watchlists.create')), form = n('form', null, 'wl-editor-form');
     d.classList.add('wl-editor');
     const heading = d.querySelector('h2'), header = n('header', null, 'wl-editor-header');
-    const close = button('×', () => d.close(), 'wl-editor-close'); close.setAttribute('aria-label', 'Close watchlist editor');
+    const close = button('×', () => d.close(), 'wl-editor-close'); close.setAttribute('aria-label', i18n.t('watchlists.closeEditor'));
     header.append(heading, close); d.append(header, form);
-    const name = field('Name', 'text', list?.name || ''), description = field('Description (optional)', 'text', list?.description || '');
+    const name = field(i18n.t('watchlists.name'), 'text', list?.name || ''), description = field(i18n.t('watchlists.description'), 'text', list?.description || '');
     name.input.required = true; name.input.maxLength = 100; description.input.maxLength = 500;
-    name.input.placeholder = 'e.g. European opportunities'; description.input.placeholder = 'What is this watchlist for?';
+    name.input.placeholder = i18n.t('watchlists.namePlaceholder'); description.input.placeholder = i18n.t('watchlists.descriptionPlaceholder');
     const identity = n('div', null, 'wl-editor-identity'); identity.append(name.label, description.label);
     const columns = n('div', null, 'wl-editor-columns'), instruments = n('section', null, 'wl-editor-instruments');
-    instruments.setAttribute('aria-label', 'Choose instruments');
-    instruments.append(n('h3', 'Choose instruments'));
-    const search = field('Search individual tickers', 'search'), results = n('div', null, 'wl-results');
-    search.input.placeholder = 'Ticker or company name'; instruments.append(search.label, results);
-    const market = n('section', null, 'wl-market-browser'); market.setAttribute('aria-label', 'Browse indexes');
-    market.append(n('h3', 'Browse indexes'), n('p', 'Choose a continent, then a country. Check an index to choose what to add.', 'wl-muted'));
-    const regions = n('div', null, 'wl-region-options'); regions.setAttribute('role', 'group'); regions.setAttribute('aria-label', 'Continents');
-    const countries = n('div', null, 'wl-country-options'); countries.setAttribute('role', 'group'); countries.setAttribute('aria-label', 'Countries');
+    instruments.setAttribute('aria-label', i18n.t('watchlists.chooseInstruments'));
+    instruments.append(n('h3', i18n.t('watchlists.chooseInstruments')));
+    const search = field(i18n.t('watchlists.searchTickers'), 'search'), results = n('div', null, 'wl-results');
+    search.input.placeholder = i18n.t('watchlists.searchTickersPlaceholder'); instruments.append(search.label, results);
+    const market = n('section', null, 'wl-market-browser'); market.setAttribute('aria-label', i18n.t('watchlists.browseIndexes'));
+    market.append(n('h3', i18n.t('watchlists.browseIndexes')), n('p', i18n.t('watchlists.browseIndexesHelp'), 'wl-muted'));
+    const regions = n('div', null, 'wl-region-options'); regions.setAttribute('role', 'group'); regions.setAttribute('aria-label', i18n.t('watchlists.continents'));
+    const countries = n('div', null, 'wl-country-options'); countries.setAttribute('role', 'group'); countries.setAttribute('aria-label', i18n.t('watchlists.countries'));
     const countrySection = n('div', null, 'wl-country-section'); countrySection.hidden = true;
-    countrySection.append(n('h4', 'Country'), countries);
+    countrySection.append(n('h4', i18n.t('watchlists.country')), countries);
     const indexSection = n('div', null, 'wl-index-section'); indexSection.hidden = true;
-    const indexTitle = n('h4', 'Indexes'), indexOptions = n('div', null, 'wl-index-options'); indexSection.append(indexTitle, indexOptions);
-    const catalogStatus = n('p', 'Loading continents…', 'wl-muted'); catalogStatus.setAttribute('role', 'status');
+    const indexTitle = n('h4', i18n.t('watchlists.indexes')), indexOptions = n('div', null, 'wl-index-options'); indexSection.append(indexTitle, indexOptions);
+    const catalogStatus = n('p', i18n.t('watchlists.loadingContinents'), 'wl-muted'); catalogStatus.setAttribute('role', 'status');
     market.append(regions, countrySection, indexSection, catalogStatus); instruments.append(market);
     const selections = n('div', null, 'wl-selection-list'), selectionSection = n('section', null, 'wl-selection-summary');
-    selectionSection.setAttribute('aria-label', 'Selected additions');
-    selectionSection.append(n('h3', 'Selected additions'), selections); instruments.append(selectionSection);
+    selectionSection.setAttribute('aria-label', i18n.t('watchlists.selectedAdditions'));
+    selectionSection.append(n('h3', i18n.t('watchlists.selectedAdditions')), selections); instruments.append(selectionSection);
     const monitoring = window.StockWatchListSettings.create(changed);
     monitoring.root.disabled = !!list;
-    const settingsPane = n('section', null, 'wl-editor-settings'); settingsPane.setAttribute('aria-label', 'Follow and email settings');
+    const settingsPane = n('section', null, 'wl-editor-settings'); settingsPane.setAttribute('aria-label', i18n.t('watchlists.settingsAria'));
     settingsPane.append(monitoring.root); columns.append(instruments, settingsPane);
     const status = n('p', '', 'wl-status'); status.setAttribute('role', 'status');
     const previewArea = n('div', null, 'wl-editor-preview'), count = n('p', '', 'wl-muted'); count.setAttribute('role', 'status');
-    const save = n('button', list ? 'Save watchlist' : 'Create watchlist', 'btn-accent'); save.type = 'submit';
-    const actions = n('div', null, 'wl-actions'); actions.append(button('Cancel', () => d.close()), save);
+    const save = n('button', i18n.t(list ? 'watchlists.save' : 'watchlists.create'), 'btn-accent'); save.type = 'submit';
+    const actions = n('div', null, 'wl-actions'); actions.append(button(i18n.t('common.cancel'), () => d.close()), save);
     const footer = n('footer', null, 'wl-editor-footer'), footerRow = n('div', null, 'wl-editor-footer-row'); footerRow.append(count, actions);
     footer.append(status, previewArea, footerRow); form.append(identity, columns, footer);
     const selected = new Map(), indexChoices = new Map(), indexInputs = new Map();
     let catalog = [], activeRegion = '', activeCountry = '', previewed = false, busy = false, settingsLoaded = !list;
-    const modes = { index: 'Index only', stocks: 'All stocks in the index', both: 'Both' };
+    const modes = Object.fromEntries(['index', 'stocks', 'both'].map(mode => [mode, i18n.t(`watchlists.mode.${mode}`)]));
     function additions() {
       const symbols = new Set(selected.keys()), indexIds = [];
       indexChoices.forEach(({ entry, mode }) => {
@@ -313,33 +324,35 @@
       const itemRow = (title, subtitle, edit, remove) => {
         const row = n('div', null, 'wl-selection-row'), text = n('div'); text.append(n('strong', title), n('small', subtitle));
         const actions = n('div', null, 'wl-selection-actions');
-        if (edit) { const b = button('Change', edit); b.setAttribute('aria-label', `Change ${title} selection`); actions.append(b); }
-        const b = button('×', remove); b.setAttribute('aria-label', `Remove ${title}`); actions.append(b); row.append(text, actions); selections.append(row);
+        if (edit) { const b = button(i18n.t('watchlists.change'), edit); b.setAttribute('aria-label', i18n.t('watchlists.changeAria', title)); actions.append(b); }
+        const b = button('×', remove); b.setAttribute('aria-label', i18n.t('watchlists.removeAria', title)); actions.append(b); row.append(text, actions); selections.append(row);
       };
-      selected.forEach((item, symbol) => itemRow(symbol, item.name || 'Individual instrument', null, () => { selected.delete(symbol); changed(); }));
-      indexChoices.forEach(({ entry, mode }) => itemRow(entry.name, `${modes[mode]} · ${mode === 'index' ? entry.symbol : entry.count + ' stocks' + (mode === 'both' ? ' + index' : '')}`,
+      selected.forEach((item, symbol) => itemRow(symbol, item.name || i18n.t('watchlists.individualInstrument'), null, () => { selected.delete(symbol); changed(); }));
+      indexChoices.forEach(({ entry, mode }) => itemRow(entry.name, `${modes[mode]} · ${mode === 'index' ? entry.symbol
+        : mode === 'both' ? i18n.t('watchlists.stocksAndIndex', stockCount(entry.count)) : stockCount(entry.count)}`,
         () => chooseIndex(entry), () => { indexChoices.delete(entry.id); changed(); }));
-      if (!selected.size && !indexChoices.size) selections.append(n('p', 'Your selected tickers and indexes will appear here.', 'wl-muted'));
+      if (!selected.size && !indexChoices.size) selections.append(n('p', i18n.t('watchlists.selectionsEmpty'), 'wl-muted'));
       indexInputs.forEach((input, id) => { input.checked = indexChoices.has(id); });
-      count.textContent = `${selected.size} individual tickers · ${indexChoices.size} index selections`;
-      save.textContent = selected.size || indexChoices.size || monitoring.restrictionsChanged() || list?.instruments > 0 && monitoring.monitoringChanged() ? 'Review changes' : (list ? 'Save watchlist' : 'Create watchlist');
+      count.textContent = `${i18n.plural('watchlists.individualTickers', selected.size, selected.size)} · ${i18n.plural('watchlists.indexSelections', indexChoices.size, indexChoices.size)}`;
+      save.textContent = selected.size || indexChoices.size || monitoring.restrictionsChanged() || list?.instruments > 0 && monitoring.monitoringChanged() ? i18n.t('watchlists.reviewChanges') : i18n.t(list ? 'watchlists.save' : 'watchlists.create');
     }
     function chooseIndex(entry) {
-      const choice = modal(`Add ${entry.name}`); choice.classList.add('wl-index-dialog');
-      choice.append(n('p', 'What would you like to add to this watchlist?', 'wl-muted'));
-      const options = n('fieldset', null, 'wl-index-modes'); options.append(n('legend', 'Choose what to add'));
+      const choice = modal(i18n.t('watchlists.addIndexTitle', entry.name)); choice.classList.add('wl-index-dialog');
+      choice.append(n('p', i18n.t('watchlists.addIndexQuestion'), 'wl-muted'));
+      const options = n('fieldset', null, 'wl-index-modes'); options.append(n('legend', i18n.t('watchlists.chooseWhatToAdd')));
       let mode = indexChoices.get(entry.id)?.mode || 'index';
-      const descriptions = { index: `The index itself (${entry.symbol}).`, stocks: `All ${entry.count} constituent stocks, without the index.`, both: `The index and all ${entry.count} constituent stocks.` };
+      const descriptions = { index: i18n.t('watchlists.modeHelp.index', entry.symbol), stocks: i18n.plural('watchlists.modeHelp.stocks', entry.count, entry.count),
+        both: i18n.plural('watchlists.modeHelp.both', entry.count, entry.count) };
       Object.entries(modes).forEach(([value, title]) => {
         const label = n('label', null, 'wl-index-mode'), input = n('input'); input.type = 'radio'; input.name = 'indexMode'; input.value = value;
         input.checked = mode === value; input.disabled = value !== 'index' && !entry.count;
         const text = n('span'); text.append(n('strong', title), n('small', descriptions[value])); label.append(input, text); options.append(label);
         input.addEventListener('change', () => { mode = value; });
       });
-      const note = n('p', null, 'wl-muted'); note.append(n('span', `Constituents captured ${entry.asOf}. `));
-      const source = link('View source', entry.source); source.target = '_blank'; source.rel = 'noopener noreferrer'; note.append(source);
+      const note = n('p', null, 'wl-muted'); note.append(n('span', `${i18n.t('watchlists.constituentsAsOf', entry.asOf)} `));
+      const source = link(i18n.t('watchlists.viewSource'), entry.source); source.target = '_blank'; source.rel = 'noopener noreferrer'; note.append(source);
       const actions = n('div', null, 'wl-actions');
-      actions.append(button('Cancel', () => choice.close()), button('Confirm selection', () => { indexChoices.set(entry.id, { entry, mode }); changed(); choice.close(); }, 'btn-accent'));
+      actions.append(button(i18n.t('common.cancel'), () => choice.close()), button(i18n.t('watchlists.confirmSelection'), () => { indexChoices.set(entry.id, { entry, mode }); changed(); choice.close(); }, 'btn-accent'));
       choice.append(options, note, actions);
       choice.addEventListener('close', () => {
         indexInputs.forEach((input, id) => { input.checked = indexChoices.has(id); });
@@ -348,11 +361,11 @@
     }
     function renderIndexes() {
       indexOptions.replaceChildren(); indexInputs.clear();
-      indexTitle.textContent = `Indexes in ${activeCountry}`; indexSection.hidden = false;
+      indexTitle.textContent = i18n.t('watchlists.indexesIn', geo(activeCountry)); indexSection.hidden = false;
       catalog.filter(entry => entry.region === activeRegion && entry.country === activeCountry).forEach(entry => {
         const row = n('label', null, 'wl-index-option'), input = n('input'); input.type = 'checkbox';
         input.setAttribute('aria-label', entry.name); input.checked = indexChoices.has(entry.id); indexInputs.set(entry.id, input);
-        const text = n('span'); text.append(n('strong', entry.name), n('small', `${entry.symbol} · ${entry.count} stocks`)); row.append(input, text); indexOptions.append(row);
+        const text = n('span'); text.append(n('strong', entry.name), n('small', `${entry.symbol} · ${stockCount(entry.count)}`)); row.append(input, text); indexOptions.append(row);
         input.addEventListener('change', () => {
           if (input.checked) chooseIndex(entry);
           else { indexChoices.delete(entry.id); changed(); }
@@ -361,25 +374,25 @@
     }
     function renderCountries() {
       countries.replaceChildren(); countrySection.hidden = false; indexSection.hidden = true; indexInputs.clear();
-      [...new Set(catalog.filter(entry => entry.region === activeRegion).map(entry => entry.country))].sort().forEach(country => {
-        const b = button(country, () => {
+      [...new Set(catalog.filter(entry => entry.region === activeRegion).map(entry => entry.country))].sort(byLocalName).forEach(country => {
+        const b = button(geo(country), () => {
           activeCountry = country; countries.querySelectorAll('button').forEach(item => item.setAttribute('aria-pressed', String(item === b))); renderIndexes();
         }, 'wl-geography-button'); b.setAttribute('aria-pressed', 'false'); countries.append(b);
       });
     }
     async function loadCatalog() {
-      catalogStatus.replaceChildren(n('span', 'Loading continents…'));
+      catalogStatus.replaceChildren(n('span', i18n.t('watchlists.loadingContinents')));
       try {
         catalog = await api('/api/watchlists/indexes'); if (!d.isConnected) return;
         catalogStatus.replaceChildren(); regions.replaceChildren();
-        [...new Set(catalog.map(entry => entry.region))].sort().forEach(region => {
-          const b = button(region, () => {
+        [...new Set(catalog.map(entry => entry.region))].sort(byLocalName).forEach(region => {
+          const b = button(geo(region), () => {
             activeRegion = region; activeCountry = ''; regions.querySelectorAll('button').forEach(item => item.setAttribute('aria-pressed', String(item === b))); renderCountries();
           }, 'wl-geography-button'); b.setAttribute('aria-pressed', 'false'); regions.append(b);
         });
-        if (!catalog.length) catalogStatus.textContent = 'No index collections are available. You can still search individual tickers.';
+        if (!catalog.length) catalogStatus.textContent = i18n.t('watchlists.noIndexCollections');
       } catch (error) {
-        catalogStatus.replaceChildren(n('span', 'Indexes could not be loaded. You can still search individual tickers. '), button('Retry', loadCatalog));
+        catalogStatus.replaceChildren(n('span', `${i18n.t('watchlists.indexesFailed')} `), button(i18n.t('common.retry'), loadCatalog));
       }
     }
     let searchSequence = 0, timer;
@@ -391,7 +404,7 @@
           const found = await api(`/api/stocks/search?q=${encodeURIComponent(q)}`);
           if (seq !== searchSequence || !d.isConnected) return; results.replaceChildren();
           for (const item of found) results.append(button(`${item.symbol} · ${item.name} · ${item.region || item.country || ''}`, () => { selected.set(item.symbol, item); search.input.value = ''; results.replaceChildren(); changed(); }));
-          if (!found.length) results.append(n('p', 'No instruments found.', 'wl-muted'));
+          if (!found.length) results.append(n('p', i18n.t('watchlists.noInstrumentsFound'), 'wl-muted'));
         } catch (error) { if (seq === searchSequence) results.replaceChildren(n('p', error.message, 'wl-status')); }
       }, 300);
     });
@@ -403,17 +416,19 @@
       try {
         if (monitoring.restrictionsChanged() && !previewed && !selected.size && !indexChoices.size && !applyExisting) {
           previewArea.replaceChildren(n('p', monitoring.restrictionSummary(), 'wl-status'));
-          previewed = true; save.textContent = 'Save watchlist changes'; return;
+          previewed = true; save.textContent = i18n.t('watchlists.saveChanges'); return;
         }
         if ((selected.size || indexChoices.size || applyExisting) && !previewed) {
           const preview = await api(`/api/watchlists/imports/preview${list ? `?watchlistId=${list.id}` : ''}`, { method: 'POST', body: JSON.stringify(payload) });
-          previewArea.replaceChildren(n('p', `${preview.uniqueCount} unique instruments · ${preview.duplicates} duplicates removed · ${preview.alreadyPresent} already in this list`, 'wl-muted'));
+          previewArea.replaceChildren(n('p', [i18n.plural('watchlists.uniqueInstruments', preview.uniqueCount, preview.uniqueCount),
+            i18n.plural('watchlists.duplicatesRemoved', preview.duplicates, preview.duplicates),
+            i18n.plural('watchlists.alreadyPresent', preview.alreadyPresent, preview.alreadyPresent)].join(' · '), 'wl-muted'));
           if (monitoring.restrictionsChanged()) previewArea.append(n('p', monitoring.restrictionSummary(), 'wl-status'));
           if (preview.warning) previewArea.append(n('p', preview.warning, 'wl-status'));
-          if (preview.skippedTickerInstruments) previewArea.append(n('p', `${preview.skippedTickerInstruments} indexes or ETFs skipped for ticker alerts. Technical selections still apply.`, 'wl-muted'));
-          if (payload.selections.some(value => value.watch && ['CONGRESS', 'INSIDER'].includes(value.type))) previewArea.append(n('p', `${preview.congressRemaining} congressional and ${preview.insiderRemaining} insider follow slots remaining`, 'wl-muted'));
-          previewArea.append(n('p', `${preview.newlyMonitored} new monitored instruments · ${preview.capacityRemaining} remaining monitoring capacity`, 'wl-muted'));
-          previewed = preview.allowed; save.textContent = preview.allowed ? 'Save watchlist changes' : 'Review changes';
+          if (preview.skippedTickerInstruments) previewArea.append(n('p', i18n.plural('watchlists.tickerAlertsSkipped', preview.skippedTickerInstruments, preview.skippedTickerInstruments), 'wl-muted'));
+          if (payload.selections.some(value => value.watch && ['CONGRESS', 'INSIDER'].includes(value.type))) previewArea.append(n('p', i18n.t('watchlists.followSlots', preview.congressRemaining, preview.insiderRemaining), 'wl-muted'));
+          previewArea.append(n('p', `${i18n.plural('watchlists.newlyFollowed', preview.newlyMonitored, preview.newlyMonitored)} · ${i18n.t('watchlists.roomFor', preview.capacityRemaining)}`, 'wl-muted'));
+          previewed = preview.allowed; save.textContent = i18n.t(preview.allowed ? 'watchlists.saveChanges' : 'watchlists.reviewChanges');
           return;
         }
         const saved = await api('/api/watchlists/save', { method: 'POST', body: JSON.stringify({
@@ -428,41 +443,41 @@
     });
     const loadSettings = list ? api(`/api/watchlists/${list.id}/settings`).then(view => {
       monitoring.set(view); monitoring.root.disabled = false; settingsLoaded = true;
-    }).catch(error => { status.textContent = `Settings could not be loaded: ${error.message} Close and retry to avoid overwriting them.`; save.disabled = true; }) : Promise.resolve();
+    }).catch(error => { status.textContent = i18n.t('watchlists.settingsFailed', error.message); save.disabled = true; }) : Promise.resolve();
     loadCatalog();
     await loadSettings;
     changed();
   }
   async function showImport(id) {
-    const d = modal('Updating watchlist instruments'), status = n('p', '', 'wl-status'), errors = n('div');
-    const actions = n('div', null, 'wl-actions'); actions.append(button('Close — continue in background', () => d.close())); d.append(status, errors, actions);
+    const d = modal(i18n.t('watchlists.importTitle')), status = n('p', '', 'wl-status'), errors = n('div');
+    const actions = n('div', null, 'wl-actions'); actions.append(button(i18n.t('watchlists.closeInBackground'), () => d.close())); d.append(status, errors, actions);
     async function poll() {
       try {
         const job = await api(`/api/watchlists/imports/${id}`);
-        status.textContent = `${job.completed} of ${job.total} updated · ${job.failed} failed · ${job.pending} remaining`;
+        status.textContent = i18n.t('watchlists.importProgress', job.completed, job.total, job.failed, job.pending);
         errors.replaceChildren(); job.errors.forEach(error => errors.append(n('p', `${error.symbol}: ${error.error}`, 'wl-muted')));
         if (job.pending) setTimeout(poll, d.isConnected ? 2000 : 10000);
         else {
           await refresh();
-          if (job.failed) actions.append(button('Retry failed instruments', async event => {
+          if (job.failed) actions.append(button(i18n.t('watchlists.retryFailed'), async event => {
             const retry = event.currentTarget; retry.disabled = true;
             try { await api(`/api/watchlists/imports/${id}/retry`, { method: 'POST' }); retry.remove(); poll(); }
             catch (error) { status.textContent = error.message; retry.disabled = false; }
           }));
         }
-      } catch (error) { status.textContent = error.message; actions.append(button('Retry status', poll)); }
+      } catch (error) { status.textContent = error.message; actions.append(button(i18n.t('watchlists.retryStatus'), poll)); }
     }
     poll();
   }
   async function recentImports() {
-    const d = modal('Recent imports'), content = n('div');
-    d.append(content, button('Close', () => d.close()));
-    content.append(n('p', 'Loading imports…', 'wl-status'));
+    const d = modal(i18n.t('watchlists.recentImports')), content = n('div');
+    d.append(content, button(i18n.t('common.close'), () => d.close()));
+    content.append(n('p', i18n.t('watchlists.loadingImports'), 'wl-status'));
     try {
       const jobs = await api('/api/watchlists/imports'); content.replaceChildren();
-      if (!jobs.length) content.append(n('p', 'No imports yet.', 'wl-muted'));
+      if (!jobs.length) content.append(n('p', i18n.t('watchlists.noImports'), 'wl-muted'));
       jobs.forEach(job => content.append(button(
-        `Import ${job.id}: ${job.completed} of ${job.total} updated · ${job.pending} remaining · ${job.failed} failed`,
+        i18n.t('watchlists.importSummary', job.id, job.completed, job.total, job.pending, job.failed),
         () => { d.close(); showImport(job.id); })));
     } catch (error) { content.replaceChildren(n('p', error.message, 'wl-status')); }
   }
@@ -473,7 +488,7 @@
     b.disabled = true;
     try {
       const selection = await window.StockWatchLists.choose(b.dataset.symbol, { mode: 'membership' });
-      if (selection) { await api(`/api/watchlists/memberships/${encodeURIComponent(b.dataset.symbol)}`, { method: 'POST', body: JSON.stringify(selection) }); b.textContent = 'Added to watchlists'; await refresh(); }
+      if (selection) { await api(`/api/watchlists/memberships/${encodeURIComponent(b.dataset.symbol)}`, { method: 'POST', body: JSON.stringify(selection) }); b.textContent = i18n.t('watchlists.addedToWatchlists'); await refresh(); }
     } catch (error) { b.textContent = error.message; }
     finally { b.disabled = false; }
   }));

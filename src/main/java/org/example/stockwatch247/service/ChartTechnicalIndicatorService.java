@@ -2,6 +2,7 @@ package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.repository.CandleRepository;
+import org.example.stockwatch247.service.technical.StableVolumeProfileKde;
 import org.example.stockwatch247.service.technical.Ta4jBarSeriesFactory;
 import org.springframework.stereotype.Service;
 import org.ta4j.core.BarSeries;
@@ -27,7 +28,6 @@ import org.ta4j.core.indicators.helpers.TypicalPriceIndicator;
 import org.ta4j.core.indicators.helpers.VolumeIndicator;
 import org.ta4j.core.indicators.keltner.KeltnerChannelFacade;
 import org.ta4j.core.indicators.statistics.StandardDeviationIndicator;
-import org.ta4j.core.indicators.supportresistance.VolumeProfileKDEIndicator;
 import org.ta4j.core.indicators.trend.DownTrendIndicator;
 import org.ta4j.core.indicators.trend.UpTrendIndicator;
 import org.ta4j.core.indicators.volume.MoneyFlowIndexIndicator;
@@ -299,12 +299,11 @@ public class ChartTechnicalIndicatorService {
                 double firstClose = Math.abs(candles.getFirst().getClosePrice());
                 double firstRange = Math.abs(candles.getFirst().getHighPrice() - candles.getFirst().getLowPrice());
                 double bandwidth = Math.max(0.000_001, Math.max(firstClose * 0.0025, firstRange * 0.5));
-                VolumeProfileKDEIndicator kde = new VolumeProfileKDEIndicator(
-                        typical, volume, period, bars.numFactory().numOf(bandwidth));
+                StableVolumeProfileKde kde = new StableVolumeProfileKde(
+                        typical, volume, period, bandwidth);
                 output.add(series("mode", label, "LINE", candles, from, to, index -> {
                     if (index < kde.getCountOfUnstableBars()) return Double.NaN;
-                    Num mode = kde.getModePrice(index);
-                    return mode == null || mode.isNaN() ? Double.NaN : mode.doubleValue();
+                    return kde.getModePrice(index);
                 }));
             }
             default -> throw new IllegalArgumentException("Unsupported chart indicator: " + type);

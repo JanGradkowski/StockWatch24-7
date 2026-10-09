@@ -1,0 +1,1509 @@
+# Polish translations of messages produced by Java code (validation errors, confirmations), keyed by
+# the exact English text, like a gettext catalog. Read by ServerMessages.
+#
+#   en: <English text, exactly as in the code; {0}, {1} match any value>
+#   pl: <Polish text; {0}, {1} insert the matched values>
+#
+# "internal" instead of "pl:" marks a message users never see: these failures reach the browser only as
+# the generic error page or a generic API error, so they stay in English for the logs.
+# ServerMessagesCoverageTest fails when a message in the code is missing here.
+# Terminology: docs/i18n-glossary-pl.md.
+
+# --- Generic API and page errors -------------------------------------------------------------------
+
+en: Request could not be completed.
+pl: Nie udało się wykonać żądania.
+
+en: The request could not be completed.
+pl: Nie udało się wykonać żądania.
+
+en: Invalid request.
+pl: Nieprawidłowe żądanie.
+
+en: An unexpected error occurred.
+pl: Wystąpił nieoczekiwany błąd.
+
+en: Market data is temporarily unavailable. Try again in a few minutes.
+pl: Dane rynkowe są chwilowo niedostępne. Spróbuj ponownie za kilka minut.
+
+en: Daily candle data is temporarily unavailable for {0}.
+pl: Dane świec dziennych dla {0} są chwilowo niedostępne.
+
+en: Weekly candle data is temporarily unavailable for {0}.
+pl: Dane świec tygodniowych dla {0} są chwilowo niedostępne.
+
+en: Monthly candle data is temporarily unavailable for {0}.
+pl: Dane świec miesięcznych dla {0} są chwilowo niedostępne.
+
+en: Requested candle data is temporarily unavailable for {0}.
+pl: Żądane dane świec dla {0} są chwilowo niedostępne.
+
+en: Quote refresh is in progress for {0}
+pl: Trwa odświeżanie notowania {0}
+
+en: Quote unavailable for {0}
+pl: Notowanie {0} jest niedostępne
+
+en: Authentication is required.
+pl: Wymagane jest zalogowanie.
+
+en: An authenticated user is required.
+pl: Wymagane jest zalogowanie.
+
+en: Authenticated user not found.
+pl: Nie znaleziono zalogowanego użytkownika.
+
+en: Authenticated user was not found.
+pl: Nie znaleziono zalogowanego użytkownika.
+
+en: The signed-in account no longer exists.
+pl: Zalogowane konto już nie istnieje.
+
+en: Account not found.
+pl: Nie znaleziono konta.
+
+en: Too many attempts. Please wait before trying again.
+pl: Zbyt wiele prób. Odczekaj chwilę i spróbuj ponownie.
+
+en: Unsupported language.
+pl: Nieobsługiwany język.
+
+# --- Account, password and two-step sign-in ---------------------------------------------------------
+
+en: Enter a valid email address.
+pl: Podaj prawidłowy adres e-mail.
+
+en: Name contains unsupported characters.
+pl: Nazwa zawiera niedozwolone znaki.
+
+en: Password must be at least 15 characters and at most 72 UTF-8 bytes.
+pl: Hasło musi mieć co najmniej 15 znaków i najwyżej 72 bajty w kodowaniu UTF-8.
+
+en: Current password is incorrect.
+pl: Obecne hasło jest nieprawidłowe.
+
+en: Choose a password different from your current password.
+pl: Wybierz hasło inne niż obecne.
+
+en: The new passwords do not match.
+pl: Nowe hasła nie są takie same.
+
+en: The code or account details are invalid.
+pl: Kod lub dane konta są nieprawidłowe.
+
+en: The security code is invalid, expired, or has too many failed attempts.
+pl: Kod zabezpieczający jest nieprawidłowy, wygasł lub przekroczono dozwoloną liczbę prób.
+
+en: We could not send your code. Please try again later.
+pl: Nie udało się wysłać kodu. Spróbuj ponownie później.
+
+en: Password changed. All other sessions were signed out.
+pl: Hasło zostało zmienione. Wszystkie pozostałe sesje zostały wylogowane.
+
+en: All other sessions were signed out.
+pl: Wszystkie pozostałe sesje zostały wylogowane.
+
+en: Verification email could not be sent. Please try again later.
+pl: Nie udało się wysłać wiadomości weryfikacyjnej. Spróbuj ponownie później.
+
+en: Too many verification attempts. Please wait before trying again.
+pl: Zbyt wiele prób weryfikacji. Odczekaj chwilę i spróbuj ponownie.
+
+en: Email could not be sent.
+pl: Nie udało się wysłać wiadomości e-mail.
+
+en: Email delivery is not configured.
+pl: Wysyłka wiadomości e-mail nie jest skonfigurowana.
+
+en: Authenticator setup expired. Start again.
+pl: Konfiguracja aplikacji uwierzytelniającej wygasła. Zacznij od nowa.
+
+en: Authenticator verification is already enabled.
+pl: Weryfikacja aplikacją uwierzytelniającą jest już włączona.
+
+en: Authenticator verification is enabled. Save your recovery codes now.
+pl: Weryfikacja aplikacją uwierzytelniającą jest włączona. Zapisz teraz kody odzyskiwania.
+
+en: Authenticator verification was disabled and other sessions were signed out.
+pl: Weryfikacja aplikacją uwierzytelniającą została wyłączona, a pozostałe sesje zostały wylogowane.
+
+en: New recovery codes generated. Previous codes no longer work.
+pl: Wygenerowano nowe kody odzyskiwania. Poprzednie kody nie są już ważne.
+
+en: Enter the current six-digit code from your authenticator app.
+pl: Wpisz aktualny sześciocyfrowy kod z aplikacji uwierzytelniającej.
+
+en: Scan the QR code, then enter the current authenticator code.
+pl: Zeskanuj kod QR, a następnie wpisz aktualny kod z aplikacji uwierzytelniającej.
+
+en: The authenticator code is invalid.
+pl: Kod z aplikacji uwierzytelniającej jest nieprawidłowy.
+
+en: The authenticator or recovery code is invalid.
+pl: Kod z aplikacji lub kod odzyskiwania jest nieprawidłowy.
+
+en: That authenticator or recovery code is invalid.
+pl: Ten kod z aplikacji lub kod odzyskiwania jest nieprawidłowy.
+
+en: Could not create authenticator QR code.
+pl: Nie udało się utworzyć kodu QR dla aplikacji uwierzytelniającej.
+
+en: Could not verify authenticator code.
+pl: Nie udało się zweryfikować kodu z aplikacji uwierzytelniającej.
+
+en: Type DELETE exactly to confirm account deletion.
+pl: Aby potwierdzić usunięcie konta, wpisz dokładnie DELETE.
+
+en: The confirmation email could not be sent, so deletion was not scheduled.
+pl: Nie udało się wysłać wiadomości z potwierdzeniem, więc usunięcie konta nie zostało zaplanowane.
+
+en: Invalid authenticator secret.
+internal
+
+en: Could not initialize MFA encryption.
+internal
+
+en: Could not protect the authenticator secret.
+internal
+
+en: Could not read the authenticator secret.
+internal
+
+en: Could not sign the value.
+internal
+
+en: Unsupported security-code purpose.
+internal
+
+en: An account is required.
+internal
+
+en: User is required.
+internal
+
+en: A public application URL is required for email verification.
+internal
+
+en: Could not queue email.
+internal
+
+en: SMTP accepted but delivery ownership expired.
+internal
+
+en: MFA_ENCRYPTION_KEY must be a unique secret of at least {0} characters. Use the dev profile for local development.
+internal
+
+# --- Security notice emails (subject and body; the footer comes from email.security.footer) ---------
+
+en: Your StockWatch password was changed
+pl: Hasło do StockWatch zostało zmienione
+
+en: Your password was changed and other sessions were signed out.
+pl: Hasło zostało zmienione, a pozostałe sesje zostały wylogowane.
+
+en: Your StockWatch password was reset
+pl: Hasło do StockWatch zostało zresetowane
+
+en: Your password was reset and every existing session was signed out.
+pl: Hasło zostało zresetowane, a wszystkie istniejące sesje zostały wylogowane.
+
+en: Authenticator verification enabled
+pl: Włączono weryfikację aplikacją uwierzytelniającą
+
+en: Authenticator-app verification was enabled on your account.
+pl: Na Twoim koncie włączono weryfikację aplikacją uwierzytelniającą.
+
+en: Authenticator verification disabled
+pl: Wyłączono weryfikację aplikacją uwierzytelniającą
+
+en: Authenticator-app verification was disabled on your account.
+pl: Na Twoim koncie wyłączono weryfikację aplikacją uwierzytelniającą.
+
+en: New recovery codes generated
+pl: Wygenerowano nowe kody odzyskiwania
+
+en: Your previous authenticator recovery codes were revoked.
+pl: Poprzednie kody odzyskiwania zostały unieważnione.
+
+en: Repeated wrong authenticator codes
+pl: Wielokrotnie podano błędny kod z aplikacji uwierzytelniającej
+
+en: Someone entered your correct password but {0} wrong authenticator or recovery codes within 24 hours. Code entry is paused for 1 hour.
+pl: Ktoś podał poprawne hasło do Twojego konta, ale w ciągu 24 godzin wpisał {0} błędnych kodów z aplikacji lub kodów odzyskiwania. Wprowadzanie kodów wstrzymano na godzinę.
+
+en: Other StockWatch sessions signed out
+pl: Wylogowano pozostałe sesje StockWatch
+
+en: All other signed-in sessions were revoked from Settings.
+pl: Wszystkie pozostałe zalogowane sesje zostały wylogowane w Ustawieniach.
+
+en: StockWatch account deletion cancelled
+pl: Anulowano usunięcie konta StockWatch
+
+en: Your account deletion was cancelled. You can sign in again.
+pl: Usunięcie konta zostało anulowane. Możesz się ponownie zalogować.
+
+en: Many failed sign-in attempts on your StockWatch account
+pl: Wiele nieudanych prób logowania na Twoje konto StockWatch
+
+en: Sign-in to your account received an unusually large number of attempts and is paused for browsers that have not signed in to it before. Browsers you already use can still sign in.
+pl: Na Twoje konto podjęto nietypowo dużo prób logowania. Logowanie zostało wstrzymane dla przeglądarek, z których wcześniej nie logowano się na to konto. Przeglądarki, których już używasz, nadal mogą się logować.
+
+# --- Settings: confirmations --------------------------------------------------------------------------
+
+en: Appearance preferences applied.
+pl: Zastosowano ustawienia wyglądu.
+
+en: Analysis and alert preferences applied to future signals.
+pl: Ustawienia analizy i alertów zostaną zastosowane do przyszłych sygnałów.
+
+en: Analysis and alert preferences were restored to factory settings.
+pl: Przywrócono domyślne ustawienia analizy i alertów.
+
+en: Shared analysis settings were restored to factory values.
+pl: Przywrócono domyślne wartości wspólnych ustawień analizy.
+
+en: Candlestick detection rules applied to future detections.
+pl: Reguły wykrywania formacji świecowych zostaną zastosowane do przyszłych wykryć.
+
+en: Candlestick detection rules were restored to factory settings.
+pl: Przywrócono domyślne reguły wykrywania formacji świecowych.
+
+en: Candlestick definitions and trade plans applied to future signals.
+pl: Definicje formacji świecowych i plany transakcji zostaną zastosowane do przyszłych sygnałów.
+
+en: Scoring and cross-pattern confluence changes applied.
+pl: Zastosowano zmiany punktacji i zbieżności między formacjami.
+
+en: Shared Elliott Wave definitions applied to future detections.
+pl: Wspólne definicje fal Elliotta zostaną zastosowane do przyszłych wykryć.
+
+en: Elliott Wave definitions were restored to factory settings.
+pl: Przywrócono domyślne definicje fal Elliotta.
+
+en: Harmonic Formation definitions applied to future detections and reconstructed overlays.
+pl: Definicje formacji harmonicznych zostaną zastosowane do przyszłych wykryć i odtworzonych nakładek.
+
+# --- Settings: validation -----------------------------------------------------------------------------
+
+en: Choose a valid six-digit color.
+pl: Wybierz prawidłowy kolor zapisany sześcioma cyframi szesnastkowymi.
+
+en: Choose two different Elliott Wave colors.
+pl: Wybierz dwa różne kolory fal Elliotta.
+
+en: Choose three different Elliott Wave colors.
+pl: Wybierz trzy różne kolory fal Elliotta.
+
+en: Choose a valid factory-reset scope.
+pl: Wybierz prawidłowy zakres przywracania ustawień domyślnych.
+
+en: Choose a valid scoring profile to reset.
+pl: Wybierz prawidłowy profil punktacji do przywrócenia.
+
+en: Choose a valid candlestick pattern to reset.
+pl: Wybierz prawidłową formację świecową do przywrócenia.
+
+en: Choose a valid Harmonic Formation profile to reset.
+pl: Wybierz prawidłowy profil formacji harmonicznej do przywrócenia.
+
+en: Choose a configurable candlestick pattern.
+pl: Wybierz konfigurowalną formację świecową.
+
+en: Enter a whole number for {0}.
+pl: Wpisz liczbę całkowitą w polu „{0}”.
+
+en: Enter a valid number for {0}.
+pl: Wpisz prawidłową liczbę w polu „{0}”.
+
+en: A value is required for {0}.
+pl: Uzupełnij pole „{0}”.
+
+en: A candlestick pattern definition is missing.
+pl: Brak definicji formacji świecowej.
+
+en: A candlestick risk-to-reward ratio is outside its supported range.
+pl: Stosunek zysku do ryzyka dla formacji świecowej wykracza poza obsługiwany zakres.
+
+en: A candlestick threshold is outside its supported range.
+pl: Próg formacji świecowej wykracza poza obsługiwany zakres.
+
+en: A valid directional stop-loss rule is required.
+pl: Wymagana jest prawidłowa reguła stop loss dla danego kierunku.
+
+en: An incomplete candlestick pattern definition was saved.
+pl: Zapisano niekompletną definicję formacji świecowej.
+
+en: An incomplete candlestick stop-loss rule was saved.
+pl: Zapisano niekompletną regułę stop loss dla formacji świecowej.
+
+en: Every candlestick ATR circuit-breaker profile is required.
+pl: Wymagane są wszystkie profile bezpiecznika ATR dla formacji świecowych.
+
+en: Every candlestick pattern definition is required.
+pl: Wymagane są definicje wszystkich formacji świecowych.
+
+en: Every candlestick risk-to-reward ratio is required.
+pl: Wymagane są wszystkie wartości stosunku zysku do ryzyka dla formacji świecowych.
+
+en: Every candlestick setting must be submitted.
+pl: Należy przesłać wszystkie ustawienia formacji świecowych.
+
+en: Could not save candlestick settings.
+pl: Nie udało się zapisać ustawień formacji świecowych.
+
+en: Invalid candlestick pattern.
+pl: Nieprawidłowa formacja świecowa.
+
+en: Unsupported candlestick pattern.
+pl: Nieobsługiwana formacja świecowa.
+
+en: Every scoring parameter must be submitted.
+pl: Należy przesłać wszystkie parametry punktacji.
+
+en: Every cross-pattern confluence source must be submitted.
+pl: Należy przesłać wszystkie źródła zbieżności między formacjami.
+
+en: A scoring profile is missing.
+pl: Brak profilu punktacji.
+
+en: An Elliott Wave structural switch is missing.
+pl: Brak przełącznika reguły strukturalnej fal Elliotta.
+
+en: An Elliott Wave value is outside its supported range.
+pl: Wartość ustawienia fal Elliotta wykracza poza obsługiwany zakres.
+
+en: An incomplete Elliott Wave profile was saved.
+pl: Zapisano niekompletny profil fal Elliotta.
+
+en: A shared Elliott Wave profile is required.
+pl: Wymagany jest wspólny profil fal Elliotta.
+
+en: The Elliott Wave profile is missing.
+pl: Brak profilu fal Elliotta.
+
+en: Could not save Elliott Wave settings.
+pl: Nie udało się zapisać ustawień fal Elliotta.
+
+en: A harmonic pattern profile is missing.
+pl: Brak profilu formacji harmonicznej.
+
+en: A harmonic pattern is required.
+pl: Wymagana jest formacja harmoniczna.
+
+en: Invalid harmonic detection rules.
+pl: Nieprawidłowe reguły wykrywania formacji harmonicznych.
+
+en: Invalid harmonic ratio override.
+pl: Nieprawidłowa wartość współczynnika formacji harmonicznej.
+
+en: Invalid harmonic soft-rule tolerance.
+pl: Nieprawidłowa tolerancja miękkiej reguły formacji harmonicznej.
+
+en: Required visual leg difference must exceed the equality tolerance.
+pl: Wymagana różnica długości odcinków musi przekraczać tolerancję równości.
+
+en: A technical indicator profile is required.
+pl: Wymagany jest profil wskaźników technicznych.
+
+en: Indicator profile periods are invalid.
+pl: Okresy w profilu wskaźników są nieprawidłowe.
+
+en: MACD fast period must be below its slow period.
+pl: Okres szybkiej średniej MACD musi być krótszy niż okres wolnej średniej.
+
+en: RSI lower boundary must be below its upper boundary.
+pl: Dolna granica RSI musi być niższa niż górna.
+
+en: Adaptive trend parameters are required.
+pl: Wymagane są parametry trendu adaptacyjnego.
+
+en: Adaptive terminal median distance must be between 0 and 10 ATR.
+pl: Adaptacyjna odległość końcowa od mediany musi wynosić od 0 do 10 ATR.
+
+en: Terminal median distance must be between 0 and 10 ATR.
+pl: Odległość końcowa od mediany musi wynosić od 0 do 10 ATR.
+
+en: Terminal median distance must be disabled (-1) or between 0 and 10 ATR.
+pl: Odległość końcowa od mediany musi być wyłączona (-1) lub wynosić od 0 do 10 ATR.
+
+en: Directional move must be between 0 and 50 percent.
+pl: Ruch kierunkowy musi wynosić od 0 do 50 procent.
+
+en: Directional participation window must be between 2 and 100 candles.
+pl: Okno udziału ruchu kierunkowego musi obejmować od 2 do 100 świec.
+
+en: Directional transitions must be between 1 and window candles minus one.
+pl: Liczba zmian kierunku musi wynosić od 1 do liczby świec w oknie pomniejszonej o jeden.
+
+en: Minimum regression R-squared must be between 0 and 1.
+pl: Minimalny współczynnik R² regresji musi wynosić od 0 do 1.
+
+en: Minimum swing displacement must be between 0 and 20 ATR.
+pl: Minimalne przesunięcie wahania musi wynosić od 0 do 20 ATR.
+
+en: Minimum trend candles cannot exceed the trend lookback.
+pl: Minimalna liczba świec trendu nie może przekraczać okresu obserwacji trendu.
+
+en: Minimum trend candles must be between 2 and 100.
+pl: Minimalna liczba świec trendu musi wynosić od 2 do 100.
+
+en: Minimum trend move must be between 0% and 50%.
+pl: Minimalny ruch trendu musi wynosić od 0% do 50%.
+
+en: Normalized slope threshold must be between 0 and 10.
+pl: Próg znormalizowanego nachylenia musi wynosić od 0 do 10.
+
+en: Pivot left/right confirmation bars must be between 1 and 20.
+pl: Liczba świec potwierdzających punkt zwrotny po lewej i prawej stronie musi wynosić od 1 do 20.
+
+en: Pivot lookback cannot establish two confirmed highs and lows.
+pl: Przy tym okresie obserwacji nie da się wyznaczyć dwóch potwierdzonych szczytów i dołków.
+
+en: Pivot prominence must be between 0 and 10 ATR.
+pl: Wyrazistość punktu zwrotnego musi wynosić od 0 do 10 ATR.
+
+en: Regression window must be between 3 and 200 candles.
+pl: Okno regresji musi obejmować od 3 do 200 świec.
+
+en: Trend lookback candles must be between 2 and 100.
+pl: Okres obserwacji trendu musi wynosić od 2 do 100 świec.
+
+en: Candle lookback must be between {0} and {1}.
+pl: Okres obserwacji świec musi wynosić od {0} do {1}.
+
+en: Analysis preferences are required.
+internal
+
+en: Analysis preferences could not be serialized.
+internal
+
+en: Stored analysis preferences are invalid.
+internal
+
+en: Candlestick pattern definitions are required.
+internal
+
+en: Candlestick pattern settings are required.
+internal
+
+en: Candlestick trend-detection rules are required.
+internal
+
+en: An account and candlestick detection rules are required.
+internal
+
+en: An account, interval, and indicator periods are required.
+internal
+
+en: Scoring preferences are required.
+internal
+
+en: Scoring preferences could not be serialized.
+internal
+
+en: Unsupported scoring profile version.
+internal
+
+en: All {0} scoring profiles are required.
+internal
+
+en: Score version must not exceed 32 characters.
+internal
+
+en: Elliott Wave settings are required.
+internal
+
+en: Harmonic preferences are required.
+internal
+
+en: Harmonic preferences could not be serialized.
+internal
+
+en: Stored harmonic global rule is invalid.
+internal
+
+en: Stored harmonic pattern rules are invalid.
+internal
+
+en: Stored harmonic preferences are invalid.
+internal
+
+en: Stored harmonic ratio is invalid.
+internal
+
+en: This trend policy requires regression parameters.
+internal
+
+en: This trend policy requires swing parameters.
+internal
+
+en: A trend policy is required.
+internal
+
+en: A trend policy and both evidence records are required.
+internal
+
+en: Adaptive factory trend detection requires a daily, weekly, or monthly interval.
+internal
+
+en: Only daily, weekly, and monthly factory trend models are supported.
+internal
+
+# --- Intervals and chart data -------------------------------------------------------------------------
+
+en: A Daily, Weekly, or Monthly interval is required.
+pl: Wybierz interwał dzienny, tygodniowy lub miesięczny.
+
+en: Choose Daily, Weekly or Monthly.
+pl: Wybierz interwał dzienny, tygodniowy lub miesięczny.
+
+en: Choose All, Daily, Weekly, or Monthly.
+pl: Wybierz wszystkie interwały albo interwał dzienny, tygodniowy lub miesięczny.
+
+en: Only daily, weekly, and monthly analysis is supported.
+pl: Obsługiwana jest tylko analiza na interwale dziennym, tygodniowym i miesięcznym.
+
+en: Pattern overlays require daily, weekly or monthly candles.
+pl: Nakładki formacji wymagają świec dziennych, tygodniowych lub miesięcznych.
+
+en: Elliott Wave overlays require a daily, weekly, or monthly interval.
+pl: Nakładki fal Elliotta wymagają interwału dziennego, tygodniowego lub miesięcznego.
+
+en: Harmonic overlays require a daily, weekly, or monthly interval.
+pl: Nakładki formacji harmonicznych wymagają interwału dziennego, tygodniowego lub miesięcznego.
+
+en: Anchored volume profiles require a daily, weekly, or monthly interval.
+pl: Zakotwiczony profil wolumenu wymaga interwału dziennego, tygodniowego lub miesięcznego.
+
+en: Elliott Wave detection supports daily, weekly, and monthly intervals.
+pl: Wykrywanie fal Elliotta obsługuje interwały dzienny, tygodniowy i miesięczny.
+
+en: Elliott Wave alerts are available only for daily, weekly, and monthly intervals.
+pl: Alerty fal Elliotta są dostępne tylko dla interwałów dziennego, tygodniowego i miesięcznego.
+
+en: Historical Elliott details require a daily, weekly, or monthly interval.
+pl: Szczegóły historycznych fal Elliotta wymagają interwału dziennego, tygodniowego lub miesięcznego.
+
+en: Historical harmonic details require a daily, weekly, or monthly interval.
+pl: Szczegóły historycznych formacji harmonicznych wymagają interwału dziennego, tygodniowego lub miesięcznego.
+
+en: Historical candlestick analysis supports daily, weekly, and monthly intervals.
+pl: Historyczna analiza formacji świecowych obsługuje interwały dzienny, tygodniowy i miesięczny.
+
+en: Technical outlook supports daily, weekly, and monthly intervals.
+pl: Ocena techniczna obsługuje interwały dzienny, tygodniowy i miesięczny.
+
+en: Automated Technical Outlook supports daily, weekly, and monthly intervals.
+pl: Automatyczna ocena techniczna obsługuje interwały dzienny, tygodniowy i miesięczny.
+
+en: Demo Trading supports daily, weekly, and monthly analysis.
+pl: Konto demo obsługuje analizę na interwale dziennym, tygodniowym i miesięcznym.
+
+en: Daily Elliott waves do not have a configured child timeframe.
+pl: Dla fal Elliotta na interwale dziennym nie skonfigurowano niższego interwału.
+
+en: Wave drill-down currently moves from monthly to weekly or weekly to daily candles.
+pl: Szczegółowy podgląd fali przechodzi obecnie z interwału miesięcznego na tygodniowy lub z tygodniowego na dzienny.
+
+en: Unsupported Elliott hierarchy interval.
+pl: Nieobsługiwany interwał hierarchii fal Elliotta.
+
+en: Unsupported parent interval.
+pl: Nieobsługiwany interwał nadrzędny.
+
+en: Unsupported candle interval.
+pl: Nieobsługiwany interwał świec.
+
+en: Invalid Elliott hierarchy boundary.
+pl: Nieprawidłowa granica hierarchii fal Elliotta.
+
+en: Invalid parent-wave boundary.
+pl: Nieprawidłowa granica fali nadrzędnej.
+
+en: Invalid candle timestamp.
+pl: Nieprawidłowy znacznik czasu świecy.
+
+en: A positive, ordered candle range is required.
+pl: Wymagany jest prawidłowy, uporządkowany zakres świec.
+
+en: The candle price range is invalid.
+pl: Zakres cen świecy jest nieprawidłowy.
+
+en: No candle data is available for the requested profile.
+pl: Brak danych świecowych dla wybranego profilu.
+
+en: Candle history changed during analysis; retry the range request.
+pl: Historia notowań zmieniła się w trakcie analizy. Spróbuj ponownie.
+
+en: A valid anchor candle is required.
+pl: Wymagana jest prawidłowa świeca zakotwiczenia.
+
+en: The selected anchor candle is not available in the cached chart history.
+pl: Wybranej świecy zakotwiczenia nie ma w zapisanej historii wykresu.
+
+en: Chart indicator configuration is invalid.
+pl: Konfiguracja wskaźników wykresu jest nieprawidłowa.
+
+en: Chart indicator id is too long.
+pl: Identyfikator wskaźnika wykresu jest za długi.
+
+en: Chart indicator parameters are invalid.
+pl: Parametry wskaźnika wykresu są nieprawidłowe.
+
+en: At most 32 chart indicators can be active at once.
+pl: Na wykresie można jednocześnie włączyć najwyżej 32 wskaźniki.
+
+en: Configurable chart indicators are unavailable.
+pl: Konfigurowalne wskaźniki wykresu są niedostępne.
+
+en: Unsupported chart indicator: {0}
+pl: Nieobsługiwany wskaźnik wykresu: {0}
+
+en: Historical calculation failed.
+pl: Obliczenia historyczne nie powiodły się.
+
+en: Historical calculation interrupted.
+pl: Obliczenia historyczne zostały przerwane.
+
+en: Historical calculation is busy; retry shortly.
+pl: Obliczenia historyczne są w toku. Spróbuj ponownie za chwilę.
+
+en: A historical candlestick pattern is required.
+pl: Wymagana jest historyczna formacja świecowa.
+
+en: Historical candlestick signal is outside the completed candle archive.
+pl: Historyczny sygnał świecowy wykracza poza archiwum zamkniętych świec.
+
+en: Historical candlestick signal is outside the current analysis window.
+pl: Historyczny sygnał świecowy wykracza poza bieżące okno analizy.
+
+en: The Elliott pattern candidate is no longer available in the completed candle cache.
+pl: Ta formacja Elliotta nie jest już dostępna w archiwum zamkniętych świec.
+
+en: The historical Elliott wave is no longer available in the completed candle cache.
+pl: Ta historyczna fala Elliotta nie jest już dostępna w archiwum zamkniętych świec.
+
+en: The historical harmonic formation is no longer available in the completed candle cache.
+pl: Ta historyczna formacja harmoniczna nie jest już dostępna w archiwum zamkniętych świec.
+
+en: The harmonic confirmation candle is missing from the completed cache.
+pl: W archiwum zamkniętych świec brakuje świecy potwierdzającej formację harmoniczną.
+
+en: The harmonic confirmation candle is unavailable.
+pl: Świeca potwierdzająca formację harmoniczną jest niedostępna.
+
+en: Unsupported Elliott candle interval.
+internal
+
+en: Unsupported Elliott parent label.
+internal
+
+en: Unsupported profile interval.
+internal
+
+en: Candle completion is only defined for daily, weekly, and monthly intervals.
+internal
+
+en: Candlestick V4 scoring supports DAILY, WEEKLY, and MONTHLY intervals only.
+internal
+
+en: Elliott indicator enrichment supports ONE_HOUR, DAILY, WEEKLY, and MONTHLY intervals only.
+internal
+
+en: Cannot enrich candles from mixed intervals.
+internal
+
+en: Indicator interval is required.
+internal
+
+en: Every chart indicator needs an id.
+internal
+
+en: Invalid historical candle cursor.
+internal
+
+en: At least one candle is required.
+internal
+
+en: At least one completed candle is required.
+internal
+
+en: A cached candle contains an invalid price.
+internal
+
+en: Candles are required to locate a trend leg.
+internal
+
+en: Signal direction is required to locate a trend leg.
+internal
+
+en: Directional participation requires an exact structural trend leg.
+internal
+
+en: KDE requires a shared series and finite non-negative bandwidth.
+internal
+
+en: Could not fingerprint historical signal settings.
+internal
+
+en: Could not serialize historical signal cache entry.
+internal
+
+en: Candle interval {0}
+internal
+
+en: Unsupported candlestick scoring interval: {0}
+internal
+
+en: Unsupported trade-plan interval: {0}
+internal
+
+en: Unsupported Elliott degree label: {0}
+internal
+
+en: Unknown subdivision mode: {0}
+internal
+
+en: Unexpected complex correction kind {0}
+internal
+
+en: Unsupported developing Elliott stage: {0}
+internal
+
+en: patternCandleCount must be positive.
+internal
+
+# --- Instruments, search and market data ----------------------------------------------------------
+
+en: Invalid market symbol.
+pl: Nieprawidłowy symbol instrumentu.
+
+en: Invalid market identifier code.
+pl: Nieprawidłowy kod identyfikacyjny rynku (MIC).
+
+en: Invalid search query.
+pl: Nieprawidłowe zapytanie wyszukiwania.
+
+en: Search is too long.
+pl: Zapytanie jest za długie.
+
+en: A ticker is required.
+pl: Podaj ticker.
+
+en: Unknown stock.
+pl: Nieznana akcja.
+
+en: Instrument metadata is unavailable. Try again later.
+pl: Dane o instrumencie są niedostępne. Spróbuj ponownie później.
+
+en: No market data was found for {0}. Check the ticker and exchange, then try again.
+pl: Nie znaleziono danych rynkowych dla {0}. Sprawdź ticker i giełdę, a następnie spróbuj ponownie.
+
+en: Alerts and outlook tracking cover exchange-traded stocks, funds and indices. {0} trades around the clock (crypto or currency pair), so the candle rules do not apply to it.
+pl: Alerty i obserwacja ocen technicznych obejmują akcje, fundusze i indeksy notowane na giełdzie. {0} jest notowany całą dobę (kryptowaluta lub para walutowa), więc reguły dotyczące świec nie mają do niego zastosowania.
+
+en: Market data providers were unavailable while verifying a new listing.
+internal
+
+en: Global market data capacity has been reached.
+pl: Osiągnięto ogólny limit instrumentów śledzonych w serwisie.
+
+en: Global market-data tracking capacity has been reached.
+pl: Osiągnięto ogólny limit instrumentów śledzonych w serwisie.
+
+en: You can track at most {0} companies across technical alerts and automated outlooks.
+pl: Możesz śledzić najwyżej {0} spółek łącznie w alertach technicznych i automatycznych ocenach technicznych.
+
+en: You can track at most {0} instruments across technical alerts and automated outlooks.
+pl: Możesz śledzić najwyżej {0} instrumentów łącznie w alertach technicznych i automatycznych ocenach technicznych.
+
+en: Per-user tracked market instrument limit reached ({0}).
+pl: Osiągnięto limit śledzonych instrumentów na konto ({0}).
+
+en: The temporary top-200 universe would exceed global market data capacity.
+internal
+
+en: Temporary U.S. test universe must contain 200 unique symbols.
+internal
+
+en: Twelve Data API key is not configured.
+internal
+
+en: Twelve Data is disabled.
+internal
+
+en: Twelve Data listing coverage is unavailable; revalidation is deferred for up to six hours.
+internal
+
+en: Twelve Data returned a different exchange than requested.
+internal
+
+en: Twelve Data returned an empty response.
+internal
+
+en: Twelve Data returned no candles.
+internal
+
+en: Twelve Data request failed: {0}
+internal
+
+en: Twelve Data response could not be read: {0}
+internal
+
+en: Twelve Data response could not be parsed: {0}
+internal
+
+en: Twelve Data returned a {0} listing for a {1} instrument.
+internal
+
+en: Yahoo Finance fallback is disabled.
+internal
+
+en: Yahoo Finance request failed.
+internal
+
+en: Yahoo Finance returned an empty response.
+internal
+
+en: Yahoo Finance returned no candles.
+internal
+
+en: Yahoo Finance request failed: {0}
+internal
+
+en: Yahoo Finance could not retrieve {0}
+internal
+
+en: Yahoo Finance returned no OHLC data for {0}.
+internal
+
+en: Yahoo Finance returned no chart result for {0}.
+internal
+
+en: Yahoo Finance returned only incomplete candles for {0}.
+internal
+
+en: Yahoo candidate {0} belongs to a different company.
+internal
+
+en: Yahoo candidate {0} does not match the expected {1} exchange listing.
+internal
+
+en: Yahoo candidate {0} has a different instrument type.
+internal
+
+en: Yahoo candidate {0} uses {1} instead of {2}.
+internal
+
+en: Could not serialize the shared quote cache entry
+internal
+
+# --- Alerts, signals and archives ---------------------------------------------------------------------
+
+en: Alert changes are required.
+pl: Wybierz zmiany alertów.
+
+en: Alert interval and signal are required.
+pl: Podaj interwał i kierunek sygnału alertu.
+
+en: An alert change batch must contain between 1 and {0} entries.
+pl: Pakiet zmian alertów musi zawierać od 1 do {0} pozycji.
+
+en: Duplicate alert rule in change batch.
+pl: Ta sama reguła alertu występuje w zmianach więcej niż raz.
+
+en: Active alert rule not found.
+pl: Nie znaleziono aktywnej reguły alertu.
+
+en: Only BUY and SELL alert signals can be tracked.
+pl: Można śledzić tylko alerty z sygnałem kupna lub sprzedaży.
+
+en: Only BUY and SELL signals can be checked.
+pl: Można sprawdzać tylko sygnały kupna i sprzedaży.
+
+en: Choose at least one pattern family and interval.
+pl: Wybierz co najmniej jedną rodzinę formacji i jeden interwał.
+
+en: Selected rules are required.
+pl: Wybierz reguły.
+
+en: Select between 1 and 27 followed rules.
+pl: Wybierz od 1 do 27 obserwowanych reguł.
+
+en: Signal event not found.
+pl: Nie znaleziono sygnału.
+
+en: Select at least one signal to delete.
+pl: Wybierz co najmniej jeden sygnał do usunięcia.
+
+en: Select between 1 and 100 signals to delete.
+pl: Wybierz od 1 do 100 sygnałów do usunięcia.
+
+en: Delete at most 100 signals at once.
+pl: Jednorazowo możesz usunąć najwyżej 100 sygnałów.
+
+en: The signal selection is invalid.
+pl: Wybór sygnałów jest nieprawidłowy.
+
+en: One or more selected signals no longer exist or do not belong to this account.
+pl: Co najmniej jeden z wybranych sygnałów już nie istnieje lub nie należy do tego konta.
+
+en: Unsupported signal archive sort: {0}
+pl: Nieobsługiwane sortowanie archiwum sygnałów: {0}
+
+en: Invalid alert changes.
+pl: Nieprawidłowe zmiany alertów.
+
+en: The alert changes could not be applied.
+pl: Nie udało się zastosować zmian alertów.
+
+en: Invalid alert request.
+pl: Nieprawidłowe żądanie alertu.
+
+en: The alert request could not be completed.
+pl: Nie udało się wykonać żądania alertu.
+
+en: Invalid rule selection.
+pl: Nieprawidłowy wybór reguł.
+
+en: The selected rules could not be deleted.
+pl: Nie udało się usunąć wybranych reguł.
+
+en: Invalid signal-check request.
+pl: Nieprawidłowe żądanie sprawdzenia sygnału.
+
+en: The signal check could not be completed.
+pl: Nie udało się sprawdzić sygnału.
+
+en: Invalid unfollow request.
+pl: Nieprawidłowe żądanie zakończenia obserwacji.
+
+en: The company could not be unfollowed.
+pl: Nie udało się przestać obserwować spółki.
+
+en: The followed tickers could not be unfollowed.
+pl: Nie udało się przestać obserwować wybranych tickerów.
+
+en: Use named watchlist index imports.
+pl: Do importu indeksów użyj nazwanej listy obserwowanych.
+
+en: Choose a valid notification scope and watchlist.
+pl: Wybierz prawidłowy zakres powiadomień i listę obserwowanych.
+
+en: A persisted event is required for a technical follow-up.
+internal
+
+en: A tracked signal event is required.
+internal
+
+en: A persisted Elliott event and prepared projection are required.
+internal
+
+en: A persisted Elliott event and prepared trade plan are required.
+internal
+
+en: A developing Elliott stage is required for email delivery.
+internal
+
+en: A harmonic geometry snapshot is required for email delivery.
+internal
+
+en: A directional signal, positive entry, and formation are required.
+internal
+
+en: A candlestick formation is required.
+internal
+
+en: A resolved Elliott trade plan is required.
+internal
+
+en: A resolved harmonic stop plan is required.
+internal
+
+en: A terminal candlestick trade status is required.
+internal
+
+en: A terminal detected-signal outcome is required.
+internal
+
+en: A terminal outcome is required.
+internal
+
+en: A terminal signal lifecycle status is required.
+internal
+
+en: A valid Elliott candidate and endpoint are required.
+internal
+
+en: A valid Elliott stage and endpoint are required.
+internal
+
+en: A valid harmonic pattern and endpoint are required.
+internal
+
+en: An active state is required.
+internal
+
+en: Entry, stop and reward/risk must be finite and positive.
+internal
+
+en: No positive primary target.
+internal
+
+en: No valid adverse structural stop.
+internal
+
+en: Harmonic snapshots must not exceed 16000 characters.
+internal
+
+en: The detected candlestick range is not valid for lifecycle tracking.
+internal
+
+en: The detected candlestick range is unavailable for lifecycle tracking.
+internal
+
+en: The formation has no complete price range.
+internal
+
+en: The stored interval profile does not match the signal interval.
+internal
+
+en: Unexpected candlestick trade status: {0}
+internal
+
+en: Unsupported candlestick lifecycle pattern: {0}
+internal
+
+en: No candlestick trade plan exists for {0}.
+internal
+
+en: Technical stage failed: {0}
+internal
+
+en: No alert schedule is configured for {0}
+internal
+
+# --- Technical outlook ---------------------------------------------------------------------------------
+
+en: Choose each outlook interval once.
+pl: Każdy interwał oceny technicznej wybierz tylko raz.
+
+en: Choose alert or outlook changes to apply.
+pl: Wybierz zmiany alertów lub ocen technicznych do zastosowania.
+
+en: Technical outlook change was not found.
+pl: Nie znaleziono zmiany oceny technicznej.
+
+en: The stored technical snapshot could not be read.
+internal
+
+en: The technical entry snapshot could not be stored.
+internal
+
+en: Stored technical outlook change report could not be read.
+internal
+
+en: Stored technical outlook snapshot could not be read.
+internal
+
+en: Technical outlook snapshot could not be stored.
+internal
+
+# --- Watchlists and imports ----------------------------------------------------------------------------
+
+en: Watchlist not found.
+pl: Nie znaleziono listy obserwowanych.
+
+en: Choose a watchlist to edit.
+pl: Wybierz listę obserwowanych do edycji.
+
+en: Choose a watchlist before enabling monitoring.
+pl: Przed włączeniem obserwacji wybierz listę obserwowanych.
+
+en: Select a watchlist or create one.
+pl: Wybierz listę obserwowanych lub utwórz nową.
+
+en: Choose valid watchlists.
+pl: Wybierz prawidłowe listy obserwowanych.
+
+en: Choose valid watchlist changes.
+pl: Wybierz prawidłowe zmiany list obserwowanych.
+
+en: Choose valid watchlist settings.
+pl: Wybierz prawidłowe ustawienia listy obserwowanych.
+
+en: Choose valid allowed signal types.
+pl: Wybierz prawidłowe dozwolone rodzaje sygnałów.
+
+en: Choose each signal type, direction and interval once.
+pl: Każdy rodzaj sygnału, kierunek i interwał wybierz tylko raz.
+
+en: Choose instruments or indexes to add.
+pl: Wybierz instrumenty lub indeksy do dodania.
+
+en: Select at least one instrument.
+pl: Wybierz co najmniej jeden instrument.
+
+en: Every selection must have a valid identifier.
+pl: Każdy wybrany element musi mieć prawidłowy identyfikator.
+
+en: Some selected instruments are no longer in this watchlist. Refresh and select them again.
+pl: Niektórych wybranych instrumentów nie ma już na tej liście. Odśwież stronę i wybierz je ponownie.
+
+en: Use 1–{0} characters without control characters.
+pl: Użyj od 1 do {0} znaków bez znaków sterujących.
+
+en: Use at most {0} characters without control characters.
+pl: Użyj najwyżej {0} znaków bez znaków sterujących.
+
+en: This watchlist does not allow candlestick signals. Choose another list or edit its allowed signal types.
+pl: Ta lista obserwowanych nie dopuszcza sygnałów formacji świecowych. Wybierz inną listę lub zmień dozwolone rodzaje sygnałów.
+
+en: This watchlist does not allow elliott wave signals. Choose another list or edit its allowed signal types.
+pl: Ta lista obserwowanych nie dopuszcza sygnałów fal Elliotta. Wybierz inną listę lub zmień dozwolone rodzaje sygnałów.
+
+en: This watchlist does not allow harmonic formation signals. Choose another list or edit its allowed signal types.
+pl: Ta lista obserwowanych nie dopuszcza sygnałów formacji harmonicznych. Wybierz inną listę lub zmień dozwolone rodzaje sygnałów.
+
+en: This watchlist does not allow outlook signals. Choose another list or edit its allowed signal types.
+pl: Ta lista obserwowanych nie dopuszcza ocen technicznych. Wybierz inną listę lub zmień dozwolone rodzaje sygnałów.
+
+en: This watchlist does not allow congress signals. Choose another list or edit its allowed signal types.
+pl: Ta lista obserwowanych nie dopuszcza alertów o transakcjach członków Kongresu. Wybierz inną listę lub zmień dozwolone rodzaje sygnałów.
+
+en: This watchlist does not allow insider signals. Choose another list or edit its allowed signal types.
+pl: Ta lista obserwowanych nie dopuszcza alertów o transakcjach insiderów. Wybierz inną listę lub zmień dozwolone rodzaje sygnałów.
+
+en: This watchlist does not allow {0} signals. Choose another list or edit its allowed signal types.
+pl: Ta lista obserwowanych nie dopuszcza sygnałów typu „{0}”. Wybierz inną listę lub zmień dozwolone rodzaje sygnałów.
+
+en: Import not found.
+pl: Nie znaleziono importu.
+
+en: Duplicate index preset.
+pl: Ten sam zestaw indeksu wybrano więcej niż raz.
+
+en: Unknown index preset.
+pl: Nieznany zestaw indeksu.
+
+en: Select between 1 and 10,000 unique instruments per import.
+pl: W jednym imporcie wybierz od 1 do 10 000 różnych instrumentów.
+
+en: Add at most {0} tickers that are not yet known to StockWatch per import. Index presets are not limited.
+pl: W jednym imporcie dodaj najwyżej {0} tickerów, których StockWatch jeszcze nie zna. Zestawy indeksów nie mają tego limitu.
+
+en: The import exceeds monitoring capacity. Save without alerts or select fewer instruments.
+pl: Import przekracza limit obserwowanych instrumentów. Zapisz bez alertów lub wybierz mniej instrumentów.
+
+en: The import request is invalid.
+pl: Żądanie importu jest nieprawidłowe.
+
+en: The import could not be completed.
+pl: Nie udało się dokończyć importu.
+
+en: The watchlist request is invalid.
+pl: Żądanie dotyczące listy obserwowanych jest nieprawidłowe.
+
+en: The watchlist change could not be completed.
+pl: Nie udało się wprowadzić zmiany na liście obserwowanych.
+
+en: Duplicate index constituent.
+internal
+
+# --- Insider and congressional activity -------------------------------------------------------------
+
+en: Activity signal not found.
+pl: Nie znaleziono alertu o transakcji.
+
+en: Activity notification not found.
+pl: Nie znaleziono powiadomienia o transakcji.
+
+en: Unknown activity signal type.
+pl: Nieznany rodzaj alertu o transakcji.
+
+en: Select at least one activity signal to delete.
+pl: Wybierz co najmniej jeden alert o transakcji do usunięcia.
+
+en: Delete at most 100 activity signals at once.
+pl: Jednorazowo możesz usunąć najwyżej 100 alertów o transakcjach.
+
+en: The activity signal selection is invalid.
+pl: Wybór alertów o transakcjach jest nieprawidłowy.
+
+en: Congressional activity is only available for stocks.
+pl: Transakcje członków Kongresu są dostępne tylko dla akcji.
+
+en: Congressional activity tracking is disabled.
+pl: Śledzenie transakcji członków Kongresu jest wyłączone.
+
+en: CongressInvests data is temporarily unavailable.
+pl: Dane z CongressInvests są chwilowo niedostępne.
+
+en: The daily congressional data request budget has been reached. Cached data remains available.
+pl: Wyczerpano dzienny limit zapytań o dane Kongresu. Zapisane wcześniej dane pozostają dostępne.
+
+en: Only two uncached congressional-history refreshes are allowed per minute. Cached requests do not count.
+pl: W ciągu minuty można wykonać najwyżej dwa odświeżenia historii transakcji Kongresu, które pobierają nowe dane. Odczyty z pamięci podręcznej nie są liczone.
+
+en: This ticker's congressional-history refresh has already been attempted today. Please try again after midnight UTC.
+pl: Historię transakcji Kongresu dla tego tickera próbowano już dziś odświeżyć. Spróbuj ponownie po północy UTC.
+
+en: Insider activity is only available for stocks.
+pl: Transakcje insiderów są dostępne tylko dla akcji.
+
+en: Insider activity tracking is disabled.
+pl: Śledzenie transakcji insiderów jest wyłączone.
+
+en: The shared API Ninjas insider-data limit of {0} requests per hour has been reached.
+pl: Osiągnięto wspólny limit {0} zapytań na godzinę o dane insiderów z API Ninjas.
+
+en: API Ninjas returned an empty insider-data response.
+pl: API Ninjas zwróciło pustą odpowiedź z danymi insiderów.
+
+en: API Ninjas rejected the insider API credential.
+pl: API Ninjas odrzuciło klucz dostępu do danych insiderów.
+
+en: The API Ninjas insider-data quota has been reached.
+pl: Wyczerpano limit danych insiderów w API Ninjas.
+
+en: API Ninjas insider data is temporarily unavailable.
+pl: Dane insiderów z API Ninjas są chwilowo niedostępne.
+
+en: API Ninjas returned an unexpected insider response.
+pl: API Ninjas zwróciło nieoczekiwaną odpowiedź z danymi insiderów.
+
+en: API Ninjas returned unreadable insider data.
+pl: API Ninjas zwróciło nieczytelne dane insiderów.
+
+en: API Ninjas insider activity is not configured.
+pl: Dane o transakcjach insiderów z API Ninjas nie są skonfigurowane.
+
+en: An insider trade delivery is required.
+internal
+
+en: CongressInvests base URL must not be blank.
+internal
+
+en: CongressInvests returned an empty response.
+internal
+
+en: CongressInvests returned an unexpected response.
+internal
+
+en: Congressional data provider request budget is disabled.
+internal
+
+en: API Ninjas base URL must not be blank.
+internal
+
+# --- Demo trading --------------------------------------------------------------------------------------
+
+en: Choose Demo buy or Demo sell.
+pl: Wybierz kupno demo lub sprzedaż demo.
+
+en: Choose either a quantity or a virtual investment amount, not both.
+pl: Podaj liczbę akcji albo kwotę wirtualnej inwestycji, nie obie wartości naraz.
+
+en: A valid demo trade is required.
+pl: Wymagana jest prawidłowa transakcja demo.
+
+en: A valid virtual-trade request identifier is required.
+pl: Wymagany jest prawidłowy identyfikator żądania transakcji demo.
+
+en: Demo trade deleted.
+pl: Transakcja demo została usunięta.
+
+en: Demo trade was not found.
+pl: Nie znaleziono transakcji demo.
+
+en: A reliable current price is not available for this demo trade.
+pl: Dla tej transakcji demo brak wiarygodnej bieżącej ceny.
+
+en: Completed technical data is not available for this demo trade.
+pl: Dla tej transakcji demo nie ma jeszcze danych technicznych z zamkniętych świec.
+
+en: Only an outdated stored price is available for this demo trade. Try again later.
+pl: Dla tej transakcji demo dostępna jest tylko nieaktualna zapisana cena. Spróbuj ponownie później.
+
+en: The latest quote for this demo trade is out of date. Try again in a minute.
+pl: Ostatnie notowanie dla tej transakcji demo jest nieaktualne. Spróbuj ponownie za minutę.
+
+en: Open the stock workspace once so its market metadata can be resolved before creating a demo trade.
+pl: Przed utworzeniem transakcji demo otwórz raz stronę tej akcji, aby można było ustalić jej dane rynkowe.
+
+# --- Infrastructure (never shown to users) ---------------------------------------------------------------
+
+en: DB_URL must use jdbc:postgresql:// for the migration job.
+internal
+
+en: Database migration did not complete successfully.
+internal
+
+en: PUBLIC_BASE_URL must be an absolute HTTPS URL.
+internal
+
+en: TRUSTED_PROXY_IP_REGEX is not a valid regular expression.
+internal
+
+en: No Spring profile is active, so production checks apply. Set SPRING_PROFILES_ACTIVE=prod for a deployment or dev for local development. {0}
+internal
+
+en: Job ownership changed before acknowledgement.
+internal
+
+en: ReadListener is required.
+internal
+
+en: SHA-256 is unavailable
+internal
+
+en: SHA-256 is unavailable.
+internal
+
+en: Unknown work queue.
+internal
+
+en: Handled above
+internal
+
+# Errors of the catalog loader itself
+en: Missing {0}
+internal
+
+en: Duplicate catalog entry: {0}
+internal
+
+en: No translation for: {0}
+internal
+
+en: Translation without English: {0}
+internal
+
+en: Unreadable catalog line: {0}
+internal
+
+# --- Settings validation with a label ({0} is a pattern, profile or field name, translated when known) ---
+
+en: {0} stop-loss value must be a number.
+pl: Wartość stop loss dla formacji „{0}” musi być liczbą.
+
+en: {0} stop-loss value must be between {1} and 50 percent.
+pl: Wartość stop loss dla formacji „{0}” musi wynosić od {1} do 50 procent.
+
+en: {0} risk-to-reward ratio must be a number.
+pl: Stosunek zysku do ryzyka musi być liczbą.
+
+en: {0} risk-to-reward ratio must be between 0.1 and 20.
+pl: Stosunek zysku do ryzyka musi wynosić od 0,1 do 20.
+
+en: {0} ATR period must be a whole number.
+pl: Okres ATR musi być liczbą całkowitą.
+
+en: {0} ATR period must be between 2 and 500 candles.
+pl: Okres ATR musi wynosić od 2 do 500 świec.
+
+en: {0} ATR multiplier must be a number.
+pl: Mnożnik ATR musi być liczbą.
+
+en: {0} ATR multiplier must be between 0.1 and 10.
+pl: Mnożnik ATR musi wynosić od 0,1 do 10.
+
+en: {0} circuit-breaker activation threshold must be a number.
+pl: Próg włączenia bezpiecznika ATR musi być liczbą.
+
+en: {0} circuit-breaker activation threshold must be between 1 and 95 percent.
+pl: Próg włączenia bezpiecznika ATR musi wynosić od 1 do 95 procent.
+
+en: {0} — {1} must be a number.
+pl: „{0}”: wartość „{1}” musi być liczbą.
+
+en: {0} — {1} must be between {2} and {3}.
+pl: „{0}”: wartość „{1}” musi wynosić od {2} do {3}.
+
+en: {0}: choose a valid prior-trend requirement.
+pl: „{0}”: wybierz prawidłowe wymaganie dotyczące wcześniejszego trendu.
+
+en: {0}: choose a valid stop-loss method.
+pl: „{0}”: wybierz prawidłową metodę stop loss.
+
+en: {0}: minimum body size cannot exceed maximum body size.
+pl: „{0}”: minimalny korpus nie może być większy niż maksymalny.
+
+en: {0} points must be a whole number.
+pl: Liczba punktów dla „{0}” musi być liczbą całkowitą.
+
+en: {0} points must be between 0 and 100.
+pl: Liczba punktów dla „{0}” musi wynosić od 0 do 100.
+
+en: {0} included points must total exactly 100 (currently {1}).
+pl: Uwzględnione punkty w profilu „{0}” muszą sumować się dokładnie do 100 (obecnie {1}).
+
+en: {0} confluence points must be between 0 and 100.
+pl: Punkty zbieżności dla rodziny „{0}” muszą wynosić od 0 do 100.
+
+en: {0} confluence settings are missing.
+pl: Brak ustawień zbieżności dla rodziny „{0}”.
+
+en: All Harmonic Formation definitions were restored to factory settings.
+pl: Przywrócono domyślne definicje wszystkich formacji harmonicznych.
+
+en: {0} definitions were restored to factory settings.
+pl: Przywrócono domyślne definicje formacji „{0}”.
+
+en: {0}: the Wave II preferred maximum must remain below the absolute Wave II maximum.
+pl: Preferowane maksimum fali II musi pozostać poniżej bezwzględnego maksimum fali II.
+
+en: {0}: the Wave IV preferred maximum must remain below the absolute Wave IV maximum.
+pl: Preferowane maksimum fali IV musi pozostać poniżej bezwzględnego maksimum fali IV.
+
+en: {0}: the preferred A–B–C maximum must remain below the absolute correction maximum.
+pl: Preferowane maksimum korekty A–B–C musi pozostać poniżej bezwzględnego maksimum korekty.
+
+en: {0}: minimum structure quality cannot exceed minimum alert confidence.
+pl: Minimalna jakość struktury nie może przekraczać minimalnej pewności alertu.
+
+en: {0}: the full I–V span must allow five minimum-length wave legs.
+pl: Pełny zakres I–V musi pomieścić pięć fal o minimalnej długości.
+
+en: {0}: pivot sensitivity levels must increase from level 1 through level 4.
+pl: Czułość punktów zwrotnych musi rosnąć od poziomu 1 do poziomu 4.
+
+en: {0}: enable at least one A–B–C correction shape.
+pl: Włącz co najmniej jeden kształt korekty A–B–C.
+
+en: {0}: {1} minimum must be below its maximum.
+pl: Minimum dla wartości „{1}” musi być niższe niż maksimum.
+
+en: {0}: {1} must stay inside the wider preferred range.
+pl: Wartość „{1}” musi mieścić się w szerszym preferowanym zakresie.
+
+en: {0}: {1} must not exceed {2}.
+pl: „{0}”: wartość „{1}” nie może przekraczać wartości „{2}”.
+
+en: {0}: every numeric rule must be submitted.
+pl: Należy przesłać wszystkie reguły liczbowe fal Elliotta.
+
+en: {0} is required for the migration job.
+internal
+
+en: {0} must not exceed 32000 characters.
+internal
+
+# --- Generic patterns: keep these last, so the specific entries above win ---------------------------
+
+en: {0} must be a whole number from 2 to 500.
+pl: Wartość „{0}” musi być liczbą całkowitą od 2 do 500.
+
+en: {0} must be greater than zero and no more than {1}.
+pl: Wartość „{0}” musi być większa od zera i nie większa niż {1}.
+
+en: {0} must be between {1} and {2}.
+pl: Wartość „{0}” musi wynosić od {1} do {2}.
+
+
+en: {0} must be a whole number.
+pl: Wartość „{0}” musi być liczbą całkowitą.
+
+en: {0} must be a number.
+pl: Wartość „{0}” musi być liczbą.

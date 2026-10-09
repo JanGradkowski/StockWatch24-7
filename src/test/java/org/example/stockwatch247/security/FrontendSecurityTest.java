@@ -5,13 +5,55 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FrontendSecurityTest {
+    /** Message keys referenced by templates (#{key}, #messages.msg('key'), pluralKey) and scripts (i18n.t('key')). */
+    private static final Pattern MESSAGE_KEY = Pattern.compile(
+            "#\\{([\\w.]+)|msg(?:OrNull)?\\('([\\w.]+)'|pluralKey\\('([\\w.]+)'|(?:i18n|StockWatchI18n)\\.(?:t|plural)\\([`'\"]([\\w.]+)"
+                    // Any other quoted dotted name, such as either branch of i18n.t(cond ? 'a.b' : 'a.c').
+                    + "|[`'\"]([A-Za-z]\\w*(?:\\.\\w+)+)[`'\"]");
+    private static Properties englishMessages;
+
+    /**
+     * The source followed by the English text of every message key it uses, so checks for interface
+     * wording keep working now that the wording lives in messages.properties.
+     */
+    private static String english(String source) throws IOException {
+        if (englishMessages == null) {
+            Properties loaded = new Properties();
+            try (Reader reader = Files.newBufferedReader(Path.of("src/main/resources/messages.properties"), StandardCharsets.UTF_8)) {
+                loaded.load(reader);
+            }
+            englishMessages = loaded;
+        }
+        StringBuilder text = new StringBuilder(source);
+        Matcher matcher = MESSAGE_KEY.matcher(source);
+        while (matcher.find()) {
+            String key = null;
+            for (int group = 1; group <= matcher.groupCount() && key == null; group++) key = matcher.group(group);
+            for (String prefix : List.of("", "js.")) {
+                String full = prefix + key;
+                for (String name : englishMessages.stringPropertyNames()) {
+                    // A key built at runtime ('family.' + value) covers every key with that prefix.
+                    boolean matches = full.endsWith(".") ? name.startsWith(full)
+                            : name.equals(full) || name.equals(full + ".one") || name.equals(full + ".other");
+                    if (matches) text.append('\n').append(englishMessages.getProperty(name));
+                }
+            }
+        }
+        return text.toString();
+    }
+
     private String stylesheets() throws IOException {
         return Files.readString(Path.of("src/main/resources/static/css/style.css"));
     }
@@ -19,9 +61,9 @@ class FrontendSecurityTest {
 
     @Test
     void stockPageExposesDeliveredHarmonicRulesHistoricalHoverCardAndConfirmedOverlay() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String historical = Files.readString(
-                Path.of("src/main/resources/templates/historical-harmonic-detail.html"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String historical = english(Files.readString(
+                Path.of("src/main/resources/templates/historical-harmonic-detail.html")));
 
         assertTrue(stock.contains("id=\"harmonicOverlayToggle\""));
         assertTrue(stock.contains("Harmonic formations overlay"));
@@ -48,9 +90,9 @@ class FrontendSecurityTest {
 
     @Test
     void stockPageCreatesDemoTradesAndWatchlistRemovalExplainsMonitoringScope() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
-        String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String dashboard = english(Files.readString(Path.of("src/main/resources/templates/home.html")));
+        String dashboardScript = english(Files.readString(Path.of("src/main/resources/static/js/dashboard.js")));
         String stylesheet = stylesheets();
 
         assertTrue(stock.contains("data-stock-demo-trade=\"BUY\""));
@@ -64,12 +106,13 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("`/api/virtual-trades/${encodedTicker}`"));
         assertTrue(stock.contains("method: 'POST'"));
 
-        String watchlists = Files.readString(Path.of("src/main/resources/static/js/watchlists.js"));
-        String picker = Files.readString(Path.of("src/main/resources/static/js/watchlist-picker.js"));
+        String watchlists = english(Files.readString(Path.of("src/main/resources/static/js/watchlists.js")));
+        String picker = english(Files.readString(Path.of("src/main/resources/static/js/watchlist-picker.js")));
         assertTrue(dashboard.contains("data-named-watchlists"));
-        assertTrue(watchlists.contains("Remove from this list"));
-        assertTrue(watchlists.contains("If this is its last list, new monitoring stops"));
-        assertTrue(watchlists.contains("Notification history is preserved"));
+        String watchlistText = Files.readString(Path.of("src/main/resources/messages.properties"));
+        assertTrue(watchlists.contains("watchlists.removeFromList") && watchlistText.contains("=Remove from this list"));
+        assertTrue(watchlists.contains("watchlists.removeSymbolText") && watchlistText.contains("If this is its last list, its alerts stop"));
+        assertTrue(watchlists.contains("watchlists.deleteText") && watchlistText.contains("Notification history is preserved"));
         assertTrue(watchlists.contains("method: 'DELETE'"));
         assertTrue(picker.contains("X-CSRF-TOKEN"));
         assertFalse(watchlists.contains("innerHTML"));
@@ -79,22 +122,22 @@ class FrontendSecurityTest {
 
     @Test
     void priceChartsExposePersistentFibonacciAndPositionDrawingTools() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String signal = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
-        String historicalCandle = Files.readString(
-                Path.of("src/main/resources/templates/historical-candlestick-detail.html"));
-        String historicalElliott = Files.readString(
-                Path.of("src/main/resources/templates/historical-elliott-detail.html"));
-        String activity = Files.readString(
-                Path.of("src/main/resources/templates/activity-signal-detail.html"));
-        String technicalOutlook = Files.readString(
-                Path.of("src/main/resources/templates/technical-outlook.html"));
-        String virtualTrade = Files.readString(
-                Path.of("src/main/resources/templates/virtual-trade.html"));
-        String intervals = Files.readString(
-                Path.of("src/main/resources/static/js/detail-chart-intervals.js"));
-        String fibonacci = Files.readString(
-                Path.of("src/main/resources/static/js/fibonacci-drawing-tool.js"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String signal = english(Files.readString(Path.of("src/main/resources/templates/signal-detail.html")));
+        String historicalCandle = english(Files.readString(
+                Path.of("src/main/resources/templates/historical-candlestick-detail.html")));
+        String historicalElliott = english(Files.readString(
+                Path.of("src/main/resources/templates/historical-elliott-detail.html")));
+        String activity = english(Files.readString(
+                Path.of("src/main/resources/templates/activity-signal-detail.html")));
+        String technicalOutlook = english(Files.readString(
+                Path.of("src/main/resources/templates/technical-outlook.html")));
+        String virtualTrade = english(Files.readString(
+                Path.of("src/main/resources/templates/virtual-trade.html")));
+        String intervals = english(Files.readString(
+                Path.of("src/main/resources/static/js/detail-chart-intervals.js")));
+        String fibonacci = english(Files.readString(
+                Path.of("src/main/resources/static/js/fibonacci-drawing-tool.js")));
 
         assertTrue(stock.contains("@{/js/fibonacci-drawing-tool.js}"));
         assertTrue(stock.contains("new StockWatchFibonacciDrawingTool"));
@@ -125,8 +168,8 @@ class FrontendSecurityTest {
         assertTrue(fibonacci.contains("1.272"));
         assertTrue(fibonacci.contains("1.618"));
         assertTrue(fibonacci.contains("2.618"));
-        assertTrue(fibonacci.contains("createButton('Long'"));
-        assertTrue(fibonacci.contains("createButton('Short'"));
+        assertTrue(fibonacci.contains("createButton(i18n.t('drawing.long')"));
+        assertTrue(fibonacci.contains("createButton(i18n.t('drawing.short')"));
         assertTrue(fibonacci.contains("entryPrice"));
         assertTrue(fibonacci.contains("targetPrice"));
         assertTrue(fibonacci.contains("stopPrice"));
@@ -148,7 +191,7 @@ class FrontendSecurityTest {
 
     @Test
     void harmonicSignalDetailShowsAStopOnlyPlanWithoutInventingTargets() throws IOException {
-        String signal = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
+        String signal = english(Files.readString(Path.of("src/main/resources/templates/signal-detail.html")));
 
         assertTrue(signal.contains("Harmonic eight-candle outcome plan"));
         assertTrue(signal.contains("Exact structural invalidation"));
@@ -162,10 +205,10 @@ class FrontendSecurityTest {
 
     @Test
     void virtualTradeSurfacesExposeConfirmedCspSafeDeletion() throws IOException {
-        String archive = Files.readString(Path.of("src/main/resources/templates/virtual-trades.html"));
-        String outlook = Files.readString(Path.of("src/main/resources/templates/technical-outlook.html"));
-        String deletionScript = Files.readString(
-                Path.of("src/main/resources/static/js/virtual-trade-deletion.js"));
+        String archive = english(Files.readString(Path.of("src/main/resources/templates/virtual-trades.html")));
+        String outlook = english(Files.readString(Path.of("src/main/resources/templates/technical-outlook.html")));
+        String deletionScript = english(Files.readString(
+                Path.of("src/main/resources/static/js/virtual-trade-deletion.js")));
 
         assertTrue(archive.contains("/virtual-trades/{id}/delete"));
         assertTrue(archive.contains("data-virtual-trade-delete-dialog"));
@@ -179,11 +222,11 @@ class FrontendSecurityTest {
 
     @Test
     void settingsExposeStrictPerFamilyAndIntervalScoringProfiles() throws IOException {
-        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
-        String scoring = Files.readString(
-                Path.of("src/main/resources/templates/fragments/scoring-settings.html"));
-        String script = Files.readString(
-                Path.of("src/main/resources/static/js/scoring-settings.js"));
+        String settings = english(Files.readString(Path.of("src/main/resources/templates/settings.html")));
+        String scoring = english(Files.readString(
+                Path.of("src/main/resources/templates/fragments/scoring-settings.html")));
+        String script = english(Files.readString(
+                Path.of("src/main/resources/static/js/scoring-settings.js")));
 
         assertTrue(settings.contains("@{/settings/scoring}"));
         assertTrue(settings.contains("settingsTab == 'scoring'"));
@@ -203,10 +246,10 @@ class FrontendSecurityTest {
 
     @Test
     void settingsExposeHarmonicAppearanceEmailScoringAndRuleDefinitions() throws IOException {
-        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
-        String analysis = Files.readString(Path.of("src/main/resources/templates/fragments/analysis-settings.html"));
-        String harmonic = Files.readString(Path.of("src/main/resources/templates/fragments/harmonic-pattern-settings.html"));
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
+        String settings = english(Files.readString(Path.of("src/main/resources/templates/settings.html")));
+        String analysis = english(Files.readString(Path.of("src/main/resources/templates/fragments/analysis-settings.html")));
+        String harmonic = english(Files.readString(Path.of("src/main/resources/templates/fragments/harmonic-pattern-settings.html")));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
 
         assertTrue(settings.contains("name=\"harmonicFormationColor\""));
         assertTrue(settings.contains("@{/settings/harmonic-formations}"));
@@ -221,9 +264,9 @@ class FrontendSecurityTest {
 
     @Test
     void settingsExposeIntervalSpecificCandlestickDetectionRulesAndScopedReset() throws IOException {
-        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
-        String detection = Files.readString(
-                Path.of("src/main/resources/templates/fragments/detection-settings.html"));
+        String settings = english(Files.readString(Path.of("src/main/resources/templates/settings.html")));
+        String detection = english(Files.readString(
+                Path.of("src/main/resources/templates/fragments/detection-settings.html")));
 
         assertTrue(settings.contains("@{/settings/detection}"));
         assertTrue(settings.contains("settingsTab == 'detection'"));
@@ -237,11 +280,11 @@ class FrontendSecurityTest {
 
     @Test
     void settingsExplainEveryCustomCandlestickDefinitionAndAvoidUnsafeRendering() throws IOException {
-        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
-        String definitions = Files.readString(
-                Path.of("src/main/resources/templates/fragments/candlestick-pattern-settings.html"));
-        String script = Files.readString(
-                Path.of("src/main/resources/static/js/candlestick-pattern-settings.js"));
+        String settings = english(Files.readString(Path.of("src/main/resources/templates/settings.html")));
+        String definitions = english(Files.readString(
+                Path.of("src/main/resources/templates/fragments/candlestick-pattern-settings.html")));
+        String script = english(Files.readString(
+                Path.of("src/main/resources/static/js/candlestick-pattern-settings.js")));
 
         assertTrue(settings.contains("@{/settings/candlestick-patterns}"));
         assertTrue(settings.contains("settingsTab == 'candlestick-patterns'"));
@@ -266,8 +309,8 @@ class FrontendSecurityTest {
 
     @Test
     void technicalOutlookShowsAndEditsTheSavedIndicatorPeriods() throws IOException {
-        String outlook = Files.readString(
-                Path.of("src/main/resources/templates/technical-outlook.html"));
+        String outlook = english(Files.readString(
+                Path.of("src/main/resources/templates/technical-outlook.html")));
         String controller = Files.readString(
                 Path.of("src/main/java/org/example/stockwatch247/controller/TechnicalOutlookController.java"));
         String service = Files.readString(
@@ -313,15 +356,15 @@ class FrontendSecurityTest {
 
     @Test
     void authenticatedPageBackNavigationUsesOneReusableHistoryControl() throws IOException {
-        String fragment = Files.readString(
-                Path.of("src/main/resources/templates/fragments/history-back.html"));
-        String behavior = Files.readString(
-                Path.of("src/main/resources/static/js/history-back.js"));
+        String fragment = english(Files.readString(
+                Path.of("src/main/resources/templates/fragments/history-back.html")));
+        String behavior = english(Files.readString(
+                Path.of("src/main/resources/static/js/history-back.js")));
         String stylesheet = stylesheets();
-        String navbar = Files.readString(
-                Path.of("src/main/resources/templates/fragments/navbar.html"));
-        String dashboard = Files.readString(
-                Path.of("src/main/resources/templates/home.html"));
+        String navbar = english(Files.readString(
+                Path.of("src/main/resources/templates/fragments/navbar.html")));
+        String dashboard = english(Files.readString(
+                Path.of("src/main/resources/templates/home.html")));
 
         assertTrue(fragment.contains("th:fragment=\"historyBack(fallbackUrl)\""));
         assertTrue(fragment.contains("data-history-back"));
@@ -351,7 +394,7 @@ class FrontendSecurityTest {
             assertTrue(source.contains("fragments/navbar :: navbar"), template);
         }
 
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
         assertTrue(stock.contains("setAlertBeforeUnloadGuard(!pageExitAllowed && changedCount > 0)"));
         assertTrue(stock.contains("window.removeEventListener('beforeunload', handleUnsavedAlertBeforeUnload)"));
         assertFalse(stock.contains("window.addEventListener('beforeunload', event =>"));
@@ -374,11 +417,11 @@ class FrontendSecurityTest {
             }
         }
 
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String detailIntervals = Files.readString(
-                Path.of("src/main/resources/static/js/detail-chart-intervals.js"));
-        assertTrue(stock.contains("historicalCandlestickIntervalLabel(interval).toLowerCase()"));
-        assertTrue(detailIntervals.contains("intervalLabel.textContent = label.toLowerCase()"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String detailIntervals = english(Files.readString(
+                Path.of("src/main/resources/static/js/detail-chart-intervals.js")));
+        assertTrue(stock.contains("i18n.t(`sw.candles.loading.${apiIntervalEnum(interval)}`)"));
+        assertTrue(detailIntervals.contains("intervalLabel.textContent = intervalName(interval).toLowerCase()"));
         assertFalse(detailIntervals.contains("(native ? nativeLabel : interval)"));
     }
 
@@ -412,15 +455,18 @@ class FrontendSecurityTest {
             assertTrue(source.indexOf("/js/theme.js") < source.indexOf("/css/style.css"), template);
         }
 
-        String theme = Files.readString(
-                Path.of("src/main/resources/static/js/theme.js"));
+        String theme = english(Files.readString(
+                Path.of("src/main/resources/static/js/theme.js")));
         String stylesheet = stylesheets();
         assertTrue(theme.contains("stockwatch-theme"));
         assertTrue(theme.contains("return 'dark'"));
         assertTrue(theme.contains("createSvgIcon('sun')"));
         assertTrue(theme.contains("createSvgIcon('moon')"));
-        assertTrue(theme.contains("Switch to light mode"));
-        assertTrue(theme.contains("Switch to dark mode"));
+        assertTrue(theme.contains("theme.toLight"));
+        assertTrue(theme.contains("theme.toDark"));
+        String englishMessages = Files.readString(Path.of("src/main/resources/messages.properties"));
+        assertTrue(englishMessages.contains("js.theme.toLight=Switch to light mode"));
+        assertTrue(englishMessages.contains("js.theme.toDark=Switch to dark mode"));
         assertTrue(theme.contains("stockwatch:themechange"));
         assertTrue(theme.contains("toggleAttribute('hidden'"));
         assertTrue(theme.contains("document.querySelector('.navbar')"));
@@ -441,13 +487,13 @@ class FrontendSecurityTest {
 
     @Test
     void templatesAvoidKnownDomXssAndThirdPartyLeakageSinks() throws IOException {
-        String navbar = Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html"));
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String historicalCandlestickDetail = Files.readString(
-                Path.of("src/main/resources/templates/historical-candlestick-detail.html"));
-        String historicalElliottDetail = Files.readString(
-                Path.of("src/main/resources/templates/historical-elliott-detail.html"));
-        String about = Files.readString(Path.of("src/main/resources/templates/about.html"));
+        String navbar = english(Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html")));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String historicalCandlestickDetail = english(Files.readString(
+                Path.of("src/main/resources/templates/historical-candlestick-detail.html")));
+        String historicalElliottDetail = english(Files.readString(
+                Path.of("src/main/resources/templates/historical-elliott-detail.html")));
+        String about = english(Files.readString(Path.of("src/main/resources/templates/about.html")));
 
         assertFalse(navbar.contains("innerHTML"));
         assertFalse(navbar.matches("(?s).*\\son(?:click|load|error)=.*"));
@@ -505,8 +551,8 @@ class FrontendSecurityTest {
 
     @Test
     void signupAndAppearanceSettingsExposeSeparateElliottColorChoices() throws IOException {
-        String signup = Files.readString(Path.of("src/main/resources/templates/signup.html"));
-        String settings = Files.readString(Path.of("src/main/resources/templates/settings.html"));
+        String signup = english(Files.readString(Path.of("src/main/resources/templates/signup.html")));
+        String settings = english(Files.readString(Path.of("src/main/resources/templates/settings.html")));
 
         assertTrue(signup.contains("name=\"elliottMotiveColor\""));
         assertTrue(signup.contains("name=\"elliottCorrectiveColor\""));
@@ -523,8 +569,8 @@ class FrontendSecurityTest {
 
     @Test
     void aboutPageDocumentsTheImplementedDetectionAndResearchRules() throws IOException {
-        String index = Files.readString(Path.of("src/main/resources/templates/index.html"));
-        String about = Files.readString(Path.of("src/main/resources/templates/about.html"));
+        String index = english(Files.readString(Path.of("src/main/resources/templates/index.html")));
+        String about = english(Files.readString(Path.of("src/main/resources/templates/about.html")));
 
         assertTrue(index.contains("th:href=\"@{/about}\""));
         assertTrue(about.contains("id=\"candlesticks\""));
@@ -544,8 +590,8 @@ class FrontendSecurityTest {
 
     @Test
     void stockTemplateSeparatesNativeElliottStructuresFromSubwavesAndSupportsDailyAlerts() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String outlook = Files.readString(Path.of("src/main/resources/templates/technical-outlook.html"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String outlook = english(Files.readString(Path.of("src/main/resources/templates/technical-outlook.html")));
         String styles = stylesheets();
 
         assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"DAILY\" data-alert-signal=\"BUY\""));
@@ -556,13 +602,13 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\" data-alert-signal=\"SELL\""));
         assertTrue(stock.contains("function tradeSignalDisplayLabel(value, lowercase = false)"));
         assertTrue(stock.contains("Sell/Short</div>"));
-        assertTrue(stock.contains("copy.textContent = 'Sell/Short'"));
+        assertTrue(stock.contains("copy.textContent = i18n.t('sw.sellShortWord')"));
         assertTrue(stock.contains("class=\"alert-eye-input\" type=\"checkbox\""));
         assertTrue(stock.contains("class=\"alert-panel alert-star-panel\""));
-        assertTrue(stock.contains("Filled stars indicate alerts you follow."));
+        assertTrue(stock.contains("Switch on the signals you want to follow, then click Apply changes."));
         assertTrue(styles.contains(".alert-star-panel .alert-eye-graphic::before"));
         assertTrue(styles.contains(".alert-star-panel .alert-eye-input:checked + .alert-eye-graphic::before"));
-        assertTrue(styles.contains("content: \"★\""));
+        assertTrue(styles.contains("transform: translateX(16px)"));
         assertTrue(styles.contains(".alert-star-panel .alert-eye-input:checked + .alert-eye-graphic .alert-eye-filled"));
         assertFalse(stock.contains("check-alert-btn"));
         assertFalse(stock.contains("data-check-family"));
@@ -590,7 +636,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("let elliottSubwavesEnabled = false"));
         assertTrue(stock.contains("const historicalDetailUrl = endpoint?.timestamp"));
         assertFalse(stock.contains("currentInterval !== '1d' && endpoint?.timestamp"));
-        assertTrue(stock.contains("tracked ? 'Open signal details' : 'Open historical signal details'"));
+        assertTrue(stock.contains("tracked ? 'sw.elliott.openSignal' : 'sw.elliott.openHistorical'"));
         assertFalse(stock.contains("id=\"historicElliottBtn\""));
         assertTrue(stock.contains("/elliott-waves/history?interval="));
         assertTrue(stock.contains("&from=${encodeURIComponent(oldestTimestamp)}"));
@@ -666,7 +712,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("function historicalCandlestickDirectionalReturn(signal, exitPrice)"));
         assertTrue(stock.contains("reopenHistoricalCandlestickResultsFromUrl"));
 
-        String navbar = Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html"));
+        String navbar = english(Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html")));
         assertTrue(navbar.contains("Search stocks or indexes"));
         assertTrue(navbar.contains("instrumentType === 'INDEX'"));
         assertTrue(navbar.contains("typeLabel.textContent"));
@@ -758,7 +804,7 @@ class FrontendSecurityTest {
 
     @Test
     void stockWorkspacePutsMarketAnalysisBeforeAlertControlsAndCongressionalActivity() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
         String stylesheet = stylesheets();
 
         int priceChart = stock.indexOf("id=\"priceChartContainer\"");
@@ -796,7 +842,7 @@ class FrontendSecurityTest {
 
     @Test
     void stockWorkspaceUsesAccessibleStatePreservingSubtabs() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
         String stylesheet = stylesheets();
 
         assertTrue(stock.contains("class=\"stock-workspace-tabs\" role=\"tablist\""));
@@ -830,7 +876,7 @@ class FrontendSecurityTest {
 
     @Test
     void stockWorkspaceUsesAnAccessibleLoaderUntilAsyncInitializationFinishes() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
         String stylesheet = stylesheets();
 
         assertTrue(stock.contains("<body class=\"stock-is-loading\">"));
@@ -857,15 +903,15 @@ class FrontendSecurityTest {
 
     @Test
     void stockAlertChangesRemainDraftsUntilExplicitlyApplied() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String navbar = Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String navbar = english(Files.readString(Path.of("src/main/resources/templates/fragments/navbar.html")));
 
         assertTrue(stock.contains("id=\"applyAlertChangesBtn\""));
         assertTrue(stock.contains("id=\"toggleAllTechnicalMonitoringBtn\""));
         assertTrue(stock.contains("function toggleAllTechnicalMonitoring()"));
         assertTrue(stock.contains("alertInputs().forEach(input =>"));
         assertTrue(stock.contains("[...alertInputs(), ...outlookFollowInputs()].forEach"));
-        assertTrue(stock.contains("anyFollowed ? 'Unfollow all' : 'Follow all'"));
+        assertTrue(stock.contains("anyFollowed ? 'sw.unfollowAll' : 'sw.followAll'"));
         assertFalse(stock.contains("async function updateOutlookFollow("));
         assertTrue(stock.contains("id=\"unsavedAlertDialog\""));
         assertTrue(stock.contains("id=\"saveAlertChangesBeforeLeaveBtn\""));
@@ -885,8 +931,8 @@ class FrontendSecurityTest {
 
     @Test
     void congressionalActivityIsStockOnlyAndExplainsItsCacheAndHistoryWindow() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String dashboard = english(Files.readString(Path.of("src/main/resources/templates/home.html")));
 
         assertTrue(stock.contains("id=\"congressionalActivityPanel\""));
         assertTrue(stock.contains("panel.hidden = !congressionalActivityEligible"));
@@ -913,8 +959,8 @@ class FrontendSecurityTest {
 
     @Test
     void insiderActivityUsesDailyFiledTradeMonitoringAndCompletedCloseReturns() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String dashboard = english(Files.readString(Path.of("src/main/resources/templates/home.html")));
 
         assertTrue(stock.contains("id=\"insiderActivityPanel\""));
         assertTrue(stock.contains("id=\"insiderHistoryDialog\""));
@@ -944,8 +990,8 @@ class FrontendSecurityTest {
 
     @Test
     void dashboardSeparatesTechnicalAnalysisFromTickerAlerts() throws IOException {
-        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
-        String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
+        String dashboard = english(Files.readString(Path.of("src/main/resources/templates/home.html")));
+        String dashboardScript = english(Files.readString(Path.of("src/main/resources/static/js/dashboard.js")));
         String styles = stylesheets();
 
         assertFalse(dashboard.contains("dashboard-view-navigation"));
@@ -986,7 +1032,7 @@ class FrontendSecurityTest {
         assertTrue(styles.contains("grid-template-columns: repeat(2, minmax(0, 1fr));"));
 
         assertTrue(dashboardScript.contains("function initializeDashboardViews()"));
-        assertTrue(dashboardScript.contains("window.location.hash === \"#ticker-alerts\""));
+        assertTrue(dashboardScript.contains("window.location.replace(\"/ticker-alerts\")"));
         assertTrue(dashboardScript.contains("data-notification-read-all"));
         assertTrue(dashboardScript.contains("reloadTickerAlerts"));
         assertTrue(dashboardScript.contains("section.hidden = section.dataset.dashboardView !== view"));
@@ -997,26 +1043,27 @@ class FrontendSecurityTest {
 
     @Test
     void dashboardAndCompanyHistoryReuseTheSharedSignalArchive() throws IOException {
-        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
-        String dashboardScript = Files.readString(Path.of("src/main/resources/static/js/dashboard.js"));
+        String dashboard = english(Files.readString(Path.of("src/main/resources/templates/home.html")));
+        String dashboardScript = english(Files.readString(Path.of("src/main/resources/static/js/dashboard.js")));
         String styles = stylesheets();
-        String archive = Files.readString(Path.of("src/main/resources/templates/all-signals.html"));
-        String activityArchive = Files.readString(
-                Path.of("src/main/resources/templates/all-activity-signals.html"));
-        String archiveSelectionScript = Files.readString(
-                Path.of("src/main/resources/static/js/signal-archive-selection.js"));
-        String activityDetail = Files.readString(
-                Path.of("src/main/resources/templates/activity-signal-detail.html"));
-        String signalDetail = Files.readString(Path.of("src/main/resources/templates/signal-detail.html"));
-        String detailChartIntervals = Files.readString(
-                Path.of("src/main/resources/static/js/detail-chart-intervals.js"));
+        String archive = english(Files.readString(Path.of("src/main/resources/templates/all-signals.html")));
+        String activityArchive = english(Files.readString(
+                Path.of("src/main/resources/templates/all-activity-signals.html")));
+        String archiveSelectionScript = english(Files.readString(
+                Path.of("src/main/resources/static/js/signal-archive-selection.js")));
+        String activityDetail = english(Files.readString(
+                Path.of("src/main/resources/templates/activity-signal-detail.html")));
+        String signalDetail = english(Files.readString(Path.of("src/main/resources/templates/signal-detail.html")));
+        String detailChartIntervals = english(Files.readString(
+                Path.of("src/main/resources/static/js/detail-chart-intervals.js")));
 
-        String watchlists = Files.readString(Path.of("src/main/resources/static/js/watchlists.js"));
+        String watchlists = english(Files.readString(Path.of("src/main/resources/static/js/watchlists.js")));
         assertTrue(dashboard.contains("data-named-watchlists"));
         assertTrue(watchlists.contains("/signals?${new URLSearchParams({ watchlistId: list.id, ticker: item.symbol })}"));
-        assertTrue(watchlists.contains("View all signals"));
+        String watchlistText = Files.readString(Path.of("src/main/resources/messages.properties"));
+        assertTrue(watchlists.contains("watchlists.viewAllSignals") && watchlistText.contains("js.watchlists.viewAllSignals=View all signals"));
         assertTrue(watchlists.contains("item.signals"));
-        assertTrue(watchlists.contains("Unread signals"));
+        assertTrue(watchlistText.contains("js.watchlists.column.unread=Unread signals"));
         assertFalse(dashboard.contains("th:each=\"alert : ${activeAlerts}\""));
         assertTrue(dashboard.contains("th:each=\"item : ${latestSignalItems}\""));
         assertTrue(dashboard.contains("item.technicalSignal()"));
@@ -1029,11 +1076,12 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("signal.setupScore()"));
         assertTrue(dashboard.contains("signal.signalPeriodLabel()"));
         assertTrue(dashboard.contains("signal.researchHorizonLabel()"));
-        assertTrue(dashboard.contains("<span>Status</span>"));
+        assertTrue(dashboard.contains(">Status</span>"));
         assertTrue(dashboard.contains("class=\"latest-lifecycle\""));
         assertTrue(dashboard.contains("signal.lifecycle().label()"));
-        assertTrue(watchlists.contains("['stocks', 'Stocks']"));
-        assertTrue(watchlists.contains("['funds', 'Indexes / ETFs']"));
+        assertTrue(watchlists.contains("['all', 'stocks', 'funds']"));
+        assertTrue(watchlistText.contains("js.watchlists.group.stocks=Stocks"));
+        assertTrue(watchlistText.contains("js.watchlists.group.funds=Indexes / ETFs"));
         assertTrue(watchlists.contains("group: group.input.value"));
         assertTrue(dashboard.contains("@{/js/dashboard.js}"));
         assertTrue(dashboardScript.contains("activateFilter(\"stocks\")"));
@@ -1058,7 +1106,7 @@ class FrontendSecurityTest {
 
         assertTrue(archive.contains("archive.signals()"));
         assertTrue(archive.contains("companyArchive != null"));
-        assertTrue(archive.contains("companyArchive.symbol() + ' signals'"));
+        assertTrue(archive.contains("'signals.companyHeading', companyArchive.symbol()"));
         assertTrue(archive.contains("@{/alerts/{id}/signals/delete"));
         assertTrue(archive.contains("name=\"sort\""));
         assertTrue(archive.contains("name=\"direction\""));
@@ -1073,7 +1121,7 @@ class FrontendSecurityTest {
         assertTrue(archive.contains("signal.lifecycle().label()"));
         assertTrue(archive.contains("entry.outcome().valueLabel()"));
         assertTrue(archive.contains("entry.outcome().priceDetail()"));
-        assertTrue(archive.contains("Outcomes use each pattern family"));
+        assertTrue(archive.contains("using each pattern family's stop, target and time-limit rules"));
         assertTrue(archive.contains("stop, target and time-limit rules"));
         assertTrue(archive.contains("entry.stageOutcomes()"));
         assertFalse(archive.contains("entry.bestDirectionalMovePercent()"));
@@ -1090,7 +1138,7 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("congressional-dashboard-row latest-signal-row is-unread"));
         assertTrue(dashboard.contains("insider-dashboard-row latest-signal-row is-unread"));
         assertTrue(dashboard.contains("activity.returnPercent()"));
-        assertTrue(dashboard.contains("transaction-date close proxy"));
+        assertTrue(dashboard.contains("from the first close after disclosure"));
         assertTrue(styles.contains(".activity-archive-links"));
         assertTrue(styles.contains(".ticker-notification-row .congressional-row-actions"));
         assertTrue(dashboardScript.contains("initializeNotificationReadButtons"));
@@ -1151,7 +1199,7 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("Favorable move in the signal direction"));
         assertTrue(signalDetail.contains("Adverse move against the signal"));
         assertTrue(signalDetail.contains("Starting price"));
-        assertTrue(signalDetail.contains("text: `${tradeSignal === 'SELL' ? 'SELL/SHORT' : tradeSignal} measurement start`"));
+        assertTrue(signalDetail.contains("signalDetail.measurementStart.SELL") && signalDetail.contains("SELL/SHORT measurement start"));
         assertTrue(signalDetail.contains("color: colors.signalStart"));
         assertTrue(signalDetail.contains("Best price in this period"));
         assertTrue(signalDetail.contains("id=\"signalChart\""));
@@ -1204,7 +1252,7 @@ class FrontendSecurityTest {
 
     @Test
     void fullCandleHistoryReplacementRebuildsDateDeduplicationState() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
 
         int processorStart = stock.indexOf("function processAndSetData(rawData, isPrepend)");
         int candleLoopStart = stock.indexOf("rawData.forEach", processorStart);
@@ -1218,10 +1266,10 @@ class FrontendSecurityTest {
 
     @Test
     void automatedOutlookFollowingUsesIntervalSubscriptionsAndDedicatedChangeReport() throws IOException {
-        String stock = (Files.readString(Path.of("src/main/resources/templates/stock.html")) + Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js")));
-        String dashboard = Files.readString(Path.of("src/main/resources/templates/home.html"));
-        String detail = Files.readString(
-                Path.of("src/main/resources/templates/technical-outlook-change.html"));
+        String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
+        String dashboard = english(Files.readString(Path.of("src/main/resources/templates/home.html")));
+        String detail = english(Files.readString(
+                Path.of("src/main/resources/templates/technical-outlook-change.html")));
         String stylesheet = stylesheets();
 
         assertTrue(stock.contains(">Automated Technical Outlook</div>"));
@@ -1242,8 +1290,8 @@ class FrontendSecurityTest {
         assertTrue(detail.contains("outlookIndicatorDeltas"));
         assertTrue(detail.contains("outlookSignalEvidence"));
         assertTrue(detail.contains("<script th:inline=\"javascript\" th:attr=\"nonce=${cspNonce}\">"));
-        assertTrue(detail.contains("/*[[${change.currentSnapshot()}]]*/"));
-        assertTrue(detail.contains("/*[[${change.report()}]]*/"));
+        assertTrue(detail.contains("JSON.parse(/*[[${currentSnapshotJson}]]*/ 'null')"));
+        assertTrue(detail.contains("JSON.parse(/*[[${changeReportJson}]]*/ 'null')"));
         assertFalse(detail.contains("/*[[${change}]]*/"));
         assertTrue(detail.contains("id=\"toggleUnchangedIndicators\""));
         assertTrue(detail.contains("outlook-driver-card"));

@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — StockWatch 24/7</title>
-  <script th:src="@{/js/theme.js}"></script>
-  <link rel="stylesheet" th:href="@{/css/style.css}">
+  <title th:text="${dashboardView == 'alerts' ? #messages.msg('home.pageTitle.alerts') : #messages.msg('home.pageTitle.dashboard')}">Dashboard — StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/dashboard.js}" defer></script>
@@ -19,50 +19,50 @@
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
 <main class="dashboard-container">
-  <header class="app-hero welcome-header">
+  <header th:unless="${dashboardView == 'alerts'}" class="app-hero welcome-header">
     <div class="app-hero-copy">
-      <div class="eyebrow">Your watchlists</div>
-      <h1 class="welcome-text">Good to see you, <span class="primary-text" th:text="${firstName}">Trader</span>.</h1>
-      <p class="welcome-subtitle">Search for a stock, ETF, or index to view its chart or set up alerts.</p>
+      <div class="eyebrow" th:text="#{watchlists.yours}">Your watchlists</div>
+      <h1 class="welcome-text"><span th:text="#{home.greeting}">Good to see you,</span> <span class="primary-text" th:text="${firstName}">Trader</span>.</h1>
+      <p class="welcome-subtitle" th:text="#{home.subtitle}">Search for a stock, ETF, or index to view its chart or set up alerts.</p>
     </div>
     <div class="wl-hero-actions">
       <a th:href="@{/signals}" class="btn-accent wl-account-signals">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19h16M5 14l4-5 4 3 6-8"/></svg>
-        All signals
+        <span th:text="#{signals.all}">All signals</span>
       </a>
-      <div class="hero-status">Automatic alerts</div>
+      <a th:href="@{/settings/analysis-alerts}" class="text-link hero-settings-link" th:text="#{home.alertSettings}">Alert settings</a>
     </div>
   </header>
 
-  <div class="grid-layout" data-dashboard-view-layout>
+  <div class="grid-layout" data-dashboard-view-layout th:attr="data-active-view=${dashboardView}">
     <div class="dashboard-main-stack">
       <section id="latestTechnicalSignals"
                class="glass-panel dashboard-panel latest-signals-panel"
-               data-dashboard-view="technical"
+               data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}"
                aria-labelledby="latest-signals-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">New signals and outlook changes</div>
-            <h2 id="latest-signals-heading" class="panel-title">Latest signals <span class="panel-count" th:text="${#lists.size(latestSignalItems)}">0</span></h2>
+            <div class="panel-kicker" th:text="#{home.newSignalsKicker}">New signals and outlook changes</div>
+            <h2 id="latest-signals-heading" class="panel-title"><span th:text="#{home.latestSignals}">Latest signals</span> <span class="panel-count" th:text="${#lists.size(latestSignalItems)}">0</span></h2>
           </div>
           <div class="panel-heading-actions">
-            <a th:href="@{/signals(state='unread')}" class="text-link">Unread archive</a>
+            <a th:href="@{/signals(state='unread')}" class="text-link" th:text="#{js.watchlists.column.unread}">Unread signals</a>
           </div>
         </div>
 
-        <details class="dashboard-score-help"><summary>About scores</summary><p>Pattern scores are evidence ratings out of 100, not probabilities. Outlook percentages describe the outlook score, not investment returns.</p></details>
+        <details th:unless="${#lists.isEmpty(latestSignalItems)}" class="dashboard-score-help how-it-works"><summary th:text="#{home.aboutScores}">About scores</summary><p th:text="#{home.aboutScoresText}">Pattern scores are evidence ratings out of 100, not probabilities. Outlook percentages describe the outlook score, not investment returns.</p></details>
 
-        <div th:if="${#lists.isEmpty(latestSignalItems)}" class="latest-signals-empty">
+        <div th:if="${#lists.isEmpty(latestSignalItems)}" class="latest-signals-empty is-compact">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
-            <h3>No unread signals</h3>
-            <p>New matches and followed outlook changes will appear here. Pattern detections you have opened remain available in All signals; outlook changes use their own reports.</p>
+            <h3 th:text="#{home.caughtUp}">You're all caught up</h3>
+            <p><span th:text="#{home.caughtUpText}">New signals and outlook changes for stocks you follow will appear here. Signals you have opened stay in</span> <a th:href="@{/signals}" class="text-link" th:text="#{signals.all}">All signals</a>.</p>
           </div>
         </div>
 
         <div th:if="${!#lists.isEmpty(latestSignalItems)}">
           <div class="latest-signal-head latest-signal-grid" aria-hidden="true">
-            <span>Signal</span><span>Company</span><span class="wl-notification-origin">Watchlists</span><span>Interval</span><span>Candle period</span><span>Research horizon</span><span>Status</span><span>Setup score</span><span></span>
+            <span th:text="#{signals.column.signal}">Signal</span><span th:text="#{virtualTrades.column.company}">Company</span><span class="wl-notification-origin" th:text="#{sidebar.watchlists}">Watchlists</span><span th:text="#{signals.column.interval}">Interval</span><span th:text="#{home.candlePeriod}">Candle period</span><span th:text="#{home.researchHorizon}">Research horizon</span><span th:text="#{virtualTrades.column.status}">Status</span><span th:text="#{signals.column.setupScore}">Setup score</span><span></span>
           </div>
           <div class="latest-signal-list">
             <th:block th:each="item : ${latestSignalItems}">
@@ -70,51 +70,52 @@
                th:with="signal=${item.technicalSignal()}"
                th:href="@{/alerts/signals/{id}(id=${signal.id()})}"
                class="latest-signal-row latest-signal-grid is-unread"
-               th:aria-label="${'Open unread ' + signal.patternLabel() + ' score report for ' + signal.symbol()}">
+               th:aria-label="#{home.openSignalAria(${#tr.text(signal.patternLabel())}, ${signal.symbol()})}">
               <div class="latest-signal-type">
-                <strong th:text="${signal.patternLabel()}">Bullish Engulfing</strong>
+                <strong th:text="${#tr.text(signal.patternLabel())}">Bullish Engulfing</strong>
                 <div class="latest-signal-tags">
-                  <span class="latest-family-tag" th:text="${signal.familyLabel()}">Candlestick</span>
+                  <span class="latest-family-tag" th:text="${#tr.text(signal.familyLabel())}">Candlestick</span>
                   <span class="latest-direction-tag"
                         th:classappend="${signal.tradeSignal().name() == 'BUY'} ? ' buy' : ' sell'"
-                        th:text="${signal.directionLabel()}">Potential buy</span>
+                        th:text="${#tr.text(signal.directionLabel())}">Potential buy</span>
                 </div>
               </div>
               <div class="latest-company">
                 <strong th:text="${signal.symbol()}">MARA</strong>
                 <span th:text="${signal.companyName()}">MARA Holdings, Inc.</span>
               </div>
-              <div class="wl-notification-origin" th:with="origin=${watchlistOrigins != null ? watchlistOrigins['TECHNICAL:' + signal.id()] : null}"><span th:text="${origin != null ? origin : 'Earlier notification'}" th:title="${origin}"></span></div>
-              <span class="latest-interval" th:text="${signal.intervalLabel()}">Weekly</span>
+              <div class="wl-notification-origin" th:with="origin=${watchlistOrigins != null ? watchlistOrigins['TECHNICAL:' + signal.id()] : null}"><span th:text="${origin != null ? origin : #messages.msg('home.earlierNotification')}" th:title="${origin}"></span></div>
+              <span class="latest-interval" th:text="${#tr.text(signal.intervalLabel())}">Weekly</span>
               <div class="latest-signal-date">
-                <time th:text="${signal.signalPeriodLabel() != null ? signal.signalPeriodLabel() : 'Period unavailable'}">13&ndash;17 Jul 2026</time>
-                <span th:text="${signal.sentAt() != null ? 'Recorded ' + #temporals.format(signal.sentAt(), 'HH:mm') : 'Time unavailable'}">Recorded 08:15</span>
+                <time th:text="${signal.signalPeriodLabel() != null ? #tr.text(signal.signalPeriodLabel()) : #messages.msg('alertHistory.periodUnavailable')}">13&ndash;17 Jul 2026</time>
+                <span th:text="${signal.sentAt() != null ? #messages.msg('home.recordedAt', #temporals.format(signal.sentAt(), 'HH:mm')) : #messages.msg('home.timeUnavailable')}">Recorded 08:15</span>
               </div>
               <div class="latest-horizon"
-                   th:title="${signal.researchHorizonLabel() != null ? signal.researchHorizonSummary() + ' ' + signal.researchHorizonDisclaimer() : 'Candlestick-specific guidance is not applied to this signal family.'}">
+                   th:title="${signal.researchHorizonLabel() != null ? #tr.text(signal.researchHorizonSummary()) + ' ' + #tr.text(signal.researchHorizonDisclaimer()) : #messages.msg('home.noHorizonGuidance')}">
                 <strong th:if="${signal.researchHorizonLabel() != null}"
-                        th:text="${signal.researchHorizonLabel()}">8&ndash;12 weeks</strong>
-                <span th:if="${signal.researchHorizonLabel() != null}">Historical evaluation window</span>
-                <span th:unless="${signal.researchHorizonLabel() != null}" class="unavailable">Not applicable</span>
+                        th:text="${#tr.text(signal.researchHorizonLabel())}">8&ndash;12 weeks</strong>
+                <span th:if="${signal.researchHorizonLabel() != null}" th:text="#{home.historicalWindow}">Historical evaluation window</span>
+                <span th:unless="${signal.researchHorizonLabel() != null}" class="unavailable" th:text="#{home.notApplicable}">Not applicable</span>
               </div>
-              <div class="latest-lifecycle" aria-label="Lifecycle status">
+              <div class="latest-lifecycle" aria-label="Lifecycle status" th:aria-label="#{alertHistory.lifecycleStatus}">
                 <span th:if="${signal.lifecycle().harmonicStopStatus() != null}"
                       class="signal-lifecycle-pill"
                       th:classappend="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? ' invalidated' : ' detected'}"
-                      th:title="${signal.lifecycle().summary()}"
-                      th:text="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? 'Stop breached' : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? 'Candle 8 complete' : 'Active outcome')}">Active outcome</span>
+                      th:title="${#tr.text(signal.lifecycle().summary())}"
+                      th:text="${signal.lifecycle().harmonicStopStatus() == 'STOPPED' ? #messages.msg('alertHistory.stopBreached') : (signal.lifecycle().harmonicStopStatus() == 'TIME_STOPPED' ? #messages.msg('alertHistory.candle8Complete') : #messages.msg('alertHistory.activeOutcome'))}">Active outcome</span>
                 <span th:if="${signal.lifecycle().harmonicStopStatus() == null and signal.lifecycle().tracked()}"
                       class="signal-lifecycle-pill"
                       th:classappend="${' ' + signal.lifecycle().cssClass()}"
-                      th:text="${signal.lifecycle().label()}">Detected</span>
+                      th:text="${#tr.text(signal.lifecycle().label())}">Detected</span>
                 <span th:if="${signal.lifecycle().harmonicStopStatus() == null and !signal.lifecycle().tracked()}"
-                      class="lifecycle-unavailable">Not tracked</span>
+                      class="lifecycle-unavailable" th:text="#{alertHistory.notTracked}">Not tracked</span>
               </div>
               <div class="latest-confidence"
                    th:classappend="${' ' + signal.setupBand()}"
-                   th:attr="aria-label=${signal.setupScore() != null ? 'Setup score ' + signal.setupScore() + ' out of 100; model ' + signal.scoreVersion() : 'Setup score unavailable'},title=${'Score model: ' + signal.scoreVersion()}">
+                   th:aria-label="${signal.setupScore() != null ? #messages.msg('home.setupScoreAria', signal.setupScore(), signal.scoreVersion()) : #messages.msg('signals.setupScoreUnavailable')}"
+                   th:title="#{alertHistory.scoreModel(${signal.scoreVersion()})}">
                 <strong th:text="${signal.setupScore() != null ? signal.setupScore() : '--'}">88</strong>
-                <span th:text="${signal.setupScore() != null ? '/100' : 'N/A'}">/100</span>
+                <span th:text="${signal.setupScore() != null ? '/100' : #messages.msg('common.notAvailable')}">/100</span>
               </div>
               <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
             </a>
@@ -122,34 +123,34 @@
                th:with="change=${item.outlookChange()}"
                th:href="${change.detailUrl()}"
                class="latest-signal-row latest-signal-grid is-unread outlook-change-row"
-               th:aria-label="${'Open ' + change.symbol() + ' ' + change.intervalLabel() + ' Automated Technical Outlook change report'}">
+               th:aria-label="#{home.openChangeAria(${change.symbol()}, ${#tr.text(change.intervalLabel())})}">
               <div class="latest-signal-type">
-                <strong>Automated Technical Outlook</strong>
+                <strong th:text="#{home.automatedOutlook}">Automated Technical Outlook</strong>
                 <div class="latest-signal-tags">
-                  <span class="latest-family-tag">Outlook change</span>
+                  <span class="latest-family-tag" th:text="#{home.outlookChange}">Outlook change</span>
                   <span class="latest-direction-tag outlook-transition"
-                        th:text="${change.previousClassification() + ' → ' + change.currentClassification()}">Slight buy outlook → Neutral outlook</span>
+                        th:text="${#tr.text(change.previousClassification()) + ' → ' + #tr.text(change.currentClassification())}">Slight buy outlook → Neutral outlook</span>
                 </div>
               </div>
               <div class="latest-company">
                 <strong th:text="${change.symbol()}">AAPL</strong>
                 <span th:text="${change.companyName()}">Apple Inc.</span>
               </div>
-              <div class="wl-notification-origin" th:with="origin=${watchlistOrigins != null ? watchlistOrigins['OUTLOOK:' + change.id()] : null}"><span th:text="${origin != null ? origin : 'Earlier notification'}" th:title="${origin}"></span></div>
-              <span class="latest-interval" th:text="${change.intervalLabel()}">Daily</span>
+              <div class="wl-notification-origin" th:with="origin=${watchlistOrigins != null ? watchlistOrigins['OUTLOOK:' + change.id()] : null}"><span th:text="${origin != null ? origin : #messages.msg('home.earlierNotification')}" th:title="${origin}"></span></div>
+              <span class="latest-interval" th:text="${#tr.text(change.intervalLabel())}">Daily</span>
               <div class="latest-signal-date">
-                <time th:text="${change.candlePeriodLabel()}">28 Aug 2026, 00:00 UTC</time>
-                <span th:text="${'Recorded ' + #temporals.format(change.createdAt(), 'HH:mm')}">Recorded 08:15</span>
+                <time th:text="${#tr.text(change.candlePeriodLabel())}">28 Aug 2026, 00:00 UTC</time>
+                <span th:text="#{home.recordedAt(${#temporals.format(change.createdAt(), 'HH:mm')})}">Recorded 08:15</span>
               </div>
               <div class="latest-horizon">
-                <strong>Snapshot comparison</strong>
-                <span>Previous completed candle versus current</span>
+                <strong th:text="#{home.snapshotComparison}">Snapshot comparison</strong>
+                <span th:text="#{home.previousVersusCurrent}">Previous completed candle versus current</span>
               </div>
-              <div class="latest-lifecycle" aria-label="Outlook status">
-                <span class="signal-lifecycle-pill confirmed">Changed</span>
+              <div class="latest-lifecycle" aria-label="Outlook status" th:aria-label="#{home.outlookStatusAria}">
+                <span class="signal-lifecycle-pill confirmed" th:text="#{js.outlookChange.changed}">Changed</span>
               </div>
               <div class="latest-confidence outlook-score"
-                   th:attr="aria-label=${'Current normalized outlook score ' + #numbers.formatDecimal(change.currentScore() * 100, 1, 1) + ' percent'}">
+                   th:aria-label="#{home.outlookScoreAria(${#numbers.formatDecimal(change.currentScore() * 100, 1, 1)})}">
                 <strong th:text="${#numbers.formatDecimal(change.currentScore() * 100, 1, 0)}">0</strong>
                 <span>%</span>
               </div>
@@ -160,33 +161,33 @@
         </div>
       </section>
 
-      <section id="technicalWatchDesk" class="glass-panel dashboard-panel" data-dashboard-view="technical" aria-labelledby="watch-desk-heading">
-        <div class="panel-heading"><h2 id="watch-desk-heading" class="panel-title">Your watchlists</h2>
-          <div class="panel-heading-actions"><a th:href="@{/watchlists}" class="text-link">Manage watchlists</a><button type="button" class="btn-accent" data-create-watchlist>Create watchlist</button></div>
+      <section id="technicalWatchDesk" class="glass-panel dashboard-panel" data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}" aria-labelledby="watch-desk-heading">
+        <div class="panel-heading"><h2 id="watch-desk-heading" class="panel-title" th:text="#{watchlists.yours}">Your watchlists</h2>
+          <div class="panel-heading-actions"><a th:href="@{/watchlists}" class="text-link" th:text="#{watchlists.manageAria}">Manage watchlists</a><button type="button" class="btn-accent" data-create-watchlist th:text="#{watchlists.create}">Create watchlist</button></div>
         </div>
-        <div data-named-watchlists><p role="status">Loading watchlists…</p></div>
+        <div data-named-watchlists><p role="status" th:text="#{watchlists.loading}">Loading watchlists…</p></div>
       </section>
 
       <section id="tickerAlertsIntroduction"
                class="ticker-alerts-introduction"
                data-dashboard-view="alerts"
                aria-labelledby="ticker-alerts-view-heading"
-               hidden>
+               th:hidden="${dashboardView != 'alerts'}">
         <div>
-          <div class="panel-kicker">Insider and congressional filings</div>
-          <h2 id="ticker-alerts-view-heading">Ticker alerts</h2>
-          <p>Purchases and sales reported by company insiders and members of Congress.</p>
+          <div class="panel-kicker" th:text="#{home.tickerKicker}">Insider and congressional filings</div>
+          <h1 id="ticker-alerts-view-heading" th:text="#{activitySignals.eyebrow}">Ticker alerts</h1>
+          <p th:text="#{home.tickerIntro}">Purchases and sales reported by company insiders and members of Congress.</p>
         </div>
         <div class="ticker-alerts-summary-grid">
           <div class="ticker-alerts-summary">
-            <span>Congress follows</span>
+            <span th:text="#{home.congressFollows}">Congress follows</span>
             <strong th:text="${congressionalFollowedCount}">0</strong>
-            <small>Stocks watched for public disclosures</small>
+            <small th:text="#{home.congressFollowsHelp}">Stocks followed for public disclosures</small>
           </div>
           <div class="ticker-alerts-summary insider">
-            <span>Insider follows</span>
+            <span th:text="#{home.insiderFollows}">Insider follows</span>
             <strong th:text="${insiderFollowedCount}">0</strong>
-            <small>Stocks checked daily for SEC filings</small>
+            <small th:text="#{home.insiderFollowsHelp}">Stocks checked daily for SEC filings</small>
           </div>
         </div>
       </section>
@@ -196,24 +197,24 @@
                data-dashboard-view="alerts"
                data-notification-panel
                th:attr="data-unread-count=${tickerNotificationUnreadCount}"
-               hidden
+               th:hidden="${dashboardView != 'alerts'}"
                aria-labelledby="latest-ticker-notifications-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">New filings for stocks you follow</div>
+            <div class="panel-kicker" th:text="#{home.newFilingsKicker}">New filings for stocks you follow</div>
             <h2 id="latest-ticker-notifications-heading" class="panel-title">
-              Latest notifications
+              <span th:text="#{home.latestNotifications}">Latest notifications</span>
               <span class="panel-count" data-notification-count th:text="${tickerNotificationUnreadCount}">0</span>
             </h2>
           </div>
           <div class="panel-heading-actions">
             <span class="panel-meta"
-                  th:text="${tickerNotificationUnreadCount > 10 ? 'Showing the latest 10 of ' + tickerNotificationUnreadCount + ' unread notifications' : 'Congressional disclosures and insider filings'}">Congressional disclosures and insider filings</span>
+                  th:text="${tickerNotificationUnreadCount > 10 ? #messages.msg('home.latestTenNotifications', tickerNotificationUnreadCount) : #messages.msg('home.tickerPanelMeta')}">Congressional disclosures and insider filings</span>
             <button type="button"
                     class="btn-secondary panel-action-button notification-clear-button"
                     data-notifications-read-all data-read-scope="ACTIVITY"
-                    title="Mark all congressional and insider activity across your account as read">Mark all as read</button>
-            <a th:href="@{/activity-signals}" class="btn-secondary panel-action-button">All ticker alerts</a>
+                    title="Mark all congressional and insider activity across your account as read" th:text="#{signals.markAllRead}" th:title="#{home.markAllActivityTitle}">Mark all as read</button>
+            <a th:href="@{/activity-signals}" class="btn-secondary panel-action-button" th:text="#{activitySignals.heading}">All ticker alerts</a>
             <span data-notifications-read-status role="status" class="panel-meta"></span>
           </div>
         </div>
@@ -225,8 +226,8 @@
              th:hidden="${!#lists.isEmpty(latestTickerNotifications)}">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
-            <h3>No unread ticker notifications</h3>
-            <p>Newly observed filings will appear here. Notifications you mark as read remain available in All ticker alerts.</p>
+            <h3 th:text="#{home.noTickerNotifications}">No unread ticker notifications</h3>
+            <p th:text="#{home.noTickerNotificationsText}">Newly observed filings will appear here. Notifications you mark as read remain available in All ticker alerts.</p>
           </div>
         </div>
 
@@ -239,49 +240,49 @@
                    th:attr="data-notification-key=${notification.notificationKey()}">
             <div class="ticker-notification-source"
                  th:classappend="${notification.source() == 'INSIDER'} ? ' insider' : ' congressional'">
-              <span th:text="${notification.sourceLabel()}">Corporate insider</span>
+              <span th:text="${#tr.text(notification.sourceLabel())}">Corporate insider</span>
               <strong th:text="${notification.symbol()}">AAPL</strong>
             </div>
-            <div class="wl-notification-origin" th:with="origin=${watchlistOrigins != null ? watchlistOrigins[(notification.source() == 'INSIDER' ? 'INSIDER:' : 'CONGRESS:') + notification.id()] : null}"><small>Watchlists</small><span th:text="${origin != null ? origin : 'Earlier notification'}" th:title="${origin}"></span></div>
+            <div class="wl-notification-origin" th:with="origin=${watchlistOrigins != null ? watchlistOrigins[(notification.source() == 'INSIDER' ? 'INSIDER:' : 'CONGRESS:') + notification.id()] : null}"><small th:text="#{sidebar.watchlists}">Watchlists</small><span th:text="${origin != null ? origin : #messages.msg('home.earlierNotification')}" th:title="${origin}"></span></div>
             <div class="ticker-notification-actor">
               <strong th:text="${notification.actorName()}">Reporting person</strong>
-              <span th:text="${notification.actorRole() != null ? notification.actorRole() : notification.companyName()}">Officer</span>
+              <span th:text="${notification.actorRole() != null ? #tr.text(notification.actorRole()) : notification.companyName()}">Officer</span>
             </div>
             <div class="ticker-notification-activity">
               <span class="congressional-history-type"
                     th:classappend="${notification.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'"
-                    th:text="${notification.transactionTypeLabel()}">Purchase</span>
-              <strong th:text="${notification.amountLabel()}">$25,000</strong>
+                    th:text="${#tr.text(notification.transactionTypeLabel())}">Purchase</span>
+              <strong th:text="${#tr.text(notification.amountLabel())}">$25,000</strong>
             </div>
             <div class="ticker-notification-return">
-              <span>Directional return</span>
+              <span th:text="#{activitySignals.directionalReturn}">Directional return</span>
               <strong th:if="${notification.returnPercent() != null}"
                       th:classappend="${notification.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
                       th:text="${(notification.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(notification.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
-              <strong th:unless="${notification.returnPercent() != null}" class="unavailable">Awaiting price data</strong>
+              <strong th:unless="${notification.returnPercent() != null}" class="unavailable" th:text="#{home.awaitingPriceData}">Awaiting price data</strong>
               <small th:if="${notification.returnAsOf() != null}"
-                     th:text="${(notification.source() == 'CONGRESSIONAL' ? 'from transaction-date close proxy' : 'from filed price on ' + #temporals.format(notification.transactionDate(), 'dd MMM yyyy')) + ' · through ' + #temporals.format(notification.returnAsOf(), 'dd MMM yyyy')}">from filed price on 01 Jan 2026 · through 08 Jan 2026</small>
+                     th:text="#{home.returnWindow(${#temporals.format(notification.filingDate(), 'dd MMM yyyy')}, ${#temporals.format(notification.returnAsOf(), 'dd MMM yyyy')})}">from the first close after the 02 Jan 2026 filing · through 08 Jan 2026</small>
             </div>
             <div class="ticker-notification-dates">
-              <span>Traded <time th:text="${#temporals.format(notification.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time></span>
-              <span>Filed <time th:text="${#temporals.format(notification.filingDate(), 'dd MMM yyyy')}">02 Jan 2026</time></span>
+              <span><span th:text="#{activitySignals.tradedPrefix}">Traded</span> <time th:text="${#temporals.format(notification.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time></span>
+              <span><span th:text="#{activitySignals.filedPrefix}">Filed</span> <time th:text="${#temporals.format(notification.filingDate(), 'dd MMM yyyy')}">02 Jan 2026</time></span>
             </div>
             <div class="congressional-row-actions">
-              <span class="congressional-delivery-status" th:text="${notification.deliveryStatus()}">Email sent</span>
+              <span class="congressional-delivery-status" th:text="${#tr.text(notification.deliveryStatus())}">Email sent</span>
               <a class="notification-action-button notification-detail-button"
-                 th:href="${notification.detailUrl()}">View signal</a>
+                 th:href="${notification.detailUrl()}" th:text="#{home.viewSignal}">View signal</a>
               <button type="button"
                       class="notification-action-button notification-read-button"
                       data-notification-read
                       th:attr="data-notification-key=${notification.notificationKey()},data-read-endpoint=${notification.readEndpoint()}"
-                      th:aria-label="${'Mark ' + notification.sourceLabel() + ' notification for ' + notification.symbol() + ' as read'}">Mark as read</button>
+                      th:aria-label="#{home.markReadAria(${#tr.text(notification.sourceLabel())}, ${notification.symbol()})}" th:text="#{home.markAsRead}">Mark as read</button>
               <a class="notification-action-button notification-stock-button"
-                 th:href="@{/stock/{symbol}(symbol=${notification.symbol()})}">Open stock</a>
+                 th:href="@{/stock/{symbol}(symbol=${notification.symbol()})}" th:text="#{home.openStock}">Open stock</a>
               <a th:if="${notification.sourceUrl() != null}"
                  class="notification-action-button notification-filing-button"
                  th:href="${notification.sourceUrl()}"
                  target="_blank"
-                 rel="noopener noreferrer">Official filing</a>
+                 rel="noopener noreferrer" th:text="#{activityDetail.officialFiling}">Official filing</a>
             </div>
           </article>
         </div>
@@ -292,37 +293,37 @@
                data-dashboard-view="alerts"
                data-notification-panel
                th:attr="data-unread-count=${congressionalUnreadCount}"
-               hidden
+               th:hidden="${dashboardView != 'alerts'}"
                aria-labelledby="congressional-dashboard-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">Congressional filings</div>
+            <div class="panel-kicker" th:text="#{home.congressKicker}">Congressional filings</div>
             <h2 id="congressional-dashboard-heading" class="panel-title">
-              Congressional activity
+              <span th:text="#{js.followType.CONGRESS}">Congressional activity</span>
               <span class="panel-count" data-notification-count th:text="${congressionalUnreadCount}">0</span>
             </h2>
           </div>
           <div class="panel-heading-actions">
             <span class="panel-meta"
-                  th:text="${congressionalUnreadCount > 10 ? 'Showing the latest 10 of ' + congressionalUnreadCount + ' unread disclosures' : 'Relevant window: last 365 days'}">Relevant window: last 365 days</span>
+                  th:text="${congressionalUnreadCount > 10 ? #messages.msg('home.latestTenDisclosures', congressionalUnreadCount) : #messages.msg('home.congressWindow')}">Relevant window: last 365 days</span>
             <button type="button"
                     class="btn-secondary panel-action-button notification-clear-button"
                     data-notification-read-all
                     data-read-all-source="CONGRESSIONAL"
                     th:hidden="${congressionalUnreadCount == 0}"
-                    data-read-endpoints="/api/congressional-activity/notifications/read-all">Mark all as read</button>
+                    data-read-endpoints="/api/congressional-activity/notifications/read-all" th:text="#{signals.markAllRead}">Mark all as read</button>
           </div>
         </div>
 
         <div th:if="${!#lists.isEmpty(congressionalFollowedStocks)}"
              class="congressional-follow-strip"
-             aria-label="Stocks followed for congressional disclosures">
-          <span class="congressional-follow-label">Following</span>
+             aria-label="Stocks followed for congressional disclosures" th:aria-label="#{home.congressStripAria}">
+          <span class="congressional-follow-label" th:text="#{js.watchlists.column.following}">Following</span>
           <a th:each="stock : ${congressionalFollowedStocks}"
              th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"
              class="congressional-follow-chip">
             <strong th:text="${stock.symbol()}">AAPL</strong>
-            <span th:if="${stock.baselinePending()}">Preparing alerts</span>
+            <span th:if="${stock.baselinePending()}" th:text="#{home.preparingAlerts}">Preparing alerts</span>
           </a>
         </div>
 
@@ -331,11 +332,11 @@
              th:hidden="${!#lists.isEmpty(congressionalActivities)}">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
-            <h3>No unread congressional disclosures</h3>
-            <p th:if="${#lists.isEmpty(congressionalFollowedStocks)}">
+            <h3 th:text="#{home.noCongress}">No unread congressional disclosures</h3>
+            <p th:if="${#lists.isEmpty(congressionalFollowedStocks)}" th:text="#{home.noCongressHelp}">
               Open a stock and switch on congressional activity alerts to start following newly reported purchases and sales.
             </p>
-            <p th:unless="${#lists.isEmpty(congressionalFollowedStocks)}">
+            <p th:unless="${#lists.isEmpty(congressionalFollowedStocks)}" th:text="#{home.newFilingsHelp}">
               New filings will appear here. Emails follow your notification settings.
             </p>
           </div>
@@ -350,63 +351,66 @@
                    th:attr="data-notification-key=${'CONGRESSIONAL-' + activity.id()}">
             <div class="congressional-activity-direction"
                  th:classappend="${activity.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'">
-              <span th:text="${activity.transactionTypeLabel()}">Purchase</span>
+              <span th:text="${#tr.text(activity.transactionTypeLabel())}">Purchase</span>
               <strong th:text="${activity.symbol()}">AAPL</strong>
             </div>
             <div class="congressional-member">
               <strong th:text="${activity.memberName()}">Member name</strong>
-              <span th:text="${activity.chamber()}">House</span>
+              <span th:text="${#tr.text(activity.chamber())}">House</span>
             </div>
             <div class="congressional-value">
-              <span>Reported value</span>
-              <strong th:text="${activity.amountRange()}">$1,001 - $15,000</strong>
+              <span th:text="#{home.reportedValue}">Reported value</span>
+              <strong th:text="${#tr.text(activity.amountRange())}">$1,001 - $15,000</strong>
             </div>
             <div class="ticker-notification-return">
-              <span>Directional return</span>
+              <span th:text="#{activitySignals.directionalReturn}">Directional return</span>
               <strong th:if="${activity.returnPercent() != null}"
                       th:classappend="${activity.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
                       th:text="${(activity.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(activity.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
-              <strong th:unless="${activity.returnPercent() != null}" class="unavailable">Awaiting price data</strong>
+              <strong th:unless="${activity.returnPercent() != null}" class="unavailable" th:text="#{home.awaitingPriceData}">Awaiting price data</strong>
               <small th:if="${activity.returnAsOf() != null}"
-                     th:text="${'from transaction-date close proxy · through ' + #temporals.format(activity.returnAsOf(), 'dd MMM yyyy')}">from transaction-date close proxy · through 08 Jan 2026</small>
+                     th:text="#{home.returnAfterDisclosure(${#temporals.format(activity.returnAsOf(), 'dd MMM yyyy')})}">from the first close after disclosure · through 08 Jan 2026</small>
             </div>
             <div class="congressional-dates">
               <span>
-                Traded
+                <span th:text="#{activitySignals.tradedPrefix}">Traded</span>
                 <time th:text="${#temporals.format(activity.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time>
               </span>
               <span>
-                Disclosed
+                <span th:text="#{home.disclosedPrefix}">Disclosed</span>
                 <time th:text="${#temporals.format(activity.disclosureDate(), 'dd MMM yyyy')}">02 Jan 2026</time>
               </span>
             </div>
             <div class="congressional-row-actions">
-              <span class="congressional-delivery-status" th:text="${activity.deliveryStatus()}">Email sent</span>
+              <span class="congressional-delivery-status" th:text="${#tr.text(activity.deliveryStatus())}">Email sent</span>
               <a class="notification-action-button notification-detail-button"
-                 th:href="@{/activity-signals/congressional/{id}(id=${activity.id()})}">View signal</a>
+                 th:href="@{/activity-signals/congressional/{id}(id=${activity.id()})}" th:text="#{home.viewSignal}">View signal</a>
               <button type="button"
                       class="notification-action-button notification-read-button"
                       data-notification-read
                       th:attr="data-notification-key=${'CONGRESSIONAL-' + activity.id()},data-read-endpoint=@{/api/congressional-activity/notifications/{id}/read(id=${activity.id()})}"
-                      th:aria-label="${'Mark congressional notification for ' + activity.symbol() + ' as read'}">Mark as read</button>
+                      th:aria-label="#{home.markCongressReadAria(${activity.symbol()})}" th:text="#{home.markAsRead}">Mark as read</button>
               <a class="notification-action-button notification-stock-button"
-                 th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}">Open stock</a>
+                 th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}" th:text="#{home.openStock}">Open stock</a>
               <a th:if="${activity.sourceUrl() != null}"
                  class="notification-action-button notification-filing-button"
                  th:href="${activity.sourceUrl()}"
                  target="_blank"
-                 rel="noopener noreferrer">Official filing</a>
+                 rel="noopener noreferrer" th:text="#{activityDetail.officialFiling}">Official filing</a>
             </div>
           </article>
         </div>
 
+        <details class="how-it-works">
+          <summary th:text="#{home.aboutData}">About this data</summary>
         <p class="congressional-dashboard-note">
-          Purchases and sales are sourced through
-          <a href="https://congressinvests.com/" target="_blank" rel="noopener noreferrer">CongressInvests</a>
-          from public House and Senate filings. Disclosures can arrive up to 45 days after a transaction.
-          Directional return uses the completed daily close on the transaction date as a proxy because disclosures provide value ranges rather than execution prices.
-          Informational only, not financial advice.
+          <span th:text="#{home.congressSourcePrefix}">Purchases and sales are sourced through</span>
+          <a href="https://congressinvests.com/" target="_blank" rel="noopener noreferrer" th:text="#{home.congressInvests}">CongressInvests</a>
+          <span th:text="#{home.congressSourceText}">from public House and Senate filings. Disclosures can arrive up to 45 days after a transaction.
+          Directional return runs from the first completed daily close after the disclosure became public, the earliest price a reader could act on. Disclosures give value ranges rather than execution prices.
+          Informational only, not financial advice.</span>
         </p>
+        </details>
       </section>
 
       <section id="insiderActivityDashboard"
@@ -414,37 +418,37 @@
                data-dashboard-view="alerts"
                data-notification-panel
                th:attr="data-unread-count=${insiderUnreadCount}"
-               hidden
+               th:hidden="${dashboardView != 'alerts'}"
                aria-labelledby="insider-dashboard-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker">Insider filings</div>
+            <div class="panel-kicker" th:text="#{home.insiderKicker}">Insider filings</div>
             <h2 id="insider-dashboard-heading" class="panel-title">
-              Corporate insider activity
+              <span th:text="#{home.insiderTitle}">Corporate insider activity</span>
               <span class="panel-count" data-notification-count th:text="${insiderUnreadCount}">0</span>
             </h2>
           </div>
           <div class="panel-heading-actions">
             <span class="panel-meta"
-                  th:text="${insiderUnreadCount > 10 ? 'Showing the latest 10 of ' + insiderUnreadCount + ' unread filings' : 'Daily checks · Open-market purchases and sales'}">Daily checks · Open-market purchases and sales</span>
+                  th:text="${insiderUnreadCount > 10 ? #messages.msg('home.latestTenFilings', insiderUnreadCount) : #messages.msg('home.insiderPanelMeta')}">Daily checks · Open-market purchases and sales</span>
             <button type="button"
                     class="btn-secondary panel-action-button notification-clear-button"
                     data-notification-read-all
                     data-read-all-source="INSIDER"
                     th:hidden="${insiderUnreadCount == 0}"
-                    data-read-endpoints="/api/insider-activity/notifications/read-all">Mark all as read</button>
+                    data-read-endpoints="/api/insider-activity/notifications/read-all" th:text="#{signals.markAllRead}">Mark all as read</button>
           </div>
         </div>
 
         <div th:if="${!#lists.isEmpty(insiderFollowedStocks)}"
              class="congressional-follow-strip insider-follow-strip"
-             aria-label="Stocks followed for insider filings">
-          <span class="congressional-follow-label">Following</span>
+             aria-label="Stocks followed for insider filings" th:aria-label="#{home.insiderStripAria}">
+          <span class="congressional-follow-label" th:text="#{js.watchlists.column.following}">Following</span>
           <a th:each="stock : ${insiderFollowedStocks}"
              th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"
              class="congressional-follow-chip">
             <strong th:text="${stock.symbol()}">AAPL</strong>
-            <span th:if="${stock.baselinePending()}">Preparing alerts</span>
+            <span th:if="${stock.baselinePending()}" th:text="#{home.preparingAlerts}">Preparing alerts</span>
           </a>
         </div>
 
@@ -453,11 +457,11 @@
              th:hidden="${!#lists.isEmpty(insiderActivities)}">
           <div class="latest-empty-pulse" aria-hidden="true"><span></span></div>
           <div>
-            <h3>No unread corporate insider filings</h3>
-            <p th:if="${#lists.isEmpty(insiderFollowedStocks)}">
+            <h3 th:text="#{home.noInsider}">No unread corporate insider filings</h3>
+            <p th:if="${#lists.isEmpty(insiderFollowedStocks)}" th:text="#{home.noInsiderHelp}">
               Open a stock and follow corporate insider activity to monitor newly filed purchases and sales.
             </p>
-            <p th:unless="${#lists.isEmpty(insiderFollowedStocks)}">
+            <p th:unless="${#lists.isEmpty(insiderFollowedStocks)}" th:text="#{home.newFilingsHelp}">
               New filings will appear here. Emails follow your notification settings.
             </p>
           </div>
@@ -472,95 +476,98 @@
                    th:attr="data-notification-key=${'INSIDER-' + activity.id()}">
             <div class="congressional-activity-direction"
                  th:classappend="${activity.transactionType() == 'PURCHASE'} ? ' purchase' : ' sale'">
-              <span th:text="${activity.transactionTypeLabel()}">Purchase</span>
+              <span th:text="${#tr.text(activity.transactionTypeLabel())}">Purchase</span>
               <strong th:text="${activity.symbol()}">AAPL</strong>
             </div>
             <div class="congressional-member">
               <strong th:text="${activity.insiderName()}">Insider name</strong>
-              <span th:text="${activity.ownerRole() != null ? activity.ownerRole() : 'Role not reported'}">Director</span>
+              <span th:text="${activity.ownerRole() != null ? #tr.text(activity.ownerRole()) : #messages.msg('home.roleNotReported')}">Director</span>
             </div>
             <div class="congressional-value">
-              <span>Filed trade</span>
+              <span th:text="#{activitySignals.filedTrade}">Filed trade</span>
               <strong th:if="${activity.transactionValue() != null}"
                       th:text="${'$' + #numbers.formatDecimal(activity.transactionValue(), 1, 0)}">$25,000</strong>
-              <strong th:unless="${activity.transactionValue() != null}">Value unavailable</strong>
+              <strong th:unless="${activity.transactionValue() != null}" th:text="#{home.valueUnavailable}">Value unavailable</strong>
             </div>
             <div class="insider-dashboard-return">
-              <span>Directional return</span>
+              <span th:text="#{activitySignals.directionalReturn}">Directional return</span>
               <strong th:if="${activity.returnPercent() != null}"
                       th:classappend="${activity.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
                       th:text="${(activity.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(activity.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
-              <strong th:unless="${activity.returnPercent() != null}" class="unavailable">Awaiting price data</strong>
+              <strong th:unless="${activity.returnPercent() != null}" class="unavailable" th:text="#{home.awaitingPriceData}">Awaiting price data</strong>
               <small th:if="${activity.returnAsOf() != null}"
-                     th:text="${'from filed price on ' + #temporals.format(activity.transactionDate(), 'dd MMM yyyy') + ' · through ' + #temporals.format(activity.returnAsOf(), 'dd MMM yyyy')}">from filed price on 01 Jan 2026 · through 08 Jan 2026</small>
+                     th:text="#{home.returnWindow(${#temporals.format(activity.filingDate(), 'dd MMM yyyy')}, ${#temporals.format(activity.returnAsOf(), 'dd MMM yyyy')})}">from the first close after the 02 Jan 2026 filing · through 08 Jan 2026</small>
             </div>
             <div class="congressional-dates">
-              <span>Traded <time th:text="${#temporals.format(activity.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time></span>
-              <span>Filed <time th:text="${#temporals.format(activity.filingDate(), 'dd MMM yyyy')}">02 Jan 2026</time></span>
+              <span><span th:text="#{activitySignals.tradedPrefix}">Traded</span> <time th:text="${#temporals.format(activity.transactionDate(), 'dd MMM yyyy')}">01 Jan 2026</time></span>
+              <span><span th:text="#{activitySignals.filedPrefix}">Filed</span> <time th:text="${#temporals.format(activity.filingDate(), 'dd MMM yyyy')}">02 Jan 2026</time></span>
             </div>
             <div class="congressional-row-actions">
-              <span class="congressional-delivery-status" th:text="${activity.deliveryStatus()}">Email sent</span>
+              <span class="congressional-delivery-status" th:text="${#tr.text(activity.deliveryStatus())}">Email sent</span>
               <a class="notification-action-button notification-detail-button"
-                 th:href="@{/activity-signals/insider/{id}(id=${activity.id()})}">View signal</a>
+                 th:href="@{/activity-signals/insider/{id}(id=${activity.id()})}" th:text="#{home.viewSignal}">View signal</a>
               <button type="button"
                       class="notification-action-button notification-read-button"
                       data-notification-read
                       th:attr="data-notification-key=${'INSIDER-' + activity.id()},data-read-endpoint=@{/api/insider-activity/notifications/{id}/read(id=${activity.id()})}"
-                      th:aria-label="${'Mark corporate insider notification for ' + activity.symbol() + ' as read'}">Mark as read</button>
+                      th:aria-label="#{home.markInsiderReadAria(${activity.symbol()})}" th:text="#{home.markAsRead}">Mark as read</button>
               <a class="notification-action-button notification-stock-button"
-                 th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}">Open stock</a>
+                 th:href="@{/stock/{symbol}(symbol=${activity.symbol()})}" th:text="#{home.openStock}">Open stock</a>
               <a th:if="${activity.sourceUrl() != null}"
                  class="notification-action-button notification-filing-button"
                  th:href="${activity.sourceUrl()}"
                  target="_blank"
-                 rel="noopener noreferrer">SEC filing</a>
+                 rel="noopener noreferrer" th:text="#{activitySignals.secFiling}">SEC filing</a>
             </div>
           </article>
         </div>
 
+        <details class="how-it-works">
+          <summary th:text="#{home.aboutData}">About this data</summary>
         <p class="congressional-dashboard-note">
-          Insider filings are sourced through
+          <span th:text="#{home.insiderSourcePrefix}">Insider filings are sourced through</span>
           <a href="https://api-ninjas.com/api/insidertrading"
              target="_blank"
-             rel="noopener noreferrer">API Ninjas</a>.
+             rel="noopener noreferrer" th:text="#{home.apiNinjas}">API Ninjas</a><span th:text="#{home.insiderSourceText}">.
           Coverage is limited to the latest 10 filings per check, so busy periods may have gaps.
-          Directional return measures a purchase rising or a sale being followed by a decline, from the filed price to the latest completed close.
-          It is not a realized return or a recommendation.
+          Directional return measures a purchase rising or a sale being followed by a decline, from the first completed close after the filing became public to the latest completed close.
+          It is not a realized return or a recommendation.</span>
         </p>
+        </details>
       </section>
     </div>
 
     <aside class="dashboard-technical-sidebar"
-           data-dashboard-view="technical"
-           aria-label="Technical monitoring summary">
+           data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}"
+           aria-label="Signal alerts summary" th:aria-label="#{home.summaryAria}">
       <section id="technicalDashboardMetrics"
                class="metrics-grid dashboard-sidebar-metrics"
-               aria-label="Technical monitoring overview">
+               aria-label="Signal alerts overview" th:aria-label="#{home.overviewAria}">
         <article class="metric-card">
-          <span class="metric-label">Followed instruments</span>
+          <span class="metric-label" th:text="#{home.followedInstruments}">Followed instruments</span>
           <strong class="metric-value" th:text="${technicalInstrumentCount}">0</strong>
-          <span class="metric-note">Stocks, indexes and ETFs with alerts</span>
+          <span class="metric-note" th:text="#{home.followedInstrumentsHelp}">Stocks, indexes and ETFs with alerts</span>
         </article>
         <article class="metric-card">
-          <span class="metric-label">Active rules</span>
+          <span class="metric-label" th:text="#{home.alertsFollowed}">Signal alerts followed</span>
           <strong class="metric-value" th:text="${activeRuleCount}">0</strong>
-          <span class="metric-note">Pattern, direction and interval combinations</span>
+          <span class="metric-note" th:text="#{home.alertsFollowedHelp}">Each pattern, direction and interval you follow counts once</span>
         </article>
         <article class="metric-card">
-          <span class="metric-label">Latest signals</span>
+          <span class="metric-label" th:text="#{js.watchlists.column.unread}">Unread signals</span>
           <strong class="metric-value" th:text="${#lists.size(latestSignalItems)}">0</strong>
-          <span class="metric-note">Unread signals and outlook changes</span>
+          <span class="metric-note" th:text="#{home.newSignalsKicker}">New signals and outlook changes</span>
         </article>
-        <article class="metric-card">
-          <span class="metric-label">Missed checks</span>
-          <strong class="metric-value market-up">Retried</strong>
-          <span class="metric-note">Missed scheduled checks resume after restart</span>
-        </article>
+        <a class="metric-card metric-card-link" th:href="@{/ticker-alerts}">
+          <span class="metric-label" th:text="#{home.unreadTickerAlerts}">Unread ticker alerts</span>
+          <strong class="metric-value" th:text="${tickerNotificationUnreadCount}">0</strong>
+          <span class="metric-note" th:text="#{home.unreadTickerAlertsHelp}">Insider and congressional trades</span>
+        </a>
       </section>
 
       <details id="systemPulsePanel" class="glass-panel dashboard-panel system-pulse-panel">
-        <summary>About monitoring</summary>
-        <p>Checks run in the background while StockWatch is running. Missed scheduled checks resume after a restart.</p>
+        <summary th:text="#{home.aboutMonitoring}">About monitoring</summary>
+        <p th:text="#{home.aboutMonitoringText}">Checks run in the background while StockWatch is running. Missed scheduled checks resume after a restart.</p>
       </details>
     </aside>
   </div>
@@ -570,17 +577,17 @@
         class="unsaved-alert-dialog company-unfollow-dialog"
         aria-labelledby="unfollowCompanyTitle">
   <div class="unsaved-alert-dialog-content">
-    <span class="unsaved-alert-kicker">Manage technical monitoring</span>
-    <h2 id="unfollowCompanyTitle">Manage followed rules</h2>
-    <p>Choose which pattern rules or Automated Technical Analysis subscriptions to stop following for <strong id="unfollowCompanyName">this company</strong>.</p>
-    <p>Select individual rules below, or delete every listed rule at once:</p>
+    <span class="unsaved-alert-kicker" th:text="#{js.watchlists.manageFollows}">Manage follows</span>
+    <h2 id="unfollowCompanyTitle" th:text="#{home.manageRules}">Manage followed rules</h2>
+    <p><span th:text="#{home.manageRulesText}">Choose which signal or outlook alerts to stop following for</span> <strong id="unfollowCompanyName" th:text="#{home.thisCompany}">this company</strong>.</p>
+    <p th:text="#{home.manageRulesHelp}">Select individual rules below, or delete every listed rule at once:</p>
     <ul id="unfollowCompanyRuleList" class="company-unfollow-rule-list"></ul>
-    <p class="company-unfollow-history-note">Existing signal history will remain available. Ticker alerts are not affected.</p>
+    <p class="company-unfollow-history-note" th:text="#{home.manageRulesNote}">Existing signal history will remain available. Ticker alerts are not affected.</p>
     <p id="unfollowCompanyStatus" class="unsaved-alert-dialog-status" role="status"></p>
     <div class="unsaved-alert-dialog-actions">
-      <button id="cancelUnfollowCompany" type="button" class="btn-secondary">Keep following</button>
-      <button id="deleteSelectedCompanyRules" type="button" class="company-unfollow-delete-selected" disabled>Delete selected</button>
-      <button id="deleteAllCompanyRules" type="button" class="signal-delete-confirm-button">Delete all</button>
+      <button id="cancelUnfollowCompany" type="button" class="btn-secondary" th:text="#{technicalWatchlist.keepFollowing}">Keep following</button>
+      <button id="deleteSelectedCompanyRules" type="button" class="company-unfollow-delete-selected" disabled th:text="#{signals.deleteSelected}">Delete selected</button>
+      <button id="deleteAllCompanyRules" type="button" class="signal-delete-confirm-button" th:text="#{js.dashboard.deleteAll}">Delete all</button>
     </div>
   </div>
 </dialog>

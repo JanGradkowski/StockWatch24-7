@@ -24,7 +24,6 @@ import org.ta4j.core.indicators.helpers.TypicalPriceIndicator;
 import org.ta4j.core.indicators.helpers.VolumeIndicator;
 import org.ta4j.core.indicators.keltner.KeltnerChannelFacade;
 import org.ta4j.core.indicators.statistics.StandardDeviationIndicator;
-import org.ta4j.core.indicators.supportresistance.VolumeProfileKDEIndicator;
 import org.ta4j.core.indicators.trend.DownTrendIndicator;
 import org.ta4j.core.indicators.trend.UpTrendIndicator;
 import org.ta4j.core.indicators.volume.MoneyFlowIndexIndicator;
@@ -90,11 +89,11 @@ public final class Ta4jIndicatorRegistry {
         DownTrendIndicator downTrend = new DownTrendIndicator(series, parameters.trendPeriod());
         TypicalPriceIndicator typicalPrice = new TypicalPriceIndicator(series);
         VolumeIndicator volume = new VolumeIndicator(series);
-        VolumeProfileKDEIndicator volumeProfileKde = new VolumeProfileKDEIndicator(
+        StableVolumeProfileKde volumeProfileKde = new StableVolumeProfileKde(
                 typicalPrice,
                 volume,
                 parameters.volumeProfilePeriod(),
-                series.numFactory().numOf(causalBandwidth(series)));
+                causalBandwidth(series));
         return new ResearchIndicators(
                 adx, plusDi, minusDi, stochasticK, stochasticD, stochasticRsi,
                 obv, moneyFlow, donchian.lower(), donchian.middle(), donchian.upper(),
@@ -147,6 +146,6 @@ public final class Ta4jIndicatorRegistry {
             Indicator<Num> keltnerUpper,
             Indicator<Boolean> upTrend,
             Indicator<Boolean> downTrend,
-            VolumeProfileKDEIndicator volumeProfileKde) {
+            StableVolumeProfileKde volumeProfileKde) {
     }
 }

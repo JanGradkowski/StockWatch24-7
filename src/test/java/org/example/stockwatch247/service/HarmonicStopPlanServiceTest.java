@@ -152,6 +152,58 @@ class HarmonicStopPlanServiceTest {
         assertThat(event.getHarmonicStopStatus()).isEqualTo("ACTIVE");
     }
 
+    @Test
+    void nextOpenPlanFillsAtTheOpenAndCanReachItsTargetOnTheSameCandle() {
+        var event = awaitingFillEvent();
+        List<Candle> candles = new java.util.ArrayList<>(quietHistory());
+        candles.add(new Candle("TEST", "1d", 101L, 101.0, 116.0, 100.5, 114.0, 1_000L));
+
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY, candles)).isEqualTo(1);
+
+        assertThat(event.getTradeFillStatus()).isEqualTo("FILLED");
+        assertThat(event.getTradeEntryPrice()).isEqualTo(101.0);
+        assertThat(event.getTradeEntryTimestamp()).isEqualTo(101L);
+        assertThat(event.getRewardRiskRatio()).isCloseTo(14.0 / 6.0, org.assertj.core.api.Assertions.within(1e-9));
+        assertThat(event.getHarmonicStopStatus()).isEqualTo("TARGET_REACHED");
+        assertThat(event.getTradeResolutionPrice()).isEqualTo(115.0);
+    }
+
+    @Test
+    void nextOpenBelowTheStopRecordsANotFilledPlanInsteadOfALoss() {
+        var event = awaitingFillEvent();
+        List<Candle> candles = new java.util.ArrayList<>(quietHistory());
+        Candle gap = new Candle("TEST", "1d", 101L, 94.0, 96.0, 93.0, 95.5, 1_000L);
+        candles.add(gap);
+
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY, candles)).isEqualTo(1);
+
+        assertThat(event.getTradeFillStatus()).isEqualTo("NOT_FILLED");
+        assertThat(event.getHarmonicStopStatus()).isEqualTo(HarmonicStopStatus.NOT_FILLED.name());
+        assertThat(event.getHarmonicStopResolutionPrice()).isEqualTo(94.0);
+        assertThat(event.getHarmonicStopResolutionReason()).contains("beyond the stop");
+        assertThat(event.getTradeResolutionPrice()).isNull();
+        verify(notificationService).sendHarmonicStopOutcomeEmail(event, gap);
+    }
+
+    private AlertEvent awaitingFillEvent() {
+        var event = activeEvent(TradeSignal.BUY, 95.0);
+        event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);
+        event.setTradeActionable(true);
+        event.setTradeHorizonCandles(5);
+        event.setDetectionCandleTimestamp(100L);
+        event.setProfitTargetPrice(115.0);
+        event.setTradeFillStatus("AWAITING_FILL");
+        when(eventRepository.findActiveHarmonicStopPlans("TEST", TimeInterval.DAILY)).thenReturn(List.of(event));
+        return event;
+    }
+
+    /** Fifteen bars with a four-point range give the ATR needed to qualify the plan at its real entry. */
+    private List<Candle> quietHistory() {
+        return java.util.stream.LongStream.rangeClosed(86, 100)
+                .mapToObj(timestamp -> new Candle("TEST", "1d", timestamp, 100.0, 102.0, 98.0, 100.0, 1_000L))
+                .toList();
+    }
+
     private AlertEvent activeEvent(TradeSignal signal, double stop) {
         AlertEvent event = new AlertEvent();
         event.setTradeSignal(signal);

@@ -63,6 +63,18 @@ public class PasswordSecurityCodeService {
 
     @Transactional
     public boolean consume(Long userId, String purpose, String rawCode) {
+        if (!verify(userId, purpose, rawCode)) return false;
+        discard(userId, purpose);
+        return true;
+    }
+
+    /**
+     * Checks the code and counts a wrong one, but leaves a correct one in place, so a request that fails
+     * for another reason after the check does not use the code up. Call {@link #discard} once the
+     * change it authorises has been made.
+     */
+    @Transactional
+    public boolean verify(Long userId, String purpose, String rawCode) {
         PasswordSecurityCode challenge = repository.findForUpdate(userId, purpose).orElse(null);
         if (challenge == null || !challenge.getExpiresAt().isAfter(LocalDateTime.now(clock))
                 || challenge.getFailedAttempts() >= 5) return false;
@@ -72,8 +84,12 @@ public class PasswordSecurityCodeService {
             repository.save(challenge);
             return false;
         }
-        repository.delete(challenge);
         return true;
+    }
+
+    @Transactional
+    public void discard(Long userId, String purpose) {
+        repository.findForUpdate(userId, purpose).ifPresent(repository::delete);
     }
 
     public java.util.Optional<java.time.Instant> activeChangeCodeExpiry(Long userId) {

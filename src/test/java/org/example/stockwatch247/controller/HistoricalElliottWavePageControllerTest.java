@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.ElliottSignalStage;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.service.HistoricalElliottWaveService;
+import org.example.stockwatch247.service.SignalScoringPreferencesService;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.ui.ConcurrentModel;
@@ -64,5 +65,32 @@ class HistoricalElliottWavePageControllerTest {
                 1_515_974_400L,
                 "BULLISH:1:2:3:4:5"
         );
+    }
+
+    @Test
+    void opensPatternCandidateDetailWithItsOwnUnweightedScore() {
+        UserRepository userRepository = mock(UserRepository.class);
+        HistoricalElliottWaveService service = mock(HistoricalElliottWaveService.class);
+        HistoricalElliottWaveService.HistoricalElliottWaveDetail detail =
+                mock(HistoricalElliottWaveService.HistoricalElliottWaveDetail.class);
+        when(detail.candidate()).thenReturn(true);
+        when(detail.qualityScore()).thenReturn(81);
+        when(service.findCandidateDetail("MARA", "1d", 1_515_974_400L, "FLAT:1-2-3-4", null)).thenReturn(detail);
+        HistoricalElliottWavePageController controller =
+                new HistoricalElliottWavePageController(userRepository, service);
+        ConcurrentModel model = new ConcurrentModel();
+
+        String view = controller.historicalElliottCandidateDetail(
+                "mara", "1d", 1_515_974_400L, "FLAT:1-2-3-4", () -> "jan@example.com",
+                model, new MockHttpServletResponse());
+
+        assertThat(view).isEqualTo("historical-elliott-detail");
+        assertThat(model.getAttribute("wave")).isSameAs(detail);
+        assertThat(model.getAttribute("displayScore"))
+                .isInstanceOfSatisfying(SignalScoringPreferencesService.DisplayScore.class, score -> {
+                    assertThat(score.score()).isEqualTo(81);
+                    assertThat(score.strengthLabel()).isEqualTo("Moderate fit");
+                    assertThat(score.customApplied()).isFalse();
+                });
     }
 }

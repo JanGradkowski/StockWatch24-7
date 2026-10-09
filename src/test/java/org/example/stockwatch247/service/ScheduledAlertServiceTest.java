@@ -41,6 +41,74 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class ScheduledAlertServiceTest {
+    @Test void duplicatePublicationIncludesArchivedEventsAndDoesNotRepeatSideEffects() throws Exception {
+        var events = mock(AlertEventRepository.class);
+        var service = service(mock(AlertRuleRepository.class), events, mock(CandleRepository.class),
+                mock(MarketDataService.class), mock(AlertNotificationService.class), mock(ElliottWaveDetectionService.class));
+        var rule = rule("NKE", TimeInterval.DAILY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        rule.setId(6150L);
+        var existing = new AlertEvent(); existing.setId(42L); existing.markDeleted(Instant.now());
+        var attempted = new AlertEvent(); attempted.setAlertRule(rule);
+        attempted.setPattern(CandlePattern.ELLIOTT_BEARISH_WAVE_V_END); attempted.setSignalCandleTimestamp(1790553600L);
+        when(events.findFirstByAlertRuleAndPatternAndSignalCandleTimestampOrderByIdAsc(
+                rule,attempted.getPattern(),attempted.getSignalCandleTimestamp())).thenReturn(Optional.of(existing));
+        var publication = mock(Runnable.class);
+        var publish = ScheduledAlertService.class.getDeclaredMethod("publishEvent", AlertEvent.class, Runnable.class);
+        publish.setAccessible(true); publish.invoke(service,attempted,publication);
+        verify(events).lockPublicationRule(6150L);
+        verify(publication,never()).run();
+    }
+
+
+    @Test
+    void providerOutageDefersTheJobEvenAfterTheCalculationRetryLimit() {
+        var rules = mock(AlertRuleRepository.class);
+        var events = mock(AlertEventRepository.class);
+        var candles = mock(CandleRepository.class);
+        var market = mock(MarketDataService.class);
+        var service = service(rules, events, candles, market, mock(AlertNotificationService.class));
+        var store = (AlertCheckJobStore) org.springframework.test.util.ReflectionTestUtils.getField(service, "jobStore");
+        var job = new AlertCheckJobStore.AlertCheckJob(1, "CDR", TimeInterval.DAILY, Instant.now(), 4);
+        when(store.claimNext(any())).thenReturn(Optional.of(job));
+        when(market.syncCandlesForAnalysis(anyString(), anyString(), anyInt()))
+                .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.NONE, 0, "provider offline"));
+
+        service.processNextQueuedCheck();
+
+        verify(store).backoff(eq(job), org.mockito.ArgumentMatchers.contains("provider offline"),
+                eq(java.time.Duration.ofMinutes(8)), eq(48));
+        verify(store, never()).defer(any(), anyString(), any());
+        verify(store, never()).retryOrFail(any(), anyString(), anyInt(), any());
+        verify(store, never()).complete(any());
+        org.mockito.Mockito.verifyNoInteractions(candles);
+        verify(events, never()).save(any());
+    }
+
+    @Test
+    void failingCandlestickStageStillEvaluatesElliottBeforeRetryingTheJob() {
+        var rules = mock(AlertRuleRepository.class);
+        var events = mock(AlertEventRepository.class);
+        var candles = mock(CandleRepository.class);
+        var market = mock(MarketDataService.class);
+        var candlesticks = mock(CandlePatternDetectionService.class);
+        var waves = mock(ElliottWaveDetectionService.class);
+        var service = service(rules, events, candles, market, mock(AlertNotificationService.class), candlesticks, waves);
+        when(rules.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue("TEST", TimeInterval.DAILY))
+                .thenReturn(List.of(rule("TEST", TimeInterval.DAILY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY),
+                        rule("TEST", TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY)));
+        when(candles.findBySymbolAndTimeIntervalOrderByTimestampDesc("TEST", "1d", PageRequest.of(0, 1199)))
+                .thenReturn(syntheticElliottCandles("TEST", "1d").reversed());
+        when(candlesticks.detectAlertSignalsFactory(any(), eq(TimeInterval.DAILY)))
+                .thenThrow(new IllegalStateException("test detector failure"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.processSymbolInterval("TEST", TimeInterval.DAILY))
+                .hasMessageContaining("rule CANDLESTICK")
+                .hasMessageContaining("test detector failure");
+        var order = org.mockito.Mockito.inOrder(candlesticks, waves);
+        order.verify(candlesticks).detectAlertSignalsFactory(any(), eq(TimeInterval.DAILY));
+        order.verify(waves).findDevelopingImpulses(any());
+        order.verify(waves).detectAlertSignals(any());
+    }
 
     @Test
     void startsAtNewlyAvailableWaveThreeButDoesNotRedeliverAnOldCount() {
@@ -302,6 +370,7 @@ class ScheduledAlertServiceTest {
         });
         when(alertEventRepository.saveAndFlush(any(AlertEvent.class))).thenAnswer(invocation -> {
             AlertEvent event = invocation.getArgument(0);
+            if (event.getId() == null) event.setId(1L);
             persisted.set(event);
             return event;
         });
@@ -356,8 +425,11 @@ class ScheduledAlertServiceTest {
         AlertEvent cycle = saved.getValue();
         assertThat(cycle.getElliottSignalStage()).isEqualTo(ElliottSignalStage.WAVE_II_END);
         assertThat(cycle.getPattern()).isEqualTo(CandlePattern.ELLIOTT_BULLISH_WAVE_II_END);
-        assertThat(cycle.getStopLossPrice()).isEqualTo(98.0);
-        assertThat(cycle.getProfitTargetPrice()).isEqualTo(138.0);
+        // Weekly plans are recomputed for the weekly interval rather than taken from the daily preview.
+        var weeklyPlan = ElliottTradePlanPolicy.calculate(ElliottSignalStage.WAVE_II_END, "BULLISH", TradeSignal.BUY,
+                106.0, waveTwo.points(), TradeRiskPolicy.atr(List.of(latestWaveTwo), 0, 14), TimeInterval.WEEKLY).orElseThrow();
+        assertThat(cycle.getStopLossPrice()).isEqualTo(weeklyPlan.stopLossPrice()).isLessThan(100.0);
+        assertThat(cycle.getProfitTargetPrice()).isEqualTo(weeklyPlan.targetTriggerPrice()).isGreaterThan(106.0);
         assertThat(cycle.getElliottTransitionHistory()).contains("WAVE_II_END");
 
         ElliottWaveDetectionService.DevelopingImpulse waveThree = developingCandidate(
@@ -513,6 +585,28 @@ class ScheduledAlertServiceTest {
         verify(alertEventRepository, org.mockito.Mockito.times(2)).save(event);
         verify(notificationService, org.mockito.Mockito.times(1)).sendDevelopingElliottEmail(
                 eq(rule), any(DetectedSignal.class), eq(event), eq(false), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test void existingCycleCannotBeMovedOntoAnotherEventsNotificationIdentity() {
+        var rules=mock(AlertRuleRepository.class); var events=mock(AlertEventRepository.class);
+        var candles=mock(CandleRepository.class); var market=mock(MarketDataService.class);
+        var notification=mock(AlertNotificationService.class); var detector=mock(ElliottWaveDetectionService.class);
+        var rule=rule("AAPL",TimeInterval.WEEKLY,AlertPatternFamily.ELLIOTT_WAVE,TradeSignal.BUY);
+        var candidate=developingCandidate(ElliottSignalStage.WAVE_II_END,CandlePattern.ELLIOTT_BULLISH_WAVE_II_END,
+                TradeSignal.BUY,4*86_400L,114.0,List.of(point("0",1,100,"LOW"),point("I",2,120,"HIGH"),point("II",3,110,"LOW")));
+        var existing=new AlertEvent();existing.setId(10L);existing.setAlertRule(rule);
+        existing.setLifecycleStatus(SignalLifecycleStatus.DETECTED);existing.setElliottSignalStage(ElliottSignalStage.WAVE_II_END);
+        var collision=new AlertEvent();collision.setId(11L);
+        var enriched=List.of(enriched(1,100));
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(candidate));
+        when(events.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(rule,candidate.developmentKey())).thenReturn(Optional.of(existing));
+        when(events.findFirstByAlertRuleAndPatternAndSignalCandleTimestampOrderByIdAsc(rule,candidate.pattern(),candidate.confirmationTimestamp())).thenReturn(Optional.of(collision));
+        var service=service(rules,events,candles,market,notification,detector);
+        service.processDevelopingElliott("AAPL",TimeInterval.WEEKLY,List.of(rule),
+                List.of(candle("AAPL","1wk",4,111,115,110,114)),enriched,4*86_400L);
+        verify(events,never()).save(existing);
+        verify(events,never()).saveAndFlush(existing);
+        org.mockito.Mockito.verifyNoInteractions(notification);
     }
 
     @Test
@@ -748,7 +842,7 @@ class ScheduledAlertServiceTest {
                 detectionService,
                 new ElliottWaveDetectionService(),
                 notificationService,
-                new CandlestickSignalLifecycleService(alertEventRepository, notificationService, 3),
+                new CandlestickSignalLifecycleService(alertEventRepository, notificationService),
                 mock(AlertCheckJobStore.class),
                 mock(AlertScheduleRecoveryService.class),
                 true,
@@ -1065,7 +1159,7 @@ class ScheduledAlertServiceTest {
                 new CandlePatternDetectionService(),
                 elliottWaveDetectionService,
                 notificationService,
-                new CandlestickSignalLifecycleService(alertEventRepository, notificationService, 3),
+                new CandlestickSignalLifecycleService(alertEventRepository, notificationService),
                 mock(AlertCheckJobStore.class),
                 mock(AlertScheduleRecoveryService.class),
                 true,
@@ -1096,7 +1190,7 @@ class ScheduledAlertServiceTest {
                 detectionService,
                 elliottWaveDetectionService,
                 notificationService,
-                new CandlestickSignalLifecycleService(alertEventRepository, notificationService, 3),
+                new CandlestickSignalLifecycleService(alertEventRepository, notificationService),
                 mock(AlertCheckJobStore.class),
                 mock(AlertScheduleRecoveryService.class),
                 true,

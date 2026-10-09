@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title th:text="|#{error.title} — StockWatch 24/7|">Something went wrong — StockWatch 24/7</title><script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script><link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
+  <link rel="stylesheet" th:href="@{/css/design.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
+</head>
+<body class="auth-page"><div class="bg-animation" aria-hidden="true"><div class="glow-orb orb-1"></div><div class="glow-orb orb-2"></div></div>
+<main class="auth-shell auth-shell-compact"><section class="auth-showcase"><a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7" th:aria-label="#{auth.backHome}"><span class="logo-mark" aria-hidden="true"></span><span class="logo-word">StockWatch <span>24/7</span></span></a><div class="auth-pitch"><div class="eyebrow" th:text="${status != null} ? #{error.eyebrow.status(${status})} : #{error.eyebrow}">Error</div><h1><span th:text="#{error.headline1}">This page</span><br><span class="text-gradient" th:text="#{error.headline2}">could not be shown.</span></h1></div></section>
+<section class="auth-card" th:with="code=${status == null ? 500 : status}">
+  <div class="auth-kicker" th:text="${code}">500</div>
+  <h2 th:switch="${code}">
+    <span th:case="404" th:text="#{error.404}">Page not found</span>
+    <span th:case="403" th:text="#{error.403}">Access denied</span>
+    <span th:case="400" th:text="#{error.400}">The request could not be processed</span>
+    <span th:case="409" th:text="#{error.409}">The request could not be completed</span>
+    <span th:case="*" th:text="#{error.generic}">Something went wrong</span>
+  </h2>
+  <p class="auth-description" th:if="${userMessage != null}" th:text="${userMessage}"></p>
+  <p class="auth-description" th:if="${userMessage == null}" th:text="#{error.retry}">Go back and try again. If the problem continues, try again in a few minutes.</p>
+  <p class="auth-description" th:if="${requestId != null}"><span th:text="#{error.reference}">Reference:</span> <code th:text="${requestId}"></code></p>
+  <p class="auth-switch"><a th:href="@{/}" class="text-link" th:text="#{error.home}">Return to the dashboard</a></p>
+</section></main></body></html>

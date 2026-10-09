@@ -25,8 +25,11 @@ class PatternDetectionAuditRegressionTest {
     }
 
     @Test void recognizesPublishedHarmonicRangesInBothDirections() {
-        check(HarmonicPatternType.BAT, 100, 200, 145, 181.25, 111.4);
+        check(HarmonicPatternType.BAT, 100, 200, 155, 185, 111.4);
         check(HarmonicPatternType.BAT, 100, 200, 150, 192.3, 111.4);
+        // A 55% B retracement is the wide Bat variant, which is opt-in; the default range is 38.2-50%.
+        assertThat(harmonics.classifyAll(pivots(false, 100, 200, 145, 181.25, 111.4)))
+                .noneMatch(f -> f.pattern() == HarmonicPatternType.BAT);
         check(HarmonicPatternType.BUTTERFLY, 100, 200, 121.4, 151.31347, 73);
         check(HarmonicPatternType.SHARK, 100, 200, 144, 214, 100);
     }
@@ -142,7 +145,7 @@ class PatternDetectionAuditRegressionTest {
     }
 
     @Test void harmonicAvailabilityUsesRecognitionTimeRatherThanBackdatingToThePivot() {
-        var formation=harmonics.classify(pivots(false,100,200,145,181.25,111.4)).orElseThrow();
+        var formation=harmonics.classify(pivots(false,100,200,155,185,111.4)).orElseThrow();
         var late=new HarmonicPatternDetectionService() {
             @Override public List<HarmonicFormation> detectAll(List<Candle> input) {
                 return input.size()>=40?List.of(formation):List.of();
@@ -213,7 +216,7 @@ class PatternDetectionAuditRegressionTest {
         var changing = new HarmonicPatternDetectionService() {
             @Override public List<HarmonicFormation> detectAll(List<Candle> input) {
                 if (input.size()<12 || input.size()>16) return List.of();
-                return List.of(harmonics.classify(pivots(false,100,200,145,181.25,111.4)).orElseThrow());
+                return List.of(harmonics.classify(pivots(false,100,200,155,185,111.4)).orElseThrow());
             }
         };
         var full=service.buildTimeline(raw,List.of(),List.of(),TimeInterval.DAILY,null,null,waves,changing);

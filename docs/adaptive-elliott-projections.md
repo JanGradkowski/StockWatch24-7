@@ -34,6 +34,27 @@ confluence scores.
   confirmed corrective rebound can support a new remaining leg back to that
   target. Contact history is retained; it never automatically completes a wave.
 
+## Compressed Wave IV
+
+Fibonacci retracements are guidelines; only the Wave I overlap is a rule. When a
+Wave III endpoint leaves no standard Wave IV target zone (23.6% and deeper)
+outside Wave I territory, the count is kept, not invalidated:
+
+- The detector lowers the developing count's confidence when the remaining room
+  is below the common Wave IV minimum (23.6% by default), by 6–10 points scaled
+  like the shallow Wave IV penalty, and records the room in its evidence. The
+  user's alert threshold still applies to the lowered score.
+- The stage generator emits a single `COMPRESSED_WAVE_IV` scenario: a schematic
+  A-B-C that ends just inside Wave I, a zone equal to the remaining legal range,
+  Wave I as the hard boundary and the Wave III extreme as its endpoint boundary.
+- Because that zone is a structural range rather than an objective, contact does
+  not hide the path. It ends through the Wave I boundary, three closes beyond
+  Wave III, the next validated stage, or the bounded lifetime.
+- The trade plan stays projection-only and states the remaining room.
+
+V76 applies the same confidence penalty to open developing counts recorded before
+this rule.
+
 These are conservative, configurable-in-code engineering thresholds, not fitted
 probabilities or guarantees of a particular Elliott interpretation. Confirmed
 local swings provide evidence about a candidate; they do not become confirmed

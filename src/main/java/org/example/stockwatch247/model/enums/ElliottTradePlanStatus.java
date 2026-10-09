@@ -8,5 +8,7 @@ public enum ElliottTradePlanStatus {
     TIME_STOPPED,
     STRUCTURE_INVALIDATED,
     STAGE_COMPLETED,
-    REVISED
+    REVISED,
+    /** The next candle opened beyond the stop or target, so the entry was never filled. */
+    NOT_FILLED
 }

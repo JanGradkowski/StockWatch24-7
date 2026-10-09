@@ -57,12 +57,9 @@
     const button = document.getElementById('themeToggle');
     if (!button) return;
     const switchToLight = theme === 'dark';
-    button.setAttribute(
-      'aria-label',
-      switchToLight ? 'Switch to light mode' : 'Switch to dark mode');
-    button.setAttribute(
-      'title',
-      switchToLight ? 'Switch to light mode' : 'Switch to dark mode');
+    const label = window.StockWatchI18n.t(switchToLight ? 'theme.toLight' : 'theme.toDark');
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
     button.setAttribute('aria-pressed', String(theme === 'light'));
     button.querySelector('.theme-toggle-sun').toggleAttribute('hidden', !switchToLight);
     button.querySelector('.theme-toggle-moon').toggleAttribute('hidden', switchToLight);

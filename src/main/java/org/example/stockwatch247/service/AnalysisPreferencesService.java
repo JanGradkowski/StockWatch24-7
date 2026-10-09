@@ -15,6 +15,7 @@ import org.springframework.util.MultiValueMap;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 
 @Service
@@ -388,8 +389,50 @@ public class AnalysisPreferencesService {
         return value != null && (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("on") || value.equals("1"));
     }
 
+    /** The label the settings page shows for each field, so validation messages name what the user sees. */
+    static final Map<String, String> FIELD_LABELS = Map.ofEntries(
+            Map.entry("candlestickResolutionCandles", "Candlestick resolution window"),
+            Map.entry("elliottResolutionCandles", "Elliott resolution window"),
+            Map.entry("confirmationMovePercent", "Elliott confirmation move (%)"),
+            Map.entry("invalidationMovePercent", "Elliott invalidation move (%)"),
+            Map.entry("rsiPeriod", "RSI period"),
+            Map.entry("rsiBuyThreshold", "RSI buy boundary"),
+            Map.entry("rsiSellThreshold", "RSI sell/short boundary"),
+            Map.entry("cciPeriod", "CCI period"),
+            Map.entry("cciBuyThreshold", "CCI buy boundary"),
+            Map.entry("cciSellThreshold", "CCI sell/short boundary"),
+            Map.entry("atrPeriod", "ATR period"),
+            Map.entry("bollingerPeriod", "Bollinger period"),
+            Map.entry("bollingerDeviation", "Bollinger deviations"),
+            Map.entry("fastEmaPeriod", "Fast EMA period"),
+            Map.entry("slowEmaPeriod", "Slow EMA period"),
+            Map.entry("emaThresholdPercent", "EMA neutral tolerance (%)"),
+            Map.entry("longSmaPeriod", "Long SMA period"),
+            Map.entry("longSmaThresholdPercent", "Long SMA tolerance (%)"),
+            Map.entry("macdFastPeriod", "MACD fast period"),
+            Map.entry("macdSlowPeriod", "MACD slow period"),
+            Map.entry("macdSignalPeriod", "MACD signal period"),
+            Map.entry("macdThresholdPercent", "MACD neutral tolerance (%)"),
+            Map.entry("volumePeriod", "Average-volume period"),
+            Map.entry("relativeVolumeThreshold", "Relative-volume threshold (×)"),
+            Map.entry("vwapPeriod", "Rolling VWAP period"),
+            Map.entry("vwapThresholdPercent", "VWAP neutral tolerance (%)"),
+            Map.entry("volumeProfilePeriod", "Volume-profile period"),
+            Map.entry("volumeProfileValueAreaFraction", "Value-area fraction"),
+            Map.entry("supportResistancePeriod", "Support/resistance period"),
+            Map.entry("supportResistanceAtrDistance", "Boundary distance (ATR)"),
+            Map.entry("marketRelativeThresholdPercent", "Market-relative threshold (%)"),
+            Map.entry("neutralScorePercent", "Neutral boundary (%)"),
+            Map.entry("moderateScorePercent", "Moderate boundary (%)"),
+            Map.entry("strongScorePercent", "Strong boundary (%)"),
+            Map.entry("trendTerminalMedianDistanceAtr", "Median-position margin (ATR)"),
+            Map.entry("trendMinimumMovePercent", "Minimum trend move (%)"),
+            Map.entry("trendMinimumCandles", "Required directional confirmations"),
+            Map.entry("trendLookbackCandles", "Original-rule window candles"));
+
     private static String readable(String value) {
-        return value.replaceAll("([a-z])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT);
+        String label = FIELD_LABELS.get(value);
+        return label != null ? label : value.replaceAll("([a-z])([A-Z])", "$1 $2").toLowerCase(Locale.ROOT);
     }
 
     private PreferencesView read(UserAnalysisPreferences entity) {

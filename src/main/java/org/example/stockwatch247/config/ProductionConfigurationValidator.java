@@ -3,7 +3,9 @@ package org.example.stockwatch247.config;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.EnvironmentAware;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -11,10 +13,14 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-/** Fails startup when security-sensitive production settings are missing or unsafe. */
+/**
+ * Fails startup when security-sensitive production settings are missing or unsafe. It runs for every
+ * profile except dev and test, so forgetting to activate prod fails closed instead of running insecurely.
+ */
 @Component
-@Profile("prod")
-public class ProductionConfigurationValidator implements InitializingBean {
+@Profile("!dev & !test")
+public class ProductionConfigurationValidator implements InitializingBean, EnvironmentAware {
+    private Environment environment;
     private final boolean requireHttps;
     private final String publicBaseUrl;
     private final String forwardHeadersStrategy;
@@ -31,6 +37,17 @@ public class ProductionConfigurationValidator implements InitializingBean {
     private final String migrationUsername;
     private final String migrationPassword;
     private final String mfaEncryptionKey;
+    private boolean sessionCookieSecure = true;
+
+    @Override
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
+    }
+
+    @Autowired(required = false)
+    void setSessionCookieSecure(@Value("${server.servlet.session.cookie.secure:false}") boolean secure) {
+        this.sessionCookieSecure = secure;
+    }
 
     @Autowired
     public ProductionConfigurationValidator(
@@ -84,7 +101,21 @@ public class ProductionConfigurationValidator implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() {
+        try {
+            validate();
+        } catch (IllegalStateException problem) {
+            if (environment != null && environment.getActiveProfiles().length == 0) {
+                throw new IllegalStateException("No Spring profile is active, so production checks apply. "
+                        + "Set SPRING_PROFILES_ACTIVE=prod for a deployment or dev for local development. "
+                        + problem.getMessage(), problem);
+            }
+            throw problem;
+        }
+    }
+
+    private void validate() {
         require(requireHttps, "Production requires HTTPS enforcement.");
+        require(sessionCookieSecure, "Production session cookies must be marked Secure.");
         validatePublicBaseUrl();
         require("native".equalsIgnoreCase(forwardHeadersStrategy),
                 "Production must use the container's trusted-proxy forwarding strategy.");

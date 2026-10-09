@@ -23,11 +23,12 @@ public class AlertCheckJobStore {
         return jdbcTemplate.update(
                 """
                 insert into alert_check_jobs (symbol, interval, scheduled_for, status)
-                values (?, ?, ?, 'PENDING')
+                select ?, ?, ?, 'PENDING'
+                where not exists (select 1 from alert_schedule_control where cancelled_through >= ?)
                 on conflict (symbol, interval, scheduled_for)
                 do nothing
                 """,
-                symbol, interval.name(), toOffsetDateTime(scheduledFor));
+                symbol, interval.name(), toOffsetDateTime(scheduledFor), toOffsetDateTime(scheduledFor));
     }
 
     public int enqueueScheduledRun(TimeInterval interval, Instant scheduledFor) {
@@ -35,7 +36,8 @@ public class AlertCheckJobStore {
                 """
                 with inserted_run as (
                     insert into alert_schedule_runs (interval, scheduled_for)
-                    values (?, ?)
+                    select ?, ?
+                    where not exists (select 1 from alert_schedule_control where cancelled_through >= ?)
                     on conflict (interval, scheduled_for) do nothing
                     returning interval, scheduled_for
                 )
@@ -98,17 +100,16 @@ public class AlertCheckJobStore {
                 ) candidate on candidate.interval = inserted_run.interval
                 on conflict (symbol, interval, scheduled_for) do nothing
                 """,
-                interval.name(), toOffsetDateTime(scheduledFor));
+                interval.name(), toOffsetDateTime(scheduledFor), toOffsetDateTime(scheduledFor));
     }
 
     public Optional<Instant> findLatestScheduledRun(TimeInterval interval) {
         List<Instant> scheduledRuns = jdbcTemplate.query(
                 """
-                select scheduled_for
-                from alert_schedule_runs
-                where interval = ?
-                order by scheduled_for desc
-                limit 1
+                select max(scheduled_for) as scheduled_for from (
+                    select scheduled_for from alert_schedule_runs where interval = ?
+                    union all select cancelled_through from alert_schedule_control
+                ) boundaries having max(scheduled_for) is not null
                 """,
                 (rs, rowNum) -> rs.getObject("scheduled_for", OffsetDateTime.class).toInstant(),
                 interval.name());
@@ -126,23 +127,45 @@ public class AlertCheckJobStore {
     private Optional<AlertCheckJob> claimNext(Duration lease, String symbol) {
         List<AlertCheckJob> jobs = jdbcTemplate.query(
                 """
-                with candidate as (
+                with claim_gate as materialized (
+                    select pg_try_advisory_xact_lock(7510247) as acquired
+                ), candidate as (
                     select candidate_job.id
                     from alert_check_jobs candidate_job
-                    where (cast(? as varchar) is null or candidate_job.symbol = ?)
+                    where (select acquired from claim_gate)
+                      and (cast(? as varchar) is null or candidate_job.symbol = ?)
                       and ((candidate_job.status = 'PENDING' and candidate_job.available_at <= current_timestamp)
                            or (candidate_job.status = 'PROCESSING' and candidate_job.lease_until <= current_timestamp))
+                      -- One technical check runs at a time across every worker.
+                      and not exists (
+                          select 1
+                          from alert_check_jobs running_job
+                          where running_job.status = 'PROCESSING'
+                            and running_job.lease_until > current_timestamp
+                            and running_job.id <> candidate_job.id
+                      )
+                      -- The oldest check keeps priority, except while its series waits out a data
+                      -- outage. Checks for the same series always run in schedule order.
                       and not exists (
                           select 1
                           from alert_check_jobs earlier_job
-                          where earlier_job.symbol = candidate_job.symbol
-                            and earlier_job.interval = candidate_job.interval
-                            and earlier_job.status in ('PENDING', 'PROCESSING')
-                            and (earlier_job.scheduled_for < candidate_job.scheduled_for
-                                 or (earlier_job.scheduled_for = candidate_job.scheduled_for
-                                     and earlier_job.id < candidate_job.id))
+                          where earlier_job.status in ('PENDING', 'PROCESSING')
+                            and (earlier_job.scheduled_for, earlier_job.id)
+                                < (candidate_job.scheduled_for, candidate_job.id)
+                            and ((earlier_job.symbol = candidate_job.symbol
+                                  and earlier_job.interval = candidate_job.interval)
+                                 or (not earlier_job.yields_priority
+                                     and not exists (
+                                         select 1
+                                         from alert_check_jobs outage_job
+                                         where outage_job.symbol = earlier_job.symbol
+                                           and outage_job.interval = earlier_job.interval
+                                           and outage_job.status = 'PENDING'
+                                           and outage_job.yields_priority
+                                           and (outage_job.scheduled_for, outage_job.id)
+                                               < (earlier_job.scheduled_for, earlier_job.id))))
                       )
-                    order by candidate_job.scheduled_for, candidate_job.available_at, candidate_job.id
+                    order by candidate_job.scheduled_for, candidate_job.id
                     for update of candidate_job skip locked
                     limit 1
                 )
@@ -150,9 +173,12 @@ public class AlertCheckJobStore {
                 set status = 'PROCESSING',
                     lease_until = current_timestamp + (? * interval '1 second'),
                     attempts = attempts + 1,
+                    yields_priority = false,
                     updated_at = current_timestamp
                 from candidate
                 where job.id = candidate.id
+                  and ((job.status = 'PENDING' and job.available_at <= current_timestamp)
+                       or (job.status = 'PROCESSING' and job.lease_until <= current_timestamp))
                 returning job.id, job.symbol, job.interval, job.scheduled_for, job.attempts
                 """,
                 (rs, rowNum) -> new AlertCheckJob(
@@ -185,25 +211,54 @@ public class AlertCheckJobStore {
 
     public void retryOrFail(AlertCheckJob job, String error, int maximumAttempts, Duration retryDelay) {
         String safeError = error == null ? "Unknown processing error" : error.substring(0, Math.min(1000, error.length()));
-        if (job.attempts() >= Math.max(1, maximumAttempts)) {
-            jdbcTemplate.update(
-                    """
-                    update alert_check_jobs
-                    set status = 'FAILED', lease_until = null, last_error = ?, updated_at = current_timestamp
-                    where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
-                    """,
-                    safeError, job.id(), job.attempts());
-            return;
-        }
         jdbcTemplate.update(
                 """
                 update alert_check_jobs
-                set status = 'PENDING', lease_until = null, last_error = ?,
+                set status = case when calculation_failures + 1 >= ? then 'FAILED' else 'PENDING' end,
+                    calculation_failures = calculation_failures + 1,
+                    lease_until = null, last_error = ?, updated_at = current_timestamp,
+                    available_at = current_timestamp + (? * interval '1 second')
+                where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
+                """, Math.max(1, maximumAttempts), safeError, Math.max(1L, retryDelay.toSeconds()),
+                job.id(), job.attempts());
+    }
+
+    /** A checkpointed continuation keeps its place at the head of the queue. */
+    public void defer(AlertCheckJob job, String error, Duration retryDelay) {
+        String safeError = error == null ? "Market data temporarily unavailable" : error.substring(0, Math.min(1000, error.length()));
+        jdbcTemplate.update(
+                """
+                update alert_check_jobs
+                set status = 'PENDING', lease_until = null, last_error = ?, yields_priority = false,
                     available_at = current_timestamp + (? * interval '1 second'),
                     updated_at = current_timestamp
                 where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
                 """,
                 safeError, Math.max(1L, retryDelay.toSeconds()), job.id(), job.attempts());
+    }
+
+    /**
+     * Provider and data outages wait without blocking other instruments. They do not consume the
+     * calculation retry budget, but a series that never returns data is eventually failed.
+     */
+    public void backoff(AlertCheckJob job, String error, Duration retryDelay, int maximumDeferrals) {
+        String safeError = error == null ? "Market data temporarily unavailable" : error.substring(0, Math.min(900, error.length()));
+        jdbcTemplate.update(
+                """
+                update alert_check_jobs
+                set status = case when deferrals + 1 >= ? then 'FAILED' else 'PENDING' end,
+                    last_error = case when deferrals + 1 >= ?
+                        then 'Market data stayed unavailable after ' || (deferrals + 1) || ' attempts: ' || ?
+                        else ? end,
+                    deferrals = deferrals + 1,
+                    yields_priority = true,
+                    lease_until = null,
+                    available_at = current_timestamp + (? * interval '1 second'),
+                    updated_at = current_timestamp
+                where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
+                """,
+                Math.max(1, maximumDeferrals), Math.max(1, maximumDeferrals), safeError, safeError,
+                Math.max(1L, retryDelay.toSeconds()), job.id(), job.attempts());
     }
 
     public int pendingCount() {

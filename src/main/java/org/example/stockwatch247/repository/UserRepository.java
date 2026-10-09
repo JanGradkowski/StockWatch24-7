@@ -20,8 +20,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<User> findByDeletionCancelTokenHash(String deletionCancelTokenHash);
     List<User> findByDeletionRequestedAtLessThanEqual(LocalDateTime cutoff);
-    @Query(value = "select * from users where deletion_requested_at <= :cutoff order by id for update skip locked limit 25", nativeQuery = true)
-    List<User> findExpiredDeletionBatch(@Param("cutoff") LocalDateTime cutoff);
+    @Query(value = "select id from users where deletion_requested_at <= :cutoff order by id limit :limit", nativeQuery = true)
+    List<Long> findExpiredDeletionIds(@Param("cutoff") LocalDateTime cutoff, @Param("limit") int limit);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")

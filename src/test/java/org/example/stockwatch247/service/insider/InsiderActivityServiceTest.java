@@ -97,7 +97,7 @@ class InsiderActivityServiceTest {
     }
 
     @Test
-    void calculatesDirectionalReturnsFromFiledPriceToLatestCompletedClose() {
+    void calculatesDirectionalReturnsFromTheFirstCloseAfterFilingToLatestCompletedClose() {
         StockAsset asset = stock();
         User user = new User();
         user.setId(9L);
@@ -119,6 +119,13 @@ class InsiderActivityServiceTest {
         when(fixture.candles().findBySymbolAndTimeIntervalOrderByTimestampDesc(
                 eq("AAPL"), eq("1d"), any(Pageable.class))).thenReturn(List.of(latest));
         when(fixture.completion().isComplete(completedTimestamp, TimeInterval.DAILY)).thenReturn(true);
+        // Returns start at the first completed close after the filing became public.
+        long afterFiling = LocalDate.now(ZoneOffset.UTC).minusDays(28).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        Candle firstAfterFiling = new Candle("AAPL", "1d", afterFiling, 100, 101, 99, 100.0, 1000L);
+        when(fixture.candles().findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                eq("AAPL"), eq("1d"), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(),
+                any(Pageable.class))).thenReturn(List.of(firstAfterFiling));
+        when(fixture.completion().isComplete(afterFiling, TimeInterval.DAILY)).thenReturn(true);
 
         var response = fixture.service().getHistory(user, "AAPL");
 
@@ -149,6 +156,13 @@ class InsiderActivityServiceTest {
         when(fixture.candles().findBySymbolAndTimeIntervalOrderByTimestampDesc(
                 eq("AAPL"), eq("1d"), any(Pageable.class))).thenReturn(List.of(latest));
         when(fixture.completion().isComplete(completedTimestamp, TimeInterval.DAILY)).thenReturn(true);
+        // Returns start at the first completed close after the filing became public.
+        long afterFiling = LocalDate.now(ZoneOffset.UTC).minusDays(28).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        Candle firstAfterFiling = new Candle("AAPL", "1d", afterFiling, 100, 101, 99, 100.0, 1000L);
+        when(fixture.candles().findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                eq("AAPL"), eq("1d"), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong(),
+                any(Pageable.class))).thenReturn(List.of(firstAfterFiling));
+        when(fixture.completion().isComplete(afterFiling, TimeInterval.DAILY)).thenReturn(true);
 
         var activity = fixture.service().getAllActivity(user);
 

@@ -29,9 +29,25 @@ public class JobLeaseGuard {
     }
 
     public static void requireOwnership() {
+        checkActive();
         Claim claim = CURRENT.get();
         if (claim != null && (claim.lost.get() || !claim.renew.getAsBoolean()))
-            throw new IllegalStateException("Job lease ownership was lost.");
+            throw new AnalysisDeferredException("Job lease ownership was lost.");
+    }
+
+    public static void checkActive() {
+        Claim claim = CURRENT.get();
+        if (Thread.currentThread().isInterrupted() || claim != null && claim.lost.get())
+            throw new AnalysisDeferredException("Analysis cancelled: interruption or lost lease.");
+    }
+
+    static Runnable cancellationCheck() {
+        Claim claim = CURRENT.get();
+        Thread thread = Thread.currentThread();
+        return () -> {
+            if (thread.isInterrupted() || claim != null && claim.lost.get())
+                throw new AnalysisDeferredException("Analysis cancelled: interruption or lost lease.");
+        };
     }
 
     @PreDestroy void stop() { heartbeats.shutdownNow(); }

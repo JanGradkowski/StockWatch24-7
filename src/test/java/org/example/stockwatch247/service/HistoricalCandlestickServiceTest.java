@@ -29,6 +29,63 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class HistoricalCandlestickServiceTest {
+    @Test void overlayPreservesEveryDisplayedFieldWithoutCalculatingUnusedConfluenceScores() {
+        var enrichment = mock(TechnicalIndicatorEnrichmentService.class);
+        var detector = mock(CandlePatternDetectionService.class);
+        var completion = mock(CandleCompletionService.class);
+        var confluence = mock(CrossPatternConfluenceService.class);
+        var waves = mock(ElliottWaveDetectionService.class);
+        var harmonics = mock(HarmonicPatternDetectionService.class);
+        var raw = candles("AAPL", "1d", 60);
+        var prepared = raw.stream().map(this::enriched).toList();
+        long timestamp = raw.get(40).getTimestamp();
+        var detected = signal(CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY, timestamp, raw.get(40).getClosePrice());
+        when(completion.isComplete(org.mockito.ArgumentMatchers.anyLong(), any())).thenReturn(true);
+        when(enrichment.enrich(raw, raw.size(), TimeInterval.DAILY)).thenReturn(prepared);
+        when(detector.detectAlertSignals(anyList(), any())).thenReturn(List.of(detected));
+        when(confluence.apply(any(), any(), any())).thenAnswer(invocation -> invocation.getArgument(0));
+        var service = new HistoricalCandlestickService(mock(CandleRepository.class), mock(StockAssetRepository.class),
+                mock(MarketDataService.class), enrichment, detector, completion, "Europe/Warsaw", waves, harmonics, confluence);
+        var rules = CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(TimeInterval.DAILY);
+        var definitions = CandlestickPatternPreferencesService.factoryPreferences();
+        var overlay = service.scanOverlayRange("AAPL", "1d", timestamp, timestamp, rules, definitions, raw);
+        assertThat(overlay.signals()).hasSize(1);
+        verifyNoInteractions(waves, harmonics, confluence);
+        var scored = service.scanRange("AAPL", "1d", timestamp, timestamp, rules, definitions, raw);
+        assertThat(overlay.signals()).containsExactlyElementsOf(scored.signals().stream()
+                .map(HistoricalCandlestickService.HistoricalOverlaySignal::from).toList());
+        var json = new tools.jackson.databind.ObjectMapper().valueToTree(overlay);
+        assertThat(json.path("signals").get(0).has("setupScore")).isFalse();
+        assertThat(overlay.signals().getFirst().interval()).isEqualTo("1d");
+    }
+    @Test void rangeScanEvaluatesOnlyVisibleCandlesAndRetainsEarlierTrendContext() {
+        var repository = mock(CandleRepository.class);
+        var assets = mock(StockAssetRepository.class);
+        var market = mock(MarketDataService.class);
+        var enrichment = mock(TechnicalIndicatorEnrichmentService.class);
+        var detector = mock(CandlePatternDetectionService.class);
+        var completion = mock(CandleCompletionService.class);
+        var raw = candles("AAPL", "1d", 150);
+        var prepared = raw.stream().map(this::enriched).toList();
+        when(completion.isComplete(org.mockito.ArgumentMatchers.anyLong(), any())).thenReturn(true);
+        when(enrichment.enrich(raw, raw.size(), TimeInterval.DAILY)).thenReturn(prepared);
+        var service = new HistoricalCandlestickService(repository, assets, market, enrichment, detector,
+                completion, "Europe/Warsaw");
+        long from = raw.get(110).getTimestamp();
+        long to = raw.get(119).getTimestamp();
+        var rules = CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(TimeInterval.DAILY);
+        var result = service.scanRange("AAPL", "1d", from, to, rules,
+                CandlestickPatternPreferencesService.factoryPreferences(), raw);
+        assertThat(result.lookbackCandles()).isEqualTo(10);
+        var contexts = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(detector, times(10)).detectAlertSignals(contexts.capture(), org.mockito.ArgumentMatchers.eq(rules));
+        assertThat(contexts.getAllValues()).allSatisfy(context -> {
+            assertThat(context).hasSize(100);
+            assertThat(((EnrichedCandle) context.getFirst()).timestamp()).isLessThan(from);
+            assertThat(((EnrichedCandle) context.getLast()).timestamp()).isBetween(from, to);
+        });
+        verifyNoInteractions(repository, market);
+    }
 
     @Test
     void invalidOhlcHistoryLeavesDetectedPatternsProjectionOnlyWithoutCaching() {
@@ -122,8 +179,7 @@ class HistoricalCandlestickServiceTest {
                 enrichmentService,
                 detectionService,
                 completionService,
-                "Europe/Brussels",
-                3
+                "Europe/Brussels"
         );
 
         HistoricalCandlestickService.HistoricalScan first = service.scan(symbol, "1d", 60);
@@ -178,8 +234,7 @@ class HistoricalCandlestickServiceTest {
                 enrichmentService,
                 detectionService,
                 completionService,
-                "Europe/Brussels",
-                3
+                "Europe/Brussels"
         );
 
         HistoricalCandlestickService.HistoricalScan scan = service.scanAll(symbol, "1d");
@@ -240,8 +295,7 @@ class HistoricalCandlestickServiceTest {
                 enrichmentService,
                 detectionService,
                 completionService,
-                "Europe/Brussels",
-                3);
+                "Europe/Brussels");
 
         HistoricalCandlestickService.HistoricalScan scan = service.scan(symbol, "1mo", 120);
 
@@ -273,8 +327,7 @@ class HistoricalCandlestickServiceTest {
                 enrichmentService,
                 detectionService,
                 completionService,
-                "Europe/Brussels",
-                3);
+                "Europe/Brussels");
 
         assertThatThrownBy(() -> service.scan(symbol, "1mo", 120))
                 .isInstanceOf(MarketDataUnavailableException.class)
@@ -296,8 +349,7 @@ class HistoricalCandlestickServiceTest {
                 mock(TechnicalIndicatorEnrichmentService.class),
                 mock(CandlePatternDetectionService.class),
                 mock(CandleCompletionService.class),
-                "Europe/Brussels",
-                3
+                "Europe/Brussels"
         );
 
         assertThatThrownBy(() -> service.scan("AAPL", "1mo", 0))
@@ -320,8 +372,7 @@ class HistoricalCandlestickServiceTest {
                 mock(TechnicalIndicatorEnrichmentService.class),
                 mock(CandlePatternDetectionService.class),
                 completionService,
-                "Europe/Brussels",
-                3
+                "Europe/Brussels"
         );
         List<Candle> candles = candles("AAPL", "1d", 12);
         HistoricalCandlestickService.HistoricalSignal signal =
@@ -367,8 +418,7 @@ class HistoricalCandlestickServiceTest {
                 mock(TechnicalIndicatorEnrichmentService.class),
                 mock(CandlePatternDetectionService.class),
                 mock(CandleCompletionService.class),
-                "Europe/Brussels",
-                3
+                "Europe/Brussels"
         );
         long signalTimestamp = 1_750_000_000L;
         HistoricalCandlestickService.HistoricalSignal signal =
@@ -434,8 +484,7 @@ class HistoricalCandlestickServiceTest {
                 enrichmentService,
                 mock(CandlePatternDetectionService.class),
                 completionService,
-                "Europe/Brussels",
-                3
+                "Europe/Brussels"
         );
         return service.scan("AAPL", interval, lookbackCandles);
     }
