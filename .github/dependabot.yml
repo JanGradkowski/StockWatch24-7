@@ -5,11 +5,21 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
-  - package-ecosystem: "docker"
+  # The repo has no Dockerfile; the only image lives in docker-compose.yml.
+  - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # A new Postgres major cannot open the existing postgres-data volume without pg_upgrade.
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      # init and analyze must stay on the same CodeQL version.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"

@@ -1,0 +1,11 @@
+title = "StockWatch24-7 gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Published test vectors that are not real secrets"
+regexes = [
+    # RFC 6238 Appendix B shared secret ("12345678901234567890" in Base32), used by TotpServiceTest.
+    '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''',
+]
