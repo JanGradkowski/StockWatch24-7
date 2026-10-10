@@ -27,7 +27,8 @@ public final class Ta4jBarSeriesFactory {
                 .highPrice(candle.getHighPrice())
                 .lowPrice(candle.getLowPrice())
                 .closePrice(candle.getClosePrice())
-                .volume(candle.getVolume() == null ? 0.0 : candle.getVolume())
+                // TA4J rejects negative volume; bad provider data counts as no volume, as elsewhere.
+                .volume(candle.getVolume() == null ? 0.0 : Math.max(0L, candle.getVolume()))
                 .build()));
         return series;
     }

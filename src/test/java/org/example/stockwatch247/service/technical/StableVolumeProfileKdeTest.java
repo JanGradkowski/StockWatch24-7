@@ -53,7 +53,7 @@ class StableVolumeProfileKdeTest {
         assertThat(mode(List.of(candle(0, 11, 1000000001), candle(1, 10, 1000000000)), 2, 1)).isEqualTo(11);
         assertThat(mode(List.of(candle(0, 11, 120), candle(1, 10, 70), candle(2, 10, 70)), 3, 0)).isEqualTo(10);
         assertThat(mode(List.of(candle(0, 10, 0), candle(1, 11, 0)), 2, 1)).isNaN();
-        assertThat(mode(List.of(candle(0, 10, 0), candle(1, 11, -100)), 2, 1)).isEqualTo(11);
+        assertThat(mode(List.of(candle(0, 10, 0), candle(1, 11, -100)), 2, 1)).isNaN();
     }
 
     @Test
