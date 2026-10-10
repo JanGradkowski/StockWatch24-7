@@ -5,6 +5,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      # 13.0.0 cannot update NVD data without an API key (DependencyCheck#8715); fixed after that release.
+      - dependency-name: "org.owasp:dependency-check-maven"
+        versions: ["13.0.0"]
   # The repo has no Dockerfile; the only image lives in docker-compose.yml.
   - package-ecosystem: "docker-compose"
     directory: "/"
