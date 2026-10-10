@@ -57,6 +57,14 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1 .7-1.5 1-1.5 2M12 17h.01"/></svg><span th:text="#{sidebar.help}">Help &amp; about</span>
         </a>
       </nav>
+      <button type="button" id="learningModeToggle" class="app-sidebar-learning" aria-pressed="false"
+              title="Explain terms and options as you go" th:title="#{sidebar.learning.title}"
+              th:attr="aria-pressed=${learningMode == true},data-endpoint=@{/api/settings/learning-mode},data-csrf-token=${_csrf.token}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m2 9 10-5 10 5-10 5Z"/><path d="M6 11v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5M22 9v6"/></svg>
+        <span class="app-sidebar-learning-label" th:text="#{sidebar.learning}">Learning mode</span>
+        <span class="app-sidebar-learning-switch" aria-hidden="true"></span>
+      </button>
+      <p class="app-sidebar-learning-hint" th:text="#{sidebar.learning.hint}">Hover or tap underlined words and ? marks to see what they mean.</p>
       <button type="button" class="app-sidebar-collapse" aria-controls="appSidebar" aria-expanded="true" aria-label="Collapse sidebar" title="Collapse sidebar" th:aria-label="#{sidebar.collapse}" th:title="#{sidebar.collapse}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m7-11-3 3 3 3"/></svg><span th:text="#{sidebar.collapse}">Collapse sidebar</span>
       </button>

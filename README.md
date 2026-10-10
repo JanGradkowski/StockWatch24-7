@@ -22,6 +22,7 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 - [Named watchlists](docs/named-watchlists.md) with shared monitoring, geographic index imports, and a watchlist picker when applying stock follows
 - Symbol search, historical candlestick charts, and live-price lookup
 - Persistent light and dark display themes available from every page
+- Optional learning mode, switched on from the sidebar and saved per account: "?" marks explain options and underlined terms show plain-language definitions in English and Polish
 - Twelve Data market data with Yahoo Finance fallback
 - Interactive classic anchored volume profiles with POC, 70% value area, cached historical candles, active-day 15-minute resolution, and two per-user live refreshes per active ticker candle
 - Geometry- and trend-validated candlestick detection with a stock-only heuristic setup score and frozen higher-interval pattern calibration; scoring evidence ranks valid patterns but never creates or suppresses alerts

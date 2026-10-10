@@ -846,7 +846,9 @@
       price: rsiOversoldBoundary,
       title: lowerLabel
     });
-    document.getElementById('rsiChartTitle').textContent = `RSI (${rsiPeriod})`;
+    // The title text sits in a learning-mode term span; keep that span.
+    const rsiTitle = document.getElementById('rsiChartTitle');
+    (rsiTitle.querySelector('.learn-term') || rsiTitle).textContent = `RSI (${rsiPeriod})`;
     document.getElementById('rsiChartMeta').textContent =
             i18n.t('sw.rsiMeta', upperLabel, lowerLabel);
 

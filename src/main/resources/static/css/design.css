@@ -438,21 +438,69 @@
 :root[data-theme] .how-it-works ul { display: grid; gap: var(--space-2); padding-left: var(--space-5); }
 :root[data-theme] .how-it-works p { padding: 0; border: 0; background: none; font-size: var(--fs-sm); }
 
-/* "?" glossary tooltips beside technical terms. */
-:root[data-theme] .term-help { position: relative; display: inline-flex; margin-left: 4px; vertical-align: middle; font-weight: 400; letter-spacing: 0; text-transform: none; }
-:root[data-theme] .term-help-button { display: inline-grid; place-items: center; width: 18px; height: 18px; min-height: 0; padding: 0; border: 1px solid var(--glass-border); border-radius: 50%; background: transparent; color: var(--muted-text); font-size: var(--fs-xs); font-weight: 700; line-height: 1; cursor: help; }
-:root[data-theme] :is(.term-help-button:hover, .term-help-button:focus-visible, .term-help.is-open .term-help-button) { border-color: var(--muted-text); color: var(--text-color); }
-:root[data-theme] .term-help-text {
-    position: absolute; bottom: calc(100% + 8px); left: 50%; z-index: 60;
-    width: max-content; max-width: min(280px, 80vw); padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-sm); background: var(--text-color); color: var(--bg-color); box-shadow: var(--shadow-lg);
-    font-size: var(--fs-sm); font-weight: 500; line-height: var(--lh-normal); text-align: left; white-space: normal;
-    transform: translateX(-50%); visibility: hidden; opacity: 0; pointer-events: none; transition: opacity 120ms ease;
+/* Learning mode (learning-mode.js): "?" marks beside options and underlined terms. Inert until switched on. */
+/* !important: a "?" sits inside labels and headings whose own span rules must not reveal or reshape it. */
+:root:not([data-learning-mode="on"]) .learn-help { display: none !important; }
+:root[data-learning-mode="on"] .learn-help {
+    display: inline-grid !important; place-items: center; flex: 0 0 auto; width: 18px; height: 18px; margin: 0 0 0 5px; padding: 0; vertical-align: middle;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 55%, transparent); border-radius: 50%;
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent); color: var(--primary-color);
+    font-family: inherit; font-size: var(--fs-xs); font-style: normal; font-weight: 700; line-height: 1; letter-spacing: 0; text-transform: none;
+    cursor: help; user-select: none;
 }
-:root[data-theme] .term-help.align-start .term-help-text { left: 0; transform: none; }
-:root[data-theme] .term-help.align-end .term-help-text { right: 0; left: auto; transform: none; }
-:root[data-theme] .term-help.align-below .term-help-text { top: calc(100% + 8px); bottom: auto; }
-:root[data-theme] :is(.term-help:hover, .term-help:focus-within, .term-help.is-open) .term-help-text { visibility: visible; opacity: 1; }
+/* A label text and its "?" stay on one line where a field grid would otherwise stack them. */
+.analysis-input-grid label > .learn-label { display: block; }
+:root[data-learning-mode="on"] .learn-help:is(:hover, :focus-visible, [aria-expanded="true"]) { background: var(--primary-color); color: var(--bg-color); }
+/* A control that explains itself carries the same "?" as decoration; its name stays unchanged. */
+:root[data-learning-mode="on"] .learn-control::after {
+    content: "?"; content: "?" / "";
+    position: static; inset: auto; transform: none; transition: none; /* buttons such as .btn-accent use ::after for a shine */
+    display: inline-grid; place-items: center; flex: 0 0 auto; width: 16px; height: 16px; margin-left: 6px; vertical-align: middle;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 55%, transparent); border-radius: 50%;
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent); color: var(--primary-color);
+    font-size: 11px; font-style: normal; font-weight: 700; line-height: 1; letter-spacing: 0; text-transform: none;
+}
+:root[data-learning-mode="on"] .learn-term:is([data-term], [data-learn]) {
+    border-radius: 3px; background: color-mix(in srgb, var(--primary-color) 9%, transparent);
+    text-decoration: underline dotted color-mix(in srgb, var(--primary-color) 85%, transparent); text-decoration-thickness: 2px; text-underline-offset: 3px;
+    cursor: help;
+}
+:root[data-learning-mode="on"] .learn-term:is([data-term], [data-learn]):is(:hover, :focus-visible, [aria-expanded="true"]) { background: color-mix(in srgb, var(--primary-color) 22%, transparent); }
+:root[data-learning-mode="on"] :is(.learn-help, .learn-term):focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.learn-popover {
+    position: fixed; inset: auto; top: 0; left: 0; z-index: 1000; overflow: visible;
+    width: max-content; max-width: min(320px, calc(100vw - 16px)); margin: 0; padding: var(--space-2) var(--space-3);
+    border: 0; border-radius: var(--radius-sm); background: var(--text-color); color: var(--bg-color); box-shadow: var(--shadow-lg);
+    font-size: var(--fs-sm); font-weight: 500; line-height: var(--lh-normal); text-align: left; white-space: normal; pointer-events: none;
+}
+.learn-popover[hidden] { display: none; }
+.learn-popover strong:not([hidden]) { display: block; margin-bottom: 2px; font-weight: 700; }
+.learn-popover p { margin: 0; padding: 0; border: 0; background: none; color: inherit; font-size: inherit; opacity: .88; }
+@media print { .learn-help, .learn-popover { display: none !important; } }
+
+/* Learning mode switch in the sidebar footer; the hint shows while it is on. */
+.app-sidebar-learning {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; margin-top: 6px; padding: 11px 13px;
+    border: 1px solid transparent; border-radius: 11px; background: transparent; color: var(--text-soft);
+    font: inherit; font-size: var(--fs-md); font-weight: 650; text-align: left; cursor: pointer;
+    transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+.app-sidebar-learning:hover { background: var(--surface-raised); color: var(--text-color); border-color: var(--glass-border); }
+.app-sidebar-learning-label { flex: 1 1 auto; min-width: 0; line-height: 1.25; overflow-wrap: break-word; }
+.app-sidebar-learning-switch { position: relative; flex: 0 0 30px; height: 18px; border-radius: var(--radius-pill); background: var(--glass-border); transition: background 150ms ease; }
+.app-sidebar-learning-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow-sm); transition: transform 150ms ease; }
+.app-sidebar-learning[aria-pressed="true"] { color: var(--text-color); }
+.app-sidebar-learning[aria-pressed="true"] svg { color: var(--primary-color); }
+.app-sidebar-learning[aria-pressed="true"] .app-sidebar-learning-switch { background: var(--primary-color); }
+.app-sidebar-learning[aria-pressed="true"] .app-sidebar-learning-switch::after { transform: translateX(12px); }
+.app-sidebar-learning-hint { margin: 4px 13px 0; color: var(--muted-text); font-size: var(--fs-xs); line-height: var(--lh-normal); }
+:root:not([data-learning-mode="on"]) .app-sidebar-learning-hint { display: none; }
+@media (min-width: 1025px) {
+    :root[data-sidebar-collapsed="true"] .app-sidebar :is(.app-sidebar-learning-label, .app-sidebar-learning-switch, .app-sidebar-learning-hint) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .app-sidebar-learning, .app-sidebar-learning-switch, .app-sidebar-learning-switch::after { transition: none; }
+}
 
 /* Row menus hold rarely used, destructive actions such as Delete. */
 .row-menu { position: relative; align-self: center; justify-self: center; }

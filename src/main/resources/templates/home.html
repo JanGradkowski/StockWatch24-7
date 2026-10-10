@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21,7 +21,7 @@
 <main class="dashboard-container">
   <header th:unless="${dashboardView == 'alerts'}" class="app-hero welcome-header">
     <div class="app-hero-copy">
-      <div class="eyebrow" th:text="#{watchlists.yours}">Your watchlists</div>
+      <div class="eyebrow"><span class="learn-term" data-term="watchlist" th:text="#{watchlists.yours}">Your watchlists</span></div>
       <h1 class="welcome-text"><span th:text="#{home.greeting}">Good to see you,</span> <span class="primary-text" th:text="${firstName}">Trader</span>.</h1>
       <p class="welcome-subtitle" th:text="#{home.subtitle}">Search for a stock, ETF, or index to view its chart or set up alerts.</p>
     </div>
@@ -62,7 +62,7 @@
 
         <div th:if="${!#lists.isEmpty(latestSignalItems)}">
           <div class="latest-signal-head latest-signal-grid" aria-hidden="true">
-            <span th:text="#{signals.column.signal}">Signal</span><span th:text="#{virtualTrades.column.company}">Company</span><span class="wl-notification-origin" th:text="#{sidebar.watchlists}">Watchlists</span><span th:text="#{signals.column.interval}">Interval</span><span th:text="#{home.candlePeriod}">Candle period</span><span th:text="#{home.researchHorizon}">Research horizon</span><span th:text="#{virtualTrades.column.status}">Status</span><span th:text="#{signals.column.setupScore}">Setup score</span><span></span>
+            <span class="learn-term" data-term="signal" th:text="#{signals.column.signal}">Signal</span><span th:text="#{virtualTrades.column.company}">Company</span><span class="wl-notification-origin" th:text="#{sidebar.watchlists}">Watchlists</span><span class="learn-term" data-term="interval" th:text="#{signals.column.interval}">Interval</span><span class="learn-term" data-term="signalPeriod" th:text="#{home.candlePeriod}">Candle period</span><span class="learn-term" data-term="researchHorizon" th:text="#{home.researchHorizon}">Research horizon</span><span th:text="#{virtualTrades.column.status}">Status</span><span class="learn-term" data-term="setupScore" th:text="#{signals.column.setupScore}">Setup score</span><span></span>
           </div>
           <div class="latest-signal-list">
             <th:block th:each="item : ${latestSignalItems}">
@@ -162,7 +162,7 @@
       </section>
 
       <section id="technicalWatchDesk" class="glass-panel dashboard-panel" data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}" aria-labelledby="watch-desk-heading">
-        <div class="panel-heading"><h2 id="watch-desk-heading" class="panel-title" th:text="#{watchlists.yours}">Your watchlists</h2>
+        <div class="panel-heading"><h2 id="watch-desk-heading" class="panel-title"><span class="learn-term" data-term="watchlist" th:text="#{watchlists.yours}">Your watchlists</span></h2>
           <div class="panel-heading-actions"><a th:href="@{/watchlists}" class="text-link" th:text="#{watchlists.manageAria}">Manage watchlists</a><button type="button" class="btn-accent" data-create-watchlist th:text="#{watchlists.create}">Create watchlist</button></div>
         </div>
         <div data-named-watchlists><p role="status" th:text="#{watchlists.loading}">Loading watchlists…</p></div>
@@ -255,7 +255,7 @@
               <strong th:text="${#tr.text(notification.amountLabel())}">$25,000</strong>
             </div>
             <div class="ticker-notification-return">
-              <span th:text="#{activitySignals.directionalReturn}">Directional return</span>
+              <span class="learn-term" data-term="directionalReturn" th:text="#{activitySignals.directionalReturn}">Directional return</span>
               <strong th:if="${notification.returnPercent() != null}"
                       th:classappend="${notification.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
                       th:text="${(notification.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(notification.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
@@ -297,7 +297,7 @@
                aria-labelledby="congressional-dashboard-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker" th:text="#{home.congressKicker}">Congressional filings</div>
+            <div class="panel-kicker"><span class="learn-term" data-term="congressionalTrade" th:text="#{home.congressKicker}">Congressional filings</span></div>
             <h2 id="congressional-dashboard-heading" class="panel-title">
               <span th:text="#{js.followType.CONGRESS}">Congressional activity</span>
               <span class="panel-count" data-notification-count th:text="${congressionalUnreadCount}">0</span>
@@ -363,7 +363,7 @@
               <strong th:text="${#tr.text(activity.amountRange())}">$1,001 - $15,000</strong>
             </div>
             <div class="ticker-notification-return">
-              <span th:text="#{activitySignals.directionalReturn}">Directional return</span>
+              <span class="learn-term" data-term="directionalReturn" th:text="#{activitySignals.directionalReturn}">Directional return</span>
               <strong th:if="${activity.returnPercent() != null}"
                       th:classappend="${activity.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
                       th:text="${(activity.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(activity.returnPercent(), 1, 2) + '%'}">+4.20%</strong>
@@ -422,9 +422,9 @@
                aria-labelledby="insider-dashboard-heading">
         <div class="panel-heading">
           <div>
-            <div class="panel-kicker" th:text="#{home.insiderKicker}">Insider filings</div>
+            <div class="panel-kicker"><span class="learn-term" data-term="insiderTrade" th:text="#{home.insiderKicker}">Insider filings</span></div>
             <h2 id="insider-dashboard-heading" class="panel-title">
-              <span th:text="#{home.insiderTitle}">Corporate insider activity</span>
+              <span class="learn-term" data-term="insiderTrade" th:text="#{home.insiderTitle}">Corporate insider activity</span>
               <span class="panel-count" data-notification-count th:text="${insiderUnreadCount}">0</span>
             </h2>
           </div>
@@ -490,7 +490,7 @@
               <strong th:unless="${activity.transactionValue() != null}" th:text="#{home.valueUnavailable}">Value unavailable</strong>
             </div>
             <div class="insider-dashboard-return">
-              <span th:text="#{activitySignals.directionalReturn}">Directional return</span>
+              <span class="learn-term" data-term="directionalReturn" th:text="#{activitySignals.directionalReturn}">Directional return</span>
               <strong th:if="${activity.returnPercent() != null}"
                       th:classappend="${activity.returnPercent().signum() >= 0} ? ' positive' : ' negative'"
                       th:text="${(activity.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(activity.returnPercent(), 1, 2) + '%'}">+4.20%</strong>

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -107,7 +107,7 @@
           </div>
           <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'actor', #{activitySignals.column.actor}, 'asc', ${null})}"></a>
           <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'transaction', #{activitySignals.column.transaction}, 'asc', ${null})}"></a>
-          <span th:text="#{activitySignals.directionalReturn}">Directional return</span>
+          <span class="learn-term" data-term="directionalReturn" th:text="#{activitySignals.directionalReturn}">Directional return</span>
           <a th:replace="~{fragments/archive-sort :: column('/activity-signals', ${archive}, 'date', #{activitySignals.column.traded}, 'desc', ${null})}"></a>
           <span></span>
         </div>

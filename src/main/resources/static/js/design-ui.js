@@ -152,41 +152,6 @@
             });
         });
     }
-    // "?" glossary buttons: hover or focus shows the definition, a click pins it for touch screens.
-    function termHelp() {
-        const helps = Array.from(document.querySelectorAll('.term-help'));
-        if (!helps.length) return;
-        const close = except => helps.forEach(help => {
-            if (help === except) return;
-            help.classList.remove('is-open');
-            help.querySelector('.term-help-button')?.setAttribute('aria-expanded', 'false');
-        });
-        helps.forEach(help => {
-            const button = help.querySelector('.term-help-button'), text = help.querySelector('.term-help-text');
-            if (!button || !text) return;
-            const place = () => {
-                help.classList.remove('align-start', 'align-end', 'align-below');
-                const bounds = visibleBounds(help), rect = text.getBoundingClientRect();
-                if (rect.right > bounds.right - 8) help.classList.add('align-end');
-                else if (rect.left < bounds.left + 8) help.classList.add('align-start');
-                if (rect.top < bounds.top + 8) help.classList.add('align-below');
-            };
-            help.addEventListener('mouseenter', place);
-            button.addEventListener('focus', place);
-            button.addEventListener('click', event => {
-                event.preventDefault();
-                const open = !help.classList.contains('is-open');
-                close(help);
-                help.classList.toggle('is-open', open);
-                button.setAttribute('aria-expanded', String(open));
-                if (open) place();
-            });
-        });
-        document.addEventListener('click', event => {
-            if (!(event.target instanceof Element) || !event.target.closest('.term-help')) close(null);
-        });
-        document.addEventListener('keydown', event => { if (event.key === 'Escape') close(null); });
-    }
     // Row "more actions" menus close on outside click or Escape, and open upwards when clipped below.
     function rowMenus() {
         const menus = Array.from(document.querySelectorAll('details.row-menu'));
@@ -216,5 +181,5 @@
         });
     }
     labelRows(); settingsChanges(); appearancePreview(); fieldErrors();
-    filterableMenus(); termHelp(); rowMenus(); expandableStatus();
+    filterableMenus(); rowMenus(); expandableStatus();
 })();

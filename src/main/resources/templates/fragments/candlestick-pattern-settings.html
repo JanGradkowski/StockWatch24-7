@@ -10,7 +10,7 @@
     </div>
     <p class="analysis-settings-intro" th:text="#{candlestick.intro}">Control the completed-candle measurements that define each formation and the close-based trade plan opened after detection. These settings apply to future alerts and newly generated historical scans.</p>
     <div class="analysis-safety-strip candlestick-definition-guide">
-      <strong th:text="#{candlestick.measured}">How values are measured</strong>
+      <strong><span class="learn-label"><th:block th:text="#{candlestick.measured}">How values are measured</th:block> <span th:replace="~{fragments/learn-help :: termHelp('candleAnatomy')}"></span></span></strong>
       <span><b th:text="#{candlestick.measured.percent}">Percent (%)</b> <span th:text="#{candlestick.measured.percent.help}">compares a real body with the candle's complete high-to-low range.</span></span>
       <span><b th:text="#{candlestick.measured.multiple}">Multiple (×)</b> <span th:text="#{candlestick.measured.multiple.help}">compares a shadow or body with another body or the recent median body.</span></span>
     </div>
@@ -24,13 +24,13 @@
   <form id="candlestickPatternDefinitionsForm" th:action="@{/settings/candlestick-patterns}" method="post" class="candlestick-pattern-preferences-form">
     <section class="settings-card candlestick-trade-plan-overview">
       <div class="settings-card-heading">
-        <div><span class="settings-number">02</span><h2 th:text="#{candlestick.rewardRisk.heading}">Risk-to-reward</h2></div>
+        <div><span class="settings-number">02</span><h2><span class="learn-term" data-term="riskReward" th:text="#{candlestick.rewardRisk.heading}">Risk-to-reward</span></h2></div>
         <span class="analysis-profile-state" th:text="${preferences.custom()} ? #{candlestick.rewardRisk.custom} : #{candlestick.rewardRisk.default}">Default trade plan</span>
       </div>
       <p class="analysis-settings-intro" th:text="#{candlestick.rewardRisk.intro}">Set one reward multiple for all intervals. A value of 2 means the target is twice as far from entry as the configured stop loss. Once you change it, the same multiple is also the minimum for Elliott Wave and harmonic trade plans (their defaults are 1:2 daily and 1:3 weekly or monthly). Trades enter at the open of the candle after the signal and close at the end of the saved horizon if neither level is reached.</p>
       <div class="candlestick-reward-risk-grid">
         <label class="candlestick-reward-risk-control" th:each="ratio : ${candlestickRewardRiskProfiles}">
-          <span th:text="#{candlestick.rewardRisk.allIntervals}">All intervals</span>
+          <span class="learn-label"><th:block th:text="#{candlestick.rewardRisk.allIntervals}">All intervals</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('candlestick.rewardRisk', #{candlestick.rewardRisk.heading})}"></span></span>
           <small th:text="#{candlestick.rewardRisk.default.value(${#numbers.formatDecimal(ratio.factoryValue(), 1, 1)})}">Default: 1:2</small>
           <span class="candlestick-ratio-input"><b>1 :</b><input type="number" required inputmode="decimal" min="0.1" max="20" step="0.1" th:name="${'rewardRisk.' + ratio.key()}" th:value="${ratio.value()}"></span>
         </label>
@@ -38,11 +38,11 @@
     </section>
 
     <section class="settings-card">
-      <div class="settings-card-heading"><h2><span th:text="#{candlestick.structural.heading}">Structural risk checks</span> <span th:replace="~{fragments/term-help :: termHelp('help-atr', 'ATR', #{candlestick.help.atr})}"></span></h2></div>
+      <div class="settings-card-heading"><h2><span class="learn-label"><th:block th:text="#{candlestick.structural.heading}">Structural risk checks</th:block> <span th:replace="~{fragments/learn-help :: termHelp('atr')}"></span></span></h2></div>
       <p th:text="#{candlestick.structural.stops}">New plans apply the stop exactly as configured: the structural price moved out by your buffer percent, or a fixed percent from entry. A distant stop or insufficient reward to the nearest target makes the setup projection only. Stops are never pulled inside the structure to manufacture a reward/risk ratio.</p>
       <p th:text="#{candlestick.structural.limits}">Daily limits: 3 ATR / 12.5%. Weekly: 4 ATR / 20%. Monthly: 5 ATR / 30%. These are initial safeguards, not estimated success probabilities. Daily and weekly candlestick horizons are 8 bars; monthly is 6.</p>
       <div th:each="profile : ${candlestickCircuitBreakerProfiles}">
-        <label><span th:text="#{candlestick.volatilityHistory}">Volatility history (bars)</span>
+        <label><span class="learn-label"><th:block th:text="#{candlestick.volatilityHistory}">Volatility history (bars)</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('candlestick.volatilityHistory', #{candlestick.volatilityHistory})}"></span></span>
           <input type="number" required min="2" max="500" step="1" th:name="${'circuitBreaker.' + profile.key() + '.atrPeriod'}" th:value="${profile.atrPeriod()}">
         </label>
         <input type="hidden" th:name="${'circuitBreaker.' + profile.key() + '.enabled'}" th:value="${profile.enabled()}">
@@ -58,7 +58,7 @@
       <div class="settings-card-heading candlestick-pattern-heading">
         <div>
           <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 4, 2)}">04</span>
-          <div><p class="scoring-family-label" th:text="${formationText}">Two-candle bullish reversal</p><h2 th:text="${patternName}">Bullish Engulfing</h2></div>
+          <div><p class="scoring-family-label" th:text="${formationText}">Two-candle bullish reversal</p><h2><span class="learn-term" th:attr="data-term=${profile.pattern.glossaryTerm()}" th:text="${patternName}">Bullish Engulfing</span></h2></div>
         </div>
         <div class="candlestick-pattern-heading-actions">
           <span class="analysis-profile-state candlestick-pattern-state" th:classappend="${profile.factoryProfile} ? '' : ' custom'" th:text="${profile.factoryProfile} ? #{candlestick.state.default} : #{candlestick.state.custom}">Default</span>
@@ -73,11 +73,11 @@
       </div>
 
       <fieldset class="analysis-setting-group candlestick-stop-loss-group" th:if="${profile.directional()}">
-        <legend th:text="#{candlestick.stopLoss.heading}">Stop-loss rule</legend>
+        <legend><span class="learn-term" data-term="stopLoss" th:text="#{candlestick.stopLoss.heading}">Stop-loss rule</span></legend>
         <p th:text="#{candlestick.stopLoss.help}">Choose how the stop loss is calculated. Its price is fixed when a new signal opens.</p>
         <div class="candlestick-stop-loss-controls">
           <label class="candlestick-select-control" th:for="${profile.key + '-stop-loss-mode'}">
-            <span><span th:text="#{candlestick.stopLoss.method}">Method</span><small th:text="${#messages.msg('common.defaultValue', #messages.msg('candlestick.stopLoss.factory'))}">Default: textbook structural price</small></span>
+            <span><span class="learn-label"><th:block th:text="#{candlestick.stopLoss.method}">Method</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('candlestick.stopLossMethod', #{candlestick.stopLoss.method})}"></span></span><small th:text="${#messages.msg('common.defaultValue', #messages.msg('candlestick.stopLoss.factory'))}">Default: textbook structural price</small></span>
             <select th:id="${profile.key + '-stop-loss-mode'}" th:name="${profile.key + '.stopLossMode'}" required>
               <option th:each="mode : ${stopLossModes}" th:value="${mode.name()}" th:text="${#messages.msg('candlestick.stopLoss.' + mode.name() + '.label')}" th:selected="${mode == profile.stopLossMode}">Textbook structural price + buffer</option>
             </select>
@@ -99,7 +99,7 @@
 
       <div class="candlestick-pattern-rule-grid">
         <fieldset class="analysis-setting-group candlestick-trend-group">
-          <legend th:text="#{candlestick.trend.heading}">Prior price action</legend>
+          <legend><span class="learn-term" data-term="priorTrend" th:text="#{candlestick.trend.heading}">Prior price action</span></legend>
           <p th:text="#{candlestick.trend.help}">Choose where this candle formation is allowed to qualify as this named pattern.</p>
           <label class="candlestick-select-control" th:for="${profile.key + '-trend'}">
             <span><span th:text="#{candlestick.trend.required}">Required price action before the formation</span><small><span th:text="#{common.default}">Default:</span> <b th:text="${#messages.msg('candlestick.trend.' + profile.factoryTrendRequirement.name())}">Required downtrend</b></small></span>

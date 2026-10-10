@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,7 +25,7 @@
 
   <header class="signal-report-header technical-outlook-header outlook-change-header">
     <div class="signal-report-heading">
-      <div class="signal-report-eyebrow" th:text="#{outlookChange.eyebrow}">Saved outlook change</div>
+      <div class="signal-report-eyebrow"><span class="learn-term" data-term="outlookChange" th:text="#{outlookChange.eyebrow}">Saved outlook change</span></div>
       <h1 th:text="#{outlookChange.heading(${change.symbol()}, ${#tr.text(change.intervalLabel())})}">AAPL Daily outlook changed</h1>
       <p th:text="${change.companyName() + ' · ' + #messages.msg('outlookChange.recorded', #temporals.format(change.createdAt(), 'dd MMM uuuu, HH:mm'))}">Apple Inc.</p>
     </div>

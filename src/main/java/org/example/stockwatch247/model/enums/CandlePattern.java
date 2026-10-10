@@ -47,5 +47,17 @@ public enum CandlePattern {
     HARMONIC_DEEP_CRAB,
     HARMONIC_FIVE_ZERO,
     HARMONIC_AB_CD,
-    HARMONIC_ALTERNATE_AB_CD
+    HARMONIC_ALTERNATE_AB_CD;
+
+    /**
+     * Learning-mode glossary id (js.glossary.&lt;id&gt;) that explains this pattern. Bullish and bearish
+     * forms of an Elliott stage share one explanation; ANY has none.
+     */
+    public String glossaryTerm() {
+        if (this == ANY) return null;
+        String name = name();
+        return name.startsWith("ELLIOTT_")
+                ? "elliott." + name.replaceFirst("^ELLIOTT_(BULLISH|BEARISH)_", "")
+                : "pattern." + name;
+    }
 }

@@ -70,7 +70,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("data-alert-family=\"HARMONIC_FORMATION\""));
         assertTrue(stock.contains("function refreshHarmonicOverlays"));
         assertTrue(stock.contains("function renderHarmonicFormation"));
-        assertTrue(stock.contains("/harmonic-formations/history?interval="));
+        assertTrue(stock.contains("loadPatternRange('harmonics', interval)"));
         assertTrue(stock.contains("addEventListener('click', toggleHarmonicOverlays)"));
         assertTrue(stock.contains("id=\"harmonicFormationHoverCard\""));
         assertTrue(stock.contains("id=\"harmonicFormationHitTargets\""));
@@ -190,16 +190,17 @@ class FrontendSecurityTest {
     }
 
     @Test
-    void harmonicSignalDetailShowsAStopOnlyPlanWithoutInventingTargets() throws IOException {
+    void harmonicSignalDetailKeepsTheStructuralStopAndShowsATargetOnlyWhenOneWasSaved() throws IOException {
         String signal = english(Files.readString(Path.of("src/main/resources/templates/signal-detail.html")));
 
-        assertTrue(signal.contains("Harmonic eight-candle outcome plan"));
+        assertTrue(signal.contains("Entry, targets, stop, and trade horizon"));
         assertTrue(signal.contains("Exact structural invalidation"));
-        assertTrue(signal.contains("Equity liquidity buffer"));
-        assertTrue(signal.contains("Executable stop loss"));
+        assertTrue(signal.contains("Structural formula"));
+        assertTrue(signal.contains("Saved price buffer"));
+        assertTrue(signal.contains("Protective stop trigger"));
         assertTrue(signal.contains("data-trade-structural-stop"));
-        assertTrue(signal.contains("Structural invalidation"));
-        assertTrue(signal.contains("No profit target or R:R is shown"));
+        assertTrue(signal.contains("<article th:if=\"${signal.lifecycle().profitTargetPrice() != null}\" class=\"reward\">"));
+        assertTrue(signal.contains("Legacy harmonic plans retain their eight-bar stop-only rules."));
         assertFalse(signal.contains("harmonicStopBasis()} ?"));
     }
 
@@ -297,7 +298,7 @@ class FrontendSecurityTest {
         assertTrue(definitions.contains("Stop-loss rule"));
         assertTrue(definitions.contains(".stopLossMode"));
         assertTrue(definitions.contains(".stopLossValuePercent"));
-        assertTrue(definitions.contains("ATR-based risk limit"));
+        assertTrue(definitions.contains("Structural risk checks"));
         assertTrue(definitions.contains("circuitBreaker."));
         assertTrue(definitions.contains(".atrPeriod"));
         assertTrue(definitions.contains(".atrMultiplier"));
@@ -601,7 +602,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\" data-alert-signal=\"BUY\""));
         assertTrue(stock.contains("data-alert-family=\"ELLIOTT_WAVE\" data-alert-interval=\"WEEKLY\" data-alert-signal=\"SELL\""));
         assertTrue(stock.contains("function tradeSignalDisplayLabel(value, lowercase = false)"));
-        assertTrue(stock.contains("Sell/Short</div>"));
+        assertTrue(stock.contains("Sell/Short</span></div>"));
         assertTrue(stock.contains("copy.textContent = i18n.t('sw.sellShortWord')"));
         assertTrue(stock.contains("class=\"alert-eye-input\" type=\"checkbox\""));
         assertTrue(stock.contains("class=\"alert-panel alert-star-panel\""));
@@ -638,9 +639,9 @@ class FrontendSecurityTest {
         assertFalse(stock.contains("currentInterval !== '1d' && endpoint?.timestamp"));
         assertTrue(stock.contains("tracked ? 'sw.elliott.openSignal' : 'sw.elliott.openHistorical'"));
         assertFalse(stock.contains("id=\"historicElliottBtn\""));
-        assertTrue(stock.contains("/elliott-waves/history?interval="));
-        assertTrue(stock.contains("&from=${encodeURIComponent(oldestTimestamp)}"));
-        assertTrue(stock.contains("Number.isSafeInteger(oldestTimestamp) && oldestTimestamp > 0"));
+        assertTrue(stock.contains("loadPatternRange('waves', interval)"));
+        assertTrue(stock.contains("loadPatternRange('candidates', interval)"));
+        assertTrue(stock.contains("function visiblePatternRange(paddingCandles = 20)"));
         assertTrue(stock.contains("structure.structureId || elliottStructureFallbackId(structure)"));
         assertTrue(stock.contains("id=\"elliottWaveHoverCard\""));
         assertTrue(stock.contains("/elliott-cards?interval="));
@@ -650,7 +651,7 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("function historicalElliottCard(segment)"));
         assertTrue(stock.contains("Historical results from the first 10 completed candles."));
         assertTrue(stock.contains("return segment.points;"));
-        assertTrue(stock.contains("item.series.applyOptions({ lineWidth: item.groupId === segment?.groupId ? 4 : 2 })"));
+        assertTrue(stock.contains("lineWidth: item.groupId === segment?.groupId ? item.activeLineWidth : item.lineWidth"));
         assertTrue(stock.contains("Open signal details"));
         assertTrue(stock.contains("status.classList.add('error')"));
         assertTrue(stock.contains("setElliottConfirmationMarkers"));
@@ -658,7 +659,8 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("color: 'rgba(0, 0, 0, 0)'"));
         assertFalse(stock.contains("lineVisible: false"));
         assertTrue(stock.contains("elliottQualityWarnings(structure)"));
-        assertTrue(stock.contains("Quality range ${qualityMin}–${qualityMax}/100"));
+        assertTrue(stock.contains("i18n.t('sw.elliott.qualityRange', qualityMin, qualityMax)"));
+        assertTrue(stock.contains("Quality range {0}–{1}/100"));
         assertTrue(stock.contains("structure.deepWaveTwo"));
         assertTrue(stock.contains("structure.qualityWarnings"));
         assertTrue(stock.contains("structure.impulseVariant === 'TRUNCATED_FIFTH'"));
@@ -692,7 +694,8 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("value=\"1wk\""));
         assertTrue(stock.contains("value=\"1mo\""));
         assertTrue(stock.contains("/candlestick-patterns/history?interval="));
-        assertTrue(stock.contains("&fullHistory=true"));
+        assertTrue(stock.contains("loadPatternRange('candles', interval)"));
+        assertTrue(stock.contains("${baseUrl}?fullHistory=true"));
         assertTrue(stock.contains("&lookbackCandles=${encodeURIComponent(lookbackCandles)}"));
         assertTrue(stock.contains("cache: 'no-store'"));
         assertTrue(stock.contains("createHistoricalCandlestickRow"));
@@ -707,7 +710,8 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("function historicalCandlestickCardOutcome(signal)"));
         assertTrue(stock.contains("Return at sell target"));
         assertTrue(stock.contains("Stop loss reached"));
-        assertTrue(stock.contains("Return at candle ${timeStopCandles} time stop"));
+        assertTrue(stock.contains("i18n.t('sw.outcome.timeStopReturn', timeStopCandles)"));
+        assertTrue(stock.contains("Return at candle {0} time stop"));
         assertTrue(stock.contains("Potential return at sell target"));
         assertTrue(stock.contains("function historicalCandlestickDirectionalReturn(signal, exitPrice)"));
         assertTrue(stock.contains("reopenHistoricalCandlestickResultsFromUrl"));
@@ -771,8 +775,8 @@ class FrontendSecurityTest {
         assertTrue(paginationReady > loadChartData);
         assertTrue(paginationReady < initialOverlayRefresh);
 
-        int candlestickStart = stock.indexOf("<div class=\"alert-section-title\">Candlestick Patterns</div>");
-        int elliottStart = stock.indexOf("<div class=\"alert-section-title\">Elliott Wave Patterns</div>");
+        int candlestickStart = stock.indexOf("#{stock.candleHeading}");
+        int elliottStart = stock.indexOf("#{stock.elliottHeading}");
         int elliottEnd = stock.indexOf("<section id=\"congressionalActivityPanel\"", elliottStart);
         String candlestickSection = stock.substring(candlestickStart, elliottStart);
         String elliottSection = stock.substring(elliottStart, elliottEnd);
@@ -1239,7 +1243,7 @@ class FrontendSecurityTest {
         assertTrue(signalDetail.contains("detail.text()"));
         assertTrue(signalDetail.contains("class=\"evidence-detail-list\""));
         assertTrue(signalDetail.contains("Detailed evidence was not stored for this signal"));
-        assertTrue(signalDetail.contains("Close-based trade outcome"));
+        assertTrue(signalDetail.contains("Modeled trade outcome"));
         assertTrue(signalDetail.contains("signal.observedOutcome().directionalReturnPercent()"));
         assertTrue(signalDetail.contains("Most favorable completed-close move"));
         assertTrue(signalDetail.contains("data-trade-target"));
@@ -1272,7 +1276,7 @@ class FrontendSecurityTest {
                 Path.of("src/main/resources/templates/technical-outlook-change.html")));
         String stylesheet = stylesheets();
 
-        assertTrue(stock.contains(">Automated Technical Outlook</div>"));
+        assertTrue(stock.contains(">Automated Technical Outlook</span></div>"));
         assertTrue(stock.contains("data-outlook-follow-interval=\"DAILY\""));
         assertTrue(stock.contains("data-outlook-follow-interval=\"WEEKLY\""));
         assertTrue(stock.contains("data-outlook-follow-interval=\"MONTHLY\""));

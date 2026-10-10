@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -55,7 +55,8 @@
     </div>
     <div class="signal-report-actions">
       <a th:if="${signal.filingUrl() != null}" th:href="${signal.filingUrl()}"
-         class="btn-secondary" target="_blank" rel="noopener noreferrer" th:text="#{activityDetail.officialFiling}">Official filing</a>
+         class="btn-secondary learn-control" th:attr="data-term=${signal.source() == 'INSIDER' ? 'secFiling' : 'congressionalTrade'}"
+         target="_blank" rel="noopener noreferrer" th:text="#{activityDetail.officialFiling}">Official filing</a>
       <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary"><span th:text="#{detail.openWorkspace}">Open workspace</span> <span class="button-arrow" aria-hidden="true">&rarr;</span></a>
     </div>
   </header>
@@ -164,7 +165,7 @@
         <div><span th:text="#{virtualTrades.column.company}">Company</span><strong th:text="${signal.companyName() + ' · ' + signal.symbol()}">Johnson &amp; Johnson · JNJ</strong></div>
         <div><span th:text="#{js.detailChart.transaction}">Transaction</span><strong th:text="${#tr.text(signal.transactionTypeLabel())}">Sale</strong></div>
         <div><span th:text="#{activitySignals.sort.date}">Transaction date</span><strong th:text="${#temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">07 Aug 2026</strong></div>
-        <div><span th:text="#{activityDetail.filingDate}">Filing date</span><strong th:text="${#temporals.format(signal.filingDate(), 'dd MMM yyyy')}">07 Aug 2026</strong></div>
+        <div><span class="learn-term" data-term="filingDate" th:text="#{activityDetail.filingDate}">Filing date</span><strong th:text="${#temporals.format(signal.filingDate(), 'dd MMM yyyy')}">07 Aug 2026</strong></div>
         <div>
           <span th:text="#{activityDetail.executionPrice}">Execution price</span>
           <strong th:if="${signal.transactionPrice() != null}" th:text="${signal.currency() + ' ' + #numbers.formatDecimal(signal.transactionPrice(), 1, 2)}">USD 257.76</strong>
@@ -178,7 +179,7 @@
           <strong th:if="${signal.transactionValue() == null and signal.amountRange() == null}" th:text="#{activityDetail.notDisclosed}">Not disclosed</strong>
         </div>
         <div>
-          <span th:text="#{activityDetail.returnSinceFiling}">Return since public filing</span>
+          <span class="learn-term" data-term="returnSinceFiling" th:text="#{activityDetail.returnSinceFiling}">Return since public filing</span>
           <strong th:if="${signal.publicReturnPercent() != null}"
                   th:classappend="${signal.publicReturnPercent().signum() >= 0} ? ' positive' : ' negative'"
                   th:text="${(signal.publicReturnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(signal.publicReturnPercent(), 1, 2) + '%'}">+3.10%</strong>

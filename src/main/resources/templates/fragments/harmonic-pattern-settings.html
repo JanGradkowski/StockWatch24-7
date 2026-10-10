@@ -4,13 +4,13 @@
 <div th:fragment="harmonicPatternSettings(preferences)" class="elliott-settings-stack harmonic-settings-stack">
   <section class="settings-card analysis-profile-overview elliott-settings-overview">
     <div class="settings-card-heading">
-      <div><span class="settings-number">01</span><h2 th:text="#{harmonic.heading}">Harmonic Formation definitions</h2></div>
+      <div><span class="settings-number">01</span><h2><span class="learn-label"><th:block th:text="#{harmonic.heading}">Harmonic Formation definitions</th:block> <span th:replace="~{fragments/learn-help :: termHelp('harmonicPattern')}"></span></span></h2></div>
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.custom()} ? #{candlestick.custom} : #{candlestick.default}">Default settings</span>
     </div>
     <p class="analysis-settings-intro" th:text="#{harmonic.intro}">Set turning-point and Fibonacci rules for harmonic patterns. These settings apply to daily, weekly and monthly charts.</p>
     <div class="analysis-safety-strip elliott-definition-guide">
-      <strong th:text="#{harmonic.required}">Required pattern rules</strong>
+      <strong><span class="learn-label"><th:block th:text="#{harmonic.required}">Required pattern rules</th:block> <span th:replace="~{fragments/learn-help :: termHelp('xabcd')}"></span></span></strong>
       <span th:text="#{harmonic.required.always}">Direction, chronological pivot order, alternating highs/lows, inside/outside completion, and pattern-specific point boundaries always remain hard rules.</span>
       <span th:text="#{harmonic.required.softHard}">A hard ratio accepts only the base Fibonacci tolerance. A soft ratio may exceed it by the pattern&rsquo;s extra soft-rule allowance and loses score as it stretches.</span>
       <span th:text="#{harmonic.required.affects}">Changes affect future alerts and newly reconstructed overlays. Saved signals retain their original geometry and score evidence.</span>
@@ -20,7 +20,7 @@
   <form id="harmonicDefinitionsForm" th:action="@{/settings/harmonic-formations}" method="post" class="elliott-preferences-form">
     <section class="settings-card elliott-interval-card">
       <div class="settings-card-heading candlestick-pattern-heading">
-        <div><span class="settings-number">02</span><div><p class="scoring-family-label" th:text="#{harmonic.global.kicker}">All harmonic patterns</p><h2 th:text="#{harmonic.global.heading}">Pivot and tolerance defaults</h2></div></div>
+        <div><span class="settings-number">02</span><div><p class="scoring-family-label" th:text="#{harmonic.global.kicker}">All harmonic patterns</p><h2><span class="learn-label"><th:block th:text="#{harmonic.global.heading}">Pivot and tolerance defaults</th:block> <span th:replace="~{fragments/learn-help :: termHelp('fibonacciTolerance')}"></span></span></h2></div></div>
       </div>
       <p class="candlestick-pattern-description" th:text="#{harmonic.global.help}">These values are shared by every enabled harmonic formation and every supported interval.</p>
       <div class="elliott-setting-list">
@@ -45,7 +45,7 @@
       <div class="settings-card-heading candlestick-pattern-heading">
         <div>
           <span class="settings-number" th:text="${#numbers.formatInteger(stat.index + 3, 2)}">03</span>
-          <div><p class="scoring-family-label" th:text="#{harmonic.pattern.kicker}">Pattern definition</p><h2 th:text="${#messages.msgOrNull('harmonic.pattern.' + profile.pattern().name()) ?: profile.label()}">Gartley</h2></div>
+          <div><p class="scoring-family-label" th:text="#{harmonic.pattern.kicker}">Pattern definition</p><h2><span class="learn-term" th:attr="data-term=${'pattern.HARMONIC_' + profile.pattern().name()}" th:text="${#messages.msgOrNull('harmonic.pattern.' + profile.pattern().name()) ?: profile.label()}">Gartley</span></h2></div>
         </div>
         <div class="candlestick-pattern-heading-actions">
           <span class="analysis-profile-state" th:classappend="${profile.factoryProfile()} ? '' : ' custom'"
@@ -85,7 +85,7 @@
 
       <section class="elliott-rule-section">
         <div class="elliott-rule-section-heading">
-          <div><span class="elliott-rule-kicker" th:text="#{harmonic.ratios.kicker}">Ratios</span><h3 th:text="#{harmonic.ratios.heading}">Fibonacci definition</h3></div>
+          <div><span class="elliott-rule-kicker" th:text="#{harmonic.ratios.kicker}">Ratios</span><h3><span class="learn-term" data-term="fibonacciRatio" th:text="#{harmonic.ratios.heading}">Fibonacci definition</span></h3></div>
           <p th:text="#{harmonic.ratios.help}">Values are percentages of the price leg named in each label. For example, 61.8% means 61.8% of that price move.</p>
         </div>
         <div class="elliott-setting-list">

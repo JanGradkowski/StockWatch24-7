@@ -334,6 +334,13 @@ public class SettingsController {
         return Map.of("theme", "light".equalsIgnoreCase(theme) ? "light" : "dark");
     }
 
+    @PostMapping(path = "/api/settings/learning-mode", produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public Map<String, Boolean> learningModeApi(@RequestParam boolean enabled, Principal principal) {
+        security.updateLearningMode(current(principal).getId(), enabled);
+        return Map.of("enabled", enabled);
+    }
+
     @PostMapping("/settings/password/code")
     public String passwordCode(@RequestParam String currentPassword, Principal principal,
                                HttpServletRequest request, RedirectAttributes redirect) {
@@ -492,6 +499,7 @@ public class SettingsController {
         data.put("exportedAt", clock.instant().toString()); data.put("email", user.getEmail());
         data.put("firstName", user.getFirstName()); data.put("lastName", user.getLastName());
         data.put("createdAt", user.getCreatedAt()); data.put("theme", user.getThemePreference());
+        data.put("learningMode", user.isLearningMode());
         data.put("elliottMotiveColor", user.getElliottMotiveColor());
         data.put("elliottCorrectiveColor", user.getElliottCorrectiveColor());
         data.put("elliottSubwaveColor", user.getElliottSubwaveColor());

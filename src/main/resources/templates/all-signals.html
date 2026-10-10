@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -61,7 +61,7 @@
           <ul>
             <li th:text="#{signals.how.unread}">Unread signals have a green dot. Opening a signal marks it as read.</li>
             <li><strong th:text="#{signals.state.active}">Active</strong> <span th:text="#{signals.how.activeText}">signals are pending setups and projections.</span> <strong th:text="#{signals.state.completed}">Completed</strong> <span th:text="#{signals.how.completedText}">signals have resolved, been rejected, or are recorded filings.</span></li>
-            <li><strong th:text="#{signals.column.setupScore}">Setup score</strong> <span th:text="#{signals.how.scoreText}">rates the evidence for a pattern out of 100. It is not a probability of profit.</span></li>
+            <li><strong class="learn-term" data-term="setupScore" th:text="#{signals.column.setupScore}">Setup score</strong> <span th:text="#{signals.how.scoreText}">rates the evidence for a pattern out of 100. It is not a probability of profit.</span></li>
             <li><strong th:text="#{signals.column.tradeOutcome}">Trade outcome</strong> <span th:text="#{signals.how.outcomeText}">is the separately tracked price result, using each pattern family's stop, target and time-limit rules.</span></li>
           </ul>
         </details>
@@ -72,14 +72,14 @@
             th:aria-label="${companyArchive != null ? #messages.msg('signals.sortCompanyAria', companyArchive.symbol()) : #messages.msg('signals.sortAllAria')}">
         <input th:if="${archiveFilter.watchlistId() != null}" type="hidden" name="watchlistId" th:value="${archiveFilter.watchlistId()}">
         <fieldset class="archive-state-filter">
-          <legend th:text="#{signals.showSignals}">Show signals</legend>
+          <legend><span class="learn-label"><th:block th:text="#{signals.showSignals}">Show signals</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('signals.state', #{signals.showSignals})}"></span></span></legend>
           <label><input type="radio" name="state" value="all" th:checked="${archiveFilter.state() == 'all'}"><span th:text="#{signals.state.all}">All</span></label>
           <label><input type="radio" name="state" value="unread" th:checked="${archiveFilter.state() == 'unread'}"><span th:text="#{signals.state.unread}">Unread</span></label>
           <label><input type="radio" name="state" value="active" th:checked="${archiveFilter.state() == 'active'}"><span th:text="#{signals.state.active}">Active</span></label>
           <label><input type="radio" name="state" value="completed" th:checked="${archiveFilter.state() == 'completed'}"><span th:text="#{signals.state.completed}">Completed</span></label>
         </fieldset>
         <label class="archive-ticker-filter">
-          <span th:text="#{signals.column.ticker}">Ticker</span>
+          <span class="learn-term" data-term="ticker" th:text="#{signals.column.ticker}">Ticker</span>
           <input type="search" name="ticker" th:value="${archiveFilter.ticker()}" placeholder="Ticker or tickers, e.g. AAPL,MSFT" autocomplete="off" th:placeholder="#{signals.tickerPlaceholder}">
         </label>
         <label>
@@ -145,7 +145,7 @@
 
       <div class="signal-archive-results">
         <div class="signal-archive-head">
-          <span th:text="#{signals.column.signal}">Signal</span>
+          <span class="learn-term" data-term="signal" th:text="#{signals.column.signal}">Signal</span>
           <a th:replace="~{fragments/archive-sort :: column(${archiveClearUrl}, ${archive}, 'ticker', #{signals.column.ticker}, 'asc', ${archiveFilter})}"></a>
           <a th:replace="~{fragments/archive-sort :: column(${archiveClearUrl}, ${archive}, 'interval', #{signals.column.interval}, 'asc', ${archiveFilter})}"></a>
           <a th:replace="~{fragments/archive-sort :: column(${archiveClearUrl}, ${archive}, 'date', #{signals.column.received}, 'desc', ${archiveFilter})}"></a>
@@ -266,7 +266,7 @@
                         th:text="#{signals.planSummary(${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 2)}, ${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 2)}, ${#numbers.formatDecimal(signal.lifecycle().profitTargetPrice(), 1, 2)}, ${#numbers.formatDecimal(signal.lifecycle().rewardRiskRatio(), 1, 0)})}">Entry 100.00 · Stop 95.00 · Target 110.00 · 1:2</span>
                   <span th:if="${signal.lifecycle().harmonicStopStatus() != null}"
                         th:text="#{signals.harmonicSummary(${#numbers.formatDecimal(signal.lifecycle().entryPrice(), 1, 2)}, ${#numbers.formatDecimal(signal.lifecycle().stopLossPrice(), 1, 2)}, ${#messages.msgOrNull('signals.harmonicStatus.' + signal.lifecycle().harmonicStopStatus()) ?: #strings.toLowerCase(#strings.replace(signal.lifecycle().harmonicStopStatus(), '_', ' '))})}">Confirmation entry 100.00 · Harmonic stop 95.00 · active</span>
-                  <span th:if="${signal.lifecycle().atrCircuitBreakerApplied()}" th:text="#{signals.atrActive}">ATR circuit breaker active</span>
+                  <span class="learn-term" th:if="${signal.lifecycle().atrCircuitBreakerApplied()}" data-term="atrCircuitBreaker" th:text="#{signals.atrActive}">ATR circuit breaker active</span>
 
                   <p th:if="${entry.stageOutcomes().isEmpty()}" th:text="${#tr.text(entry.outcome().priceDetail())}"></p>
                   <p th:each="stageOutcome : ${entry.stageOutcomes()}" th:text="${#tr.text(stageOutcome.label()) + ': ' + #tr.text(stageOutcome.priceDetail())}"></p>

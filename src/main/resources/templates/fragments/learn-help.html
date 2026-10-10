@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<!-- A "?" shown only in learning mode. Hover, focus or tap explains it (learning-mode.js). -->
+<!-- learnHelp explains an option: key is a js.learn.<key> message, title the option's visible name. -->
+<span th:fragment="learnHelp(key, title)" class="learn-help" th:attr="data-learn=${key},data-learn-title=${title}">?</span>
+<!-- termHelp explains a glossary term: term is the id of js.glossary.<term>.term and .text. -->
+<span th:fragment="termHelp(term)" class="learn-help" th:attr="data-term=${term}">?</span>
+<!-- learnTerm underlines a term in learning mode; text is the visible (possibly inflected) word. -->
+<span th:fragment="learnTerm(term, text)" class="learn-term" th:attr="data-term=${term}" th:text="${text}">term</span>
+</body>
+</html>

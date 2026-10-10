@@ -22,6 +22,7 @@ public class UserViewModelAdvice {
         }
         model.addAttribute("navigationSection", navigationSection(request.getRequestURI().substring(request.getContextPath().length())));
         model.addAttribute("accountTheme", user == null ? null : user.getThemePreference().toLowerCase());
+        model.addAttribute("learningMode", user != null && user.isLearningMode());
         model.addAttribute("elliottMotiveColor", user == null
                 ? User.DEFAULT_ELLIOTT_MOTIVE_COLOR : user.getElliottMotiveColor());
         model.addAttribute("elliottCorrectiveColor", user == null

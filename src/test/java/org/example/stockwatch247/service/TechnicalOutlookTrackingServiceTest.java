@@ -78,12 +78,18 @@ class TechnicalOutlookTrackingServiceTest {
         verify(notifications).save(any(TechnicalOutlookNotification.class));
     }
 
-    private List<org.example.stockwatch247.model.Candle> pipelineCandles(boolean falling) {
-        return java.util.stream.IntStream.range(0, falling ? 321 : 320).mapToObj(index -> {
-            double price = falling ? 500 - index : 100 + index;
+    // Under the factory rules a steady rise reads as a neutral outlook, and a long decline that ends in a sharp
+    // three-candle rebound reads as a moderate sell outlook, so the second evaluation sees a later candle with
+    // a different classification.
+    private List<org.example.stockwatch247.model.Candle> pipelineCandles(boolean reversed) {
+        int count = reversed ? 323 : 320;
+        java.util.function.IntToDoubleFunction close = index -> !reversed ? 100 + index
+                : index < 320 ? 500 - index : 181 * Math.pow(1.15, index - 319);
+        return java.util.stream.IntStream.range(0, count).mapToObj(index -> {
+            double price = close.applyAsDouble(index);
+            double open = index == 0 ? price : close.applyAsDouble(index - 1);
             return new org.example.stockwatch247.model.Candle("PIPE", "1mo", 86400L * 30 * (index + 1),
-                    falling && index == 320 ? price + 0.01 : price, price + 0.025, price - 0.025,
-                    price, falling && index == 320 ? 1000000000L : 1000000L);
+                    open, Math.max(open, price) + 0.025, Math.min(open, price) - 0.025, price, 1000000L);
         }).toList();
     }
 

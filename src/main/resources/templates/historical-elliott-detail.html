@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -95,7 +95,7 @@
         <div class="signal-score-card-topline">
           <div>
             <span class="signal-section-kicker" th:text="#{detail.scoreAtDetection}">Score at detection</span>
-            <h2 id="elliott-setup-heading" th:text="#{signals.column.setupScore}">Setup score</h2>
+            <h2 id="elliott-setup-heading"><span class="learn-term" data-term="setupScore" th:text="#{signals.column.setupScore}">Setup score</span></h2>
           </div>
           <span class="signal-confidence-pill"
                 th:text="${#tr.text(displayScore.strengthLabel())}">
@@ -141,7 +141,7 @@
                     th:text="${#messages.msgOrNull('elliottHistory.signalType.' + wave.tradeSignal().name()) ?: wave.tradeSignal().name()}">SELL/SHORT signal</strong>
           </div>
           <div class="signal-snapshot-item"><span th:text="#{detail.stage}">Stage</span><strong th:text="${#tr.text(wave.stageLabel())}">Wave V ending</strong></div>
-          <div class="signal-snapshot-item"><span th:text="#{detail.signalPeriod}">Signal period</span><strong th:text="${#tr.text(wave.signalPeriodLabel())}">Jan 2018</strong></div>
+          <div class="signal-snapshot-item"><span class="learn-term" data-term="signalPeriod" th:text="#{detail.signalPeriod}">Signal period</span><strong th:text="${#tr.text(wave.signalPeriodLabel())}">Jan 2018</strong></div>
           <div class="signal-snapshot-item"><span th:text="#{virtualTrades.column.status}">Status</span><strong th:text="${#tr.text(wave.statusLabel())}">Confirmed</strong></div>
         </div>
         <div class="historical-calculation-note">
@@ -164,8 +164,8 @@
       <div class="signal-chart-legend" aria-label="Elliott chart legend" th:aria-label="#{detail.elliottLegendAria}">
         <span th:if="${wave.candidate()}"><i class="signal-chart-key candidate" aria-hidden="true"></i><span th:text="#{elliottHistory.legend.candidate}">Pattern candidate</span></span>
         <span th:unless="${wave.candidate()}"><i class="signal-chart-key motive" aria-hidden="true"></i><span th:text="#{detail.legend.motive}">Motive I&ndash;V</span></span>
-        <span th:unless="${wave.candidate()}"><i class="signal-chart-key corrective" aria-hidden="true"></i><span th:text="#{detail.legend.corrective}">Corrective A&ndash;B&ndash;C</span></span>
-        <span><i class="signal-chart-key subwave" aria-hidden="true"></i><span th:text="#{detail.legend.subwaves}">Subwaves on hover</span></span>
+        <span th:unless="${wave.candidate()}"><i class="signal-chart-key corrective" aria-hidden="true"></i><span class="learn-term" data-term="correctiveWave" th:text="#{detail.legend.corrective}">Corrective A&ndash;B&ndash;C</span></span>
+        <span><i class="signal-chart-key subwave" aria-hidden="true"></i><span class="learn-term" data-term="subwave" th:text="#{detail.legend.subwaves}">Subwaves on hover</span></span>
         <span><i class="signal-chart-key detection" aria-hidden="true"></i><span th:text="#{harmonicHistory.legend.confirmation}">Confirmation candle</span></span>
       </div>
       <div id="historicalElliottDetailChart"
@@ -184,7 +184,7 @@
       <div class="signal-lifecycle-heading">
         <div>
           <div class="signal-section-kicker" th:text="#{elliottHistory.lifecycleKicker}">Historical follow-through</div>
-          <h2 id="elliott-lifecycle-heading" th:text="#{detail.lifecycle}">Signal lifecycle</h2>
+          <h2 id="elliott-lifecycle-heading"><span class="learn-term" data-term="signalStatus" th:text="#{detail.lifecycle}">Signal lifecycle</span></h2>
         </div>
         <span class="signal-lifecycle-pill lifecycle-heading-pill confirmed" th:text="${#tr.text(wave.statusLabel())}">Confirmed</span>
       </div>
@@ -259,9 +259,9 @@
             <span class="evidence-impact" th:text="#{detail.structuralEvidence}">Structural evidence</span>
           </div>
           <ul class="evidence-detail-list">
-            <li><div class="evidence-detail-heading"><strong th:text="#{detail.waveTwoRetracement}">Wave II retracement</strong></div><p th:text="${#numbers.formatDecimal(wave.waveTwoRetracement() * 100, 1, 1) + '%'}">50.0%</p></li>
+            <li><div class="evidence-detail-heading"><strong class="learn-term" data-term="retracement" th:text="#{detail.waveTwoRetracement}">Wave II retracement</strong></div><p th:text="${#numbers.formatDecimal(wave.waveTwoRetracement() * 100, 1, 1) + '%'}">50.0%</p></li>
             <li><div class="evidence-detail-heading"><strong th:text="#{detail.waveThreeToOne}">Wave III / Wave I</strong></div><p th:text="${#numbers.formatDecimal(wave.waveThreeToOneRatio(), 1, 2) + '×'}">1.62×</p></li>
-            <li><div class="evidence-detail-heading"><strong th:text="#{detail.waveFourRetracement}">Wave IV retracement</strong></div><p th:text="${#numbers.formatDecimal(wave.waveFourRetracement() * 100, 1, 1) + '%'}">38.2%</p></li>
+            <li><div class="evidence-detail-heading"><strong class="learn-term" data-term="retracement" th:text="#{detail.waveFourRetracement}">Wave IV retracement</strong></div><p th:text="${#numbers.formatDecimal(wave.waveFourRetracement() * 100, 1, 1) + '%'}">38.2%</p></li>
           </ul>
         </article>
         <article class="signal-evidence-card" th:if="${false}">
@@ -270,8 +270,8 @@
             <span class="evidence-impact" th:text="#{detail.detectorVariant}">Detector variant</span>
           </div>
           <ul class="evidence-detail-list">
-            <li><div class="evidence-detail-heading"><strong th:text="#{detail.impulse}">Impulse</strong></div><p th:text="${#messages.msgOrNull('elliott.variant.' + wave.impulseVariant()) ?: wave.impulseVariant()}">STANDARD</p></li>
-            <li><div class="evidence-detail-heading"><strong th:text="#{detail.correction}">Correction</strong></div><p th:text="${#messages.msgOrNull('elliott.variant.' + wave.correctionVariant()) ?: wave.correctionVariant()}">STANDARD</p></li>
+            <li><div class="evidence-detail-heading"><strong class="learn-term" data-term="impulseWave" th:text="#{detail.impulse}">Impulse</strong></div><p th:text="${#messages.msgOrNull('elliott.variant.' + wave.impulseVariant()) ?: wave.impulseVariant()}">STANDARD</p></li>
+            <li><div class="evidence-detail-heading"><strong class="learn-term" data-term="correctiveWave" th:text="#{detail.correction}">Correction</strong></div><p th:text="${#messages.msgOrNull('elliott.variant.' + wave.correctionVariant()) ?: wave.correctionVariant()}">STANDARD</p></li>
             <li><div class="evidence-detail-heading"><strong th:text="#{detail.detectedStage}">Detected stage</strong></div><p th:text="${#tr.text(wave.stageLabel())}">ABC correction ending</p></li>
           </ul>
         </article>
@@ -329,8 +329,8 @@
            role="img"
            th:aria-label="${#messages.msg('elliottHistory.resultsChartAria', #messages.msg('alertHistory.signal.' + wave.tradeSignal().name()), wave.symbol())}"></div>
       <div class="signal-results-legend" aria-label="Results chart color legend" th:aria-label="#{results.legendAria}">
-        <span><i class="signal-results-key positive" aria-hidden="true"></i><span th:text="#{results.legend.favorable}">Favorable move in the signal direction</span></span>
-        <span><i class="signal-results-key negative" aria-hidden="true"></i><span th:text="#{results.legend.adverse}">Adverse move against the signal</span></span>
+        <span><i class="signal-results-key positive" aria-hidden="true"></i><span class="learn-term" data-term="favorableMove" th:text="#{results.legend.favorable}">Favorable move in the signal direction</span></span>
+        <span><i class="signal-results-key negative" aria-hidden="true"></i><span class="learn-term" data-term="adverseMove" th:text="#{results.legend.adverse}">Adverse move against the signal</span></span>
         <span><i class="signal-results-key start" aria-hidden="true"></i><span th:text="#{results.legend.entryNextOpen}">Entry at the next candle&rsquo;s open</span></span>
         <span><i class="signal-results-key best" aria-hidden="true"></i><span th:text="#{results.legend.bestPrice}">Best price in this period</span></span>
       </div>

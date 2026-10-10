@@ -4,7 +4,7 @@
 <div th:fragment="scoringSettings(preferences)" class="scoring-settings-stack">
   <section class="settings-card scoring-overview-card">
     <div class="settings-card-heading">
-      <div><span class="settings-number">01</span><h2 th:text="#{scoring.heading}">Signal detail scoring</h2></div>
+      <div><span class="settings-number">01</span><h2><span class="learn-label"><th:block th:text="#{scoring.heading}">Signal detail scoring</th:block> <span th:replace="~{fragments/learn-help :: termHelp('setupScore')}"></span></span></h2></div>
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.custom()} ? #{scoring.custom} : #{scoring.factory}">Factory weights</span>
     </div>
@@ -31,7 +31,7 @@
       </div>
 
       <div class="scoring-total-row" role="status" aria-live="polite">
-        <span th:text="#{scoring.total}">Included point total</span>
+        <span class="learn-label"><th:block th:text="#{scoring.total}">Included point total</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('scoring.points', #{scoring.total})}"></span></span>
         <strong class="scoring-total" th:text="${profile.totalPoints() + ' / 100'}">100 / 100</strong>
         <small class="scoring-total-message" th:text="#{js.scoring.ready}">Ready to apply</small>
       </div>
@@ -55,7 +55,7 @@
 
       <div class="scoring-confluence-block">
         <div class="scoring-confluence-heading">
-          <div><span th:text="#{scoring.confluence}">Support from other pattern families</span><strong th:text="#{scoring.confluence.window}">Preceding eight candles</strong></div>
+          <div><span class="learn-term" data-term="confluence" th:text="#{scoring.confluence}">Support from other pattern families</span><strong th:text="#{scoring.confluence.window}">Preceding eight candles</strong></div>
           <p th:text="#{scoring.confluence.help}">Configure each other signal family independently. Supporting points are added for the same direction; opposing points are deducted for the opposite direction.</p>
         </div>
         <div class="scoring-confluence-list">

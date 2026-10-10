@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -83,7 +83,8 @@
             </nav>
         </section>
 
-        <!-- One vocabulary for the whole app; page copy uses these words with these meanings. -->
+        <!-- One vocabulary for the whole app; page copy uses these words with these meanings. Learning mode
+             shows the same js.glossary.* definitions beside the words. -->
         <section id="glossary" class="about-section" aria-labelledby="glossary-title">
             <div class="about-section-heading">
                 <span class="about-section-number" th:text="#{about.guide00}">Guide / 00</span>
@@ -95,53 +96,53 @@
             <div class="about-definition-grid">
                 <article>
                     <span th:text="#{about.organising}">Organising</span>
-                    <h3 th:text="#{about.watchlist}">Watchlist</h3>
-                    <p th:text="#{about.aNamedListOfStocksEtfs}">A named list of stocks, ETFs or indexes. A stock can be in several watchlists; alerts are shared, so you never receive the same alert twice.</p>
+                    <h3 th:text="#{js.glossary.watchlist.term}">Watchlist</h3>
+                    <p th:text="#{js.glossary.watchlist.text}">A named list of stocks, ETFs or indexes. A stock can be in several watchlists; alerts are shared, so you never receive the same alert twice.</p>
                 </article>
                 <article>
                     <span th:text="#{about.organising}">Organising</span>
-                    <h3 th:text="#{about.follow}">Follow</h3>
-                    <p th:text="#{about.switchingOnAlertsForSomethingA}">Switching on alerts for something: a pattern on a stock, its outlook, or its insider and congressional trades. Unfollow switches them off.</p>
+                    <h3 th:text="#{js.glossary.follow.term}">Follow</h3>
+                    <p th:text="#{js.glossary.follow.text}">Switching on alerts for something: a pattern on a stock, its outlook, or its insider and congressional trades. Unfollow switches them off.</p>
                 </article>
                 <article>
                     <span th:text="#{about.whatStockwatchFinds}">What StockWatch finds</span>
-                    <h3 th:text="#{about.signal}">Signal</h3>
-                    <p th:text="#{about.aChartPatternCandlestickElliottWave}">A chart pattern (candlestick, Elliott Wave or harmonic) detected on a completed candle for a stock you follow. Every signal stays in Technical signals.</p>
+                    <h3 th:text="#{js.glossary.signal.term}">Signal</h3>
+                    <p th:text="#{js.glossary.signal.text}">A chart pattern (candlestick, Elliott Wave or harmonic) detected on a completed candle for a stock you follow. Every signal stays in Technical signals.</p>
                 </article>
                 <article>
                     <span th:text="#{about.whatStockwatchFinds}">What StockWatch finds</span>
-                    <h3 th:text="#{about.tickerAlert}">Ticker alert</h3>
-                    <p th:text="#{about.aNewlyFiledPurchaseOrSale}">A newly filed purchase or sale by a company insider or a member of Congress, for a stock you follow.</p>
+                    <h3 th:text="#{js.glossary.tickerAlert.term}">Ticker alert</h3>
+                    <p th:text="#{js.glossary.tickerAlert.text}">A newly filed purchase or sale by a company insider or a member of Congress, for a stock you follow.</p>
                 </article>
                 <article>
                     <span th:text="#{about.whatStockwatchFinds}">What StockWatch finds</span>
-                    <h3 th:text="#{about.outlook}">Outlook</h3>
-                    <p th:text="#{about.theAutomatedTechnicalOutlookOneOverall}">The automated technical outlook: one overall buy, neutral or sell reading built from many indicators, per interval.</p>
+                    <h3 th:text="#{js.glossary.outlook.term}">Outlook</h3>
+                    <p th:text="#{js.glossary.outlook.text}">The automated technical outlook: one overall buy, neutral or sell reading built from many indicators, per interval.</p>
                 </article>
                 <article>
                     <span th:text="#{about.howYouAreTold}">How you are told</span>
-                    <h3 th:text="#{about.alert}">Alert</h3>
-                    <p th:text="#{about.theNotificationYouReceiveAboutA}">The notification you receive about a signal, outlook change or ticker alert: in Latest signals and, if switched on, by email.</p>
+                    <h3 th:text="#{js.glossary.alert.term}">Alert</h3>
+                    <p th:text="#{js.glossary.alert.text}">The notification you receive about a signal, outlook change or ticker alert: in Latest signals and, if switched on, by email.</p>
                 </article>
                 <article>
                     <span th:text="#{about.readingASignal}">Reading a signal</span>
-                    <h3 th:text="#{about.setupScore}">Setup score</h3>
-                    <p th:text="#{about.howMuchTechnicalEvidenceSupportsA}">How much technical evidence supports a pattern, out of 100. It is not the chance of a profitable trade.</p>
+                    <h3 th:text="#{js.glossary.setupScore.term}">Setup score</h3>
+                    <p th:text="#{js.glossary.setupScore.text}">How much technical evidence supports a pattern, out of 100. It is not the chance of a profitable trade.</p>
                 </article>
                 <article>
                     <span th:text="#{about.readingASignal}">Reading a signal</span>
-                    <h3 th:text="#{about.tradeOutcome}">Trade outcome</h3>
-                    <p th:text="#{about.whatPriceDidAfterTheSignal}">What price did after the signal, measured with the pattern's stop, target and time limit. It is tracked separately from the score.</p>
+                    <h3 th:text="#{js.glossary.tradeOutcome.term}">Trade outcome</h3>
+                    <p th:text="#{js.glossary.tradeOutcome.text}">What price did after the signal, measured with the pattern's stop, target and time limit. It is tracked separately from the score.</p>
                 </article>
                 <article>
                     <span th:text="#{about.readingASignal}">Reading a signal</span>
-                    <h3 th:text="#{about.status}">Status</h3>
-                    <p th:text="#{about.whereASignalIsInIts}">Where a signal is in its life: potential or detected, then confirmed, invalidated or expired once later candles decide it.</p>
+                    <h3 th:text="#{js.glossary.signalStatus.term}">Status</h3>
+                    <p th:text="#{js.glossary.signalStatus.text}">Where a signal is in its life: potential or detected, then confirmed, invalidated or expired once later candles decide it.</p>
                 </article>
                 <article>
                     <span th:text="#{about.practice}">Practice</span>
-                    <h3 th:text="#{about.demoTrade}">Demo trade</h3>
-                    <p th:text="#{about.aPracticeBuyOrSellRecorded}">A practice buy or sell recorded at the current quote. No real order is placed and no money moves.</p>
+                    <h3 th:text="#{js.glossary.demoTrade.term}">Demo trade</h3>
+                    <p th:text="#{js.glossary.demoTrade.text}">A practice buy or sell recorded at the current quote. No real order is placed and no money moves.</p>
                 </article>
             </div>
         </section>

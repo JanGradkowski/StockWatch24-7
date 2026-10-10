@@ -48,6 +48,10 @@
         @Column(name = "theme_preference", nullable = false, length = 16)
         private String themePreference = "DARK";
 
+        /** Shows "?" explanations beside options and underlines technical terms on every page. */
+        @Column(name = "learning_mode", nullable = false)
+        private boolean learningMode = false;
+
         /** "en" or "pl"; null follows the browser language. */
         @Column(name = "preferred_language", length = 8)
         private String preferredLanguage;
@@ -212,6 +216,8 @@
         public String getDetectedLanguage() { return detectedLanguage; }
         public void setDetectedLanguage(String value) { this.detectedLanguage = value; }
         public void setThemePreference(String themePreference) { this.themePreference = themePreference; }
+        public boolean isLearningMode() { return learningMode; }
+        public void setLearningMode(boolean learningMode) { this.learningMode = learningMode; }
         public String getElliottMotiveColor() { return elliottMotiveColor; }
         public void setElliottMotiveColor(String value) { this.elliottMotiveColor = value; }
         public String getElliottCorrectiveColor() { return elliottCorrectiveColor; }

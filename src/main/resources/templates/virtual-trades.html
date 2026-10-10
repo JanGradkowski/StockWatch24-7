@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20,7 +20,7 @@
   <header class="signal-archive-header">
     <div>
       <div class="eyebrow" th:text="#{virtualTrades.eyebrow}">Paper decisions &middot; no real orders</div>
-      <h1 class="title" th:text="#{virtualTrades.heading}">Demo Trading</h1>
+      <h1 class="title"><span class="learn-term" data-term="demoTrade" th:text="#{virtualTrades.heading}">Demo Trading</span></h1>
       <p class="subtitle" th:text="#{virtualTrades.subtitle}">Review your demo trades. Buys track returns; sells track avoided losses or missed gains, not short positions.</p>
     </div>
     <div class="signal-archive-total" aria-label="Total demo trades" th:aria-label="#{virtualTrades.totalAria}">
@@ -41,7 +41,7 @@
           <p class="panel-meta" th:text="${#tr.text(balance.priceDates())}"></p>
         </div>
         <dl class="portfolio-value-breakdown">
-          <div><dt th:text="#{virtualTrades.openPositions}">Open positions</dt><dd th:text="${balance.openValue() != null ? #numbers.formatDecimal(balance.openValue(), 1, 2) + ' ' + balance.currency() : #messages.msg('virtualTrades.unavailable')}"></dd></div>
+          <div><dt><span class="learn-term" data-term="openPosition" th:text="#{virtualTrades.openPositions}">Open positions</span></dt><dd th:text="${balance.openValue() != null ? #numbers.formatDecimal(balance.openValue(), 1, 2) + ' ' + balance.currency() : #messages.msg('virtualTrades.unavailable')}"></dd></div>
           <div><dt th:text="#{virtualTrades.cash}">Cash from closed buys</dt><dd th:text="${#numbers.formatDecimal(balance.cash(), 1, 2) + ' ' + balance.currency()}"></dd></div>
           <div><dt th:text="#{virtualTrades.totalInvested}">Total invested</dt><dd th:text="${#numbers.formatDecimal(balance.invested(), 1, 2) + ' ' + balance.currency()}"></dd></div>
         </dl>
@@ -116,7 +116,7 @@
 
     <div th:if="${!#lists.isEmpty(archive.trades())}" class="signal-archive-results virtual-trade-archive-results">
       <div class="virtual-trade-archive-head" aria-hidden="true">
-        <span th:text="#{virtualTrades.column.decision}">Decision</span><span th:text="#{virtualTrades.column.company}">Company</span><span th:text="#{virtualTrades.column.entry}">Entry</span><span th:text="#{virtualTrades.column.evaluation}">Evaluation</span><span th:text="#{virtualTrades.column.amount}">Amount &amp; value</span><span th:text="#{virtualTrades.outcome}">Outcome</span><span th:text="#{virtualTrades.column.status}">Status</span><span></span><span th:text="#{virtualTrades.column.action}">Action</span>
+        <span th:text="#{virtualTrades.column.decision}">Decision</span><span th:text="#{virtualTrades.column.company}">Company</span><span class="learn-term" data-term="entry" th:text="#{virtualTrades.column.entry}">Entry</span><span th:text="#{virtualTrades.column.evaluation}">Evaluation</span><span th:text="#{virtualTrades.column.amount}">Amount &amp; value</span><span th:text="#{virtualTrades.outcome}">Outcome</span><span th:text="#{virtualTrades.column.status}">Status</span><span></span><span th:text="#{virtualTrades.column.action}">Action</span>
       </div>
       <div class="signal-archive-list">
         <div th:each="trade, row : ${archive.trades()}" class="signal-archive-entry">

@@ -29,7 +29,11 @@ public class IsolatedDatabaseContextCustomizerFactory implements ContextCustomiz
                 "spring.flyway.schemas=" + SCHEMA, "spring.flyway.default-schema=" + SCHEMA,
                 "spring.jpa.properties.hibernate.default_schema=" + SCHEMA,
                 // Fixture tickers are synthetic; provider verification has dedicated unit tests.
-                "market-data.require-verification=false").applyTo(environment);
+                "market-data.require-verification=false",
+                // Every cached test context keeps its own pool; idle ones must hand their connections
+                // back, or a full run exceeds PostgreSQL's connection limit (see spring.properties).
+                "spring.datasource.hikari.minimum-idle=0",
+                "spring.datasource.hikari.idle-timeout=10000").applyTo(environment);
         // Production-profile tests keep the real startup checks; every other test runs as "test".
         if (!java.util.Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
             environment.addActiveProfile("test");

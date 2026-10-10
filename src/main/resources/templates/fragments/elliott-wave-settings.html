@@ -4,16 +4,16 @@
 <div th:fragment="elliottWaveSettings(preferences)" class="elliott-settings-stack">
   <section class="settings-card analysis-profile-overview elliott-settings-overview">
     <div class="settings-card-heading">
-      <div><span class="settings-number">01</span><h2 th:text="#{elliott.heading}">Elliott Wave detection definitions</h2></div>
+      <div><span class="settings-number">01</span><h2><span class="learn-label"><th:block th:text="#{elliott.heading}">Elliott Wave detection definitions</th:block> <span th:replace="~{fragments/learn-help :: termHelp('elliottWave')}"></span></span></h2></div>
       <span class="analysis-profile-state" th:classappend="${preferences.custom()} ? ' custom' : ''"
             th:text="${preferences.custom()} ? #{candlestick.custom} : #{candlestick.default}">Default settings</span>
     </div>
     <p class="analysis-settings-intro" th:text="#{elliott.intro}">Control how completed candles become swing pivots, how I–II–III–IV–V is validated, and which A–B–C corrections are accepted. One shared definition applies across all intervals.</p>
     <div class="analysis-safety-strip elliott-definition-guide">
       <strong th:text="#{candlestick.measured}">How the values are measured</strong>
-      <span><b th:text="#{elliott.measured.retracement}">Retracement (%)</b> <span th:text="#{elliott.measured.retracement.help}">divides a corrective price distance by the actionary wave or complete impulse named in that option.</span></span>
+      <span><b class="learn-term" data-term="retracement" th:text="#{elliott.measured.retracement}">Retracement (%)</b> <span th:text="#{elliott.measured.retracement.help}">divides a corrective price distance by the actionary wave or complete impulse named in that option.</span></span>
       <span><b th:text="#{elliott.measured.ratio}">Ratio (%)</b> <span th:text="#{elliott.measured.ratio.help}">compares two wave lengths: 100% means equal length, 50% means half, and 200% means twice as long.</span></span>
-      <span><b th:text="#{elliott.measured.atr}">ATR multiple (×)</b> <span th:text="#{elliott.measured.atr.help}">controls how far price must reverse before a new swing pivot exists.</span></span>
+      <span><b class="learn-term" data-term="atr" th:text="#{elliott.measured.atr}">ATR multiple (×)</b> <span th:text="#{elliott.measured.atr.help}">controls how far price must reverse before a new swing pivot exists.</span></span>
     </div>
     <div class="elliott-theory-note">
       <strong th:text="#{elliott.longest.heading}">About the “longest wave” rules</strong>
@@ -40,7 +40,7 @@
 
       <section class="elliott-rule-section elliott-pivot-section">
         <div class="elliott-rule-section-heading">
-          <div><span class="elliott-rule-kicker" th:text="#{elliott.step1}">Step 1</span><h3 th:text="#{elliott.section.PIVOTS}">Pivot construction and confirmation</h3></div>
+          <div><span class="elliott-rule-kicker" th:text="#{elliott.step1}">Step 1</span><h3><span class="learn-term" data-term="pivot" th:text="#{elliott.section.PIVOTS}">Pivot construction and confirmation</span></h3></div>
           <p th:text="#{elliott.section.PIVOTS.help}">These values decide which price reversals become candidate wave endpoints before any Elliott labels are assigned.</p>
         </div>
         <div class="elliott-setting-list">
@@ -63,7 +63,7 @@
 
       <section class="elliott-rule-section elliott-motive-section">
         <div class="elliott-rule-section-heading">
-          <div><span class="elliott-rule-kicker" th:text="#{elliott.step2}">Step 2</span><h3 th:text="#{elliott.section.MOTIVE}">Motive I–II–III–IV–V definition</h3></div>
+          <div><span class="elliott-rule-kicker" th:text="#{elliott.step2}">Step 2</span><h3><span class="learn-term" data-term="impulseWave" th:text="#{elliott.section.MOTIVE}">Motive I–II–III–IV–V definition</span></h3></div>
           <p th:text="#{elliott.section.MOTIVE.help}">Retracement fields define price proportions. Structural switches decide which wave relationships are hard requirements.</p>
         </div>
         <div class="elliott-structural-switches">
@@ -94,7 +94,7 @@
 
       <section class="elliott-rule-section elliott-corrective-section">
         <div class="elliott-rule-section-heading">
-          <div><span class="elliott-rule-kicker" th:text="#{elliott.step3}">Step 3</span><h3 th:text="#{elliott.section.CORRECTIVE}">Corrective A–B–C definition</h3></div>
+          <div><span class="elliott-rule-kicker" th:text="#{elliott.step3}">Step 3</span><h3><span class="learn-term" data-term="correctiveWave" th:text="#{elliott.section.CORRECTIVE}">Corrective A–B–C definition</span></h3></div>
           <p th:text="#{elliott.section.CORRECTIVE.help}">Choose permitted correction shapes, then define the maximum retracement and the allowed relationship between Waves A, B, and C.</p>
         </div>
         <div class="elliott-structural-switches">

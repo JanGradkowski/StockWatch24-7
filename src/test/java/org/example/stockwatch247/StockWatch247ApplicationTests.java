@@ -870,7 +870,7 @@ class StockWatch247ApplicationTests {
 
     @Test
     @Transactional
-    void groupedCompanyDashboardAndDynamicHistoryBoardRender() throws Exception {
+    void dashboardLatestSignalsAndDynamicHistoryBoardRender() throws Exception {
         String suffix = Long.toString(System.nanoTime(), 36).toUpperCase();
         String symbol = "TST" + suffix;
         String email = symbol.toLowerCase() + "@example.com";
@@ -890,32 +890,12 @@ class StockWatch247ApplicationTests {
         stockAsset.setInstrumentType(InstrumentType.EQUITY);
         stockAsset = stockAssetRepository.save(stockAsset);
 
-        StockAsset indexAsset = new StockAsset();
-        indexAsset.setTickerSymbol("I" + suffix);
-        indexAsset.setCompanyName("Dashboard Test Index");
-        indexAsset.setExchange("INDEX");
-        indexAsset.setCurrency("USD");
-        indexAsset.setInstrumentType(InstrumentType.INDEX);
-        indexAsset = stockAssetRepository.save(indexAsset);
-
-        StockAsset etfAsset = new StockAsset();
-        etfAsset.setTickerSymbol("E" + suffix);
-        etfAsset.setCompanyName("Dashboard Test ETF");
-        etfAsset.setExchange("NYSE");
-        etfAsset.setCurrency("USD");
-        etfAsset.setInstrumentType(InstrumentType.ETF);
-        etfAsset = stockAssetRepository.save(etfAsset);
-
         AlertRule candleBuy = alertRule(user, stockAsset, TimeInterval.WEEKLY,
                 AlertPatternFamily.CANDLESTICK, TradeSignal.BUY, CandlePattern.BULLISH_ENGULFING);
         AlertRule elliottSell = alertRule(user, stockAsset, TimeInterval.MONTHLY,
                 AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL, CandlePattern.ELLIOTT_BEARISH_CORRECTION);
         candleBuy = alertRuleRepository.save(candleBuy);
         alertRuleRepository.save(elliottSell);
-        alertRuleRepository.save(alertRule(user, indexAsset, TimeInterval.WEEKLY,
-                AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY, CandlePattern.ELLIOTT_BULLISH_CORRECTION));
-        alertRuleRepository.save(alertRule(user, etfAsset, TimeInterval.DAILY,
-                AlertPatternFamily.CANDLESTICK, TradeSignal.SELL, CandlePattern.BEARISH_ENGULFING));
 
         AlertEvent event = new AlertEvent();
         event.setAlertRule(candleBuy);
@@ -980,20 +960,13 @@ class StockWatch247ApplicationTests {
                 25_000L
         ));
 
+        // Followed instruments now live in named watchlists, which the dashboard loads into this panel.
         mockMvc.perform(get("/home").with(user(email)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("home"))
                 .andExpect(model().attributeExists("latestSignals"))
-                .andExpect(model().attribute("stockCompanyCount", 1L))
-                .andExpect(model().attribute("indexEtfCompanyCount", 2L))
-                .andExpect(content().string(containsString("Grouped Board Test Company")))
-                .andExpect(content().string(containsString("Dashboard Test Index")))
-                .andExpect(content().string(containsString("Dashboard Test ETF")))
-                .andExpect(content().string(containsString("Watched rules")))
-                .andExpect(content().string(containsString("Indexes / ETFs")))
-                .andExpect(content().string(containsString("data-instrument-group=\"stocks\"")))
-                .andExpect(content().string(containsString("data-instrument-group=\"funds\"")))
-                .andExpect(content().string(containsString("aria-pressed=\"true\"")))
+                .andExpect(content().string(containsString("data-named-watchlists")))
+                .andExpect(content().string(containsString("Your watchlists")))
                 .andExpect(content().string(containsString("Latest signals")))
                 .andExpect(content().string(containsString("Bullish Engulfing")))
                 .andExpect(content().string(containsString(CandlePatternDetectionService.SETUP_SCORE_VERSION)))
@@ -1001,7 +974,6 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Lifecycle status")))
                 .andExpect(content().string(containsString("Confirmed")))
                 .andExpect(content().string(containsString("Setup score 88 out of 100")))
-                .andExpect(content().string(containsString("data-unread-signal-count=\"1\"")))
                 .andExpect(content().string(containsString("is-unread\"")))
                 .andExpect(content().string(containsString("href=\"/signals\"")))
                 .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
@@ -1068,7 +1040,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Available price history")))
                 .andExpect(content().string(containsString("Why this score")))
                 .andExpect(content().string(containsString("Signal lifecycle timeline")))
-                .andExpect(content().string(containsString("Close-based trade outcome")))
+                .andExpect(content().string(containsString("Modeled trade outcome")))
                 .andExpect(content().string(containsString("Detection")))
                 .andExpect(content().string(containsString("Detected")))
                 .andExpect(content().string(containsString("Terminal update")))
@@ -1078,14 +1050,19 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Setup score 88 out of 100")))
                 .andExpect(content().string(containsString("Strict bullish candle-pattern geometry.")))
                 .andExpect(content().string(containsString("RSI is rising versus the previous candle")))
-                .andExpect(content().string(containsString("How the setup score works")));
+                .andExpect(content().string(containsString("How the setup score works")))
+                .andExpect(content().string(containsString(
+                        "data-mark-read-endpoint=\"/api/alerts/signals/" + event.getId() + "/read\"")));
 
+        // Opening the page is a GET and changes nothing; the page then marks itself read with a POST.
+        assertThat(alertEventRepository.findById(event.getId()).orElseThrow().getReadAt()).isNull();
+        mockMvc.perform(post("/api/alerts/signals/{id}/read", event.getId()).with(user(email)).with(csrf()))
+                .andExpect(status().isNoContent());
         assertThat(alertEventRepository.findById(event.getId()).orElseThrow().getReadAt()).isNotNull();
 
         mockMvc.perform(get("/home").with(user(email)))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("data-unread-signal-count=\"0\"")))
-                .andExpect(content().string(containsString("You're all caught up")))
+                .andExpect(content().string(containsString("You&#39;re all caught up")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         containsString("/alerts/signals/" + event.getId()))));
 
@@ -1125,9 +1102,11 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         containsString("/alerts/signals/" + event.getId()))));
 
+        // A page request answers with the HTML error page (API routes keep their JSON error body).
         mockMvc.perform(get("/alerts/signals/{id}", event.getId()).with(user(otherUser.getEmail())))
                 .andExpect(status().isBadRequest())
-                .andExpect(content().string("{\"error\":\"Invalid request.\"}"));
+                .andExpect(view().name("error"))
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString("Grouped Board Test Company"))));
 
         mockMvc.perform(post("/signals/delete")
                         .param("singleSignalId", event.getId().toString())

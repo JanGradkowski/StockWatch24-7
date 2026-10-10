@@ -232,6 +232,11 @@ public class AccountSecurityService {
     }
 
     @Transactional
+    public void updateLearningMode(Long userId, boolean enabled) {
+        User user = locked(userId); user.setLearningMode(enabled); users.save(user);
+    }
+
+    @Transactional
     public void updateAppearance(Long userId,
                                  String theme,
                                  String motiveColor,

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme}">
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -113,7 +113,7 @@
         <article class="best-result"><span th:text="#{virtualTrade.bestResult}">Best result in this period</span><strong id="resultBestReturn">+0.00%</strong><small id="resultBestDifference" th:text="#{virtualTrade.perSharePlaceholder}">+0.0000 per share</small></article>
       </div>
       <div id="signalResultsChart" class="signal-results-chart" role="img" aria-label="Demo trade result chart" th:aria-label="#{virtualTrade.resultsChartAria}"></div>
-      <div class="signal-results-legend"><span><i class="signal-results-key positive" aria-hidden="true"></i><span th:text="#{virtualTrade.positiveResult}">Positive result</span></span><span><i class="signal-results-key negative" aria-hidden="true"></i><span th:text="#{virtualTrade.negativeResult}">Negative result</span></span><span><i class="signal-results-key start" aria-hidden="true"></i><span th:text="#{virtualTrade.entryPrice}">Entry price</span></span><span><i class="signal-results-key best" aria-hidden="true"></i><span th:text="#{virtualTrade.bestResult}">Best result in this period</span></span></div>
+      <div class="signal-results-legend"><span><i class="signal-results-key positive" aria-hidden="true"></i><span th:text="#{virtualTrade.positiveResult}">Positive result</span></span><span><i class="signal-results-key negative" aria-hidden="true"></i><span th:text="#{virtualTrade.negativeResult}">Negative result</span></span><span><i class="signal-results-key start" aria-hidden="true"></i><span class="learn-term" data-term="entry" th:text="#{virtualTrade.entryPrice}">Entry price</span></span><span><i class="signal-results-key best" aria-hidden="true"></i><span th:text="#{virtualTrade.bestResult}">Best result in this period</span></span></div>
       <ol id="signalResultsData" hidden aria-hidden="true">
         <li th:each="point : ${virtualTrade.results().points()}" th:attr="data-candle-number=${point.candleNumber()},data-time=${point.timestamp()},data-period-label=${#tr.text(point.periodLabel())},data-close=${point.close()},data-directional-return=${point.directionalReturnPercent()},data-directional-difference=${point.directionalPriceDifference()}"></li>
       </ol>
