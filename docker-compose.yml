@@ -1,7 +1,7 @@
 services:
   postgres:
     # Exact release and multi-architecture image digest, refreshed by Dependabot.
-    image: postgres:16.14@sha256:be01cf82fc7dbba824acf0a82e150b4b360f3ff93c6631d7844af431e841a95c
+    image: postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
     container_name: uptodate-db
     restart: unless-stopped
     security_opt:
