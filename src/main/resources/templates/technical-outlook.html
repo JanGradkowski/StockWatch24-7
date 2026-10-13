@@ -8,9 +8,9 @@
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
-  <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
-  <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
+  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
 </head>

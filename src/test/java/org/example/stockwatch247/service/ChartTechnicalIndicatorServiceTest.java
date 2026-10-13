@@ -82,18 +82,25 @@ class ChartTechnicalIndicatorServiceTest {
     }
 
     @Test
-    void rejectsInvalidPeriodsAndMacdOrdering() {
+    void invalidSettingsMarkOnlyThatIndicatorAndExplainWhy() {
         CandleRepository repository = mock(CandleRepository.class);
         when(repository.findBySymbolAndTimeIntervalOrderByTimestampAsc("AAPL", "1d"))
                 .thenReturn(candles(40));
         ChartTechnicalIndicatorService service = new ChartTechnicalIndicatorService(repository);
 
-        assertThatThrownBy(() -> service.calculate("AAPL", "1d", request(
-                config("ema", "EMA", Map.of("period", 501.0)))))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("2 to 500");
-        assertThatThrownBy(() -> service.calculate("AAPL", "1d", request(
-                config("macd", "MACD", Map.of("fast", 30.0, "slow", 20.0, "signal", 9.0)))))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("fast period");
+        var result = service.calculate("AAPL", "1d", new ChartTechnicalIndicatorService.IndicatorBatchRequest(null, null, List.of(
+                config("ema", "EMA", Map.of("period", 501.0)),
+                config("macd", "MACD", Map.of("fast", 30.0, "slow", 20.0, "signal", 9.0)),
+                config("sma", "SMA", Map.of("period", 5.0)))));
+
+        assertThat(result.indicators()).extracting(ChartTechnicalIndicatorService.IndicatorConfigurationView::id).containsExactly("ema", "macd", "sma");
+        assertThat(result.indicators().get(0).error()).contains("2 to 500");
+        assertThat(result.indicators().get(1).error()).contains("fast period");
+        assertThat(result.indicators().get(2).error()).isNull();
+        assertThat(result.indicators().get(2).series()).isNotEmpty();
+        // Problems a person cannot fix from the settings dialog still reject the request.
+        assertThatThrownBy(() -> service.calculate("AAPL", "1d", request(config("x", "NO_SUCH_INDICATOR", Map.of()))))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private ChartTechnicalIndicatorService.IndicatorBatchRequest request(
@@ -103,7 +110,7 @@ class ChartTechnicalIndicatorServiceTest {
 
     private ChartTechnicalIndicatorService.IndicatorConfiguration config(
             String id, String type, Map<String, Double> parameters) {
-        return new ChartTechnicalIndicatorService.IndicatorConfiguration(id, type, parameters);
+        return new ChartTechnicalIndicatorService.IndicatorConfiguration(id, type, Map.<String, Object>copyOf(parameters));
     }
 
     private List<Candle> candles(int count) {

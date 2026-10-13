@@ -3,24 +3,35 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
+// A minimal Lightweight Charts 5 surface: addSeries(definition), createSeriesMarkers(series).
 function app(theme = 'dark') {
-    const events = new Map(), charts = [];
+    const events = new Map(), charts = [], markerPlugins = [];
     const document = {documentElement: {dataset: {theme}}, addEventListener() {}, querySelectorAll: () => []};
+    const definition = type => ({type, isBuiltIn: true, defaultOptions: {}});
     const context = {document, window: {addEventListener: (key, fn) => events.set(key, fn)}, LightweightCharts: {
+        LineSeries: definition('Line'), HistogramSeries: definition('Histogram'), CandlestickSeries: definition('Candlestick'),
+        AreaSeries: definition('Area'), BaselineSeries: definition('Baseline'), BarSeries: definition('Bar'),
+        createSeriesMarkers(series, markers) {
+            const plugin = {series, current: markers, setMarkers(next) {this.current = next;}};
+            markerPlugins.push(plugin); return plugin;
+        },
         createChart(host, options) {
             const chart = {options, series: [], removed: false, applyOptions(next) {Object.assign(this.options, next);}, remove() {this.removed = true;}, removeSeries(series) {this.series.splice(this.series.indexOf(series), 1);}};
-            for (const name of ['addLineSeries', 'addHistogramSeries', 'addCandlestickSeries']) chart[name] = options => {
-                const series = {options, writes: 0, applyOptions(next) {Object.assign(this.options, next);},
-                    setData(data) {this.data = data; this.writes++;}, setMarkers(markers) {this.markers = markers;},
+            const add = (seriesDefinition, options, paneIndex) => {
+                const series = {type: seriesDefinition.type ?? 'Custom', paneIndex, options, writes: 0, applyOptions(next) {Object.assign(this.options, next);},
+                    setData(data) {this.data = data; this.writes++;},
                     createPriceLine(options) {return {options, applyOptions(next) {Object.assign(this.options, next);}};}, removePriceLine() {}};
                 chart.series.push(series); return series;
             };
+            chart.addSeries = add;
+            chart.addCustomSeries = (view, options, paneIndex) => add({}, options, paneIndex);
             charts.push(chart);return chart;
         }
     }};
     vm.createContext(context);
     vm.runInContext(fs.readFileSync('src/main/resources/static/js/chart-theme.js', 'utf8'), context);
-    return {api:context.window.StockWatchCharts, charts, switchTheme(theme) {document.documentElement.dataset.theme = theme;events.get('stockwatch:themechange')();}};
+    const markersOf = series => markerPlugins.find(plugin => plugin.series === series)?.current;
+    return {api:context.window.StockWatchCharts, charts, markersOf, switchTheme(theme) {document.documentElement.dataset.theme = theme;events.get('stockwatch:themechange')();}};
 }
 test('theme updates existing charts and series without rebuilding or changing visibility and data', () => {
     const a = app(), chart = a.api.createChart({}, {height:540});
@@ -40,8 +51,23 @@ test('coloured histogram points and marker visibility survive repeated theme cha
     const data=[{time:1,value:2,color:'#64e8bd'},{time:2,value:-1,color:'#ff647c'}];
     series.setData(data);series.setMarkers([{time:1,color:'#ffbd59',text:'Entry'}]);
     a.switchTheme('light');assert.equal(series.data[0].color,'#08795d');assert.equal(data[0].color,'#64e8bd');
-    assert.equal(series.markers[0].text,'Entry');series.setMarkers([]);
-    a.switchTheme('dark');assert.equal(series.markers.length,0);assert.equal(series.data[1].value,-1);
+    assert.equal(a.markersOf(series)[0].text,'Entry');assert.equal(a.markersOf(series)[0].color,'#945b09');
+    assert.equal(series.markers()[0].text,'Entry');series.setMarkers([]);
+    a.switchTheme('dark');assert.equal(a.markersOf(series).length,0);assert.equal(series.data[1].value,-1);
+});
+test('legacy series methods map onto Lightweight Charts 5 definitions and pane indexes', () => {
+    const a = app(), chart = a.api.createChart({}, {});
+    assert.equal(chart.addCandlestickSeries({}).type, 'Candlestick');
+    assert.equal(chart.addLineSeries({}, 2).paneIndex, 2);
+    assert.equal(chart.addSeries({type: 'Area'}, {}, 1).type, 'Area');
+});
+test('markers are written in time order whatever order the page supplies', () => {
+    const a = app(), chart = a.api.createChart({}, {}), series = chart.addLineSeries({});
+    series.setMarkers([{time:'2024-03-02',text:'b'},{time:'2024-06-01',text:'c'},{time:'2024-01-05',text:'a'}]);
+    assert.deepEqual([...a.markersOf(series).map(marker => marker.text)], ['a','b','c']);
+    const business = chart.addLineSeries({});
+    business.setMarkers([{time:{year:2024,month:6,day:1},text:'late'},{time:{year:2023,month:12,day:31},text:'early'}]);
+    assert.deepEqual([...a.markersOf(business).map(marker => marker.text)], ['early','late']);
 });
 test('explicit account colours are preserved and removed charts stop receiving updates', () => {
     const a=app('light');a.api.preserveColors(['#64e8bd']);

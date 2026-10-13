@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test": "node --test src/test/js/*.test.cjs",
-    "test:watchlists:browser": "node scripts/check_watchlist_ui.cjs"
+    "test:watchlists:browser": "node scripts/check_watchlist_ui.cjs",
+    "test:chart:browser": "node scripts/check_stock_chart_ui.cjs"
   },
   "devDependencies": {
     "jsdom": "29.1.1",

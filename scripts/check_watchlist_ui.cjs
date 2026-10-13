@@ -1,9 +1,13 @@
 /* Browser checks use real rendered templates and production JS/CSS with deterministic API fixtures.
- * Generate templates with NamedWatchlistIntegrationTest -Ddesign.preview.capture=true first. */
+ * Generate the templates first, then run the check:
+ *
+ *   ./mvnw test -Ddesign.preview.capture=true -Dtest=NamedWatchlistIntegrationTest
+ *   npm run test:watchlists:browser */
 const { chromium } = require('playwright');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const { messages, messagesScript } = require('./i18n-fixture.cjs');
 
 const repo = path.resolve(__dirname, '..');
 const previews = path.join(repo, 'target/design-preview');
@@ -84,8 +88,10 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
         }
         return json({});
       }
+      if (pathname === '/i18n/messages.js') return route.fulfill({ contentType: 'application/javascript', body: messagesScript(messages('messages.properties'), 'en') });
       if (pathname === '/watchlists/1') return route.fulfill({ contentType: 'text/html', body: template('_watchlists_') });
       if (pathname === '/home') return route.fulfill({ contentType: 'text/html', body: template('_home-') });
+      if (pathname === '/ticker-alerts') return route.fulfill({ contentType: 'text/html', body: template('_ticker-alerts-', 'data-read-scope="ACTIVITY"') });
       if (pathname === '/signals') return route.fulfill({ contentType: 'text/html', body: template('_signals-', url.searchParams.has('watchlistId') ? 'name="signalKeys"' : 'Mark every notification in your account') });
       const relative = pathname.replace(/-[a-f0-9]{32}(?=\.(js|css)$)/, '');
       const file = path.join(repo, 'src/main/resources/static', relative);
@@ -182,7 +188,7 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     await dialog.getByLabel('Allow Candlestick', { exact: true }).uncheck();
     assert.equal(await dialog.getByLabel('Watch Candlestick buy daily', { exact: true }).isDisabled(), true);
     await dialog.getByRole('button', { name: 'Review changes', exact: true }).click();
-    assert.match(await dialog.locator('.wl-editor-preview').textContent(), /Remove 1 existing follows/);
+    assert.match(await dialog.locator('.wl-editor-preview').textContent(), /Remove 1 existing follow from this watchlist/);
     await dialog.getByRole('button', { name: 'Save watchlist changes', exact: true }).click();
     await dialog.waitFor({ state: 'detached' });
     assert.equal(mutations.at(-1).body.applyMonitoring, false, 'Restrictions preserve unrelated individual follows');
@@ -216,8 +222,8 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     assert.equal(await accountSignals.getAttribute('href'), '/signals', 'Account-wide link has no ticker or watchlist filter');
     const greetingBounds = await page.locator('.app-hero-copy').boundingBox();
     const allSignalsBounds = await accountSignals.boundingBox();
-    const statusBounds = await page.locator('.hero-status').boundingBox();
-    assert.ok(allSignalsBounds.x >= greetingBounds.x + greetingBounds.width && allSignalsBounds.x < statusBounds.x, 'All signals sits between the greeting and alert status');
+    const settingsBounds = await page.locator('.hero-settings-link').boundingBox();
+    assert.ok(allSignalsBounds.x >= greetingBounds.x + greetingBounds.width && allSignalsBounds.x < settingsBounds.x, 'All signals sits between the greeting and Alert settings');
     await page.locator('.wl-accordion').first().waitFor();
     assert.equal(await page.locator('[data-watchlist-shortcuts]').count(), 0, 'Watchlist shortcuts disappear outside the Watchlists section');
     await page.locator('[data-nav-section="alerts"]').click();

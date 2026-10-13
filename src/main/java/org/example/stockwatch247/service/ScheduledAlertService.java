@@ -203,6 +203,13 @@ public class ScheduledAlertService {
         this.technicalOutlookTrackingService = trackingService;
     }
 
+    private ChartAlertService chartAlertService;
+
+    @Autowired(required = false)
+    void configureChartAlerts(ChartAlertService chartAlerts) {
+        this.chartAlertService = chartAlerts;
+    }
+
     ScheduledAlertService(AlertRuleRepository alertRuleRepository,
                           AlertEventRepository alertEventRepository,
                           CandleRepository candleRepository,
@@ -567,6 +574,12 @@ public class ScheduledAlertService {
             AnalysisWork.rethrowInfrastructure(failure);
             familyFailures.add(stageFailure("automated outlook", failure));
         }
+        try {
+            evaluateChartAlerts(symbol, interval);
+        } catch (RuntimeException failure) {
+            AnalysisWork.rethrowInfrastructure(failure);
+            familyFailures.add(stageFailure("chart alerts", failure));
+        }
         if (!familyFailures.isEmpty()) {
             var failure = new IllegalStateException("Technical stage failed: " + familyFailures.getFirst().getMessage(),
                     familyFailures.getFirst());
@@ -589,6 +602,17 @@ public class ScheduledAlertService {
             System.out.println("Automated technical outlook evaluated for " + symbol + " " + interval
                     + ": " + result.baselinesEstablished() + " baseline(s), "
                     + result.changesCreated() + " change notification(s).");
+        }
+    }
+
+    /** Alerts set on chart drawings and indicators, checked against the candles refreshed above. */
+    private void evaluateChartAlerts(String symbol, TimeInterval interval) {
+        if (chartAlertService == null) return;
+        technicalStage(symbol, interval, "evaluating chart alerts");
+        ChartAlertService.EvaluationResult result = chartAlertService.evaluate(symbol, interval);
+        if (result.triggered() > 0) {
+            System.out.println("Chart alerts evaluated for " + symbol + " " + interval + ": "
+                    + result.triggered() + " of " + result.checked() + " triggered.");
         }
     }
 

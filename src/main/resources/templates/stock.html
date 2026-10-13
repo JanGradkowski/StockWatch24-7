@@ -9,9 +9,12 @@
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <!-- TradingView Lightweight Charts (Industry Standard) -->
-  <script th:src="@{/webjars/lightweight-charts/4.0.1/dist/lightweight-charts.standalone.production.js}"></script>
+  <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
-  <script th:src="@{/js/fibonacci-drawing-tool.js}"></script>
+  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
+  <script th:src="@{/js/chart-types.js}"></script>
+  <script th:src="@{/js/chart-indicators.js}"></script>
+  <script th:src="@{/js/chart-alerts.js}"></script>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
@@ -155,12 +158,37 @@
       <span class="toolbar-label"><span class="learn-label"><th:block th:text="#{stock.view}">View</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('stock.chartView', #{stock.view})}"></span></span></span>
       <div class="toolbar-controls-row">
         <div class="button-group toolbar-direct-controls">
-          <button id="lineBtn" type="button" class="view-toggle" data-chart-mode="line" th:text="#{stock.line}">Line</button>
-          <button id="candleBtn" type="button" class="view-toggle active learn-control" data-term="candle" data-chart-mode="candle" th:text="#{stock.candles}">Candles</button>
+          <details class="chart-control-menu chart-type-menu">
+            <summary id="chartTypeTrigger" class="view-toggle chart-control-menu-trigger learn-control" data-term="candle" aria-label="Chart type" th:aria-label="#{stock.chartTypeAria}">
+              <span id="chartTypeLabel" th:text="#{stock.chartType.candles}">Candles</span>
+              <span class="chart-control-menu-chevron" aria-hidden="true"></span>
+            </summary>
+            <div class="chart-control-menu-panel" role="group" aria-label="Chart type" th:aria-label="#{stock.chartTypeAria}">
+              <button type="button" class="view-toggle chart-control-menu-item is-selected" data-chart-type="candles" aria-pressed="true" th:text="#{stock.chartType.candles}">Candles</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="hollow" aria-pressed="false" th:text="#{stock.chartType.hollow}">Hollow candles</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="heikinAshi" aria-pressed="false" th:text="#{stock.chartType.heikinAshi}">Heikin Ashi</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="bars" aria-pressed="false" th:text="#{stock.chartType.bars}">Bars</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="highLow" aria-pressed="false" th:text="#{stock.chartType.highLow}">High-low</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="line" aria-pressed="false" th:text="#{stock.chartType.line}">Line</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="lineMarkers" aria-pressed="false" th:text="#{stock.chartType.lineMarkers}">Line with markers</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="step" aria-pressed="false" th:text="#{stock.chartType.step}">Step line</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="area" aria-pressed="false" th:text="#{stock.chartType.area}">Area</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="baseline" aria-pressed="false" th:text="#{stock.chartType.baseline}">Baseline</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="columns" aria-pressed="false" th:text="#{stock.chartType.columns}">Columns</button>
+              <span class="chart-control-menu-section-label" th:text="#{stock.chartTypePriceOnly}">Price movement only</span>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="renko" aria-pressed="false" th:text="#{stock.chartType.renko}">Renko</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="lineBreak" aria-pressed="false" th:text="#{stock.chartType.lineBreak}">Line break</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="kagi" aria-pressed="false" th:text="#{stock.chartType.kagi}">Kagi</button>
+              <button type="button" class="view-toggle chart-control-menu-item" data-chart-type="pointFigure" aria-pressed="false" th:text="#{stock.chartType.pointFigure}">Point &amp; figure</button>
+            </div>
+          </details>
+          <button id="openIndicatorBrowser" type="button" class="view-toggle learn-control" data-term="technicalIndicator" aria-haspopup="dialog" th:text="#{stock.indicators}">Indicators</button>
+          <button id="compareSymbolButton" type="button" class="view-toggle" aria-haspopup="dialog" aria-controls="compareSymbolDialog" th:text="#{stock.compare}">Compare</button>
           <button id="volumeChartToggle"
                   type="button"
-                  class="view-toggle active"
-                  aria-controls="volumeChartPanel"
+                  class="view-toggle active learn-control"
+                  data-term="volume"
+                  aria-controls="priceChartStage"
                   aria-pressed="true" th:text="#{stock.volumeOn}">
             Volume: on
           </button>
@@ -197,48 +225,23 @@
           </details>
 
           <details class="chart-control-menu">
-            <summary class="view-toggle chart-control-menu-trigger learn-control" data-term="technicalIndicator">
-              <span th:text="#{stock.technicalIndicators}">Technical indicators</span>
+            <summary class="view-toggle chart-control-menu-trigger">
+              <span th:text="#{stock.chartTools}">Chart tools</span>
               <span class="chart-control-menu-chevron" aria-hidden="true"></span>
             </summary>
-            <div id="technicalIndicatorMenuPanel" class="chart-control-menu-panel technical-indicator-menu-panel" role="group" aria-label="Technical indicator overlays" th:aria-label="#{stock.indicatorOverlaysAria}">
-              <label class="chart-menu-search">
-                <span class="visually-hidden" th:text="#{stock.findIndicator}">Find an indicator</span>
-                <input type="search" placeholder="Find an indicator…" autocomplete="off"
-                       data-filter-target="technicalIndicatorMenuPanel" th:placeholder="#{stock.findIndicatorPlaceholder}">
-              </label>
-              <p class="chart-menu-search-empty" data-filter-empty hidden th:text="#{stock.noIndicators}">No indicators match.</p>
-              <span class="chart-control-menu-section-label" th:text="#{outlook.overlaysAria}">Price overlays</span>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="ema" data-add-chart-indicator="EMA" th:text="#{stock.add.ema}">Add EMA…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="sma" data-add-chart-indicator="SMA" th:text="#{stock.add.sma}">Add SMA…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="bollinger" data-add-chart-indicator="BOLLINGER" th:text="#{stock.add.bollinger}">Add Bollinger Bands…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="vwap" data-add-chart-indicator="VWAP" th:text="#{stock.add.vwap}">Add rolling VWAP…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="supportResistance" data-add-chart-indicator="SUPPORT_RESISTANCE" th:text="#{stock.add.levels}">Add support / resistance…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="donchian" data-add-chart-indicator="DONCHIAN" th:text="#{stock.add.donchian}">Add Donchian Channel…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="keltner" data-add-chart-indicator="KELTNER" th:text="#{stock.add.keltner}">Add Keltner Channel…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="volumeProfile" data-add-chart-indicator="VOLUME_PROFILE" th:text="#{stock.add.volumeProfile}">Add rolling volume profile…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="kde" data-add-chart-indicator="KDE_VOLUME_PROFILE" th:text="#{stock.add.kde}">Add KDE profile mode…</button>
-              <span class="chart-control-menu-section-label" th:text="#{outlookChange.panelsTitle}">Indicator panels</span>
-              <button id="rsiOverlayToggle"
-                      type="button"
-                      class="view-toggle chart-control-menu-item learn-control" data-term="rsi"
-                      aria-pressed="false" th:text="#{stock.rsiOverlay}">RSI overlay</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="macd" data-add-chart-indicator="MACD" th:text="#{stock.add.macd}">Add MACD…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="cci" data-add-chart-indicator="CCI" th:text="#{stock.add.cci}">Add CCI…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="atr" data-add-chart-indicator="ATR" th:text="#{stock.add.atr}">Add ATR…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="relativeVolume" data-add-chart-indicator="RELATIVE_VOLUME" th:text="#{stock.add.relativeVolume}">Add relative volume…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="adx" data-add-chart-indicator="ADX_DMI" th:text="#{stock.add.adx}">Add ADX / DMI…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="stochastic" data-add-chart-indicator="STOCHASTIC" th:text="#{stock.add.stochastic}">Add Stochastic…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="stochasticRsi" data-add-chart-indicator="STOCHASTIC_RSI" th:text="#{stock.add.stochasticRsi}">Add Stochastic RSI…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="obv" data-add-chart-indicator="OBV" th:text="#{stock.add.obv}">Add OBV</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="mfi" data-add-chart-indicator="MFI" th:text="#{stock.add.mfi}">Add Money Flow Index…</button>
-              <button type="button" class="view-toggle chart-control-menu-item learn-control" data-term="trendState" data-add-chart-indicator="TREND" th:text="#{stock.add.trendState}">Add trend state…</button>
-              <span class="chart-control-menu-section-label" th:text="#{stock.interactiveTools}">Interactive tools</span>
+            <div class="chart-control-menu-panel" role="group" aria-label="Chart tools" th:aria-label="#{stock.chartTools}">
               <button id="anchoredVolumeProfileToggle"
                       type="button"
                       class="view-toggle chart-control-menu-item learn-control" data-term="anchoredVolumeProfile"
                       aria-pressed="false" th:text="#{stock.anchoredProfile}">Anchored volume profile</button>
-              <div id="activeChartIndicatorList" class="active-chart-indicator-list" aria-live="polite"></div>
+              <button id="splitMarkersToggle"
+                      type="button"
+                      class="view-toggle chart-control-menu-item is-selected"
+                      aria-pressed="true" th:text="#{stock.splitMarkers}">Stock split markers</button>
+              <button id="chartAlertsButton"
+                      type="button"
+                      class="view-toggle chart-control-menu-item"
+                      aria-haspopup="dialog" th:text="#{stock.chartAlerts}">Chart alerts…</button>
             </div>
           </details>
         </div>
@@ -254,16 +257,23 @@
     </div>
   </section>
 
-  <!-- Price Chart Canvas -->
+  <!-- One chart: price, volume and indicator panes share the time axis; drawing tools sit in the rail. -->
   <section id="priceChartPanel" class="chart-wrapper resizable-chart-panel">
     <div class="chart-panel-head">
-      <h2 class="chart-panel-title" th:text="#{stock.priceAction}">Price action</h2>
-      <span class="chart-panel-meta" th:text="#{stock.scrollHistory}">Scroll horizontally to explore history</span>
+      <div>
+        <h2 class="chart-panel-title" th:text="#{stock.priceAction}">Price action</h2>
+        <span class="chart-panel-meta" th:text="#{stock.scrollHistory}">Scroll horizontally to explore history</span>
+      </div>
+      <div class="chart-panel-actions" role="group" aria-label="Chart view" th:aria-label="#{stock.chartViewAria}">
+        <button id="dataWindowToggle" type="button" class="chart-icon-button" aria-pressed="false" title="Data window" th:title="#{stock.dataWindow}" aria-label="Data window" th:aria-label="#{stock.dataWindow}" data-chart-icon="data"></button>
+        <button id="chartScreenshotButton" type="button" class="chart-icon-button" title="Save chart image" th:title="#{stock.screenshot}" aria-label="Save chart image" th:aria-label="#{stock.screenshot}" data-chart-icon="camera"></button>
+        <button id="chartFullscreenButton" type="button" class="chart-icon-button" aria-pressed="false" title="Full screen" th:title="#{stock.fullscreen}" aria-label="Full screen" th:aria-label="#{stock.fullscreen}" data-chart-icon="fullscreen"></button>
+      </div>
     </div>
     <div id="candlestickOverlayStatus" class="elliott-overlay-status candlestick-overlay-status" aria-live="polite" data-expandable-status></div>
     <div id="elliottOverlayStatus" class="elliott-overlay-status" aria-live="polite" data-expandable-status></div>
     <div id="harmonicOverlayStatus" class="elliott-overlay-status harmonic-overlay-status" aria-live="polite" data-expandable-status></div>
-    <div id="chartIndicatorOverlayLegend" class="chart-indicator-overlay-legend" aria-live="polite"></div>
+    <div id="chartStatus" class="chart-status-line" role="status" aria-live="polite"></div>
     <div id="anchoredVolumeProfileSummary" class="anchored-volume-profile-summary">
       <div class="anchored-volume-profile-range">
         <span class="anchored-volume-profile-kicker" th:text="#{stock.anchoredRange}">Anchored range</span>
@@ -287,93 +297,123 @@
            class="anchored-volume-profile-status"
            aria-live="polite"></div>
     </div>
-    <div id="priceChartStage" class="price-chart-stage">
-      <div id="priceChartContainer" class="price-chart-container"></div>
-      <canvas id="anchoredVolumeProfileCanvas"
-              class="anchored-volume-profile-canvas"
-              aria-hidden="true"></canvas>
-      <div id="elliottWaveHitTargets"
-           class="elliott-wave-hit-targets"
-           aria-label="Interactive Elliott Wave signals" th:aria-label="#{stock.elliottSignalsAria}"></div>
-      <div id="historicalCandlestickHitTargets"
-           class="elliott-wave-hit-targets historical-candlestick-hit-targets"
-           aria-label="Interactive historical candlestick signals" th:aria-label="#{stock.candleSignalsAria}"></div>
-      <div id="harmonicFormationHitTargets"
-           class="elliott-wave-hit-targets harmonic-formation-hit-targets"
-           aria-label="Interactive harmonic formation signals" th:aria-label="#{stock.harmonicSignalsAria}"></div>
-      <aside id="elliottWaveHoverCard"
-             class="elliott-wave-hover-card"
-             role="dialog"
-             aria-labelledby="elliottWaveCardTitle"
-             hidden>
-        <button id="elliottWaveCardClose"
-                class="elliott-wave-card-close"
-                type="button"
-                aria-label="Close Elliott Wave details" th:aria-label="#{stock.closeElliottAria}">&times;</button>
-        <p id="elliottWaveCardEyebrow" class="elliott-wave-card-eyebrow"></p>
-        <h3 id="elliottWaveCardTitle"></h3>
-        <p id="elliottWaveCardStage" class="elliott-wave-card-stage"></p>
-        <span id="elliottWaveCardStatus" class="elliott-wave-card-status"></span>
-        <div id="elliottWaveCardOutcome" class="elliott-wave-card-outcome">
-          <span id="elliottWaveCardOutcomeLabel"></span>
-          <strong id="elliottWaveCardOutcomeValue"></strong>
-          <small id="elliottWaveCardWindowEnd"></small>
-        </div>
-        <p id="elliottWaveCardMessage" class="elliott-wave-card-message"></p>
-        <p id="elliottWaveCardNote" class="elliott-wave-card-note"></p>
-        <a id="elliottWaveCardLink" class="elliott-wave-card-link" href="#" th:text="#{stock.openSignalDetails}">Open signal details</a>
-      </aside>
-      <aside id="historicalCandlestickHoverCard"
-             class="elliott-wave-hover-card historical-candlestick-hover-card"
-             role="dialog"
-             aria-labelledby="historicalCandlestickCardTitle"
-             hidden>
-        <button id="historicalCandlestickCardClose"
-                class="elliott-wave-card-close"
-                type="button"
-                aria-label="Close candlestick signal details" th:aria-label="#{stock.closeCandleAria}">&times;</button>
-        <p class="elliott-wave-card-eyebrow" th:text="#{stock.historicalCandleKicker}">HISTORICAL CANDLESTICK SIGNAL</p>
-        <h3 id="historicalCandlestickCardTitle"></h3>
-        <p id="historicalCandlestickCardStage" class="elliott-wave-card-stage"></p>
-        <span id="historicalCandlestickCardStatus" class="elliott-wave-card-status"></span>
-        <div id="historicalCandlestickCardOutcome" class="elliott-wave-card-outcome">
-          <span id="historicalCandlestickCardOutcomeLabel"></span>
-          <strong id="historicalCandlestickCardOutcomeValue"></strong>
-          <small id="historicalCandlestickCardOutcomeWindow"></small>
-        </div>
-        <p id="historicalCandlestickCardTrend" class="elliott-wave-card-message"></p>
-        <p id="historicalCandlestickCardNote" class="elliott-wave-card-note"></p>
-        <div id="historicalCandlestickCardClusterNavigation"
-             class="historical-candlestick-card-navigation"
-             hidden>
-          <button id="previousHistoricalCandlestickSignal" type="button" aria-label="Previous nearby signal" th:aria-label="#{stock.previousSignalAria}">&larr;</button>
-          <span id="historicalCandlestickCardClusterPosition"></span>
-          <button id="nextHistoricalCandlestickSignal" type="button" aria-label="Next nearby signal" th:aria-label="#{stock.nextSignalAria}">&rarr;</button>
-        </div>
-        <a id="historicalCandlestickCardLink"
-           class="elliott-wave-card-link historical-candlestick-card-link"
-           href="#" th:text="#{stock.openHistoricalDetails}">Open historical signal details</a>
-      </aside>
-      <aside id="harmonicFormationHoverCard"
-             class="elliott-wave-hover-card harmonic-formation-hover-card"
-             role="dialog"
-             aria-labelledby="harmonicFormationCardTitle"
-             hidden>
-        <button id="harmonicFormationCardClose" class="elliott-wave-card-close" type="button"
-                aria-label="Close harmonic formation details" th:aria-label="#{stock.closeHarmonicAria}">&times;</button>
-        <p class="elliott-wave-card-eyebrow" th:text="#{stock.historicalHarmonicKicker}">HISTORICAL HARMONIC SIGNAL</p>
-        <h3 id="harmonicFormationCardTitle"></h3>
-        <p id="harmonicFormationCardStage" class="elliott-wave-card-stage"></p>
-        <span id="harmonicFormationCardStatus" class="elliott-wave-card-status confirmed learn-term" data-term="statusConfirmed" th:text="#{detail.confirmed}">Confirmed</span>
-        <div id="harmonicFormationCardOutcome" class="elliott-wave-card-outcome">
-          <span id="harmonicFormationCardOutcomeLabel"></span>
-          <strong id="harmonicFormationCardOutcomeValue"></strong>
-          <small id="harmonicFormationCardWindowEnd"></small>
-        </div>
-        <p id="harmonicFormationCardMessage" class="elliott-wave-card-message"></p>
-        <p id="harmonicFormationCardNote" class="elliott-wave-card-note"></p>
-        <a id="harmonicFormationCardLink" class="elliott-wave-card-link" href="#" th:text="#{stock.openHistoricalDetails}">Open historical signal details</a>
-      </aside>
+    <div class="chart-workbench-body">
+      <div id="drawingToolbarHost" class="chart-drawing-rail-host"></div>
+      <div id="priceChartStage" class="price-chart-stage">
+        <div id="priceChartContainer" class="price-chart-container"></div>
+        <div id="priceOnlyChartContainer" class="price-only-chart-container" hidden></div>
+        <div id="priceOnlyLegend" class="price-only-legend" aria-live="polite" hidden></div>
+        <canvas id="anchoredVolumeProfileCanvas"
+                class="anchored-volume-profile-canvas"
+                aria-hidden="true"></canvas>
+        <div id="elliottWaveHitTargets"
+             class="elliott-wave-hit-targets"
+             aria-label="Interactive Elliott Wave signals" th:aria-label="#{stock.elliottSignalsAria}"></div>
+        <div id="historicalCandlestickHitTargets"
+             class="elliott-wave-hit-targets historical-candlestick-hit-targets"
+             aria-label="Interactive historical candlestick signals" th:aria-label="#{stock.candleSignalsAria}"></div>
+        <div id="harmonicFormationHitTargets"
+             class="elliott-wave-hit-targets harmonic-formation-hit-targets"
+             aria-label="Interactive harmonic formation signals" th:aria-label="#{stock.harmonicSignalsAria}"></div>
+        <aside id="elliottWaveHoverCard"
+               class="elliott-wave-hover-card"
+               role="dialog"
+               aria-labelledby="elliottWaveCardTitle"
+               hidden>
+          <button id="elliottWaveCardClose"
+                  class="elliott-wave-card-close"
+                  type="button"
+                  aria-label="Close Elliott Wave details" th:aria-label="#{stock.closeElliottAria}">&times;</button>
+          <p id="elliottWaveCardEyebrow" class="elliott-wave-card-eyebrow"></p>
+          <h3 id="elliottWaveCardTitle"></h3>
+          <p id="elliottWaveCardStage" class="elliott-wave-card-stage"></p>
+          <span id="elliottWaveCardStatus" class="elliott-wave-card-status"></span>
+          <div id="elliottWaveCardOutcome" class="elliott-wave-card-outcome">
+            <span id="elliottWaveCardOutcomeLabel"></span>
+            <strong id="elliottWaveCardOutcomeValue"></strong>
+            <small id="elliottWaveCardWindowEnd"></small>
+          </div>
+          <p id="elliottWaveCardMessage" class="elliott-wave-card-message"></p>
+          <p id="elliottWaveCardNote" class="elliott-wave-card-note"></p>
+          <a id="elliottWaveCardLink" class="elliott-wave-card-link" href="#" th:text="#{stock.openSignalDetails}">Open signal details</a>
+        </aside>
+        <aside id="historicalCandlestickHoverCard"
+               class="elliott-wave-hover-card historical-candlestick-hover-card"
+               role="dialog"
+               aria-labelledby="historicalCandlestickCardTitle"
+               hidden>
+          <button id="historicalCandlestickCardClose"
+                  class="elliott-wave-card-close"
+                  type="button"
+                  aria-label="Close candlestick signal details" th:aria-label="#{stock.closeCandleAria}">&times;</button>
+          <p class="elliott-wave-card-eyebrow" th:text="#{stock.historicalCandleKicker}">HISTORICAL CANDLESTICK SIGNAL</p>
+          <h3 id="historicalCandlestickCardTitle"></h3>
+          <p id="historicalCandlestickCardStage" class="elliott-wave-card-stage"></p>
+          <span id="historicalCandlestickCardStatus" class="elliott-wave-card-status"></span>
+          <div id="historicalCandlestickCardOutcome" class="elliott-wave-card-outcome">
+            <span id="historicalCandlestickCardOutcomeLabel"></span>
+            <strong id="historicalCandlestickCardOutcomeValue"></strong>
+            <small id="historicalCandlestickCardOutcomeWindow"></small>
+          </div>
+          <p id="historicalCandlestickCardTrend" class="elliott-wave-card-message"></p>
+          <p id="historicalCandlestickCardNote" class="elliott-wave-card-note"></p>
+          <div id="historicalCandlestickCardClusterNavigation"
+               class="historical-candlestick-card-navigation"
+               hidden>
+            <button id="previousHistoricalCandlestickSignal" type="button" aria-label="Previous nearby signal" th:aria-label="#{stock.previousSignalAria}">&larr;</button>
+            <span id="historicalCandlestickCardClusterPosition"></span>
+            <button id="nextHistoricalCandlestickSignal" type="button" aria-label="Next nearby signal" th:aria-label="#{stock.nextSignalAria}">&rarr;</button>
+          </div>
+          <a id="historicalCandlestickCardLink"
+             class="elliott-wave-card-link historical-candlestick-card-link"
+             href="#" th:text="#{stock.openHistoricalDetails}">Open historical signal details</a>
+        </aside>
+        <aside id="harmonicFormationHoverCard"
+               class="elliott-wave-hover-card harmonic-formation-hover-card"
+               role="dialog"
+               aria-labelledby="harmonicFormationCardTitle"
+               hidden>
+          <button id="harmonicFormationCardClose" class="elliott-wave-card-close" type="button"
+                  aria-label="Close harmonic formation details" th:aria-label="#{stock.closeHarmonicAria}">&times;</button>
+          <p class="elliott-wave-card-eyebrow" th:text="#{stock.historicalHarmonicKicker}">HISTORICAL HARMONIC SIGNAL</p>
+          <h3 id="harmonicFormationCardTitle"></h3>
+          <p id="harmonicFormationCardStage" class="elliott-wave-card-stage"></p>
+          <span id="harmonicFormationCardStatus" class="elliott-wave-card-status confirmed learn-term" data-term="statusConfirmed" th:text="#{detail.confirmed}">Confirmed</span>
+          <div id="harmonicFormationCardOutcome" class="elliott-wave-card-outcome">
+            <span id="harmonicFormationCardOutcomeLabel"></span>
+            <strong id="harmonicFormationCardOutcomeValue"></strong>
+            <small id="harmonicFormationCardWindowEnd"></small>
+          </div>
+          <p id="harmonicFormationCardMessage" class="elliott-wave-card-message"></p>
+          <p id="harmonicFormationCardNote" class="elliott-wave-card-note"></p>
+          <a id="harmonicFormationCardLink" class="elliott-wave-card-link" href="#" th:text="#{stock.openHistoricalDetails}">Open historical signal details</a>
+        </aside>
+      </div>
+    </div>
+    <div class="chart-footer-bar">
+      <div class="chart-range-presets" role="group" aria-label="Date range" th:aria-label="#{stock.rangeAria}">
+        <button type="button" class="chart-range-button" data-chart-range="1M" th:text="#{stock.range.1M}">1M</button>
+        <button type="button" class="chart-range-button" data-chart-range="3M" th:text="#{stock.range.3M}">3M</button>
+        <button type="button" class="chart-range-button" data-chart-range="6M" th:text="#{stock.range.6M}">6M</button>
+        <button type="button" class="chart-range-button" data-chart-range="YTD" th:text="#{stock.range.YTD}">YTD</button>
+        <button type="button" class="chart-range-button" data-chart-range="1Y" th:text="#{stock.range.1Y}">1Y</button>
+        <button type="button" class="chart-range-button" data-chart-range="5Y" th:text="#{stock.range.5Y}">5Y</button>
+        <button type="button" class="chart-range-button" data-chart-range="ALL" th:text="#{stock.range.ALL}">All</button>
+        <form id="goToDateForm" class="chart-go-to-date">
+          <label>
+            <span class="visually-hidden" th:text="#{stock.goToDate}">Go to date</span>
+            <input id="goToDateInput" type="date" required>
+          </label>
+          <button type="submit" class="chart-range-button" th:text="#{stock.goToDate}">Go to date</button>
+        </form>
+      </div>
+      <div class="chart-scale-controls" role="group" aria-label="Price scale" th:aria-label="#{stock.scaleAria}">
+        <button type="button" class="chart-range-button" data-chart-scale="invert" aria-pressed="false" title="Invert the price scale" th:title="#{stock.scale.invertTitle}" th:text="#{stock.scale.invert}">Invert</button>
+        <button type="button" class="chart-range-button" data-chart-scale="indexed" aria-pressed="false" title="Indexed to 100" th:title="#{stock.scale.indexedTitle}" th:text="#{stock.scale.indexed}">100</button>
+        <button type="button" class="chart-range-button" data-chart-scale="percent" aria-pressed="false" title="Percentage scale" th:title="#{stock.scale.percentTitle}" th:text="#{stock.scale.percent}">%</button>
+        <button type="button" class="chart-range-button" data-chart-scale="log" aria-pressed="false" title="Logarithmic scale" th:title="#{stock.scale.logTitle}" th:text="#{stock.scale.log}">Log</button>
+        <button type="button" class="chart-range-button" data-chart-scale="auto" aria-pressed="true" title="Fit the price scale to the visible candles" th:title="#{stock.scale.autoTitle}" th:text="#{stock.scale.auto}">Auto</button>
+      </div>
     </div>
     <div class="chart-resize-handle"
          data-chart-resize-target="priceChartStage"
@@ -387,50 +427,6 @@
          aria-valuemax="1200"
          aria-valuenow="490"
          tabindex="0" th:aria-label="#{stock.resizePriceAria}"><span aria-hidden="true"></span><small th:text="#{stock.dragResize}">Drag to resize</small></div>
-  </section>
-
-  <div id="dynamicIndicatorPanels" class="dynamic-indicator-panels"></div>
-
-  <section id="rsiChartPanel" class="chart-wrapper rsi-chart-wrapper resizable-chart-panel" hidden>
-    <div class="chart-panel-head">
-      <h2 id="rsiChartTitle" class="chart-panel-title"><span class="learn-term" data-term="rsi" th:text="#{stock.rsiTitle}">RSI (14)</span></h2>
-      <span id="rsiChartMeta" class="chart-panel-meta" th:text="#{stock.rsiSubtitle}">Wilder RSI · 70 / 30 reference levels</span>
-    </div>
-    <div id="rsiChartStatus" class="rsi-chart-status" aria-live="polite"></div>
-    <div id="rsiChartContainer" class="rsi-chart-container"></div>
-    <div class="chart-resize-handle"
-         data-chart-resize-target="rsiChartContainer"
-         data-chart-resize-min="120"
-         data-chart-resize-max="800"
-         data-chart-resize-default="210"
-         role="separator"
-         aria-label="Resize the RSI chart"
-         aria-orientation="horizontal"
-         aria-valuemin="120"
-         aria-valuemax="800"
-         aria-valuenow="210"
-         tabindex="0" th:aria-label="#{stock.resizeRsiAria}"><span aria-hidden="true"></span><small th:text="#{stock.dragResize}">Drag to resize</small></div>
-  </section>
-
-  <!-- Volume Chart Canvas -->
-  <section id="volumeChartPanel" class="chart-wrapper resizable-chart-panel">
-    <div class="chart-panel-head">
-      <h2 class="volume-title"><span class="learn-term" data-term="volume" th:text="#{stock.tradingVolume}">Trading volume</span></h2>
-      <span class="chart-panel-meta" th:text="#{stock.volumeHelp}">Uses the chart's time range</span>
-    </div>
-    <div id="volumeChartContainer" class="volume-chart-container"></div>
-    <div class="chart-resize-handle"
-         data-chart-resize-target="volumeChartContainer"
-         data-chart-resize-min="100"
-         data-chart-resize-max="800"
-         data-chart-resize-default="180"
-         role="separator"
-         aria-label="Resize the Trading volume chart"
-         aria-orientation="horizontal"
-         aria-valuemin="100"
-         aria-valuemax="800"
-         aria-valuenow="180"
-         tabindex="0" th:aria-label="#{stock.resizeVolumeAria}"><span aria-hidden="true"></span><small th:text="#{stock.dragResize}">Drag to resize</small></div>
   </section>
 
   </div>
@@ -875,97 +871,33 @@
     </div>
   </dialog>
 
-  <dialog id="rsiPeriodDialog"
-          class="congressional-history-dialog rsi-period-dialog"
-          aria-labelledby="rsiPeriodTitle">
-    <form id="rsiPeriodForm" class="congressional-history-dialog-content rsi-period-dialog-content">
-      <div class="congressional-history-heading rsi-period-dialog-heading">
-        <div>
-          <span class="congressional-panel-kicker" th:text="#{stock.indicatorSettings}">Indicator settings</span>
-          <h2 id="rsiPeriodTitle" th:text="#{stock.chooseRsi}">Choose the RSI period</h2>
-          <p th:text="#{stock.rsiHelp}">RSI 14 with 70/30 boundaries is the classic default. Adjust all three values for your preferred interpretation.</p>
-        </div>
-        <button id="closeRsiPeriodDialogBtn"
-                type="button"
-                class="congressional-dialog-close"
-                aria-label="Close RSI period picker" th:aria-label="#{stock.closeRsiAria}">&times;</button>
-      </div>
-      <div class="rsi-settings-grid">
-        <label class="rsi-period-field" for="rsiPeriodInput">
-          <span class="learn-term" data-term="rsi" th:text="#{outlook.period.rsi}">RSI period</span>
-          <input id="rsiPeriodInput"
-                 name="rsiPeriod"
-                 type="number"
-                 min="1"
-                 step="1"
-                 value="14"
-                 inputmode="numeric"
-                 required
-                 aria-describedby="rsiPeriodHelp rsiPeriodError">
-          <small id="rsiPeriodHelp" th:text="#{stock.positiveWhole}">Positive whole number.</small>
-        </label>
-        <label class="rsi-period-field" for="rsiOverboughtInput">
-          <span class="learn-label"><th:block th:text="#{stock.upperBoundary}">Upper boundary</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('stock.rsiOverbought', #{stock.upperBoundary})}"></span></span>
-          <input id="rsiOverboughtInput"
-                 name="rsiOverbought"
-                 type="number"
-                 min="0"
-                 max="100"
-                 step="any"
-                 value="70"
-                 inputmode="decimal"
-                 required
-                 aria-describedby="rsiBoundaryHelp rsiPeriodError">
-          <small th:text="#{stock.upperHelp}">Line turns red above this level.</small>
-        </label>
-        <label class="rsi-period-field" for="rsiOversoldInput">
-          <span class="learn-label"><th:block th:text="#{stock.lowerBoundary}">Lower boundary</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('stock.rsiOversold', #{stock.lowerBoundary})}"></span></span>
-          <input id="rsiOversoldInput"
-                 name="rsiOversold"
-                 type="number"
-                 min="0"
-                 max="100"
-                 step="any"
-                 value="30"
-                 inputmode="decimal"
-                 required
-                 aria-describedby="rsiBoundaryHelp rsiPeriodError">
-          <small th:text="#{stock.lowerHelp}">Line turns green below this level.</small>
-        </label>
-      </div>
-      <p id="rsiBoundaryHelp" class="rsi-boundary-help" th:text="#{stock.boundariesHelp}">Boundaries must remain inside 0–100, with the upper boundary greater than the lower boundary. The indicator uses candles already loaded on this chart.</p>
-      <p id="rsiPeriodError" class="rsi-period-error" role="alert"></p>
-      <div class="rsi-period-actions">
-        <button id="cancelRsiPeriodBtn" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
-        <button type="submit" class="btn-primary" th:text="#{stock.showRsi}">Show RSI</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="chartIndicatorDialog"
-          class="congressional-history-dialog chart-indicator-dialog"
-          aria-labelledby="chartIndicatorDialogTitle">
-    <form id="chartIndicatorForm" class="congressional-history-dialog-content chart-indicator-dialog-content">
+  <dialog id="compareSymbolDialog"
+          class="congressional-history-dialog compare-symbol-dialog"
+          aria-labelledby="compareSymbolTitle">
+    <form id="compareSymbolForm" class="congressional-history-dialog-content compare-symbol-dialog-content">
       <div class="congressional-history-heading">
         <div>
-          <span class="congressional-history-kicker" th:text="#{stock.configurableIndicator}">Configurable indicator</span>
-          <h2 id="chartIndicatorDialogTitle" th:text="#{stock.addIndicator}">Add indicator</h2>
-          <p id="chartIndicatorDialogDescription" th:text="#{stock.indicatorParamsHelp}">Choose the calculation parameters for this chart.</p>
+          <h2 id="compareSymbolTitle" th:text="#{stock.compareTitle}">Compare with another symbol</h2>
+          <p th:text="#{stock.compareHelp}">The symbol is drawn on this chart, rebased to the first loaded candle so both start at the same price.</p>
         </div>
-        <button id="closeChartIndicatorDialogBtn"
+        <button id="closeCompareSymbolDialogBtn"
                 type="button"
                 class="congressional-dialog-close"
-                aria-label="Close indicator settings" th:aria-label="#{stock.closeIndicatorAria}">&times;</button>
+                aria-label="Close" th:aria-label="#{common.close}">&times;</button>
       </div>
-      <div id="chartIndicatorFields" class="chart-indicator-fields"></div>
-      <p id="chartIndicatorError" class="rsi-period-error" role="alert"></p>
+      <label class="compare-symbol-field">
+        <span th:text="#{stock.compareSymbol}">Symbol</span>
+        <input id="compareSymbolInput" type="search" maxlength="20" autocomplete="off" spellcheck="false" required
+               aria-describedby="compareSymbolError" aria-controls="compareSymbolResults">
+      </label>
+      <div id="compareSymbolResults" class="compare-symbol-results" role="listbox" aria-label="Matching symbols" th:aria-label="#{stock.compareResultsAria}"></div>
+      <p id="compareSymbolError" class="rsi-period-error" role="alert"></p>
       <div class="rsi-period-actions">
-        <button id="cancelChartIndicatorBtn" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
-        <button type="submit" class="btn-primary" th:text="#{stock.addToChart}">Add to chart</button>
+        <button id="cancelCompareSymbolBtn" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+        <button type="submit" class="btn-primary" th:text="#{stock.compareAdd}">Add to chart</button>
       </div>
     </form>
   </dialog>
-
   <dialog id="unsavedAlertDialog" class="unsaved-alert-dialog" aria-labelledby="unsavedAlertTitle">
     <div class="unsaved-alert-dialog-content">
       <span class="unsaved-alert-kicker" th:text="#{stock.unsavedKicker}">Unsaved changes</span>

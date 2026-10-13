@@ -1,70 +1,71 @@
 package org.example.stockwatch247.service;
 
+import org.example.stockwatch247.i18n.ServerMessages;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.repository.CandleRepository;
-import org.example.stockwatch247.service.technical.StableVolumeProfileKde;
-import org.example.stockwatch247.service.technical.Ta4jBarSeriesFactory;
+import org.example.stockwatch247.service.chartindicator.ChartIndicatorCatalog;
+import org.example.stockwatch247.service.chartindicator.ChartIndicatorEngine;
+import org.example.stockwatch247.service.chartindicator.ChartIndicatorEngine.Computed;
+import org.example.stockwatch247.service.chartindicator.IndicatorContext;
+import org.example.stockwatch247.service.chartindicator.IndicatorDefinition;
+import org.example.stockwatch247.service.chartindicator.IndicatorDefinition.InputKind;
+import org.example.stockwatch247.service.chartindicator.IndicatorDefinition.InputSpec;
+import org.example.stockwatch247.service.chartindicator.IndicatorDefinition.InputValues;
+import org.example.stockwatch247.service.chartindicator.IndicatorDefinition.OutputSpec;
+import org.example.stockwatch247.service.chartindicator.IndicatorDefinition.OutputStyle;
+import org.example.stockwatch247.service.chartindicator.MarketCalendar;
+import org.example.stockwatch247.service.chartindicator.PriceSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.ta4j.core.BarSeries;
-import org.ta4j.core.Indicator;
-import org.ta4j.core.indicators.ATRIndicator;
-import org.ta4j.core.indicators.CCIIndicator;
-import org.ta4j.core.indicators.MACDIndicator;
-import org.ta4j.core.indicators.RSIIndicator;
-import org.ta4j.core.indicators.StochasticOscillatorDIndicator;
-import org.ta4j.core.indicators.StochasticOscillatorKIndicator;
-import org.ta4j.core.indicators.StochasticRSIIndicator;
-import org.ta4j.core.indicators.adx.ADXIndicator;
-import org.ta4j.core.indicators.adx.MinusDIIndicator;
-import org.ta4j.core.indicators.adx.PlusDIIndicator;
-import org.ta4j.core.indicators.averages.EMAIndicator;
-import org.ta4j.core.indicators.averages.SMAIndicator;
-import org.ta4j.core.indicators.bollinger.BollingerBandsLowerIndicator;
-import org.ta4j.core.indicators.bollinger.BollingerBandsMiddleIndicator;
-import org.ta4j.core.indicators.bollinger.BollingerBandsUpperIndicator;
-import org.ta4j.core.indicators.donchian.DonchianChannelFacade;
-import org.ta4j.core.indicators.helpers.ClosePriceIndicator;
-import org.ta4j.core.indicators.helpers.TypicalPriceIndicator;
-import org.ta4j.core.indicators.helpers.VolumeIndicator;
-import org.ta4j.core.indicators.keltner.KeltnerChannelFacade;
-import org.ta4j.core.indicators.statistics.StandardDeviationIndicator;
-import org.ta4j.core.indicators.trend.DownTrendIndicator;
-import org.ta4j.core.indicators.trend.UpTrendIndicator;
-import org.ta4j.core.indicators.volume.MoneyFlowIndexIndicator;
-import org.ta4j.core.indicators.volume.OnBalanceVolumeIndicator;
-import org.ta4j.core.indicators.volume.VWAPIndicator;
-import org.ta4j.core.num.Num;
 
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Produces configurable chart series using the same TA4J indicator classes as
- * the automated technical outlook. The service deliberately returns only
- * finite points so JSON serialization cannot be broken by a warm-up NaN.
+ * Computes the configurable indicators a chart asks for. Definitions come from the indicator
+ * catalog; this service loads the bars, orders indicators that read each other, maps
+ * higher-timeframe results onto chart bars and turns the results into chart series, markers and
+ * shapes. Only finite values are returned, so a warm-up NaN can never break the JSON.
  */
 @Service
 public class ChartTechnicalIndicatorService {
-    private CandleRevisionService revisions;
-    private final BoundedTtlCache<java.util.List<Object>, IndicatorBatchView> resultCache = new BoundedTtlCache<>(64, 120);
-    @org.springframework.beans.factory.annotation.Autowired
-    void setRevisions(CandleRevisionService revisions) { this.revisions = revisions; }
-
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ChartTechnicalIndicatorService.class);
     private static final int MAX_CONFIGURATIONS = 32;
-    private static final int MAX_PERIOD = 500;
-    private static final int PROFILE_BINS = 24;
+    private static final int MAX_PARAMETERS = 16;
+    private static final int MAX_TEXT = 240;
+    private static final int MAX_FUTURE_BARS = 600;
 
     private final CandleRepository candleRepository;
-    private final Ta4jBarSeriesFactory seriesFactory = new Ta4jBarSeriesFactory();
+    private final ChartIndicatorEngine engine = new ChartIndicatorEngine();
+    private final BoundedTtlCache<List<Object>, IndicatorBatchView> resultCache = new BoundedTtlCache<>(64, 120);
+    private ChartIndicatorCatalog catalog = new ChartIndicatorCatalog();
+    private CandleRevisionService revisions;
+    private MarketDataService marketData;
 
     public ChartTechnicalIndicatorService(CandleRepository candleRepository) {
         this.candleRepository = candleRepository;
     }
+
+    @Autowired
+    void setRevisions(CandleRevisionService revisions) { this.revisions = revisions; }
+
+    @Autowired(required = false)
+    void setCatalog(ChartIndicatorCatalog catalog) { this.catalog = catalog; }
+
+    @Autowired(required = false)
+    void setMarketData(MarketDataService marketData) { this.marketData = marketData; }
+
+    public ChartIndicatorCatalog catalog() { return catalog; }
 
     public IndicatorBatchView calculate(String symbol, String interval, IndicatorBatchRequest request) {
         if (request == null || request.indicators() == null || request.indicators().isEmpty()) {
@@ -74,358 +75,263 @@ public class ChartTechnicalIndicatorService {
             throw new IllegalArgumentException("At most 32 chart indicators can be active at once.");
         }
         symbol = symbol.toUpperCase(Locale.ROOT);
-        if (request.indicators().stream().anyMatch(config -> config == null || config.id() == null || config.id().isBlank()
-                || config.id().length() > 100 || config.parameters() != null && (config.parameters().size() > 8
-                || config.parameters().values().stream().anyMatch(value -> value == null || !Double.isFinite(value)))))
-            throw new IllegalArgumentException("Chart indicator configuration is invalid.");
-        // Copy nested request collections before using them as a cache key.
-        request = new IndicatorBatchRequest(request.from(), request.to(), request.indicators().stream()
-                .map(config -> new IndicatorConfiguration(config.id(), config.type(), config.parameters() == null ? Map.of() : Map.copyOf(config.parameters()))).toList());
-        var key = java.util.List.<Object>of(symbol, interval, request, revisions == null ? 0 : revisions.generation(symbol, interval));
-        var cached = resultCache.get(key, java.time.Instant.now().getEpochSecond());
-        if (cached != null) return cached;
-        List<Candle> candles = request.to() == null ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
-                : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanEqualOrderByTimestampAsc(symbol, interval, request.to());
-        candles = candles.stream().filter(this::complete).sorted(Comparator.comparingLong(Candle::getTimestamp)).toList();
-        if (candles.isEmpty()) return new IndicatorBatchView(interval, List.of());
-        BarSeries series = seriesFactory.create(candles);
-        List<IndicatorConfigurationView> results = new ArrayList<>();
-        Map<IndicatorConfiguration, IndicatorConfigurationView> calculated = new LinkedHashMap<>();
+        Set<String> ids = new HashSet<>();
         for (IndicatorConfiguration config : request.indicators()) {
-            var computation = new IndicatorConfiguration("", config.type() == null ? "" : config.type().trim().toUpperCase(Locale.ROOT), config.parameters());
-            var values = calculated.get(computation);
-            if (values == null) {
-                values = calculateOne(candles, series, config, request.from(), request.to());
-                calculated.put(computation, values);
+            if (config == null || config.id() == null || config.id().isBlank() || config.id().length() > 100 || !ids.add(config.id())
+                    || config.parameters() != null && (config.parameters().size() > MAX_PARAMETERS
+                    || config.parameters().values().stream().anyMatch(value -> !allowedValue(value)))) {
+                throw new IllegalArgumentException("Chart indicator configuration is invalid.");
             }
-            results.add(new IndicatorConfigurationView(config.id(), values.type(), values.label(), values.placement(),
-                    values.parameters(), values.series(), values.references()));
         }
-        var result = new IndicatorBatchView(interval, List.copyOf(results));
-        long pointCount = result.indicators().stream().flatMap(config -> config.series().stream()).mapToLong(outputSeries -> outputSeries.points().size()).sum();
-        if (pointCount <= 10_000) resultCache.put(key, result, java.time.Instant.now().getEpochSecond());
+        // Copy nested request collections before using them as a cache key.
+        request = new IndicatorBatchRequest(request.from(), request.to(), request.visibleFrom(), request.visibleTo(),
+                request.indicators().stream().map(config -> new IndicatorConfiguration(config.id(),
+                        config.type() == null ? "" : config.type().trim().toUpperCase(Locale.ROOT),
+                        config.parameters() == null ? Map.of() : Map.copyOf(config.parameters()))).toList());
+
+        List<Resolved> resolved = new ArrayList<>();
+        // A setting the user can correct (a formula typo, fast >= slow) marks only that indicator.
+        Map<String, String> rejected = new HashMap<>();
+        for (IndicatorConfiguration config : request.indicators()) {
+            IndicatorDefinition definition = catalog.find(config.type())
+                    .orElseThrow(() -> new IllegalArgumentException("Unsupported chart indicator: " + config.type()));
+            try {
+                InputValues values = catalog.resolve(definition, config.parameters(), ids, config.id(), interval);
+                resolved.add(new Resolved(config, definition, values));
+            } catch (UserInputException invalid) {
+                rejected.put(config.id(), ServerMessages.translate(invalid.getMessage()));
+            }
+        }
+        List<Resolved> ordered = dependencyOrder(resolved);
+        boolean visibleRange = resolved.stream().anyMatch(item -> item.definition().visibleRangeDependent());
+
+        List<Object> key = cacheKey(symbol, interval, request, visibleRange, resolved);
+        long now = Instant.now().getEpochSecond();
+        IndicatorBatchView cached = resultCache.get(key, now);
+        if (cached != null) return cached;
+
+        List<Candle> candles = completed(load(symbol, interval, request.to()));
+        if (candles.isEmpty()) return new IndicatorBatchView(interval, List.of());
+        List<Long> future = MarketCalendar.futureTimestamps(candles.getLast().getTimestamp(), interval, MAX_FUTURE_BARS);
+
+        Map<String, Computed> computed = new HashMap<>();
+        Map<String, String> errors = new HashMap<>();
+        for (Resolved item : ordered) {
+            try {
+                computed.put(item.config().id(), computeOne(item, symbol, interval, candles, computed, request));
+            } catch (IndicatorUnavailableException unavailable) {
+                errors.put(item.config().id(), ServerMessages.translate(unavailable.getMessage()));
+            } catch (UserInputException invalid) {
+                errors.put(item.config().id(), ServerMessages.translate(invalid.getMessage()));
+            } catch (IllegalArgumentException invalid) {
+                throw invalid;
+            } catch (RuntimeException failure) {
+                log.warn("Chart indicator {} failed for {} {}", item.definition().type(), symbol, interval, failure);
+                errors.put(item.config().id(), ServerMessages.translate("This indicator could not be calculated for the loaded bars."));
+            }
+        }
+        List<IndicatorConfigurationView> views = new ArrayList<>();
+        Map<String, Resolved> byId = new HashMap<>();
+        resolved.forEach(item -> byId.put(item.config().id(), item));
+        for (IndicatorConfiguration config : request.indicators()) {
+            String id = config.id();
+            Resolved item = byId.get(id);
+            if (item == null) {
+                views.add(new IndicatorConfigurationView(id, config.type(), config.type(), null, config.parameters(),
+                        List.of(), List.of(), List.of(), List.of(), rejected.get(id)));
+            } else {
+                views.add(errors.containsKey(id)
+                        ? errorView(item, errors.get(id))
+                        : view(item, computed.get(id), candles, future, request));
+            }
+        }
+        IndicatorBatchView result = new IndicatorBatchView(interval, List.copyOf(views));
+        long pointCount = result.indicators().stream().flatMap(view -> view.series().stream())
+                .mapToLong(series -> series.points().size()).sum();
+        if (pointCount <= 20_000) resultCache.put(key, result, now);
         return result;
     }
 
-    private IndicatorConfigurationView calculateOne(List<Candle> candles,
-                                                     BarSeries bars,
-                                                     IndicatorConfiguration config,
-                                                     Long from,
-                                                     Long to) {
-        if (config == null || config.id() == null || config.id().isBlank()) {
-            throw new IllegalArgumentException("Every chart indicator needs an id.");
+    private Computed computeOne(Resolved item, String symbol, String interval, List<Candle> candles,
+                                Map<String, Computed> computed, IndicatorBatchRequest request) {
+        IndicatorDefinition definition = item.definition();
+        InputValues values = item.values();
+        Map<String, double[]> external = new HashMap<>();
+        for (InputSpec spec : definition.inputs()) {
+            if (spec.kind() == InputKind.SOURCE && PriceSource.isDependency(values.text(spec.key()))) {
+                String source = values.text(spec.key());
+                Computed dependency = computed.get(PriceSource.dependencyId(source));
+                double[] output = dependency == null ? null : dependency.outputs().get(PriceSource.dependencyOutput(source));
+                if (output == null) throw new IndicatorUnavailableException("The source indicator is unavailable.");
+                external.put(source, output);
+            } else if (spec.kind() == InputKind.SYMBOL) {
+                String other = values.text(spec.key());
+                external.put("symbol:" + other, alignedClose(other, interval, candles, request.to()));
+            }
         }
-        if (config.id().length() > 100) throw new IllegalArgumentException("Chart indicator id is too long.");
-        String type = config.type() == null ? "" : config.type().trim().toUpperCase(Locale.ROOT);
-        Map<String, Double> parameters = config.parameters() == null ? Map.of() : config.parameters();
-        if (parameters.size() > 8 || parameters.values().stream().anyMatch(java.util.Objects::isNull)) {
-            throw new IllegalArgumentException("Chart indicator parameters are invalid.");
+        String timeframe = definition.inputs().stream().anyMatch(spec -> spec.kind() == InputKind.TIMEFRAME)
+                ? values.text("timeframe") : "chart";
+        if ("chart".equals(timeframe)) {
+            return engine.run(definition, values, interval, candles, external, request.from(), request.visibleFrom(), request.visibleTo());
         }
-        ClosePriceIndicator close = new ClosePriceIndicator(bars);
-        TypicalPriceIndicator typical = new TypicalPriceIndicator(bars);
-        VolumeIndicator volume = new VolumeIndicator(bars);
-        List<SeriesView> output = new ArrayList<>();
-        List<Double> references = new ArrayList<>();
-        String placement;
-        String label;
-
-        switch (type) {
-            case "EMA" -> {
-                int period = period(parameters, "period", 20);
-                label = "EMA " + period;
-                placement = "PRICE";
-                add(output, "value", label, "LINE", new EMAIndicator(close, period), candles, from, to);
-            }
-            case "SMA" -> {
-                int period = period(parameters, "period", 200);
-                label = "SMA " + period;
-                placement = "PRICE";
-                add(output, "value", label, "LINE", new SMAIndicator(close, period), candles, from, to);
-            }
-            case "BOLLINGER" -> {
-                int period = period(parameters, "period", 20);
-                double deviation = positive(parameters, "deviation", 2.0, 0.1, 10.0);
-                label = "Bollinger " + period + " / " + compact(deviation) + "σ";
-                placement = "PRICE";
-                BollingerBandsMiddleIndicator middle = new BollingerBandsMiddleIndicator(new SMAIndicator(close, period));
-                StandardDeviationIndicator std = StandardDeviationIndicator.ofPopulation(close, period);
-                Num multiplier = bars.numFactory().numOf(deviation);
-                add(output, "lower", "Lower", "LINE", new BollingerBandsLowerIndicator(middle, std, multiplier), candles, from, to);
-                add(output, "middle", "Middle", "LINE", middle, candles, from, to);
-                add(output, "upper", "Upper", "LINE", new BollingerBandsUpperIndicator(middle, std, multiplier), candles, from, to);
-            }
-            case "VWAP" -> {
-                int period = period(parameters, "period", 20);
-                label = "Rolling VWAP " + period;
-                placement = "PRICE";
-                add(output, "value", label, "LINE", new VWAPIndicator(typical, volume, period), candles, from, to);
-            }
-            case "SUPPORT_RESISTANCE" -> {
-                int period = period(parameters, "period", 20);
-                label = "Support / resistance " + period;
-                placement = "PRICE";
-                output.addAll(supportResistance(candles, period, from, to));
-            }
-            case "RSI" -> {
-                int period = period(parameters, "period", 14);
-                double lower = bounded(parameters, "lower", 30, 0, 100);
-                double upper = bounded(parameters, "upper", 70, 0, 100);
-                if (lower >= upper) throw new IllegalArgumentException("RSI lower boundary must be below its upper boundary.");
-                label = "RSI " + period;
-                placement = "PANEL";
-                add(output, "value", label, "LINE", new RSIIndicator(close, period), candles, from, to);
-                references.addAll(List.of(lower, 50.0, upper));
-            }
-            case "MACD" -> {
-                int fast = period(parameters, "fast", 12);
-                int slow = period(parameters, "slow", 26);
-                int signalPeriod = period(parameters, "signal", 9);
-                if (fast >= slow) throw new IllegalArgumentException("MACD fast period must be below its slow period.");
-                label = "MACD " + fast + "/" + slow + "/" + signalPeriod;
-                placement = "PANEL";
-                MACDIndicator macd = new MACDIndicator(close, fast, slow);
-                add(output, "macd", "MACD", "LINE", macd, candles, from, to);
-                add(output, "signal", "Signal", "LINE", macd.getSignalLine(signalPeriod), candles, from, to);
-                add(output, "histogram", "Histogram", "HISTOGRAM", macd.getHistogram(signalPeriod), candles, from, to);
-                references.add(0.0);
-            }
-            case "CCI" -> {
-                int period = period(parameters, "period", 20);
-                label = "CCI " + period;
-                placement = "PANEL";
-                add(output, "value", label, "LINE", new CCIIndicator(bars, period), candles, from, to);
-                references.addAll(List.of(-100.0, 0.0, 100.0));
-            }
-            case "ATR" -> {
-                int period = period(parameters, "period", 14);
-                label = "ATR " + period;
-                placement = "PANEL";
-                add(output, "value", label, "LINE", new ATRIndicator(bars, period), candles, from, to);
-            }
-            case "RELATIVE_VOLUME" -> {
-                int period = period(parameters, "period", 20);
-                label = "Relative volume " + period;
-                placement = "PANEL";
-                SMAIndicator average = new SMAIndicator(volume, period);
-                output.add(series("value", label, "HISTOGRAM", candles, from, to, index -> {
-                    double denominator = value(average, index);
-                    if (!Double.isFinite(denominator) || denominator == 0) return Double.NaN;
-                    double direction = candles.get(index).getClosePrice() >= candles.get(index).getOpenPrice() ? 1 : -1;
-                    return value(volume, index) / denominator * direction;
-                }));
-                references.addAll(List.of(-1.0, 0.0, 1.0));
-            }
-            case "ADX_DMI" -> {
-                int period = period(parameters, "period", 14);
-                label = "ADX / DMI " + period;
-                placement = "PANEL";
-                add(output, "adx", "ADX", "LINE", new ADXIndicator(bars, period), candles, from, to);
-                add(output, "plusDi", "+DI", "LINE", new PlusDIIndicator(bars, period), candles, from, to);
-                add(output, "minusDi", "-DI", "LINE", new MinusDIIndicator(bars, period), candles, from, to);
-                references.addAll(List.of(20.0, 25.0));
-            }
-            case "STOCHASTIC" -> {
-                int period = period(parameters, "period", 14);
-                label = "Stochastic " + period;
-                placement = "PANEL";
-                StochasticOscillatorKIndicator k = new StochasticOscillatorKIndicator(bars, period);
-                add(output, "k", "%K", "LINE", k, candles, from, to);
-                add(output, "d", "%D", "LINE", new StochasticOscillatorDIndicator(k), candles, from, to);
-                references.addAll(List.of(20.0, 50.0, 80.0));
-            }
-            case "STOCHASTIC_RSI" -> {
-                int period = period(parameters, "period", 14);
-                label = "Stochastic RSI " + period;
-                placement = "PANEL";
-                add(output, "value", label, "LINE", new StochasticRSIIndicator(bars, period), candles, from, to);
-                references.addAll(List.of(20.0, 50.0, 80.0));
-            }
-            case "OBV" -> {
-                label = "On-balance volume";
-                placement = "PANEL";
-                add(output, "value", label, "LINE", new OnBalanceVolumeIndicator(bars), candles, from, to);
-            }
-            case "MFI" -> {
-                int period = period(parameters, "period", 14);
-                label = "Money Flow Index " + period;
-                placement = "PANEL";
-                add(output, "value", label, "LINE", new MoneyFlowIndexIndicator(bars, period), candles, from, to);
-                references.addAll(List.of(20.0, 50.0, 80.0));
-            }
-            case "DONCHIAN" -> {
-                int period = period(parameters, "period", 20);
-                label = "Donchian Channel " + period;
-                placement = "PRICE";
-                DonchianChannelFacade channel = new DonchianChannelFacade(bars, period);
-                add(output, "lower", "Lower", "LINE", channel.lower(), candles, from, to);
-                add(output, "middle", "Middle", "LINE", channel.middle(), candles, from, to);
-                add(output, "upper", "Upper", "LINE", channel.upper(), candles, from, to);
-            }
-            case "KELTNER" -> {
-                int period = period(parameters, "period", 20);
-                int atrPeriod = period(parameters, "atrPeriod", 14);
-                double multiplier = positive(parameters, "multiplier", 2.0, 0.1, 10.0);
-                label = "Keltner Channel " + period + " / ATR " + atrPeriod;
-                placement = "PRICE";
-                KeltnerChannelFacade channel = new KeltnerChannelFacade(bars, period, atrPeriod, multiplier);
-                add(output, "lower", "Lower", "LINE", channel.lower(), candles, from, to);
-                add(output, "middle", "Middle", "LINE", channel.middle(), candles, from, to);
-                add(output, "upper", "Upper", "LINE", channel.upper(), candles, from, to);
-            }
-            case "TREND" -> {
-                int period = period(parameters, "period", 20);
-                label = "TA4J trend state " + period;
-                placement = "PANEL";
-                UpTrendIndicator up = new UpTrendIndicator(bars, period);
-                DownTrendIndicator down = new DownTrendIndicator(bars, period);
-                output.add(series("value", label, "LINE", candles, from, to, index -> {
-                    boolean rising = Boolean.TRUE.equals(up.getValue(index));
-                    boolean falling = Boolean.TRUE.equals(down.getValue(index));
-                    return rising == falling ? 0.0 : rising ? 1.0 : -1.0;
-                }));
-                references.addAll(List.of(-1.0, 0.0, 1.0));
-            }
-            case "VOLUME_PROFILE" -> {
-                int period = period(parameters, "period", 60);
-                double valueArea = positive(parameters, "valueArea", 0.70, 0.50, 0.95);
-                label = "Rolling volume profile " + period;
-                placement = "PRICE";
-                output.addAll(volumeProfile(candles, period, valueArea, from, to));
-            }
-            case "KDE_VOLUME_PROFILE" -> {
-                int period = period(parameters, "period", 60);
-                label = "KDE volume-profile mode " + period;
-                placement = "PRICE";
-                double firstClose = Math.abs(candles.getFirst().getClosePrice());
-                double firstRange = Math.abs(candles.getFirst().getHighPrice() - candles.getFirst().getLowPrice());
-                double bandwidth = Math.max(0.000_001, Math.max(firstClose * 0.0025, firstRange * 0.5));
-                StableVolumeProfileKde kde = new StableVolumeProfileKde(
-                        typical, volume, period, bandwidth);
-                output.add(series("mode", label, "LINE", candles, from, to, index -> {
-                    if (index < kde.getCountOfUnstableBars()) return Double.NaN;
-                    return kde.getModePrice(index);
-                }));
-            }
-            default -> throw new IllegalArgumentException("Unsupported chart indicator: " + type);
+        if (!ChartIndicatorCatalog.dependencies(definition, values).isEmpty()) {
+            throw new UserInputException("A higher timeframe cannot use another indicator as its source.");
         }
-        return new IndicatorConfigurationView(config.id(), type, label, placement,
-                Map.copyOf(parameters), List.copyOf(output), List.copyOf(references));
+        List<Candle> higher = completed(load(symbol, timeframe, request.to()));
+        if (higher.size() < 2) throw new IndicatorUnavailableException("No " + timeframe + " candles are stored for " + symbol + ".");
+        Computed raw = engine.run(definition, values, timeframe, higher, external, null, null, null);
+        Map<String, double[]> outputs = new LinkedHashMap<>();
+        raw.outputs().forEach((output, array) -> outputs.put(output, ChartIndicatorEngine.mapHigherTimeframe(candles, higher, array)));
+        Map<String, int[]> tones = new HashMap<>();
+        raw.tones().forEach((output, array) -> tones.put(output, ChartIndicatorEngine.mapHigherTimeframe(candles, higher, array)));
+        return new Computed(raw.label(), outputs, raw.shifts(), tones, Map.of(), List.of(), raw.references());
     }
 
-    private void add(List<SeriesView> output, String key, String label, String style,
-                     Indicator<Num> indicator, List<Candle> candles, Long from, Long to) {
-        output.add(series(key, label, style, candles, from, to, index -> value(indicator, index)));
-    }
-
-    private SeriesView series(String key, String label, String style, List<Candle> candles,
-                              Long from, Long to, IndexedValue values) {
-        List<PointView> points = new ArrayList<>();
+    /** Closing prices of another symbol on the chart's bars, filling its history first when necessary. */
+    private double[] alignedClose(String other, String interval, List<Candle> candles, Long to) {
+        if (marketData != null) {
+            try {
+                marketData.loadCandlePage(other, interval, null, 1000);
+            } catch (RuntimeException unavailable) {
+                // Stored candles, if any, are still used below.
+            }
+        }
+        Map<Long, Double> closes = new HashMap<>();
+        for (Candle candle : completed(load(other, interval, to))) closes.put(candle.getTimestamp(), candle.getClosePrice());
+        double[] result = new double[candles.size()];
+        int matched = 0;
         for (int index = 0; index < candles.size(); index++) {
-            long timestamp = candles.get(index).getTimestamp();
-            if (from != null && timestamp < from) continue;
-            if (to != null && timestamp > to) continue;
-            double value = values.at(index);
-            if (Double.isFinite(value)) points.add(new PointView(timestamp, value));
+            Double close = closes.get(candles.get(index).getTimestamp());
+            result[index] = close == null ? Double.NaN : close;
+            if (close != null) matched++;
         }
-        return new SeriesView(key, label, style, List.copyOf(points));
+        if (matched == 0) throw new IndicatorUnavailableException("No candles are stored for " + other + ".");
+        return result;
     }
 
-    private List<SeriesView> supportResistance(List<Candle> candles, int period, Long from, Long to) {
-        ArrayDeque<Integer> lows = new ArrayDeque<>();
-        ArrayDeque<Integer> highs = new ArrayDeque<>();
-        double[] support = new double[candles.size()];
-        double[] resistance = new double[candles.size()];
-        java.util.Arrays.fill(support, Double.NaN);
-        java.util.Arrays.fill(resistance, Double.NaN);
-        for (int index = 0; index < candles.size(); index++) {
-            while (!lows.isEmpty() && candles.get(lows.getLast()).getLowPrice() >= candles.get(index).getLowPrice()) lows.removeLast();
-            while (!highs.isEmpty() && candles.get(highs.getLast()).getHighPrice() <= candles.get(index).getHighPrice()) highs.removeLast();
-            lows.addLast(index);
-            highs.addLast(index);
-            int expired = index - period;
-            while (!lows.isEmpty() && lows.getFirst() <= expired) lows.removeFirst();
-            while (!highs.isEmpty() && highs.getFirst() <= expired) highs.removeFirst();
-            if (index + 1 >= period) {
-                support[index] = candles.get(lows.getFirst()).getLowPrice();
-                resistance[index] = candles.get(highs.getFirst()).getHighPrice();
+    private IndicatorConfigurationView view(Resolved item, Computed computed, List<Candle> candles, List<Long> future,
+                                            IndicatorBatchRequest request) {
+        IndicatorDefinition definition = item.definition();
+        Long from = request.from();
+        Long to = request.to();
+        int size = candles.size();
+        List<SeriesView> series = new ArrayList<>();
+        List<MarkerView> markers = new ArrayList<>();
+        for (OutputSpec spec : definition.outputs()) {
+            if (spec.style() == OutputStyle.MARKERS) {
+                for (IndicatorContext.Marker marker : computed.markers().getOrDefault(spec.key(), List.of())) {
+                    if (marker.index() < 0 || marker.index() >= size || !Double.isFinite(marker.price())) continue;
+                    long timestamp = candles.get(marker.index()).getTimestamp();
+                    if (from != null && timestamp < from || to != null && timestamp > to) continue;
+                    markers.add(new MarkerView(spec.key(), timestamp, marker.price(), marker.text()));
+                }
+                continue;
+            }
+            double[] values = computed.outputs().get(spec.key());
+            if (values == null) continue;
+            int shift = computed.shifts().getOrDefault(spec.key(), 0);
+            int[] tones = computed.tones().get(spec.key());
+            List<PointView> points = new ArrayList<>();
+            for (int index = 0; index < values.length; index++) {
+                if (!Double.isFinite(values[index])) continue;
+                int target = index + shift;
+                if (target < 0) continue;
+                long timestamp;
+                if (target < size) {
+                    timestamp = candles.get(target).getTimestamp();
+                    if (from != null && timestamp < from || to != null && timestamp > to) continue;
+                } else {
+                    if (target - size >= future.size()) continue;
+                    timestamp = future.get(target - size);
+                }
+                points.add(new PointView(timestamp, values[index], tones == null ? null : tones[index]));
+            }
+            series.add(new SeriesView(spec.key(), englishLabel(spec.key()), spec.style().name(), List.copyOf(points)));
+        }
+        List<ShapeView> shapes = new ArrayList<>();
+        for (IndicatorContext.Shape shape : computed.shapes()) {
+            List<ShapePointView> points = new ArrayList<>();
+            boolean valid = true;
+            for (IndicatorContext.ShapePoint point : shape.points()) {
+                long timestamp;
+                if (point.index() < 0) { valid = false; break; }
+                if (point.index() < size) timestamp = candles.get(point.index()).getTimestamp();
+                else if (point.index() - size < future.size()) timestamp = future.get(point.index() - size);
+                else timestamp = future.getLast();
+                points.add(new ShapePointView(timestamp, point.price()));
+            }
+            if (valid) shapes.add(new ShapeView(shape.kind(), List.copyOf(points), shape.text(), shape.role(), shape.extend(), shape.data()));
+        }
+        List<Double> references = new ArrayList<>(definition.references());
+        references.addAll(computed.references());
+        return new IndicatorConfigurationView(item.config().id(), definition.type(), computed.label(), definition.placement().name(),
+                item.values().asMap(), List.copyOf(series), List.copyOf(references), List.copyOf(markers), List.copyOf(shapes), null);
+    }
+
+    private IndicatorConfigurationView errorView(Resolved item, String message) {
+        IndicatorDefinition definition = item.definition();
+        return new IndicatorConfigurationView(item.config().id(), definition.type(), definition.label().apply(item.values()),
+                definition.placement().name(), item.values().asMap(), List.of(), List.copyOf(definition.references()),
+                List.of(), List.of(), message);
+    }
+
+    /** Indicators that read another indicator are computed after it; a cycle is rejected. */
+    private List<Resolved> dependencyOrder(List<Resolved> resolved) {
+        Map<String, Resolved> byId = new LinkedHashMap<>();
+        resolved.forEach(item -> byId.put(item.config().id(), item));
+        Map<String, Integer> incoming = new HashMap<>();
+        Map<String, List<String>> dependents = new HashMap<>();
+        for (Resolved item : resolved) {
+            // A rejected source is not in the batch; its dependents report it as unavailable instead.
+            List<String> dependencies = ChartIndicatorCatalog.dependencies(item.definition(), item.values()).stream()
+                    .filter(byId::containsKey).toList();
+            incoming.put(item.config().id(), dependencies.size());
+            for (String dependency : dependencies) dependents.computeIfAbsent(dependency, ignored -> new ArrayList<>()).add(item.config().id());
+        }
+        ArrayDeque<String> ready = new ArrayDeque<>();
+        byId.keySet().forEach(id -> { if (incoming.get(id) == 0) ready.add(id); });
+        List<Resolved> ordered = new ArrayList<>();
+        while (!ready.isEmpty()) {
+            String id = ready.removeFirst();
+            ordered.add(byId.get(id));
+            for (String dependent : dependents.getOrDefault(id, List.of())) {
+                if (incoming.merge(dependent, -1, Integer::sum) == 0) ready.add(dependent);
             }
         }
-        return List.of(
-                series("support", "Support", "LINE", candles, from, to, index -> support[index]),
-                series("resistance", "Resistance", "LINE", candles, from, to, index -> resistance[index]));
+        if (ordered.size() != resolved.size()) throw new UserInputException("Indicator sources form a cycle.");
+        return ordered;
     }
 
-    private List<SeriesView> volumeProfile(List<Candle> candles, int period, double valueArea, Long from, Long to) {
-        double[] poc = new double[candles.size()];
-        double[] val = new double[candles.size()];
-        double[] vah = new double[candles.size()];
-        java.util.Arrays.fill(poc, Double.NaN);
-        java.util.Arrays.fill(val, Double.NaN);
-        java.util.Arrays.fill(vah, Double.NaN);
-        for (int end = period - 1; end < candles.size(); end++) {
-            int start = end - period + 1;
-            double minimum = Double.POSITIVE_INFINITY;
-            double maximum = Double.NEGATIVE_INFINITY;
-            double total = 0;
-            for (int index = start; index <= end; index++) {
-                minimum = Math.min(minimum, candles.get(index).getLowPrice());
-                maximum = Math.max(maximum, candles.get(index).getHighPrice());
-                total += Math.max(0, candles.get(index).getVolume() == null ? 0 : candles.get(index).getVolume());
+    private List<Object> cacheKey(String symbol, String interval, IndicatorBatchRequest request, boolean visibleRange, List<Resolved> resolved) {
+        List<Object> key = new ArrayList<>();
+        key.add(symbol);
+        key.add(interval);
+        // Error messages in the result are in the reader's language.
+        key.add(org.example.stockwatch247.i18n.Messages.current().getLanguage());
+        key.add(visibleRange ? request : new IndicatorBatchRequest(request.from(), request.to(), null, null, request.indicators()));
+        key.add(generation(symbol, interval));
+        for (Resolved item : resolved) {
+            for (InputSpec spec : item.definition().inputs()) {
+                if (spec.kind() == InputKind.SYMBOL) key.add(generation(item.values().text(spec.key()), interval));
+                if (spec.kind() == InputKind.TIMEFRAME && !"chart".equals(item.values().text(spec.key()))) {
+                    key.add(generation(symbol, item.values().text(spec.key())));
+                }
             }
-            if (!(maximum > minimum) || total <= 0) continue;
-            double width = (maximum - minimum) / PROFILE_BINS;
-            double[] bins = new double[PROFILE_BINS];
-            for (int index = start; index <= end; index++) {
-                Candle candle = candles.get(index);
-                int lowBin = Math.min(PROFILE_BINS - 1, Math.max(0, (int) ((candle.getLowPrice() - minimum) / width)));
-                int highBin = Math.min(PROFILE_BINS - 1, Math.max(0, (int) ((candle.getHighPrice() - minimum) / width)));
-                double amount = Math.max(0, candle.getVolume() == null ? 0 : candle.getVolume()) / Math.max(1, highBin - lowBin + 1);
-                for (int bin = lowBin; bin <= highBin; bin++) bins[bin] += amount;
-            }
-            int mode = 0;
-            for (int bin = 1; bin < bins.length; bin++) if (bins[bin] > bins[mode]) mode = bin;
-            int lower = mode;
-            int upper = mode;
-            double included = bins[mode];
-            while (included < total * valueArea && (lower > 0 || upper < PROFILE_BINS - 1)) {
-                double below = lower > 0 ? bins[lower - 1] : -1;
-                double above = upper < PROFILE_BINS - 1 ? bins[upper + 1] : -1;
-                if (above > below) included += bins[++upper]; else included += bins[--lower];
-            }
-            poc[end] = minimum + (mode + 0.5) * width;
-            val[end] = minimum + lower * width;
-            vah[end] = minimum + (upper + 1.0) * width;
         }
-        return List.of(
-                series("val", "Value area low", "LINE", candles, from, to, index -> val[index]),
-                series("poc", "Point of control", "LINE", candles, from, to, index -> poc[index]),
-                series("vah", "Value area high", "LINE", candles, from, to, index -> vah[index]));
+        return List.copyOf(key);
     }
 
-    private double value(Indicator<Num> indicator, int index) {
-        if (index < indicator.getCountOfUnstableBars()) return Double.NaN;
-        Num value = indicator.getValue(index);
-        return value == null || value.isNaN() ? Double.NaN : value.doubleValue();
+    private long generation(String symbol, String interval) {
+        return revisions == null ? 0 : revisions.generation(symbol, interval);
     }
 
-    private int period(Map<String, Double> parameters, String key, int fallback) {
-        double raw = parameters.getOrDefault(key, (double) fallback);
-        if (!Double.isFinite(raw) || raw != Math.rint(raw) || raw < 2 || raw > MAX_PERIOD) {
-            throw new IllegalArgumentException(key + " must be a whole number from 2 to 500.");
-        }
-        return (int) raw;
+    private List<Candle> load(String symbol, String interval, Long to) {
+        return to == null ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
+                : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanEqualOrderByTimestampAsc(symbol, interval, to);
     }
 
-    private double positive(Map<String, Double> parameters, String key, double fallback, double minimum, double maximum) {
-        double raw = parameters.getOrDefault(key, fallback);
-        if (!Double.isFinite(raw) || raw < minimum || raw > maximum) {
-            throw new IllegalArgumentException(key + " must be between " + minimum + " and " + maximum + ".");
-        }
-        return raw;
-    }
-
-    private double bounded(Map<String, Double> parameters, String key, double fallback, double minimum, double maximum) {
-        return positive(parameters, key, fallback, minimum, maximum);
+    private List<Candle> completed(List<Candle> candles) {
+        return candles.stream().filter(this::complete).sorted(Comparator.comparingLong(Candle::getTimestamp)).toList();
     }
 
     private boolean complete(Candle candle) {
@@ -433,19 +339,63 @@ public class ChartTechnicalIndicatorService {
                 && candle.getHighPrice() != null && candle.getLowPrice() != null && candle.getClosePrice() != null;
     }
 
-    private String compact(double value) {
-        return value == Math.rint(value) ? Long.toString(Math.round(value)) : Double.toString(value);
+    private static boolean allowedValue(Object value) {
+        if (value instanceof Number number) return Double.isFinite(number.doubleValue());
+        if (value instanceof String text) return text.length() <= MAX_TEXT;
+        return value instanceof Boolean;
     }
 
-    @FunctionalInterface
-    private interface IndexedValue { double at(int index); }
+    private static String englishLabel(String key) {
+        return switch (key) {
+            case "value" -> "Value";
+            case "macd" -> "MACD";
+            case "k" -> "%K";
+            case "d" -> "%D";
+            case "adx" -> "ADX";
+            case "plusDi" -> "+DI";
+            case "minusDi" -> "-DI";
+            case "poc" -> "Point of control";
+            case "val" -> "Value area low";
+            case "vah" -> "Value area high";
+            default -> Character.toUpperCase(key.charAt(0)) + key.substring(1);
+        };
+    }
 
-    public record IndicatorBatchRequest(Long from, Long to, List<IndicatorConfiguration> indicators) { }
-    public record IndicatorConfiguration(String id, String type, Map<String, Double> parameters) { }
+    private record Resolved(IndicatorConfiguration config, IndicatorDefinition definition, InputValues values) { }
+
+    /** A reason one indicator could not be drawn (for example a comparison symbol without data). */
+    static final class IndicatorUnavailableException extends RuntimeException {
+        IndicatorUnavailableException(String message) { super(message); }
+    }
+
+    public record IndicatorBatchRequest(Long from, Long to, Long visibleFrom, Long visibleTo, List<IndicatorConfiguration> indicators) {
+        public IndicatorBatchRequest(Long from, Long to, List<IndicatorConfiguration> indicators) {
+            this(from, to, null, null, indicators);
+        }
+    }
+
+    public record IndicatorConfiguration(String id, String type, Map<String, Object> parameters) { }
+
     public record IndicatorBatchView(String interval, List<IndicatorConfigurationView> indicators) { }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record IndicatorConfigurationView(String id, String type, String label, String placement,
-                                             Map<String, Double> parameters, List<SeriesView> series,
-                                             List<Double> references) { }
+                                             Map<String, Object> parameters, List<SeriesView> series,
+                                             List<Double> references, List<MarkerView> markers, List<ShapeView> shapes,
+                                             String error) { }
+
     public record SeriesView(String key, String label, String style, List<PointView> points) { }
-    public record PointView(long timestamp, double value) { }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PointView(long timestamp, double value, Integer tone) {
+        public PointView(long timestamp, double value) { this(timestamp, value, null); }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record MarkerView(String key, long timestamp, double price, String text) { }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ShapeView(String kind, List<ShapePointView> points, String text, String role, String extend, Map<String, Object> data) { }
+
+    public record ShapePointView(long timestamp, double price) { }
 }

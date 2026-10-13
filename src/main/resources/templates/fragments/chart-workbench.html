@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<!-- The drawing toolset shared by every chart page: engine, tools, icons and toolbar. -->
+<th:block th:fragment="drawingAssets">
+  <link rel="stylesheet" th:href="@{/css/chart-workbench.css}">
+  <script th:src="@{/js/chart-drawing-core.js}"></script>
+  <script th:src="@{/js/chart-drawing-kit.js}"></script>
+  <script th:src="@{/js/chart-drawing-tools-lines.js}"></script>
+  <script th:src="@{/js/chart-drawing-tools-fib.js}"></script>
+  <script th:src="@{/js/chart-drawing-tools-patterns.js}"></script>
+  <script th:src="@{/js/chart-drawing-tools-measure.js}"></script>
+  <script th:src="@{/js/chart-drawing-tools-shapes.js}"></script>
+  <script th:src="@{/js/chart-drawing-icons.js}"></script>
+  <script th:src="@{/js/chart-drawing-ui.js}"></script>
+</th:block>
+</body>
+</html>

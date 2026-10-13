@@ -41,6 +41,16 @@ public class CorporateActionService {
         }
     }
 
+    /** A detected split; {@code lastTimestamp} is the last bar on the old price basis. */
+    public record SplitView(long lastTimestamp, int numerator, int denominator) { }
+
+    public List<SplitView> splits(String symbol, String interval) {
+        return jdbc.query("""
+                select cutoff_timestamp, numerator, denominator from corporate_actions
+                where symbol = ? and time_interval = ? order by cutoff_timestamp
+                """, (row, index) -> new SplitView(row.getLong(1), row.getInt(2), row.getInt(3)), symbol, interval);
+    }
+
     /**
      * Compares completed bars that are both stored and freshly fetched. A run of the oldest
      * overlapping bars that all differ by the same clean split ratio, followed only by unchanged

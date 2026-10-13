@@ -72,6 +72,15 @@ public class I18nScriptController {
                       return value === undefined || value === null ? match : String(value);
                     }).replace(/\\u0000/g, "'");
                   }
+                  // Building an Intl formatter is far slower than using one, and charts format on every frame.
+                  var formatters = {};
+                  function formatter(kind, options) {
+                    var key = kind + JSON.stringify(options || {});
+                    if (!formatters[key]) {
+                      formatters[key] = kind === 'number' ? new Intl.NumberFormat(tag, options) : new Intl.DateTimeFormat(tag, options);
+                    }
+                    return formatters[key];
+                  }
                   window.StockWatchI18n = Object.freeze({
                     locale: %s,
                     tag: tag,
@@ -92,10 +101,10 @@ public class I18nScriptController {
                       var number = Number(value);
                       if (!Number.isFinite(number)) return '';
                       if (tag === 'en') return number.toFixed(digits);
-                      return new Intl.NumberFormat(tag, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(number);
+                      return formatter('number', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(number);
                     },
                     date: function (value, options) {
-                      return new Intl.DateTimeFormat(tag, options).format(value instanceof Date ? value : new Date(value));
+                      return formatter('date', options).format(value instanceof Date ? value : new Date(value));
                     }
                   });
                 })();

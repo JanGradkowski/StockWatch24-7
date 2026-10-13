@@ -89,6 +89,9 @@ class StockWatch247ApplicationTests {
     private MockMvc mockMvc;
 
     @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -855,17 +858,18 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("class=\"alert-panel alert-star-panel\"")))
                 .andExpect(content().string(containsString("Switch on the signals you want to follow, then click Apply changes.")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(containsString("check-alert-btn"))))
-                .andExpect(content().string(containsString("id=\"rsiOverlayToggle\"")))
+                // One chart with price, volume and indicator panes, the catalog's indicator list and the chart tools.
+                .andExpect(content().string(containsString("id=\"openIndicatorBrowser\"")))
                 .andExpect(content().string(containsString("id=\"volumeChartToggle\"")))
-                .andExpect(content().string(containsString("id=\"volumeChartPanel\"")))
+                .andExpect(content().string(containsString("id=\"drawingToolbarHost\"")))
+                .andExpect(content().string(containsString("data-chart-type=\"heikinAshi\"")))
+                .andExpect(content().string(containsString("data-chart-range=\"YTD\"")))
+                .andExpect(content().string(containsString("data-chart-scale=\"log\"")))
+                .andExpect(content().string(containsString("id=\"compareSymbolDialog\"")))
+                .andExpect(content().string(containsString("id=\"chartAlertsButton\"")))
                 .andExpect(content().string(containsString("data-chart-resize-target=\"priceChartStage\"")))
-                .andExpect(content().string(containsString("data-chart-resize-target=\"rsiChartContainer\"")))
-                .andExpect(content().string(containsString("data-chart-resize-target=\"volumeChartContainer\"")))
-                .andExpect(content().string(containsString("id=\"rsiPeriodDialog\"")))
-                .andExpect(content().string(containsString("id=\"rsiChartContainer\"")))
-                .andExpect(content().string(containsString("RSI 14 with 70/30 boundaries is the classic default")))
-                .andExpect(content().string(containsString("id=\"rsiOverboughtInput\"")))
-                .andExpect(content().string(containsString("id=\"rsiOversoldInput\"")));
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString("id=\"rsiPeriodDialog\""))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString("id=\"volumeChartPanel\""))));
     }
 
     @Test
@@ -960,6 +964,17 @@ class StockWatch247ApplicationTests {
                 25_000L
         ));
 
+        // A triggered chart alert joins Latest signals and links back to its chart.
+        Long chartAlertId = jdbcTemplate.queryForObject("""
+                insert into chart_alerts (user_id, symbol, interval, source_kind, source_id, label, condition, definition, frequency)
+                values (?, ?, 'DAILY', 'DRAWING', 'line-1', 'Breakout line', 'CROSSES_UP', '{"geometry":"HORIZONTAL","price":20}', 'ONCE')
+                returning id
+                """, Long.class, user.getId(), symbol);
+        Long chartAlertEventId = jdbcTemplate.queryForObject("""
+                insert into chart_alert_events (alert_id, candle_timestamp, close_price, value, level)
+                values (?, ?, 20.75, 20.75, 20.0) returning id
+                """, Long.class, chartAlertId, Instant.parse("2026-07-20T00:00:00Z").getEpochSecond());
+
         // Followed instruments now live in named watchlists, which the dashboard loads into this panel.
         mockMvc.perform(get("/home").with(user(email)))
                 .andExpect(status().isOk())
@@ -976,7 +991,14 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Setup score 88 out of 100")))
                 .andExpect(content().string(containsString("is-unread\"")))
                 .andExpect(content().string(containsString("href=\"/signals\"")))
-                .andExpect(content().string(containsString("/alerts/signals/" + event.getId())));
+                .andExpect(content().string(containsString("/alerts/signals/" + event.getId())))
+                .andExpect(content().string(containsString("Breakout line")))
+                .andExpect(content().string(containsString("Chart alert")))
+                .andExpect(content().string(containsString("Crossed up")))
+                .andExpect(content().string(containsString("/stock/" + symbol + "?chartAlert=" + chartAlertEventId + "#general")));
+
+        // The chart page marks a shown trigger read (ChartAlertServiceIntegrationTest); here it is simply read.
+        jdbcTemplate.update("update chart_alert_events set read_at = current_timestamp where id = ?", chartAlertEventId);
 
         mockMvc.perform(get("/alerts/{id}", candleBuy.getId()).with(user(email)))
                 .andExpect(status().isOk())

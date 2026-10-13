@@ -26,6 +26,13 @@ public class NotificationReadService {
                     "coalesce(s.pattern_family,'CANDLESTICK')", "s.interval", "e.trade_signal", true);
             updated += mark(user, watchlistId, "OUTLOOK", "technical_outlook_notifications", "technical_outlook_subscriptions",
                     "subscription_id", "'OUTLOOK'", "s.interval", "'ANY'", false);
+            // Chart alerts belong to the chart they were set on, not to a watchlist.
+            if (watchlistId == null) {
+                updated += db.update("""
+                        update chart_alert_events e set read_at = current_timestamp from chart_alerts a
+                        where a.id = e.alert_id and a.user_id = ? and e.read_at is null
+                        """, user.getId());
+            }
         }
         updated += mark(user, watchlistId, "CONGRESS", "congressional_trade_deliveries", "congressional_trade_subscriptions",
                 "subscription_id", "'CONGRESS'", "'DAILY'", "'ANY'", true);
