@@ -6,7 +6,7 @@
 
     class ElliottWaveHierarchyOverlay {
         constructor({ chart, container, symbol, interval = '1mo', color = '#F59E0B',
-                        asOfTimestamp, statusElement, renderTime, onWaveClick } = {}) {
+                        asOfTimestamp, statusElement, renderTime, onWaveClick, createLine } = {}) {
             if (!chart || !container || !symbol) {
                 throw new Error('An Elliott chart, container, and symbol are required.');
             }
@@ -19,6 +19,8 @@
             this.statusElement = statusElement || null;
             this.renderTime = typeof renderTime === 'function' ? renderTime : value => Number(value);
             this.onWaveClick = typeof onWaveClick === 'function' ? onWaveClick : null;
+            // A page whose price scale can switch to percentages passes lines that stay with its candles.
+            this.createLine = typeof createLine === 'function' ? createLine : options => this.chart.addLineSeries(options);
             this.hierarchy = null;
             this.series = [];
             this.segments = [];
@@ -90,7 +92,7 @@
             }));
             if (data.some(point => point.time === null || point.time === undefined
                 || !Number.isFinite(point.value))) return;
-            const line = this.chart.addLineSeries({
+            const line = this.createLine({
                 color: this.color,
                 lineWidth: 2,
                 priceLineVisible: false,

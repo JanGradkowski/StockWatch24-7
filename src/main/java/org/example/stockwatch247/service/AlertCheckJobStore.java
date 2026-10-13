@@ -97,6 +97,12 @@ public class AlertCheckJobStore {
                     from technical_outlook_subscriptions subscription
                     join stock_assets asset on asset.id = subscription.stock_asset_id
                     where subscription.is_active = true
+
+                    union
+
+                    select chart_alert.symbol, chart_alert.interval
+                    from chart_alerts chart_alert
+                    where chart_alert.active = true
                 ) candidate on candidate.interval = inserted_run.interval
                 on conflict (symbol, interval, scheduled_for) do nothing
                 """,

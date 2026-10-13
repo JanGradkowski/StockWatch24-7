@@ -79,6 +79,9 @@ public class AuthController {
     void configureTechnicalOutlookTracking(TechnicalOutlookTrackingService trackingService) {
         this.technicalOutlookTrackingService = trackingService;
     }
+
+    @Autowired(required = false)
+    private org.example.stockwatch247.service.ChartAlertService chartAlertService;
     @GetMapping("/login")
     public String loginPage() {return "login";}
 
@@ -225,9 +228,14 @@ public class AuthController {
             var latestOutlookChanges = technicalOutlookTrackingService == null
                     ? java.util.List.<TechnicalOutlookTrackingService.LatestOutlookChangeView>of()
                     : technicalOutlookTrackingService.latestUnread(currentUser, 8);
-            var latestSignalItems = Stream.concat(
+            var latestChartAlerts = chartAlertService == null
+                    ? java.util.List.<org.example.stockwatch247.service.ChartAlertService.LatestChartAlertView>of()
+                    : chartAlertService.latestUnread(currentUser.getId(), 8);
+            var latestSignalItems = Stream.of(
                             latestSignals.stream().map(DashboardLatestSignalView::technical),
-                            latestOutlookChanges.stream().map(DashboardLatestSignalView::outlook))
+                            latestOutlookChanges.stream().map(DashboardLatestSignalView::outlook),
+                            latestChartAlerts.stream().map(DashboardLatestSignalView::chartAlert))
+                    .flatMap(stream -> stream)
                     .sorted(Comparator.comparing(
                             DashboardLatestSignalView::occurredAt,
                             Comparator.nullsLast(Comparator.reverseOrder())))
@@ -255,8 +263,10 @@ public class AuthController {
                     .toList();
             if (watchlists != null) {
                 java.util.Set<String> keys = new java.util.HashSet<>();
-                latestSignalItems.forEach(item -> keys.add(item.technicalSignal() != null
-                        ? "TECHNICAL:" + item.technicalSignal().id() : "OUTLOOK:" + item.outlookChange().id()));
+                latestSignalItems.forEach(item -> {
+                    if (item.technicalSignal() != null) keys.add("TECHNICAL:" + item.technicalSignal().id());
+                    else if (item.outlookChange() != null) keys.add("OUTLOOK:" + item.outlookChange().id());
+                });
                 latestTickerNotifications.forEach(item -> keys.add(("INSIDER".equals(item.source()) ? "INSIDER:" : "CONGRESS:") + item.id()));
                 model.addAttribute("watchlistOrigins", watchlists.notificationOrigins(currentUser, keys));
             }
@@ -578,14 +588,20 @@ public class AuthController {
             String kind,
             LocalDateTime occurredAt,
             AlertRuleService.LatestSignalView technicalSignal,
-            TechnicalOutlookTrackingService.LatestOutlookChangeView outlookChange) {
+            TechnicalOutlookTrackingService.LatestOutlookChangeView outlookChange,
+            org.example.stockwatch247.service.ChartAlertService.LatestChartAlertView chartAlert) {
         private static DashboardLatestSignalView technical(AlertRuleService.LatestSignalView signal) {
-            return new DashboardLatestSignalView("TECHNICAL", signal.sentAt(), signal, null);
+            return new DashboardLatestSignalView("TECHNICAL", signal.sentAt(), signal, null, null);
         }
 
         private static DashboardLatestSignalView outlook(
                 TechnicalOutlookTrackingService.LatestOutlookChangeView change) {
-            return new DashboardLatestSignalView("OUTLOOK", change.createdAt(), null, change);
+            return new DashboardLatestSignalView("OUTLOOK", change.createdAt(), null, change, null);
+        }
+
+        private static DashboardLatestSignalView chartAlert(
+                org.example.stockwatch247.service.ChartAlertService.LatestChartAlertView alert) {
+            return new DashboardLatestSignalView("CHART_ALERT", alert.createdAt(), null, null, alert);
         }
     }
 

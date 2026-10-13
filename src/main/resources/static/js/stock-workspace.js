@@ -86,15 +86,15 @@
     return { 'Content-Type': 'application/json', [csrfHeader]: csrfToken };
   }
 
-  let priceChart, volumeChart, rsiChart;
-  let fibonacciDrawingTool = null;
+  let priceChart;
+  let drawingManager = null;
+  let indicatorManager = null;
   const INITIAL_CANDLE_LIMIT = 1000;
   const INITIAL_VISIBLE_CANDLES = 150;
   const HISTORY_PAGE_LIMIT = 500;
   const HISTORY_PREFETCH_THRESHOLD = 120;
 
-  let lineSeries, candleSeries, volumeSeries, elliottConfirmationSeries, rsiSeries;
-  let rsiGuideLines = [];
+  let priceSeries, volumeSeries, elliottConfirmationSeries;
   let historicalElliottSeries = [];
   let historicalElliottGroups = new Map();
   const ELLIOTT_CANDIDATE_COLOR = '#94a3b8';
@@ -123,7 +123,6 @@
   let historicalCandlestickCardPinned = false;
   let historicalCandlestickCardHovered = false;
   let historicalCandlestickCardHideTimer = null;
-  let currentMode = 'candle';
   let currentInterval = '1d';
   let pendingStockDemoTradeSide = 'BUY';
   let stockDemoTradeSizeMode = 'none';
@@ -191,58 +190,28 @@
   let anchoredVolumeProfileRequestSequence = 0;
   let anchoredVolumeProfileRenderFrame = null;
   const ANCHORED_PROFILE_RIGHT_OFFSET_BARS = 30;
-  let rsiOverlayEnabled = false;
-  let rsiPeriod = 14;
-  let rsiOverboughtBoundary = 70;
-  let rsiOversoldBoundary = 30;
   let volumeChartEnabled = true;
+  let chartType = 'candles';
+  // The main series' type. A price-only type (Renko, Line break, Kagi, Point & Figure) shows its own
+  // chart over the time-based one and leaves the main series, its indicators and drawings as they are.
+  let seriesType = 'candles';
+  let priceOnlyChart = null;
+  let priceOnlySeries = null;
+  let priceOnlyKind = null;
+  let priceOnlyItems = [];
+  let priceOnlyFitPending = false;
+  const priceOnlySettings = { box: null, lines: 3 };
+  const priceScaleSettings = { mode: 'normal', invert: false, auto: true };
+  let splitMarkersEnabled = true;
+  let splitData = [];
+  // The whole chart's height when the user set one with the resize handle; otherwise it fits the window.
+  // Panes share it, so adding indicators never makes the chart taller (TradingView works the same way).
+  let chosenChartHeight = null;
+  let fittedWindowHeight = null;
+  const CHART_HEIGHT_MAX_DEFAULT = 900;
+  let baselineFrame = null;
   let chartResizeObserver = null;
   let generalChartResizeFrame = null;
-  const activeChartIndicators = new Map();
-  const chartIndicatorPriceSeries = new Map();
-  const chartIndicatorPanels = new Map();
-  let pendingChartIndicatorType = null;
-  let chartIndicatorRequestSequence = 0;
-  let chartIndicatorRefreshTimer = null;
-
-  const CHART_INDICATOR_COLORS = [
-    '#b7f34a', '#64e8bd', '#9a8cff', '#ffb55f', '#55b8ff', '#ff647c',
-    '#f6df69', '#46d3c4', '#d993ff', '#ff8f70', '#7ea6ff', '#c2e970'
-  ];
-
-  const CHART_INDICATOR_SPECS = {
-    EMA: indicatorSpec('EMA', [periodField(20)]),
-    SMA: indicatorSpec('SMA', [periodField(200)]),
-    BOLLINGER: indicatorSpec('BOLLINGER', [periodField(20), numberField('deviation', i18n.t('sw.field.deviation'), 2, 0.1, 10, 0.1)]),
-    VWAP: indicatorSpec('VWAP', [periodField(20)]),
-    SUPPORT_RESISTANCE: indicatorSpec('SUPPORT_RESISTANCE', [periodField(20)]),
-    MACD: indicatorSpec('MACD', [periodField(12, 'fast', i18n.t('sw.field.fast')), periodField(26, 'slow', i18n.t('sw.field.slow')), periodField(9, 'signal', i18n.t('sw.field.signal'))]),
-    CCI: indicatorSpec('CCI', [periodField(20)]),
-    ATR: indicatorSpec('ATR', [periodField(14)]),
-    RELATIVE_VOLUME: indicatorSpec('RELATIVE_VOLUME', [periodField(20)]),
-    ADX_DMI: indicatorSpec('ADX_DMI', [periodField(14)]),
-    STOCHASTIC: indicatorSpec('STOCHASTIC', [periodField(14)]),
-    STOCHASTIC_RSI: indicatorSpec('STOCHASTIC_RSI', [periodField(14)]),
-    OBV: indicatorSpec('OBV', []),
-    MFI: indicatorSpec('MFI', [periodField(14)]),
-    DONCHIAN: indicatorSpec('DONCHIAN', [periodField(20)]),
-    KELTNER: indicatorSpec('KELTNER', [periodField(20), periodField(14, 'atrPeriod', i18n.t('sw.field.atrPeriod')), numberField('multiplier', i18n.t('sw.field.atrMultiplier'), 2, 0.1, 10, 0.1)]),
-    TREND: indicatorSpec('TREND', [periodField(20)]),
-    VOLUME_PROFILE: indicatorSpec('VOLUME_PROFILE', [periodField(60), numberField('valueArea', i18n.t('sw.field.valueArea'), 0.7, 0.5, 0.95, 0.01)]),
-    KDE_VOLUME_PROFILE: indicatorSpec('KDE_VOLUME_PROFILE', [periodField(60)])
-  };
-
-  function indicatorSpec(key, fields) {
-    return { label: i18n.t(`sw.indicator.${key}.label`), description: i18n.t(`sw.indicator.${key}.description`), fields };
-  }
-
-  function periodField(value, key = 'period', label = i18n.t('sw.field.period')) {
-    return numberField(key, label, value, 2, 500, 1, i18n.t('sw.field.periodHelp'));
-  }
-
-  function numberField(key, label, value, min, max, step, help = '') {
-    return { key, label, value, min, max, step, help };
-  }
 
   let isFetching = false;
   let isLoadingOlder = false;
@@ -252,7 +221,6 @@
   let stockCurrency = 'USD';
 
   let globalCandleData = [];
-  let globalLineData = [];
   let globalVolumeData = [];
   let seenDates = new Set();
 
@@ -333,62 +301,856 @@
     }));
   }
 
-  function rsiSeriesThemeOptions(theme = document.documentElement.dataset.theme) {
-    const light = theme === 'light';
+  const chartOptions = chartThemeOptions();
+
+  const PRICE_SCALE_MODES = { normal: 'Normal', log: 'Logarithmic', percent: 'Percentage', indexed: 'IndexedTo100' };
+
+  function priceColors(theme = document.documentElement.dataset.theme) {
+    const seriesTheme = chartSeriesThemeOptions(theme);
     return {
-      line: light ? '#5b50c9' : '#9a8cff',
-      overbought: light ? '#c93452' : '#ff647c',
-      overboughtGuide: light ? 'rgba(201, 52, 82, 0.58)' : 'rgba(255, 100, 124, 0.58)',
-      midpoint: light ? 'rgba(82, 97, 88, 0.42)' : 'rgba(180, 189, 180, 0.34)',
-      oversold: light ? '#00785d' : '#64e8bd',
-      oversoldGuide: light ? 'rgba(0, 120, 93, 0.58)' : 'rgba(100, 232, 189, 0.58)'
+      up: seriesTheme.candles.upColor,
+      down: seriesTheme.candles.downColor,
+      line: seriesTheme.line.color,
+      neutral: theme === 'light' ? '#2869bc' : '#60a5fa'
     };
   }
 
-  function themedRsiData(points,
-                         overboughtBoundary = 70,
-                         oversoldBoundary = 30,
-                         theme = document.documentElement.dataset.theme) {
-    const colors = rsiSeriesThemeOptions(theme);
-    return points.map(point => {
-      if (!Number.isFinite(point.value)) return { ...point };
-      const color = point.value > overboughtBoundary
-              ? colors.overbought
-              : (point.value < oversoldBoundary ? colors.oversold : colors.line);
-      return { ...point, color };
+  function formatPlainPrice(price) {
+    const value = Number(price);
+    return i18n.number(value, Math.abs(value) < 1 ? 4 : 2);
+  }
+
+  /** Price-pane height in pixels; overlays positioned over the price pane stay inside it. */
+  function pricePaneHeight() {
+    try {
+      const height = priceChart.panes()[0].getHeight();
+      if (Number.isFinite(height) && height > 0) return height;
+    } catch (ignored) {
+      // Before the first layout the stage height is the best estimate.
+    }
+    return document.getElementById('priceChartStage').clientHeight;
+  }
+
+  function showChartStatus(message) {
+    const status = document.getElementById('chartStatus');
+    if (!status) return;
+    status.textContent = message || '';
+    clearTimeout(showChartStatus.timer);
+    if (message) showChartStatus.timer = setTimeout(() => { status.textContent = ''; }, 6000);
+  }
+
+  // ---- main price series and chart types
+
+  function setPriceSeriesData() {
+    if (!priceSeries) return;
+    priceSeries.setData(StockWatchChartTypes.data(seriesType, globalCandleData, priceColors()));
+    if (seriesType === 'baseline') scheduleBaselineUpdate();
+    reanchorPriceOverlays();
+    renderPriceOnlyChart();
+  }
+
+  /** Live quotes move only the newest bar; Heikin Ashi needs the whole history to stay consistent. */
+  function updateLatestPriceBar() {
+    if (!priceSeries || !globalCandleData.length) return;
+    const source = seriesType === 'heikinAshi' ? globalCandleData : globalCandleData.slice(-2);
+    const points = StockWatchChartTypes.data(seriesType, source, priceColors());
+    priceSeries.update(points[points.length - 1]);
+    renderPriceOnlyChart();
+  }
+
+  /** The price axis shows the currency; volume and indicator panes keep their own number formats. */
+  function priceSeriesFormat() {
+    // Phones need the axis width for the chart, so the currency is left off there.
+    const narrow = window.matchMedia?.('(max-width: 600px)');
+    return {
+      type: 'custom',
+      minMove: 0.01,
+      formatter: price => (narrow?.matches ? i18n.number(price, 2) : `${i18n.number(price, 2)} ${stockCurrency}`)
+    };
+  }
+
+  function createPriceSeries() {
+    const series = StockWatchChartTypes.create(priceChart, seriesType, priceColors(), { priceFormat: priceSeriesFormat() });
+    // Indicators and overlays draw above the price.
+    series.setSeriesOrder?.(0);
+    series.attachPrimitive?.(priceRepaintHook);
+    return series;
+  }
+
+  // ---- overlays that follow the price scale
+
+  // Elliott and harmonic points, candlestick hit areas and the volume profile are HTML or their own canvas. The price
+  // pane draws this view on every repaint, scale changes (invert, log, percentage) included, and they follow.
+  const PRICE_REPAINT_VIEWS = [{ zOrder: () => 'bottom', renderer: () => ({ draw: () => followPriceRepaint() }) }];
+  const priceRepaintHook = { paneViews: () => PRICE_REPAINT_VIEWS };
+  let priceRepaintQueued = false;
+
+  function followPriceRepaint() {
+    if (priceRepaintQueued) return;
+    priceRepaintQueued = true;
+    queueMicrotask(() => {
+      priceRepaintQueued = false;
+      scheduleElliottHitTargetPositioning();
+      scheduleHarmonicHitTargetPositioning();
+      scheduleHistoricalCandlestickHitTargetPositioning();
+      if (anchoredVolumeProfileEnabled) scheduleAnchoredVolumeProfileRender();
     });
   }
 
-  function formatRsiBoundary(value) {
-    return Number.isInteger(value)
-            ? String(value)
-            : i18n.number(value, 2).replace(/[.,]?0+$/, '');
+  const anchoredPriceOverlays = new Set();
+  let priceAnchorCache = { candles: null, length: -1, type: null, lastClose: null, anchors: [] };
+
+  /** The main series' bars as {time, close}: what overlay lines on its scale are measured from. */
+  function priceAnchors() {
+    const cache = priceAnchorCache;
+    const lastClose = globalCandleData[globalCandleData.length - 1]?.close ?? null;
+    if (cache.candles !== globalCandleData || cache.length !== globalCandleData.length || cache.type !== seriesType
+            || cache.lastClose !== lastClose) {
+      const points = StockWatchChartTypes.data(seriesType, globalCandleData, priceColors());
+      priceAnchorCache = {
+        candles: globalCandleData, length: globalCandleData.length, type: seriesType, lastClose,
+        anchors: points.map(point => ({ time: point.time, close: Number.isFinite(point.close) ? point.close : point.value }))
+      };
+    }
+    return priceAnchorCache.anchors;
   }
 
-  const chartOptions = chartThemeOptions();
+  /**
+   * A line on the price scale (Elliott waves, harmonic patterns, candlestick trends) that stays with the candles in
+   * every scale mode; a plain line series is measured from its own first point in percentage and indexed scales.
+   */
+  function addPriceOverlayLine(options) {
+    const series = StockWatchChartTypes.addAnchoredLine(priceChart, options, priceAnchors);
+    anchoredPriceOverlays.add(series);
+    return series;
+  }
+
+  function reanchorPriceOverlays() {
+    anchoredPriceOverlays.forEach(series => {
+      try { series.reanchor(); } catch (error) { anchoredPriceOverlays.delete(series); }
+    });
+  }
+
+  function setChartType(type, persist = true) {
+    const next = StockWatchChartTypes.TYPES.includes(type) ? type : 'candles';
+    chartType = next;
+    document.querySelectorAll('[data-chart-type]').forEach(button => {
+      const active = button.dataset.chartType === next;
+      // Not "active": that class marks menus with an overlay switched on.
+      button.classList.toggle('is-selected', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    document.getElementById('chartTypeLabel').textContent = i18n.t(`sw.chartType.${next}`);
+    if (persist) indicatorManager?.setExtra('chartType', next);
+    if (!priceChart) return;
+    // Candlestick signals describe real candles, so they need a chart that draws them.
+    if (historicalCandlestickOverlayEnabled && !StockWatchChartTypes.isOhlc(next)) {
+      disableHistoricalCandlestickOverlay();
+    }
+    if (StockWatchChartTypes.isPriceOnly(next)) {
+      showPriceOnlyView();
+      return;
+    }
+    hidePriceOnlyView();
+    if (next === seriesType) return;
+    seriesType = next;
+    const previous = priceSeries;
+    priceSeries = createPriceSeries();
+    setPriceSeriesData();
+    drawingManager?.setSeries(priceSeries);
+    if (previous) priceChart.removeSeries(previous);
+    indicatorManager?.setPriceSeries(priceSeries);
+    applySplitMarkers();
+    applyPriceScale();
+    scheduleAnchoredVolumeProfileRender();
+    scheduleElliottHitTargetPositioning();
+    scheduleHistoricalCandlestickHitTargetPositioning();
+    scheduleHarmonicHitTargetPositioning();
+  }
+
+  // ---- price-only view: Renko, Line break, Kagi, Point & Figure
+
+  function priceOnlyActive() {
+    return Boolean(priceOnlyChart) && StockWatchChartTypes.isPriceOnly(chartType);
+  }
+
+  /** Price-only positions are numbered; their labels show the date of the candle that completed each one. */
+  function priceOnlyDate(time) {
+    const item = priceOnlyItems[StockWatchChartTypes.elementIndex(time)];
+    if (!item) return '';
+    // "25 Oct '22", like the drawing tools' date labels.
+    const date = new Date(item.timestamp * 1000);
+    return `${date.getUTCDate()} ${i18n.date(date, { month: 'short', timeZone: 'UTC' })} '${String(date.getUTCFullYear()).slice(-2)}`;
+  }
+
+  function ensurePriceOnlyChart() {
+    if (priceOnlyChart) return;
+    priceOnlyChart = StockWatchCharts.createChart(document.getElementById('priceOnlyChartContainer'), {
+      ...chartOptions,
+      timeScale: { ...chartOptions.timeScale, tickMarkFormatter: time => priceOnlyDate(time) },
+      localization: { timeFormatter: time => priceOnlyDate(time) }
+    });
+  }
+
+  function showPriceOnlyView() {
+    ensurePriceOnlyChart();
+    // Show the newest elements once data is there (it may still be loading).
+    priceOnlyFitPending = true;
+    document.getElementById('priceChartStage').classList.add('price-only-view');
+    document.querySelector('.chart-workbench-body').classList.add('price-only-view');
+    document.getElementById('priceOnlyChartContainer').hidden = false;
+    document.getElementById('priceOnlyLegend').hidden = false;
+    drawingManager?.setMode?.('cursor');
+    priceOnlyKind = null;
+    renderPriceOnlyChart();
+    applyPriceScale();
+    updateStageHeight();
+  }
+
+  function hidePriceOnlyView() {
+    const stage = document.getElementById('priceChartStage');
+    if (!stage.classList.contains('price-only-view')) return;
+    stage.classList.remove('price-only-view');
+    document.querySelector('.chart-workbench-body').classList.remove('price-only-view');
+    document.getElementById('priceOnlyChartContainer').hidden = true;
+    document.getElementById('priceOnlyLegend').hidden = true;
+    updateStageHeight();
+  }
+
+  function renderPriceOnlyChart() {
+    if (!priceOnlyActive() || !globalCandleData.length) return;
+    const result = StockWatchChartTypes.priceOnly(chartType, globalCandleData, priceOnlySettings);
+    priceOnlyItems = result.items;
+    if (priceOnlyKind !== result.series) {
+      if (priceOnlySeries) priceOnlyChart.removeSeries(priceOnlySeries);
+      const colors = priceColors();
+      priceOnlySeries = result.series === 'candles'
+              ? priceOnlyChart.addSeries(LightweightCharts.CandlestickSeries,
+                      { ...StockWatchChartTypes.options('candles', colors), priceFormat: priceSeriesFormat() })
+              : priceOnlyChart.addCustomSeries(result.series === 'kagi'
+                      ? new StockWatchChartTypes.KagiView() : new StockWatchChartTypes.PointFigureView(),
+                      { upColor: colors.up, downColor: colors.down, priceFormat: priceSeriesFormat(), priceLineVisible: false });
+      priceOnlyKind = result.series;
+    }
+    priceOnlySeries.setData(result.data);
+    if (priceOnlyFitPending && priceOnlyItems.length) {
+      priceOnlyFitPending = false;
+      priceOnlyChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, priceOnlyItems.length - 120), to: priceOnlyItems.length - 1 + 3 });
+    }
+    renderPriceOnlyLegend(result);
+  }
+
+  function renderPriceOnlyLegend(result) {
+    const legend = document.getElementById('priceOnlyLegend');
+    const title = document.createElement('strong');
+    title.textContent = `${ticker} · ${i18n.t(`draw.interval.${currentInterval}`)} · ${i18n.t(`sw.chartType.${chartType}`)}`;
+    const field = document.createElement('label');
+    field.className = 'price-only-field';
+    const caption = document.createElement('span');
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = chartType === 'lineBreak' ? '1' : '0';
+    input.max = chartType === 'lineBreak' ? '10' : '';
+    input.step = chartType === 'lineBreak' ? '1' : 'any';
+    input.inputMode = 'decimal';
+    if (chartType === 'lineBreak') {
+      caption.textContent = i18n.t('sw.priceOnly.lines');
+      input.value = String(priceOnlySettings.lines);
+    } else {
+      caption.textContent = i18n.t('sw.priceOnly.box');
+      input.placeholder = i18n.t('sw.priceOnly.auto', formatPlainPrice(result.box));
+      input.value = priceOnlySettings.box ? String(priceOnlySettings.box) : '';
+      input.setAttribute('aria-describedby', 'priceOnlyNote');
+    }
+    input.addEventListener('change', () => {
+      const value = Number(input.value);
+      if (chartType === 'lineBreak') {
+        priceOnlySettings.lines = Number.isInteger(value) && value >= 1 && value <= 10 ? value : 3;
+      } else {
+        priceOnlySettings.box = Number.isFinite(value) && value > 0 ? value : null;
+      }
+      indicatorManager?.setExtra('priceOnly', { ...priceOnlySettings });
+      renderPriceOnlyChart();
+    });
+    field.append(caption, input);
+    const note = document.createElement('span');
+    note.id = 'priceOnlyNote';
+    note.className = 'price-only-note';
+    note.textContent = i18n.t(chartType === 'pointFigure' ? 'sw.priceOnly.notePointFigure' : 'sw.priceOnly.note');
+    legend.replaceChildren(title, field, note);
+  }
+
+  /** A baseline chart splits above and below the close of the first visible candle. */
+  function scheduleBaselineUpdate() {
+    if (seriesType !== 'baseline' || baselineFrame !== null) return;
+    baselineFrame = requestAnimationFrame(() => {
+      baselineFrame = null;
+      const range = priceChart?.timeScale().getVisibleLogicalRange();
+      if (!range || !globalCandleData.length || seriesType !== 'baseline') return;
+      const index = Math.max(0, Math.min(globalCandleData.length - 1, Math.ceil(range.from)));
+      priceSeries.applyOptions({ baseValue: { type: 'price', price: globalCandleData[index].close } });
+    });
+  }
+
+  // ---- price scale
+
+  function applyPriceScale() {
+    if (!priceChart) return;
+    const mode = LightweightCharts.PriceScaleMode[PRICE_SCALE_MODES[priceScaleSettings.mode] || 'Normal'];
+    const scale = { mode, invertScale: priceScaleSettings.invert, autoScale: priceScaleSettings.auto };
+    priceChart.priceScale('right').applyOptions(scale);
+    priceOnlyChart?.priceScale('right').applyOptions(scale);
+    updatePriceScaleButtons();
+  }
+
+  function updatePriceScaleButtons() {
+    if (priceChart) {
+      // Dragging the price axis switches automatic scaling off inside the chart.
+      priceScaleSettings.auto = priceChart.priceScale('right').options().autoScale !== false;
+    }
+    document.querySelectorAll('[data-chart-scale]').forEach(button => {
+      const key = button.dataset.chartScale;
+      const active = key === 'invert' ? priceScaleSettings.invert
+              : (key === 'auto' ? priceScaleSettings.auto : priceScaleSettings.mode === key);
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+
+  function togglePriceScale(key) {
+    if (key === 'invert') priceScaleSettings.invert = !priceScaleSettings.invert;
+    else if (key === 'auto') priceScaleSettings.auto = true;
+    else priceScaleSettings.mode = priceScaleSettings.mode === key ? 'normal' : key;
+    applyPriceScale();
+    indicatorManager?.setExtra('scale', { mode: priceScaleSettings.mode, invert: priceScaleSettings.invert });
+  }
+
+  // ---- date ranges
+
+  /** Loads older pages until {@code seconds} is on the chart or the history ends. */
+  async function ensureHistoryFrom(seconds) {
+    const interval = currentInterval;
+    let attempts = 0;
+    let announced = false;
+    while (attempts++ < 400 && hasMoreHistory && currentInterval === interval
+            && globalCandleData.length && globalCandleData[0].timestamp > seconds) {
+      if (!announced) {
+        showChartStatus(i18n.t('sw.loadingOlderHistory'));
+        announced = true;
+      }
+      if (isLoadingOlder || isFetching) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+        continue;
+      }
+      const before = globalCandleData.length;
+      await loadOlderData({ refreshOverlays: false });
+      if (globalCandleData.length === before && !hasMoreHistory) break;
+    }
+    if (announced) {
+      showChartStatus('');
+      await Promise.all([
+        refreshHistoricalElliottOverlays(interval),
+        refreshHistoricalCandlestickOverlay(interval),
+        refreshHarmonicOverlays(interval)
+      ]);
+    }
+  }
+
+  async function showDateRange(preset) {
+    if (!globalCandleData.length) return;
+    const last = globalCandleData[globalCandleData.length - 1].timestamp;
+    const start = StockWatchChartTypes.rangeStart(preset, last);
+    await ensureHistoryFrom(start ?? Number.NEGATIVE_INFINITY);
+    if (priceOnlyActive()) {
+      const first = start === null ? 0 : priceOnlyItems.findIndex(item => item.timestamp >= start);
+      const from = first < 0 ? Math.max(0, priceOnlyItems.length - 1) : first;
+      priceOnlyChart.timeScale().setVisibleLogicalRange({ from, to: priceOnlyItems.length - 1 + 3 });
+      return;
+    }
+    if (start === null) {
+      priceChart.timeScale().setVisibleLogicalRange({ from: 0, to: globalCandleData.length - 1 + 3 });
+      return;
+    }
+    const index = StockWatchChartTypes.nearestIndex(globalCandleData.map(candle => candle.timestamp), start);
+    priceChart.timeScale().setVisibleLogicalRange({ from: index, to: globalCandleData.length - 1 + 3 });
+  }
+
+  /** Opened from a chart alert in Latest signals: show the candle that triggered it, then mark it read. */
+  async function openChartAlertFromUrl() {
+    const id = new URLSearchParams(window.location.search).get('chartAlert');
+    if (!/^\d{1,18}$/.test(id || '')) return;
+    try {
+      const response = await fetch(`/api/chart-alerts/events/${id}`);
+      if (response.ok) {
+        const trigger = await response.json();
+        const interval = { DAILY: '1d', WEEKLY: '1wk', MONTHLY: '1mo' }[trigger.interval] || '1d';
+        if (interval !== currentInterval) await changeInterval(interval);
+        await ensureHistoryFrom(trigger.candleTimestamp);
+        const index = StockWatchChartTypes.nearestIndex(globalCandleData.map(candle => candle.timestamp), trigger.candleTimestamp);
+        if (index >= 0) {
+          const range = priceChart.timeScale().getVisibleLogicalRange();
+          const span = range ? Math.max(20, range.to - range.from) : INITIAL_VISIBLE_CANDLES;
+          priceChart.timeScale().setVisibleLogicalRange({ from: index - span * 0.7, to: index + span * 0.3 });
+        }
+        showChartStatus(i18n.t('alert.status.opened', trigger.label));
+        await fetch(`/api/chart-alerts/events/${id}/read`, { method: 'POST', headers: secureJsonHeaders() });
+      }
+    } catch (error) {
+      console.warn('Chart alert could not be opened', error);
+    }
+    // The address keeps no reference to the alert once it has been shown.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('chartAlert');
+    window.history.replaceState(null, '', url);
+  }
+
+  async function goToDate(event) {
+    event.preventDefault();
+    const value = document.getElementById('goToDateInput').value;
+    const seconds = Date.parse(`${value}T00:00:00Z`) / 1000;
+    if (!Number.isFinite(seconds) || !globalCandleData.length) return;
+    await ensureHistoryFrom(seconds);
+    if (seconds < globalCandleData[0].timestamp) showChartStatus(i18n.t('sw.dateBeforeHistory'));
+    const chart = priceOnlyActive() ? priceOnlyChart : priceChart;
+    const times = priceOnlyActive() ? priceOnlyItems.map(item => item.timestamp) : globalCandleData.map(candle => candle.timestamp);
+    const index = StockWatchChartTypes.nearestIndex(times, seconds);
+    const range = chart.timeScale().getVisibleLogicalRange();
+    const span = range ? Math.max(20, range.to - range.from) : INITIAL_VISIBLE_CANDLES;
+    chart.timeScale().setVisibleLogicalRange({ from: index - span / 2, to: index + span / 2 });
+  }
+
+  // ---- screenshot, full screen, data window
+
+  function saveChartScreenshot() {
+    if (!priceChart) return;
+    const stage = document.getElementById('priceChartStage');
+    const priceOnly = priceOnlyActive();
+    const chartCanvas = (priceOnly ? priceOnlyChart : priceChart).takeScreenshot(true);
+    const container = document.getElementById(priceOnly ? 'priceOnlyChartContainer' : 'priceChartContainer');
+    const ratio = chartCanvas.width / Math.max(1, container.clientWidth);
+    const header = 30;
+    const canvas = document.createElement('canvas');
+    canvas.width = chartCanvas.width;
+    canvas.height = chartCanvas.height + Math.round(header * ratio);
+    const context = canvas.getContext('2d');
+    const styles = getComputedStyle(document.body);
+    context.fillStyle = StockWatchCharts.isLight() ? '#ffffff' : '#0d1117';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(chartCanvas, 0, Math.round(header * ratio));
+    context.scale(ratio, ratio);
+    context.fillStyle = styles.color || (StockWatchCharts.isLight() ? '#182230' : '#e8edf3');
+    context.font = '600 13px "Inter Variable", Inter, sans-serif';
+    const stamp = i18n.date(new Date(), { year: 'numeric', month: 'short', day: 'numeric' });
+    const typeName = priceOnly ? ` · ${i18n.t(`sw.chartType.${chartType}`)}` : '';
+    context.fillText(`${ticker} · ${i18n.t(`draw.interval.${currentInterval}`)}${typeName} · ${stamp} · StockWatch 24/7`, 10, 20);
+    // Legends are page elements, so their text is written onto the image at the same place.
+    context.font = '500 11px "Inter Variable", Inter, sans-serif';
+    if (!priceOnly) stage.querySelectorAll('.ind-legend:not([hidden])').forEach(legend => {
+      const top = parseFloat(legend.style.top) || 0;
+      const left = parseFloat(legend.style.left) || 0;
+      [...legend.querySelectorAll('.ind-legend-row')].forEach((row, index) => {
+        const name = row.querySelector('.ind-legend-name')?.textContent || '';
+        const values = [...row.querySelectorAll('.ind-legend-value')].map(item => item.textContent).join('  ');
+        context.fillText(`${name}  ${values}`.trim(), left + 2, header + top + 13 + index * 18);
+      });
+    });
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${ticker}-${currentInterval}-${new Date().toISOString().slice(0, 10)}.png`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }, 'image/png');
+  }
+
+  function chartIsFullscreen() {
+    return document.fullscreenElement === document.getElementById('priceChartPanel');
+  }
+
+  async function toggleChartFullscreen() {
+    try {
+      if (chartIsFullscreen()) await document.exitFullscreen();
+      else await document.getElementById('priceChartPanel').requestFullscreen();
+    } catch (error) {
+      showChartStatus(i18n.t('sw.fullscreenUnavailable'));
+    }
+  }
+
+  function onChartFullscreenChange() {
+    const active = chartIsFullscreen();
+    const button = document.getElementById('chartFullscreenButton');
+    button.setAttribute('aria-pressed', String(active));
+    button.title = i18n.t(active ? 'sw.exitFullscreen' : 'sw.fullscreen');
+    button.setAttribute('aria-label', button.title);
+    updateStageHeight();
+  }
+
+  function toggleDataWindow() {
+    if (!indicatorManager) return;
+    const open = indicatorManager.toggleDataWindow();
+    document.getElementById('dataWindowToggle').setAttribute('aria-pressed', String(open));
+    indicatorManager.setExtra('dataWindow', open);
+  }
+
+  // ---- stage height: one height for the whole chart, whatever panes it has
+
+  /** Without a chosen height the chart fills the window below the panel heading, with room for its footer. */
+  function defaultChartHeight() {
+    fittedWindowHeight ??= window.innerHeight;
+    const narrow = window.matchMedia?.('(max-width: 699px)').matches === true;
+    return Math.round(Math.min(CHART_HEIGHT_MAX_DEFAULT, Math.max(narrow ? 360 : 420, fittedWindowHeight - 180)));
+  }
+
+  /** Phone address bars change the window height while scrolling; only a real resize refits the chart. */
+  function refitChartToWindow() {
+    if (chosenChartHeight !== null || fittedWindowHeight === null
+        || Math.abs(window.innerHeight - fittedWindowHeight) < 150) return false;
+    fittedWindowHeight = window.innerHeight;
+    updateStageHeight();
+    return true;
+  }
+
+  function currentChartHeight() {
+    return chosenChartHeight ?? defaultChartHeight();
+  }
+
+  function updateStageHeight() {
+    const stage = document.getElementById('priceChartStage');
+    if (!stage) return;
+    stage.style.height = chartIsFullscreen() ? '' : `${currentChartHeight()}px`;
+    const handle = document.getElementById('priceChartPanel').querySelector('.chart-resize-handle');
+    handle?.setAttribute('aria-valuenow', String(currentChartHeight()));
+    scheduleGeneralWorkspaceChartResize();
+  }
+
+  // ---- split markers
+
+  async function loadSplitMarkers(interval) {
+    let splits = [];
+    try {
+      const response = await fetch(`/api/stocks/${encodedTicker}/splits?interval=${encodeURIComponent(interval)}`);
+      if (response.ok) splits = await response.json();
+    } catch (ignored) {
+      // Markers are optional context; the chart works without them.
+    }
+    if (interval !== currentInterval) return;
+    splitData = Array.isArray(splits) ? splits : [];
+    applySplitMarkers();
+  }
+
+  function applySplitMarkers() {
+    if (!priceSeries?.setMarkers) return;
+    const markers = [];
+    if (splitMarkersEnabled) {
+      splitData.forEach(split => {
+        const candle = globalCandleData.find(item => item.timestamp > Number(split.lastTimestamp));
+        if (!candle) return;
+        markers.push({
+          time: candle.time,
+          position: 'aboveBar',
+          shape: 'square',
+          size: 0.8,
+          color: '#ffbd59',
+          text: i18n.t('sw.splitMarker', split.numerator, split.denominator)
+        });
+      });
+    }
+    priceSeries.setMarkers(markers);
+  }
+
+  function updateSplitMarkersToggle() {
+    const button = document.getElementById('splitMarkersToggle');
+    button.classList.toggle('is-selected', splitMarkersEnabled);
+    button.setAttribute('aria-pressed', String(splitMarkersEnabled));
+  }
+
+  function toggleSplitMarkers() {
+    splitMarkersEnabled = !splitMarkersEnabled;
+    updateSplitMarkersToggle();
+    applySplitMarkers();
+    indicatorManager?.setExtra('splits', splitMarkersEnabled);
+  }
+
+  // ---- volume pane
+
+  function volumeHooks() {
+    return {
+      onCreate: series => { volumeSeries = series; },
+      onRemove: () => { volumeSeries = null; }
+    };
+  }
+
+  function updateVolumeChartToggle() {
+    const button = document.getElementById('volumeChartToggle');
+    button.classList.toggle('active', volumeChartEnabled);
+    button.setAttribute('aria-pressed', String(volumeChartEnabled));
+    button.textContent = i18n.t(volumeChartEnabled ? 'sw.volumeOn' : 'sw.volume');
+  }
+
+  function toggleVolumeChart() {
+    volumeChartEnabled = !volumeChartEnabled;
+    indicatorManager?.setVolume(volumeChartEnabled, volumeHooks());
+    updateVolumeChartToggle();
+    indicatorManager?.setExtra('volume', volumeChartEnabled);
+  }
+
+  // ---- saved chart preferences (kept with the indicator layout)
+
+  function applyChartPreferences(extras = {}) {
+    const wide = window.matchMedia?.('(min-width: 700px)').matches !== false;
+    if (wide && Number.isFinite(extras.chartHeight)) {
+      chosenChartHeight = Math.min(1200, Math.max(260, extras.chartHeight));
+    } else if (wide && Number.isFinite(extras.priceHeight) && extras.priceHeight > defaultChartHeight()) {
+      // Saved before panes shared the chart: it was the price pane's height, so only a taller one is kept.
+      chosenChartHeight = Math.min(1200, extras.priceHeight);
+    }
+    if (typeof extras.volume === 'boolean' && extras.volume !== volumeChartEnabled) {
+      volumeChartEnabled = extras.volume;
+      indicatorManager.setVolume(volumeChartEnabled, volumeHooks());
+      updateVolumeChartToggle();
+    }
+    if (extras.scale && typeof extras.scale === 'object') {
+      priceScaleSettings.mode = Object.hasOwn(PRICE_SCALE_MODES, extras.scale.mode) ? extras.scale.mode : 'normal';
+      priceScaleSettings.invert = extras.scale.invert === true;
+      applyPriceScale();
+    }
+    if (typeof extras.splits === 'boolean') {
+      splitMarkersEnabled = extras.splits;
+      updateSplitMarkersToggle();
+      applySplitMarkers();
+    }
+    if (extras.dataWindow === true) {
+      indicatorManager.toggleDataWindow(true);
+      document.getElementById('dataWindowToggle').setAttribute('aria-pressed', 'true');
+    }
+    if (extras.priceOnly && typeof extras.priceOnly === 'object') {
+      const box = Number(extras.priceOnly.box);
+      const lines = Number(extras.priceOnly.lines);
+      priceOnlySettings.box = Number.isFinite(box) && box > 0 ? box : null;
+      priceOnlySettings.lines = Number.isInteger(lines) && lines >= 1 && lines <= 10 ? lines : 3;
+    }
+    if (typeof extras.chartType === 'string') setChartType(extras.chartType, false);
+    updateStageHeight();
+  }
+
+  // ---- compare
+
+  function initializeCompareDialog() {
+    const dialog = document.getElementById('compareSymbolDialog');
+    const input = document.getElementById('compareSymbolInput');
+    const results = document.getElementById('compareSymbolResults');
+    const error = document.getElementById('compareSymbolError');
+    let searchTimer = null;
+    let searchSequence = 0;
+
+    const add = value => {
+      const symbol = String(value || '').trim().toUpperCase();
+      if (!/^[A-Z0-9.^=-]{1,20}$/.test(symbol)) {
+        error.textContent = i18n.t('sw.compare.invalid');
+        input.focus();
+        return;
+      }
+      if (symbol === String(ticker).toUpperCase()) {
+        error.textContent = i18n.t('sw.compare.same');
+        input.focus();
+        return;
+      }
+      if (!indicatorManager?.add('COMPARE', { inputs: { symbol } })) {
+        error.textContent = i18n.t('sw.compare.failed');
+        return;
+      }
+      dialog.close();
+      showChartStatus(i18n.t('sw.compare.added', symbol));
+    };
+
+    const search = async query => {
+      const sequence = ++searchSequence;
+      try {
+        const response = await fetch(`/api/stocks/search/local?q=${encodeURIComponent(query)}`);
+        const items = response.ok ? await response.json() : [];
+        if (sequence !== searchSequence) return;
+        results.replaceChildren(...items.slice(0, 8).map(item => {
+          const symbol = String(item.symbol || '');
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'compare-symbol-option';
+          option.setAttribute('role', 'option');
+          const code = document.createElement('strong');
+          code.textContent = symbol;
+          const name = document.createElement('span');
+          name.textContent = String(item.name || '');
+          option.append(code, name);
+          option.addEventListener('click', () => add(symbol));
+          return option;
+        }));
+      } catch (ignored) {
+        results.replaceChildren();
+      }
+    };
+
+    document.getElementById('compareSymbolButton').addEventListener('click', () => {
+      input.value = '';
+      error.textContent = '';
+      results.replaceChildren();
+      dialog.showModal();
+      input.focus();
+    });
+    input.addEventListener('input', () => {
+      error.textContent = '';
+      clearTimeout(searchTimer);
+      const query = input.value.trim();
+      if (query.length < 1) {
+        results.replaceChildren();
+        return;
+      }
+      searchTimer = setTimeout(() => search(query), 200);
+    });
+    document.getElementById('compareSymbolForm').addEventListener('submit', event => {
+      event.preventDefault();
+      add(input.value);
+    });
+    for (const id of ['closeCompareSymbolDialogBtn', 'cancelCompareSymbolBtn']) {
+      document.getElementById(id).addEventListener('click', () => dialog.close());
+    }
+  }
+
+  // ---- drawings and indicators
+
+  function chartBars() {
+    return globalCandleData.map((candle, index) => ({
+      time: candle.timestamp,
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+      volume: globalVolumeData[index]?.value
+    }));
+  }
+
+  function createDrawingManager(stage) {
+    if (typeof StockWatchDrawing === 'undefined') return null;
+    // Drawings used to be kept per interval in this browser; they move into the account once.
+    const legacyKeys = ['1d', '1wk', '1mo'].map(interval => ({ key: `stock:${ticker}:${interval}`, interval }));
+    const manager = new StockWatchDrawing.DrawingManager({
+      chart: priceChart,
+      series: priceSeries,
+      container: stage,
+      store: new StockWatchDrawing.ServerDrawingStore(ticker, legacyKeys),
+      interval: currentInterval,
+      bars: chartBars,
+      priceFormatter: formatPlainPrice,
+      features: { alerts: typeof StockWatchChartAlerts !== 'undefined', demoTrade: true },
+      toolbarHost: document.getElementById('drawingToolbarHost')
+    });
+    manager.on('demo-trade', ({ side }) => openStockDemoTradeDialog(side, true));
+    manager.on('alert-request', drawing => {
+      if (typeof StockWatchChartAlerts !== 'undefined') StockWatchChartAlerts.openForDrawing(drawing);
+    });
+    return manager;
+  }
+
+  function createIndicatorManager(stage) {
+    if (typeof StockWatchIndicatorManager === 'undefined') return null;
+    const manager = new StockWatchIndicatorManager({
+      chart: priceChart,
+      priceSeries,
+      stage,
+      symbol: ticker,
+      interval: currentInterval,
+      candles: () => globalCandleData,
+      anchors: priceAnchors,
+      volume: () => themedVolumeData(),
+      priceFormatter: formatPlainPrice,
+      drawings: drawingManager,
+      onPanesChanged: () => updateStageHeight()
+    });
+    manager.onLayoutLoaded = applyChartPreferences;
+    manager.onStatus = showChartStatus;
+    if (typeof StockWatchChartAlerts !== 'undefined') {
+      manager.onAlertRequest = config => StockWatchChartAlerts.openForIndicator(config);
+    }
+    manager.setVolume(volumeChartEnabled, volumeHooks());
+    manager.setPriceInfo(priceLegendInfo);
+    return manager;
+  }
+
+  function candleIndexAt(time) {
+    const key = chartTimeKey(time);
+    let low = 0;
+    let high = globalCandleData.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      const value = globalCandleData[middle].time;
+      if (value === key) return middle;
+      if (value < key) low = middle + 1; else high = middle - 1;
+    }
+    return -1;
+  }
+
+  /** The price legend's first row: symbol, interval and the candle under the crosshair (else the latest). */
+  function priceLegendInfo(param) {
+    const title = `${ticker} · ${i18n.t(`draw.interval.${currentInterval}`)}`;
+    if (!globalCandleData.length) return { title };
+    let index = param?.time ? candleIndexAt(param.time) : -1;
+    if (index < 0) index = globalCandleData.length - 1;
+    const candle = globalCandleData[index];
+    const previous = index > 0 ? globalCandleData[index - 1].close : candle.open;
+    const change = previous ? (candle.close - previous) / previous * 100 : 0;
+    const colors = priceColors();
+    const tone = candle.close >= candle.open ? colors.up : colors.down;
+    return {
+      title,
+      values: [
+        { label: i18n.t('sw.legend.open'), value: formatPlainPrice(candle.open), color: tone },
+        { label: i18n.t('sw.legend.high'), value: formatPlainPrice(candle.high), color: tone },
+        { label: i18n.t('sw.legend.low'), value: formatPlainPrice(candle.low), color: tone },
+        { label: i18n.t('sw.legend.close'), value: formatPlainPrice(candle.close), color: tone },
+        { value: `${change > 0 ? '+' : ''}${i18n.number(change, 2)}%`, color: change >= 0 ? colors.up : colors.down }
+      ]
+    };
+  }
+
+  /** Overlays toggled from the toolbar appear in the price legend with a remove button. */
+  function renderChartOverlayChips() {
+    const items = [];
+    if (historicalCandlestickOverlayEnabled) {
+      items.push({
+        label: i18n.t('sw.candlestickSignals'),
+        removeLabel: i18n.t('sw.removeCandlestickSignals'),
+        onRemove: () => {
+          disableHistoricalCandlestickOverlay();
+          document.getElementById('candlestickOverlayToggle').focus({ preventScroll: true });
+        }
+      });
+    }
+    indicatorManager?.setOverlays(items);
+  }
 
   async function initCharts() {
     let completionMessage = i18n.t('sw.ready');
     try {
       updateStockLoadingStatus(i18n.t('sw.preparingCharts'));
-      priceChart = StockWatchCharts.createChart(document.getElementById('priceChartContainer'), chartOptions);
-      volumeChart = StockWatchCharts.createChart(document.getElementById('volumeChartContainer'), {
+      const stage = document.getElementById('priceChartStage');
+      stage.style.height = `${currentChartHeight()}px`;
+      // One chart holds the price, volume and indicator panes, so they share the time axis and crosshair.
+      priceChart = StockWatchCharts.createChart(document.getElementById('priceChartContainer'), {
         ...chartOptions,
-        timeScale: { visible: false }
+        layout: { ...chartOptions.layout, panes: { enableResize: true } }
       });
+      const removeChartSeries = priceChart.removeSeries.bind(priceChart);
+      priceChart.removeSeries = series => {
+        anchoredPriceOverlays.delete(series);
+        removeChartSeries(series);
+      };
 
       priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
         maybeLoadOlderForVisibleRange(range);
         schedulePatternRangeRefresh();
-        if (range) {
-          volumeChart.timeScale().setVisibleLogicalRange(range);
-          if (rsiChart && rsiOverlayEnabled) {
-            rsiChart.timeScale().setVisibleLogicalRange(range);
-          }
-          chartIndicatorPanels.forEach(panel => {
-            panel.chart.timeScale().setVisibleLogicalRange(range);
-          });
-        }
+        scheduleBaselineUpdate();
         scheduleAnchoredVolumeProfileRender();
         scheduleElliottHitTargetPositioning();
         scheduleHistoricalCandlestickHitTargetPositioning();
@@ -423,39 +1185,39 @@
         if (event.key === 'Escape' && !harmonicCard.hidden) hideHarmonicFormationCard();
       });
 
-      const seriesTheme = chartSeriesThemeOptions();
-      candleSeries = priceChart.addCandlestickSeries(seriesTheme.candles);
-      lineSeries = priceChart.addLineSeries(seriesTheme.line);
+      priceSeries = createPriceSeries();
       if (typeof StockWatchElliottHierarchyOverlay !== 'undefined') {
         elliottHierarchyOverlay = new StockWatchElliottHierarchyOverlay({
           chart: priceChart,
-          container: document.getElementById('priceChartStage'),
+          container: stage,
           symbol: ticker,
           interval: currentInterval,
           color: ELLIOTT_SUBWAVE_COLOR,
           renderTime: timestampToChartDate,
           statusElement: document.getElementById('elliottOverlayStatus'),
-          onWaveClick: showElliottHierarchyWaveCard
+          onWaveClick: showElliottHierarchyWaveCard,
+          createLine: options => addPriceOverlayLine(options)
         });
       }
-      elliottConfirmationSeries = priceChart.addLineSeries({
-        // This series exists only to anchor confirmation markers. Lightweight
-        // Charts 4 ignores lineVisible on a line series, so use a fully
-        // transparent color to prevent it connecting sparse confirmations.
+      // This series exists only to anchor confirmation markers; a transparent line never connects them.
+      elliottConfirmationSeries = addPriceOverlayLine({
         color: 'rgba(0, 0, 0, 0)',
-        crosshairMarkerVisible: false,
         lastValueVisible: false,
         priceLineVisible: false
       });
-      volumeSeries = volumeChart.addHistogramSeries({ priceFormat: { type: 'volume' } });
-      if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
-        fibonacciDrawingTool = new StockWatchFibonacciDrawingTool({
-          chart: priceChart,
-          series: candleSeries,
-          container: document.getElementById('priceChartStage'),
-          storageKey: `stock:${ticker}:${currentInterval}`
+      drawingManager = createDrawingManager(stage);
+      indicatorManager = createIndicatorManager(stage);
+      if (typeof StockWatchChartAlerts !== 'undefined') {
+        void StockWatchChartAlerts.attach({
+          symbol: ticker,
+          interval: () => currentInterval,
+          drawings: drawingManager,
+          indicators: indicatorManager,
+          onStatus: showChartStatus
         });
       }
+      stage.addEventListener('pointerup', () => setTimeout(updatePriceScaleButtons, 0));
+      stage.addEventListener('wheel', () => setTimeout(updatePriceScaleButtons, 0), { passive: true });
 
       // Load currency metadata first
       updateStockLoadingStatus(i18n.t('sw.loadingMarket'));
@@ -475,21 +1237,23 @@
           ]);
           if (metaJson.currency) {
             stockCurrency = metaJson.currency;
-            priceChart.applyOptions({
-              localization: { priceFormatter: price => `${i18n.number(price, 2)} ${stockCurrency}` }
-            });
+            priceSeries.applyOptions({ priceFormat: priceSeriesFormat() });
           }
         }
       } catch (e) { console.warn("Currency fallback to USD"); }
+
+      // The saved indicator layout also holds the chart type, scale and pane heights.
+      updateStockLoadingStatus(i18n.t('sw.preparingIndicators'));
+      await indicatorManager?.ready;
+      updateStageHeight();
 
       updateStockLoadingStatus(i18n.t('sw.loadingHistory'));
       await loadChartData('1d');
       updateStockLoadingStatus(i18n.t('sw.loadingAlerts'));
       await Promise.all([loadAlertState(), loadOutlookFollowState()]);
 
-      setChartMode('candle');
-      updateStockLoadingStatus(i18n.t('sw.preparingIndicators'));
       await reopenHistoricalCandlestickResultsFromUrl();
+      await openChartAlertFromUrl();
 
     } catch (err) {
       console.error("Initialization error:", err);
@@ -506,7 +1270,6 @@
     isFetching = true;
 
     globalCandleData = [];
-    globalLineData = [];
     globalVolumeData = [];
     seenDates.clear();
     hasMoreHistory = true;
@@ -524,9 +1287,6 @@
     updateHarmonicOverlayToggle();
     historicalCandlestickOverlayRequestSequence++;
     clearHistoricalCandlestickOverlayVisuals();
-    chartIndicatorRequestSequence++;
-    clearTimeout(chartIndicatorRefreshTimer);
-    activeChartIndicators.forEach((config, id) => removeChartIndicatorVisuals(id));
     anchoredVolumeProfileRequestSequence++;
     anchoredVolumeProfile = null;
     anchoredVolumeProfileAnchorTimestamp = null;
@@ -556,6 +1316,7 @@
       processAndSetData(data, false);
       showNewestCandles(INITIAL_VISIBLE_CANDLES);
       updatePriceHeaderFromLatestCandle();
+      void loadSplitMarkers(interval);
 
       document.querySelector('.ticker-name').nextElementSibling.innerText = i18n.t(`sw.intervalLabel.${apiIntervalEnum(interval)}`);
 
@@ -588,7 +1349,7 @@
     }
   }
 
-  async function loadOlderData() {
+  async function loadOlderData({ refreshOverlays = true } = {}) {
     if (isLoadingOlder || !oldestTimestamp || !hasMoreHistory) return;
     isLoadingOlder = true;
     const requestedInterval = currentInterval;
@@ -614,7 +1375,7 @@
         pageAdvanced = true;
         hasMoreHistory = pageMayHaveMore(page, data, HISTORY_PAGE_LIMIT);
         processAndSetData(data, true);
-        await Promise.all([
+        if (refreshOverlays) await Promise.all([
           refreshHistoricalElliottOverlays(requestedInterval),
           refreshHistoricalCandlestickOverlay(requestedInterval),
           refreshHarmonicOverlays(requestedInterval)
@@ -651,7 +1412,6 @@
     rawData.sort((a, b) => a.timestamp - b.timestamp);
 
     const newCandles = [];
-    const newLines = [];
     const newVols = [];
 
     rawData.forEach(d => {
@@ -680,22 +1440,18 @@
         low: low,
         close: close
       });
-      newLines.push({ time: timeString, value: close });
       newVols.push({ time: timeString, value: volume, isUp: close >= open });
     });
 
     if (isPrepend) {
       globalCandleData = [...newCandles, ...globalCandleData];
-      globalLineData = [...newLines, ...globalLineData];
       globalVolumeData = [...newVols, ...globalVolumeData];
     } else {
       globalCandleData = newCandles;
-      globalLineData = newLines;
       globalVolumeData = newVols;
     }
 
     globalCandleData.sort((a, b) => a.time.localeCompare(b.time));
-    globalLineData.sort((a, b) => a.time.localeCompare(b.time));
     globalVolumeData.sort((a, b) => a.time.localeCompare(b.time));
 
     if (globalCandleData.length > 0) {
@@ -704,21 +1460,11 @@
     updateAnchoredVolumeProfileToggle();
 
     try {
-      // Lightweight Charts normalises string dates in-place. Give the library
-      // copies so our pagination arrays keep one stable YYYY-MM-DD type across
-      // every prepend and can still be sorted/deduplicated reliably.
-      candleSeries.setData(globalCandleData.map(item => ({
-        time: item.time,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close
-      })));
-      lineSeries.setData(globalLineData.map(item => ({ ...item })));
-      volumeSeries.setData(themedVolumeData());
-      updateRsiOverlay();
-      scheduleChartIndicatorRefresh();
-      fibonacciDrawingTool?.scheduleRender();
+      // The chart type decides what the main series shows; the candles themselves stay unchanged.
+      setPriceSeriesData();
+      indicatorManager?.refreshVolume();
+      indicatorManager?.dataChanged();
+      applySplitMarkers();
     } catch (err) {
       console.error("TradingView setData Crash:", err);
     }
@@ -735,590 +1481,13 @@
     }
   }
 
-  function calculateWilderRsi(candles, period) {
-    const points = candles.map(candle => ({ time: candle.time }));
-    if (!Number.isSafeInteger(period) || period < 1 || candles.length <= period) {
-      return points;
-    }
-    const closes = candles.map(candle => Number(candle.close));
-    if (closes.some(close => !Number.isFinite(close))) {
-      return points;
-    }
-
-    let averageGain = 0;
-    let averageLoss = 0;
-    for (let index = 1; index <= period; index++) {
-      const change = closes[index] - closes[index - 1];
-      averageGain += Math.max(change, 0);
-      averageLoss += Math.max(-change, 0);
-    }
-    averageGain /= period;
-    averageLoss /= period;
-    points[period] = { time: candles[period].time, value: rsiValue(averageGain, averageLoss) };
-
-    for (let index = period + 1; index < candles.length; index++) {
-      const change = closes[index] - closes[index - 1];
-      const gain = Math.max(change, 0);
-      const loss = Math.max(-change, 0);
-      averageGain = ((averageGain * (period - 1)) + gain) / period;
-      averageLoss = ((averageLoss * (period - 1)) + loss) / period;
-      points[index] = { time: candles[index].time, value: rsiValue(averageGain, averageLoss) };
-    }
-    return points;
-  }
-
-  function rsiValue(averageGain, averageLoss) {
-    if (averageGain === 0 && averageLoss === 0) return 50;
-    if (averageLoss === 0) return 100;
-    if (averageGain === 0) return 0;
-    return 100 - (100 / (1 + (averageGain / averageLoss)));
-  }
-
-  function ensureRsiChart() {
-    if (rsiChart) return;
-    const container = document.getElementById('rsiChartContainer');
-    const options = chartThemeOptions();
-    const theme = rsiSeriesThemeOptions();
-    rsiChart = StockWatchCharts.createChart(container, {
-      ...options,
-      // Keep the RSI pane aligned with the price chart, but give it its own
-      // visible date axis so the crosshair date is readable in this pane too.
-      timeScale: { ...options.timeScale, visible: true },
-      handleScroll: false,
-      handleScale: false
-    });
-    rsiSeries = rsiChart.addLineSeries({
-      color: theme.line,
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      crosshairMarkerVisible: true,
-      priceFormat: {
-        type: 'custom',
-        formatter: value => value.toFixed(0)
-      },
-      autoscaleInfoProvider: () => ({
-        priceRange: { minValue: 0, maxValue: 100 }
-      })
-    });
-    rsiGuideLines = [
-      rsiSeries.createPriceLine({
-        price: rsiOverboughtBoundary,
-        color: theme.overboughtGuide,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: formatRsiBoundary(rsiOverboughtBoundary)
-      }),
-      rsiSeries.createPriceLine({
-        price: 50,
-        color: theme.midpoint,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dotted,
-        axisLabelVisible: false
-      }),
-      rsiSeries.createPriceLine({
-        price: rsiOversoldBoundary,
-        color: theme.oversoldGuide,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: formatRsiBoundary(rsiOversoldBoundary)
-      })
-    ];
-  }
-
-  function updateRsiOverlay() {
-    if (!rsiOverlayEnabled || !rsiSeries) return;
-    const points = calculateWilderRsi(globalCandleData, rsiPeriod);
-    rsiSeries.setData(themedRsiData(
-            points,
-            rsiOverboughtBoundary,
-            rsiOversoldBoundary
-    ));
-    const upperLabel = formatRsiBoundary(rsiOverboughtBoundary);
-    const lowerLabel = formatRsiBoundary(rsiOversoldBoundary);
-    rsiGuideLines[0]?.applyOptions({
-      price: rsiOverboughtBoundary,
-      title: upperLabel
-    });
-    rsiGuideLines[2]?.applyOptions({
-      price: rsiOversoldBoundary,
-      title: lowerLabel
-    });
-    // The title text sits in a learning-mode term span; keep that span.
-    const rsiTitle = document.getElementById('rsiChartTitle');
-    (rsiTitle.querySelector('.learn-term') || rsiTitle).textContent = `RSI (${rsiPeriod})`;
-    document.getElementById('rsiChartMeta').textContent =
-            i18n.t('sw.rsiMeta', upperLabel, lowerLabel);
-
-    const status = document.getElementById('rsiChartStatus');
-    status.classList.remove('overbought', 'oversold');
-    let latestPoint = null;
-    for (let index = points.length - 1; index >= 0; index--) {
-      if (Number.isFinite(points[index].value)) {
-        latestPoint = points[index];
-        break;
-      }
-    }
-    if (!latestPoint) {
-      status.textContent = i18n.plural('sw.rsiNeedsCandles', rsiPeriod + 1, rsiPeriod + 1, rsiPeriod);
-      return;
-    }
-    const zone = latestPoint.value > rsiOverboughtBoundary
-            ? i18n.t('sw.rsiOverbought')
-            : i18n.t(latestPoint.value < rsiOversoldBoundary ? 'sw.rsiOversold' : 'sw.rsiNeutral');
-    if (latestPoint.value > rsiOverboughtBoundary) status.classList.add('overbought');
-    if (latestPoint.value < rsiOversoldBoundary) status.classList.add('oversold');
-    status.textContent = i18n.t('sw.rsiLatest', rsiPeriod, i18n.number(latestPoint.value, 2), zone);
-  }
-
-  function updateRsiOverlayToggle() {
-    const button = document.getElementById('rsiOverlayToggle');
-    button.classList.toggle('active', rsiOverlayEnabled);
-    button.setAttribute('aria-pressed', String(rsiOverlayEnabled));
-    button.textContent = rsiOverlayEnabled
-            ? `RSI · ${rsiPeriod} · ${formatRsiBoundary(rsiOverboughtBoundary)}/${formatRsiBoundary(rsiOversoldBoundary)}`
-            : i18n.t('sw.rsiOverlay');
-  }
-
-  function openRsiPeriodDialog() {
-    const dialog = document.getElementById('rsiPeriodDialog');
-    const input = document.getElementById('rsiPeriodInput');
-    document.getElementById('rsiPeriodError').textContent = '';
-    input.value = String(rsiPeriod);
-    document.getElementById('rsiOverboughtInput').value = formatRsiBoundary(rsiOverboughtBoundary);
-    document.getElementById('rsiOversoldInput').value = formatRsiBoundary(rsiOversoldBoundary);
-    if (!dialog.open) dialog.showModal();
-    window.setTimeout(() => {
-      input.focus();
-      input.select();
-    }, 0);
-  }
-
-  function closeRsiPeriodDialog() {
-    const dialog = document.getElementById('rsiPeriodDialog');
-    if (dialog.open) dialog.close();
-  }
-
-  function enableRsiOverlay(period, overboughtBoundary, oversoldBoundary) {
-    rsiPeriod = period;
-    rsiOverboughtBoundary = overboughtBoundary;
-    rsiOversoldBoundary = oversoldBoundary;
-    rsiOverlayEnabled = true;
-    const panel = document.getElementById('rsiChartPanel');
-    panel.hidden = false;
-    ensureRsiChart();
-    updateRsiOverlayToggle();
-    updateRsiOverlay();
-    window.requestAnimationFrame(() => {
-      const container = document.getElementById('rsiChartContainer');
-      rsiChart.resize(container.clientWidth, container.clientHeight);
-      const range = priceChart?.timeScale().getVisibleLogicalRange();
-      if (range) rsiChart.timeScale().setVisibleLogicalRange(range);
-    });
-  }
-
-  function disableRsiOverlay() {
-    rsiOverlayEnabled = false;
-    document.getElementById('rsiChartPanel').hidden = true;
-    updateRsiOverlayToggle();
-  }
-
-  function toggleRsiOverlay() {
-    if (rsiOverlayEnabled) {
-      disableRsiOverlay();
-      return;
-    }
-    openRsiPeriodDialog();
-  }
-
-  function updateVolumeChartToggle() {
-    const button = document.getElementById('volumeChartToggle');
-    button.classList.toggle('active', volumeChartEnabled);
-    button.setAttribute('aria-pressed', String(volumeChartEnabled));
-    button.textContent = i18n.t(volumeChartEnabled ? 'sw.volumeOn' : 'sw.volume');
-  }
-
-  function toggleVolumeChart() {
-    volumeChartEnabled = !volumeChartEnabled;
-    const panel = document.getElementById('volumeChartPanel');
-    panel.hidden = !volumeChartEnabled;
-    updateVolumeChartToggle();
-    if (!volumeChartEnabled) return;
-    window.requestAnimationFrame(() => {
-      scheduleGeneralWorkspaceChartResize();
-      const range = priceChart?.timeScale().getVisibleLogicalRange();
-      if (range && volumeChart) volumeChart.timeScale().setVisibleLogicalRange(range);
-    });
-  }
-
-  function submitRsiPeriod(event) {
-    event.preventDefault();
-    const input = document.getElementById('rsiPeriodInput');
-    const period = Number(input.value);
-    if (!Number.isSafeInteger(period) || period < 1) {
-      document.getElementById('rsiPeriodError').textContent =
-              i18n.t('sw.rsiPeriodInvalid');
-      input.focus();
-      return;
-    }
-    const overboughtInput = document.getElementById('rsiOverboughtInput');
-    const oversoldInput = document.getElementById('rsiOversoldInput');
-    const overboughtBoundary = Number(overboughtInput.value);
-    const oversoldBoundary = Number(oversoldInput.value);
-    if (!Number.isFinite(overboughtBoundary) || !Number.isFinite(oversoldBoundary)
-            || oversoldBoundary <= 0 || overboughtBoundary >= 100
-            || oversoldBoundary >= overboughtBoundary) {
-      document.getElementById('rsiPeriodError').textContent =
-              i18n.t('sw.rsiBoundariesInvalid');
-      if (!Number.isFinite(overboughtBoundary) || overboughtBoundary >= 100) {
-        overboughtInput.focus();
-      } else {
-        oversoldInput.focus();
-      }
-      return;
-    }
-    closeRsiPeriodDialog();
-    enableRsiOverlay(period, overboughtBoundary, oversoldBoundary);
-  }
-
-  function openChartIndicatorDialog(type) {
-    const spec = CHART_INDICATOR_SPECS[type];
-    if (!spec) return;
-    pendingChartIndicatorType = type;
-    document.getElementById('chartIndicatorDialogTitle').textContent = i18n.t('sw.addIndicatorTitle', spec.label);
-    document.getElementById('chartIndicatorDialogDescription').textContent = spec.description;
-    document.getElementById('chartIndicatorError').textContent = '';
-    const fields = document.getElementById('chartIndicatorFields');
-    fields.replaceChildren();
-    spec.fields.forEach(field => {
-      const wrapper = document.createElement('label');
-      wrapper.className = 'chart-indicator-field';
-      const label = document.createElement('span');
-      label.textContent = field.label;
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.name = field.key;
-      input.value = String(field.value);
-      input.min = String(field.min);
-      input.max = String(field.max);
-      input.step = String(field.step);
-      input.inputMode = field.step === 1 ? 'numeric' : 'decimal';
-      input.required = true;
-      wrapper.append(label, input);
-      if (field.help) {
-        const help = document.createElement('small');
-        help.textContent = field.help;
-        wrapper.append(help);
-      }
-      fields.append(wrapper);
-    });
-    const dialog = document.getElementById('chartIndicatorDialog');
-    if (!dialog.open) dialog.showModal();
-    window.setTimeout(() => fields.querySelector('input')?.focus(), 0);
-  }
-
-  function closeChartIndicatorDialog() {
-    const dialog = document.getElementById('chartIndicatorDialog');
-    if (dialog.open) dialog.close();
-    pendingChartIndicatorType = null;
-  }
-
-  function submitChartIndicator(event) {
-    event.preventDefault();
-    const type = pendingChartIndicatorType;
-    const spec = CHART_INDICATOR_SPECS[type];
-    if (!spec) return;
-    const parameters = {};
-    for (const field of spec.fields) {
-      const input = event.currentTarget.elements.namedItem(field.key);
-      const value = Number(input?.value);
-      if (!Number.isFinite(value) || value < field.min || value > field.max
-              || (field.step === 1 && !Number.isSafeInteger(value))) {
-        document.getElementById('chartIndicatorError').textContent =
-                i18n.t(field.step === 1 ? 'sw.fieldRangeWhole' : 'sw.fieldRange', field.label,
-                        Number(field.min).toLocaleString(i18n.tag), Number(field.max).toLocaleString(i18n.tag));
-        input?.focus();
-        return;
-      }
-      parameters[field.key] = value;
-    }
-    if (type === 'MACD' && parameters.fast >= parameters.slow) {
-      document.getElementById('chartIndicatorError').textContent =
-              i18n.t('sw.macdOrder');
-      event.currentTarget.elements.namedItem('fast')?.focus();
-      return;
-    }
-    const id = `${type.toLowerCase()}-${crypto.randomUUID()}`;
-    activeChartIndicators.set(id, { id, type, parameters, displayLabel: configuredIndicatorLabel(type, parameters) });
-    closeChartIndicatorDialog();
-    renderActiveChartIndicatorControls();
-    scheduleChartIndicatorRefresh(0);
-  }
-
-  function configuredIndicatorLabel(type, parameters) {
-    const spec = CHART_INDICATOR_SPECS[type];
-    const values = Object.values(parameters);
-    if (!values.length) return spec.label;
-    if (type === 'MACD') return `MACD ${parameters.fast}/${parameters.slow}/${parameters.signal}`;
-    if (type === 'BOLLINGER') return i18n.t('sw.label.bollinger', parameters.period, Number(parameters.deviation).toLocaleString(i18n.tag));
-    if (type === 'KELTNER') return i18n.t('sw.label.keltner', parameters.period, parameters.atrPeriod, Number(parameters.multiplier).toLocaleString(i18n.tag));
-    if (type === 'VOLUME_PROFILE') return i18n.t('sw.label.volumeProfile', parameters.period);
-    return `${spec.label} ${values[0]}`;
-  }
-
-  function removeChartIndicator(id) {
-    activeChartIndicators.delete(id);
-    removeChartIndicatorVisuals(id);
-    renderActiveChartIndicatorControls();
-  }
-
-  function removeChartIndicatorVisuals(id) {
-    const priceSeries = chartIndicatorPriceSeries.get(id) || [];
-    priceSeries.forEach(series => {
-      try { priceChart?.removeSeries(series); } catch (ignored) { }
-    });
-    chartIndicatorPriceSeries.delete(id);
-    const panel = chartIndicatorPanels.get(id);
-    if (panel) {
-      panel.chart?.remove();
-      panel.element?.remove();
-      chartIndicatorPanels.delete(id);
-    }
-    renderChartIndicatorOverlayLegend();
-  }
-
-  function appendCandlestickOverlayControl(container, className) {
-    if (!historicalCandlestickOverlayEnabled) return;
-    const chip = document.createElement('span');
-    chip.className = className;
-    const label = document.createElement('span');
-    label.textContent = i18n.t('sw.candlestickSignals');
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.textContent = '\u00d7';
-    remove.setAttribute('aria-label', i18n.t('sw.removeCandlestickSignals'));
-    remove.addEventListener('click', event => {
-      event.stopPropagation();
-      disableHistoricalCandlestickOverlay();
-      document.getElementById('candlestickOverlayToggle').focus({ preventScroll: true });
-    });
-    chip.append(label, remove);
-    container.append(chip);
-  }
-
-  function renderActiveChartIndicatorControls() {
-    const container = document.getElementById('activeChartIndicatorList');
-    container.replaceChildren();
-    activeChartIndicators.forEach(config => {
-      const chip = document.createElement('span');
-      chip.className = 'active-chart-indicator-chip';
-      const copy = document.createElement('span');
-      copy.textContent = config.displayLabel;
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.textContent = '×';
-      remove.setAttribute('aria-label', i18n.t('sw.removeIndicator', config.displayLabel));
-      remove.addEventListener('click', event => {
-        event.stopPropagation();
-        removeChartIndicator(config.id);
-      });
-      chip.append(copy, remove);
-      container.append(chip);
-    });
-    appendCandlestickOverlayControl(container, 'active-chart-indicator-chip');
-  }
-
-  function renderChartIndicatorOverlayLegend() {
-    const legend = document.getElementById('chartIndicatorOverlayLegend');
-    legend.replaceChildren();
-    activeChartIndicators.forEach(config => {
-      if (!chartIndicatorPriceSeries.has(config.id)) return;
-      const chip = document.createElement('span');
-      chip.className = 'chart-indicator-overlay-chip';
-      chip.style.borderColor = indicatorColor(config.id, 0);
-      const label = document.createElement('span');
-      label.textContent = config.displayLabel;
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.textContent = '×';
-      remove.setAttribute('aria-label', i18n.t('sw.removeIndicator', config.displayLabel));
-      remove.addEventListener('click', () => removeChartIndicator(config.id));
-      chip.append(label, remove);
-      legend.append(chip);
-    });
-    appendCandlestickOverlayControl(legend, 'chart-indicator-overlay-chip');
-  }
-
-  function indicatorColor(id, seriesIndex) {
-    let hash = 0;
-    for (let index = 0; index < id.length; index++) hash = ((hash << 5) - hash + id.charCodeAt(index)) | 0;
-    const colorIndex = (Math.abs(hash) + seriesIndex * 3) % CHART_INDICATOR_COLORS.length;
-    return StockWatchCharts.color(CHART_INDICATOR_COLORS.at(colorIndex));
-  }
-
-  function scheduleChartIndicatorRefresh(delay = 120) {
-    clearTimeout(chartIndicatorRefreshTimer);
-    if (!activeChartIndicators.size || !globalCandleData.length) return;
-    chartIndicatorRefreshTimer = window.setTimeout(refreshChartIndicators, delay);
-  }
-
-  async function refreshChartIndicators() {
-    if (!activeChartIndicators.size || !globalCandleData.length) return;
-    const requestId = ++chartIndicatorRequestSequence;
-    const requestedInterval = currentInterval;
-    const first = globalCandleData[0]?.timestamp;
-    const last = globalCandleData[globalCandleData.length - 1]?.timestamp;
-    try {
-      const response = await fetch(
-              `/api/stocks/${encodedTicker}/chart-indicators?interval=${encodeURIComponent(requestedInterval)}`,
-              {
-                method: 'POST',
-                headers: secureJsonHeaders(),
-                body: JSON.stringify({
-                  from: first,
-                  to: last,
-                  indicators: [...activeChartIndicators.values()].map(({ id, type, parameters }) => ({ id, type, parameters }))
-                })
-              });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.message || body.detail || body.error || i18n.t('sw.indicatorFailed'));
-      }
-      const batch = await response.json();
-      if (requestId !== chartIndicatorRequestSequence || requestedInterval !== currentInterval) return;
-      const returned = new Set();
-      (batch.indicators || []).forEach(indicator => {
-        if (!activeChartIndicators.has(indicator.id)) return;
-        returned.add(indicator.id);
-        removeChartIndicatorVisuals(indicator.id);
-        const config = activeChartIndicators.get(indicator.id);
-        config.displayLabel = indicator.label || config.displayLabel;
-        if (indicator.placement === 'PRICE') {
-          renderPriceChartIndicator(indicator);
-        } else {
-          renderIndicatorPanel(indicator);
-        }
-      });
-      activeChartIndicators.forEach((config, id) => {
-        if (!returned.has(id)) removeChartIndicatorVisuals(id);
-      });
-      renderActiveChartIndicatorControls();
-      renderChartIndicatorOverlayLegend();
-    } catch (error) {
-      if (requestId !== chartIndicatorRequestSequence) return;
-      console.warn('Chart indicators unavailable', error);
-      const legend = document.getElementById('chartIndicatorOverlayLegend');
-      legend.textContent = error.message || i18n.t('sw.indicatorsFailed');
-    }
-  }
-
-  function indicatorPoints(points) {
-    return (points || []).map(point => ({
-      time: new Date(point.timestamp * 1000).toISOString().slice(0, 10),
-      value: Number(point.value)
-    })).filter(point => Number.isFinite(point.value));
-  }
-
-  function renderPriceChartIndicator(indicator) {
-    const created = [];
-    (indicator.series || []).forEach((definition, index) => {
-      const series = priceChart.addLineSeries({
-        color: indicatorColor(indicator.id, index),
-        lineWidth: definition.key === 'middle' || definition.key === 'poc' ? 2 : 1,
-        lineStyle: definition.key === 'middle' || definition.key === 'poc'
-                ? LightweightCharts.LineStyle.Dashed
-                : LightweightCharts.LineStyle.Solid,
-        title: `${indicator.label} · ${definition.label}`,
-        priceLineVisible: false,
-        lastValueVisible: true,
-        crosshairMarkerVisible: false
-      });
-      series.setData(indicatorPoints(definition.points));
-      created.push(series);
-    });
-    chartIndicatorPriceSeries.set(indicator.id, created);
-  }
-
-  function renderIndicatorPanel(indicator) {
-    const panelElement = document.createElement('section');
-    panelElement.className = 'chart-wrapper resizable-chart-panel dynamic-indicator-panel';
-    panelElement.dataset.indicatorId = indicator.id;
-    const heading = document.createElement('div');
-    heading.className = 'chart-panel-head';
-    const title = document.createElement('h2');
-    title.className = 'chart-panel-title';
-    title.textContent = indicator.label;
-    const actions = document.createElement('div');
-    actions.className = 'dynamic-indicator-panel-actions';
-    const meta = document.createElement('span');
-    meta.className = 'chart-panel-meta';
-    meta.textContent = i18n.t('sw.usesChartRange');
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'dynamic-indicator-panel-remove';
-    remove.textContent = i18n.t('sw.remove');
-    remove.addEventListener('click', () => removeChartIndicator(indicator.id));
-    actions.append(meta, remove);
-    heading.append(title, actions);
-    const container = document.createElement('div');
-    container.className = 'dynamic-indicator-chart';
-    panelElement.append(heading, container);
-    document.getElementById('dynamicIndicatorPanels').append(panelElement);
-
-    const options = chartThemeOptions();
-    const chart = StockWatchCharts.createChart(container, {
-      ...options,
-      timeScale: { ...options.timeScale, visible: true },
-      handleScroll: false,
-      handleScale: false
-    });
-    const created = [];
-    (indicator.series || []).forEach((definition, index) => {
-      const color = indicatorColor(indicator.id, index);
-      const series = definition.style === 'HISTOGRAM'
-              ? chart.addHistogramSeries({
-                priceLineVisible: false,
-                lastValueVisible: true,
-                color,
-                base: 0
-              })
-              : chart.addLineSeries({
-                color,
-                lineWidth: 2,
-                priceLineVisible: false,
-                lastValueVisible: true,
-                title: definition.label
-              });
-      const points = indicatorPoints(definition.points);
-      series.setData(definition.style === 'HISTOGRAM'
-              ? points.map(point => ({ ...point, color: point.value >= 0 ? '#64e8bd' : '#ff647c' }))
-              : points);
-      created.push(series);
-    });
-    if (created.length) {
-      (indicator.references || []).forEach(reference => created[0].createPriceLine({
-        price: reference,
-        color: 'rgba(150, 160, 154, 0.45)',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: String(reference)
-      }));
-    }
-    chartIndicatorPanels.set(indicator.id, { chart, element: panelElement, container, series: created });
-    const range = priceChart?.timeScale().getVisibleLogicalRange();
-    if (range) chart.timeScale().setVisibleLogicalRange(range);
-  }
-
   function maybeLoadOlderForVisibleRange(range) {
-    if (!range || isFetching || isLoadingOlder || !hasMoreHistory || !candleSeries) return;
+    if (!range || isFetching || isLoadingOlder || !hasMoreHistory || !priceSeries) return;
 
     // This is Lightweight Charts' supported infinite-history signal. Unlike
     // comparing raw logical indexes, barsBefore remains correct when another
     // series changes the chart's shared time scale.
-    const barsInfo = candleSeries.barsInLogicalRange(range);
+    const barsInfo = priceSeries.barsInLogicalRange(range);
     const barsBefore = barsInfo?.barsBefore;
     if ((Number.isFinite(barsBefore) && barsBefore < HISTORY_PREFETCH_THRESHOLD)
             || (!Number.isFinite(barsBefore) && range.from < HISTORY_PREFETCH_THRESHOLD)) {
@@ -1621,7 +1790,7 @@
     const points = Array.isArray(formation.points) ? formation.points : [];
     if (points.length !== 4 && points.length !== 5) return;
     const colors = harmonicOverlayColors(formation.direction);
-    const series = priceChart.addLineSeries({
+    const series = addPriceOverlayLine({
       color: colors.line,
       lineWidth: 2,
       lineStyle: 2,
@@ -1693,7 +1862,7 @@
         const x = endpoint ? priceChart.timeScale().timeToCoordinate(timestampToChartDate(endpoint.timestamp)) : null;
         const y = endpoint ? overlay.series.priceToCoordinate(Number(endpoint.price)) : null;
         const visible = Number.isFinite(x) && Number.isFinite(y)
-                && x >= 0 && x <= stage.clientWidth && y >= 0 && y <= stage.clientHeight;
+                && x >= 0 && x <= stage.clientWidth && y >= 0 && y <= pricePaneHeight();
         button.hidden = !visible;
         if (visible) {
           button.style.left = `${x}px`;
@@ -1807,7 +1976,7 @@
     }
     if (globalCandleData.length === 0) return;
 
-    setChartMode('candle');
+    if (!StockWatchChartTypes.isOhlc(chartType)) setChartType('candles');
     anchoredVolumeProfileEnabled = true;
     document.getElementById('priceChartStage')
             .classList.add('anchor-selection-active');
@@ -2020,7 +2189,7 @@
     if (!anchoredVolumeProfileEnabled
             || !anchoredVolumeProfile
             || !priceChart
-            || !candleSeries
+            || !priceSeries
             || !canvas
             || !container) {
       clearAnchoredVolumeProfileCanvas();
@@ -2028,11 +2197,12 @@
     }
 
     const width = container.clientWidth;
-    const height = container.clientHeight;
+    const fullHeight = container.clientHeight;
+    const height = Math.min(fullHeight, pricePaneHeight());
     if (width <= 0 || height <= 0) return;
     const pixelRatio = window.devicePixelRatio || 1;
     canvas.width = Math.round(width * pixelRatio);
-    canvas.height = Math.round(height * pixelRatio);
+    canvas.height = Math.round(fullHeight * pixelRatio);
 
     const context = canvas.getContext('2d');
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
@@ -2047,7 +2217,7 @@
         priceScaleWidth = measuredPriceScaleWidth;
       }
     } catch (ignored) {
-      // Lightweight Charts 4 exposes this in normal operation; keep a safe fallback.
+      // Lightweight Charts exposes this in normal operation; keep a safe fallback.
     }
     const profileRight = Math.max(100, width - priceScaleWidth - 10);
     const preferredWidth = Math.max(150, Math.min(250, width * 0.19));
@@ -2078,8 +2248,8 @@
     context.fillRect(profileLeft - 16, 0, profileRight - profileLeft + 16, height);
 
     (profile.bins || []).forEach(bin => {
-      const topCoordinate = candleSeries.priceToCoordinate(Number(bin.priceHigh));
-      const bottomCoordinate = candleSeries.priceToCoordinate(Number(bin.priceLow));
+      const topCoordinate = priceSeries.priceToCoordinate(Number(bin.priceHigh));
+      const bottomCoordinate = priceSeries.priceToCoordinate(Number(bin.priceLow));
       if (!Number.isFinite(topCoordinate) || !Number.isFinite(bottomCoordinate)) return;
 
       const top = Math.min(topCoordinate, bottomCoordinate);
@@ -2136,7 +2306,7 @@
           price,
           color,
           dashed) {
-    const coordinate = candleSeries.priceToCoordinate(Number(price));
+    const coordinate = priceSeries.priceToCoordinate(Number(price));
     if (!Number.isFinite(coordinate)) return;
     context.save();
     context.setLineDash(dashed ? [4, 4] : []);
@@ -2215,7 +2385,7 @@
     const groupId = `candidate:${candidate.candidateKey || elliottStructureFallbackId(candidate)}`;
     const structure = { ...candidate, candidate: true };
     const points = candidate.points;
-    const series = priceChart.addLineSeries({
+    const series = addPriceOverlayLine({
       color: ELLIOTT_CANDIDATE_COLOR, lineWidth: 1, lineStyle: 2,
       crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false
     });
@@ -2268,7 +2438,7 @@
 
   function renderHistoricalElliottSegment(structure, points, color, includeMarker, stage, groupId) {
     if (points.length < 2) return;
-    const series = priceChart.addLineSeries({
+    const series = addPriceOverlayLine({
       color,
       lineWidth: 2,
       crosshairMarkerVisible: false,
@@ -2436,7 +2606,7 @@
               : null;
       const y = point ? segment.series.priceToCoordinate(Number(point.price)) : null;
       const visible = Number.isFinite(x) && Number.isFinite(y)
-              && x >= 0 && x <= stage.clientWidth && y >= 0 && y <= stage.clientHeight;
+              && x >= 0 && x <= stage.clientWidth && y >= 0 && y <= pricePaneHeight();
       button.hidden = !visible;
       if (visible) {
         button.style.left = `${x}px`;
@@ -2859,7 +3029,8 @@
   async function changeInterval(newInterval) {
     if (currentInterval === newInterval) return;
     currentInterval = newInterval;
-    fibonacciDrawingTool?.setContext(`stock:${ticker}:${newInterval}`);
+    drawingManager?.setInterval(newInterval);
+    indicatorManager?.setInterval(newInterval);
 
     document.getElementById('int-1d').classList.remove('active');
     document.getElementById('int-1wk').classList.remove('active');
@@ -2867,23 +3038,6 @@
     document.getElementById(`int-${newInterval}`).classList.add('active');
 
     await loadChartData(newInterval);
-  }
-
-  function setChartMode(mode) {
-    if (mode === 'line' && anchoredVolumeProfileEnabled) {
-      disableAnchoredVolumeProfile();
-    }
-    currentMode = mode;
-    document.getElementById('lineBtn').classList.toggle('active', mode === 'line');
-    document.getElementById('candleBtn').classList.toggle('active', mode === 'candle');
-
-    if (mode === 'line') {
-      lineSeries.applyOptions({ visible: true });
-      candleSeries.applyOptions({ visible: false });
-    } else {
-      lineSeries.applyOptions({ visible: false });
-      candleSeries.applyOptions({ visible: true });
-    }
   }
 
   async function fetchLivePrice() {
@@ -2904,24 +3058,12 @@
           if (newPrice > latestCandle.high) latestCandle.high = newPrice;
           if (newPrice < latestCandle.low) latestCandle.low = newPrice;
 
-          candleSeries.update({
-            time: latestCandle.time,
-            open: latestCandle.open,
-            high: latestCandle.high,
-            low: latestCandle.low,
-            close: latestCandle.close
-          });
-          lineSeries.update({ time: latestCandle.time, value: newPrice });
           const latestLoadedCandle = globalCandleData[globalCandleData.length - 1];
           if (latestLoadedCandle?.time === latestCandle.time) {
             latestLoadedCandle.close = latestCandle.close;
             latestLoadedCandle.high = latestCandle.high;
             latestLoadedCandle.low = latestCandle.low;
-            const latestLoadedLine = globalLineData[globalLineData.length - 1];
-            if (latestLoadedLine?.time === latestCandle.time) {
-              latestLoadedLine.value = latestCandle.close;
-            }
-            updateRsiOverlay();
+            updateLatestPriceBar();
           }
         }
       }
@@ -3088,7 +3230,7 @@
 
   async function enableHistoricalCandlestickOverlay() {
     historicalCandlestickOverlayEnabled = true;
-    setChartMode('candle');
+    if (!StockWatchChartTypes.isOhlc(chartType)) setChartType('candles');
     updateHistoricalCandlestickOverlayToggle();
     await refreshHistoricalCandlestickOverlay(currentInterval);
     if (historicalCandlestickOverlayEnabled) {
@@ -3112,8 +3254,7 @@
     button.classList.toggle('active', historicalCandlestickOverlayEnabled);
     button.setAttribute('aria-pressed', String(historicalCandlestickOverlayEnabled));
     button.textContent = i18n.t(historicalCandlestickOverlayEnabled ? 'sw.toggle.candlesOn' : 'sw.candlestickSignals');
-    renderActiveChartIndicatorControls();
-    renderChartIndicatorOverlayLegend();
+    renderChartOverlayChips();
   }
 
   async function refreshHistoricalCandlestickOverlay(interval) {
@@ -3207,7 +3348,7 @@
   }
 
   function positionHistoricalCandlestickHitTargets() {
-    if (!priceChart || !candleSeries || !historicalCandlestickOverlayEnabled) return;
+    if (!priceChart || !priceSeries || !historicalCandlestickOverlayEnabled) return;
     const stage = document.getElementById('priceChartStage');
     const candleByTimestamp = new Map(globalCandleData.map(candle => [Number(candle.timestamp), candle]));
     const candidates = [];
@@ -3219,10 +3360,10 @@
       const x = priceChart.timeScale().timeToCoordinate(candle.time);
       const buy = String(signal.tradeSignal).toUpperCase() === 'BUY';
       const candlePrice = buy ? Number(candle.low) : Number(candle.high);
-      const candleY = candleSeries.priceToCoordinate(candlePrice);
+      const candleY = priceSeries.priceToCoordinate(candlePrice);
       const y = Number(candleY) + (buy ? 22 : -22);
       if (!Number.isFinite(x) || !Number.isFinite(y)
-              || x < 0 || x > stage.clientWidth || y < 0 || y > stage.clientHeight) return;
+              || x < 0 || x > stage.clientWidth || y < 0 || y > pricePaneHeight()) return;
       candidates.push({button, signal, x, y, buy});
     });
     candidates.sort((left, right) => left.x - right.x || left.y - right.y);
@@ -3423,16 +3564,16 @@
 
   function historicalCandlestickSignalCoordinate(signal) {
     const candle = globalCandleData.find(item => Number(item.timestamp) === Number(signal?.signalTimestamp));
-    if (!candle || !priceChart || !candleSeries) return null;
+    if (!candle || !priceChart || !priceSeries) return null;
     const x = priceChart.timeScale().timeToCoordinate(candle.time);
     const buy = String(signal.tradeSignal).toUpperCase() === 'BUY';
-    const y = candleSeries.priceToCoordinate(buy ? Number(candle.low) : Number(candle.high));
+    const y = priceSeries.priceToCoordinate(buy ? Number(candle.low) : Number(candle.high));
     return Number.isFinite(x) && Number.isFinite(y) ? {x, y} : null;
   }
 
   function ensureHistoricalCandlestickHighlightSeries() {
     if (!historicalCandlestickTrendSeries) {
-      historicalCandlestickTrendSeries = priceChart.addLineSeries({
+      historicalCandlestickTrendSeries = addPriceOverlayLine({
         color: '#ffbd59',
         lineWidth: 3,
         crosshairMarkerVisible: false,
@@ -3441,7 +3582,7 @@
       });
     }
     if (!historicalCandlestickFormationSeries) {
-      historicalCandlestickFormationSeries = priceChart.addLineSeries({
+      historicalCandlestickFormationSeries = addPriceOverlayLine({
         color: '#b7f34a',
         lineWidth: 4,
         crosshairMarkerVisible: false,
@@ -4471,28 +4612,34 @@
   function resizeGeneralWorkspaceCharts() {
     if (!priceChart) return;
     const priceContainer = document.getElementById('priceChartContainer');
-    const volumeContainer = document.getElementById('volumeChartContainer');
     if (priceContainer.clientWidth && priceContainer.clientHeight) {
       priceChart.resize(priceContainer.clientWidth, priceContainer.clientHeight);
     }
-    if (volumeChart && volumeChartEnabled
-            && volumeContainer.clientWidth && volumeContainer.clientHeight) {
-      volumeChart.resize(volumeContainer.clientWidth, volumeContainer.clientHeight);
+    const priceOnlyContainer = document.getElementById('priceOnlyChartContainer');
+    if (priceOnlyActive() && priceOnlyContainer.clientWidth && priceOnlyContainer.clientHeight) {
+      priceOnlyChart.resize(priceOnlyContainer.clientWidth, priceOnlyContainer.clientHeight);
     }
-    if (rsiChart && rsiOverlayEnabled) {
-      const rsiContainer = document.getElementById('rsiChartContainer');
-      if (rsiContainer.clientWidth && rsiContainer.clientHeight) {
-        rsiChart.resize(rsiContainer.clientWidth, rsiContainer.clientHeight);
-      }
-    }
-    chartIndicatorPanels.forEach(panel => {
-      if (panel.container.clientWidth && panel.container.clientHeight) {
-        panel.chart.resize(panel.container.clientWidth, panel.container.clientHeight);
-      }
-    });
+    indicatorManager?.applyPaneHeights();
+    indicatorManager?.positionLegends();
     scheduleAnchoredVolumeProfileRender();
     scheduleElliottHitTargetPositioning();
     scheduleHistoricalCandlestickHitTargetPositioning();
+    scheduleHarmonicHitTargetPositioning();
+  }
+
+  /** The price chart's handle sizes the whole chart; its panes share that height. */
+  function resizableHeight(handle, target) {
+    return handle.dataset.chartResizeTarget === 'priceChartStage'
+            ? currentChartHeight()
+            : target.getBoundingClientRect().height;
+  }
+
+  /** A height from the resize handle, or null to fit the window again. */
+  function chooseChartHeight(height) {
+    chosenChartHeight = height;
+    indicatorManager?.setExtra('chartHeight', height);
+    indicatorManager?.setExtra('priceHeight', null);
+    updateStageHeight();
   }
 
   function setResizableChartHeight(handle, requestedHeight) {
@@ -4501,6 +4648,10 @@
     const minimum = Number(handle.dataset.chartResizeMin);
     const maximum = Number(handle.dataset.chartResizeMax);
     const nextHeight = Math.round(Math.min(maximum, Math.max(minimum, requestedHeight)));
+    if (handle.dataset.chartResizeTarget === 'priceChartStage') {
+      chooseChartHeight(nextHeight);
+      return;
+    }
     target.style.height = `${nextHeight}px`;
     handle.setAttribute('aria-valuenow', String(nextHeight));
     scheduleGeneralWorkspaceChartResize();
@@ -4517,7 +4668,7 @@
           if (!entry.contentRect.height) return;
           const handle = handles.find(candidate =>
                   candidate.dataset.chartResizeTarget === entry.target.id);
-          handle?.setAttribute('aria-valuenow', String(Math.round(entry.contentRect.height)));
+          handle?.setAttribute('aria-valuenow', String(Math.round(resizableHeight(handle, entry.target))));
         });
         scheduleGeneralWorkspaceChartResize();
       });
@@ -4527,7 +4678,7 @@
       const target = document.getElementById(handle.dataset.chartResizeTarget);
       if (!target) return;
       chartResizeObserver?.observe(target);
-      const initialHeight = target.getBoundingClientRect().height
+      const initialHeight = resizableHeight(handle, target)
               || Number(handle.dataset.chartResizeDefault);
       handle.setAttribute('aria-valuenow', String(Math.round(initialHeight)));
 
@@ -4546,7 +4697,7 @@
         if (event.button !== 0) return;
         activePointerId = event.pointerId;
         startY = event.clientY;
-        startHeight = target.getBoundingClientRect().height;
+        startHeight = resizableHeight(handle, target);
         handle.setPointerCapture(event.pointerId);
         handle.classList.add('is-resizing');
         document.body.classList.add('chart-panel-resizing');
@@ -4562,7 +4713,7 @@
       handle.addEventListener('lostpointercapture', finishResize);
 
       handle.addEventListener('keydown', event => {
-        const currentHeight = target.getBoundingClientRect().height;
+        const currentHeight = resizableHeight(handle, target);
         const step = event.shiftKey ? 50 : 10;
         let nextHeight = null;
         if (event.key === 'ArrowUp') nextHeight = currentHeight - step;
@@ -4575,7 +4726,8 @@
       });
 
       handle.addEventListener('dblclick', () => {
-        setResizableChartHeight(handle, Number(handle.dataset.chartResizeDefault));
+        if (handle.dataset.chartResizeTarget === 'priceChartStage') chooseChartHeight(null);
+        else setResizableChartHeight(handle, Number(handle.dataset.chartResizeDefault));
       });
     });
   }
@@ -4629,6 +4781,34 @@
     activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
   }
 
+  /** {@code fromChart}: opened from a long or short position drawn on the chart. */
+  function openStockDemoTradeDialog(side, fromChart = false) {
+    const dialog = document.getElementById('stockDemoTradeDialog');
+    const status = document.getElementById('stockDemoTradeStatus');
+    const sizeInput = document.getElementById('stockDemoTradeSizeInput');
+    const sizeField = document.getElementById('stockDemoTradeSizeField');
+    const confirmButton = document.getElementById('confirmStockDemoTrade');
+    pendingStockDemoTradeSide = side === 'SELL' ? 'SELL' : 'BUY';
+    pendingStockDemoTradeInterval = currentInterval;
+    pendingStockDemoTradeRequestId = crypto.randomUUID();
+    stockDemoTradeSizeMode = 'none';
+    document.querySelectorAll('[data-stock-demo-size-mode]').forEach(option => {
+      option.classList.toggle('active', option.dataset.stockDemoSizeMode === 'none');
+    });
+    sizeField.hidden = true;
+    sizeInput.value = '';
+    document.getElementById('stockDemoTradeDialogTitle').textContent =
+            i18n.t(pendingStockDemoTradeSide === 'BUY' ? 'outlook.demoBuyTitle' : 'outlook.demoSellTitle', ticker);
+    document.getElementById('stockDemoTradeExplanation').textContent =
+            i18n.t(pendingStockDemoTradeSide === 'BUY' ? 'outlook.demoBuyText' : 'outlook.demoSellText');
+    status.textContent = i18n.t(`sw.demo.analysisSaved.${apiIntervalEnum(pendingStockDemoTradeInterval)}`);
+    // The trade records the current quote; the drawn entry, target and stop stay on the chart.
+    if (fromChart) status.textContent = `${status.textContent} ${i18n.t('sw.demo.fromPosition')}`;
+    confirmButton.disabled = false;
+    confirmButton.textContent = i18n.t('outlook.createDemoTrade');
+    dialog.showModal();
+  }
+
   function initializeStockDemoTrading() {
     const dialog = document.getElementById('stockDemoTradeDialog');
     const status = document.getElementById('stockDemoTradeStatus');
@@ -4637,25 +4817,7 @@
     const confirmButton = document.getElementById('confirmStockDemoTrade');
 
     document.querySelectorAll('[data-stock-demo-trade]').forEach(button => {
-      button.addEventListener('click', () => {
-        pendingStockDemoTradeSide = button.dataset.stockDemoTrade;
-        pendingStockDemoTradeInterval = currentInterval;
-        pendingStockDemoTradeRequestId = crypto.randomUUID();
-        stockDemoTradeSizeMode = 'none';
-        document.querySelectorAll('[data-stock-demo-size-mode]').forEach(option => {
-          option.classList.toggle('active', option.dataset.stockDemoSizeMode === 'none');
-        });
-        sizeField.hidden = true;
-        sizeInput.value = '';
-        document.getElementById('stockDemoTradeDialogTitle').textContent =
-                i18n.t(pendingStockDemoTradeSide === 'BUY' ? 'outlook.demoBuyTitle' : 'outlook.demoSellTitle', ticker);
-        document.getElementById('stockDemoTradeExplanation').textContent =
-                i18n.t(pendingStockDemoTradeSide === 'BUY' ? 'outlook.demoBuyText' : 'outlook.demoSellText');
-        status.textContent = i18n.t(`sw.demo.analysisSaved.${apiIntervalEnum(pendingStockDemoTradeInterval)}`);
-        confirmButton.disabled = false;
-        confirmButton.textContent = i18n.t('outlook.createDemoTrade');
-        dialog.showModal();
-      });
+      button.addEventListener('click', () => openStockDemoTradeDialog(button.dataset.stockDemoTrade));
     });
 
     document.getElementById('cancelStockDemoTrade').addEventListener('click', () => dialog.close());
@@ -4708,47 +4870,54 @@
   }
 
   window.addEventListener('resize', () => {
-    scheduleGeneralWorkspaceChartResize();
+    if (!refitChartToWindow()) scheduleGeneralWorkspaceChartResize();
   });
 
   window.addEventListener('stockwatch:themechange', event => {
-    if (!priceChart || !volumeChart) return;
+    if (!priceChart) return;
     const theme = event.detail?.theme;
-    const options = chartThemeOptions(theme);
-    const seriesTheme = chartSeriesThemeOptions(theme);
-    priceChart.applyOptions(options);
-    volumeChart.applyOptions(options);
-    candleSeries.applyOptions(seriesTheme.candles);
-    lineSeries.applyOptions(seriesTheme.line);
-    volumeSeries.setData(themedVolumeData(theme));
-    if (rsiChart) {
-      const rsiTheme = rsiSeriesThemeOptions(theme);
-      rsiChart.applyOptions({
-        ...options,
-        timeScale: { ...options.timeScale, visible: true },
-        handleScroll: false,
-        handleScale: false
-      });
-      rsiSeries.applyOptions({ color: rsiTheme.line });
-      rsiGuideLines[0]?.applyOptions({ color: rsiTheme.overboughtGuide });
-      rsiGuideLines[1]?.applyOptions({ color: rsiTheme.midpoint });
-      rsiGuideLines[2]?.applyOptions({ color: rsiTheme.oversoldGuide });
-      updateRsiOverlay();
+    priceChart.applyOptions(chartThemeOptions(theme));
+    priceSeries.applyOptions(StockWatchChartTypes.options(seriesType, priceColors(theme)));
+    if (priceOnlyChart) {
+      priceOnlyChart.applyOptions(chartThemeOptions(theme));
+      priceOnlyKind = null;
     }
-    chartIndicatorPanels.forEach(panel => {
-      panel.chart.applyOptions({
-        ...options,
-        timeScale: { ...options.timeScale, visible: true },
-        handleScroll: false,
-        handleScale: false
-      });
-    });
-    renderChartIndicatorOverlayLegend();
+    setPriceSeriesData();
+    indicatorManager?.refreshVolume();
+    applySplitMarkers();
     scheduleAnchoredVolumeProfileRender();
   });
 
-  document.querySelectorAll('[data-chart-mode]').forEach(button => {
-    button.addEventListener('click', () => setChartMode(button.dataset.chartMode));
+  document.querySelectorAll('[data-chart-type]').forEach(button => {
+    button.addEventListener('click', () => setChartType(button.dataset.chartType));
+  });
+  document.querySelectorAll('[data-chart-range]').forEach(button => {
+    button.addEventListener('click', () => showDateRange(button.dataset.chartRange));
+  });
+  document.querySelectorAll('[data-chart-scale]').forEach(button => {
+    button.addEventListener('click', () => togglePriceScale(button.dataset.chartScale));
+  });
+  document.querySelectorAll('[data-chart-icon]').forEach(button => {
+    const names = { data: 'dataWindow', camera: 'camera', fullscreen: 'fullscreen' };
+    if (typeof StockWatchDrawingIcons !== 'undefined') button.append(StockWatchDrawingIcons.icon(names[button.dataset.chartIcon], 16));
+  });
+  document.getElementById('goToDateForm').addEventListener('submit', goToDate);
+  document.getElementById('openIndicatorBrowser').addEventListener('click', () => indicatorManager?.openBrowser());
+  document.getElementById('dataWindowToggle').addEventListener('click', toggleDataWindow);
+  document.getElementById('chartScreenshotButton').addEventListener('click', saveChartScreenshot);
+  document.getElementById('chartFullscreenButton').addEventListener('click', toggleChartFullscreen);
+  document.getElementById('splitMarkersToggle').addEventListener('click', toggleSplitMarkers);
+  document.getElementById('chartAlertsButton').addEventListener('click', () => {
+    if (typeof StockWatchChartAlerts !== 'undefined') StockWatchChartAlerts.openManager();
+  });
+  document.addEventListener('fullscreenchange', onChartFullscreenChange);
+  document.addEventListener('keydown', event => {
+    // "/" opens the indicator list, as on TradingView.
+    if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target.closest?.('input, textarea, select, [contenteditable="true"], dialog')) return;
+    if (document.getElementById('generalWorkspacePanel').hidden) return;
+    event.preventDefault();
+    indicatorManager?.openBrowser();
   });
   document.querySelectorAll('[data-chart-interval]').forEach(button => {
     button.addEventListener('click', () => changeInterval(button.dataset.chartInterval));
@@ -4760,13 +4929,8 @@
           .addEventListener('click', showHistoricalCandlestickViewPicker);
   document.getElementById('anchoredVolumeProfileToggle')
           .addEventListener('click', toggleAnchoredVolumeProfile);
-  document.getElementById('rsiOverlayToggle')
-          .addEventListener('click', toggleRsiOverlay);
   document.getElementById('volumeChartToggle')
           .addEventListener('click', toggleVolumeChart);
-  document.querySelectorAll('[data-add-chart-indicator]').forEach(button => {
-    button.addEventListener('click', () => openChartIndicatorDialog(button.dataset.addChartIndicator));
-  });
   document.querySelectorAll('.chart-control-menu .chart-control-menu-item').forEach(button => {
     button.addEventListener('click', () => button.closest('.chart-control-menu')?.removeAttribute('open'));
   });
@@ -4779,18 +4943,6 @@
     if (event.key !== 'Escape') return;
     document.querySelectorAll('.chart-control-menu[open]').forEach(menu => menu.removeAttribute('open'));
   });
-  document.getElementById('rsiPeriodForm')
-          .addEventListener('submit', submitRsiPeriod);
-  document.getElementById('closeRsiPeriodDialogBtn')
-          .addEventListener('click', closeRsiPeriodDialog);
-  document.getElementById('cancelRsiPeriodBtn')
-          .addEventListener('click', closeRsiPeriodDialog);
-  document.getElementById('chartIndicatorForm')
-          .addEventListener('submit', submitChartIndicator);
-  document.getElementById('closeChartIndicatorDialogBtn')
-          .addEventListener('click', closeChartIndicatorDialog);
-  document.getElementById('cancelChartIndicatorBtn')
-          .addEventListener('click', closeChartIndicatorDialog);
   document.getElementById('followCongressionalActivityBtn')
           .addEventListener('click', toggleCongressionalActivityFollow);
   document.getElementById('showCongressionalHistoryBtn')
@@ -4846,4 +4998,5 @@
     initializeResizableCharts();
     initializeStockWorkspaceTabs();
     initializeStockDemoTrading();
+    initializeCompareDialog();
   };

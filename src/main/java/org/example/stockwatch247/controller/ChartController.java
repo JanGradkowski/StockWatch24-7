@@ -17,6 +17,7 @@ import org.example.stockwatch247.service.HistoricalSignalCacheService;
 import org.example.stockwatch247.service.HistoricalPatternInputs;
 import org.example.stockwatch247.service.TechnicalIndicatorEnrichmentService;
 import org.example.stockwatch247.service.ChartTechnicalIndicatorService;
+import org.example.stockwatch247.service.CorporateActionService;
 import org.example.stockwatch247.service.TwelveDataService;
 import org.example.stockwatch247.service.YahooFinanceService;
 import org.springframework.data.domain.PageRequest;
@@ -100,6 +101,22 @@ public class ChartController {
     @Autowired
     void configureChartTechnicalIndicators(ChartTechnicalIndicatorService service) {
         this.chartTechnicalIndicatorService = service;
+    }
+
+    private CorporateActionService corporateActionService;
+
+    @Autowired
+    void configureCorporateActions(CorporateActionService service) {
+        this.corporateActionService = service;
+    }
+
+    /** Splits found in the stored history, for split markers on the price chart. */
+    @GetMapping("/{symbol}/splits")
+    public List<CorporateActionService.SplitView> getSplits(@PathVariable String symbol,
+                                                            @RequestParam(defaultValue = "1d") String interval) {
+        symbol = SecurityInputValidator.requireMarketSymbol(symbol);
+        interval = SecurityInputValidator.requireInterval(interval);
+        return corporateActionService == null ? List.of() : corporateActionService.splits(symbol, interval);
     }
 
     @GetMapping("/{symbol}/candles")

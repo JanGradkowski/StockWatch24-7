@@ -121,72 +121,53 @@ class FrontendSecurityTest {
     }
 
     @Test
-    void priceChartsExposePersistentFibonacciAndPositionDrawingTools() throws IOException {
+    void priceChartsShareThePersistentDrawingToolset() throws IOException {
         String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
-        String signal = english(Files.readString(Path.of("src/main/resources/templates/signal-detail.html")));
-        String historicalCandle = english(Files.readString(
-                Path.of("src/main/resources/templates/historical-candlestick-detail.html")));
-        String historicalElliott = english(Files.readString(
-                Path.of("src/main/resources/templates/historical-elliott-detail.html")));
-        String activity = english(Files.readString(
-                Path.of("src/main/resources/templates/activity-signal-detail.html")));
-        String technicalOutlook = english(Files.readString(
-                Path.of("src/main/resources/templates/technical-outlook.html")));
-        String virtualTrade = english(Files.readString(
-                Path.of("src/main/resources/templates/virtual-trade.html")));
-        String intervals = english(Files.readString(
-                Path.of("src/main/resources/static/js/detail-chart-intervals.js")));
-        String fibonacci = english(Files.readString(
-                Path.of("src/main/resources/static/js/fibonacci-drawing-tool.js")));
+        String fragment = Files.readString(Path.of("src/main/resources/templates/fragments/chart-workbench.html"));
+        String technicalOutlook = english(Files.readString(Path.of("src/main/resources/templates/technical-outlook.html")));
+        String virtualTrade = english(Files.readString(Path.of("src/main/resources/templates/virtual-trade.html")));
+        String intervals = english(Files.readString(Path.of("src/main/resources/static/js/detail-chart-intervals.js")));
+        String core = Files.readString(Path.of("src/main/resources/static/js/chart-drawing-core.js"));
+        String fibonacci = Files.readString(Path.of("src/main/resources/static/js/chart-drawing-tools-fib.js"));
+        String measure = Files.readString(Path.of("src/main/resources/static/js/chart-drawing-tools-measure.js"));
 
-        assertTrue(stock.contains("@{/js/fibonacci-drawing-tool.js}"));
-        assertTrue(stock.contains("new StockWatchFibonacciDrawingTool"));
-        assertTrue(stock.contains("fibonacciDrawingTool?.setContext"));
-        assertTrue(signal.contains("@{/js/fibonacci-drawing-tool.js}"));
-        assertTrue(signal.contains("new StockWatchFibonacciDrawingTool"));
-        assertTrue(signal.contains("role=\"group\""));
-        assertTrue(historicalCandle.contains("@{/js/fibonacci-drawing-tool.js}"));
-        assertTrue(historicalElliott.contains("new StockWatchFibonacciDrawingTool"));
-        assertTrue(activity.contains("@{/js/fibonacci-drawing-tool.js}"));
-        assertTrue(activity.contains("new StockWatchFibonacciDrawingTool"));
-        assertTrue(technicalOutlook.contains("@{/js/fibonacci-drawing-tool.js}"));
+        for (String page : List.of("stock", "signal-detail", "historical-candlestick-detail", "historical-elliott-detail",
+                "historical-harmonic-detail", "activity-signal-detail", "technical-outlook", "virtual-trade")) {
+            String template = Files.readString(Path.of("src/main/resources/templates/" + page + ".html"));
+            assertTrue(template.contains("~{fragments/chart-workbench :: drawingAssets}"), page);
+            assertFalse(template.contains("fibonacci-drawing-tool.js"), page);
+        }
+        assertFalse(Files.exists(Path.of("src/main/resources/static/js/fibonacci-drawing-tool.js")));
+        assertTrue(fragment.contains("@{/js/chart-drawing-core.js}"));
+        assertTrue(fragment.contains("@{/js/chart-drawing-ui.js}"));
+
+        // The stock page keeps drawings in the account (older per-interval browser drawings move over once).
+        assertTrue(stock.contains("new StockWatchDrawing.DrawingManager"));
+        assertTrue(stock.contains("new StockWatchDrawing.ServerDrawingStore(ticker, legacyKeys)"));
+        assertTrue(stock.contains("key: `stock:${ticker}:${interval}`"));
+        assertTrue(stock.contains("drawingManager?.setInterval(newInterval)"));
+        assertTrue(stock.contains("toolbarHost: document.getElementById('drawingToolbarHost')"));
+        assertTrue(stock.contains("manager.on('demo-trade'"));
         assertTrue(technicalOutlook.contains("new StockWatchFibonacciDrawingTool"));
         assertTrue(technicalOutlook.contains("priceFibonacciTool?.destroy()"));
         assertTrue(technicalOutlook.contains("'ta4jTrend', 'volumeProfileKde'"));
         assertTrue(technicalOutlook.contains("researchOnly ? 'RESEARCH'"));
-        assertTrue(virtualTrade.contains("@{/js/fibonacci-drawing-tool.js}"));
-        assertTrue(virtualTrade.contains("new StockWatchFibonacciDrawingTool"));
         assertTrue(virtualTrade.contains("priceFibonacciTool?.destroy()"));
         assertTrue(intervals.contains("alternateFibonacciTool"));
         assertTrue(intervals.contains("new StockWatchFibonacciDrawingTool"));
-        assertFalse(intervals.contains("typeof StockWatchFibonacciDrawingTool !== 'undefined' && chartKind === 'technical'"));
-        assertTrue(fibonacci.contains("0.236"));
-        assertTrue(fibonacci.contains("0.382"));
-        assertTrue(fibonacci.contains("0.618"));
-        assertTrue(fibonacci.contains("0.786"));
-        assertTrue(fibonacci.contains("-0.618"));
-        assertTrue(fibonacci.contains("1.272"));
-        assertTrue(fibonacci.contains("1.618"));
-        assertTrue(fibonacci.contains("2.618"));
-        assertTrue(fibonacci.contains("createButton(i18n.t('drawing.long')"));
-        assertTrue(fibonacci.contains("createButton(i18n.t('drawing.short')"));
-        assertTrue(fibonacci.contains("entryPrice"));
-        assertTrue(fibonacci.contains("targetPrice"));
-        assertTrue(fibonacci.contains("stopPrice"));
-        assertTrue(fibonacci.contains("riskRewardLabel"));
-        assertTrue(fibonacci.contains("R:R"));
-        assertTrue(fibonacci.contains("position-target"));
-        assertTrue(fibonacci.contains("position-stop"));
-        assertTrue(fibonacci.contains("#26a69a"));
-        assertTrue(fibonacci.contains("#ef5350"));
-        assertTrue(fibonacci.contains("localStorage.setItem"));
-        assertTrue(fibonacci.contains("setPointerCapture"));
-        assertTrue(fibonacci.contains("event.key === 'Delete'"));
-        assertTrue(fibonacci.contains("coordinateToTime"));
-        assertTrue(fibonacci.contains("coordinateToLogical"));
-        assertTrue(fibonacci.contains("logicalToCoordinate"));
-        assertTrue(fibonacci.contains("coordinateToPrice"));
-        assertFalse(fibonacci.contains("innerHTML"));
+
+        for (String level : List.of("0.236", "0.382", "0.618", "0.786", "-0.618", "1.272", "1.618", "2.618")) {
+            assertTrue(fibonacci.contains(level), level);
+        }
+        assertTrue(measure.contains("positionTool('longPosition', true)"));
+        assertTrue(measure.contains("positionTool('shortPosition', false)"));
+        assertTrue(core.contains("setPointerCapture"));
+        assertTrue(core.contains("coordinateToLogical"));
+        assertTrue(core.contains("coordinateToPrice"));
+        for (String file : List.of("core", "kit", "ui", "icons", "tools-lines", "tools-fib", "tools-patterns", "tools-measure", "tools-shapes")) {
+            assertFalse(Files.readString(Path.of("src/main/resources/static/js/chart-drawing-" + file + ".js")).contains("innerHTML"), file);
+        }
+        assertFalse(Files.readString(Path.of("src/main/resources/static/js/chart-indicators.js")).contains("innerHTML"));
     }
 
     @Test
@@ -504,7 +485,8 @@ class FrontendSecurityTest {
         assertTrue(navbar.contains("encodeURIComponent"));
         assertFalse(stock.contains("unpkg.com"));
         assertFalse(stock.contains("financialmodelingprep.com"));
-        assertTrue(stock.contains("/webjars/lightweight-charts/"));
+        assertTrue(stock.contains("@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"));
+        assertFalse(stock.contains("/webjars/lightweight-charts/"));
         assertFalse(stock.contains("<style>"));
         assertTrue(stock.contains("<style th:attr=\"nonce=${cspNonce}\">"));
         assertFalse(stock.contains("style="));
@@ -625,12 +607,12 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("structure.points.slice(5)"));
         assertTrue(stock.contains("isCorrectiveElliottPoint"));
         assertTrue(stock.contains("id=\"elliottOverlayToggle\""));
-        assertTrue(stock.contains("data-add-chart-indicator=\"EMA\""));
-        assertTrue(stock.contains("data-add-chart-indicator=\"MACD\""));
-        assertTrue(stock.contains("data-add-chart-indicator=\"KELTNER\""));
-        assertTrue(stock.contains("/chart-indicators?interval="));
-        assertTrue(stock.contains("activeChartIndicators.set(id"));
-        assertTrue(stock.contains("id=\"dynamicIndicatorPanels\""));
+        // Indicators come from the server catalog through the indicator manager, one pane per panel indicator.
+        assertTrue(stock.contains("id=\"openIndicatorBrowser\""));
+        assertTrue(stock.contains("@{/js/chart-indicators.js}"));
+        assertTrue(stock.contains("new StockWatchIndicatorManager({"));
+        assertFalse(stock.contains("data-add-chart-indicator="));
+        assertFalse(stock.contains("id=\"dynamicIndicatorPanels\""));
         assertTrue(stock.contains("id=\"elliottSubwaveToggle\""));
         assertTrue(stock.contains("Independent Elliott structures"));
         assertTrue(stock.contains("Fractal subwaves"));
@@ -728,12 +710,12 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("const INITIAL_VISIBLE_CANDLES = 150"));
         assertTrue(stock.contains("const HISTORY_PAGE_LIMIT = 500"));
         assertTrue(stock.contains("getVisibleLogicalRange()"));
-        assertTrue(stock.contains("candleSeries.barsInLogicalRange(range)"));
+        assertTrue(stock.contains("priceSeries.barsInLogicalRange(range)"));
         assertTrue(stock.contains("barsBefore < HISTORY_PREFETCH_THRESHOLD"));
         assertTrue(stock.contains("pageMayHaveMore(page, data, INITIAL_CANDLE_LIMIT)"));
         assertTrue(stock.contains("visibleLogicalRange.from + newCandles.length"));
         assertTrue(stock.contains("scheduleViewportHistoryFill()"));
-        assertTrue(stock.contains("candleSeries.setData(globalCandleData.map(item => ({"));
+        assertTrue(stock.contains("priceSeries.setData(StockWatchChartTypes.data(seriesType, globalCandleData, priceColors()))"));
         assertTrue(stock.contains("id=\"anchoredVolumeProfileToggle\""));
         assertTrue(stock.contains("handleAnchoredVolumeProfileChartClick"));
         assertTrue(stock.contains("/anchored-volume-profile"));
@@ -741,30 +723,12 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("applyAnchoredVolumeProfileChartSpacing"));
         assertTrue(stock.contains("ANCHORED_PROFILE_RIGHT_OFFSET_BARS"));
         assertTrue(stock.contains("formatProfileCalculationInterval"));
-        assertTrue(stock.contains("id=\"rsiOverlayToggle\""));
-        assertTrue(stock.contains("id=\"rsiPeriodDialog\""));
-        assertTrue(stock.contains("id=\"rsiPeriodInput\""));
-        assertTrue(stock.contains("id=\"rsiOverboughtInput\""));
-        assertTrue(stock.contains("id=\"rsiOversoldInput\""));
-        assertTrue(stock.contains("value=\"14\""));
-        assertTrue(stock.contains("id=\"rsiChartPanel\""));
-        assertTrue(stock.contains("function calculateWilderRsi(candles, period)"));
-        assertTrue(stock.contains("function themedRsiData(points"));
-        assertTrue(stock.contains("point.value > overboughtBoundary"));
-        assertTrue(stock.contains("point.value < oversoldBoundary"));
-        assertTrue(stock.contains("colors.overbought"));
-        assertTrue(stock.contains("colors.oversold"));
-        assertTrue(stock.contains("oversoldBoundary >= overboughtBoundary"));
-        assertTrue(stock.contains("enableRsiOverlay(period, overboughtBoundary, oversoldBoundary)"));
-        assertTrue(stock.contains("averageGain = ((averageGain * (period - 1)) + gain) / period"));
-        assertTrue(stock.contains("averageLoss = ((averageLoss * (period - 1)) + loss) / period"));
-        assertTrue(stock.contains("priceRange: { minValue: 0, maxValue: 100 }"));
-        String visibleRsiDateAxis = "timeScale: { ...options.timeScale, visible: true }";
-        int initialRsiDateAxis = stock.indexOf(visibleRsiDateAxis);
-        assertTrue(initialRsiDateAxis >= 0);
-        assertTrue(stock.indexOf(visibleRsiDateAxis, initialRsiDateAxis + 1) > initialRsiDateAxis);
-        assertTrue(stock.contains("rsiChart.timeScale().setVisibleLogicalRange(range)"));
-        assertTrue(stock.contains("The indicator uses candles already loaded on this chart."));
+        // RSI is one of the catalog indicators now; the separate RSI chart and dialog are gone.
+        assertFalse(stock.contains("rsiOverlayToggle"));
+        assertFalse(stock.contains("rsiPeriodDialog"));
+        assertFalse(stock.contains("calculateWilderRsi"));
+        String catalogRsi = Files.readString(Path.of("src/main/java/org/example/stockwatch247/service/chartindicator/MomentumIndicators.java"));
+        assertTrue(catalogRsi.contains("define(\"RSI\""));
         assertFalse(stock.contains("anchoredVolumeProfileRail"));
         assertFalse(stock.contains("setVisibleRange(visibleTimeRange)"));
         assertFalse(stock.contains("timeScale().fitContent()"));
@@ -812,28 +776,24 @@ class FrontendSecurityTest {
         String stylesheet = stylesheets();
 
         int priceChart = stock.indexOf("id=\"priceChartContainer\"");
-        int rsiChart = stock.indexOf("id=\"rsiChartContainer\"");
-        int volumeChart = stock.indexOf("id=\"volumeChartContainer\"");
         int automatedSignals = stock.indexOf("<section class=\"alert-panel alert-star-panel\">");
         int congressionalActivity = stock.indexOf("id=\"congressionalActivityPanel\"");
 
         assertTrue(priceChart >= 0);
-        assertTrue(rsiChart > priceChart);
-        assertTrue(volumeChart > rsiChart);
-        assertTrue(automatedSignals > volumeChart);
+        assertTrue(automatedSignals > priceChart);
         assertTrue(congressionalActivity > automatedSignals);
 
+        // Volume and indicator panels are panes of the one price chart, sharing its time axis.
+        assertFalse(stock.contains("id=\"volumeChartContainer\""));
+        assertFalse(stock.contains("id=\"rsiChartContainer\""));
         assertTrue(stock.contains("id=\"volumeChartToggle\""));
-        assertTrue(stock.contains("id=\"volumeChartPanel\""));
-        assertTrue(stock.contains("aria-controls=\"volumeChartPanel\""));
+        assertTrue(stock.contains("aria-controls=\"priceChartStage\""));
         assertTrue(stock.contains("aria-pressed=\"true\""));
         assertTrue(stock.contains("let volumeChartEnabled = true"));
-        assertTrue(stock.contains("panel.hidden = !volumeChartEnabled"));
+        assertTrue(stock.contains("indicatorManager?.setVolume(volumeChartEnabled, volumeHooks())"));
         assertTrue(stock.contains(".addEventListener('click', toggleVolumeChart)"));
         assertTrue(stock.contains("data-chart-resize-target=\"priceChartStage\""));
-        assertTrue(stock.contains("data-chart-resize-target=\"rsiChartContainer\""));
-        assertTrue(stock.contains("data-chart-resize-target=\"volumeChartContainer\""));
-        assertEquals(3, stock.split("data-chart-resize-target=", -1).length - 1);
+        assertEquals(1, stock.split("data-chart-resize-target=", -1).length - 1);
         assertTrue(stock.contains("role=\"separator\""));
         assertTrue(stock.contains("new ResizeObserver(entries =>"));
         assertTrue(stock.contains("handle.addEventListener('pointerdown'"));

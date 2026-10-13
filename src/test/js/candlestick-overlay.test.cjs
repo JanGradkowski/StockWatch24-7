@@ -25,18 +25,18 @@ function workspace() {
     currentInterval: '1d', encodedTicker: 'AAPL', globalCandleData: [],
     patternRangeLoader: null,
     loadPatternRange() {return new Promise(resolve => pending.push(resolve));},
-    activeChartIndicators: new Map([['bb', {id:'bb', displayLabel:'Bollinger Bands'}]]),
-    chartIndicatorPriceSeries: new Map([['bb', []]]), indicatorColor: () => '#123456',
-    removeChartIndicator() {throw new Error('Removing patterns must leave other indicators alone');},
+    // The indicator manager shows the overlay as a removable row next to the indicators.
+    indicatorManager: {overlays: [], setOverlays(items) {this.overlays = items;}},
+    chartType: 'candles', StockWatchChartTypes: {isOhlc: type => ['candles', 'hollow', 'bars'].includes(type)},
+    setChartType(type) {context.chartType = type;},
     hideHistoricalCandlestickCard() {context.cardHidden = true;},
     rebuildHistoricalCandlestickHitTargets() {context.rebuilt = true;},
-    setChartMode() {}, showHistoricalCandlestickLookbackPicker() {context.pickerOpened = true;},
+    showHistoricalCandlestickLookbackPicker() {context.pickerOpened = true;},
     fetch() {return new Promise(resolve => pending.push(data => resolve({ok:true, json: async () => data})));}
   };
   vm.createContext(context);
   const source = fs.readFileSync('src/main/resources/static/js/stock-workspace.js', 'utf8');
-  for (const name of ['appendCandlestickOverlayControl', 'renderActiveChartIndicatorControls',
-    'renderChartIndicatorOverlayLegend', 'showHistoricalCandlestickViewPicker',
+  for (const name of ['renderChartOverlayChips', 'showHistoricalCandlestickViewPicker',
     'enableHistoricalCandlestickOverlay', 'disableHistoricalCandlestickOverlay',
     'updateHistoricalCandlestickOverlayToggle', 'refreshHistoricalCandlestickOverlay',
     'apiIntervalEnum', 'updateHistoricalCandlestickOverlayStatus',
@@ -48,26 +48,34 @@ function workspace() {
   return {context, get, pending, series};
 }
 
-test('overlay has the same removable chips as price indicators and clears every visual', async () => {
+test('overlay appears in the indicator legend with a remove button that clears every visual', async () => {
   const {context:c, get, pending, series} = workspace();
   const enable = c.enableHistoricalCandlestickOverlay();
   pending.shift()({signals:[{signalTimestamp:100}], completedCandlesLoaded:30}); await enable;
-  assert.equal(get('chartIndicatorOverlayLegend').children.length, 2);
-  assert.equal(get('activeChartIndicatorList').children.length, 2);
-  get('chartIndicatorOverlayLegend').children[1].children[1].click();
+  assert.equal(c.indicatorManager.overlays.length, 1);
+  assert.equal(c.indicatorManager.overlays[0].label, 'Candlestick signals');
+  c.indicatorManager.overlays[0].onRemove();
   assert.equal(c.historicalCandlestickOverlayEnabled, false);
   assert.equal(get('candlestickOverlayToggle').attributes['aria-pressed'], 'false');
-  assert.equal(get('chartIndicatorOverlayLegend').children.length, 1);
-  assert.equal(get('activeChartIndicatorList').children.length, 1);
+  assert.equal(get('candlestickOverlayToggle').focused, true);
+  assert.equal(c.indicatorManager.overlays.length, 0);
   assert.equal(series.data.length, 0);
   assert.equal(c.cardHidden, true);
   assert.equal(get('candlestickOverlayStatus').textContent, '');
 });
 
+test('candlestick signals switch a line chart back to candles', async () => {
+  const {context:c, pending} = workspace();
+  c.chartType = 'area';
+  const enable = c.enableHistoricalCandlestickOverlay();
+  assert.equal(c.chartType, 'candles');
+  pending.shift()({signals:[], completedCandlesLoaded:30}); await enable;
+});
+
 test('removing while loading prevents a late response from restoring markers or status', async () => {
   const {context:c, get, pending} = workspace();
   const enable = c.enableHistoricalCandlestickOverlay();
-  get('activeChartIndicatorList').children[1].children[1].click();
+  c.indicatorManager.overlays[0].onRemove();
   pending.shift()({signals:[{signalTimestamp:100}]}); await enable;
   assert.equal(c.historicalCandlestickOverlayHistory, null);
   assert.equal(c.historicalCandlestickOverlaySignals.length, 0);

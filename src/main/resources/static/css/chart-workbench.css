@@ -1,0 +1,1520 @@
+/* Chart workbench: drawing tools, indicator panes and legends, chart settings.
+   Uses the design tokens from tokens.css; both themes are handled by those variables. */
+
+:root,
+:root[data-theme="dark"] {
+    --draw-label-bg: rgba(18, 24, 32, 0.92);
+    --draw-label-text: #edf3ee;
+    --draw-handle-fill: #101612;
+    --draw-selection: #d7ff78;
+    --wb-panel: rgba(21, 28, 38, 0.97);
+    --wb-hover: rgba(232, 237, 243, 0.08);
+    --wb-active: rgba(183, 243, 74, 0.16);
+}
+
+:root[data-theme="light"] {
+    --draw-label-bg: rgba(255, 255, 255, 0.94);
+    --draw-label-text: #182230;
+    --draw-handle-fill: #ffffff;
+    --draw-selection: #2962ff;
+    --wb-panel: rgba(255, 255, 255, 0.98);
+    --wb-hover: rgba(24, 34, 48, 0.06);
+    --wb-active: rgba(71, 122, 18, 0.14);
+}
+
+.drawing-host {
+    position: relative;
+}
+
+.drawing-mode-active canvas {
+    cursor: crosshair !important;
+}
+
+.drawing-host[data-drawing-mode="eraser"] canvas {
+    cursor: cell !important;
+}
+
+.drawing-host[data-drawing-mode="zoom"] canvas {
+    cursor: zoom-in !important;
+}
+
+/* ---- tool rail */
+
+.draw-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--wb-panel);
+    color: var(--text-soft);
+    z-index: 22;
+}
+
+.draw-rail-overlay {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    max-height: calc(100% - 16px);
+    overflow: visible;
+    box-shadow: var(--shadow-sm);
+}
+
+.draw-rail-section {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+}
+
+.draw-rail-button,
+.draw-tool-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 30px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.draw-rail-button:hover,
+.draw-tool-button:hover,
+.draw-rail-more:hover {
+    background: var(--wb-hover);
+    color: var(--text-color);
+}
+
+.draw-rail-button.active,
+.draw-tool-button.active {
+    background: var(--wb-active);
+    color: var(--primary-color);
+}
+
+.draw-rail-button:disabled,
+.draw-tool-button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.draw-rail-button:focus-visible,
+.draw-tool-button:focus-visible,
+.draw-rail-more:focus-visible,
+.draw-flyout-item:focus-visible,
+.draw-menu-item:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+}
+
+.draw-rail-more {
+    width: 12px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted-text);
+    cursor: pointer;
+}
+
+.draw-rail-more .draw-icon {
+    width: 10px;
+    height: 10px;
+}
+
+.draw-rail-separator {
+    height: 1px;
+    margin: 3px 2px;
+    background: var(--glass-border);
+}
+
+.draw-tool-button.danger:hover {
+    color: var(--danger);
+}
+
+/* Fixed to the window beside its rail section (placed by script), so a scrolling rail cannot cut it off. */
+.draw-flyout {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 1200;
+    width: 270px;
+    max-height: min(70vh, 560px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--wb-panel);
+    box-shadow: var(--shadow-lg);
+    color: var(--text-soft);
+}
+
+.draw-flyout-back {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 30px;
+    margin-bottom: 2px;
+    padding: 4px 8px;
+    border: 0;
+    border-bottom: 1px solid var(--glass-border);
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    color: var(--muted-text);
+    font: inherit;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.draw-flyout-back .draw-icon {
+    transform: rotate(180deg);
+}
+
+.draw-flyout-back:hover {
+    background: var(--wb-hover);
+    color: var(--text-color);
+}
+
+.draw-flyout-back:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+}
+
+.draw-flyout-heading {
+    padding: 8px 8px 4px;
+    color: var(--muted-text);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.draw-flyout-row {
+    display: flex;
+    align-items: center;
+}
+
+.draw-flyout-item {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    min-height: 32px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    font-size: var(--fs-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.draw-flyout-item:hover,
+.draw-menu-item:hover {
+    background: var(--wb-hover);
+}
+
+.draw-flyout-item.active {
+    background: var(--wb-active);
+}
+
+.draw-flyout-name {
+    flex: 1;
+}
+
+.draw-flyout-shortcut {
+    color: var(--muted-text);
+    font-size: var(--fs-xs);
+}
+
+.draw-flyout-star {
+    display: inline-flex;
+    padding: 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted-text);
+    cursor: pointer;
+    opacity: 0.55;
+}
+
+.draw-flyout-star:hover,
+.draw-flyout-star.active {
+    color: var(--warning);
+    opacity: 1;
+}
+
+.draw-flyout-star.active path {
+    fill: currentColor;
+}
+
+.draw-favorites {
+    position: absolute;
+    top: 8px;
+    left: 56px;
+    z-index: 21;
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--wb-panel);
+    color: var(--text-soft);
+}
+
+.draw-favorites[hidden] {
+    display: none;
+}
+
+/* ---- selection toolbar, menus and toast */
+
+.draw-selection-toolbar {
+    position: absolute;
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--wb-panel);
+    color: var(--text-soft);
+    box-shadow: var(--shadow-sm);
+}
+
+.draw-selection-toolbar[hidden] {
+    display: none;
+}
+
+.draw-color-button {
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.draw-color-button::after,
+.draw-color-swatch::after {
+    content: "";
+    display: block;
+    width: 18px;
+    height: 18px;
+    margin: auto;
+    border: 1px solid var(--glass-border);
+    border-radius: 4px;
+    background: var(--draw-swatch, #2962ff);
+}
+
+.draw-select {
+    height: 28px;
+    padding: 0 4px;
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+    font-size: var(--fs-xs);
+}
+
+.draw-select[hidden] {
+    display: none;
+}
+
+.draw-context-menu {
+    position: fixed;
+    z-index: 1200;
+    min-width: 210px;
+    max-width: 320px;
+    padding: 5px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--wb-panel);
+    color: var(--text-color);
+    box-shadow: var(--shadow-lg);
+}
+
+.draw-menu-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 9px;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--fs-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.draw-menu-item:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.draw-menu-item.danger {
+    color: var(--danger);
+}
+
+.draw-menu-hint {
+    margin-left: auto;
+    color: var(--muted-text);
+    font-size: var(--fs-xs);
+}
+
+.draw-menu-separator {
+    height: 1px;
+    margin: 4px 2px;
+    background: var(--glass-border);
+}
+
+.draw-color-popover {
+    padding: 10px;
+}
+
+.draw-color-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 22px);
+    gap: 4px;
+}
+
+.draw-color-swatch {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.draw-color-swatch::after {
+    width: 20px;
+    height: 20px;
+}
+
+.draw-custom-color {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+    color: var(--text-soft);
+    font-size: var(--fs-xs);
+}
+
+.draw-toast {
+    position: absolute;
+    bottom: 34px;
+    left: 50%;
+    z-index: 24;
+    max-width: min(90%, 520px);
+    padding: 6px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-pill);
+    background: var(--wb-panel);
+    color: var(--text-color);
+    font-size: var(--fs-xs);
+    transform: translateX(-50%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+}
+
+.draw-toast.visible {
+    opacity: 1;
+}
+
+.draw-text-editor {
+    position: absolute;
+    z-index: 30;
+    min-width: 180px;
+    max-width: 360px;
+    padding: 6px 8px;
+    border: 1px solid var(--primary-color);
+    border-radius: 6px;
+    background: var(--wb-panel);
+    color: var(--text-color);
+    font: inherit;
+    font-size: var(--fs-sm);
+    resize: both;
+}
+
+/* ---- dialogs */
+
+.draw-dialog {
+    width: min(520px, calc(100vw - 32px));
+    max-height: min(86vh, 760px);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text-color);
+    box-shadow: var(--shadow-lg);
+}
+
+.draw-dialog::backdrop {
+    background: rgb(5 8 12 / 45%);
+}
+
+.draw-dialog-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: inherit;
+    padding: 18px;
+}
+
+.draw-dialog-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.draw-dialog-title {
+    margin: 0;
+    font-size: var(--fs-lg);
+}
+
+.draw-dialog-close {
+    display: inline-flex;
+    padding: 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted-text);
+    cursor: pointer;
+}
+
+.draw-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.draw-tab {
+    padding: 8px 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-soft);
+    font: inherit;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+}
+
+.draw-tab.active {
+    border-bottom-color: var(--primary-color);
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.draw-tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 120px;
+    overflow-y: auto;
+}
+
+.draw-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: var(--fs-sm);
+}
+
+.draw-field.inline {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.draw-field input[type="number"],
+.draw-field input[type="text"],
+.draw-field select,
+.draw-field textarea,
+.draw-coordinate-row input,
+.draw-prompt-dialog input {
+    min-height: 34px;
+    padding: 6px 8px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+    font: inherit;
+    font-size: var(--fs-sm);
+}
+
+.draw-field.inline input[type="number"],
+.draw-field.inline select {
+    width: 150px;
+}
+
+.draw-field input[type="color"],
+.draw-level-row input[type="color"] {
+    width: 44px;
+    height: 30px;
+    padding: 2px;
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    background: var(--surface-soft);
+}
+
+.draw-field-label {
+    color: var(--text-soft);
+}
+
+.draw-field-hint {
+    margin: 0;
+    color: var(--muted-text);
+    font-size: var(--fs-xs);
+}
+
+.draw-check {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.draw-levels {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.draw-level-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.draw-level-row input[type="number"] {
+    min-height: 30px;
+    padding: 4px 8px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+}
+
+.draw-add-level {
+    align-self: flex-start;
+}
+
+.draw-coordinate-row {
+    display: grid;
+    grid-template-columns: 70px 1fr 1fr;
+    align-items: center;
+    gap: 8px;
+}
+
+.draw-dialog-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.draw-dialog-spacer {
+    flex: 1;
+}
+
+.draw-prompt-dialog {
+    width: min(380px, calc(100vw - 32px));
+}
+
+/* ---- object tree */
+
+.draw-tree-panel {
+    position: absolute;
+    top: 8px;
+    right: 80px;
+    z-index: 26;
+    display: flex;
+    flex-direction: column;
+    width: min(300px, calc(100% - 100px));
+    max-height: calc(100% - 16px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--wb-panel);
+    box-shadow: var(--shadow-lg);
+}
+
+.draw-tree-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 6px 6px 12px;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.draw-tree-heading h3 {
+    margin: 0;
+    font-size: var(--fs-sm);
+}
+
+.draw-tree-list {
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.draw-tree-section {
+    padding: 8px 8px 4px;
+    color: var(--muted-text);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.draw-tree-empty {
+    margin: 4px 8px 8px;
+    color: var(--muted-text);
+    font-size: var(--fs-xs);
+}
+
+.draw-tree-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 6px;
+}
+
+.draw-tree-row.selected {
+    background: var(--wb-active);
+}
+
+.draw-tree-row.muted .draw-tree-name {
+    opacity: 0.55;
+}
+
+.draw-tree-name {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 6px;
+    border: 0;
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    font-size: var(--fs-xs);
+    text-align: left;
+    cursor: pointer;
+}
+
+.draw-tree-name span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.draw-tree-controls {
+    display: flex;
+}
+
+.draw-tree-controls .draw-tool-button {
+    min-width: 24px;
+    height: 24px;
+    padding: 0 3px;
+}
+
+.draw-tree-controls .draw-up .draw-icon {
+    transform: rotate(-90deg);
+}
+
+.draw-tree-controls .draw-down .draw-icon {
+    transform: rotate(90deg);
+}
+
+/* ---- phone widths */
+
+@media (max-width: 768px) {
+    .draw-rail-overlay {
+        top: 4px;
+        left: 4px;
+        padding: 2px;
+    }
+
+    .draw-rail-button,
+    .draw-tool-button {
+        min-width: 28px;
+        height: 28px;
+    }
+
+    .draw-flyout {
+        position: fixed;
+        top: auto;
+        bottom: 12px;
+        left: 12px;
+        right: 12px;
+        width: auto;
+        max-height: 60vh;
+    }
+
+    .draw-tree-panel {
+        right: 8px;
+        width: calc(100% - 60px);
+    }
+
+    .draw-coordinate-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ---- stock chart: rail column, header actions, footer bar */
+
+.chart-workbench-body {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.chart-workbench-body > .price-chart-stage {
+    flex: 1;
+    min-width: 0;
+}
+
+.chart-drawing-rail-host {
+    flex: 0 0 auto;
+}
+
+.chart-drawing-rail-host:empty {
+    display: none;
+}
+
+.chart-drawing-rail-host .draw-rail {
+    position: sticky;
+    top: 8px;
+    max-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.chart-panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.chart-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-soft);
+    cursor: pointer;
+}
+
+.chart-icon-button:hover,
+.chart-icon-button:focus-visible {
+    background: var(--wb-hover);
+    color: var(--text-color);
+}
+
+.chart-icon-button[aria-pressed="true"] {
+    border-color: var(--glass-border-bright);
+    background: var(--wb-active);
+    color: var(--primary-color);
+}
+
+.chart-control-menu-item.is-selected {
+    background: var(--wb-active);
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.chart-status-line {
+    color: var(--muted-text);
+    font-size: var(--fs-sm);
+}
+
+.chart-status-line:not(:empty) {
+    margin-bottom: 6px;
+}
+
+.chart-footer-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.chart-range-presets,
+.chart-scale-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+}
+
+.chart-range-button {
+    min-width: 34px;
+    min-height: 28px;
+    padding: 3px 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-soft);
+    font: inherit;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+}
+
+.chart-range-button:hover,
+.chart-range-button:focus-visible {
+    background: var(--wb-hover);
+    color: var(--text-color);
+}
+
+.chart-range-button[aria-pressed="true"] {
+    border-color: var(--glass-border-bright);
+    background: var(--wb-active);
+    color: var(--primary-color);
+}
+
+.chart-go-to-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+}
+
+.chart-go-to-date input {
+    min-height: 28px;
+    padding: 2px 6px;
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+    font: inherit;
+    font-size: var(--fs-sm);
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] .chart-go-to-date input {
+    color-scheme: light;
+}
+
+/* Full screen: the chart fills the screen; the stage takes the room the header and footer leave. */
+.chart-wrapper:fullscreen {
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    background: var(--bg-color);
+}
+
+.chart-wrapper:fullscreen .chart-workbench-body {
+    flex: 1;
+    min-height: 0;
+}
+
+.chart-wrapper:fullscreen .price-chart-stage {
+    height: auto !important;
+}
+
+.chart-wrapper:fullscreen .chart-resize-handle {
+    display: none;
+}
+
+/* ---- indicator legends (one per pane, over the chart) */
+
+.ind-legends {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    pointer-events: none;
+}
+
+.ind-legend {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    overflow: hidden;
+    font-size: var(--fs-xs);
+    line-height: 1.35;
+}
+
+.ind-legend-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    max-width: 100%;
+    padding: 1px 4px;
+    border-radius: 5px;
+    pointer-events: auto;
+}
+
+.ind-legend-row:hover,
+.ind-legend-row:focus-within {
+    background: var(--wb-panel);
+}
+
+.ind-legend-name {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-soft);
+    font: inherit;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+span.ind-legend-name {
+    cursor: default;
+}
+
+.ind-legend-values {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+.ind-legend-controls {
+    display: inline-flex;
+    gap: 1px;
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+
+.ind-legend-row:hover .ind-legend-controls,
+.ind-legend-row:focus-within .ind-legend-controls,
+.ind-legend-overlay .ind-legend-controls {
+    opacity: 1;
+}
+
+.ind-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-soft);
+    cursor: pointer;
+}
+
+.ind-icon-button:hover,
+.ind-icon-button:focus-visible {
+    background: var(--wb-hover);
+    color: var(--text-color);
+}
+
+.hidden-indicator .ind-legend-name,
+.hidden-indicator .ind-legend-values {
+    opacity: 0.45;
+}
+
+.ind-legend-error {
+    flex-basis: 100%;
+    color: var(--danger);
+    font-weight: 500;
+}
+
+.ind-legend-loading {
+    color: var(--muted-text);
+}
+
+.ind-legend-collapse {
+    padding: 1px 4px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted-text);
+    font: inherit;
+    font-size: var(--fs-xs);
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.ind-legend-collapse:hover {
+    color: var(--text-color);
+}
+
+.ind-legend.collapsed .ind-legend-row:not(.ind-legend-overlay):not(.ind-legend-symbol) {
+    display: none;
+}
+
+/* ---- data window */
+
+.ind-data-window {
+    position: absolute;
+    top: 8px;
+    right: 72px;
+    z-index: 20;
+    width: 210px;
+    max-height: calc(100% - 16px);
+    overflow-y: auto;
+    padding: 8px 10px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--wb-panel);
+    box-shadow: var(--shadow-sm);
+    font-size: var(--fs-xs);
+}
+
+.ind-data-window h3 {
+    margin: 0 0 6px;
+    font-size: var(--fs-sm);
+}
+
+.ind-data-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 1px 0;
+    color: var(--muted-text);
+}
+
+.ind-data-row strong {
+    color: var(--text-color);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.ind-data-heading {
+    margin-top: 6px;
+    color: var(--text-soft);
+    font-weight: 600;
+}
+
+/* ---- indicator list */
+
+.ind-browser {
+    width: min(760px, calc(100vw - 32px));
+}
+
+.ind-browser input[type="search"] {
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+    font: inherit;
+}
+
+.ind-browser-body {
+    display: grid;
+    grid-template-columns: 190px 1fr;
+    gap: 10px;
+    min-height: 0;
+    height: min(56vh, 520px);
+}
+
+.ind-browser-categories {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+}
+
+.ind-browser-category {
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-soft);
+    font: inherit;
+    font-size: var(--fs-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.ind-browser-category:hover {
+    background: var(--wb-hover);
+}
+
+.ind-browser-category.active {
+    background: var(--wb-active);
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.ind-browser-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+}
+
+.ind-browser-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 6px;
+}
+
+.ind-browser-row:hover,
+.ind-browser-row:focus-within {
+    background: var(--wb-hover);
+}
+
+.ind-browser-item {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ind-browser-name {
+    font-size: var(--fs-md);
+    font-weight: 600;
+}
+
+.ind-browser-meta {
+    color: var(--muted-text);
+    font-size: var(--fs-xs);
+}
+
+.ind-browser-description {
+    color: var(--text-soft);
+    font-size: var(--fs-xs);
+}
+
+.ind-browser-star {
+    width: 30px;
+    height: 30px;
+    margin-right: 6px;
+}
+
+.ind-browser-star.active {
+    color: var(--warning);
+}
+
+.ind-browser-star.active .draw-icon path {
+    fill: currentColor;
+}
+
+.ind-browser-empty {
+    color: var(--muted-text);
+}
+
+.ind-browser-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* ---- indicator settings */
+
+.ind-settings-description {
+    margin: 0;
+    color: var(--muted-text);
+    font-size: var(--fs-sm);
+}
+
+.ind-settings-error {
+    min-height: 1em;
+    margin: 0;
+    color: var(--danger);
+    font-size: var(--fs-sm);
+}
+
+.ind-settings .draw-field input[type="date"] {
+    min-height: 34px;
+    padding: 6px 8px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+    font: inherit;
+}
+
+.ind-style-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.ind-style-name {
+    flex: 1;
+    min-width: 120px;
+    font-size: var(--fs-sm);
+}
+
+.ind-style-row select {
+    min-height: 30px;
+    padding: 3px 6px;
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+    font: inherit;
+    font-size: var(--fs-sm);
+}
+
+.ind-style-row input[type="color"] {
+    width: 34px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    background: transparent;
+}
+
+/* ---- compare dialog */
+
+.compare-symbol-dialog-content {
+    gap: 10px;
+}
+
+.compare-symbol-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: var(--fs-sm);
+}
+
+.compare-symbol-field input {
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+    font: inherit;
+    text-transform: uppercase;
+}
+
+.compare-symbol-results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.compare-symbol-option {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.compare-symbol-option:hover,
+.compare-symbol-option:focus-visible {
+    background: var(--wb-hover);
+}
+
+.compare-symbol-option span {
+    overflow: hidden;
+    color: var(--muted-text);
+    font-size: var(--fs-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---- chart alerts */
+
+.chart-alert-dialog .draw-field input[type="text"],
+.chart-alert-dialog .draw-field input[type="number"],
+.chart-alert-dialog .draw-field select {
+    min-height: 34px;
+}
+
+.chart-alert-manager {
+    width: min(620px, calc(100vw - 32px));
+}
+
+.chart-alert-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: min(60vh, 520px);
+    overflow-y: auto;
+}
+
+.chart-alert-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+}
+
+.chart-alert-row.inactive .chart-alert-text {
+    opacity: 0.55;
+}
+
+.chart-alert-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.chart-alert-text span {
+    color: var(--muted-text);
+    font-size: var(--fs-xs);
+}
+
+.chart-alert-switch input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary-color);
+}
+
+/* ---- price-only chart types (Renko, Line break, Kagi, Point & Figure) */
+
+.price-only-chart-container {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+}
+
+.price-only-chart-container[hidden],
+.price-only-legend[hidden] {
+    display: none;
+}
+
+.price-chart-stage.price-only-view > .price-chart-container,
+.price-chart-stage.price-only-view .ind-legends,
+.price-chart-stage.price-only-view .ind-data-window,
+.price-chart-stage.price-only-view .elliott-wave-hit-targets,
+.price-chart-stage.price-only-view .anchored-volume-profile-canvas,
+.price-chart-stage.price-only-view .elliott-wave-hover-card {
+    visibility: hidden;
+}
+
+.chart-workbench-body.price-only-view .chart-drawing-rail-host {
+    display: none;
+}
+
+.price-only-legend {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    z-index: 9;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    max-width: calc(100% - 96px);
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--wb-panel);
+    font-size: var(--fs-xs);
+}
+
+.price-only-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted-text);
+}
+
+.price-only-field input {
+    width: 9rem;
+    min-height: 26px;
+    padding: 2px 6px;
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    background: var(--surface-soft);
+    color: var(--text-color);
+    font: inherit;
+}
+
+.price-only-note {
+    flex-basis: 100%;
+    color: var(--muted-text);
+}
+
+@media (max-width: 768px) {
+    .chart-workbench-body {
+        gap: 4px;
+    }
+
+    /* Touch screens have no hover: tapping an indicator's name shows its controls. */
+    .ind-legend-row:not(:focus-within) .ind-legend-controls {
+        display: none;
+    }
+
+    .ind-data-window {
+        right: 8px;
+        width: min(210px, calc(100% - 16px));
+    }
+
+    .ind-browser-body {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+    }
+
+    .ind-browser-categories {
+        flex-direction: row;
+        overflow-x: auto;
+    }
+
+    .ind-browser-category {
+        white-space: nowrap;
+    }
+
+    .chart-footer-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+.ind-legend-symbol .ind-legend-name {
+    color: var(--text-color);
+}
+
+.ind-legend-key {
+    margin-right: 3px;
+    color: var(--muted-text);
+}

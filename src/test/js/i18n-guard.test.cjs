@@ -82,7 +82,8 @@ test('templates show only bundle text (outside elements Thymeleaf replaces)', ()
 });
 
 test('scripts set visible text through StockWatchI18n', () => {
-  const sources = [...files(SCRIPTS, '.js'), ...files(TEMPLATES, '.html')];
+  // Vendored libraries (static/js/vendor) are third-party code, not text this app shows.
+  const sources = [...files(SCRIPTS, '.js').filter(file => !file.split(path.sep).includes('vendor')), ...files(TEMPLATES, '.html')];
   const problems = sources.flatMap(file => untranslatedInScript(file).map(text => `${file}: ${text}`));
   assert.deepEqual(problems, [], 'use i18n.t(...) with a js.* message key');
 });

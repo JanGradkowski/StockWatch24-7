@@ -53,6 +53,10 @@ function referenced() {
       terms.add(second);
     }
     for (const [, id] of source.matchAll(/#\{js\.glossary\.([A-Za-z0-9_.]+)\.text\}/g)) terms.add(id);
+    // Scripts that mark data with explanations list the ids in a GLOSSARY_TERMS map.
+    for (const [, map] of source.matchAll(/GLOSSARY_TERMS = \{([^}]*)\}/g)) {
+      for (const [, id] of map.matchAll(/'([A-Za-z0-9_.]+)'/g)) terms.add(id);
+    }
     for (const [, key] of source.matchAll(/data-learn="([A-Za-z0-9_.]+)"/g)) options.add(key);
     for (const [, key] of source.matchAll(/learnHelp\('([A-Za-z0-9_.]+)'/g)) options.add(key);
   }

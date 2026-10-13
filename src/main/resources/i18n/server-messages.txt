@@ -1490,6 +1490,371 @@ internal
 en: {0} must not exceed 32000 characters.
 internal
 
+# --- Chart workspace: indicators, drawings and chart alerts -----------------------------------------
+
+en: {0} must be a whole number from {1} to {2}.
+pl: Wartość „{0}” musi być liczbą całkowitą od {1} do {2}.
+
+en: {0} must be true or false.
+pl: Wartość „{0}” musi być prawdą lub fałszem.
+
+en: {0} must be one of {1}.
+pl: Wartość „{0}” musi być jedną z: {1}.
+
+en: {0} must name a price or an indicator.
+pl: Wartość „{0}” musi wskazywać cenę lub wskaźnik.
+
+en: {0} refers to an unknown price or indicator.
+pl: Wartość „{0}” wskazuje nieznaną cenę lub wskaźnik.
+
+en: {0} must be chart, 1wk or 1mo.
+pl: Wartość „{0}” musi wynosić chart, 1wk lub 1mo.
+
+en: The timeframe must not be shorter than the chart interval.
+pl: Interwał wskaźnika nie może być krótszy niż interwał wykresu.
+
+en: {0} must be a market symbol.
+pl: Wartość „{0}” musi być symbolem rynkowym.
+
+en: {0} must be a date.
+pl: Wartość „{0}” musi być datą.
+
+en: {0} must be text of at most {1} characters.
+pl: Wartość „{0}” może mieć najwyżej {1} znaków.
+
+en: Unknown {0} input: {1}.
+internal
+
+en: Enter a formula.
+pl: Wpisz formułę.
+
+en: A formula can be at most {0} characters.
+pl: Formuła może mieć najwyżej {0} znaków.
+
+en: The formula is too long; use at most {0} terms.
+pl: Formuła jest za długa; użyj najwyżej {0} elementów.
+
+en: Unexpected character '{0}' at position {1}.
+pl: Nieoczekiwany znak „{0}” na pozycji {1}.
+
+en: Unexpected {0} at position {1}.
+pl: Nieoczekiwane „{0}” na pozycji {1}.
+
+en: Expected {0} at position {1}.
+pl: Oczekiwano „{0}” na pozycji {1}.
+
+en: The formula is nested too deeply at position {0}.
+pl: Formuła jest zbyt zagnieżdżona (pozycja {0}).
+
+en: {0} must be a whole number at position {1}.
+pl: Wartość „{0}” musi być liczbą całkowitą (pozycja {1}).
+
+en: {0} must be a whole number from {1} to {2} (position {3}).
+pl: Wartość „{0}” musi być liczbą całkowitą od {1} do {2} (pozycja {3}).
+
+en: Invalid number {0} at position {1}.
+pl: Nieprawidłowa liczba {0} na pozycji {1}.
+
+en: Unknown name {0} at position {1}.
+pl: Nieznana nazwa {0} na pozycji {1}.
+
+en: Unknown function {0} at position {1}.
+pl: Nieznana funkcja {0} na pozycji {1}.
+
+en: Unknown function {0}
+internal
+
+en: KAMA fast period must be below its slow period.
+pl: Szybki okres KAMA musi być krótszy niż wolny.
+
+en: The fast length must be below the slow length.
+pl: Szybki okres musi być krótszy niż wolny.
+
+en: The fast average must be shorter than the slow average.
+pl: Szybka średnia musi mieć krótszy okres niż wolna.
+
+en: The profile must end after it starts.
+pl: Koniec profilu musi przypadać po jego początku.
+
+en: The SAR start must not exceed its maximum.
+pl: Wartość startowa SAR nie może przekraczać maksimum.
+
+en: Indicator sources form a cycle.
+pl: Źródła wskaźników tworzą cykl.
+
+en: A higher timeframe cannot use another indicator as its source.
+pl: Wyższy interwał nie może używać innego wskaźnika jako źródła.
+
+en: This indicator could not be calculated for the loaded bars.
+pl: Nie udało się obliczyć tego wskaźnika dla wczytanych świec.
+
+en: The source indicator is unavailable.
+pl: Wskaźnik źródłowy jest niedostępny.
+
+en: No {0} candles are stored for {1}.
+pl: Brak zapisanych świec {0} dla {1}.
+
+en: No candles are stored for {0}.
+pl: Brak zapisanych świec dla {0}.
+
+en: Duplicate chart indicator {0}
+internal
+
+en: {0} repeats an input
+internal
+
+en: {0} repeats an output
+internal
+
+en: {0} fills an unknown output
+internal
+
+en: Default {0} is not an option of {1}
+internal
+
+en: Source length does not match the bar series.
+internal
+
+en: Output {0} is not aligned with the bars.
+internal
+
+en: Unsupported period: {0}
+internal
+
+en: Unsupported moving average type: {0}
+internal
+
+en: The source {0} is not available.
+internal
+
+en: No candles are available for {0}.
+internal
+
+en: A drawing needs a type.
+internal
+
+en: The drawing id does not match.
+internal
+
+en: Invalid drawing id.
+internal
+
+en: Invalid layout scope.
+internal
+
+en: Invalid template subject.
+internal
+
+en: Invalid template kind.
+internal
+
+en: Send the drawings as a list.
+internal
+
+en: The drawing is too large.
+pl: Rysunek jest za duży.
+
+en: The layout is too large.
+pl: Układ wykresu jest za duży.
+
+en: The template is too large.
+pl: Szablon jest za duży.
+
+en: The {0} is too large.
+pl: Element „{0}” jest za duży.
+
+en: The {0} must be a JSON object.
+internal
+
+en: The {0} is not valid JSON.
+internal
+
+en: At most 200 drawings can be imported at once.
+pl: Jednorazowo można zaimportować najwyżej 200 rysunków.
+
+en: A template name must have 1 to 80 characters.
+pl: Nazwa szablonu musi mieć od 1 do 80 znaków.
+
+en: This drawing was changed on another device. Reload the chart to see the latest version.
+pl: Ten rysunek zmieniono na innym urządzeniu. Wczytaj wykres ponownie, aby zobaczyć najnowszą wersję.
+
+en: Too many saved chart layouts.
+pl: Zapisano zbyt wiele układów wykresu.
+
+en: Too many saved templates. Delete one first.
+pl: Zapisano zbyt wiele szablonów. Najpierw usuń jeden z nich.
+
+en: This chart already has the maximum of {0} drawings.
+pl: Ten wykres ma już maksymalną liczbę rysunków ({0}).
+
+en: Your account already has the maximum number of saved drawings.
+pl: Twoje konto ma już maksymalną liczbę zapisanych rysunków.
+
+en: Describe the alert.
+pl: Opisz alert.
+
+en: Alerts can be set on drawings and indicators.
+pl: Alerty można ustawić na rysunkach i wskaźnikach.
+
+en: Choose how often the alert can trigger.
+pl: Wybierz, jak często alert może się wyzwalać.
+
+en: You already have {0} active chart alerts. Delete or switch off one first.
+pl: Masz już {0} aktywnych alertów z wykresu. Najpierw usuń lub wyłącz jeden z nich.
+
+en: The chart alert was not found.
+pl: Nie znaleziono alertu z wykresu.
+
+en: The alert definition is incomplete.
+pl: Opis alertu jest niepełny.
+
+en: The alert definition is too large.
+pl: Opis alertu jest za duży.
+
+en: The rectangle needs a width to set an alert on it.
+pl: Aby ustawić alert, prostokąt musi mieć szerokość.
+
+en: Alerts can be set on lines, channels and rectangles.
+pl: Alerty można ustawić na liniach, kanałach i prostokątach.
+
+en: A vertical line cannot be crossed by the price.
+pl: Cena nie może przeciąć pionowej linii.
+
+en: Choose the indicator line the alert watches.
+pl: Wybierz linię wskaźnika, którą obserwuje alert.
+
+en: Enter the value the indicator is compared with.
+pl: Wpisz wartość, z którą porównywany jest wskaźnik.
+
+en: Choose another indicator line to compare with.
+pl: Wybierz inną linię wskaźnika do porównania.
+
+en: Enter both channel levels.
+pl: Wpisz oba poziomy kanału.
+
+en: The lower channel level must be below the upper one.
+pl: Dolny poziom kanału musi być niższy od górnego.
+
+en: Choose what the indicator is compared with.
+pl: Wybierz, z czym porównać wskaźnik.
+
+en: This condition does not apply to the chosen line or shape.
+pl: Ten warunek nie pasuje do wybranej linii lub kształtu.
+
+en: Alerts can be set on daily, weekly and monthly charts.
+pl: Alerty można ustawić na wykresach dziennych, tygodniowych i miesięcznych.
+
+en: Name the alert in 1 to {0} characters.
+pl: Nazwa alertu musi mieć od 1 do {0} znaków.
+
+en: Invalid alert source.
+internal
+
+en: Nothing to change.
+internal
+
+en: Unsupported interval {0}
+internal
+
+en: A stored chart alert is not valid JSON.
+internal
+
+en: The chart alert could not be saved.
+internal
+
+en: Chart indicators are unavailable.
+internal
+
+en: The indicator was not calculated.
+internal
+
+en: The indicator could not be calculated: {0}
+internal
+
+en: Unknown comparison {0}
+internal
+
+en: Chart alert for {0}: {1}
+pl: Alert z wykresu dla {0}: {1}
+
+en: Chart alert: {0}
+pl: Alert z wykresu: {0}
+
+en: The close crossed the line.
+pl: Zamknięcie przecięło linię.
+
+en: The indicator crossed the level.
+pl: Wskaźnik przeciął poziom.
+
+en: The close crossed above the line.
+pl: Zamknięcie przecięło linię w górę.
+
+en: The indicator crossed above the level.
+pl: Wskaźnik przeciął poziom w górę.
+
+en: The close crossed below the line.
+pl: Zamknięcie przecięło linię w dół.
+
+en: The indicator crossed below the level.
+pl: Wskaźnik przeciął poziom w dół.
+
+en: The close is above the line.
+pl: Zamknięcie jest powyżej linii.
+
+en: The indicator is above the level.
+pl: Wskaźnik jest powyżej poziomu.
+
+en: The close is below the line.
+pl: Zamknięcie jest poniżej linii.
+
+en: The indicator is below the level.
+pl: Wskaźnik jest poniżej poziomu.
+
+en: The close entered the shape.
+pl: Zamknięcie weszło do kształtu.
+
+en: The indicator entered the channel.
+pl: Wskaźnik wszedł do kanału.
+
+en: The close left the shape.
+pl: Zamknięcie wyszło z kształtu.
+
+en: The indicator left the channel.
+pl: Wskaźnik wyszedł z kanału.
+
+en: The close is inside the shape.
+pl: Zamknięcie jest wewnątrz kształtu.
+
+en: The indicator is inside the channel.
+pl: Wskaźnik jest wewnątrz kanału.
+
+en: The close is outside the shape.
+pl: Zamknięcie jest poza kształtem.
+
+en: The indicator is outside the channel.
+pl: Wskaźnik jest poza kanałem.
+
+en: The alert condition was met.
+pl: Warunek alertu został spełniony.
+
+en: Close: {0}
+pl: Zamknięcie: {0}
+
+en: Indicator value: {0}
+pl: Wartość wskaźnika: {0}
+
+en: Level: {0}
+pl: Poziom: {0}
+
+en: This alert is now switched off.
+pl: Ten alert jest teraz wyłączony.
+
+en: This alert stays on and can trigger again on later candles.
+pl: Ten alert pozostaje włączony i może się wyzwolić przy kolejnych świecach.
+
+en: Open the chart: {0}
+pl: Otwórz wykres: {0}
+
 # --- Generic patterns: keep these last, so the specific entries above win ---------------------------
 
 en: {0} must be a whole number from 2 to 500.
@@ -1507,3 +1872,6 @@ pl: Wartość „{0}” musi być liczbą całkowitą.
 
 en: {0} must be a number.
 pl: Wartość „{0}” musi być liczbą.
+
+en: {0} at position {1}.
+pl: {0} (pozycja {1}).

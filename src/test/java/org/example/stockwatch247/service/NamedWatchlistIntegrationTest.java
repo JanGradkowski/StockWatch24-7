@@ -649,6 +649,11 @@ class NamedWatchlistIntegrationTest {
         assertThat(lists.technicalSummary(owner)).containsEntry("instruments", 1L).containsEntry("rules", 2L).containsEntry("tracked", 1L);
         mvc.perform(get("/home").with(user(owner.getEmail())).sessionAttr(AccountSession.SECURITY_VERSION, owner.getSecurityVersion()))
                 .andExpect(status().isOk()).andExpect(content().string(org.hamcrest.Matchers.containsString("Notification research")));
+        // With design.preview.capture this page is saved for scripts/check_watchlist_ui.cjs.
+        mvc.perform(get("/ticker-alerts").with(user(owner.getEmail())).sessionAttr(AccountSession.SECURITY_VERSION, owner.getSecurityVersion()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("data-read-scope=\"ACTIVITY\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Test member")));
         lists.delete(owner, list);
         assertThat(lists.notificationOrigins(owner, keys)).hasSize(4).allSatisfy((key, name) -> assertThat(name).endsWith("(deleted)"));
         assertThat(lists.technicalSummary(owner).get("tracked")).isEqualTo(0L);

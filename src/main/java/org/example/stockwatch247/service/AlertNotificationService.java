@@ -1564,6 +1564,26 @@ public class AlertNotificationService {
         return true;
     }
 
+    /**
+     * A chart alert (drawing or indicator) triggered. It follows the user's email setting for the interval,
+     * like outlook changes, and goes through the outbox so a failed send is retried.
+     */
+    public boolean sendChartAlertEmail(User user, org.example.stockwatch247.model.enums.TimeInterval interval,
+                                       String subject, String body, long eventId) {
+        if (!emailEnabled || preferencesService != null && !preferencesService.allowsTechnicalOutlookEmail(user, interval)) {
+            return false;
+        }
+        SimpleMailMessage message = baseMessage(user, subject);
+        message.setText(body);
+        localize(message);
+        if (outbox != null) {
+            outbox.enqueue(message, null, java.time.Duration.ofDays(7), "chart-alert:" + eventId, "INITIAL");
+        } else {
+            send(message);
+        }
+        return true;
+    }
+
     public boolean isSignalEmailEnabled(AlertRule rule, DetectedSignal signal) {
         return emailEnabled && allowsWatchlistEmail(rule,signal.tradeSignal()) && (preferencesService == null || preferencesService.allowsNewSignalEmail(
                 rule.getUser(), rule.getPatternFamily(), rule.getInterval(), signal.tradeSignal()));

@@ -156,6 +156,41 @@
               </div>
               <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
             </a>
+            <a th:if="${item.chartAlert() != null}"
+               th:with="alert=${item.chartAlert()}"
+               th:href="@{${alert.detailUrl()}}"
+               class="latest-signal-row latest-signal-grid is-unread chart-alert-row"
+               th:aria-label="#{home.openChartAlertAria(${alert.symbol()}, ${alert.label()})}">
+              <div class="latest-signal-type">
+                <strong th:text="${alert.label()}">Trend line</strong>
+                <div class="latest-signal-tags">
+                  <span class="latest-family-tag" th:text="#{home.chartAlert}">Chart alert</span>
+                  <span class="latest-direction-tag" th:text="${#messages.msg('chartAlert.condition.' + alert.condition())}">Crossed up</span>
+                </div>
+              </div>
+              <div class="latest-company">
+                <strong th:text="${alert.symbol()}">AAPL</strong>
+                <span th:text="${alert.companyName()}">Apple Inc.</span>
+              </div>
+              <div class="wl-notification-origin"><span th:text="#{home.chartAlertOrigin}">Your chart</span></div>
+              <span class="latest-interval" th:text="${#messages.msg('common.interval.' + alert.interval().name())}">Daily</span>
+              <div class="latest-signal-date">
+                <time th:text="${#temporals.format(alert.candleDate(), 'd MMM yyyy')}">28 Aug 2026</time>
+                <span th:text="#{home.recordedAt(${#temporals.format(alert.createdAt(), 'HH:mm')})}">Recorded 08:15</span>
+              </div>
+              <div class="latest-horizon">
+                <strong th:text="${#numbers.formatDecimal(alert.closePrice(), 1, 2)}">182.40</strong>
+                <span th:text="${alert.level() != null ? #messages.msg('home.chartAlertLevel', #numbers.formatDecimal(alert.level(), 1, 2)) : #messages.msg('home.closePrice')}">Close</span>
+              </div>
+              <div class="latest-lifecycle" aria-label="Alert status" th:aria-label="#{home.chartAlertStatusAria}">
+                <span class="signal-lifecycle-pill confirmed" th:text="#{home.chartAlertTriggered}">Triggered</span>
+              </div>
+              <div class="latest-confidence">
+                <strong>--</strong>
+                <span th:text="#{common.notAvailable}">Not available</span>
+              </div>
+              <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+            </a>
             </th:block>
           </div>
         </div>
