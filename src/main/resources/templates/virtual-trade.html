@@ -10,7 +10,7 @@
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
-  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
+  <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
 </head>
@@ -70,7 +70,10 @@
         </div>
       </div>
       <div id="virtualTradeChartStatus" class="technical-outlook-freshness" aria-live="polite"></div>
-      <div id="virtualTradePriceChart" class="virtual-trade-price-chart" aria-label="Candlestick chart with demo trade marker" th:aria-label="#{virtualTrade.chartAria}"></div>
+      <div class="chart-tools-frame">
+        <div class="chart-tools-rail" data-drawing-rail-host></div>
+        <div id="virtualTradePriceChart" class="virtual-trade-price-chart" aria-label="Candlestick chart with demo trade marker" th:aria-label="#{virtualTrade.chartAria}"></div>
+      </div>
       <p class="technical-chart-note" th:text="#{virtualTrade.chartNote}">The entry marker uses the exact captured quote time and is aligned to the containing completed candle when another interval is selected.</p>
     </section>
   </div>
@@ -126,6 +129,7 @@
       <p class="signal-results-disclaimer" th:text="#{virtualTrade.disclaimer}">Demo results exclude trading costs, taxes, dividends and execution constraints. A demo sell measures avoided losses or missed gains, not a short position.</p>
     </section>
   </div>
+  <dialog th:replace="~{fragments/chart-workbench :: demoTradeDialog}"></dialog>
 </main>
 
 <dialog id="closeVirtualTradeDialog" class="unsaved-alert-dialog" aria-labelledby="closeVirtualTradeTitle">
@@ -139,7 +143,7 @@
   const symbol = page.dataset.symbol;
   const encodedSymbol = encodeURIComponent(symbol);
   let priceChart = null;
-  let priceFibonacciTool = null;
+  let priceDrawingTools = null;
   let resultsChart = null;
   let resultsSeries = null;
 
@@ -157,8 +161,8 @@
     if (!response.ok) { status.textContent = i18n.t('virtualTrade.chartUnavailable'); return; }
     const payload = await response.json();
     const candles = (payload.candles || []).sort((a, b) => a.timestamp - b.timestamp);
-    priceFibonacciTool?.destroy();
-    priceFibonacciTool = null;
+    priceDrawingTools?.destroy();
+    priceDrawingTools = null;
     if (priceChart) priceChart.remove();
     const container = document.getElementById('virtualTradePriceChart');
     priceChart = StockWatchCharts.createChart(container, chartOptions(560));
@@ -171,14 +175,17 @@
     markers.sort((a, b) => String(a.time).localeCompare(String(b.time)));
     series.setMarkers(markers.filter(marker => marker.time));
     priceChart.timeScale().fitContent();
-    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
-      priceFibonacciTool = new StockWatchFibonacciDrawingTool({
-        chart: priceChart,
-        series,
-        container,
-        storageKey: `${window.location.pathname}:price:${interval}`
-      });
-    }
+    priceDrawingTools = window.StockWatchChartTools?.attach({
+      chart: priceChart,
+      series,
+      container,
+      symbol,
+      interval,
+      bars: () => candles.map(candle => ({
+        time: chartDate(candle.timestamp), open: candle.openPrice, high: candle.highPrice, low: candle.lowPrice, close: candle.closePrice, volume: candle.volume
+      })),
+      legacyKey: `${window.location.pathname}:price:${interval}`
+    }) || null;
     status.textContent = i18n.plural(`virtualTrade.completedCandles.${interval === '1wk' ? 'WEEKLY' : interval === '1mo' ? 'MONTHLY' : 'DAILY'}`, candles.length, candles.length);
   }
 

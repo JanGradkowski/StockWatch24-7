@@ -514,6 +514,8 @@
         }
     }
 
+    const sharedStores = new Map();
+
     /**
      * Drawings stored with the account for one symbol, so they follow the user across devices.
      * Changes are sent per drawing; failed writes are kept and retried, and a copy is cached in
@@ -527,14 +529,44 @@
             this.sent = new Map();
             this.pending = readLocal(this.pendingKey(), {}) || {};
             this.retryTimer = null;
+            this.loading = null;
+            this.subscribers = new Set();
             window.addEventListener('online', () => this.flush());
+        }
+
+        /**
+         * The page's one store for a symbol. Every chart of that symbol on the page (a signal chart and
+         * its other-interval chart) uses it, so they share what was sent and see what the others save.
+         */
+        static shared(symbol, legacyKeys = []) {
+            let store = sharedStores.get(symbol);
+            if (!store) {
+                store = new ServerDrawingStore(symbol, []);
+                sharedStores.set(symbol, store);
+            }
+            legacyKeys.forEach(entry => {
+                if (!store.legacyKeys.some(known => known.key === entry.key)) store.legacyKeys.push(entry);
+            });
+            return store;
         }
 
         cacheKey() { return `stockwatch:drawings:v2:server-cache:${this.symbol}`; }
 
         pendingKey() { return `stockwatch:drawings:v2:pending:${this.symbol}`; }
 
-        async load() {
+        /** Calls {@code listener(drawings, origin)} after another chart saved; returns the unsubscribe function. */
+        subscribe(listener) {
+            this.subscribers.add(listener);
+            return () => this.subscribers.delete(listener);
+        }
+
+        /** Charts created together share one request, so older browser drawings are imported only once. */
+        load() {
+            if (!this.loading) this.loading = this.fetchDrawings().finally(() => { this.loading = null; });
+            return this.loading.then(clone);
+        }
+
+        async fetchDrawings() {
             let drawings;
             try {
                 const response = await fetch(`/api/chart-state/drawings?symbol=${encodeURIComponent(this.symbol)}`, {credentials: 'same-origin'});
@@ -562,14 +594,20 @@
             return drawings;
         }
 
-        /** Brings drawings made before account storage existed (kept per interval in this browser) into the account. */
+        /**
+         * Brings drawings kept only in this browser into the account: per interval by the stock page before
+         * account storage existed, and per page by the other chart pages (current format, or the original
+         * Fibonacci tool's).
+         */
         async importLegacy(drawings) {
             const imported = [];
             for (const {key, interval} of this.legacyKeys) {
-                const legacy = readLocal(`stockwatch:fibonacci:v1:${key}`, null);
-                if (!Array.isArray(legacy) || !legacy.length) continue;
-                legacy.map(migrateLegacyDrawing).filter(Boolean).forEach(drawing => {
-                    if (drawings.some(existing => existing.id === drawing.id)) return;
+                const current = readLocal(`stockwatch:drawings:v2:${key}`, null);
+                const original = readLocal(`stockwatch:fibonacci:v1:${key}`, null);
+                const found = [...(Array.isArray(current) ? current.filter(valid) : []),
+                    ...(Array.isArray(original) ? original.map(migrateLegacyDrawing).filter(Boolean) : [])];
+                found.forEach(drawing => {
+                    if (drawings.some(existing => existing.id === drawing.id) || imported.some(item => item.id === drawing.id)) return;
                     drawing.intervals = interval ? [interval] : null;
                     imported.push(drawing);
                 });
@@ -582,16 +620,22 @@
             });
             if (!response.ok) return;
             imported.forEach(drawing => { drawings.push(drawing); this.versions.set(drawing.id, 1); });
-            this.legacyKeys.forEach(({key}) => writeLocal(`stockwatch:fibonacci:v1:${key}`, null));
+            this.legacyKeys.forEach(({key}) => {
+                writeLocal(`stockwatch:drawings:v2:${key}`, null);
+                writeLocal(`stockwatch:fibonacci:v1:${key}`, null);
+            });
         }
 
-        async persist(drawings) {
+        /** {@code origin}: the manager saving, so the other charts of the symbol take its drawings. */
+        async persist(drawings, origin) {
             const current = new Map(drawings.map(drawing => [drawing.id, JSON.stringify(drawing)]));
-            current.forEach((json, id) => { if (this.sent.get(id) !== json) this.pending[id] = JSON.parse(json); });
-            this.sent.forEach((json, id) => { if (!current.has(id)) this.pending[id] = null; });
+            let changed = false;
+            current.forEach((json, id) => { if (this.sent.get(id) !== json) { this.pending[id] = JSON.parse(json); changed = true; } });
+            this.sent.forEach((json, id) => { if (!current.has(id)) { this.pending[id] = null; changed = true; } });
             this.sent = current;
             writeLocal(this.cacheKey(), drawings);
             writeLocal(this.pendingKey(), this.pending);
+            if (changed) this.subscribers.forEach(listener => listener(drawings, origin));
             return this.flush();
         }
 
@@ -720,6 +764,7 @@
             this.series = options.series;
             this.container = options.container;
             this.store = options.store || new LocalDrawingStore(options.storageKey || window.location.pathname);
+            this.unsubscribeStore = this.store.subscribe?.((drawings, origin) => { if (origin !== this) this.adopt(drawings); }) || null;
             this.interval = options.interval || null;
             this.barsProvider = typeof options.bars === 'function' ? options.bars : null;
             this.priceFormatter = typeof options.priceFormatter === 'function' ? options.priceFormatter : null;
@@ -1909,7 +1954,7 @@
 
         async persist() {
             window.clearTimeout(this.persistTimer);
-            const result = await this.store.persist(clone(this.drawings));
+            const result = await this.store.persist(clone(this.drawings), this);
             if (result?.status === 'pending') this.setStatus(i18n.t('draw.status.savedLocally'));
             if (result?.status === 'unavailable') this.setStatus(i18n.t('draw.status.storageUnavailable'));
             if (result?.status === 'conflict') {
@@ -1933,6 +1978,20 @@
             this.redoStack = [];
             this.selection.clear();
             this.emit('selection', []);
+            this.emit('change', this.drawings);
+            this.requestRender();
+        }
+
+        /** Takes the drawings another chart of the same symbol on this page saved, so both show the same set. */
+        adopt(drawings) {
+            if (this.destroyed) return;
+            if (this.draft) this.cancelDraft(false);
+            this.drawings = clone(drawings).filter(valid);
+            // This chart's undo steps describe a set that no longer exists.
+            this.undoStack = [];
+            this.redoStack = [];
+            this.selection.forEach(id => { if (!this.find(id)) this.selection.delete(id); });
+            this.emit('selection', this.selectedDrawings());
             this.emit('change', this.drawings);
             this.requestRender();
         }
@@ -1970,6 +2029,7 @@
             if (this.destroyed) return;
             this.destroyed = true;
             this.persist();
+            this.unsubscribeStore?.();
             window.cancelAnimationFrame(this.renderFrame);
             this.series.unsubscribeDataChanged?.(this.onDataChanged);
             try { this.chart.timeScale().unsubscribeVisibleLogicalRangeChange(this.onRange); } catch (error) { /* chart removed */ }
@@ -2003,16 +2063,6 @@
         return `alt+${event.shiftKey ? 'shift+' : ''}${(event.code?.startsWith('Key') ? event.code.slice(3) : event.key).toLowerCase()}`;
     }
 
-    /**
-     * The constructor older pages call. It now opens the full drawing toolset; drawings stay keyed
-     * by the page's storage key, and ones saved by the original Fibonacci tool are converted.
-     */
-    class StockWatchFibonacciDrawingTool extends DrawingManager {
-        constructor(options = {}) {
-            super({...options, store: options.store || new LocalDrawingStore(options.storageKey || window.location.pathname)});
-        }
-    }
-
     window.StockWatchDrawing = Object.freeze({
         registerTool,
         tool,
@@ -2033,5 +2083,4 @@
         managers: () => [...managers],
         active: () => activeManager
     });
-    window.StockWatchFibonacciDrawingTool = StockWatchFibonacciDrawingTool;
 })();

@@ -7,7 +7,7 @@
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
-  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
+  <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
@@ -273,34 +273,39 @@
       <button type="button" class="btn-secondary" data-return-native-interval th:text="#{signalDetail.returnToInterval}">Return to signal interval</button>
     </div>
 
-    <div th:if="${signal.chart().available()}"
-         id="signalChart"
-         class="signal-chart"
-         data-native-detail-chart
-         role="group"
-         th:aria-label="#{signalDetail.chartAria(${#tr.text(signal.patternLabel())}, ${signal.symbol()})}"
-         th:attr="data-trend-start=${signal.chart().trendStartTimestamp()},
-                  data-pattern-start=${signal.chart().patternStartTimestamp()},
-                  data-signal-time=${signal.chart().signalTimestamp()},
-                  data-pattern-count=${signal.chart().patternCandleCount()},
-                  data-pattern-label=${#tr.text(signal.patternLabel())},
-                  data-direction=${signal.tradeSignal().name()},
-                  data-family=${signal.patternFamily().name()},
-                  data-symbol=${signal.symbol()},
-                  data-interval=${signal.interval().name()},
-                  data-trend-label=${#tr.text(signal.chart().trendLabel())},
-                  data-trade-entry=${signal.lifecycle().entryPrice()},
-                  data-trade-structural-stop=${signal.lifecycle().structuralStopPrice()},
-                  data-trade-stop=${signal.lifecycle().stopLossPrice()},
-                  data-trade-target=${signal.lifecycle().profitTargetPrice()},
-                  data-trade-rr=${signal.lifecycle().rewardRiskRatio()},
-                  data-trade-entry-time=${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.signalCandleTimestamp() : signal.lifecycle().detectionCandleTimestamp()},
-                  data-trade-time-stop-candles=${signal.lifecycle().confirmationWindowCandles()},
-                  data-trade-resolution-time=${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.lifecycle().elliottTradeResolutionTimestamp() : (signal.patternFamily().name() == 'HARMONIC_FORMATION' ? signal.lifecycle().harmonicStopResolutionTimestamp() : signal.lifecycle().resolutionCandleTimestamp())},
-                  data-trade-resolution-status=${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.lifecycle().elliottTradePlanStatus() : (signal.patternFamily().name() == 'HARMONIC_FORMATION' ? signal.lifecycle().harmonicStopStatus() : signal.lifecycle().status().name())},
-                  data-trade-resolution-close=${signal.lifecycle().tradeResolutionPrice() != null ? signal.lifecycle().tradeResolutionPrice() : signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.lifecycle().elliottTradeResolutionClose() : (signal.patternFamily().name() == 'HARMONIC_FORMATION' ? signal.lifecycle().harmonicStopResolutionPrice() : signal.lifecycle().resolutionClosePrice())}"></div>
-    <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
-         th:aria-label="#{signalDetail.alternateChartAria(${signal.symbol()})}" role="group"></div>
+    <div th:if="${signal.chart().available()}" class="chart-tools-frame">
+      <div class="chart-tools-rail" data-drawing-rail-host></div>
+      <div id="signalChart"
+           class="signal-chart"
+           data-native-detail-chart
+           role="group"
+           th:aria-label="#{signalDetail.chartAria(${#tr.text(signal.patternLabel())}, ${signal.symbol()})}"
+           th:attr="data-trend-start=${signal.chart().trendStartTimestamp()},
+                    data-pattern-start=${signal.chart().patternStartTimestamp()},
+                    data-signal-time=${signal.chart().signalTimestamp()},
+                    data-pattern-count=${signal.chart().patternCandleCount()},
+                    data-pattern-label=${#tr.text(signal.patternLabel())},
+                    data-direction=${signal.tradeSignal().name()},
+                    data-family=${signal.patternFamily().name()},
+                    data-symbol=${signal.symbol()},
+                    data-interval=${signal.interval().name()},
+                    data-trend-label=${#tr.text(signal.chart().trendLabel())},
+                    data-trade-entry=${signal.lifecycle().entryPrice()},
+                    data-trade-structural-stop=${signal.lifecycle().structuralStopPrice()},
+                    data-trade-stop=${signal.lifecycle().stopLossPrice()},
+                    data-trade-target=${signal.lifecycle().profitTargetPrice()},
+                    data-trade-rr=${signal.lifecycle().rewardRiskRatio()},
+                    data-trade-entry-time=${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.signalCandleTimestamp() : signal.lifecycle().detectionCandleTimestamp()},
+                    data-trade-time-stop-candles=${signal.lifecycle().confirmationWindowCandles()},
+                    data-trade-resolution-time=${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.lifecycle().elliottTradeResolutionTimestamp() : (signal.patternFamily().name() == 'HARMONIC_FORMATION' ? signal.lifecycle().harmonicStopResolutionTimestamp() : signal.lifecycle().resolutionCandleTimestamp())},
+                    data-trade-resolution-status=${signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.lifecycle().elliottTradePlanStatus() : (signal.patternFamily().name() == 'HARMONIC_FORMATION' ? signal.lifecycle().harmonicStopStatus() : signal.lifecycle().status().name())},
+                    data-trade-resolution-close=${signal.lifecycle().tradeResolutionPrice() != null ? signal.lifecycle().tradeResolutionPrice() : signal.patternFamily().name() == 'ELLIOTT_WAVE' ? signal.lifecycle().elliottTradeResolutionClose() : (signal.patternFamily().name() == 'HARMONIC_FORMATION' ? signal.lifecycle().harmonicStopResolutionPrice() : signal.lifecycle().resolutionClosePrice())}"></div>
+    </div>
+    <div class="chart-tools-frame">
+      <div class="chart-tools-rail" data-drawing-rail-host></div>
+      <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
+           th:aria-label="#{signalDetail.alternateChartAria(${signal.symbol()})}" role="group"></div>
+    </div>
     <div class="signal-chart-unavailable signal-detail-interval-error" data-detail-interval-error hidden>
       <span aria-hidden="true">!</span>
       <div><h3 th:text="#{detail.intervalUnavailable}">Chart interval is unavailable</h3><p data-detail-interval-error-message th:text="#{js.detailChart.historyUnavailable}">Price history is unavailable for this interval.</p></div>
@@ -966,6 +971,7 @@
       </div>
     </div>
   </dialog>
+  <dialog th:replace="~{fragments/chart-workbench :: demoTradeDialog}"></dialog>
 </main>
 <th:block th:fragment="signalDetailBehavior">
 <script th:src="@{/js/signal-tabs.js}"></script>
@@ -1869,14 +1875,14 @@
     }
 
     focusSignal();
-    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
-      new StockWatchFibonacciDrawingTool({
-        chart,
-        series: candles,
-        container,
-        storageKey: `${window.location.pathname}:native:${container.dataset.interval || 'signal'}`
-      });
-    }
+    window.StockWatchChartTools?.attach({
+      chart,
+      series: candles,
+      container,
+      symbol: container.dataset.symbol,
+      interval: container.dataset.interval,
+      legacyKey: `${window.location.pathname}:native:${container.dataset.interval || 'signal'}`
+    });
     if (elliottWave && typeof StockWatchElliottHierarchyOverlay !== 'undefined') {
       const rawInterval = container.dataset.interval === 'MONTHLY'
         ? '1mo'

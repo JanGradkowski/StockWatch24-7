@@ -7,7 +7,7 @@
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
-  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
+  <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
@@ -185,29 +185,32 @@
       <span th:if="${signal.tradeEntryPrice() != null}"><i class="signal-chart-key time-stop" aria-hidden="true"></i><span class="learn-term" data-term="timeStop" th:text="#{detail.timeStop}">Time stop</span></span>
     </div>
 
-    <div th:if="${chart.available()}"
-         id="signalChart"
-         class="signal-chart"
-         role="group"
-         th:aria-label="#{candleHistory.chartAria(${#tr.text(signal.patternLabel())}, ${signal.symbol()})}"
-         th:attr="data-trend-start=${chart.trendStartTimestamp()},
-                  data-pattern-start=${chart.patternStartTimestamp()},
-                  data-signal-time=${chart.signalTimestamp()},
-                  data-pattern-count=${chart.patternCandleCount()},
-                  data-pattern-label=${#tr.text(signal.patternLabel())},
-                  data-direction=${signal.tradeSignal().name()},
-                  data-family=CANDLESTICK,
-                  data-interval=${signal.intervalLabel().toUpperCase()},
-                  data-trend-label=${chart.trendLabel()},
-                  data-trade-entry=${signal.tradeEntryPrice()},
-                  data-trade-stop=${signal.stopLossPrice()},
-                  data-trade-target=${signal.profitTargetPrice()},
-                  data-trade-rr=${signal.rewardRiskRatio()},
-                  data-trade-entry-time=${signal.lifecycle().detectionCandleTimestamp() != null ? signal.lifecycle().detectionCandleTimestamp() : signal.signalTimestamp()},
-                  data-trade-time-stop-candles=${signal.timeStopCandles()},
-                  data-trade-resolution-time=${signal.tradeExitTimestamp()},
-                  data-trade-resolution-status=${signal.lifecycle().status().name()},
-                  data-trade-resolution-close=${signal.tradeExitPrice()}"></div>
+    <div th:if="${chart.available()}" class="chart-tools-frame">
+      <div class="chart-tools-rail" data-drawing-rail-host></div>
+      <div id="signalChart"
+           class="signal-chart"
+           role="group"
+           th:aria-label="#{candleHistory.chartAria(${#tr.text(signal.patternLabel())}, ${signal.symbol()})}"
+           th:attr="data-trend-start=${chart.trendStartTimestamp()},
+                    data-pattern-start=${chart.patternStartTimestamp()},
+                    data-signal-time=${chart.signalTimestamp()},
+                    data-pattern-count=${chart.patternCandleCount()},
+                    data-pattern-label=${#tr.text(signal.patternLabel())},
+                    data-direction=${signal.tradeSignal().name()},
+                    data-family=CANDLESTICK,
+                    data-symbol=${signal.symbol()},
+                    data-interval=${signal.intervalLabel().toUpperCase()},
+                    data-trend-label=${chart.trendLabel()},
+                    data-trade-entry=${signal.tradeEntryPrice()},
+                    data-trade-stop=${signal.stopLossPrice()},
+                    data-trade-target=${signal.profitTargetPrice()},
+                    data-trade-rr=${signal.rewardRiskRatio()},
+                    data-trade-entry-time=${signal.lifecycle().detectionCandleTimestamp() != null ? signal.lifecycle().detectionCandleTimestamp() : signal.signalTimestamp()},
+                    data-trade-time-stop-candles=${signal.timeStopCandles()},
+                    data-trade-resolution-time=${signal.tradeExitTimestamp()},
+                    data-trade-resolution-status=${signal.lifecycle().status().name()},
+                    data-trade-resolution-close=${signal.tradeExitPrice()}"></div>
+    </div>
     <ol th:if="${chart.available()}" id="signalChartData" hidden aria-hidden="true">
       <li th:each="candle : ${chart.candles()}"
           th:attr="data-time=${candle.timestamp()},data-open=${candle.open()},data-high=${candle.high()},data-low=${candle.low()},data-close=${candle.close()}"></li>
@@ -579,6 +582,7 @@
       </div>
     </div>
   </dialog>
+  <dialog th:replace="~{fragments/chart-workbench :: demoTradeDialog}"></dialog>
 </main>
 <th:block th:replace="~{signal-detail :: signalDetailBehavior}"></th:block>
 </body>

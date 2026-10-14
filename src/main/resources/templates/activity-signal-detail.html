@@ -7,7 +7,7 @@
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
-  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
+  <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
   <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
@@ -118,14 +118,21 @@
         <span><i class="signal-chart-key pattern" aria-hidden="true"></i><span th:text="${signal.proxyEntryPrice() ? #messages.msg('activityDetail.closeProxy') : #messages.msg('activityDetail.reportedPrice')}">Reported execution price</span></span>
       </div>
 
-      <div th:if="${signal.chart().available()}" id="signalChart" class="signal-chart" role="img" data-native-detail-chart
-           th:aria-label="#{activityDetail.chartAria(${#tr.text(signal.transactionTypeLabel())}, ${signal.symbol()})}"
-           th:attr="data-signal-time=${signal.chart().signalTimestamp()},
-                    data-entry-price=${signal.chart().entryPrice()},
-                    data-direction=${signal.transactionType() == 'PURCHASE' ? 'BUY' : 'SELL'},
-                    data-action-label=${#tr.text(signal.transactionTypeLabel())}"></div>
-      <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
-           th:aria-label="#{activityDetail.alternateChartAria(${signal.symbol()})}" role="img"></div>
+      <div th:if="${signal.chart().available()}" class="chart-tools-frame">
+        <div class="chart-tools-rail" data-drawing-rail-host></div>
+        <div id="signalChart" class="signal-chart" role="img" data-native-detail-chart
+             th:aria-label="#{activityDetail.chartAria(${#tr.text(signal.transactionTypeLabel())}, ${signal.symbol()})}"
+             th:attr="data-signal-time=${signal.chart().signalTimestamp()},
+                      data-entry-price=${signal.chart().entryPrice()},
+                      data-direction=${signal.transactionType() == 'PURCHASE' ? 'BUY' : 'SELL'},
+                      data-action-label=${#tr.text(signal.transactionTypeLabel())},
+                      data-symbol=${signal.symbol()}"></div>
+      </div>
+      <div class="chart-tools-frame">
+        <div class="chart-tools-rail" data-drawing-rail-host></div>
+        <div id="signalAlternateChart" class="signal-chart" data-alternate-detail-chart hidden
+             th:aria-label="#{activityDetail.alternateChartAria(${signal.symbol()})}" role="img"></div>
+      </div>
       <div class="signal-chart-unavailable signal-detail-interval-error" data-detail-interval-error hidden>
         <span aria-hidden="true">!</span>
         <div><h3 th:text="#{detail.intervalUnavailable}">Chart interval is unavailable</h3><p data-detail-interval-error-message th:text="#{js.detailChart.historyUnavailable}">Price history is unavailable for this interval.</p></div>
@@ -340,6 +347,7 @@
     </div>
   </dialog>
 
+  <dialog th:replace="~{fragments/chart-workbench :: demoTradeDialog}"></dialog>
 </main>
 
 <script th:src="@{/js/signal-tabs.js}"></script>
@@ -416,14 +424,14 @@
     const signalIndex = candleData.findIndex(candle => candle.time === signalTime);
     if (signalIndex >= 0) priceChart.timeScale().setVisibleLogicalRange({from: Math.max(-.5, signalIndex - 18), to: signalIndex + 8});
     else priceChart.timeScale().fitContent();
-    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
-      new StockWatchFibonacciDrawingTool({
-        chart: priceChart,
-        series: candleSeries,
-        container: chartContainer,
-        storageKey: `${window.location.pathname}:native:activity`
-      });
-    }
+    window.StockWatchChartTools?.attach({
+      chart: priceChart,
+      series: candleSeries,
+      container: chartContainer,
+      symbol: chartContainer.dataset.symbol,
+      interval: '1d',
+      legacyKey: `${window.location.pathname}:native:activity`
+    });
   }
 
   const resultsWorkspace = document.getElementById('signalResultsWorkspace');
