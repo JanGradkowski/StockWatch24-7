@@ -10,6 +10,9 @@
     --wb-panel: rgba(21, 28, 38, 0.97);
     --wb-hover: rgba(232, 237, 243, 0.08);
     --wb-active: rgba(183, 243, 74, 0.16);
+    /* The rail column on the other chart pages, matching their chart boxes (.signal-chart). */
+    --chart-tools-border: rgba(255, 255, 255, 0.06);
+    --chart-tools-panel: rgba(2, 4, 6, 0.32);
 }
 
 :root[data-theme="light"] {
@@ -20,6 +23,8 @@
     --wb-panel: rgba(255, 255, 255, 0.98);
     --wb-hover: rgba(24, 34, 48, 0.06);
     --wb-active: rgba(71, 122, 18, 0.14);
+    --chart-tools-border: rgba(31, 67, 40, 0.12);
+    --chart-tools-panel: rgba(255, 255, 255, 0.5);
 }
 
 .drawing-host {
@@ -776,6 +781,81 @@
 
     .draw-coordinate-row {
         grid-template-columns: 1fr;
+    }
+}
+
+/* ---- other chart pages: the rail in its own column beside the chart (StockWatchChartTools) */
+
+.chart-tools-frame {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+}
+
+/* The rail goes with its chart when the page hides it (another interval is shown instead). */
+.chart-tools-frame:has(> [hidden]) {
+    display: none;
+}
+
+.chart-tools-frame:has(> .signal-chart) {
+    margin-top: 0.65rem;
+}
+
+.chart-tools-frame:has(> .historical-elliott-detail-chart) {
+    margin-top: 0.85rem;
+}
+
+.chart-tools-frame > :not(.chart-tools-rail) {
+    flex: 1 1 0%;
+    min-width: 0;
+    margin-top: 0;
+}
+
+.chart-tools-rail {
+    display: flex;
+    flex: 0 0 auto;
+}
+
+.chart-tools-rail:empty {
+    display: none;
+}
+
+.chart-tools-rail .draw-rail {
+    flex: 1 1 auto;
+    /* As tall as the chart: the rail's own buttons never make the row taller. */
+    height: 0;
+    min-height: 100%;
+    padding: 6px 4px;
+    overflow-x: hidden;
+    /* Buttons fold into "More tools" first; only a chart too short for the tool groups scrolls. */
+    overflow-y: auto;
+    scrollbar-width: none;
+    border-color: var(--chart-tools-border);
+    border-radius: 12px;
+    background: var(--chart-tools-panel);
+}
+
+.chart-tools-rail .draw-rail > * {
+    flex: 0 0 auto;
+}
+
+/* "More tools" sits at the bottom of the column. */
+.draw-rail-overflow {
+    margin-top: auto;
+}
+
+/* The rail is beside the chart, not over it. */
+.chart-tools-frame .draw-favorites {
+    left: 8px;
+}
+
+@media (max-width: 768px) {
+    .chart-tools-frame {
+        gap: 4px;
+    }
+
+    .chart-tools-rail .draw-rail {
+        padding: 4px 2px;
     }
 }
 

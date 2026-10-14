@@ -24,6 +24,10 @@
     ];
     const MODES = ['cursor', 'eraser'];
     const INTERVALS = ['1d', '1wk', '1mo'];
+    // Rail buttons a short chart folds into "More tools", least used first; the tool sections always stay.
+    const FOLD_ORDER = ['favorites', 'stay', 'lock', 'hide', 'tree', 'remove', 'zoom', 'measure', 'magnet', 'redo', 'undo'];
+    const TOGGLES = new Set(['measure', 'zoom', 'magnet', 'stay', 'lock', 'hide', 'tree', 'favorites']);
+    const OVERFLOW = 'overflow';
 
     function element(tag, options = {}) {
         const node = document.createElement(tag);
@@ -202,6 +206,7 @@
             this.host = manager.container;
             this.host.classList.add('drawing-host');
             this.buildRail(options.toolbarHost);
+            if (options.foldRail) this.enableRailFolding();
             this.buildFavorites();
             this.buildSelectionToolbar();
             this.buildToast();
@@ -318,51 +323,61 @@
 
         toggleFlyout(section, wrapper) {
             if (this.flyout?.dataset.section === section.key) { this.closeFlyout(); return; }
+            this.openFlyout(section.key, i18n.t(`draw.section.${section.key}`), wrapper, this.sectionButtons.get(section.key).more, flyout => {
+                section.groups.forEach(group => {
+                    flyout.append(element('div', {className: 'draw-flyout-heading', text: i18n.t(`draw.group.${group}`)}));
+                    groupItems(group).forEach(type => {
+                        const definition = D.tool(type);
+                        const favorite = this.preferences.favorites.includes(type);
+                        const item = element('button', {
+                            className: `draw-flyout-item${this.manager.mode === type ? ' active' : ''}`,
+                            attrs: {type: 'button', role: 'menuitem'},
+                            on: {click: () => this.activate(type)},
+                            children: [icons.icon(type), element('span', {className: 'draw-flyout-name', text: toolName(type)}),
+                                definition?.shortcut ? element('span', {className: 'draw-flyout-shortcut', text: shortcutLabel(definition.shortcut)}) : null]
+                        });
+                        const star = element('button', {
+                            className: `draw-flyout-star${favorite ? ' active' : ''}`,
+                            attrs: {type: 'button', 'aria-pressed': String(favorite), 'aria-label': i18n.t(favorite ? 'draw.rail.unfavorite' : 'draw.rail.favorite', toolName(type))},
+                            on: {click: event => { event.stopPropagation(); this.toggleFavorite(type); this.closeFlyout(); this.toggleFlyout(section, wrapper); }}
+                        });
+                        star.append(icons.icon('star', 14));
+                        flyout.append(element('div', {className: 'draw-flyout-row', children: [item, MODES.includes(type) ? null : star]}));
+                    });
+                });
+            });
+        }
+
+        /**
+         * A tool panel beside {@code anchor}, with "Back to all tools" first; {@code opener} is the button that
+         * opened it and gets the focus back.
+         */
+        openFlyout(key, label, anchor, opener, fill) {
             this.closeFlyout();
-            const flyout = element('div', {className: 'draw-flyout', attrs: {role: 'menu', 'data-section': section.key,
-                'aria-label': i18n.t(`draw.section.${section.key}`)}});
+            const flyout = element('div', {className: 'draw-flyout', attrs: {role: 'menu', 'data-section': key, 'aria-label': label}});
             const back = element('button', {
                 className: 'draw-flyout-back', attrs: {type: 'button'},
-                on: {click: () => { this.closeFlyout(); this.sectionButtons.get(section.key).more.focus(); }},
+                on: {click: () => { this.closeFlyout(); opener.focus(); }},
                 children: [icons.icon('chevron', 14), element('span', {text: i18n.t('draw.rail.back')})]
             });
             flyout.append(back);
-            section.groups.forEach(group => {
-                flyout.append(element('div', {className: 'draw-flyout-heading', text: i18n.t(`draw.group.${group}`)}));
-                groupItems(group).forEach(type => {
-                    const definition = D.tool(type);
-                    const favorite = this.preferences.favorites.includes(type);
-                    const item = element('button', {
-                        className: `draw-flyout-item${this.manager.mode === type ? ' active' : ''}`,
-                        attrs: {type: 'button', role: 'menuitem'},
-                        on: {click: () => this.activate(type)},
-                        children: [icons.icon(type), element('span', {className: 'draw-flyout-name', text: toolName(type)}),
-                            definition?.shortcut ? element('span', {className: 'draw-flyout-shortcut', text: shortcutLabel(definition.shortcut)}) : null]
-                    });
-                    const star = element('button', {
-                        className: `draw-flyout-star${favorite ? ' active' : ''}`,
-                        attrs: {type: 'button', 'aria-pressed': String(favorite), 'aria-label': i18n.t(favorite ? 'draw.rail.unfavorite' : 'draw.rail.favorite', toolName(type))},
-                        on: {click: event => { event.stopPropagation(); this.toggleFavorite(type); this.closeFlyout(); this.toggleFlyout(section, wrapper); }}
-                    });
-                    star.append(icons.icon('star', 14));
-                    flyout.append(element('div', {className: 'draw-flyout-row', children: [item, MODES.includes(type) ? null : star]}));
-                });
-            });
+            fill(flyout);
             // Outside the rail, which may scroll and would cut the list off; full screen shows only its own element.
             (document.fullscreenElement || document.body).append(flyout);
             this.flyout = flyout;
-            this.placeFlyout(wrapper);
-            this.sectionButtons.get(section.key).more.setAttribute('aria-expanded', 'true');
-            flyout.querySelector('.draw-flyout-item')?.focus();
+            this.flyoutOpener = opener;
+            this.placeFlyout(anchor);
+            opener.setAttribute('aria-expanded', 'true');
+            flyout.querySelector('.draw-flyout-item:not(:disabled)')?.focus();
             flyout.addEventListener('keydown', event => {
-                const entries = [...flyout.querySelectorAll('.draw-flyout-item')];
+                const entries = [...flyout.querySelectorAll('.draw-flyout-item:not(:disabled)')];
                 const index = entries.indexOf(document.activeElement);
                 if (event.key === 'ArrowDown') { event.preventDefault(); entries[(index + 1) % entries.length]?.focus(); }
                 if (event.key === 'ArrowUp') { event.preventDefault(); entries[(index - 1 + entries.length) % entries.length]?.focus(); }
-                if (event.key === 'Escape') { event.stopPropagation(); this.closeFlyout(); this.sectionButtons.get(section.key).more.focus(); }
+                if (event.key === 'Escape') { event.stopPropagation(); this.closeFlyout(); opener.focus(); }
             });
             this.flyoutCloser = event => {
-                if (!wrapper.contains(event.target) && !flyout.contains(event.target)) this.closeFlyout();
+                if (!anchor.contains(event.target) && !flyout.contains(event.target)) this.closeFlyout();
             };
             // It is fixed to the window, so it closes when the page or the rail scrolls under it.
             this.flyoutScrollCloser = event => {
@@ -374,11 +389,11 @@
             window.addEventListener('resize', this.flyoutResizeCloser);
         }
 
-        /** Beside the rail section, kept inside the window; phones show it as a sheet at the bottom instead (CSS). */
-        placeFlyout(wrapper) {
+        /** Beside the rail section or button, kept inside the window; phones show it as a sheet at the bottom instead (CSS). */
+        placeFlyout(target) {
             const flyout = this.flyout;
             if (window.matchMedia?.('(max-width: 768px)').matches) return;
-            const anchor = wrapper.getBoundingClientRect();
+            const anchor = target.getBoundingClientRect();
             const box = flyout.getBoundingClientRect();
             const left = Math.min(anchor.right + 6, window.innerWidth - box.width - 8);
             const top = Math.min(anchor.top, window.innerHeight - box.height - 8);
@@ -388,13 +403,79 @@
 
         closeFlyout() {
             if (!this.flyout) return;
-            const key = this.flyout.dataset.section;
             this.flyout.remove();
             this.flyout = null;
-            this.sectionButtons.get(key)?.more.setAttribute('aria-expanded', 'false');
+            this.flyoutOpener?.setAttribute('aria-expanded', 'false');
+            this.flyoutOpener = null;
             document.removeEventListener('pointerdown', this.flyoutCloser, true);
             document.removeEventListener('scroll', this.flyoutScrollCloser, true);
             window.removeEventListener('resize', this.flyoutResizeCloser);
+        }
+
+        // ---- folding (charts shorter than the rail)
+
+        /**
+         * Charts shorter than the rail fold its least-used buttons into "More tools" at the bottom, as
+         * TradingView does in short windows, instead of scrolling the rail as the stock page does.
+         */
+        enableRailFolding() {
+            this.overflowButton = button(i18n.t('draw.rail.moreTools'), 'more', () => this.toggleOverflow(), {
+                className: 'draw-rail-button draw-rail-overflow', attrs: {'aria-haspopup': 'menu', 'aria-expanded': 'false'}
+            });
+            this.overflowButton.hidden = true;
+            this.rail.append(this.overflowButton);
+            this.folded = [];
+            if (typeof ResizeObserver !== 'undefined') {
+                // The rail is as tall as the chart beside it; hiding buttons does not change its size.
+                const observer = new ResizeObserver(() => {
+                    if (this.fitFrame) return;
+                    this.fitFrame = window.requestAnimationFrame(() => { this.fitFrame = null; this.fitRail(); });
+                });
+                observer.observe(this.rail);
+                this.disposers.push(() => { observer.disconnect(); window.cancelAnimationFrame(this.fitFrame); });
+            }
+            this.fitRail();
+        }
+
+        fitRail() {
+            const rail = this.rail;
+            // A hidden chart (the other interval's) is fitted when it is shown.
+            if (!rail.clientHeight) return;
+            const fits = () => rail.scrollHeight <= rail.clientHeight + 1;
+            FOLD_ORDER.forEach(key => { this.utilityButtons[key].hidden = false; });
+            this.overflowButton.hidden = true;
+            this.folded = [];
+            if (!fits()) {
+                this.overflowButton.hidden = false;
+                for (const key of FOLD_ORDER) {
+                    if (fits()) break;
+                    this.utilityButtons[key].hidden = true;
+                    this.folded.push(key);
+                }
+            }
+            if (this.flyout?.dataset.section === OVERFLOW) this.closeFlyout();
+        }
+
+        toggleOverflow() {
+            if (this.flyout?.dataset.section === OVERFLOW) { this.closeFlyout(); return; }
+            this.openFlyout(OVERFLOW, i18n.t('draw.rail.moreTools'), this.overflowButton, this.overflowButton, flyout => {
+                Object.entries(this.utilityButtons).filter(([key]) => this.folded.includes(key)).forEach(([key, source]) => {
+                    const toggle = TOGGLES.has(key);
+                    const item = element('button', {
+                        className: `draw-flyout-item${source.classList.contains('active') ? ' active' : ''}`,
+                        attrs: {type: 'button', role: toggle ? 'menuitemcheckbox' : 'menuitem', disabled: source.disabled,
+                            'aria-checked': toggle ? String(source.classList.contains('active')) : null},
+                        on: {click: () => {
+                            this.closeFlyout();
+                            if (key === 'remove') this.confirmRemoveAll(this.overflowButton);
+                            else source.click();
+                        }},
+                        // The rail button's own icon and title, which show its state (lock or unlock, the magnet mode).
+                        children: [source.firstElementChild?.cloneNode(true), element('span', {className: 'draw-flyout-name', text: source.title})]
+                    });
+                    flyout.append(element('div', {className: 'draw-flyout-row', children: [item]}));
+                });
+            });
         }
 
         toggleFavorite(type) {

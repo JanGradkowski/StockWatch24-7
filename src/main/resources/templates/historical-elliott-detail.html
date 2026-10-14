@@ -7,7 +7,7 @@
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
-  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
+  <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
@@ -168,10 +168,13 @@
         <span><i class="signal-chart-key subwave" aria-hidden="true"></i><span class="learn-term" data-term="subwave" th:text="#{detail.legend.subwaves}">Subwaves on hover</span></span>
         <span><i class="signal-chart-key detection" aria-hidden="true"></i><span th:text="#{harmonicHistory.legend.confirmation}">Confirmation candle</span></span>
       </div>
-      <div id="historicalElliottDetailChart"
-           class="historical-elliott-detail-chart"
-           role="group"
-           th:aria-label="#{elliottHistory.chartAria(${#tr.text(wave.stageLabel())}, ${wave.symbol()})}"></div>
+      <div class="chart-tools-frame">
+        <div class="chart-tools-rail" data-drawing-rail-host></div>
+        <div id="historicalElliottDetailChart"
+             class="historical-elliott-detail-chart"
+             role="group"
+             th:aria-label="#{elliottHistory.chartAria(${#tr.text(wave.stageLabel())}, ${wave.symbol()})}"></div>
+      </div>
     </section>
   </div>
 
@@ -372,6 +375,7 @@
       <div class="unsaved-alert-dialog-actions"><button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary" th:text="#{results.understood}">Understood</button></div>
     </div>
   </dialog>
+  <dialog th:replace="~{fragments/chart-workbench :: demoTradeDialog}"></dialog>
 </main>
 
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
@@ -440,14 +444,14 @@
       rootSeries.push(series);
     }
     chart.timeScale().fitContent();
-    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
-      new StockWatchFibonacciDrawingTool({
-        chart,
-        series: candleSeries,
-        container,
-        storageKey: `${window.location.pathname}:elliott`
-      });
-    }
+    window.StockWatchChartTools?.attach({
+      chart,
+      series: candleSeries,
+      container,
+      symbol,
+      interval: rootInterval,
+      legacyKey: `${window.location.pathname}:elliott`
+    });
     if (typeof StockWatchElliottHierarchyOverlay !== 'undefined') {
       const hierarchyOverlay = new StockWatchElliottHierarchyOverlay({
         chart,

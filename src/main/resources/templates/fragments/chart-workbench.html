@@ -14,5 +14,40 @@
   <script th:src="@{/js/chart-drawing-icons.js}"></script>
   <script th:src="@{/js/chart-drawing-ui.js}"></script>
 </th:block>
+
+<!-- The other candlestick pages: the toolset plus what the stock page adds to it (account storage per
+     symbol, alerts on drawings, demo trades from positions), set up by StockWatchChartTools.attach. -->
+<th:block th:fragment="pageAssets">
+  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
+  <script th:src="@{/js/chart-alerts.js}"></script>
+  <script th:src="@{/js/chart-page-tools.js}"></script>
+</th:block>
+
+<!-- Opened from a long or short position drawn on the chart, as on the stock page. -->
+<dialog th:fragment="demoTradeDialog"
+        id="chartDemoTradeDialog"
+        class="unsaved-alert-dialog virtual-trade-create-dialog"
+        aria-labelledby="chartDemoTradeTitle">
+  <div class="unsaved-alert-dialog-content">
+    <span class="unsaved-alert-kicker learn-term" data-term="demoTrade" th:text="#{outlook.createKicker}">Demo trading &middot; no real order</span>
+    <h2 id="chartDemoTradeTitle" th:text="#{js.outlook.createDemoTrade}">Create demo trade</h2>
+    <p id="chartDemoTradeExplanation" th:text="#{stock.createHelp}">Confirm to save the current price and analysis for the selected interval.</p>
+    <div class="virtual-trade-size-mode learn-control" data-learn="demo.size" th:data-learn-title="#{outlook.sizingAria}" role="group" aria-label="Demo trade sizing" th:aria-label="#{outlook.sizingAria}">
+      <button type="button" class="active" data-chart-demo-size-mode="none" th:text="#{virtualTrades.percentageOnly}">Percentage only</button>
+      <button type="button" data-chart-demo-size-mode="quantity" th:text="#{outlook.sizeQuantity}">Quantity</button>
+      <button type="button" data-chart-demo-size-mode="notional" th:text="#{outlook.sizeAmount}">Virtual amount</button>
+    </div>
+    <label id="chartDemoTradeSizeField" class="virtual-trade-size-field" hidden>
+      <span id="chartDemoTradeSizeLabel" th:text="#{outlook.sizeQuantity}">Quantity</span>
+      <input id="chartDemoTradeSizeInput" type="number" min="0.00000001" max="1000000000000" step="any" inputmode="decimal">
+      <small id="chartDemoTradeSizeHelp" th:text="#{js.outlook.positiveSize}">Enter a positive virtual size.</small>
+    </label>
+    <div id="chartDemoTradeStatus" class="technical-outlook-freshness" role="status"></div>
+    <div class="unsaved-alert-dialog-actions">
+      <button id="cancelChartDemoTrade" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>
+      <button id="confirmChartDemoTrade" type="button" class="btn-accent" th:text="#{js.outlook.createDemoTrade}">Create demo trade</button>
+    </div>
+  </div>
+</dialog>
 </body>
 </html>

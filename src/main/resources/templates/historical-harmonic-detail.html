@@ -7,7 +7,7 @@
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
-  <th:block th:replace="~{fragments/chart-workbench :: drawingAssets}"></th:block>
+  <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
@@ -128,8 +128,11 @@
       <h2 id="historical-harmonic-chart-heading" th:text="${#messages.msgOrNull('harmonicHistory.onChart.' + harmonic.timeInterval().name(), #tr.text(harmonic.patternLabel())) ?: harmonic.patternLabel()}">Gartley chart</h2>
       <p th:text="#{harmonicHistory.chartNote}">The pattern is drawn through D; the separate arrow marks the later candle that confirmed the terminal pivot.</p>
     </div></div>
-    <div id="historicalHarmonicChart" class="signal-chart" role="img"
-         th:attr="data-symbol=${harmonic.symbol()},data-interval=${harmonic.interval()},data-direction=${harmonic.direction()},data-confirmation-time=${harmonic.confirmationTimestamp()}"></div>
+    <div class="chart-tools-frame">
+      <div class="chart-tools-rail" data-drawing-rail-host></div>
+      <div id="historicalHarmonicChart" class="signal-chart" role="img"
+           th:attr="data-symbol=${harmonic.symbol()},data-interval=${harmonic.interval()},data-direction=${harmonic.direction()},data-confirmation-time=${harmonic.confirmationTimestamp()}"></div>
+    </div>
     <div class="signal-chart-legend" aria-label="Harmonic chart legend" th:aria-label="#{harmonicHistory.legendAria}">
       <span><i class="signal-chart-key motive" aria-hidden="true"></i><span class="learn-term" data-term="xabcd" th:text="#{harmonicHistory.legend.geometry}">Harmonic pivot geometry</span></span>
       <span><i class="signal-chart-key confirmation" aria-hidden="true"></i><span th:text="#{harmonicHistory.legend.confirmation}">Confirmation candle</span></span>
@@ -337,6 +340,7 @@
       <div class="unsaved-alert-dialog-actions"><button id="closeSignalResultsUnavailableDialog" type="button" class="btn-primary" th:text="#{results.understood}">Understood</button></div>
     </div>
   </dialog>
+  <dialog th:replace="~{fragments/chart-workbench :: demoTradeDialog}"></dialog>
 </main>
 
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
@@ -379,10 +383,9 @@
         shape: bullish ? 'arrowUp' : 'arrowDown', text: window.StockWatchI18n.t('harmonicHistory.signalConfirmed') }]);
     }
     chart.timeScale().fitContent();
-    if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
-      new StockWatchFibonacciDrawingTool({ chart, series: candleSeries, container,
-        storageKey: `historical-harmonic:${container.dataset.symbol}:${container.dataset.interval}:${points.at(-1)?.time || 0}` });
-    }
+    window.StockWatchChartTools?.attach({ chart, series: candleSeries, container,
+      symbol: container.dataset.symbol, interval: container.dataset.interval,
+      legacyKey: `historical-harmonic:${container.dataset.symbol}:${container.dataset.interval}:${points.at(-1)?.time || 0}` });
   })();
 </script>
 <th:block th:replace="~{signal-detail :: signalDetailBehavior}"></th:block>

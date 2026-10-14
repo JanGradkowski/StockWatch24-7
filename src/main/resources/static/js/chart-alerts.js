@@ -15,6 +15,7 @@
     let context = null;
     let alerts = [];
     let syncTimer = null;
+    const followed = new WeakSet();
 
     function element(tag, options = {}) {
         const node = document.createElement(tag);
@@ -383,10 +384,17 @@
 
     function attach(options) {
         context = options;
-        options.drawings?.on?.('change', scheduleSync);
+        follow(options.drawings);
         return load();
     }
 
-    window.StockWatchChartAlerts = Object.freeze({attach, openForDrawing, openForIndicator, openManager, geometry, indicatorConfigurations,
+    /** Keeps alerts on the shapes drawn on another chart of the symbol (pages with more than one chart). */
+    function follow(manager) {
+        if (!manager?.on || followed.has(manager)) return;
+        followed.add(manager);
+        manager.on('change', scheduleSync);
+    }
+
+    window.StockWatchChartAlerts = Object.freeze({attach, follow, openForDrawing, openForIndicator, openManager, geometry, indicatorConfigurations,
         alerts: () => alerts});
 })();

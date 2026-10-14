@@ -68,8 +68,29 @@ translated through `i18n/server-messages.txt`.
 positions, measures, forecasting, volume tools, shapes, annotations) and the workflow: tool rail
 with favourites, selection toolbar, properties dialog, object tree (drawings and indicators),
 lock/hide, z-order, clone, copy/paste, undo/redo, templates, keyboard shortcuts, magnet modes,
-per-interval visibility, drawings on indicator panes, touch input. All eight chart pages load the
+per-interval visibility, drawings on indicator panes, touch input. Every candlestick chart loads the
 toolset through `fragments/chart-workbench.html`; the old `fibonacci-drawing-tool.js` is gone.
+
+The other candlestick charts (signal, candlestick, Elliott, harmonic and activity details with their
+other-interval charts, the technical outlook and its change reports, demo trades) get the stock page's
+toolset through `StockWatchChartTools.attach` (`chart-page-tools.js`, loaded by the `pageAssets`
+fragment):
+
+- **Rail column.** The rail goes into the `[data-drawing-rail-host]` element beside the chart (a
+  `.chart-tools-frame`), never over the candles, and is exactly as tall as the chart, styled like the
+  page's chart box. When the chart is shorter than the rail (detail charts are 430 px, 350 px on
+  phones), the least-used buttons fold into "More tools" at its bottom, as TradingView does in short
+  windows: favourites, stay in drawing mode, lock, hide, object tree, remove all, then zoom, measure,
+  magnet, redo and undo. The stock page's rail is unchanged and scrolls instead.
+- **Account storage per symbol**, the same set the stock page shows. A page's charts of one symbol share
+  one `ServerDrawingStore.shared` store, so a page loads drawings once and a drawing saved on one chart
+  (the signal interval) appears on the other (another interval). Drawings a page kept in this browser
+  before are imported once, limited to that chart's interval.
+- **Alerts on drawings** (`chart-alerts.js`) and **demo trades from long and short positions**, through the
+  `demoTradeDialog` fragment; the technical outlook opens its own demo trade dialog.
+- **Volume** for the volume tools and the ranges: the outlook, its change reports and demo trades pass
+  their candles' volume; the detail pages, whose candles carry none, load it from the candles endpoint
+  the first time a tool needs it.
 
 A tool group (the arrow beside a rail button) opens as a panel fixed to the window beside the
 rail, with "Back to all tools" at the top; on phones it is a sheet at the bottom. It lives outside
@@ -180,6 +201,14 @@ drawing layer moves to the new price series (`DrawingManager.setSeries`).
   ./mvnw test -Ddesign.preview.capture=true -Dtest='StockWatch247ApplicationTests#indexAliasIsSearchableAndNavigatesWithTheCanonicalSymbol,ChartIndicatorCatalogTest#capturesTheCatalogForTheBrowserCheckWhenAsked'
   npm run test:chart:browser
   ```
+
+- **Browser check of the other chart pages** (`scripts/check_chart_pages_ui.cjs`): a signal detail with
+  its other-interval chart, the technical outlook and a demo trade, in English and Polish. It checks the
+  rail beside each chart and as tall as it, the chart inside its box, "More tools" on the short signal
+  chart, a trend line saved under the symbol with an alert dialog, light theme and phone width.
+  Screenshots go to `target/chart-pages-browser/`. Capture the pages with
+  `./mvnw test -Ddesign.preview.capture=true -Dtest=StockWatch247ApplicationTests`, then run
+  `npm run test:chart-pages:browser`.
 
 ## Performance
 

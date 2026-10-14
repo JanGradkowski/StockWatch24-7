@@ -8,6 +8,7 @@
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
   <script th:src="@{/js/chart-legend.js}"></script>
+  <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
@@ -63,7 +64,11 @@
       </div>
       <div id="outlookChangeOverlayLegend"></div>
       <p class="chart-legend-note" th:text="#{outlookChange.legendNote}">Uncheck indicators to hide them. This does not change the saved analysis.</p>
-      <div id="outlookChangePriceChart" class="technical-outlook-price-chart"></div>
+      <div class="chart-tools-frame">
+        <div class="chart-tools-rail" data-drawing-rail-host></div>
+        <div id="outlookChangePriceChart" class="technical-outlook-price-chart"
+             th:attr="data-symbol=${change.symbol()},data-interval=${change.interval()}"></div>
+      </div>
     </section>
     <section class="signal-evidence-section outlook-change-indicator-charts-section">
       <div class="signal-section-heading"><div><span class="signal-report-eyebrow" th:text="#{outlookChange.panelsEyebrow}">Individual indicators</span><h2 th:text="#{outlookChange.panelsTitle}">Indicator panels</h2></div></div>
@@ -96,6 +101,7 @@
       <div id="outlookSignalEvidence" class="technical-recent-signal-grid"></div>
     </section>
   </section>
+  <dialog th:replace="~{fragments/chart-workbench :: demoTradeDialog}"></dialog>
 </main>
 
 <script th:inline="javascript" th:attr="nonce=${cspNonce}">
@@ -213,6 +219,16 @@
     StockWatchChartLegend.mount(document.getElementById('outlookChangeOverlayLegend'), legendItems, i18n.t('chart.legend.overlays'));
     chart.timeScale().fitContent();
     new ResizeObserver(() => chart.applyOptions({width: container.clientWidth})).observe(container);
+    window.StockWatchChartTools?.attach({
+      chart,
+      series: candleSeries,
+      container,
+      symbol: container.dataset.symbol,
+      interval: container.dataset.interval,
+      bars: () => candles.map(candle => ({
+        time: Number(candle.timestamp), open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume
+      }))
+    });
   }
 
   function renderIndicatorCharts() {

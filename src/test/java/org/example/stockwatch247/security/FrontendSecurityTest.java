@@ -85,7 +85,7 @@ class FrontendSecurityTest {
         assertTrue(historical.contains("class=\"signal-view-tabs signal-three-view-tabs\""));
         assertTrue(historical.contains("id=\"signalResultsWorkspace\""));
         assertTrue(historical.contains("~{signal-detail :: signalDetailBehavior}"));
-        assertTrue(historical.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(historical.contains("window.StockWatchChartTools?.attach("));
     }
 
     @Test
@@ -131,15 +131,30 @@ class FrontendSecurityTest {
         String fibonacci = Files.readString(Path.of("src/main/resources/static/js/chart-drawing-tools-fib.js"));
         String measure = Files.readString(Path.of("src/main/resources/static/js/chart-drawing-tools-measure.js"));
 
-        for (String page : List.of("stock", "signal-detail", "historical-candlestick-detail", "historical-elliott-detail",
-                "historical-harmonic-detail", "activity-signal-detail", "technical-outlook", "virtual-trade")) {
+        String stockTemplate = Files.readString(Path.of("src/main/resources/templates/stock.html"));
+        assertTrue(stockTemplate.contains("~{fragments/chart-workbench :: drawingAssets}"));
+        // Every other candlestick chart gets the stock page's toolset: the rail in its own column beside the
+        // chart, drawings stored per symbol, alerts on drawings and demo trades from positions.
+        for (String page : List.of("signal-detail", "historical-candlestick-detail", "historical-elliott-detail",
+                "historical-harmonic-detail", "activity-signal-detail", "technical-outlook", "technical-outlook-change", "virtual-trade")) {
             String template = Files.readString(Path.of("src/main/resources/templates/" + page + ".html"));
-            assertTrue(template.contains("~{fragments/chart-workbench :: drawingAssets}"), page);
+            assertTrue(template.contains("~{fragments/chart-workbench :: pageAssets}"), page);
+            assertTrue(template.contains("<div class=\"chart-tools-rail\" data-drawing-rail-host></div>"), page);
+            // The candlestick history page draws its chart with signal-detail's script.
+            assertTrue(template.contains("window.StockWatchChartTools?.attach(")
+                    || template.contains("~{signal-detail :: signalDetailBehavior}"), page);
+            assertFalse(template.contains("StockWatchFibonacciDrawingTool"), page);
             assertFalse(template.contains("fibonacci-drawing-tool.js"), page);
+            if (!page.equals("technical-outlook")) {
+                assertTrue(template.contains("~{fragments/chart-workbench :: demoTradeDialog}"), page);
+            }
         }
         assertFalse(Files.exists(Path.of("src/main/resources/static/js/fibonacci-drawing-tool.js")));
         assertTrue(fragment.contains("@{/js/chart-drawing-core.js}"));
         assertTrue(fragment.contains("@{/js/chart-drawing-ui.js}"));
+        assertTrue(fragment.contains("@{/js/chart-alerts.js}"));
+        assertTrue(fragment.contains("@{/js/chart-page-tools.js}"));
+        assertTrue(fragment.contains("id=\"chartDemoTradeDialog\""));
 
         // The stock page keeps drawings in the account (older per-interval browser drawings move over once).
         assertTrue(stock.contains("new StockWatchDrawing.DrawingManager"));
@@ -148,13 +163,14 @@ class FrontendSecurityTest {
         assertTrue(stock.contains("drawingManager?.setInterval(newInterval)"));
         assertTrue(stock.contains("toolbarHost: document.getElementById('drawingToolbarHost')"));
         assertTrue(stock.contains("manager.on('demo-trade'"));
-        assertTrue(technicalOutlook.contains("new StockWatchFibonacciDrawingTool"));
-        assertTrue(technicalOutlook.contains("priceFibonacciTool?.destroy()"));
+        // Charts rebuilt for another interval take their toolset down with them.
+        assertTrue(technicalOutlook.contains("priceDrawingTools?.destroy()"));
+        assertTrue(technicalOutlook.contains("onDemoTrade: side =>"));
         assertTrue(technicalOutlook.contains("'ta4jTrend', 'volumeProfileKde'"));
         assertTrue(technicalOutlook.contains("researchOnly ? 'RESEARCH'"));
-        assertTrue(virtualTrade.contains("priceFibonacciTool?.destroy()"));
-        assertTrue(intervals.contains("alternateFibonacciTool"));
-        assertTrue(intervals.contains("new StockWatchFibonacciDrawingTool"));
+        assertTrue(virtualTrade.contains("priceDrawingTools?.destroy()"));
+        assertTrue(intervals.contains("alternateDrawingTools?.destroy()"));
+        assertTrue(intervals.contains("window.StockWatchChartTools?.attach("));
 
         for (String level : List.of("0.236", "0.382", "0.618", "0.786", "-0.618", "1.272", "1.618", "2.618")) {
             assertTrue(fibonacci.contains(level), level);
@@ -168,6 +184,7 @@ class FrontendSecurityTest {
             assertFalse(Files.readString(Path.of("src/main/resources/static/js/chart-drawing-" + file + ".js")).contains("innerHTML"), file);
         }
         assertFalse(Files.readString(Path.of("src/main/resources/static/js/chart-indicators.js")).contains("innerHTML"));
+        assertFalse(Files.readString(Path.of("src/main/resources/static/js/chart-page-tools.js")).contains("innerHTML"));
     }
 
     @Test

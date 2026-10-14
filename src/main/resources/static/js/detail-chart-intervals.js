@@ -33,7 +33,7 @@
     let alternateChart = null;
     let alternateSeries = null;
     let alternatePriceLine = null;
-    let alternateFibonacciTool = null;
+    let alternateDrawingTools = null;
     let alternateElliottOverlay = null;
 
     function intervalName(interval) {
@@ -190,8 +190,8 @@
     function renderAlternateChart(candles, interval) {
         alternateElliottOverlay?.destroy();
         alternateElliottOverlay = null;
-        alternateFibonacciTool?.destroy();
-        alternateFibonacciTool = null;
+        alternateDrawingTools?.destroy();
+        alternateDrawingTools = null;
         alternateChart?.remove();
         alternateChart = null;
         alternateSeries = null;
@@ -259,14 +259,14 @@
         } else {
             alternateChart.timeScale().fitContent();
         }
-        if (typeof StockWatchFibonacciDrawingTool !== 'undefined') {
-            alternateFibonacciTool = new StockWatchFibonacciDrawingTool({
-                chart: alternateChart,
-                series: alternateSeries,
-                container: alternateContainer,
-                storageKey: `${window.location.pathname}:alternate:${interval}`
-            });
-        }
+        alternateDrawingTools = window.StockWatchChartTools?.attach({
+            chart: alternateChart,
+            series: alternateSeries,
+            container: alternateContainer,
+            symbol,
+            interval,
+            legacyKey: `${window.location.pathname}:alternate:${interval}`
+        }) || null;
         if (chartKind === 'technical'
             && controls.dataset.signalFamily === 'ELLIOTT_WAVE'
             && typeof StockWatchElliottHierarchyOverlay !== 'undefined') {
