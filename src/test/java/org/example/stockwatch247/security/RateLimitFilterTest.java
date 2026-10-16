@@ -111,39 +111,37 @@ class RateLimitFilterTest {
     }
 
     @Test
-    void localRadixSearchUsesItsOwnHigherCapacityBucket() throws Exception {
+    void localRadixSearchUsesItsOwnHigherCapacityBucketInMemory() throws Exception {
         RequestRateLimiter limiter = mock(RequestRateLimiter.class);
-        when(limiter.tryAcquire(org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any()))
-                .thenReturn(true);
         RateLimitFilter filter = new RateLimitFilter(limiter);
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setMethod("GET");
-        request.setRequestURI("/api/stocks/search/local");
-        request.setRemoteAddr("203.0.113.8");
 
-        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
-
-        verify(limiter).tryAcquire(eq("stock-search-local:ip:203.0.113.8"), eq(120),
-                eq(java.time.Duration.ofMinutes(1)));
+        assertThat(statusAfter(filter, "/api/stocks/search/local", 120)).isEqualTo(200);
+        assertThat(statusAfter(filter, "/api/stocks/search/local", 1)).isEqualTo(429);
+        // Capacity-only limits never cost a database write.
+        org.mockito.Mockito.verifyNoInteractions(limiter);
     }
 
     @Test
     void congressionalRoutesRetainTheGeneralThirtyPerMinuteGuard() throws Exception {
         RequestRateLimiter limiter = mock(RequestRateLimiter.class);
-        when(limiter.tryAcquire(org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any()))
-                .thenReturn(true);
         RateLimitFilter filter = new RateLimitFilter(limiter);
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setMethod("GET");
-        request.setRequestURI("/api/congressional-activity/AAPL/history");
-        request.setRemoteAddr("203.0.113.8");
 
-        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+        assertThat(statusAfter(filter, "/api/congressional-activity/AAPL/history", 30)).isEqualTo(200);
+        assertThat(statusAfter(filter, "/api/congressional-activity/AAPL/history", 1)).isEqualTo(429);
+        org.mockito.Mockito.verifyNoInteractions(limiter);
+    }
 
-        verify(limiter).tryAcquire(eq("congressional-activity:ip:203.0.113.8"), eq(30),
-                eq(java.time.Duration.ofMinutes(1)));
+    /** The status of the last of {@code count} GET requests from one address. */
+    private static int statusAfter(RateLimitFilter filter, String path, int count) throws Exception {
+        int status = 0;
+        for (int index = 0; index < count; index++) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+            request.setRemoteAddr("203.0.113.8");
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(request, response, new MockFilterChain());
+            status = response.getStatus();
+        }
+        return status;
     }
 
     @Test

@@ -12,9 +12,17 @@ import java.io.IOException;
 /** Only content-addressed assets get a long browser lifetime; HTML and unversioned URLs retain their policies. */
 @Component
 public class FingerprintedAssetCacheFilter extends OncePerRequestFilter {
+    /** Dots are allowed in folders and names, so versioned vendor bundles (5.2.1/x.standalone.production) qualify too. */
+    private static final java.util.regex.Pattern FINGERPRINTED =
+            java.util.regex.Pattern.compile("/(css|js)/[A-Za-z0-9/._-]+-[a-f0-9]{32}\\.(css|js)");
+
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        return !path.matches("/(css|js)/[A-Za-z0-9/_-]+-[a-f0-9]{32}\\.(css|js)");
+        return !fingerprinted(path);
+    }
+
+    static boolean fingerprinted(String path) {
+        return !path.contains("..") && FINGERPRINTED.matcher(path).matches();
     }
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {

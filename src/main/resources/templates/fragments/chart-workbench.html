@@ -1,8 +1,15 @@
 <!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
+<!-- The CSRF token the chart scripts send with every save (drawings, layouts, alerts, demo trades). -->
+<th:block th:fragment="csrfMeta" th:if="${_csrf != null}">
+  <meta name="_csrf" th:content="${_csrf.token}">
+  <meta name="_csrf_header" th:content="${_csrf.headerName}">
+</th:block>
+
 <!-- The drawing toolset shared by every chart page: engine, tools, icons and toolbar. -->
 <th:block th:fragment="drawingAssets">
+  <th:block th:replace="~{fragments/chart-workbench :: csrfMeta}"></th:block>
   <link rel="stylesheet" th:href="@{/css/chart-workbench.css}">
   <script th:src="@{/js/chart-drawing-core.js}"></script>
   <script th:src="@{/js/chart-drawing-kit.js}"></script>

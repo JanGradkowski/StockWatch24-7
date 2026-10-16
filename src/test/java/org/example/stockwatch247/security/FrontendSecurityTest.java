@@ -476,9 +476,8 @@ class FrontendSecurityTest {
         assertTrue(stylesheet.contains(".theme-toggle"));
         assertTrue(stylesheet.contains(".theme-toggle.theme-toggle-in-navbar"));
         assertTrue(stylesheet.contains("Light theme refinement"));
-        assertTrue(stylesheet.contains("@keyframes ambient-wave-one"));
-        assertTrue(stylesheet.contains("@keyframes ambient-wave-two"));
-        assertTrue(stylesheet.contains(":root[data-theme=\"light\"] .bg-animation::before"));
+        // The animated backdrop was always hidden by design.css; its markup and styles are gone.
+        assertFalse(stylesheet.contains("bg-animation"));
         assertTrue(stylesheet.contains("@media (prefers-reduced-motion: reduce)"));
         assertTrue(theme.contains("persistAccountTheme"));
         assertFalse(theme.contains("innerHTML"));
@@ -584,8 +583,8 @@ class FrontendSecurityTest {
         assertTrue(about.contains("At least 34 completed candles"));
         assertTrue(about.contains("1–750 candles"));
         assertTrue(about.contains("If the ticker has less history"));
-        assertTrue(about.contains("@{/images/about/analysis-hero.png}"));
-        assertTrue(about.contains("@{/images/about/market-workspace.png}"));
+        assertTrue(about.contains("@{/images/about/analysis-hero.webp}"));
+        assertTrue(about.contains("@{/images/about/market-workspace.webp}"));
     }
 
     @Test

@@ -488,6 +488,22 @@ public class SettingsController {
         return "redirect:/login?deletionScheduled=true";
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.service.AccountDataExportService accountDataExport;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.service.NotificationEmailLinks notificationEmails;
+
+    /** The one switch that pauses every alert email, the same one the email's unsubscribe link sets. */
+    @PostMapping("/settings/notification-emails")
+    public String notificationEmails(@RequestParam boolean paused, Principal principal, RedirectAttributes redirect) {
+        if (notificationEmails != null && notificationEmails.setPaused(current(principal).getId(), paused)) {
+            redirect.addFlashAttribute("success", paused
+                    ? "Alert emails paused. Everything stays on the website."
+                    : "Alert emails switched back on.");
+        }
+        return "redirect:/settings/analysis-alerts#alert-emails";
+    }
+
     @GetMapping(value = "/settings/export", produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
     public ResponseEntity<Map<String, Object>> export(Principal principal) {
@@ -510,6 +526,7 @@ public class SettingsController {
         data.put("elliottWavePreferences", elliottWavePreferences.get(user));
         data.put("harmonicPatternPreferences", harmonicPatternPreferences.get(user));
         data.put("mfaEnabled", user.isMfaEnabled()); data.put("activeAlertRules", rules);
+        if (accountDataExport != null) data.putAll(accountDataExport.collect(user.getId()));
         return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=stockwatch-account-data.json").body(data);
     }

@@ -52,6 +52,18 @@ public interface CongressionalTradeDeliveryRepository
             join fetch delivery.trade trade
             join fetch trade.stockAsset
             where subscription.user = :user
+              and delivery.id in :ids
+              and delivery.deletedAt is null
+            """)
+    List<CongressionalTradeDelivery> findAllForUserByIdIn(@Param("user") User user, @Param("ids") java.util.Collection<Long> ids);
+
+    @Query("""
+            select delivery
+            from CongressionalTradeDelivery delivery
+            join fetch delivery.subscription subscription
+            join fetch delivery.trade trade
+            join fetch trade.stockAsset
+            where subscription.user = :user
               and lower(trade.tickerSymbol) = lower(:symbol)
               and trade.transactionDate >= :firstDate
               and delivery.deletedAt is null

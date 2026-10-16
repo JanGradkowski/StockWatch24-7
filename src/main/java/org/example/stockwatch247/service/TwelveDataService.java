@@ -35,6 +35,7 @@ import java.util.Optional;
 
 @Service
 public class TwelveDataService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TwelveDataService.class);
     private static final DateTimeFormatter PROVIDER_DATE_TIME = DateTimeFormatter
             .ofPattern("yyyy-MM-dd HH:mm:ss")
             .withZone(ZoneOffset.UTC);
@@ -130,7 +131,6 @@ public class TwelveDataService {
             uriBuilder.queryParam("end_date", endDate);
         }
         URI uri = uriBuilder
-                .queryParam("apikey", apiKey)
                 .build()
                 .encode()
                 .toUri();
@@ -197,7 +197,7 @@ public class TwelveDataService {
                 return seriesAsset.get();
             }
         } catch (RuntimeException e) {
-            System.err.println("Twelve Data time-series metadata unavailable for " + symbol + ": " + e.getMessage());
+            log.warn("Twelve Data time-series metadata unavailable for " + symbol + ": " + e.getMessage());
         }
 
         try {
@@ -206,7 +206,7 @@ public class TwelveDataService {
                 return providerAsset.get();
             }
         } catch (RuntimeException e) {
-            System.err.println("Twelve Data metadata refresh unavailable for " + symbol + ": " + e.getMessage());
+            log.warn("Twelve Data metadata refresh unavailable for " + symbol + ": " + e.getMessage());
         }
 
         return stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
@@ -220,7 +220,6 @@ public class TwelveDataService {
                 .path("/quote")
                 .queryParam("symbol", providerReference.symbol())
                 .queryParamIfPresent("mic_code", Optional.ofNullable(providerReference.micCode()))
-                .queryParam("apikey", apiKey)
                 .build()
                 .encode()
                 .toUri();
@@ -234,12 +233,14 @@ public class TwelveDataService {
                 normalizeSymbol(defaultIfBlank(root.path("symbol").asText(""), providerReference.symbol())),
                 providerReference.micCode(),
                 "QUOTE_SUCCESS");
+        long sessionTimestamp = root.path("timestamp").asLong(Instant.now().getEpochSecond());
         return Optional.of(new TwelveDataQuote(
                 symbol,
                 parseDouble(root.path("close").asText("0")),
                 parseDouble(root.path("percent_change").asText("0")),
-                root.path("timestamp").asLong(Instant.now().getEpochSecond()),
-                root.path("is_market_open").isBoolean() ? root.path("is_market_open").asBoolean() : null
+                sessionTimestamp,
+                root.path("is_market_open").isBoolean() ? root.path("is_market_open").asBoolean() : null,
+                root.path("last_quote_at").asLong(sessionTimestamp)
         ));
     }
 
@@ -267,7 +268,6 @@ public class TwelveDataService {
             URI uri = UriComponentsBuilder.fromUriString(baseUrl)
                     .path("/symbol_search")
                     .queryParam("symbol", query)
-                    .queryParam("apikey", apiKey)
                     .build()
                     .encode()
                     .toUri();
@@ -294,7 +294,7 @@ public class TwelveDataService {
                 results = mergeSuggestions(builtInMatches, providerMatches);
             }
         } catch (RuntimeException e) {
-            System.err.println("Twelve Data symbol search unavailable: " + e.getMessage());
+            log.warn("Twelve Data symbol search unavailable: " + e.getMessage());
             results = builtInMatches;
         }
 
@@ -397,7 +397,10 @@ public class TwelveDataService {
             throw new IllegalStateException("Twelve Data listing coverage is unavailable; revalidation is deferred for up to six hours.");
         if (requestBudget != null) requestBudget.reserveTwelveDataRequest();
         try {
-            String response = restTemplate.getForObject(uri, String.class);
+            // The key goes in the Authorization header, never the URL, so it stays out of proxy and access logs.
+            String response = restTemplate.exchange(org.springframework.http.RequestEntity.get(uri)
+                    .header(org.springframework.http.HttpHeaders.AUTHORIZATION, "apikey " + apiKey)
+                    .build(), String.class).getBody();
             JsonNode root = objectMapper.readTree(response);
             failOnApiError(root);
             return root;
@@ -475,7 +478,6 @@ public class TwelveDataService {
         URI uri = UriComponentsBuilder.fromUriString(baseUrl)
                 .path("/symbol_search")
                 .queryParam("symbol", reference.symbol())
-                .queryParam("apikey", apiKey)
                 .build()
                 .encode()
                 .toUri();
@@ -573,7 +575,7 @@ public class TwelveDataService {
         if (providerReference.micCode() != null) {
             uriBuilder.queryParam("mic_code", providerReference.micCode());
         }
-        URI uri = uriBuilder.queryParam("apikey", apiKey)
+        URI uri = uriBuilder
                 .build()
                 .encode()
                 .toUri();
@@ -738,7 +740,7 @@ public class TwelveDataService {
         if (response == null || response.isBlank()) {
             return e.getStatusCode().value() + " " + e.getStatusText();
         }
-        return e.getStatusCode().value() + " " + response.replaceAll("\\s+", " ").trim();
+        return e.getStatusCode().value() + " " + sanitizeDiagnostic(response);
     }
 
     private String describeClientFailure(Throwable failure) {
@@ -875,8 +877,16 @@ public class TwelveDataService {
                 || normalized.contains("OTC");
     }
 
-    /** {@code marketOpen} is null when the provider did not say whether the exchange is trading. */
-    public record TwelveDataQuote(String symbol, double price, double percentChange, long timestamp, Boolean marketOpen) {
+    /**
+     * {@code marketOpen} is null when the provider did not say whether the exchange is trading.
+     * {@code timestamp} is the quote's session candle; {@code quotedAt} is when the price was last updated.
+     */
+    public record TwelveDataQuote(String symbol, double price, double percentChange, long timestamp, Boolean marketOpen,
+                                  long quotedAt) {
+        public TwelveDataQuote(String symbol, double price, double percentChange, long timestamp, Boolean marketOpen) {
+            this(symbol, price, percentChange, timestamp, marketOpen, timestamp);
+        }
+
         public TwelveDataQuote(String symbol, double price, double percentChange, long timestamp) {
             this(symbol, price, percentChange, timestamp, null);
         }

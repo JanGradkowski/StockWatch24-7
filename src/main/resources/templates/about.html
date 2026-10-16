@@ -12,10 +12,6 @@
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body class="about-page">
-<div class="bg-animation" aria-hidden="true">
-    <div class="glow-orb orb-1"></div>
-    <div class="glow-orb orb-2"></div>
-</div>
 
 <th:block th:if="${showAppNavigation == true}">
     <div th:replace="~{fragments/navbar :: navbar}"></div>
@@ -57,10 +53,12 @@
                 </div>
             </div>
             <figure class="about-hero-visual">
-                <img th:src="@{/images/about/analysis-hero.png}"
+                <img th:src="@{/images/about/analysis-hero.webp}"
+                     th:srcset="@{/images/about/analysis-hero-960.webp} + ' 960w, ' + @{/images/about/analysis-hero.webp} + ' 1717w'"
+                     sizes="(max-width: 900px) 100vw, 50vw"
                      alt="Conceptual candlestick analysis flowing into a five-wave market structure"
                      width="1717"
-                     height="916" th:alt="#{about.conceptualCandlestickAnalysisFlowingIntoA}">
+                     height="916" fetchpriority="high" th:alt="#{about.conceptualCandlestickAnalysisFlowingIntoA}">
                 <figcaption th:text="#{about.anExampleOfAChartPattern}">An example of a chart pattern and its score.</figcaption>
             </figure>
         </header>
@@ -245,25 +243,33 @@
 
             <div class="about-screenshot-grid">
                 <figure class="about-screenshot wide">
-                    <img th:src="@{/images/about/market-workspace.png}"
+                    <img th:src="@{/images/about/market-workspace.webp}"
+                         th:srcset="@{/images/about/market-workspace-960.webp} + ' 960w, ' + @{/images/about/market-workspace.webp} + ' 1897w'"
+                         sizes="(max-width: 900px) 100vw, 50vw" width="1897" height="976" decoding="async"
                          alt="Stock workspace with candlestick price chart and synchronized volume chart"
                          loading="lazy" th:alt="#{about.stockWorkspaceWithCandlestickPriceChart}">
                     <figcaption><strong th:text="#{about.marketWorkspace}">Market workspace</strong><span th:text="#{about.priceActionAndVolumeShareOne}">Price action and volume share one navigable timeline.</span></figcaption>
                 </figure>
                 <figure class="about-screenshot">
-                    <img th:src="@{/images/about/latest-signals.png}"
+                    <img th:src="@{/images/about/latest-signals.webp}"
+                         th:srcset="@{/images/about/latest-signals-960.webp} + ' 960w, ' + @{/images/about/latest-signals.webp} + ' 1275w'"
+                         sizes="(max-width: 900px) 100vw, 50vw" width="1275" height="785" decoding="async"
                          alt="Dashboard list of recent candlestick signals with interval, period, horizon, and score"
                          loading="lazy" th:alt="#{about.dashboardListOfRecentCandlestickSignals}">
                     <figcaption><strong th:text="#{home.latestSignals}">Latest signals</strong><span th:text="#{about.everyRowExposesItsFamilyDirection}">Every row exposes its family, direction, interval, candle period, research horizon, and setup score.</span></figcaption>
                 </figure>
                 <figure class="about-screenshot">
-                    <img th:src="@{/images/about/monitoring-board.png}"
+                    <img th:src="@{/images/about/monitoring-board.webp}"
+                         th:srcset="@{/images/about/monitoring-board-960.webp} + ' 960w, ' + @{/images/about/monitoring-board.webp} + ' 1900w'"
+                         sizes="(max-width: 900px) 100vw, 50vw" width="1900" height="976" decoding="async"
                          alt="Company monitoring board with separate alert rule combinations"
                          loading="lazy" th:alt="#{about.companyMonitoringBoardWithSeparateAlert}">
                     <figcaption><strong th:text="#{about.companyMonitoringBoard}">Company monitoring board</strong><span th:text="#{about.eachColumnRepresentsOnePatternFamily}">Each column represents one pattern family, direction, and interval combination.</span></figcaption>
                 </figure>
                 <figure class="about-screenshot wide">
-                    <img th:src="@{/images/about/disclosure-history.png}"
+                    <img th:src="@{/images/about/disclosure-history.webp}"
+                         th:srcset="@{/images/about/disclosure-history-960.webp} + ' 960w, ' + @{/images/about/disclosure-history.webp} + ' 1890w'"
+                         sizes="(max-width: 900px) 100vw, 50vw" width="1890" height="972" decoding="async"
                          alt="Congressional trading disclosure history with reported value and filing links"
                          loading="lazy" th:alt="#{about.congressionalTradingDisclosureHistoryWithReported}">
                     <figcaption><strong th:text="#{about.companyEventResearch}">Company-event research</strong><span th:text="#{about.congressionalDisclosuresRemainVisiblySeparateFrom}">Congressional disclosures remain visibly separate from technical signals.</span></figcaption>

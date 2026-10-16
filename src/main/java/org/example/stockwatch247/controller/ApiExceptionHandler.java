@@ -141,6 +141,14 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public Object unexpected(Exception exception, HttpServletRequest request) {
+        HttpStatusCode clientError = clientErrorStatus(exception);
+        if (clientError != null) {
+            // A missing or malformed parameter, an unreadable body or a wrong method is the caller's
+            // mistake: answer with its 4xx status instead of reporting a server failure.
+            log.debug("Rejected {} {} with {}: {}", request.getMethod(), request.getRequestURI(),
+                    clientError.value(), exception.toString());
+            return respond(request, clientError, Map.of("error", "Invalid request."), null, null);
+        }
         String requestId = UUID.randomUUID().toString();
         log.error("Unexpected request failure {} on {} {}",
                 requestId, request.getMethod(), request.getRequestURI(), exception);
@@ -177,6 +185,18 @@ public class ApiExceptionHandler {
         }
         Class<?> returnType = handler.getReturnType().getParameterType();
         return !HttpEntity.class.isAssignableFrom(returnType);
+    }
+
+    static HttpStatusCode clientErrorStatus(Exception exception) {
+        if (exception instanceof org.springframework.web.ErrorResponse response
+                && response.getStatusCode().is4xxClientError()) {
+            return response.getStatusCode();
+        }
+        if (exception instanceof org.springframework.beans.TypeMismatchException
+                || exception instanceof org.springframework.http.converter.HttpMessageNotReadableException) {
+            return HttpStatus.BAD_REQUEST;
+        }
+        return null;
     }
 
     private boolean isClientDisconnect(Throwable exception) {

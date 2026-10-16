@@ -350,14 +350,6 @@
   }
 
   /** Live quotes move only the newest bar; Heikin Ashi needs the whole history to stay consistent. */
-  function updateLatestPriceBar() {
-    if (!priceSeries || !globalCandleData.length) return;
-    const source = seriesType === 'heikinAshi' ? globalCandleData : globalCandleData.slice(-2);
-    const points = StockWatchChartTypes.data(seriesType, source, priceColors());
-    priceSeries.update(points[points.length - 1]);
-    renderPriceOnlyChart();
-  }
-
   /** The price axis shows the currency; volume and indicator panes keep their own number formats. */
   function priceSeriesFormat() {
     // Phones need the axis width for the chart, so the currency is left off there.
@@ -1249,6 +1241,7 @@
 
       updateStockLoadingStatus(i18n.t('sw.loadingHistory'));
       await loadChartData('1d');
+      void refreshLiveQuote();
       updateStockLoadingStatus(i18n.t('sw.loadingAlerts'));
       await Promise.all([loadAlertState(), loadOutlookFollowState()]);
 
@@ -3014,17 +3007,88 @@
     return `${year}-${month}-${day}`;
   }
 
+  // The header shows the provider's latest quote when there is one. Until then (or when no quote is
+  // available) it shows the newest candle's close, labelled as such, with the change against the
+  // previous candle of the selected interval.
+  const LIVE_QUOTE_REFRESH_MS = 60_000;
+  const LIVE_QUOTE_IDLE_MS = 15 * 60_000;
+  let liveQuote = null;
+  let liveQuoteTimer = null;
+  let liveQuoteFetchedAt = 0;
+  let liveQuoteStarted = false;
+
+  function renderQuoteHeader(label, price, changePercent, meta) {
+    document.getElementById('quoteLabel').textContent = label;
+    document.getElementById('livePriceDisplay').textContent = `${i18n.number(price, 2)} ${stockCurrency}`;
+    const changeEl = document.getElementById('liveChangeDisplay');
+    changeEl.textContent = `${changePercent > 0 ? '+' : ''}${i18n.number(changePercent, 2)}%`;
+    changeEl.className = 'price-change ' + (changePercent >= 0 ? 'positive' : 'negative');
+    document.getElementById('quoteMeta').textContent = meta;
+  }
+
   function updatePriceHeaderFromLatestCandle() {
+    if (liveQuote) {
+      renderLiveQuote();
+      return;
+    }
     if (!latestCandle) return;
-
-    document.getElementById('livePriceDisplay').innerText = `${i18n.number(latestCandle.close, 2)} ${stockCurrency}`;
-
     const previous = globalCandleData.length > 1 ? globalCandleData[globalCandleData.length - 2].close : latestCandle.open;
     const changePercent = previous > 0 ? ((latestCandle.close - previous) / previous) * 100 : 0;
-    const changeEl = document.getElementById('liveChangeDisplay');
-    changeEl.innerText = `${changePercent > 0 ? '+' : ''}${i18n.number(changePercent, 2)}%`;
-    changeEl.className = 'price-change ' + (changePercent >= 0 ? 'positive' : 'negative');
+    const candleDate = i18n.date(Date.parse(`${latestCandle.time}T00:00:00Z`),
+        {year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'});
+    renderQuoteHeader(i18n.t('sw.quote.lastClose'), latestCandle.close, changePercent,
+        i18n.t(`sw.quote.candleMeta.${apiIntervalEnum(currentInterval)}`, candleDate));
   }
+
+  function renderLiveQuote() {
+    const quotedAt = Number(liveQuote.quotedAt ?? liveQuote.timestamp) * 1000;
+    const sameDay = new Date(quotedAt).toDateString() === new Date().toDateString();
+    const when = Number.isFinite(quotedAt)
+        ? i18n.date(quotedAt, sameDay ? {timeStyle: 'short'} : {dateStyle: 'medium', timeStyle: 'short'})
+        : '';
+    const meta = liveQuote.marketOpen === false
+        ? i18n.t('sw.quote.closedMeta', when)
+        : i18n.t('sw.quote.liveMeta', when);
+    renderQuoteHeader(i18n.t('sw.quote.live'), Number(liveQuote.price), Number(liveQuote.changePercent) || 0, meta);
+  }
+
+  function scheduleLiveQuote(delay) {
+    window.clearTimeout(liveQuoteTimer);
+    liveQuoteTimer = window.setTimeout(refreshLiveQuote, delay);
+  }
+
+  /** Polls once a minute while the tab is visible; a closed market or a missing quote is checked rarely. */
+  async function refreshLiveQuote() {
+    liveQuoteStarted = true;
+    // A page opened in a background tab waits; the visibility handler starts it when the tab is shown.
+    if (document.hidden) return;
+    liveQuoteFetchedAt = Date.now();
+    let next = LIVE_QUOTE_REFRESH_MS;
+    try {
+      const response = await fetch(`/api/stocks/${encodedTicker}/live`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const update = await response.json();
+      // A stored candle is not a quote; the candle header already shows that close.
+      if (update?.source === 'Twelve Data' && Number.isFinite(Number(update.price))) {
+        liveQuote = update;
+        renderLiveQuote();
+        if (update.marketOpen === false) next = LIVE_QUOTE_IDLE_MS;
+      } else {
+        next = LIVE_QUOTE_IDLE_MS;
+      }
+    } catch (err) {
+      next = LIVE_QUOTE_IDLE_MS;
+      console.warn('Live quote unavailable', err);
+    }
+    scheduleLiveQuote(next);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && liveQuoteStarted && Date.now() - liveQuoteFetchedAt >= LIVE_QUOTE_REFRESH_MS) {
+      window.clearTimeout(liveQuoteTimer);
+      void refreshLiveQuote();
+    }
+  });
 
   async function changeInterval(newInterval) {
     if (currentInterval === newInterval) return;
@@ -3040,37 +3104,6 @@
     await loadChartData(newInterval);
   }
 
-  async function fetchLivePrice() {
-    try {
-      const response = await fetch(`/api/stocks/${encodedTicker}/live`);
-      const update = await response.json();
-
-      if (update && update.price !== undefined) {
-        document.getElementById('livePriceDisplay').innerText = `${i18n.number(update.price, 2)} ${stockCurrency}`;
-
-        const changeEl = document.getElementById('liveChangeDisplay');
-        changeEl.innerText = `${update.changePercent > 0 ? '+' : ''}${i18n.number(update.changePercent, 2)}%`;
-        changeEl.className = 'price-change ' + (update.changePercent >= 0 ? 'positive' : 'negative');
-
-        if (latestCandle) {
-          const newPrice = update.price;
-          latestCandle.close = newPrice;
-          if (newPrice > latestCandle.high) latestCandle.high = newPrice;
-          if (newPrice < latestCandle.low) latestCandle.low = newPrice;
-
-          const latestLoadedCandle = globalCandleData[globalCandleData.length - 1];
-          if (latestLoadedCandle?.time === latestCandle.time) {
-            latestLoadedCandle.close = latestCandle.close;
-            latestLoadedCandle.high = latestCandle.high;
-            latestLoadedCandle.low = latestCandle.low;
-            updateLatestPriceBar();
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("Live fetch failed", err);
-    }
-  }
 
   async function loadAlertState() {
     const status = document.getElementById('alertStatus');

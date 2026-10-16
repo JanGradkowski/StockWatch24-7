@@ -35,6 +35,7 @@ import java.util.Set;
 @RestController
 @RequestMapping("/api/stocks")
 public class ChartController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ChartController.class);
     private static final int LATEST_WAVE_CANDLES = 100;
     private static final int HARMONIC_CONTEXT_CANDLES = 750;
     private static final java.time.Duration METADATA_REUSE = java.time.Duration.ofDays(30);
@@ -232,19 +233,6 @@ public class ChartController {
 
     @Autowired
     private org.example.stockwatch247.service.CandleCompletionService candidateCandleCompletion;
-
-    @GetMapping("/{symbol}/elliott-waves/candidates")
-    public List<ElliottWaveDetectionService.ElliottPatternCandidate> getElliottCandidates(
-            @PathVariable String symbol, @RequestParam String interval, Principal principal) {
-        String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
-        String validInterval = SecurityInputValidator.requireInterval(interval);
-        TimeInterval timeframe = elliottInterval(validInterval);
-        long cutoff = candidateCandleCompletion.firstIncompleteCandleTimestamp(timeframe);
-        List<Candle> candles = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(validSymbol, validInterval)
-                .stream().filter(c -> c == null || c.getTimestamp() == null || c.getTimestamp() < cutoff).toList();
-        return detector(principal, timeframe).findPatternCandidates(
-                enrichmentService.enrichForElliott(candles, candles.size(), timeframe));
-    }
 
     @GetMapping("/{symbol}/elliott-waves/history")
     public ElliottWaveHistoryOverlay getHistoricalElliottWaves(@PathVariable String symbol,
@@ -569,7 +557,7 @@ public class ChartController {
             try {
                 asset = yahooFinanceService.refreshStockAssetMetadata(symbol);
             } catch (RuntimeException e) {
-                System.err.println("Yahoo Finance metadata refresh unavailable for " + symbol + ": " + e.getMessage());
+                log.warn("Yahoo Finance metadata refresh unavailable for " + symbol + ": " + e.getMessage());
             }
         }
         if (!fresh && asset.hasConfirmedListing() && asset.getId() != null) {

@@ -10,6 +10,7 @@ import java.util.Map;
 
 @Service
 public class LivePricingService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(LivePricingService.class);
     private final TwelveDataService twelveDataService;
     private final CandleRepository candleRepository;
     private final SharedQuoteCache quoteCache;
@@ -55,6 +56,7 @@ public class LivePricingService {
                     values.put("price", quoteData.price());
                     values.put("changePercent", quoteData.percentChange());
                     values.put("timestamp", quoteData.timestamp());
+                    values.put("quotedAt", quoteData.quotedAt());
                     values.put("source", "Twelve Data");
                     if (quoteData.marketOpen() != null) values.put("marketOpen", quoteData.marketOpen());
                     Map<String, Object> quote = java.util.Collections.unmodifiableMap(values);
@@ -64,7 +66,7 @@ public class LivePricingService {
                     return quote;
                 }
             } catch (RuntimeException e) {
-                System.err.println("Twelve Data latest price unavailable for " + symbol + ": " + e.getMessage());
+                log.warn("Twelve Data latest price unavailable for " + symbol + ": " + e.getMessage());
             }
 
             Map<String, Object> storedQuote = getStoredQuote(symbol);

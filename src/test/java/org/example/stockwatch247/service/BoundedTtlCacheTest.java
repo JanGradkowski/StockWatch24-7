@@ -17,6 +17,43 @@ class BoundedTtlCacheTest {
     }
 
     @Test
+    void aSlowComputationDoesNotBlockOtherKeysAndRunsOncePerKey() throws Exception {
+        BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(8, 60);
+        var slowStarted = new java.util.concurrent.CountDownLatch(1);
+        var releaseSlow = new java.util.concurrent.CountDownLatch(1);
+        var slowRuns = new java.util.concurrent.atomic.AtomicInteger();
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(3)) {
+            var slow = pool.submit(() -> cache.getOrCompute("slow", () -> {
+                slowRuns.incrementAndGet();
+                slowStarted.countDown();
+                try { releaseSlow.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                return "slow";
+            }));
+            slowStarted.await();
+            var sameKey = pool.submit(() -> cache.getOrCompute("slow", () -> {
+                slowRuns.incrementAndGet();
+                return "duplicate";
+            }));
+
+            // Another key completes while the slow one is still running.
+            assertThat(pool.submit(() -> cache.getOrCompute("fast", () -> "fast")).get(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .isEqualTo("fast");
+
+            releaseSlow.countDown();
+            assertThat(slow.get(5, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("slow");
+            assertThat(sameKey.get(5, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("slow");
+            assertThat(slowRuns).hasValue(1);
+        }
+    }
+
+    @Test
+    void aComputationThatAsksForItsOwnKeyDoesNotWaitOnItself() {
+        BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
+        assertThat(cache.getOrCompute("outer", () -> "outer:" + cache.getOrCompute("outer", () -> "inner")))
+                .isEqualTo("outer:inner");
+    }
+
+    @Test
     void enforcesStrictMaximumAndExpiresEntries() {
         BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
         cache.put("one", "1", 100);

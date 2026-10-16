@@ -402,92 +402,11 @@
         deleteAllButton.addEventListener("click", () => deleteRules(true));
     }
 
-    function initializeTemporaryTopUsUniverse() {
-        const followButton = document.getElementById("followTopUs200Button");
-        const unfollowButton = document.getElementById("unfollowAllTickersButton");
-        const status = document.getElementById("followTopUs200Status");
-        if ((!followButton && !unfollowButton) || !status) {
-            return;
-        }
-        const csrfToken = document.getElementById("accountThemeSync")?.dataset.csrfToken;
-
-        followButton?.addEventListener("click", async () => {
-            if (!csrfToken) {
-                status.textContent = i18n.t("dashboard.tokenUnavailable");
-                return;
-            }
-            const confirmed = window.confirm(
-                i18n.t("dashboard.loadTestConfirm")
-            );
-            if (!confirmed) {
-                return;
-            }
-            followButton.disabled = true;
-            followButton.setAttribute("aria-busy", "true");
-            followButton.textContent = i18n.t("dashboard.activatingRules");
-            status.textContent = i18n.t("dashboard.creatingUniverse");
-            try {
-                const response = await fetch("/api/alerts/testing/top-us-200", {
-                    method: "POST",
-                    headers: {"X-CSRF-TOKEN": csrfToken},
-                    credentials: "same-origin"
-                });
-                const payload = await response.json().catch(() => ({}));
-                if (!response.ok) {
-                    throw new Error(payload.error || i18n.t("dashboard.universeFailed"));
-                }
-                status.textContent = i18n.t("dashboard.universeActive", payload.companies, payload.activeRules);
-                window.location.reload();
-            } catch (error) {
-                followButton.disabled = false;
-                followButton.removeAttribute("aria-busy");
-                followButton.textContent = i18n.t("dashboard.followTop200");
-                status.textContent = error.message || i18n.t("dashboard.universeFailed");
-            }
-        });
-
-        unfollowButton?.addEventListener("click", async () => {
-            if (!csrfToken) {
-                status.textContent = i18n.t("dashboard.tokenUnavailable");
-                return;
-            }
-            const confirmed = window.confirm(
-                i18n.t("dashboard.unfollowAllConfirm")
-            );
-            if (!confirmed) {
-                return;
-            }
-            unfollowButton.disabled = true;
-            unfollowButton.setAttribute("aria-busy", "true");
-            unfollowButton.textContent = i18n.t("dashboard.unfollowingAll");
-            status.textContent = i18n.t("dashboard.switchingOffFollowed");
-            try {
-                const response = await fetch("/api/alerts", {
-                    method: "DELETE",
-                    headers: {"X-CSRF-TOKEN": csrfToken},
-                    credentials: "same-origin"
-                });
-                const payload = await response.json().catch(() => ({}));
-                if (!response.ok) {
-                    throw new Error(payload.error || i18n.t("dashboard.unfollowFailed"));
-                }
-                status.textContent = i18n.t("dashboard.rulesSwitchedOff", payload.unfollowedRules);
-                window.location.reload();
-            } catch (error) {
-                unfollowButton.disabled = false;
-                unfollowButton.removeAttribute("aria-busy");
-                unfollowButton.textContent = i18n.t("dashboard.unfollowAllTickers");
-                status.textContent = error.message || i18n.t("dashboard.unfollowFailed");
-            }
-        });
-    }
-
     function initializeDashboard() {
         initializeDashboardViews();
         initializeWatchFilters();
         initializeNotificationReadButtons();
         initializeCompanyUnfollow();
-        initializeTemporaryTopUsUniverse();
     }
 
     if (document.readyState === "loading") {

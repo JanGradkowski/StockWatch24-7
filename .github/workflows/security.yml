@@ -75,6 +75,15 @@ jobs:
       - name: Run tests
         run: ./mvnw --batch-mode --no-transfer-progress test
 
+      # Browser-side modules (charts, watchlists, i18n guards) have their own jsdom tests. The runner's
+      # preinstalled Node runs them; the Playwright browsers are only needed for the manual UI checks.
+      - name: Run frontend tests
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
       - name: Audit dependencies
         run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DskipTests verify
 

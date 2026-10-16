@@ -16,8 +16,6 @@
   <script th:src="@{/js/chart-indicators.js}"></script>
   <script th:src="@{/js/chart-alerts.js}"></script>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
-  <meta name="_csrf" th:content="${_csrf.token}">
-  <meta name="_csrf_header" th:content="${_csrf.headerName}">
   <style th:attr="nonce=${cspNonce}">
     /* Page styling lives in the local stylesheet; the nonce keeps this template CSP-safe. */
   </style>
@@ -77,10 +75,6 @@
   </div>
 </div>
 
-<div class="bg-animation" aria-hidden="true">
-  <div class="glow-orb orb-1"></div>
-  <div class="glow-orb orb-2"></div>
-</div>
 
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
@@ -101,11 +95,12 @@
       </div>
     </section>
     <div class="quote-block">
-      <div class="quote-label" th:text="#{stock.latestQuote}">Latest quote</div>
+      <div id="quoteLabel" class="quote-label" th:text="#{stock.lastClose}">Last close</div>
       <div class="quote-value">
         <span id="livePriceDisplay" class="live-price" th:text="#{stock.loadingQuote}">Loading...</span>
         <span id="liveChangeDisplay" class="price-change"></span>
       </div>
+      <div id="quoteMeta" class="quote-meta" aria-live="polite"></div>
     </div>
   </header>
 

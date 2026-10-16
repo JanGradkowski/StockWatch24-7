@@ -8,13 +8,14 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 @Component
 public class DataSeeder implements CommandLineRunner {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DataSeeder.class);
     private final StockAssetRepository stockAssetRepository;
     public DataSeeder(StockAssetRepository stockAssetRepository) {
         this.stockAssetRepository = stockAssetRepository;
     }
     @Override
     public void run(String... args) {
-        System.out.println("--- Ensuring default stock assets exist ---");
+        log.info("--- Ensuring default stock assets exist ---");
         List<StockAsset> defaults = List.of(
                 asset("AAPL", "Apple Inc.", "NASDAQ", "USD"),
                 asset("TSLA", "Tesla Inc.", "NASDAQ", "USD"),
@@ -37,7 +38,7 @@ public class DataSeeder implements CommandLineRunner {
                                 () -> stockAssetRepository.save(defaultAsset)
                         )
         );
-        System.out.println("--- Default stock asset check complete ---");
+        log.info("--- Default stock asset check complete ---");
     }
 
     private StockAsset asset(String symbol, String name, String exchange, String currency) {

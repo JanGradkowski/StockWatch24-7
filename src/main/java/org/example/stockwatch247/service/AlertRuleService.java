@@ -87,8 +87,6 @@ public class AlertRuleService {
     private static final int SIGNAL_ARCHIVE_PAGE_SIZE = 50;
     private static final int MAX_ALERT_CHANGES_PER_REQUEST = 24;
     private static final int MINIMUM_RESULT_CANDLES = 10;
-    private static final List<TimeInterval> TEMPORARY_BULK_INTERVALS =
-            List.of(TimeInterval.DAILY, TimeInterval.WEEKLY, TimeInterval.MONTHLY);
 
     private final AlertRuleRepository alertRuleRepository;
     private final AlertEventRepository alertEventRepository;
@@ -1939,106 +1937,6 @@ public class AlertRuleService {
         return trackedInstrumentGuard == null ? asset : trackedInstrumentGuard.requireMarketData(asset);
     }
 
-    /**
-     * Temporary testing helper that activates every supported technical family,
-     * direction, and production interval for a fixed top-200 U.S. universe.
-     * This intentionally bypasses the normal per-user 50-instrument quota only
-     * for this bounded universe; the global provider-capacity guard remains active.
-     */
-    @Transactional
-    public TemporaryBulkFollowResult followTemporaryTopUsCompanies(User user) {
-        if (user == null) {
-            throw new IllegalArgumentException("User is required.");
-        }
-
-        jdbcTemplate.queryForObject(
-                "select lock_name from security_resource_locks where lock_name = ? for update",
-                String.class,
-                "alert-stock-quota");
-
-        List<StockAsset> assets = TemporaryTopUsCompanyUniverse.SYMBOLS.stream()
-                .map(symbol -> stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
-                        .orElseGet(() -> twelveDataService.upsertStockAsset(
-                                symbol, symbol, "US", "USD")))
-                .toList();
-        assets.forEach(this::normalizeTemporaryUsListing);
-        long newlyGlobalSymbols = assets.stream()
-                .filter(asset -> !alertRuleRepository.existsByStockAssetAndIsActiveTrue(asset))
-                .count();
-        long globallyTracked = alertRuleRepository.countDistinctActiveStocks();
-        if (globallyTracked + newlyGlobalSymbols > maxGlobalTrackedStocks) {
-            throw new ConflictException(
-                    "The temporary top-200 universe would exceed global market data capacity.");
-        }
-
-        Map<BulkAlertRuleKey, AlertRule> existing = new LinkedHashMap<>();
-        for (AlertRule rule : alertRuleRepository.findByUserAndStockAssetIn(user, assets)) {
-            existing.put(new BulkAlertRuleKey(
-                    rule.getInterval(), rule.getTradeSignal(), rule.getPatternFamily(),
-                    rule.getStockAsset().getId()), rule);
-        }
-
-        List<AlertRule> changed = new ArrayList<>();
-        int createdRules = 0;
-        int reactivatedRules = 0;
-        int alreadyActiveRules = 0;
-        for (StockAsset asset : assets) {
-            for (TimeInterval interval : TEMPORARY_BULK_INTERVALS) {
-                for (AlertPatternFamily family : AlertPatternFamily.values()) {
-                    validateFamilyInterval(family, interval);
-                    for (TradeSignal signal : List.of(TradeSignal.BUY, TradeSignal.SELL)) {
-                        BulkAlertRuleKey key = new BulkAlertRuleKey(
-                                interval, signal, family, asset.getId());
-                        AlertRule rule = existing.get(key);
-                        if (rule == null) {
-                            rule = new AlertRule();
-                            rule.setUser(user);
-                            rule.setStockAsset(asset);
-                            rule.setInterval(interval);
-                            rule.setTradeSignal(signal);
-                            rule.setPatternFamily(family);
-                            rule.setTargetPattern(defaultTargetPattern(signal, family));
-                            rule.setActive(true);
-                            changed.add(rule);
-                            createdRules++;
-                        } else if (!rule.isActive()) {
-                            rule.setActive(true);
-                            changed.add(rule);
-                            reactivatedRules++;
-                        } else {
-                            alreadyActiveRules++;
-                        }
-                    }
-                }
-            }
-        }
-        if (!changed.isEmpty()) {
-            alertRuleRepository.saveAll(changed);
-        }
-        return new TemporaryBulkFollowResult(
-                TemporaryTopUsCompanyUniverse.COMPANY_COUNT,
-                TEMPORARY_BULK_INTERVALS.size()
-                        * AlertPatternFamily.values().length * 2,
-                createdRules,
-                reactivatedRules,
-                alreadyActiveRules,
-                TemporaryTopUsCompanyUniverse.COMPANY_COUNT
-                        * TEMPORARY_BULK_INTERVALS.size()
-                        * AlertPatternFamily.values().length * 2,
-                TemporaryTopUsCompanyUniverse.SNAPSHOT_LABEL);
-    }
-
-    private void normalizeTemporaryUsListing(StockAsset asset) {
-        asset.setCurrency("USD");
-        asset.setCountry("US");
-        asset.setInstrumentType(InstrumentType.EQUITY);
-        if ("HD".equalsIgnoreCase(asset.getTickerSymbol())) {
-            asset.setCompanyName("The Home Depot, Inc.");
-            asset.setExchange("NYSE");
-            asset.setMicCode("XNYS");
-        }
-    }
-
     private AlertRuleChange validateAlertChange(AlertRuleChange change) {
         if (change == null || change.interval() == null || change.signal() == null) {
             throw new IllegalArgumentException("Alert interval and signal are required.");
@@ -3572,17 +3470,6 @@ public class AlertRuleService {
     ) {
     }
 
-    public record TemporaryBulkFollowResult(
-            int companies,
-            int rulesPerCompany,
-            int createdRules,
-            int reactivatedRules,
-            int alreadyActiveRules,
-            int activeRules,
-            String universeSnapshot
-    ) {
-    }
-
     private record AlertRuleKey(
             TimeInterval interval,
             TradeSignal signal,
@@ -3590,11 +3477,4 @@ public class AlertRuleService {
     ) {
     }
 
-    private record BulkAlertRuleKey(
-            TimeInterval interval,
-            TradeSignal signal,
-            AlertPatternFamily patternFamily,
-            Long stockAssetId
-    ) {
-    }
 }

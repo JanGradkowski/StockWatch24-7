@@ -24,7 +24,7 @@
       <span class="logo-word">StockWatch <span>24/7</span></span>
     </a>
 
-    <div class="search-container">
+    <div th:if="${firstName != null}" class="search-container">
       <label for="globalTickerSearch" hidden th:text="#{nav.search.label}">Search stocks or indexes</label>
       <input type="search" id="globalTickerSearch" placeholder="Search stocks or indexes — AAPL, S&amp;P 500..." th:placeholder="#{nav.search.placeholder}"
              class="global-ticker-search" autocomplete="off" aria-controls="globalSuggestionsDropdown"
@@ -55,6 +55,7 @@
       let localSearchController = null;
       let providerSearchController = null;
       let searchSequence = 0;
+      let activeIndex = -1;
 
       if (searchInput && dropdown) {
         searchInput.addEventListener('input', (e) => {
@@ -89,7 +90,10 @@
             if (sequence !== searchSequence || searchInput.value.trim() !== query) return;
             renderSuggestions(suggestions);
 
-            if (suggestions.length < 8) {
+            // An exact ticker match or a very short query needs no provider search, which spends the
+            // shared market-data allowance the charts also use.
+            const exactMatch = suggestions.some(item => String(item.symbol || '').toUpperCase() === query.toUpperCase());
+            if (suggestions.length < 8 && query.length >= 3 && !exactMatch) {
               providerSearchController = new AbortController();
               const providerResponse = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`, {
                 signal: providerSearchController.signal
@@ -107,15 +111,57 @@
           }
         }
 
+        function suggestionRows() {
+          return Array.from(dropdown.querySelectorAll('.suggestion-row'));
+        }
+
+        function setActive(index) {
+          const rows = suggestionRows();
+          activeIndex = rows.length ? (index + rows.length) % rows.length : -1;
+          rows.forEach((row, position) => {
+            const active = position === activeIndex;
+            row.classList.toggle('is-active', active);
+            row.setAttribute('aria-selected', active ? 'true' : 'false');
+            if (active) row.scrollIntoView({block: 'nearest'});
+          });
+          if (activeIndex >= 0) searchInput.setAttribute('aria-activedescendant', rows[activeIndex].id);
+          else searchInput.removeAttribute('aria-activedescendant');
+        }
+
+        function closeSuggestions() {
+          dropdown.hidden = true;
+          searchInput.setAttribute('aria-expanded', 'false');
+          searchInput.removeAttribute('aria-activedescendant');
+          activeIndex = -1;
+        }
+
+        // Arrow keys move through the results, Enter opens the highlighted (or first) one, Escape closes.
+        searchInput.addEventListener('keydown', (event) => {
+          const rows = suggestionRows();
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            if (dropdown.hidden || !rows.length) return;
+            event.preventDefault();
+            setActive(activeIndex + (event.key === 'ArrowDown' ? 1 : -1));
+          } else if (event.key === 'Enter') {
+            if (dropdown.hidden || !rows.length) return;
+            event.preventDefault();
+            rows[Math.max(0, activeIndex)].click();
+          } else if (event.key === 'Escape' && !dropdown.hidden) {
+            event.preventDefault();
+            closeSuggestions();
+          }
+        });
+
         function renderSuggestions(suggestions) {
             if (suggestions.length === 0) {
-              dropdown.hidden = true;
-              searchInput.setAttribute('aria-expanded', 'false');
+              closeSuggestions();
               return;
             }
 
             dropdown.replaceChildren();
-            suggestions.forEach(item => {
+            activeIndex = -1;
+            searchInput.removeAttribute('aria-activedescendant');
+            suggestions.forEach((item, index) => {
               const symbol = String(item.symbol || '');
               const micCode = String(item.micCode || '');
               const region = String(item.region || '');
@@ -124,7 +170,10 @@
               const row = document.createElement('button');
               row.type = 'button';
               row.className = 'suggestion-row';
+              row.id = `globalSuggestion-${index}`;
+              row.tabIndex = -1;
               row.setAttribute('role', 'option');
+              row.setAttribute('aria-selected', 'false');
               row.addEventListener('click', () => {
                 const listingQuery = micCode ? `?mic=${encodeURIComponent(micCode)}` : '';
                 const destination = `/stock/${encodeURIComponent(symbol)}${listingQuery}`;
@@ -175,8 +224,7 @@
         // Close dropdown when clicking outside
         document.addEventListener('click', (e) => {
           if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
-            dropdown.hidden = true;
-            searchInput.setAttribute('aria-expanded', 'false');
+            closeSuggestions();
           }
         });
       }

@@ -1875,3 +1875,23 @@ pl: Wartość „{0}” musi być liczbą.
 
 en: {0} at position {1}.
 pl: {0} (pozycja {1}).
+
+# --- Alert email footer and pause switch -------------------------------------------------------------
+
+en: View in StockWatch: {0}
+pl: Zobacz w StockWatch: {0}
+
+en: Manage alert emails: {0}
+pl: Zarządzaj e-mailami z alertami: {0}
+
+en: Stop all alert emails: {0}
+pl: Wyłącz wszystkie e-maile z alertami: {0}
+
+en: Alert emails paused. Everything stays on the website.
+pl: E-maile z alertami są wstrzymane. Wszystko pozostaje w serwisie.
+
+en: Alert emails switched back on.
+pl: E-maile z alertami są ponownie włączone.
+
+en: Candle refresh failed.
+internal

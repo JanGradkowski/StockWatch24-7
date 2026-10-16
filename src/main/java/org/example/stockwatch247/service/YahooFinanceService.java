@@ -38,6 +38,7 @@ import java.util.Set;
 
 @Service
 public class YahooFinanceService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(YahooFinanceService.class);
     private static final long WEEKLY_LOOKBACK_BUFFER_CANDLES = 8L;
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
@@ -427,7 +428,7 @@ public class YahooFinanceService {
                     .toList();
         } catch (RuntimeException e) {
             if (e instanceof ProviderUnavailableException) throw e;
-            System.err.println("Yahoo Finance symbol search unavailable for " + searchQuery + ": " + e.getMessage());
+            log.warn("Yahoo Finance symbol search unavailable for " + searchQuery + ": " + e.getMessage());
             return List.of();
         }
     }

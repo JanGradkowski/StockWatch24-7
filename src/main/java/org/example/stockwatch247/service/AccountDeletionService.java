@@ -65,7 +65,7 @@ public class AccountDeletionService {
         event.setDescription("Scheduled account deletion cancelled through the verified email link."); events.save(event);
         try { notifications.sendSecurityNotice(user, "StockWatch account deletion cancelled",
                 "Your account deletion was cancelled. You can sign in again."); }
-        catch (RuntimeException ignored) { System.err.println("Account deletion cancellation notice could not be sent."); }
+        catch (RuntimeException ignored) { log.warn("Account deletion cancellation notice could not be sent."); }
         return true;
     }
 

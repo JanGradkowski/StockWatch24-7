@@ -55,6 +55,18 @@ public interface InsiderTradeDeliveryRepository extends JpaRepository<InsiderTra
             join fetch delivery.trade trade
             join fetch trade.stockAsset
             where subscription.user = :user
+              and delivery.id in :ids
+              and delivery.deletedAt is null
+            """)
+    List<InsiderTradeDelivery> findAllForUserByIdIn(@Param("user") User user, @Param("ids") java.util.Collection<Long> ids);
+
+    @Query("""
+            select delivery
+            from InsiderTradeDelivery delivery
+            join fetch delivery.subscription subscription
+            join fetch delivery.trade trade
+            join fetch trade.stockAsset
+            where subscription.user = :user
               and lower(trade.tickerSymbol) = lower(:symbol)
               and trade.transactionDate >= :firstDate
               and delivery.deletedAt is null

@@ -4,7 +4,8 @@ import org.example.stockwatch247.repository.StockAssetRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestTemplate;
 import tools.jackson.databind.json.JsonMapper;
-import java.net.URI;
+import org.springframework.http.RequestEntity;
+import org.springframework.http.ResponseEntity;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -14,11 +15,11 @@ class TwelveDataBudgetBoundaryTest {
         var budget = mock(MarketDataProviderRequestBudget.class);
         var service = new TwelveDataService(http, JsonMapper.builder().build(), mock(StockAssetRepository.class), "test-key", "https://provider.example");
         service.setRequestBudget(budget);
-        when(http.getForObject(any(URI.class), eq(String.class))).thenReturn(
-                "{\"status\":\"error\",\"code\":404,\"message\":\"This symbol is available starting with the Ultra plan\"}");
+        when(http.exchange(any(RequestEntity.class), eq(String.class))).thenReturn(ResponseEntity.ok(
+                "{\"status\":\"error\",\"code\":404,\"message\":\"This symbol is available starting with the Ultra plan\"}"));
         assertThatThrownBy(() -> service.getTimeSeries("CDR", "1day", 10)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> service.getTimeSeries("CDR", "1h", 1000)).hasMessageContaining("revalidation");
-        verify(http, times(1)).getForObject(any(URI.class), eq(String.class));
+        verify(http, times(1)).exchange(any(RequestEntity.class), eq(String.class));
         verify(budget, times(1)).reserveTwelveDataRequest();
     }
     @Test void everyQuoteAndCandlePageReservesExactlyOneCreditImmediatelyBeforeHttp() {
@@ -26,14 +27,14 @@ class TwelveDataBudgetBoundaryTest {
         var budget = mock(MarketDataProviderRequestBudget.class);
         var service = new TwelveDataService(http, JsonMapper.builder().build(), mock(StockAssetRepository.class), "test-key", "https://provider.example");
         service.setRequestBudget(budget);
-        when(http.getForObject(any(URI.class), eq(String.class))).thenReturn("{\"values\":[],\"close\":\"100\",\"symbol\":\"AAPL\"}");
+        when(http.exchange(any(RequestEntity.class), eq(String.class))).thenReturn(ResponseEntity.ok("{\"values\":[],\"close\":\"100\",\"symbol\":\"AAPL\"}"));
         service.getQuote("AAPL");
         service.getTimeSeries("AAPL", "1day", 10);
         service.getTimeSeriesBefore("AAPL", "1day", 10, 1_700_000_000L);
         var order = inOrder(budget, http);
         for (int i = 0; i < 3; i++) {
             order.verify(budget).reserveTwelveDataRequest();
-            order.verify(http).getForObject(any(URI.class), eq(String.class));
+            order.verify(http).exchange(any(RequestEntity.class), eq(String.class));
         }
         verifyNoMoreInteractions(budget, http);
     }

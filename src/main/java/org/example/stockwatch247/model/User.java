@@ -52,6 +52,9 @@
         @Column(name = "learning_mode", nullable = false)
         private boolean learningMode = false;
 
+        @Column(name = "notification_emails_paused", nullable = false)
+        private boolean notificationEmailsPaused = false;
+
         /** "en" or "pl"; null follows the browser language. */
         @Column(name = "preferred_language", length = 8)
         private String preferredLanguage;
@@ -218,6 +221,8 @@
         public void setThemePreference(String themePreference) { this.themePreference = themePreference; }
         public boolean isLearningMode() { return learningMode; }
         public void setLearningMode(boolean learningMode) { this.learningMode = learningMode; }
+        public boolean isNotificationEmailsPaused() { return notificationEmailsPaused; }
+        public void setNotificationEmailsPaused(boolean notificationEmailsPaused) { this.notificationEmailsPaused = notificationEmailsPaused; }
         public String getElliottMotiveColor() { return elliottMotiveColor; }
         public void setElliottMotiveColor(String value) { this.elliottMotiveColor = value; }
         public String getElliottCorrectiveColor() { return elliottCorrectiveColor; }

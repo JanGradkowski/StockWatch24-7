@@ -412,59 +412,6 @@ input:focus-visible {
     display: none !important;
 }
 
-.bg-animation {
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    overflow: hidden;
-    pointer-events: none;
-}
-
-.bg-animation::after {
-    position: absolute;
-    top: -40%;
-    left: 42%;
-    width: 1px;
-    height: 150%;
-    background: linear-gradient(transparent, rgba(183, 243, 74, 0.15), transparent);
-    box-shadow: 110px 0 120px rgba(183, 243, 74, 0.08);
-    content: "";
-    opacity: 0.7;
-    transform: rotate(31deg);
-}
-
-.glow-orb {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(120px);
-    opacity: 0.15;
-    animation: orb-drift 18s infinite ease-in-out;
-    will-change: transform;
-}
-
-.orb-1 {
-    top: -15rem;
-    right: -10rem;
-    width: 42rem;
-    height: 42rem;
-    background: var(--violet);
-}
-
-.orb-2 {
-    bottom: -18rem;
-    left: -14rem;
-    width: 48rem;
-    height: 48rem;
-    background: var(--accent-color);
-    animation-delay: -8s;
-}
-
-@keyframes orb-drift {
-    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-    45% { transform: translate3d(3rem, -2rem, 0) scale(1.08); }
-    75% { transform: translate3d(-2rem, 2rem, 0) scale(0.94); }
-}
-
 @keyframes rise-in {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
@@ -656,9 +603,14 @@ input:focus-visible {
     border-bottom: 0;
 }
 
-.suggestion-row:hover {
+.suggestion-row:hover,
+.suggestion-row.is-active {
     background: rgba(183, 243, 74, 0.07);
     transform: translateX(3px);
+}
+
+.suggestion-row.is-active {
+    box-shadow: inset 3px 0 0 var(--primary-color);
 }
 
 .suggestion-content {
@@ -13323,10 +13275,6 @@ a.notification-filing-button:focus-visible {
     color: #172019;
 }
 
-:root[data-theme="light"] .bg-animation {
-    opacity: 0.52;
-}
-
 :root[data-theme="light"] .theme-toggle {
     border-color: rgba(101, 87, 214, 0.2);
     background: rgba(255, 255, 255, 0.92);
@@ -13754,10 +13702,6 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] body::after {
     background: radial-gradient(circle at center, transparent 62%, rgba(36, 52, 41, 0.035) 120%);
-}
-
-:root[data-theme="light"] .bg-animation {
-    opacity: 1;
 }
 
 :root[data-theme="light"] .navbar,
@@ -14319,73 +14263,6 @@ a.notification-filing-button:focus-visible {
         linear-gradient(180deg, #080a0d 0%, #040706 48%, #020403 100%);
 }
 
-.bg-animation::before,
-.bg-animation::after {
-    position: absolute;
-    right: auto;
-    left: -24vw;
-    width: 148vw;
-    height: 48vh;
-    border-radius: 42% 58% 47% 53% / 62% 40% 60% 38%;
-    box-shadow: none;
-    content: "";
-    filter: blur(58px) saturate(135%);
-    mix-blend-mode: screen;
-    opacity: 0.62;
-    pointer-events: none;
-    will-change: transform;
-}
-
-.bg-animation::before {
-    top: -12vh;
-    background:
-        radial-gradient(ellipse at 16% 58%, rgba(183, 243, 74, 0.28) 0%, transparent 36%),
-        radial-gradient(ellipse at 50% 42%, rgba(20, 210, 145, 0.22) 0%, transparent 39%),
-        radial-gradient(ellipse at 82% 58%, rgba(141, 125, 255, 0.25) 0%, transparent 36%);
-    animation: ambient-wave-one 24s ease-in-out infinite alternate;
-}
-
-.bg-animation::after {
-    top: auto;
-    bottom: -15vh;
-    background:
-        radial-gradient(ellipse at 18% 48%, rgba(141, 125, 255, 0.2) 0%, transparent 35%),
-        radial-gradient(ellipse at 53% 58%, rgba(100, 232, 189, 0.24) 0%, transparent 39%),
-        radial-gradient(ellipse at 86% 42%, rgba(183, 243, 74, 0.2) 0%, transparent 34%);
-    animation: ambient-wave-two 30s ease-in-out infinite alternate;
-}
-
-:root[data-theme="dark"] .glow-orb {
-    opacity: 0.2;
-    filter: blur(105px) saturate(145%);
-}
-
-:root[data-theme="light"] .bg-animation::before,
-:root[data-theme="light"] .bg-animation::after {
-    filter: blur(52px) saturate(112%);
-    mix-blend-mode: multiply;
-    opacity: 0.56;
-}
-
-:root[data-theme="light"] .bg-animation::before {
-    background:
-        radial-gradient(ellipse at 15% 56%, rgba(193, 240, 168, 0.5) 0%, transparent 37%),
-        radial-gradient(ellipse at 49% 40%, rgba(181, 242, 217, 0.46) 0%, transparent 40%),
-        radial-gradient(ellipse at 84% 58%, rgba(219, 213, 255, 0.36) 0%, transparent 36%);
-}
-
-:root[data-theme="light"] .bg-animation::after {
-    background:
-        radial-gradient(ellipse at 18% 46%, rgba(220, 214, 255, 0.32) 0%, transparent 35%),
-        radial-gradient(ellipse at 52% 60%, rgba(184, 239, 205, 0.48) 0%, transparent 40%),
-        radial-gradient(ellipse at 86% 40%, rgba(210, 242, 177, 0.44) 0%, transparent 35%);
-}
-
-:root[data-theme="light"] .glow-orb {
-    opacity: 0.12;
-    filter: blur(112px) saturate(108%);
-}
-
 :root[data-theme="light"] .signal-evidence-section {
     border-color: rgba(47, 104, 49, 0.17);
     background:
@@ -14498,37 +14375,6 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .alert-panel {
     border-color: rgba(47, 104, 49, 0.16);
     background: linear-gradient(145deg, rgba(252, 255, 251, 0.96), rgba(240, 249, 238, 0.95));
-}
-
-@keyframes ambient-wave-one {
-    0% {
-        transform: translate3d(-6%, -4%, 0) rotate(-3deg) scale(1);
-    }
-    50% {
-        transform: translate3d(2%, 8%, 0) rotate(2deg) scale(1.08, 0.94);
-    }
-    100% {
-        transform: translate3d(8%, 1%, 0) rotate(-1deg) scale(0.98, 1.08);
-    }
-}
-
-@keyframes ambient-wave-two {
-    0% {
-        transform: translate3d(7%, 5%, 0) rotate(2deg) scale(1.04, 0.96);
-    }
-    50% {
-        transform: translate3d(-2%, -7%, 0) rotate(-2deg) scale(0.97, 1.08);
-    }
-    100% {
-        transform: translate3d(-8%, 2%, 0) rotate(1deg) scale(1.07, 0.98);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .bg-animation::before,
-    .bg-animation::after {
-        animation: none;
-    }
 }
 /* Candlestick pattern definitions follow the established analysis/scoring settings system. */
 .candlestick-pattern-settings-stack,

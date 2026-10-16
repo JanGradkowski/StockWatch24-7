@@ -86,6 +86,10 @@ public class MfaLoginController {
             return "redirect:/login?expired=true";
         }
         request.changeSessionId();
+        Object pendingTarget = request.getSession().getAttribute(AccountSession.MFA_PENDING_TARGET);
+        String target = pendingTarget instanceof String path
+                ? org.example.stockwatch247.security.PostLoginRedirect.safeTarget(path, "")
+                : org.example.stockwatch247.security.PostLoginRedirect.DEFAULT_TARGET;
         var authentication = UsernamePasswordAuthenticationToken.authenticated(details, null, details.getAuthorities());
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication); SecurityContextHolder.setContext(context);
@@ -93,7 +97,7 @@ public class MfaLoginController {
         request.getSession().setAttribute(AccountSession.SECURITY_VERSION, identity.securityVersion());
         contextRepository.saveContext(context, request, response);
         if (knownDevices != null) knownDevices.remember(request, response, identity.email());
-        return "redirect:/home";
+        return "redirect:" + target;
     }
 
     @PostMapping("/login/2fa/cancel")
@@ -115,5 +119,6 @@ public class MfaLoginController {
         session.removeAttribute(AccountSession.MFA_PENDING_AT);
         session.removeAttribute(AccountSession.MFA_PENDING_VERSION);
         session.removeAttribute(AccountSession.MFA_PENDING_FAILURES);
+        session.removeAttribute(AccountSession.MFA_PENDING_TARGET);
     }
 }

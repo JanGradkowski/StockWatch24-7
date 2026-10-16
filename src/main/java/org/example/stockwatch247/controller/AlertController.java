@@ -8,7 +8,6 @@ import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AlertRuleService;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,11 +26,6 @@ public class AlertController {
     public AlertController(AlertRuleService alertRuleService, UserRepository userRepository) {
         this.alertRuleService = alertRuleService;
         this.userRepository = userRepository;
-    }
-
-    @PostMapping("/testing/top-us-200")
-    public ResponseEntity<?> followTemporaryTopUsCompanies(Principal principal) {
-        return ResponseEntity.status(HttpStatus.GONE).body(Map.of("error", "Use named watchlist index imports."));
     }
 
     @DeleteMapping

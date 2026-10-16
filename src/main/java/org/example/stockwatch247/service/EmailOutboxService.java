@@ -95,9 +95,11 @@ public class EmailOutboxService {
                     order by available_at for update skip locked limit 1
                 ) update email_outbox e set owner = ?, lease_until = current_timestamp + interval '2 minutes',
                     attempts = attempts + 1 from candidate where e.id = candidate.id
-                returning e.id, e.ciphertext, e.iv, e.alert_event_id, e.receipt, e.outlook_notification_id, e.attempts
+                returning e.id, e.ciphertext, e.iv, e.alert_event_id, e.receipt, e.outlook_notification_id, e.attempts,
+                    e.deduplication_key
                 """, (rs, row) -> new Claim(rs.getObject(1, UUID.class), rs.getString(2),
-                    rs.getString(3), rs.getObject(4, Long.class), rs.getString(5), rs.getObject(6, Long.class), rs.getInt(7)), owner);
+                    rs.getString(3), rs.getObject(4, Long.class), rs.getString(5), rs.getObject(6, Long.class), rs.getInt(7),
+                    rs.getString(8)), owner);
             if (claims.isEmpty()) break;
             Claim claim = claims.getFirst();
             long started = System.nanoTime();
@@ -110,16 +112,28 @@ public class EmailOutboxService {
                 }
                 Payload payload = mapper.readValue(crypto.decrypt(claim.body(), claim.iv(),
                         "email-outbox:" + claim.id()), Payload.class);
+                // Alert and notification emails stop when the account paused them, and carry the
+                // one-click unsubscribe headers mailbox providers show next to the sender.
+                var account = claim.notification() && links != null && payload.to() != null && payload.to().length > 0
+                        ? links.account(payload.to()[0]) : java.util.Optional.<org.example.stockwatch247.model.User>empty();
+                if (account.isPresent() && account.get().isNotificationEmailsPaused()) {
+                    jdbc.update("update email_outbox set expired_at=current_timestamp,ciphertext=null,iv=null,owner=null,lease_until=null where id=? and owner=?",claim.id(),owner);
+                    continue;
+                }
                 // Generate the stable ID directly. The default updateMessageID
                 // resolves the local host, even when its random ID is overwritten.
                 var message = new jakarta.mail.internet.MimeMessage(sender.createMimeMessage().getSession()) {
                     @Override protected void updateMessageID() throws jakarta.mail.MessagingException {
-                        setHeader("Message-ID", "<" + claim.id() + "@stockwatch.local>");
+                        setHeader("Message-ID", "<" + claim.id() + "@" + messageIdDomain + ">");
                     }
                 };
                 var helper = new MimeMessageHelper(message, "UTF-8");
                 helper.setFrom(payload.from()); helper.setTo(payload.to());
                 helper.setSubject(payload.subject()); helper.setText(payload.text());
+                if (account.isPresent()) {
+                    message.setHeader("List-Unsubscribe", "<" + links.unsubscribeUrl(account.get().getId()) + ">");
+                    message.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+                }
                 message.saveChanges();
                 // Recheck after payload/policy work or a process pause, before touching SMTP.
                 if (jdbc.update("update email_outbox set lease_until=current_timestamp + interval '2 minutes' "
@@ -162,12 +176,24 @@ public class EmailOutboxService {
                 if (category.providerOutage()) break;
             }
         }
-        jdbc.update("""
-            update email_outbox set expired_at = current_timestamp, ciphertext = null, iv = null, owner = null,
-            lease_until = null where delivered_at is null and expired_at is null and expires_at <= current_timestamp
-            and (lease_until is null or lease_until <= current_timestamp)
-            """);
-        jdbc.update("delete from email_outbox where coalesce(delivered_at, expired_at) < current_timestamp - interval '30 days'");
+    }
+
+    /**
+     * Erases bodies whose delivery window has passed (the worker already skips them) and removes old
+     * receipts. Hourly is enough; running it with every one-second delivery poll only added writes.
+     */
+    @Scheduled(cron = "${email-outbox.cleanup-cron:0 5 * * * *}")
+    public void expireAndPurge() {
+        try {
+            jdbc.update("""
+                update email_outbox set expired_at = current_timestamp, ciphertext = null, iv = null, owner = null,
+                lease_until = null where delivered_at is null and expired_at is null and expires_at <= current_timestamp
+                and (lease_until is null or lease_until <= current_timestamp)
+                """);
+            jdbc.update("delete from email_outbox where coalesce(delivered_at, expired_at) < current_timestamp - interval '30 days'");
+        } catch (RuntimeException failure) {
+            log.warn("Email outbox cleanup deferred to the next run: {}", failure.getClass().getSimpleName());
+        }
     }
 
     private void defer(Claim claim, UUID owner) {
@@ -179,5 +205,28 @@ public class EmailOutboxService {
     }
 
     public record Payload(String from, String[] to, String subject, String text) { }
-    private record Claim(UUID id, String body, String iv, Long eventId, String receipt, Long outlookId, int attempts) { }
+    private record Claim(UUID id, String body, String iv, Long eventId, String receipt, Long outlookId, int attempts,
+                         String deduplicationKey) {
+        /** Alert and notification emails, as opposed to account and security messages. */
+        boolean notification() {
+            return eventId != null || outlookId != null
+                    || deduplicationKey != null && deduplicationKey.startsWith("chart-alert:");
+        }
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private NotificationEmailLinks links;
+
+    /** Message-IDs name the public site, not a made-up local host that spam filters distrust. */
+    private String messageIdDomain = "stockwatch.local";
+
+    @org.springframework.beans.factory.annotation.Value("${app.public-base-url:http://localhost:8080}")
+    void setPublicBaseUrl(String publicBaseUrl) {
+        try {
+            String host = java.net.URI.create(publicBaseUrl.trim()).getHost();
+            if (host != null && !host.isBlank()) messageIdDomain = host;
+        } catch (IllegalArgumentException invalid) {
+            // Keep the fallback domain; production configuration validation reports a bad base URL.
+        }
+    }
 }

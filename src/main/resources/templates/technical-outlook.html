@@ -11,8 +11,6 @@
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
   <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
-  <meta name="_csrf" th:content="${_csrf.token}">
-  <meta name="_csrf_header" th:content="${_csrf.headerName}">
 </head>
 <body class="stock-is-loading">
 <div id="technicalOutlookPageLoader"
@@ -59,10 +57,6 @@
     <div class="stock-loader-progress" aria-hidden="true"><span></span></div>
     <p class="stock-loader-note" th:text="#{outlook.basedOnCompleted}">Based on completed candles</p>
   </div>
-</div>
-<div class="bg-animation" aria-hidden="true">
-  <div class="glow-orb orb-1"></div>
-  <div class="glow-orb orb-2"></div>
 </div>
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 

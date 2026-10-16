@@ -25,6 +25,7 @@ import java.util.List;
 
 @Service
 public class AccountSecurityService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AccountSecurityService.class);
     static final int MFA_FAILURES_BEFORE_PAUSE = 20;
     private static final java.time.Duration MFA_FAILURE_WINDOW = java.time.Duration.ofHours(24);
     private static final java.time.Duration MFA_PAUSE = java.time.Duration.ofHours(1);
@@ -313,6 +314,6 @@ public class AccountSecurityService {
     }
     private void notice(User user, String subject, String body) {
         try { notifications.sendSecurityNotice(user, subject, body); }
-        catch (RuntimeException exception) { System.err.println("Security notification email could not be sent for event: " + subject); }
+        catch (RuntimeException exception) { log.warn("Security notification email could not be sent for event: " + subject); }
     }
 }

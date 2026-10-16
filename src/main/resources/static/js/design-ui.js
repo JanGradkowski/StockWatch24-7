@@ -180,6 +180,24 @@
             sync();
         });
     }
+    // Passwords are limited to 72 UTF-8 bytes (the bcrypt limit), but maxlength counts characters, so a
+    // long password with accented letters (ą, ę: two bytes each) is caught here instead of by the server.
+    function utf8Bytes(text) {
+        let bytes = 0;
+        for (const character of text) {
+            const code = character.codePointAt(0);
+            bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+        }
+        return bytes;
+    }
+    function passwordByteLimits() {
+        document.querySelectorAll('input[type="password"][maxlength="72"]').forEach(input => {
+            const check = () => input.setCustomValidity(utf8Bytes(input.value) > 72
+                ? window.StockWatchI18n.t('password.tooLong') : '');
+            input.addEventListener('input', check);
+            check();
+        });
+    }
     labelRows(); settingsChanges(); appearancePreview(); fieldErrors();
-    filterableMenus(); rowMenus(); expandableStatus();
+    filterableMenus(); rowMenus(); expandableStatus(); passwordByteLimits();
 })();
