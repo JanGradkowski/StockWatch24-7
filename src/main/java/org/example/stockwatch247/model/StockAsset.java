@@ -3,8 +3,6 @@ package org.example.stockwatch247.model;
 import jakarta.persistence.*;
 import org.example.stockwatch247.model.enums.InstrumentType;
 
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
 @Table(name = "stock_assets")
@@ -13,9 +11,6 @@ public class StockAsset {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @OneToMany(mappedBy = "stockAsset", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<CandleData> historicalData = new ArrayList<>();
 
     @Column(name = "ticker_symbol", nullable = false, unique = true, length = 20)
     private String tickerSymbol; // e.g., "AAPL"
@@ -137,14 +132,6 @@ public class StockAsset {
 
     public void setTickerSymbol(String tickerSymbol) {
         this.tickerSymbol = tickerSymbol;
-    }
-
-    public List<CandleData> getHistoricalData() {
-        return historicalData;
-    }
-
-    public void setHistoricalData(List<CandleData> historicalData) {
-        this.historicalData = historicalData;
     }
 
     public String getCurrency() {

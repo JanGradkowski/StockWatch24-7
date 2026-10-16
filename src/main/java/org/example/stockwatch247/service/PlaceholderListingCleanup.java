@@ -26,7 +26,6 @@ public class PlaceholderListingCleanup {
                 where upper(a.exchange) = 'UNKNOWN'
                   and a.market_data_verified_at is null
                   and not exists (select 1 from candles c where c.symbol = a.ticker_symbol)
-                  and not exists (select 1 from candle_data d where d.stock_asset_id = a.id)
                   and not exists (select 1 from alert_rules r where r.stock_asset_id = a.id)
                   and not exists (select 1 from technical_outlook_subscriptions s where s.stock_asset_id = a.id)
                   and not exists (select 1 from congressional_trades t where t.stock_asset_id = a.id)

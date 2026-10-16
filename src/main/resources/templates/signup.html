@@ -10,10 +10,6 @@
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body class="auth-page">
-<div class="bg-animation" aria-hidden="true">
-  <div class="glow-orb orb-1"></div>
-  <div class="glow-orb orb-2"></div>
-</div>
 
 <main class="auth-shell">
   <section class="auth-showcase">
@@ -44,16 +40,16 @@
       <div class="form-row">
         <div class="form-group">
           <label for="firstName" th:text="#{auth.signup.firstName}">First name</label>
-          <input id="firstName" type="text" name="firstName" required minlength="1" maxlength="100" autocomplete="given-name" placeholder="Jan">
+          <input id="firstName" type="text" name="firstName" required minlength="1" maxlength="100" autocomplete="given-name" placeholder="Jan" th:value="${signupFirstName}">
         </div>
         <div class="form-group">
           <label for="lastName" th:text="#{auth.signup.lastName}">Last name</label>
-          <input id="lastName" type="text" name="lastName" required minlength="1" maxlength="100" autocomplete="family-name" placeholder="Kowalski">
+          <input id="lastName" type="text" name="lastName" required minlength="1" maxlength="100" autocomplete="family-name" placeholder="Kowalski" th:value="${signupLastName}">
         </div>
       </div>
       <div class="form-group">
         <label for="signupEmail" th:text="#{auth.email}">Email address</label>
-        <input id="signupEmail" type="email" name="email" required maxlength="254" autocomplete="email" placeholder="you@example.com" th:placeholder="#{auth.email.placeholder}">
+        <input id="signupEmail" type="email" name="email" required maxlength="254" autocomplete="email" placeholder="you@example.com" th:placeholder="#{auth.email.placeholder}" th:value="${signupEmail}">
       </div>
       <div class="form-group">
         <label for="signupPassword" th:text="#{auth.password}">Password</label>
@@ -68,11 +64,11 @@
         <div class="elliott-color-grid signup-elliott-colors">
           <label class="elliott-color-choice" for="signupElliottMotiveColor">
             <span><strong th:text="#{auth.signup.motive}">Motive I–V</strong><small th:text="#{auth.signup.motive.default}">Default: blue</small></span>
-            <input id="signupElliottMotiveColor" type="color" name="elliottMotiveColor" value="#3B82F6" required>
+            <input id="signupElliottMotiveColor" type="color" name="elliottMotiveColor" value="#3B82F6" th:value="${signupMotiveColor ?: '#3B82F6'}" required>
           </label>
           <label class="elliott-color-choice" for="signupElliottCorrectiveColor">
             <span><strong th:text="#{auth.signup.corrective}">Corrective A–B–C</strong><small th:text="#{auth.signup.corrective.default}">Default: violet</small></span>
-            <input id="signupElliottCorrectiveColor" type="color" name="elliottCorrectiveColor" value="#A855F7" required>
+            <input id="signupElliottCorrectiveColor" type="color" name="elliottCorrectiveColor" value="#A855F7" th:value="${signupCorrectiveColor ?: '#A855F7'}" required>
           </label>
         </div>
       </fieldset>

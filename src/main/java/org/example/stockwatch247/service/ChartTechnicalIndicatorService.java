@@ -48,6 +48,7 @@ public class ChartTechnicalIndicatorService {
     private final CandleRepository candleRepository;
     private final ChartIndicatorEngine engine = new ChartIndicatorEngine();
     private final BoundedTtlCache<List<Object>, IndicatorBatchView> resultCache = new BoundedTtlCache<>(64, 120);
+    private final BoundedTtlCache<List<Object>, List<Candle>> seriesCache = new BoundedTtlCache<>(8, 300);
     private ChartIndicatorCatalog catalog = new ChartIndicatorCatalog();
     private CandleRevisionService revisions;
     private MarketDataService marketData;
@@ -325,9 +326,26 @@ public class ChartTechnicalIndicatorService {
         return revisions == null ? 0 : revisions.generation(symbol, interval);
     }
 
+    /**
+     * The stored series up to {@code to}. Indicators run over the whole history so values do not depend
+     * on how far the chart has scrolled; the series is kept per candle revision, so changing an
+     * indicator or panning re-reads nothing until new candles are stored.
+     */
     private List<Candle> load(String symbol, String interval, Long to) {
-        return to == null ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
-                : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanEqualOrderByTimestampAsc(symbol, interval, to);
+        if (revisions == null) {
+            return to == null ? candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)
+                    : candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanEqualOrderByTimestampAsc(symbol, interval, to);
+        }
+        List<Candle> series = seriesCache.getOrCompute(List.of(symbol, interval, generation(symbol, interval)),
+                () -> List.copyOf(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampAsc(symbol, interval)));
+        if (to == null) return series;
+        int low = 0, high = series.size();
+        while (low < high) {
+            int middle = (low + high) >>> 1;
+            Long timestamp = series.get(middle).getTimestamp();
+            if (timestamp != null && timestamp <= to) low = middle + 1; else high = middle;
+        }
+        return series.subList(0, low);
     }
 
     private List<Candle> completed(List<Candle> candles) {

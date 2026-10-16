@@ -31,6 +31,7 @@ import java.util.Locale;
 
 @Service
 public class AlertNotificationService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AlertNotificationService.class);
     @Autowired
     private WatchlistEmailPolicy watchlistEmails;
 
@@ -49,23 +50,52 @@ public class AlertNotificationService {
     @Autowired(required = false)
     private org.example.stockwatch247.i18n.LanguagePreferenceService languages;
 
-    /** Alert emails are written in English and go out in the recipient's language, translated line by line. */
+    @Autowired(required = false)
+    private NotificationEmailLinks links;
+
     private void localize(SimpleMailMessage message) {
+        localize(message, null);
+    }
+
+    /**
+     * Alert emails end with where to see the alert, how to change which emails arrive and a one-click
+     * way to stop them all. They are written in English and go out in the recipient's language,
+     * translated line by line.
+     */
+    private void localize(SimpleMailMessage message, String viewPath) {
         String[] recipients = message.getTo();
+        if (links != null && recipients != null && recipients.length > 0) {
+            StringBuilder text = new StringBuilder(message.getText() == null ? "" : message.getText().stripTrailing())
+                    .append("\n\n");
+            if (viewPath != null) text.append("View in StockWatch: ").append(links.baseUrl()).append(viewPath).append('\n');
+            text.append("Manage alert emails: ").append(links.baseUrl()).append(NotificationEmailLinks.MANAGE_PATH).append('\n');
+            links.account(recipients[0]).ifPresent(account ->
+                    text.append("Stop all alert emails: ").append(links.unsubscribeUrl(account.getId())).append('\n'));
+            message.setText(text.toString());
+        }
         if (languages == null || recipients == null || recipients.length == 0) return;
         java.util.Locale locale = languages.localeForEmail(recipients[0]);
         message.setSubject(org.example.stockwatch247.i18n.ServerMessages.translate(message.getSubject(), locale));
         message.setText(org.example.stockwatch247.i18n.ServerMessages.translateLines(message.getText(), locale));
     }
 
+    private static String signalPath(AlertEvent event) {
+        return event == null || event.getId() == null ? null : "/alerts/signals/" + event.getId();
+    }
+
+    /** True when the recipient switched off all alert emails (the unsubscribe link or settings). */
+    private boolean notificationEmailsPaused(String recipient) {
+        return links != null && links.account(recipient).map(User::isNotificationEmailsPaused).orElse(false);
+    }
+
     private void queueInitial(SimpleMailMessage message, AlertEvent event) {
-        localize(message);
+        localize(message, signalPath(event));
         if (outbox == null) send(message);
         else outbox.enqueue(message, event == null ? null : event.getId(), java.time.Duration.ofDays(7));
     }
 
     private void queueFollowUp(SimpleMailMessage message, AlertEvent event, String transition) {
-        localize(message);
+        localize(message, signalPath(event));
         if (outbox == null) send(message);
         else {
             if (event == null || event.getId() == null)
@@ -289,7 +319,7 @@ public class AlertNotificationService {
         );
 
         if (!isSignalEmailEnabled(rule, signal)) {
-            System.out.println("[EMAIL DISABLED] Signal email suppressed for "
+            log.debug("[EMAIL DISABLED] Signal email suppressed for "
                     + rule.getStockAsset().getTickerSymbol() + ".");
             return false;
         }
@@ -373,7 +403,7 @@ public class AlertNotificationService {
                         signal.setupScore(),
                         SignalScoreBreakdown.formatEmail(signal.reasons(), signal.tradeSignal()));
         if (!isDevelopingElliottEmailEnabled(rule)) {
-            System.out.println("[EMAIL DISABLED] Developing Elliott email suppressed for " + symbol + ".");
+            log.debug("[EMAIL DISABLED] Developing Elliott email suppressed for " + symbol + ".");
             return false;
         }
         SimpleMailMessage message = new SimpleMailMessage();
@@ -381,7 +411,7 @@ public class AlertNotificationService {
         message.setTo(rule.getUser().getEmail());
         message.setSubject(subject);
         message.setText(body);
-        localize(message);
+        localize(message, signalPath(event));
         if (outbox == null) send(message);
         else outbox.enqueue(message, event.getId(), java.time.Duration.ofDays(7),
                 initial ? "initial-alert:" + event.getId() : "elliott-stage:" + event.getId() + ":" + event.getElliottSignalStage() + ":" + signal.candleTimestamp() + ":" + invalidated,
@@ -485,7 +515,7 @@ public class AlertNotificationService {
         if (!emailEnabled || !allowsWatchlistEmail(rule, plan.getExpectedMove()) || preferencesService != null
                 && !preferencesService.allowsLifecycleEmail(
                 rule.getUser(), preferenceStatus, rule.getInterval(), plan.getExpectedMove())) {
-            System.out.println("[EMAIL DISABLED] Elliott trade outcome email suppressed for " + symbol + ".");
+            log.debug("[EMAIL DISABLED] Elliott trade outcome email suppressed for " + symbol + ".");
             return false;
         }
         SimpleMailMessage message = new SimpleMailMessage();
@@ -567,7 +597,7 @@ public class AlertNotificationService {
         );
 
         if (!isSignalEmailEnabled(rule, signal)) {
-            System.out.println("[EMAIL DISABLED] Harmonic signal email suppressed for " + symbol + ".");
+            log.debug("[EMAIL DISABLED] Harmonic signal email suppressed for " + symbol + ".");
             return false;
         }
         SimpleMailMessage message = new SimpleMailMessage();
@@ -673,7 +703,7 @@ public class AlertNotificationService {
                 && !preferencesService.allowsLifecycleEmail(
                 rule.getUser(), "TARGET_REACHED".equals(event.getHarmonicStopStatus()) ? SignalLifecycleStatus.CONFIRMED : SignalLifecycleStatus.INVALIDATED,
                 rule.getInterval(), event.getTradeSignal())) {
-            System.out.println("[EMAIL DISABLED] Harmonic stop outcome email suppressed for " + symbol + ".");
+            log.debug("[EMAIL DISABLED] Harmonic stop outcome email suppressed for " + symbol + ".");
             return false;
         }
         SimpleMailMessage message = new SimpleMailMessage();
@@ -987,7 +1017,7 @@ public class AlertNotificationService {
         );
 
         if (!isSignalLifecycleEmailEnabled(event)) {
-            System.out.println("[EMAIL DISABLED] " + statusLabel
+            log.debug("[EMAIL DISABLED] " + statusLabel
                     + " lifecycle email suppressed for " + symbol + ".");
             return false;
         }
@@ -1107,7 +1137,7 @@ public class AlertNotificationService {
                 favorableLine);
 
         if (!isSignalLifecycleEmailEnabled(event)) {
-            System.out.println("[EMAIL DISABLED] " + status
+            log.debug("[EMAIL DISABLED] " + status
                     + " candlestick trade email suppressed for " + symbol + ".");
             return false;
         }
@@ -1385,7 +1415,7 @@ public class AlertNotificationService {
         }
 
         if (!isSignalLifecycleEmailEnabled(event)) {
-            System.out.println("[EMAIL DISABLED] " + status
+            log.debug("[EMAIL DISABLED] " + status
                     + " candidate-gate email suppressed for " + symbol + ".");
             return false;
         }
@@ -1442,8 +1472,9 @@ public class AlertNotificationService {
                 sourceLine);
 
         if (!emailEnabled || watchlistEmails!=null && !watchlistEmails.allows(delivery.userId(),delivery.ticker(),"CONGRESS","DAILY","ANY") || preferencesService != null
-                && !preferencesService.allowsCongressionalEmail(delivery.userId())) {
-            System.out.println("[EMAIL DISABLED] Congressional activity email suppressed for "
+                && !preferencesService.allowsCongressionalEmail(delivery.userId())
+                || notificationEmailsPaused(delivery.recipientEmail())) {
+            log.debug("[EMAIL DISABLED] Congressional activity email suppressed for "
                     + delivery.ticker() + ".");
             return;
         }
@@ -1453,8 +1484,8 @@ public class AlertNotificationService {
         message.setTo(delivery.recipientEmail());
         message.setSubject(subject);
         message.setText(body);
-        localize(message);
-        send(message);
+        localize(message, "/activity-signals/congressional/" + delivery.deliveryId());
+        sendNotification(message);
     }
 
     public void sendInsiderTradeEmail(InsiderTradeDelivery delivery) {
@@ -1507,8 +1538,9 @@ public class AlertNotificationService {
                 source);
 
         if (!emailEnabled || watchlistEmails!=null && !watchlistEmails.allows(delivery.getSubscription().getUser().getId(),symbol,"INSIDER","DAILY","ANY") || preferencesService != null
-                && !preferencesService.allowsInsiderEmail(delivery.getSubscription().getUser())) {
-            System.out.println("[EMAIL DISABLED] Insider activity email suppressed for "
+                && !preferencesService.allowsInsiderEmail(delivery.getSubscription().getUser())
+                || delivery.getSubscription().getUser().isNotificationEmailsPaused()) {
+            log.debug("[EMAIL DISABLED] Insider activity email suppressed for "
                     + symbol + ".");
             return;
         }
@@ -1519,8 +1551,8 @@ public class AlertNotificationService {
         message.setSubject("StockWatch insider " + activity.toLowerCase()
                 + " filed: " + symbol);
         message.setText(body);
-        localize(message);
-        send(message);
+        localize(message, delivery.getId() == null ? null : "/activity-signals/insider/" + delivery.getId());
+        sendNotification(message);
     }
 
     public boolean isEmailDeliveryEnabled() {
@@ -1549,7 +1581,7 @@ public class AlertNotificationService {
                                     String subject, String body, Long notificationId) {
         if (!emailEnabled || preferencesService != null
                 && !preferencesService.allowsTechnicalOutlookEmail(user, interval)) {
-            System.out.println("[EMAIL DISABLED] Technical outlook change email suppressed for "
+            log.debug("[EMAIL DISABLED] Technical outlook change email suppressed for "
                     + user.getEmail() + " " + interval + ".");
             return false;
         }
@@ -1615,6 +1647,31 @@ public class AlertNotificationService {
         return pattern != null
                 && pattern.name().startsWith("ELLIOTT_")
                 && pattern.name().endsWith("WAVE_V_END");
+    }
+
+    /** A notification sent straight to SMTP (not through the outbox) carries the one-click unsubscribe headers too. */
+    private void sendNotification(SimpleMailMessage message) {
+        JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
+        String[] recipients = message.getTo();
+        var account = links == null || recipients == null || recipients.length == 0
+                ? java.util.Optional.<User>empty() : links.account(recipients[0]);
+        if (mailSender == null || account.isEmpty()) {
+            send(message);
+            return;
+        }
+        try {
+            var mime = mailSender.createMimeMessage();
+            var helper = new org.springframework.mail.javamail.MimeMessageHelper(mime, "UTF-8");
+            helper.setFrom(message.getFrom());
+            helper.setTo(recipients);
+            helper.setSubject(message.getSubject());
+            helper.setText(message.getText());
+            mime.setHeader("List-Unsubscribe", "<" + links.unsubscribeUrl(account.get().getId()) + ">");
+            mime.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+            mailSender.send(mime);
+        } catch (MailException | jakarta.mail.MessagingException e) {
+            throw new IllegalStateException("Email could not be sent.", e);
+        }
     }
 
     private void send(SimpleMailMessage message) {

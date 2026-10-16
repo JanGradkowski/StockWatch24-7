@@ -134,6 +134,26 @@ class MarketDataHistoryPaginationTest {
         verify(yahooFinanceService, never()).getTimeSeriesBefore(any(), any(), anyInt(), anyLong());
     }
 
+    @Test
+    void providerDiagnosticsNeverReachThePage() {
+        when(historyStateStore.isEndReached("MSFT", "1wk")).thenReturn(false);
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                eq("MSFT"), eq("1wk"), eq(1_000L), any(Pageable.class))).thenReturn(List.of());
+        MarketDataSyncCoordinator.Claim claim = new MarketDataSyncCoordinator.Claim(
+                "MSFT", "1wk-history", "worker-1", MarketDataSyncCoordinator.ClaimStatus.ACQUIRED);
+        when(syncCoordinator.tryClaim("MSFT", "1wk-history", 0L, 30L)).thenReturn(claim);
+        when(twelveDataService.getTimeSeriesBefore("MSFT", "1week", 3, 1_000L))
+                .thenThrow(new IllegalStateException("Twelve Data request failed: 429 {\"message\":\"out of API credits\"}"));
+        when(yahooFinanceService.getTimeSeriesBefore("MSFT", "1wk", 3, 1_000L))
+                .thenThrow(new IllegalStateException("Yahoo Finance HTTP 401 Invalid Crumb"));
+
+        MarketDataService.CandlePage page = service.loadCandlePage("MSFT", "1wk", 1_000L, 3);
+
+        assertThat(page.source()).isEqualTo(MarketDataService.CandleSource.NONE);
+        assertThat(page.failureMessage()).isEqualTo(MarketDataService.PUBLIC_FAILURE_MESSAGE)
+                .doesNotContain("429", "Crumb", "Twelve Data", "Yahoo");
+    }
+
     private Candle candle(long timestamp) {
         return new Candle("MSFT", "1wk", timestamp, 100, 103, 99, 102.0, 1_000L);
     }

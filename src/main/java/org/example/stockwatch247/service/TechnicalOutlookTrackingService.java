@@ -152,7 +152,7 @@ public class TechnicalOutlookTrackingService {
                 else skipped++;
             } catch (RuntimeException exception) {
                 skipped++;
-                System.err.println("Technical outlook tracking failed for " + symbol + " " + interval
+                log.warn("Technical outlook tracking failed for " + symbol + " " + interval
                         + " user=" + subscription.getUser().getId() + ": " + exception.getMessage());
             }
         }
@@ -376,7 +376,7 @@ public class TechnicalOutlookTrackingService {
                 notificationRepository.save(notification);
             }
         } catch (RuntimeException exception) {
-            System.err.println("Technical outlook email failed for " + symbol + " "
+            log.warn("Technical outlook email failed for " + symbol + " "
                     + subscription.getInterval() + ": " + exception.getMessage());
         }
     }

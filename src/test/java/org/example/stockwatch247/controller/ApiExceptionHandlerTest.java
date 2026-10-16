@@ -213,6 +213,24 @@ class ApiExceptionHandlerTest {
         return (ResponseEntity<Map<String, String>>) response;
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void callerMistakesAnswerWithTheirClientStatusInsteadOfAServerFault() {
+        var missing = new org.springframework.web.bind.MissingServletRequestParameterException("token", "String");
+        var method = new org.springframework.web.HttpRequestMethodNotSupportedException("DELETE");
+        var mismatch = new org.springframework.beans.TypeMismatchException("abc", Long.class);
+
+        assertThat(ApiExceptionHandler.clientErrorStatus(missing)).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(ApiExceptionHandler.clientErrorStatus(method)).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+        assertThat(ApiExceptionHandler.clientErrorStatus(mismatch)).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(ApiExceptionHandler.clientErrorStatus(new RuntimeException("boom"))).isNull();
+
+        ResponseEntity<Map<String, String>> response = (ResponseEntity<Map<String, String>>)
+                handler.unexpected(missing, request("GET", "/api/stocks/AAPL/candles"));
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).doesNotContainKey("requestId");
+    }
+
     private MockHttpServletRequest request(String method, String uri) {
         return new MockHttpServletRequest(method, uri);
     }

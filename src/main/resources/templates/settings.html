@@ -72,6 +72,15 @@
       </form>
     </section>
 
+    <section th:if="${settingsTab == 'analysis'}" class="settings-card" id="alert-emails">
+      <div class="settings-card-heading"><div><h2 th:text="#{settings.alertEmails.heading}">All alert emails</h2></div><span class="security-status" th:classappend="${user.notificationEmailsPaused} ? '' : ' enabled'" th:text="${user.notificationEmailsPaused} ? #{settings.alertEmails.paused} : #{settings.alertEmails.on}">On</span></div>
+      <p th:text="${user.notificationEmailsPaused} ? #{settings.alertEmails.pausedNote} : #{settings.alertEmails.onNote}">The switches below choose which alert emails you get. Pausing stops all of them at once; account and security emails still arrive.</p>
+      <form th:action="@{/settings/notification-emails}" method="post">
+        <input type="hidden" name="paused" th:value="${!user.notificationEmailsPaused}" value="true">
+        <button class="btn-secondary" type="submit" th:text="${user.notificationEmailsPaused} ? #{settings.alertEmails.resume} : #{settings.alertEmails.pause}">Pause all alert emails</button>
+      </form>
+    </section>
+
     <th:block th:if="${settingsTab == 'analysis'}">
       <div th:replace="~{fragments/analysis-settings :: analysisSettings(${analysisPreferences})}"></div>
     </th:block>

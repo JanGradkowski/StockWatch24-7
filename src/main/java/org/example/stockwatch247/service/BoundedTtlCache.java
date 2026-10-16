@@ -10,8 +10,9 @@ import java.util.function.Supplier;
 final class BoundedTtlCache<K, V> {
     private final int maximumSize;
     private final long ttlSeconds;
-    private final Object[] computations = java.util.stream.IntStream.range(0, 32)
-            .mapToObj(index -> new Object()).toArray();
+    private final java.util.concurrent.ConcurrentHashMap<K, Computation<V>> inFlight = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record Computation<V>(Thread owner, java.util.concurrent.CompletableFuture<V> result) { }
     private final LinkedHashMap<K, Entry<V>> entries = new LinkedHashMap<>(128, 0.75f, true);
 
     BoundedTtlCache(int maximumSize, long ttlSeconds) {
@@ -45,15 +46,40 @@ final class BoundedTtlCache<K, V> {
         return entries.size();
     }
 
+    /**
+     * One computation per key: callers asking for the same key while it runs wait for its result, and
+     * callers for other keys are never held up by it. If the running computation fails, a waiting
+     * caller computes again itself rather than inheriting another caller's failure.
+     */
     V getOrCompute(K key, Supplier<V> supplier) {
-        V cached = get(key, java.time.Instant.now().getEpochSecond());
-        if (cached != null) return cached;
-        synchronized (computations[Math.floorMod(key.hashCode(), computations.length)]) {
-            cached = get(key, java.time.Instant.now().getEpochSecond());
+        while (true) {
+            V cached = get(key, java.time.Instant.now().getEpochSecond());
             if (cached != null) return cached;
-            V value = supplier.get();
-            put(key, value, java.time.Instant.now().getEpochSecond());
-            return value;
+            Computation<V> mine = new Computation<>(Thread.currentThread(), new java.util.concurrent.CompletableFuture<>());
+            Computation<V> running = inFlight.putIfAbsent(key, mine);
+            if (running != null) {
+                // A computation that asks for its own key again computes it directly instead of waiting on itself.
+                if (running.owner() == Thread.currentThread()) return supplier.get();
+                try {
+                    return running.result().join();
+                } catch (java.util.concurrent.CompletionException | java.util.concurrent.CancellationException failed) {
+                    continue;
+                }
+            }
+            try {
+                cached = get(key, java.time.Instant.now().getEpochSecond());
+                V value = cached != null ? cached : supplier.get();
+                if (cached == null) put(key, value, java.time.Instant.now().getEpochSecond());
+                mine.result().complete(value);
+                return value;
+            } catch (RuntimeException | Error failure) {
+                // Removed before waiters wake, so the one that retries becomes the new computation.
+                inFlight.remove(key, mine);
+                mine.result().completeExceptionally(failure);
+                throw failure;
+            } finally {
+                inFlight.remove(key, mine);
+            }
         }
     }
 

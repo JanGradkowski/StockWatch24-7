@@ -263,7 +263,7 @@ public class ScheduledAlertService {
         infrastructure.run("alert-schedule-recovery", () -> {
         AlertScheduleRecoveryService.RecoveryResult result = scheduleRecoveryService.enqueueAllDueRuns();
         if (result.scheduledRuns() > 0) {
-            System.out.println("Recovered " + result.scheduledRuns() + " due alert schedule(s); queued "
+            log.info("Recovered " + result.scheduledRuns() + " due alert schedule(s); queued "
                     + result.queuedJobs() + " symbol check(s).");
         }
         });
@@ -327,7 +327,7 @@ public class ScheduledAlertService {
         infrastructure.run("alert-schedule", () -> {
         AlertScheduleRecoveryService.RecoveryResult result = scheduleRecoveryService.enqueueDueRuns(interval);
         if (result.scheduledRuns() > 0) {
-            System.out.println("Queued " + result.queuedJobs() + " " + interval
+            log.info("Queued " + result.queuedJobs() + " " + interval
                     + " alert check(s) for " + result.scheduledRuns() + " due schedule(s).");
         }
         });
@@ -399,7 +399,7 @@ public class ScheduledAlertService {
                 .toList();
 
         if (candles.size() < 2) {
-            System.out.println("Skipping alert check for " + symbol + " " + interval + ": not enough candles.");
+            log.info("Skipping alert check for " + symbol + " " + interval + ": not enough candles.");
             return;
         }
 
@@ -420,7 +420,7 @@ public class ScheduledAlertService {
                     elliottWaveDetectionService
             );
             if (initialized > 0) {
-                System.out.println("Initialized lifecycle tracking for " + initialized
+                log.info("Initialized lifecycle tracking for " + initialized
                         + " historical Elliott signal(s) on " + symbol + " " + interval + ".");
             }
         }
@@ -434,14 +434,14 @@ public class ScheduledAlertService {
                         elliottWaveDetectionService
                 );
         if (lifecycleResult.resolved() > 0) {
-            System.out.println("Resolved " + lifecycleResult.resolved()
+            log.info("Resolved " + lifecycleResult.resolved()
                     + " signal lifecycle follow-up(s) for " + symbol + " " + interval + ".");
         }
 
         if (elliottTradePlanService != null) {
             int resolvedTradePlans = elliottTradePlanService.evaluateActivePlans(symbol, interval, candles);
             if (resolvedTradePlans > 0) {
-                System.out.println("Resolved " + resolvedTradePlans
+                log.info("Resolved " + resolvedTradePlans
                         + " Elliott possible-trade plan(s) for " + symbol + " " + interval + ".");
             }
         }
@@ -449,7 +449,7 @@ public class ScheduledAlertService {
             int evaluatedProjections = elliottProjectionService.evaluateOpenProjections(
                     symbol, interval, candles);
             if (evaluatedProjections > 0) {
-                System.out.println("Evaluated " + evaluatedProjections
+                log.info("Evaluated " + evaluatedProjections
                         + " Elliott projection set(s) for " + symbol + " " + interval + ".");
             }
         }
@@ -457,7 +457,7 @@ public class ScheduledAlertService {
             int resolvedHarmonicPlans = harmonicStopPlanService.evaluateActivePlans(
                     symbol, interval, candles);
             if (resolvedHarmonicPlans > 0) {
-                System.out.println("Resolved " + resolvedHarmonicPlans
+                log.info("Resolved " + resolvedHarmonicPlans
                         + " harmonic outcome plan(s) for " + symbol + " " + interval + ".");
             }
         }
@@ -599,7 +599,7 @@ public class ScheduledAlertService {
         TechnicalOutlookTrackingService.EvaluationResult result =
                 technicalOutlookTrackingService.evaluate(symbol, interval);
         if (result.baselinesEstablished() > 0 || result.changesCreated() > 0) {
-            System.out.println("Automated technical outlook evaluated for " + symbol + " " + interval
+            log.info("Automated technical outlook evaluated for " + symbol + " " + interval
                     + ": " + result.baselinesEstablished() + " baseline(s), "
                     + result.changesCreated() + " change notification(s).");
         }
@@ -611,7 +611,7 @@ public class ScheduledAlertService {
         technicalStage(symbol, interval, "evaluating chart alerts");
         ChartAlertService.EvaluationResult result = chartAlertService.evaluate(symbol, interval);
         if (result.triggered() > 0) {
-            System.out.println("Chart alerts evaluated for " + symbol + " " + interval + ": "
+            log.info("Chart alerts evaluated for " + symbol + " " + interval + ": "
                     + result.triggered() + " of " + result.checked() + " triggered.");
         }
     }
@@ -834,12 +834,12 @@ public class ScheduledAlertService {
                                 symbol, childApiInterval, LOWER_DEGREE_ELLIOTT_CACHE_CANDLES);
                 if (sync != null && !sync.successful()
                         && sync.source() != MarketDataService.CandleSource.CACHE_REFRESH_IN_PROGRESS) {
-                    System.err.println("Lower-degree Elliott refresh failed for " + symbol + " "
+                    log.warn("Lower-degree Elliott refresh failed for " + symbol + " "
                             + childApiInterval + ": " + sync.failureMessage());
                 }
             } catch (RuntimeException exception) {
                 AnalysisWork.rethrowInfrastructure(exception);
-                System.err.println("Lower-degree Elliott refresh failed for " + symbol + " "
+                log.warn("Lower-degree Elliott refresh failed for " + symbol + " "
                         + childApiInterval + ": " + exception.getMessage());
             }
         }
@@ -867,7 +867,7 @@ public class ScheduledAlertService {
             AnalysisWork.rethrowInfrastructure(exception);
             // Child data improves structural validation, but a bad optional child
             // cache must not abort every alert family for the parent symbol.
-            System.err.println("Lower-degree Elliott enrichment failed for " + symbol + " "
+            log.warn("Lower-degree Elliott enrichment failed for " + symbol + " "
                     + childApiInterval + ": " + exception.getMessage()
                     + ". Falling back to parent-series subdivision validation.");
             return List.of();

@@ -7,6 +7,7 @@ import org.example.stockwatch247.security.CspNonceFilter;
 import org.example.stockwatch247.security.AbsoluteSessionTimeoutFilter;
 import org.example.stockwatch247.security.AccountSessionValidationFilter;
 import org.example.stockwatch247.security.MfaAuthenticationSuccessHandler;
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -56,10 +57,14 @@ public class SecurityConfig {
                                                    AccountSessionValidationFilter accountSessionFilter) throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
+                        // 0. Error pages render for everyone, so a signed-out visitor with a broken
+                        // link sees what went wrong instead of being sent to the login form.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         // 1. Public Routes (Added /login here explicitly)
-                        .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/i18n/**", "/webjars/**",
+                        .requestMatchers("/error", "/", "/index.html", "/css/**", "/js/**", "/i18n/**", "/webjars/**",
                                 "/images/**", "/signup", "/login", "/login/2fa", "/login/2fa/cancel", "/verify-email", "/resend-verification",
-                                "/forgot-password", "/reset-password", "/cancel-account-deletion", "/about").permitAll()
+                                "/forgot-password", "/reset-password", "/cancel-account-deletion", "/about",
+                                "/email/unsubscribe").permitAll()
 
                         // 2. Protected Routes (Added /stock/** here for the new stock page)
                         .requestMatchers("/home", "/stock/**", "/api/**").authenticated()
@@ -67,6 +72,9 @@ public class SecurityConfig {
                         // 3. Catch-all safety net
                         .anyRequest().authenticated()
                 )
+                // Mailbox providers send the one-click unsubscribe POST (RFC 8058) without a session or
+                // token; the signed link itself authorizes it, so only that path skips CSRF.
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/email/unsubscribe"))
                 .formLogin(form -> form
                         .loginPage("/login")
                         .usernameParameter("email")

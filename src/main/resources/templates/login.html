@@ -10,10 +10,6 @@
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body class="auth-page">
-<div class="bg-animation" aria-hidden="true">
-  <div class="glow-orb orb-1"></div>
-  <div class="glow-orb orb-2"></div>
-</div>
 
 <main class="auth-shell">
   <section class="auth-showcase">
@@ -38,7 +34,11 @@
     <h2 th:text="#{auth.login.heading}">Sign in to StockWatch</h2>
     <p class="auth-description" th:text="#{auth.login.description}">Enter your email and password.</p>
 
-    <div th:if="${param.error}" class="auth-message error-msg" th:text="#{auth.login.error}">The email or password is incorrect.</div>
+    <div th:if="${param.error}" class="auth-message error-msg">
+      <span th:text="#{auth.login.error}">The email or password is incorrect.</span>
+      <span th:text="#{auth.login.errorUnverifiedHint}">If you signed up recently, confirm your email address first.</span>
+      <a th:href="@{/resend-verification}" class="text-link" th:text="#{auth.login.resend}">Resend verification email</a>
+    </div>
     <div th:if="${param.registered}" class="auth-message success-msg" th:text="#{auth.login.registered}">Account created. You can sign in now.</div>
     <div th:if="${param.verificationSent}" class="auth-message success-msg" th:text="#{auth.login.verificationSent}">If the address is eligible, a verification email has been sent.</div>
     <div th:if="${param.verificationResendRequested}" class="auth-message success-msg" th:text="#{auth.login.verificationResendRequested}">If these details match an unverified account, a verification email has been sent.</div>

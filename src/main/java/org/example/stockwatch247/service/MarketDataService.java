@@ -28,6 +28,14 @@ public class MarketDataService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
     private static final long FAILED_SYNC_COOLDOWN_NANOS = TimeUnit.SECONDS.toNanos(30L);
+    static final String PUBLIC_FAILURE_MESSAGE = "Market data is temporarily unavailable. Try again in a few minutes.";
+    private static final int ADAPTIVE_OUTPUT_SIZE = -1;
+    /** How long a chart's first page waits for a provider when stored candles can be shown instead. */
+    private static final long INTERACTIVE_REFRESH_WAIT_MILLIS = 8_000L;
+    private final java.util.concurrent.ExecutorService interactiveRefreshes = new java.util.concurrent.ThreadPoolExecutor(
+            2, 4, 60, TimeUnit.SECONDS, new java.util.concurrent.ArrayBlockingQueue<>(64),
+            Thread.ofPlatform().daemon(true).name("candle-refresh-", 0).factory(),
+            new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
 
     private final CandleRepository candleRepository;
     private final StockAssetRepository stockAssetRepository;
@@ -120,7 +128,21 @@ public class MarketDataService {
     }
 
     public CandleSyncResult syncCandles(String rawSymbol, String interval, Long beforeTimestamp, boolean forceRefresh) {
-        return syncCandles(rawSymbol, interval, beforeTimestamp, forceRefresh, 1_000, false);
+        return syncCandles(rawSymbol, interval, beforeTimestamp, forceRefresh, ADAPTIVE_OUTPUT_SIZE, false);
+    }
+
+    /**
+     * Bars to ask a provider for in a normal refresh: a full first page while the cache holds less than
+     * one, otherwise only the periods since the newest stored bar plus a few overlapping ones, which
+     * still reveal revised or split-adjusted bars.
+     */
+    int refreshOutputSize(String symbol, String interval) {
+        if (candleRepository.countBySymbolAndTimeInterval(symbol, interval) < 1_000) return 1_000;
+        List<Candle> newest = candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, interval, PageRequest.of(0, 1));
+        if (newest.isEmpty() || newest.getFirst().getTimestamp() == null) return 1_000;
+        long since = expectedPeriodsBetween(interval, newest.getFirst().getTimestamp(), java.time.Instant.now().getEpochSecond());
+        return (int) Math.min(1_000, Math.max(10, since + 5));
     }
 
     /**
@@ -218,7 +240,8 @@ public class MarketDataService {
         long syncStarted = System.nanoTime();
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         interval = SecurityInputValidator.requireInterval(interval);
-        int outputSize = Math.max(1, Math.min(1_000, requestedOutputSize));
+        boolean adaptiveSize = requestedOutputSize == ADAPTIVE_OUTPUT_SIZE;
+        int outputSize = adaptiveSize ? 1_000 : Math.max(1, Math.min(1_000, requestedOutputSize));
         SyncKey syncKey = new SyncKey(symbol, interval);
 
         if (!forceRefresh) {
@@ -240,7 +263,7 @@ public class MarketDataService {
             String reason = claim.status() == MarketDataSyncCoordinator.ClaimStatus.RECENT_SUCCESS
                     ? "recent successful sync"
                     : "sync already running on another worker";
-            System.out.println("Reused candle data for " + symbol + " " + interval + " from CACHE (" + reason + ").");
+            log.debug("Reused candle data for " + symbol + " " + interval + " from CACHE (" + reason + ").");
             CandleSource cacheSource = claim.status() == MarketDataSyncCoordinator.ClaimStatus.IN_PROGRESS
                     ? CandleSource.CACHE_REFRESH_IN_PROGRESS
                     : CandleSource.CACHE;
@@ -249,6 +272,8 @@ public class MarketDataService {
 
         boolean successful = false;
         try {
+                // Sized only once this worker owns the refresh, so cache hits cost no extra queries.
+                if (adaptiveSize) outputSize = refreshOutputSize(symbol, interval);
                 List<MarketDataBar> bars;
                 CandleSource source;
                 String twelveDataFailure = null;
@@ -301,7 +326,7 @@ public class MarketDataService {
                 if (persistedCandles > 0 && eventPublisher != null) {
                     eventPublisher.publishEvent(new CandleDataChangedEvent(symbol, interval, persistedCandles));
                 }
-                System.out.println("Fetched " + bars.size() + " " + interval + " candles for " + symbol + " from "
+                log.debug("Fetched " + bars.size() + " " + interval + " candles for " + symbol + " from "
                         + source + "; persisted " + persistedCandles + " new or changed candles.");
                 log.info("Market data sync timing symbol={} interval={} requested={} returned={} source={} persisted={} persistenceMs={} totalMs={}",
                         symbol, interval, outputSize, bars.size(), source, persistedCandles,
@@ -323,7 +348,7 @@ public class MarketDataService {
 
         CandleSyncResult syncResult;
         if (before == null) {
-            syncResult = syncCandles(symbol, interval, null);
+            syncResult = refreshForFirstPage(symbol, interval);
         } else {
             List<Candle> cached = queryDescending(symbol, interval, before, limit + 1);
             if (cached.size() <= limit && !historyStateStore.isEndReached(symbol, interval)) {
@@ -343,8 +368,45 @@ public class MarketDataService {
         boolean endReached = historyStateStore.isEndReached(symbol, interval);
         boolean hasMore = moreCached || !endReached && (before != null || !page.isEmpty());
         Long nextCursor = page.isEmpty() ? null : page.getFirst().getTimestamp();
-        return new CandlePage(List.copyOf(page), nextCursor, hasMore,
-                syncResult.source(), syncResult.failureMessage());
+        // Provider diagnostics (HTTP bodies, quota text) are already logged by the sync; pages and
+        // JSON responses only ever get a generic, translatable message.
+        String failure = syncResult.failureMessage() == null ? null
+                : org.example.stockwatch247.i18n.ServerMessages.translate(PUBLIC_FAILURE_MESSAGE);
+        return new CandlePage(List.copyOf(page), nextCursor, hasMore, syncResult.source(), failure);
+    }
+
+    /**
+     * With stored candles to show, a slow or failing provider does not hold the chart: after a short
+     * wait the stored page is returned and the refresh finishes in the background for the next load.
+     * An empty cache has nothing to show, so it waits for the providers as before.
+     */
+    private CandleSyncResult refreshForFirstPage(String symbol, String interval) {
+        boolean cached = !candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(
+                symbol, interval, PageRequest.of(0, 1)).isEmpty();
+        if (!cached) return syncCandles(symbol, interval, null);
+        java.util.concurrent.Future<CandleSyncResult> refresh;
+        try {
+            refresh = interactiveRefreshes.submit(() -> syncCandles(symbol, interval, null));
+        } catch (java.util.concurrent.RejectedExecutionException busy) {
+            return syncCandles(symbol, interval, null);
+        }
+        try {
+            return refresh.get(INTERACTIVE_REFRESH_WAIT_MILLIS, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException slow) {
+            log.info("Serving stored {} {} candles while the provider refresh continues", symbol, interval);
+            return new CandleSyncResult(CandleSource.CACHE_REFRESH_IN_PROGRESS, 0, null);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return new CandleSyncResult(CandleSource.CACHE_REFRESH_IN_PROGRESS, 0, null);
+        } catch (java.util.concurrent.ExecutionException failed) {
+            if (failed.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw new IllegalStateException("Candle refresh failed.", failed.getCause());
+        }
+    }
+
+    @jakarta.annotation.PreDestroy
+    void stopInteractiveRefreshes() {
+        interactiveRefreshes.shutdownNow();
     }
 
     private List<Candle> queryDescending(String symbol, String interval, Long before, int limit) {

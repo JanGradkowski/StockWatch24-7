@@ -65,13 +65,15 @@ public class ChartStateService {
             throw new IllegalArgumentException("A drawing needs a type.");
         }
         if (!drawingId.equals(document.path("id").asString(""))) throw new IllegalArgumentException("The drawing id does not match.");
-        List<Integer> current = db.queryForList("select version from user_chart_drawings where user_id=? and symbol=? and drawing_id=? for update",
-                Integer.class, userId, symbol, drawingId);
+        String locked = "select version from user_chart_drawings where user_id=? and symbol=? and drawing_id=? for update";
+        List<Integer> current = db.queryForList(locked, Integer.class, userId, symbol, drawingId);
         if (current.isEmpty()) {
             requireCapacity(userId, symbol);
-            db.update("insert into user_chart_drawings (user_id, symbol, drawing_id, payload) values (?,?,?,?)",
-                    userId, symbol, drawingId, payload);
-            return new StoredDrawing(drawingId, 1, document);
+            // Two first saves of one drawing (two tabs, a retry) can race: the loser updates instead of failing.
+            int inserted = db.update("insert into user_chart_drawings (user_id, symbol, drawing_id, payload) values (?,?,?,?) "
+                    + "on conflict (user_id, symbol, drawing_id) do nothing", userId, symbol, drawingId, payload);
+            if (inserted == 1) return new StoredDrawing(drawingId, 1, document);
+            current = db.queryForList(locked, Integer.class, userId, symbol, drawingId);
         }
         int version = current.getFirst();
         if (expectedVersion != null && expectedVersion != version) {
@@ -108,8 +110,8 @@ public class ChartStateService {
                     Integer.class, userId, symbol, id);
             if (existing != null && existing > 0) continue;
             requireCapacity(userId, symbol);
-            db.update("insert into user_chart_drawings (user_id, symbol, drawing_id, payload) values (?,?,?,?)", userId, symbol, id, payload);
-            imported++;
+            imported += db.update("insert into user_chart_drawings (user_id, symbol, drawing_id, payload) values (?,?,?,?) "
+                    + "on conflict (user_id, symbol, drawing_id) do nothing", userId, symbol, id, payload);
         }
         return imported;
     }
@@ -130,8 +132,11 @@ public class ChartStateService {
         if (updated == 0) {
             Integer count = db.queryForObject("select count(*) from user_chart_layouts where user_id=?", Integer.class, userId);
             if (count != null && count >= MAX_LAYOUTS) throw new ConflictException("Too many saved chart layouts.");
-            db.update("insert into user_chart_layouts (user_id, scope, payload) values (?,?,?)", userId, scope, payload);
-            return new StoredLayout(scope, 1, document);
+            // A concurrent first save of the same layout turns into an update instead of a key violation.
+            db.update("insert into user_chart_layouts (user_id, scope, payload) values (?,?,?) on conflict (user_id, scope) "
+                    + "do update set payload = excluded.payload, version = user_chart_layouts.version + 1, "
+                    + "updated_at = current_timestamp", userId, scope, payload);
+            return layout(userId, scope);
         }
         return layout(userId, scope);
     }

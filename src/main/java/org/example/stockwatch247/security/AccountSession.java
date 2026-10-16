@@ -8,6 +8,8 @@ public final class AccountSession {
     public static final String MFA_SETUP_AT = "MFA_SETUP_AT";
     public static final String MFA_PENDING_VERSION = "MFA_PENDING_VERSION";
     public static final String MFA_PENDING_FAILURES = "MFA_PENDING_FAILURES";
+    /** The page to open once the authenticator step succeeds (see {@link PostLoginRedirect}). */
+    public static final String MFA_PENDING_TARGET = "MFA_PENDING_TARGET";
     public static final String REQUEST_USER = AccountSession.class.getName() + ".user";
     private AccountSession() {}
 }

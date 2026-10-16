@@ -286,6 +286,17 @@ public class InsiderActivityService {
                 .toList();
     }
 
+    /** The user's notifications with these ids (one archive page), in no particular order. */
+    @Transactional(readOnly = true)
+    public List<DashboardActivityView> getActivity(User user, java.util.Collection<Long> deliveryIds) {
+        if (deliveryIds.isEmpty()) return List.of();
+        Map<String, Optional<Candle>> latestCandles = new LinkedHashMap<>();
+        return deliveryRepository.findAllForUserByIdIn(user, deliveryIds)
+                .stream()
+                .map(delivery -> toArchiveDashboardView(delivery, latestCandles))
+                .toList();
+    }
+
     @Transactional
     public void markActivityRead(User user, Long deliveryId) {
         InsiderTradeDelivery delivery = deliveryRepository

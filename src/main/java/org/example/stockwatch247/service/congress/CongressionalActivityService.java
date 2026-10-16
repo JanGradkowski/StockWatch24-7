@@ -242,6 +242,13 @@ public class CongressionalActivityService {
         return toDashboardViews(deliveryRepository.findAllForUser(user));
     }
 
+    /** The user's notifications with these ids (one archive page), in no particular order. */
+    @Transactional(readOnly = true)
+    public List<DashboardActivityView> getActivity(User user, java.util.Collection<Long> deliveryIds) {
+        if (deliveryIds.isEmpty()) return List.of();
+        return toDashboardViews(deliveryRepository.findAllForUserByIdIn(user, deliveryIds));
+    }
+
     @Transactional
     public void markActivityRead(User user, Long deliveryId) {
         CongressionalTradeDelivery delivery = deliveryRepository

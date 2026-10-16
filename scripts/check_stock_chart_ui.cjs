@@ -103,7 +103,10 @@ async function run(browser, { language, catalog }) {
           source: 'CACHE', failureMessage: null });
       }
       if (pathname === `/api/stocks/${symbol}/meta`) return json({ instrumentType: 'INDEX', currency: 'USD' });
-      if (pathname === `/api/stocks/${symbol}/live`) return json({ price: 5180.5, changePercent: 0.42 });
+      if (pathname === `/api/stocks/${symbol}/live`) {
+        const now = Math.floor(Date.now() / 1000);
+        return json({ price: 5180.5, changePercent: 0.42, timestamp: now, quotedAt: now, marketOpen: true, source: 'Twelve Data' });
+      }
       if (pathname === `/api/stocks/${symbol}/splits`) return json([]);
       if (pathname === `/api/stocks/${symbol}/chart-indicators`) {
         return json(indicatorBatch(JSON.parse(request.postData()), catalog, url.searchParams.get('interval') || '1d'));

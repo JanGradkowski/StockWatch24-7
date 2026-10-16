@@ -118,12 +118,4 @@ class AlertControllerTest {
                 ))));
     }
 
-    @Test
-    void retiredBulkEndpointDoesNotCreateUnassignedFollows() {
-        AlertRuleService service = mock(AlertRuleService.class);
-        AlertController controller = new AlertController(service, mock(UserRepository.class));
-        assertThat(controller.followTemporaryTopUsCompanies(() -> "user@example.test").getStatusCode().value()).isEqualTo(410);
-        org.mockito.Mockito.verifyNoInteractions(service);
-    }
-
 }

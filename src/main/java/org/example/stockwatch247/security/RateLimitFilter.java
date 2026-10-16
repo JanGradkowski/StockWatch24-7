@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 
 public class RateLimitFilter extends OncePerRequestFilter {
     private final RequestRateLimiter rateLimiter;
+    private final LocalRateLimiter localLimiter = new LocalRateLimiter();
     private final KnownDeviceCookies knownDevices;
     private final Consumer<String> accountLimitReached;
 
@@ -52,7 +53,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (limit != null && !tryAcquire(response, limit, requester)) {
             return;
         }
-        // Provider-backed search shares a small external allowance across every account.
+        // Provider-backed search spends the shared external allowance, so each account gets an hourly cap.
         if (request.getRequestURI().equals("/api/stocks/search")
                 && !tryAcquire(response, new Limit("stock-search-hour", 100, Duration.ofHours(1)), requester)) {
             return;
@@ -113,7 +114,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private boolean tryAcquire(HttpServletResponse response, Limit limit, String requester) throws IOException {
         String key = limit.bucket() + ':' + requester;
-        if (rateLimiter.tryAcquire(key, limit.requests(), limit.window())) {
+        boolean allowed = limit.local()
+                ? localLimiter.tryAcquire(key, limit.requests(), limit.window())
+                : rateLimiter.tryAcquire(key, limit.requests(), limit.window());
+        if (allowed) {
             return true;
         }
         reject(response, limit);
@@ -145,22 +149,22 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return new Limit("verification-resend", 5, Duration.ofHours(1));
         }
         if (path.equals("/api/stocks/search/local")) {
-            return new Limit("stock-search-local", 120, Duration.ofMinutes(1));
+            return new Limit("stock-search-local", 120, Duration.ofMinutes(1), true);
         }
         if (path.startsWith("/api/stocks/search")) {
-            return new Limit("stock-search", 30, Duration.ofMinutes(1));
+            return new Limit("stock-search", 30, Duration.ofMinutes(1), true);
         }
         if (path.startsWith("/api/stocks/")) {
-            return new Limit("stock-data", 120, Duration.ofMinutes(1));
+            return new Limit("stock-data", 120, Duration.ofMinutes(1), true);
         }
         if (path.startsWith("/api/alerts/") && path.endsWith("/check")) {
-            return new Limit("signal-check", 30, Duration.ofMinutes(1));
+            return new Limit("signal-check", 30, Duration.ofMinutes(1), true);
         }
         if (path.startsWith("/api/alerts/")) {
-            return new Limit("alert-management", 60, Duration.ofMinutes(1));
+            return new Limit("alert-management", 60, Duration.ofMinutes(1), true);
         }
         if (path.startsWith("/api/congressional-activity/")) {
-            return new Limit("congressional-activity", 30, Duration.ofMinutes(1));
+            return new Limit("congressional-activity", 30, Duration.ofMinutes(1), true);
         }
         return null;
     }
@@ -215,6 +219,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return "ip:" + request.getRemoteAddr();
     }
 
-    private record Limit(String bucket, int requests, Duration window) {
+    /** {@code local}: only protects this instance's capacity, so it is counted in memory, not in the database. */
+    private record Limit(String bucket, int requests, Duration window, boolean local) {
+        Limit(String bucket, int requests, Duration window) {
+            this(bucket, requests, window, false);
+        }
     }
 }

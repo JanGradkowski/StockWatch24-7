@@ -33,3 +33,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local Claude Code session files ###
+.claude/launch.json
+.claude/settings.local.json
+.claude/*.local.properties

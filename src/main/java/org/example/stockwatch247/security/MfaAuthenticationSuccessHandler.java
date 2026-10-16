@@ -38,7 +38,9 @@ public class MfaAuthenticationSuccessHandler implements AuthenticationSuccessHan
             response.sendRedirect(request.getContextPath() + "/login?expired=true");
             return;
         }
+        String target = PostLoginRedirect.consume(request, response);
         if (user.isMfaEnabled()) {
+            request.getSession().setAttribute(AccountSession.MFA_PENDING_TARGET, target);
             request.getSession().setAttribute(AccountSession.MFA_PENDING_USER_ID, user.getId());
             request.getSession().setAttribute(AccountSession.MFA_PENDING_VERSION, user.getSecurityVersion());
             request.getSession().setAttribute(AccountSession.MFA_PENDING_AT, clock.instant().getEpochSecond());
@@ -49,6 +51,7 @@ public class MfaAuthenticationSuccessHandler implements AuthenticationSuccessHan
         }
         request.getSession().setAttribute(AccountSession.SECURITY_VERSION, user.getSecurityVersion());
         if (knownDevices != null) knownDevices.remember(request, response, user.getEmail());
-        response.sendRedirect(request.getContextPath() + "/home");
+        // Host-relative by construction: a constant slash followed by a validated path on this site.
+        response.sendRedirect(request.getContextPath() + ("/" + PostLoginRedirect.pathAfterSlash(target)));
     }
 }

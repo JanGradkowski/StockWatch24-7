@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.SecurityInputValidator;
 import org.example.stockwatch247.service.AlertRuleService;
+import org.example.stockwatch247.service.ActivityArchiveQuery;
 import org.example.stockwatch247.service.SignalArchiveFilter;
 import org.example.stockwatch247.service.EmailVerificationService;
 import org.example.stockwatch247.service.SignalScoringPreferencesService;
@@ -35,6 +36,7 @@ import java.util.stream.Stream;
 
 @Controller
 public class AuthController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AuthController.class);
     @Autowired
     private org.example.stockwatch247.service.WatchlistService watchlists;
     private static final int ACTIVITY_ARCHIVE_PAGE_SIZE = 25;
@@ -82,11 +84,14 @@ public class AuthController {
 
     @Autowired(required = false)
     private org.example.stockwatch247.service.ChartAlertService chartAlertService;
+    @Autowired(required = false)
+    private ActivityArchiveQuery activityArchiveQuery;
+    /** Already signed in, the login and signup forms have nothing to offer, so the dashboard opens. */
     @GetMapping("/login")
-    public String loginPage() {return "login";}
+    public String loginPage(Principal principal) {return principal == null ? "login" : "redirect:/home";}
 
     @GetMapping("/signup")
-    public String signupPage() {return "signup";}
+    public String signupPage(Principal principal) {return principal == null ? "signup" : "redirect:/home";}
 
     @GetMapping("/resend-verification")
     public String resendVerificationPage() {return "resend-verification";}
@@ -118,6 +123,7 @@ public class AuthController {
             }
         } catch (IllegalArgumentException e) {
             model.addAttribute("error", e.getMessage());
+            keepSignupInput(model, firstName, lastName, email, elliottMotiveColor, elliottCorrectiveColor);
             return "signup";
         }
 
@@ -148,9 +154,34 @@ public class AuthController {
             return registrationRedirect();
         } catch (IllegalStateException ignored) {
             model.addAttribute("error", "Verification email could not be sent. Please try again later.");
+            keepSignupInput(model, firstName, lastName, email, elliottMotiveColor, elliottCorrectiveColor);
             return "signup";
         }
         return registrationRedirect();
+    }
+
+    /** A rejected form comes back with what was typed (never the password), trimmed to the field limits. */
+    private static void keepSignupInput(Model model, String firstName, String lastName, String email,
+                                        String motiveColor, String correctiveColor) {
+        model.addAttribute("signupFirstName", clip(firstName, 100));
+        model.addAttribute("signupLastName", clip(lastName, 100));
+        model.addAttribute("signupEmail", clip(email, 254));
+        model.addAttribute("signupMotiveColor", validColor(motiveColor));
+        model.addAttribute("signupCorrectiveColor", validColor(correctiveColor));
+    }
+
+    private static String clip(String value, int length) {
+        if (value == null) return "";
+        String trimmed = value.trim();
+        return trimmed.length() <= length ? trimmed : trimmed.substring(0, length);
+    }
+
+    private static String validColor(String color) {
+        try {
+            return SecurityInputValidator.requireHexColor(color);
+        } catch (IllegalArgumentException invalid) {
+            return null;
+        }
     }
 
     @Autowired(required = false)
@@ -196,15 +227,16 @@ public class AuthController {
             try {
                 emailVerificationService.resendAfterPasswordConfirmation(user.getId());
             } catch (IllegalStateException exception) {
-                System.err.println("Verification email resend failed.");
+                log.warn("Verification email resend failed.");
             }
         }
         return "redirect:/login?verificationResendRequested=true";
     }
 
     @GetMapping("/verify-email")
-    public String verifyEmail(@RequestParam String token) {
-        return emailVerificationService.verify(token)
+    public String verifyEmail(@RequestParam(required = false) String token) {
+        // A link cut short by a mail client arrives without its token; that is an invalid link too.
+        return token != null && !token.isBlank() && emailVerificationService.verify(token)
                 ? "redirect:/login?verified=true"
                 : "redirect:/login?verificationError=true";
     }
@@ -271,7 +303,6 @@ public class AuthController {
                 model.addAttribute("watchlistOrigins", watchlists.notificationOrigins(currentUser, keys));
             }
             model.addAttribute("firstName", currentUser.getFirstName());
-            model.addAttribute("trackedCompanies", trackedCompanies);
             model.addAttribute("latestSignals", latestSignals);
             model.addAttribute("latestSignalItems", latestSignalItems);
             model.addAttribute("congressionalActivities", congressionalActivities);
@@ -295,12 +326,6 @@ public class AuthController {
                     .map(String::toUpperCase)
                     .distinct()
                     .count());
-            model.addAttribute("stockCompanyCount", trackedCompanies.stream()
-                    .filter(company -> company.instrumentGroup().equals("stocks"))
-                    .count());
-            model.addAttribute("indexEtfCompanyCount", trackedCompanies.stream()
-                    .filter(company -> company.instrumentGroup().equals("funds"))
-                    .count());
             model.addAttribute("activeRuleCount", trackedCompanies.stream()
                     .mapToInt(AlertRuleService.TrackedCompanyView::ruleCount)
                     .sum());
@@ -313,7 +338,6 @@ public class AuthController {
             }
         } else {
             model.addAttribute("firstName", "Trader");
-            model.addAttribute("trackedCompanies", java.util.List.of());
             model.addAttribute("technicalInstrumentCount", 0);
             model.addAttribute("latestSignals", java.util.List.of());
             model.addAttribute("latestSignalItems", java.util.List.of());
@@ -328,8 +352,6 @@ public class AuthController {
             model.addAttribute("latestTickerNotifications", java.util.List.of());
             model.addAttribute("tickerNotificationUnreadCount", 0L);
             model.addAttribute("trackedInstrumentCount", 0L);
-            model.addAttribute("stockCompanyCount", 0L);
-            model.addAttribute("indexEtfCompanyCount", 0L);
             model.addAttribute("activeRuleCount", 0);
         }
 
@@ -527,6 +549,22 @@ public class AuthController {
                                                          int requestedPage) {
         String sort = normalizeActivitySort(requestedSort);
         String direction = "asc".equalsIgnoreCase(requestedDirection) ? "asc" : "desc";
+        if (activityArchiveQuery != null) {
+            // The database orders and pages the notifications; only the shown page is loaded.
+            var result = activityArchiveQuery.page(user.getId(), sort, "asc".equals(direction),
+                    requestedPage, ACTIVITY_ARCHIVE_PAGE_SIZE);
+            java.util.Map<String, TickerNotificationView> byKey = new java.util.HashMap<>();
+            congressionalActivityService.getActivity(user, idsOf(result, ActivityArchiveQuery.CONGRESSIONAL))
+                    .forEach(view -> byKey.put(ActivityArchiveQuery.CONGRESSIONAL + ":" + view.id(), tickerNotification(view)));
+            insiderActivityService.getActivity(user, idsOf(result, ActivityArchiveQuery.INSIDER))
+                    .forEach(view -> byKey.put(ActivityArchiveQuery.INSIDER + ":" + view.id(), tickerNotification(view)));
+            List<TickerNotificationView> rows = result.rows().stream()
+                    .map(row -> byKey.get(row.kind() + ":" + row.id()))
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            return new ActivitySignalArchivePage(rows, result.page(), result.pages(), result.count(),
+                    sort, direction, result.page() > 0, result.page() + 1 < result.pages());
+        }
         List<TickerNotificationView> notifications = Stream.concat(
                         congressionalActivityService.getAllActivity(user).stream().map(this::tickerNotification),
                         insiderActivityService.getAllActivity(user).stream().map(this::tickerNotification))
@@ -547,6 +585,10 @@ public class AuthController {
                 direction,
                 page > 0,
                 page + 1 < totalPages);
+    }
+
+    private static List<Long> idsOf(ActivityArchiveQuery.Page page, String kind) {
+        return page.rows().stream().filter(row -> kind.equals(row.kind())).map(ActivityArchiveQuery.Row::id).toList();
     }
 
     private String normalizeActivitySort(String requestedSort) {

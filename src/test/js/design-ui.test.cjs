@@ -60,3 +60,21 @@ test('discard restores numeric and checkbox values and clears the dirty state', 
     assert.equal(ui.bar.hidden, true);
     assert.equal(ui.form.classList.contains('design-has-changes'), false);
 });
+
+test('a password longer than 72 UTF-8 bytes is flagged even when it fits in 72 characters', () => {
+    const input = element({type: 'password', value: ''});
+    input.setCustomValidity = message => {input.validity = message;};
+    const document = {querySelector: () => null, addEventListener() {},
+        querySelectorAll: selector => selector === 'input[type="password"][maxlength="72"]' ? [input] : [],
+        createElement: () => element()};
+    vm.runInNewContext(fs.readFileSync('src/main/resources/static/js/design-ui.js', 'utf8'),
+        {document, window: {StockWatchI18n}, location: {href: 'https://example.test/signup'}, URL, Event,
+            MutationObserver: class {observe() {}}});
+    assert.equal(input.validity, '');
+    input.value = 'a'.repeat(72);
+    input.dispatchEvent(new Event('input'));
+    assert.equal(input.validity, '');
+    input.value = 'ą'.repeat(40); // 40 characters, 80 bytes
+    input.dispatchEvent(new Event('input'));
+    assert.equal(input.validity, StockWatchI18n.t('password.tooLong'));
+});
