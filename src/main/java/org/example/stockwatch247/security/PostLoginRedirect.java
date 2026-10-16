@@ -55,6 +55,17 @@ public final class PostLoginRedirect {
         return target.length() > 2_048 ? DEFAULT_TARGET : target;
     }
 
+    /**
+     * The target without its leading slash, for redirects written as {@code "/" + pathAfterSlash(target)}:
+     * the constant slash keeps the URL relative to this host. Anything that could start a second slash
+     * (a protocol-relative {@code //host}) falls back to the dashboard.
+     */
+    public static String pathAfterSlash(String target) {
+        String safe = safeTarget(target, "");
+        String rest = safe.substring(1);
+        return rest.isEmpty() || rest.startsWith("/") || rest.startsWith("\\") ? DEFAULT_TARGET.substring(1) : rest;
+    }
+
     /** Spring Security marks a replayed request with a bare {@code continue} parameter; it is not part of the page. */
     private static String withoutContinueMarker(String query) {
         if (query == null || query.isEmpty()) return "";

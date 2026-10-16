@@ -51,6 +51,7 @@ public class MfaAuthenticationSuccessHandler implements AuthenticationSuccessHan
         }
         request.getSession().setAttribute(AccountSession.SECURITY_VERSION, user.getSecurityVersion());
         if (knownDevices != null) knownDevices.remember(request, response, user.getEmail());
-        response.sendRedirect(request.getContextPath() + target);
+        // Host-relative by construction: a constant slash followed by a validated path on this site.
+        response.sendRedirect(request.getContextPath() + ("/" + PostLoginRedirect.pathAfterSlash(target)));
     }
 }

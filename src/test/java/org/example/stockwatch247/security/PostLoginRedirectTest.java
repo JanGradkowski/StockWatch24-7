@@ -38,6 +38,17 @@ class PostLoginRedirectTest {
     }
 
     @Test
+    void theRedirectTailNeverStartsASecondSlash() {
+        assertThat(PostLoginRedirect.pathAfterSlash("/stock/MSFT?mic=XNAS")).isEqualTo("stock/MSFT?mic=XNAS");
+        // A protocol-relative URL loses its host: only the path, on this site, remains.
+        assertThat(PostLoginRedirect.pathAfterSlash("//evil.example/x")).isEqualTo("x");
+        assertThat(PostLoginRedirect.pathAfterSlash("https://evil.example//evil.example/x")).isEqualTo("home");
+        assertThat(PostLoginRedirect.pathAfterSlash("/\\evil.example")).isEqualTo("home");
+        assertThat(PostLoginRedirect.pathAfterSlash("https://evil.example/x")).isEqualTo("x");
+        assertThat(PostLoginRedirect.pathAfterSlash(null)).isEqualTo("home");
+    }
+
+    @Test
     void passwordLoginReturnsToThePageThatAskedForIt() throws Exception {
         UserRepository users = mock(UserRepository.class);
         User user = new User(); user.setId(7L); user.setEmail("owner@example.com");

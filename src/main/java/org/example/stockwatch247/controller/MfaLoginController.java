@@ -97,7 +97,7 @@ public class MfaLoginController {
         request.getSession().setAttribute(AccountSession.SECURITY_VERSION, identity.securityVersion());
         contextRepository.saveContext(context, request, response);
         if (knownDevices != null) knownDevices.remember(request, response, identity.email());
-        return "redirect:" + target;
+        return "redirect:" + ("/" + org.example.stockwatch247.security.PostLoginRedirect.pathAfterSlash(target));
     }
 
     @PostMapping("/login/2fa/cancel")
