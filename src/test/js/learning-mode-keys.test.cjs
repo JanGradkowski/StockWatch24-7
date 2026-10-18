@@ -58,6 +58,10 @@ function referenced() {
       for (const [, id] of map.matchAll(/'([A-Za-z0-9_.]+)'/g)) terms.add(id);
     }
     for (const [, key] of source.matchAll(/data-learn="([A-Za-z0-9_.]+)"/g)) options.add(key);
+    // Scripts that build explained controls list their keys in a LEARN_OPTIONS map.
+    for (const [, map] of source.matchAll(/LEARN_OPTIONS = \{([^}]*)\}/g)) {
+      for (const [, key] of map.matchAll(/'([A-Za-z0-9_.]+)'/g)) options.add(key);
+    }
     for (const [, key] of source.matchAll(/learnHelp\('([A-Za-z0-9_.]+)'/g)) options.add(key);
   }
   return { terms, options };

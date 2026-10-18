@@ -85,6 +85,31 @@ class ScheduledAlertServiceTest {
     }
 
     @Test
+    void chartAndCustomAlertsAreEvaluatedOnASymbolWithoutPatternRules() {
+        var rules = mock(AlertRuleRepository.class);
+        var candles = mock(CandleRepository.class);
+        var service = service(rules, mock(AlertEventRepository.class), candles, mock(MarketDataService.class),
+                mock(AlertNotificationService.class));
+        var chartAlerts = mock(ChartAlertService.class);
+        when(chartAlerts.evaluate("ONLY", TimeInterval.DAILY)).thenReturn(new ChartAlertService.EvaluationResult(1, 1));
+        service.configureChartAlerts(chartAlerts);
+        when(rules.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue("ONLY", TimeInterval.DAILY))
+                .thenReturn(List.of());
+        when(candles.findBySymbolAndTimeIntervalOrderByTimestampDesc(eq("ONLY"), eq("1d"), any()))
+                .thenReturn(syntheticElliottCandles("ONLY", "1d").reversed());
+
+        var customAlerts = mock(org.example.stockwatch247.service.customalert.CustomAlertEngine.class);
+        when(customAlerts.evaluate("ONLY", TimeInterval.DAILY, null))
+                .thenReturn(new org.example.stockwatch247.service.customalert.CustomAlertEngine.EvaluationResult(1, 0));
+        service.configureCustomAlerts(customAlerts);
+
+        service.processSymbolInterval("ONLY", TimeInterval.DAILY);
+
+        verify(chartAlerts).evaluate("ONLY", TimeInterval.DAILY);
+        verify(customAlerts).evaluate("ONLY", TimeInterval.DAILY, null);
+    }
+
+    @Test
     void failingCandlestickStageStillEvaluatesElliottBeforeRetryingTheJob() {
         var rules = mock(AlertRuleRepository.class);
         var events = mock(AlertEventRepository.class);

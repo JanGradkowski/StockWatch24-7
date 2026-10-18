@@ -10,7 +10,11 @@ import java.security.Principal;
 @ControllerAdvice
 public class UserViewModelAdvice {
     private final UserRepository users;
+    private org.example.stockwatch247.service.UnreadCountService unreadCounts;
     public UserViewModelAdvice(UserRepository users) { this.users = users; }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureUnreadCounts(org.example.stockwatch247.service.UnreadCountService counts) { this.unreadCounts = counts; }
 
     @ModelAttribute
     public void accountPreferences(Principal principal, Model model, jakarta.servlet.http.HttpServletRequest request) {
@@ -19,8 +23,13 @@ public class UserViewModelAdvice {
         model.addAttribute("showAppNavigation", user != null);
         if (user != null) {
             model.addAttribute("firstName", user.getFirstName());
+            // Sidebar badges: what is waiting on each page, without opening it.
+            model.addAttribute("navigationUnread", unreadCounts == null ? null : unreadCounts.counts(user));
         }
-        model.addAttribute("navigationSection", navigationSection(request.getRequestURI().substring(request.getContextPath().length())));
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        // One custom alert's triggers live in All signals but belong to the Custom alerts section.
+        model.addAttribute("navigationSection", path.equals("/signals") && request.getParameter("customAlertId") != null
+                ? "custom" : navigationSection(path));
         model.addAttribute("accountTheme", user == null ? null : user.getThemePreference().toLowerCase());
         model.addAttribute("learningMode", user != null && user.isLearningMode());
         model.addAttribute("elliottMotiveColor", user == null
@@ -35,6 +44,7 @@ public class UserViewModelAdvice {
 
     static String navigationSection(String path) {
         if (path.equals("/watchlists") || path.startsWith("/watchlists/")) return "lists";
+        if (path.equals("/custom-alerts") || path.startsWith("/custom-alerts/")) return "custom";
         if (path.equals("/technical-watchlist") || path.startsWith("/technical-outlook/changes/")
                 || path.matches("/stock/[^/]+/technical-outlook")) return "watchlist";
         if (path.equals("/settings") || path.startsWith("/settings/")) return "settings";

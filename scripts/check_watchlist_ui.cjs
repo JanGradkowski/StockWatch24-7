@@ -59,6 +59,9 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
           return json({ updated: 10 });
         }
         if (pathname === '/api/watchlists/indexes') return json(catalog);
+        // Custom alerts on a list: none applied, none to apply (the strip shows its empty state).
+        if (pathname.startsWith('/api/custom-alerts/for-watchlist/')) return json(pathname.endsWith('/members') ? {} : []);
+        if (pathname === '/api/custom-alerts') return json([]);
         if (pathname === '/api/stocks/search') return json([{ symbol: '^GSPC', name: 'S&P 500', region: 'United States' }]);
         if (pathname.startsWith('/api/watchlists/memberships/')) return json([1]);
         if (pathname.endsWith('/members/follows/preview')) return json({ selections: [], mixedKeys: ['CANDLESTICK:DAILY:BUY'], nonStocks: 0 });
@@ -165,7 +168,8 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     assert.equal(mutations[1].body.selections.filter(v => v.email).length, 23);
     assert.deepEqual(mutations[1].body.symbols, [], 'Stocks-only does not include the index instrument');
     assert.deepEqual(mutations[1].body.indexIds, ['sp500']);
-    assert.equal(mutations[1].body.allowedTypes.length, 6, 'New lists allow every signal type');
+    assert.equal(mutations[1].body.allowedTypes.length, 7, 'New lists allow every signal type');
+    assert.ok(mutations[1].body.allowedTypes.includes('CUSTOM'), 'Saving a list keeps custom alerts allowed');
     await page.getByRole('button', { name: 'Close', exact: false }).click();
     await page.getByRole('button', { name: 'Recent imports' }).click();
     await page.getByRole('button', { name: /Import 9:/ }).click();

@@ -38,6 +38,17 @@ public class ChartAlertController {
         return Map.of("alerts", alerts.list(userId(principal), symbol));
     }
 
+    /** Every chart alert of the account, across stocks (the Custom alerts page lists them). */
+    @GetMapping("/api/chart-alerts/all")
+    public Map<String, List<ChartAlertService.AlertView>> listAll(Principal principal) {
+        return Map.of("alerts", alerts.listAll(userId(principal)));
+    }
+
+    @GetMapping("/api/chart-alerts/{id}")
+    public ChartAlertService.AlertView get(@PathVariable long id, Principal principal) {
+        return alerts.get(userId(principal), id);
+    }
+
     @PostMapping(value = "/api/chart-alerts", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ChartAlertService.AlertView create(@RequestBody ChartAlertService.CreateCommand command, Principal principal) {
         return alerts.create(userId(principal), command);

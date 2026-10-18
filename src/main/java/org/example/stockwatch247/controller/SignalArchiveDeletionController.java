@@ -115,9 +115,10 @@ public class SignalArchiveDeletionController {
             @RequestParam(required=false) List<String> signalKeys,
             @RequestParam(required=false) Long singleSignalId,
             @RequestParam(required=false) String singleSignalKey,
-            @RequestParam long watchlistId, @RequestParam(defaultValue="date") String sort,
+            @RequestParam(required=false) Long watchlistId, @RequestParam(defaultValue="date") String sort,
             @RequestParam(defaultValue="desc") String direction, @RequestParam(defaultValue="0") int page,
             @RequestParam(defaultValue="all") String state, @RequestParam(defaultValue="") String ticker,
+            @RequestParam(required=false) List<String> type, @RequestParam(required=false) Long customAlertId,
             Principal principal, RedirectAttributes redirectAttributes) {
         User user = currentUser(principal);
         if (user == null) return "redirect:/login";
@@ -128,8 +129,11 @@ public class SignalArchiveDeletionController {
             redirectAttributes.addFlashAttribute("signalDeleteMessage",deletionMessage(deleted,false));
         } catch (IllegalArgumentException error) { redirectAttributes.addFlashAttribute("signalDeleteError",error.getMessage()); }
         addArchiveLocation(redirectAttributes,sort,direction,page);
-        var filter = new org.example.stockwatch247.service.SignalArchiveFilter(state,ticker,watchlistId);
-        redirectAttributes.addAttribute("watchlistId",watchlistId);
+        var filter = new org.example.stockwatch247.service.SignalArchiveFilter(state,ticker,watchlistId,
+                type == null ? java.util.Set.of() : java.util.Set.copyOf(type), customAlertId);
+        if (filter.watchlistId() != null) redirectAttributes.addAttribute("watchlistId",filter.watchlistId());
+        if (filter.customAlertId() != null) redirectAttributes.addAttribute("customAlertId",filter.customAlertId());
+        if (!filter.types().isEmpty()) redirectAttributes.addAttribute("type",filter.typeParameter());
         redirectAttributes.addAttribute("state",filter.state()); redirectAttributes.addAttribute("ticker",filter.ticker());
         return "redirect:/signals";
     }

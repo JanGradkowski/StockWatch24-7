@@ -1107,7 +1107,8 @@ class FrontendSecurityTest {
         assertFalse(archive.contains("entry.bestDirectionalMovePercent()"));
         assertFalse(archive.contains("entry.worstDirectionalMovePercent()"));
         assertTrue(archive.contains("@{/alerts/signals/{id}(id=${signal.id()},returnTo=${archiveReturnUrl})}"));
-        assertTrue(archive.contains("@{/signals/delete}"));
+        // The account archive also lists chart and custom alert triggers, so it deletes through the mixed form.
+        assertTrue(archive.contains("@{/signals/mixed/delete}"));
         assertTrue(archive.contains("name=\"signalIds\""));
         assertTrue(archive.contains("name=\"singleSignalId\""));
         assertTrue(archive.contains("data-select-all"));

@@ -26,6 +26,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/></svg><span th:text="#{sidebar.watchlists}">Watchlists</span>
         </a>
         <div th:if="${navigationSection == 'lists'}" class="wl-sidebar-shortcuts" data-watchlist-shortcuts></div>
+        <a th:href="@{/custom-alerts}" data-nav-section="custom" th:attr="aria-current=${navigationSection == 'custom' ? 'page' : null}" title="Custom alerts: your own alert rules" aria-label="Custom alerts" th:title="#{sidebar.customAlerts.title}" th:aria-label="${navigationUnread != null and navigationUnread.custom() > 0 ? #messages.msg('sidebar.withUnread', #messages.msg('sidebar.customAlerts'), navigationUnread.custom()) : #messages.msg('sidebar.customAlerts')}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 8.5a5 5 0 0 0-10 0c0 5.5-2.5 6-2.5 7.5h15c0-1.5-2.5-2-2.5-7.5M10 19.5h4"/><path d="M19 2.5v4M17 4.5h4"/></svg><span th:text="#{sidebar.customAlerts}">Custom alerts</span>
+          <b th:replace="~{fragments/app-sidebar :: unreadBadge(${navigationUnread?.custom()})}"></b>
+        </a>
         <a th:href="@{/technical-watchlist}" data-nav-section="watchlist" th:attr="aria-current=${navigationSection == 'watchlist' ? 'page' : null}" title="Followed outlooks: automated buy/sell outlooks you follow" aria-label="Followed outlooks" th:title="#{sidebar.outlooks.title}" th:aria-label="#{sidebar.outlooks}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM7 15l3-4 4 2 3-6"/></svg><span th:text="#{sidebar.outlooks}">Followed outlooks</span>
         </a>
@@ -33,11 +37,13 @@
 
       <div class="app-sidebar-group" role="group" aria-labelledby="sidebarGroupSignals">
         <p id="sidebarGroupSignals" class="app-sidebar-group-label" th:text="#{sidebar.group.signals}">Signals</p>
-        <a th:href="@{/signals}" data-nav-section="signals" th:attr="aria-current=${navigationSection == 'signals' ? 'page' : null}" title="Technical signals: chart patterns found for stocks you follow" aria-label="Technical signals" th:title="#{sidebar.signals.title}" th:aria-label="#{sidebar.signals}">
+        <a th:href="@{/signals}" data-nav-section="signals" th:attr="aria-current=${navigationSection == 'signals' ? 'page' : null}" title="Technical signals: chart patterns found for stocks you follow" aria-label="Technical signals" th:title="#{sidebar.signals.title}" th:aria-label="${navigationUnread != null and navigationUnread.signals() > 0 ? #messages.msg('sidebar.withUnread', #messages.msg('sidebar.signals'), navigationUnread.signals()) : #messages.msg('sidebar.signals')}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v3m0 8v7M12 3v8m0 7v3M19 3v2m0 7v9"/><rect x="3" y="6" width="4" height="8" rx="1"/><rect x="10" y="11" width="4" height="7" rx="1"/><rect x="17" y="5" width="4" height="7" rx="1"/></svg><span th:text="#{sidebar.signals}">Technical signals</span>
+          <b th:replace="~{fragments/app-sidebar :: unreadBadge(${navigationUnread?.signals()})}"></b>
         </a>
-        <a th:href="@{/ticker-alerts}" data-nav-section="alerts" th:attr="aria-current=${navigationSection == 'alerts' ? 'page' : null}" title="Ticker alerts: insider and congressional trades in stocks you follow" aria-label="Ticker alerts" th:title="#{sidebar.tickerAlerts.title}" th:aria-label="#{sidebar.tickerAlerts}">
+        <a th:href="@{/ticker-alerts}" data-nav-section="alerts" th:attr="aria-current=${navigationSection == 'alerts' ? 'page' : null}" title="Ticker alerts: insider and congressional trades in stocks you follow" aria-label="Ticker alerts" th:title="#{sidebar.tickerAlerts.title}" th:aria-label="${navigationUnread != null and navigationUnread.activity() > 0 ? #messages.msg('sidebar.withUnread', #messages.msg('sidebar.tickerAlerts'), navigationUnread.activity()) : #messages.msg('sidebar.tickerAlerts')}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M12 2V1"/></svg><span th:text="#{sidebar.tickerAlerts}">Ticker alerts</span>
+          <b th:replace="~{fragments/app-sidebar :: unreadBadge(${navigationUnread?.activity()})}"></b>
         </a>
       </div>
 
@@ -71,5 +77,8 @@
     </div>
   </dialog>
 </th:block>
+<!-- An unread count beside a sidebar link; in the collapsed rail it becomes a dot on the icon. -->
+<b th:fragment="unreadBadge(count)" th:if="${count != null and count > 0}" class="app-sidebar-badge"
+   th:title="${#messages.msg('sidebar.unreadTitle', count)}" aria-hidden="true" th:text="${count > 99 ? '99+' : count}">3</b>
 </body>
 </html>

@@ -64,6 +64,13 @@ public class InsiderActivityService {
     private final int historyDays;
     private final int maximumFollows;
     private final Object[] assetLocks = java.util.stream.IntStream.range(0, 256).mapToObj(i -> new Object()).toArray();
+    /** Stocks no one follows for filings but whose filings a custom alert reads; optional so tests can leave it out. */
+    private org.example.stockwatch247.service.customalert.CustomAlertActivityTargets customAlertTargets;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setCustomAlertTargets(org.example.stockwatch247.service.customalert.CustomAlertActivityTargets customAlertTargets) {
+        this.customAlertTargets = customAlertTargets;
+    }
 
     public InsiderActivityService(
             StockAssetRepository stockAssetRepository,
@@ -237,7 +244,8 @@ public class InsiderActivityService {
         StockAsset asset = stockAssetRepository.findById(stockAssetId).orElse(null);
         if (asset == null
                 || !asset.getTickerSymbol().equalsIgnoreCase(expectedTickerSymbol)
-                || subscriptionRepository.findByStockAssetAndActiveTrue(asset).isEmpty()) {
+                || subscriptionRepository.findByStockAssetAndActiveTrue(asset).isEmpty()
+                && (customAlertTargets == null || !customAlertTargets.needs(asset.getId(), "INSIDER"))) {
             return false;
         }
 

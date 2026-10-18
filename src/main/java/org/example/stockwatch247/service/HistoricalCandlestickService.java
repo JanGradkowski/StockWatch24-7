@@ -111,9 +111,20 @@ public class HistoricalCandlestickService {
     public HistoricalScan scan(String symbol, String apiInterval, int lookbackCandles,
                                CandlePatternDetectionService.TrendDetectionRules trendRules,
                                CandlestickPatternPreferencesService.PreferencesView definitions) {
+        requireLookbackCandles(lookbackCandles);
+        synchronizeCandles(symbol, apiInterval);
+        return scanStored(symbol, apiInterval, lookbackCandles, trendRules, definitions);
+    }
+
+    /**
+     * The same scan over the candles already stored, without asking a provider for newer ones: for callers
+     * that refreshed the candles themselves (a scheduled check) or must not spend provider requests.
+     */
+    public HistoricalScan scanStored(String symbol, String apiInterval, int lookbackCandles,
+                                     CandlePatternDetectionService.TrendDetectionRules trendRules,
+                                     CandlestickPatternPreferencesService.PreferencesView definitions) {
         ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
         int validatedLookbackCandles = requireLookbackCandles(lookbackCandles);
-        synchronizeCandles(symbol, apiInterval);
 
         int analysisCandles = validatedLookbackCandles + PRE_WINDOW_CONTEXT_CANDLES;
         int requiredCandles = enrichmentService.requiredInputCandles(

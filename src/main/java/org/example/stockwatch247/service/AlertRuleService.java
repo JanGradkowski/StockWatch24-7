@@ -485,7 +485,8 @@ public class AlertRuleService {
 
     private SignalArchivePage filteredArchive(User user, StockAsset asset, String sort, String direction,
                                                int page, SignalArchiveFilter filter) {
-        if (!filter.applied()) return getSignalArchive(user, asset, sort, direction, page);
+        // The account archive also lists chart and custom alert triggers, which only the archive query reads.
+        if (!filter.applied() && (asset != null || archiveQuery == null)) return getSignalArchive(user, asset, sort, direction, page);
         String sortKey = normalizeArchiveSort(sort);
         String directionKey = "asc".equalsIgnoreCase(direction) ? "asc" : "desc";
         var result = archiveQuery.page(user.getId(), asset == null ? null : asset.getId(), sortKey,
@@ -500,8 +501,11 @@ public class AlertRuleService {
         var entries = archiveEntries(result.ids().stream().map(byId::get).filter(java.util.Objects::nonNull).toList());
         if (!result.rows().isEmpty()) {
             var technical = entries.stream().collect(Collectors.toMap(entry -> entry.signal().id(), entry -> entry));
-            entries = result.rows().stream().map(row -> row.activity()==null ? technical.get(row.id())
-                    : new SignalArchiveEntry(null,null,List.of(),row.activity())).filter(java.util.Objects::nonNull).toList();
+            entries = result.rows().stream().map(row -> switch (row.kind()) {
+                case "TECHNICAL" -> technical.get(row.id());
+                case "CONGRESS", "INSIDER" -> new SignalArchiveEntry(null, null, List.of(), row.activity(), null);
+                default -> new SignalArchiveEntry(null, null, List.of(), null, row.trigger());
+            }).filter(java.util.Objects::nonNull).toList();
         }
         return new SignalArchivePage(entries, result.page(), result.pages(), result.count(), sort, direction,
                 result.page() > 0, result.page() + 1 < result.pages());
@@ -2981,16 +2985,22 @@ public class AlertRuleService {
             LatestSignalView signal,
             SignalArchiveOutcome outcome,
             List<SignalArchiveOutcome> stageOutcomes,
-            SignalArchiveQuery.ActivitySignal activity
+            SignalArchiveQuery.ActivitySignal activity,
+            SignalArchiveQuery.AlertTrigger trigger
     ) {
         public SignalArchiveEntry(LatestSignalView signal,SignalArchiveOutcome outcome,List<SignalArchiveOutcome> stageOutcomes) {
-            this(signal,outcome,stageOutcomes,null);
+            this(signal,outcome,stageOutcomes,null,null);
         }
         public SignalArchiveEntry {
             stageOutcomes = stageOutcomes == null ? List.of() : List.copyOf(stageOutcomes);
         }
 
         private String groupKey(String sortKey) {
+            if (trigger != null) return switch (sortKey) {
+                case "ticker" -> trigger.symbol(); case "interval" -> trigger.interval().name(); case "confidence" -> "unrated";
+                case "status" -> trigger.status(); case "trade-return" -> trigger.outcomeReturn() == null ? "unavailable" : returnGroupKey(trigger.outcomeReturn());
+                default -> trigger.received().toLocalDate().toString();
+            };
             if (activity!=null) return switch(sortKey) {
                 case "ticker" -> activity.symbol(); case "interval" -> "activity"; case "confidence" -> "unrated";
                 case "status" -> "RECORDED"; case "trade-return" -> "unavailable"; default -> activity.received().toLocalDate().toString();
@@ -3006,6 +3016,13 @@ public class AlertRuleService {
         }
 
         private String groupLabel(String sortKey) {
+            if (trigger != null) return switch (sortKey) {
+                case "ticker" -> trigger.symbol(); case "interval" -> trigger.interval().analysisLabel();
+                case "confidence" -> "Score unavailable";
+                case "status" -> "MATCHED_ON_APPLY".equals(trigger.status()) ? "Matched at save" : "Triggered";
+                case "trade-return" -> returnGroupLabel(trigger.outcomeReturn());
+                default -> trigger.received().format(DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH));
+            };
             if (activity!=null) return switch(sortKey) {
                 case "ticker" -> activity.symbol(); case "interval" -> "Filings"; case "confidence" -> "Score unavailable";
                 case "status" -> "Recorded activity"; case "trade-return" -> "Return unavailable";
@@ -3027,6 +3044,7 @@ public class AlertRuleService {
         }
 
         private String groupDetail(String sortKey) {
+            if (trigger != null) return sortKey.equals("ticker") ? trigger.companyName() : null;
             if (activity!=null) return sortKey.equals("ticker")?activity.companyName():null;
             return switch (sortKey) {
                 case "ticker" -> signal.companyName();

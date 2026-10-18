@@ -22,6 +22,10 @@ public class WatchlistService {
               where s.user_id=w.user_id and s.stock_asset_id=m.stock_asset_id and d.read_at is null and d.deleted_at is null and %s
             union all select d.id from insider_trade_deliveries d join insider_trade_subscriptions s on s.id=d.subscription_id
               where s.user_id=w.user_id and s.stock_asset_id=m.stock_asset_id and d.read_at is null and d.deleted_at is null and %s
+            union all select c.id from custom_alert_events c join custom_alerts ca on ca.id=c.alert_id
+              where ca.user_id=w.user_id and c.stock_asset_id=m.stock_asset_id and c.read_at is null and c.deleted_at is null
+                and exists(select 1 from watchlist_notification_origins origin
+                    where origin.kind='CUSTOM' and origin.notification_id=c.id and origin.watchlist_id=w.id)
             """.formatted(
                 WatchlistSignalScope.matches("TECHNICAL", "e.id", "r.stock_asset_id", "coalesce(r.pattern_family,'CANDLESTICK')", "r.interval", "e.trade_signal", "w.id"),
                 WatchlistSignalScope.matches("OUTLOOK", "n.id", "s.stock_asset_id", "'OUTLOOK'", "s.interval", "'ANY'", "w.id"),

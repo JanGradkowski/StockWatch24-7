@@ -210,6 +210,13 @@ public class ScheduledAlertService {
         this.chartAlertService = chartAlerts;
     }
 
+    private org.example.stockwatch247.service.customalert.CustomAlertEngine customAlertEngine;
+
+    @Autowired(required = false)
+    void configureCustomAlerts(org.example.stockwatch247.service.customalert.CustomAlertEngine engine) {
+        this.customAlertEngine = engine;
+    }
+
     ScheduledAlertService(AlertRuleRepository alertRuleRepository,
                           AlertEventRepository alertEventRepository,
                           CandleRepository candleRepository,
@@ -463,7 +470,7 @@ public class ScheduledAlertService {
         }
 
         if (rules.isEmpty()) {
-            evaluateTrackedOutlook(symbol, interval);
+            evaluateFollowerStages(symbol, interval, scheduledFor, new java.util.ArrayList<>());
             return;
         }
 
@@ -568,22 +575,37 @@ public class ScheduledAlertService {
                 familyFailures.add(stageFailure("developing Elliott", failure));
             }
         }
+        evaluateFollowerStages(symbol, interval, scheduledFor, familyFailures);
+    }
+
+    /**
+     * Outlook follows, chart alerts and custom alerts. They run whether or not the symbol has pattern rules,
+     * because each is queued for checking on its own; one failing stage does not stop the others.
+     */
+    private void evaluateFollowerStages(String symbol, TimeInterval interval, Instant scheduledFor,
+                                        List<RuntimeException> failures) {
         try {
             evaluateTrackedOutlook(symbol, interval);
         } catch (RuntimeException failure) {
             AnalysisWork.rethrowInfrastructure(failure);
-            familyFailures.add(stageFailure("automated outlook", failure));
+            failures.add(stageFailure("automated outlook", failure));
         }
         try {
             evaluateChartAlerts(symbol, interval);
         } catch (RuntimeException failure) {
             AnalysisWork.rethrowInfrastructure(failure);
-            familyFailures.add(stageFailure("chart alerts", failure));
+            failures.add(stageFailure("chart alerts", failure));
         }
-        if (!familyFailures.isEmpty()) {
-            var failure = new IllegalStateException("Technical stage failed: " + familyFailures.getFirst().getMessage(),
-                    familyFailures.getFirst());
-            familyFailures.stream().skip(1).forEach(failure::addSuppressed);
+        try {
+            evaluateCustomAlerts(symbol, interval, scheduledFor);
+        } catch (RuntimeException failure) {
+            AnalysisWork.rethrowInfrastructure(failure);
+            failures.add(stageFailure("custom alerts", failure));
+        }
+        if (!failures.isEmpty()) {
+            var failure = new IllegalStateException("Technical stage failed: " + failures.getFirst().getMessage(),
+                    failures.getFirst());
+            failures.stream().skip(1).forEach(failure::addSuppressed);
             throw failure;
         }
     }
@@ -613,6 +635,17 @@ public class ScheduledAlertService {
         if (result.triggered() > 0) {
             log.info("Chart alerts evaluated for " + symbol + " " + interval + ": "
                     + result.triggered() + " of " + result.checked() + " triggered.");
+        }
+    }
+
+    /** Custom alerts covering this stock, checked on the candles refreshed above. */
+    private void evaluateCustomAlerts(String symbol, TimeInterval interval, Instant scheduledFor) {
+        if (customAlertEngine == null) return;
+        technicalStage(symbol, interval, "evaluating custom alerts");
+        var result = customAlertEngine.evaluate(symbol, interval, scheduledFor);
+        if (result.triggered() > 0) {
+            log.info("Custom alerts evaluated for " + symbol + " " + interval + ": "
+                    + result.triggered() + " trigger(s) from " + result.checked() + " alert(s).");
         }
     }
 

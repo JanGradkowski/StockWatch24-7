@@ -26,6 +26,13 @@ public class NotificationReadService {
                     "coalesce(s.pattern_family,'CANDLESTICK')", "s.interval", "e.trade_signal", true);
             updated += mark(user, watchlistId, "OUTLOOK", "technical_outlook_notifications", "technical_outlook_subscriptions",
                     "subscription_id", "'OUTLOOK'", "s.interval", "'ANY'", false);
+            // Custom alert triggers belong to the lists that covered the stock when they were recorded.
+            updated += db.update("""
+                    update custom_alert_events e set read_at = current_timestamp from custom_alerts a
+                    where a.id = e.alert_id and a.user_id = ? and e.read_at is null and e.deleted_at is null
+                      and (cast(? as bigint) is null or exists (select 1 from watchlist_notification_origins origin
+                          where origin.kind = 'CUSTOM' and origin.notification_id = e.id and origin.watchlist_id = ?))
+                    """, user.getId(), watchlistId, watchlistId);
             // Chart alerts belong to the chart they were set on, not to a watchlist.
             if (watchlistId == null) {
                 updated += db.update("""

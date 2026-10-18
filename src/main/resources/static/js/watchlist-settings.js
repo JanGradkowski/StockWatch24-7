@@ -12,7 +12,8 @@
     root.append(n('legend', i18n.t('watchlistSettings.legend')));
     root.append(n('p', i18n.t(members ? 'watchlistSettings.membersIntro' : 'watchlistSettings.intro'), 'wl-muted'));
     const controls = [], initial = new Map();
-    const typeNames = Object.fromEntries(['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION', 'OUTLOOK', 'CONGRESS', 'INSIDER']
+    // Every type the server knows: a type missing here would be switched off whenever the list is saved.
+    const typeNames = Object.fromEntries(['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION', 'OUTLOOK', 'CONGRESS', 'INSIDER', 'CUSTOM']
       .map(type => [type, i18n.t(`followType.${type}`)]));
     const permissions = new Map(), initialPermissions = new Map();
     let followCounts = {};
@@ -24,6 +25,7 @@
       input.addEventListener('change', () => { updateAllowedControls(); changed(); });
       permissions.set(type, input); label.append(input, n('span', title)); allowed.append(label);
     }
+    allowed.append(n('p', i18n.t('watchlistSettings.customNote'), 'wl-muted'));
     if (!members) root.append(allowed);
     function updateAllowedControls() {
       controls.forEach(value => { value.watch.disabled = !permissions.get(value.type).checked; });

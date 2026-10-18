@@ -86,6 +86,8 @@ public class AuthController {
     private org.example.stockwatch247.service.ChartAlertService chartAlertService;
     @Autowired(required = false)
     private ActivityArchiveQuery activityArchiveQuery;
+    @Autowired(required = false)
+    private org.example.stockwatch247.service.UnreadCountService unreadCounts;
     /** Already signed in, the login and signup forms have nothing to offer, so the dashboard opens. */
     @GetMapping("/login")
     public String loginPage(Principal principal) {return principal == null ? "login" : "redirect:/home";}
@@ -305,6 +307,14 @@ public class AuthController {
             model.addAttribute("firstName", currentUser.getFirstName());
             model.addAttribute("latestSignals", latestSignals);
             model.addAttribute("latestSignalItems", latestSignalItems);
+            // The list shows the newest few; the counts say how many are waiting in total.
+            var unread = unreadCounts == null ? null : unreadCounts.counts(currentUser);
+            model.addAttribute("latestSignalUnreadCount", unread == null ? latestSignalItems.size() : unread.latestSignals());
+            model.addAttribute("technicalUnreadCount", unread == null ? latestSignalItems.size() : unread.signals());
+            // Custom alerts get their own panel: the newest unread triggers, or the alerts themselves when all is read.
+            model.addAttribute("customAlertUnreadCount", unread == null ? 0L : unread.custom());
+            model.addAttribute("customAlertTriggers", customAlerts == null ? java.util.List.of() : customAlerts.latestUnread(currentUser, 5));
+            model.addAttribute("customAlertSummaries", customAlerts == null ? java.util.List.of() : customAlerts.list(currentUser).stream().limit(6).toList());
             model.addAttribute("congressionalActivities", congressionalActivities);
             model.addAttribute("congressionalUnreadCount", congressionalUnreadCount);
             model.addAttribute("congressionalFollowedStocks", congressionalFollowedStocks);
@@ -341,6 +351,11 @@ public class AuthController {
             model.addAttribute("technicalInstrumentCount", 0);
             model.addAttribute("latestSignals", java.util.List.of());
             model.addAttribute("latestSignalItems", java.util.List.of());
+            model.addAttribute("latestSignalUnreadCount", 0L);
+            model.addAttribute("technicalUnreadCount", 0L);
+            model.addAttribute("customAlertUnreadCount", 0L);
+            model.addAttribute("customAlertTriggers", java.util.List.of());
+            model.addAttribute("customAlertSummaries", java.util.List.of());
             model.addAttribute("congressionalActivities", java.util.List.of());
             model.addAttribute("congressionalUnreadCount", 0L);
             model.addAttribute("congressionalFollowedStocks", java.util.List.of());
@@ -427,6 +442,8 @@ public class AuthController {
                                  @RequestParam(defaultValue = "all") String state,
                                  @RequestParam(defaultValue = "") String ticker,
                                  @RequestParam(required = false) Long watchlistId,
+                                 @RequestParam(required = false) List<String> type,
+                                 @RequestParam(required = false) Long customAlertId,
                                  Model model,
                                  Principal principal) {
         User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
@@ -437,24 +454,36 @@ public class AuthController {
             watchlists.requireOwned(currentUser, watchlistId);
             model.addAttribute("watchlistName", watchlists.name(currentUser, watchlistId));
         }
-        var filter = new SignalArchiveFilter(state, ticker, watchlistId);
+        if (customAlertId != null && customAlerts != null) {
+            model.addAttribute("customAlert", customAlerts.archiveHeader(currentUser, customAlertId, watchlistId));
+        }
+        var filter = new SignalArchiveFilter(state, ticker, watchlistId,
+                type == null ? java.util.Set.of() : java.util.Set.copyOf(type), customAlertId);
         model.addAttribute("firstName", currentUser.getFirstName());
         var archive = alertRuleService.getSignalArchive(currentUser, sort, direction, page, filter);
         model.addAttribute("archive", archive);
         archiveNavigation(model, archive, filter, "/signals");
+        model.addAttribute("archiveTypes", customAlertId != null ? List.of()
+                : watchlistId != null ? List.of("candlestick", "elliott", "harmonic", "custom", "congress", "insider")
+                : List.of("candlestick", "elliott", "harmonic", "chart", "custom"));
         return "all-signals";
     }
+
+    @Autowired(required = false)
+    private org.example.stockwatch247.service.customalert.CustomAlertService customAlerts;
 
     private void archiveNavigation(Model model, AlertRuleService.SignalArchivePage archive,
                                    SignalArchiveFilter filter, String path) {
         model.addAttribute("archiveFilter", filter);
         var location = org.springframework.web.util.UriComponentsBuilder.fromPath(path);
         if (filter.watchlistId() != null) location.queryParam("watchlistId", filter.watchlistId());
+        if (filter.customAlertId() != null) location.queryParam("customAlertId", filter.customAlertId());
         model.addAttribute("archiveClearUrl", location.build().encode().toUriString());
-        model.addAttribute("archiveReturnUrl", location
-                .queryParam("sort", archive.sort()).queryParam("direction", archive.direction())
+        location.queryParam("sort", archive.sort()).queryParam("direction", archive.direction())
                 .queryParam("page", archive.page()).queryParam("state", filter.state())
-                .queryParam("ticker", filter.ticker()).build().encode().toUriString());
+                .queryParam("ticker", filter.ticker());
+        if (!filter.types().isEmpty()) location.queryParam("type", filter.typeParameter());
+        model.addAttribute("archiveReturnUrl", location.build().encode().toUriString());
     }
 
     @GetMapping("/activity-signals")

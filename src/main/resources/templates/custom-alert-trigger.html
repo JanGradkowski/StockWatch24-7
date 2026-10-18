@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="#{customAlerts.trigger.pageTitle(${trigger.alertName()}, ${trigger.symbol()})}">Oversold bounce: AAPL — StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}"><link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/custom-alerts.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
+  <script th:src="@{/js/mark-read-on-view.js}" defer></script>
+  <script th:src="@{/js/custom-alert-text.js}" defer></script>
+  <script th:src="@{/js/custom-alert-trigger.js}" defer></script>
+</head>
+<body>
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+<main class="page-container ca-trigger-page"
+      th:attr="data-mark-read-endpoint=${'/api/custom-alerts/triggers/' + trigger.id() + '/read'},data-trigger-id=${trigger.id()},data-alert-id=${trigger.alertId()},data-symbol=${trigger.symbol()},data-candle=${trigger.candleTimestamp()},data-evidence=${triggerEvidence},data-prices=${triggerPrices},data-outcome-candles=${trigger.outcomeCandles()}">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
+    <a th:href="@{/custom-alerts}" th:text="#{customAlerts.heading}">Custom alerts</a><span aria-hidden="true">/</span>
+    <a th:href="${returnUrl != null ? returnUrl : '/signals?customAlertId=' + trigger.alertId()}" th:text="${trigger.alertName()}">Oversold bounce</a><span aria-hidden="true">/</span>
+    <span th:text="${trigger.symbol()}">AAPL</span>
+  </nav>
+
+  <header class="ca-trigger-header">
+    <div>
+      <div class="eyebrow"><span class="learn-term" data-term="customAlert" th:text="#{customAlerts.trigger.eyebrow}">Custom alert trigger</span></div>
+      <h1><span th:text="${trigger.alertName()}">Oversold bounce</span> <span class="ca-trigger-symbol" th:text="${trigger.symbol()}">AAPL</span></h1>
+      <p class="ca-trigger-meta">
+        <span th:text="${trigger.companyName()}">Apple Inc.</span> ·
+        <span th:text="${#messages.msg('common.interval.' + trigger.interval().name())}">Daily</span> ·
+        <span th:text="#{customAlerts.trigger.candle(${#temporals.format(T(java.time.Instant).ofEpochSecond(trigger.candleTimestamp()).atZone(T(java.time.ZoneOffset).UTC).toLocalDate(), 'd MMM yyyy')})}">Completed candle 14 Oct 2026</span> ·
+        <span th:text="#{customAlerts.trigger.close(${#numbers.formatDecimal(trigger.closePrice(), 1, 2)})}">Close 182.40</span>
+      </p>
+      <p class="ca-trigger-tags">
+        <span class="signal-lifecycle-pill confirmed" th:text="${trigger.kind() == 'MATCHED_ON_APPLY'} ? #{signals.matchedWhenApplied} : #{home.chartAlertTriggered}">Triggered</span>
+        <span class="ca-conditions-tag" th:text="#{customAlerts.trigger.conditionsMet(${trigger.matchedConditions()}, ${trigger.totalConditions()})}">3 of 3 conditions met</span>
+        <span th:if="${trigger.origins() != null}" class="wl-muted" th:text="#{customAlerts.trigger.origins(${trigger.origins()})}">Watchlists: Tech giants</span>
+      </p>
+    </div>
+    <div class="ca-trigger-actions">
+      <a class="btn-accent" th:href="@{/stock/{symbol}(symbol=${trigger.symbol()})}" th:text="#{customAlerts.trigger.openStock}">Open stock chart</a>
+      <a class="btn-secondary" th:href="@{/signals(customAlertId=${trigger.alertId()})}" th:text="#{customAlerts.trigger.allTriggers}">All triggers of this alert</a>
+      <a class="btn-secondary" th:href="@{/custom-alerts/{id}/edit(id=${trigger.alertId()})}" th:text="#{customAlerts.trigger.edit}">Edit alert</a>
+      <details class="row-menu ca-menu">
+        <summary th:aria-label="#{customAlerts.trigger.moreAria}" th:title="#{virtualTrades.moreActions}"><span aria-hidden="true">···</span></summary>
+        <div class="row-menu-panel">
+          <button type="button" data-ca-unread th:text="#{customAlerts.trigger.markUnread}">Mark as unread</button>
+          <button type="button" class="danger-text" data-ca-stop th:text="#{customAlerts.trigger.stop(${trigger.symbol()})}">Stop this alert for AAPL</button>
+        </div>
+      </details>
+    </div>
+  </header>
+  <p class="wl-status" role="status" data-ca-trigger-status></p>
+
+  <div class="ca-trigger-grid">
+    <section class="glass-panel ca-trigger-panel" aria-labelledby="ca-why">
+      <h2 id="ca-why"><span th:text="#{customAlerts.trigger.why}">Why it triggered</span> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.why', #{customAlerts.trigger.why})}"></span></h2>
+      <div data-ca-evidence><p class="wl-status" th:text="#{customAlerts.loading}">Loading…</p></div>
+    </section>
+
+    <section class="glass-panel ca-trigger-panel" aria-labelledby="ca-price">
+      <h2 id="ca-price" th:text="#{customAlerts.trigger.price}">Price around the trigger</h2>
+      <div data-ca-price-chart></div>
+      <h3 class="ca-next-title"><span th:text="#{customAlerts.trigger.next}">What happened next</span> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.outcome', #{customAlerts.trigger.next})}"></span></h3>
+      <div class="ca-next" data-ca-next th:attr="data-returns=${trigger.forwardReturns() == null ? '{}' : trigger.forwardReturns().toString()},data-outcome=${trigger.outcomeReturn()},data-outcome-status=${trigger.outcomeStatus()}"></div>
+    </section>
+  </div>
+
+  <section th:if="${trigger.ruleChanged()}" class="ca-rule-changed" aria-labelledby="ca-rule-then">
+    <h2 id="ca-rule-then" th:text="#{customAlerts.trigger.ruleChanged}">This alert has changed since this trigger</h2>
+    <p class="wl-muted" th:text="#{customAlerts.trigger.ruleChangedText}">The checklist above shows the rule as it was when the trigger was recorded.</p>
+  </section>
+  <p class="ca-disclaimer" th:text="#{customAlerts.trigger.disclaimer}">Informational only, not financial advice. A trigger reports that your rule matched on a completed candle; it does not predict where the price goes.</p>
+</main>
+</body>
+</html>

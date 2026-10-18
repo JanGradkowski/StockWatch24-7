@@ -29,14 +29,18 @@ public class SignalArchiveQuery {
              else coalesce(e.lifecycle_status, 'DETECTED') in ('POTENTIAL', 'DETECTED') end)
             """;
         String where = "r.user_id = ? and e.deleted_at is null and (cast(? as bigint) is null or r.stock_asset_id = ?)"
-                + ((filter.watchlistId() != null && !filter.ticker().isEmpty()) || filter.ticker().contains(",")
-                    ? " and upper(a.ticker_symbol) = any(string_to_array(?, ','))" : " and position(? in upper(a.ticker_symbol)) > 0")
+                + " and " + tickerMatch("a.ticker_symbol", filter)
                 + switch (filter.state()) {
                     case "unread" -> " and e.read_at is null";
                     case "active" -> " and " + open;
                     case "completed" -> " and not " + open;
                     default -> "";
                 };
+        List<String> families = technicalFamilies(filter);
+        if (families.size() < 3) {
+            where += " and coalesce(r.pattern_family,'CANDLESTICK') in ("
+                    + String.join(",", families.stream().map(family -> "'" + family + "'").toList()) + ")";
+        }
         if (filter.watchlistId() != null) {
             // The ID is a Long, and ownership is also enforced here for non-controller callers.
             where += " and exists(select 1 from watchlists scoped where scoped.id=" + filter.watchlistId()
@@ -45,7 +49,10 @@ public class SignalArchiveQuery {
                         "coalesce(r.pattern_family,'CANDLESTICK')", "r.interval", "e.trade_signal",
                         filter.watchlistId().toString());
         }
-        if (filter.watchlistId() != null) return mixedPage(where,userId,stockId,sort,ascending,requestedPage,size,filter);
+        List<String> others = otherKinds(stockId, filter);
+        if (!others.isEmpty() || families.isEmpty()) {
+            return mixedPage(families.isEmpty() ? null : where, others, userId, stockId, sort, ascending, requestedPage, size, filter);
+        }
         String tables = " from alert_events e join alert_rules r on r.id = e.alert_rule_id"
                 + " join stock_assets a on a.id = r.stock_asset_id ";
         long count = jdbc.queryForObject("select count(*)" + tables + "where " + where,
@@ -74,6 +81,42 @@ public class SignalArchiveQuery {
                     (rs, row) -> rs.getLong(1), userId, stockId, stockId, filter.ticker(), size, page * size);
         }
         return new Result(ids, page, pages, count);
+    }
+
+    /** One ticker matches by prefix-free substring; a list, or a ticker inside a watchlist, matches exactly. */
+    private static String tickerMatch(String column, SignalArchiveFilter filter) {
+        return (filter.watchlistId() != null && !filter.ticker().isEmpty()) || filter.ticker().contains(",")
+                ? "upper(" + column + ") = any(string_to_array(?, ','))"
+                : "position(? in upper(" + column + ")) > 0";
+    }
+
+    /** Pattern families the archive shows; none when a custom alert or only other types are selected. */
+    private static List<String> technicalFamilies(SignalArchiveFilter filter) {
+        if (filter.customAlertId() != null) return List.of();
+        List<String> families = new java.util.ArrayList<>();
+        if (filter.shows("candlestick")) families.add("CANDLESTICK");
+        if (filter.shows("elliott")) families.add("ELLIOTT_WAVE");
+        if (filter.shows("harmonic")) families.add("HARMONIC_FORMATION");
+        return families;
+    }
+
+    /**
+     * The archive's other row kinds. A watchlist adds its insider and congressional filings; the account
+     * archive adds chart alert triggers, which belong to a chart rather than a list. Custom alert triggers
+     * appear in both. A company archive stays technical.
+     */
+    private static List<String> otherKinds(Long stockId, SignalArchiveFilter filter) {
+        if (filter.customAlertId() != null) return List.of("CUSTOM");
+        if (stockId != null) return List.of();
+        List<String> kinds = new java.util.ArrayList<>();
+        if (filter.watchlistId() != null) {
+            if (filter.shows("congress")) kinds.add("CONGRESS");
+            if (filter.shows("insider")) kinds.add("INSIDER");
+        } else if (filter.shows("chart")) {
+            kinds.add("CHART");
+        }
+        if (filter.shows("custom")) kinds.add("CUSTOM");
+        return kinds;
     }
 
     private String technicalRows(String where, boolean outcomes) {
@@ -138,36 +181,134 @@ public class SignalArchiveQuery {
             """ + where;
     }
 
-    private String activityRows(String kind, String prefix, String actor, SignalArchiveFilter filter) {
-        String where = "s.user_id=? and d.deleted_at is null and (cast(? as bigint) is null or s.stock_asset_id=?) and (?='' or upper(a.ticker_symbol)=any(string_to_array(?, ',')))"
+    /** One part of the archive union: its select and the values for its placeholders. */
+    private record Branch(String sql, List<Object> params) { }
+
+    private Branch activityRows(String kind, String prefix, String actor, long userId, Long stockId, SignalArchiveFilter filter) {
+        String where = "s.user_id=? and d.deleted_at is null and (cast(? as bigint) is null or s.stock_asset_id=?) and "
+                + tickerMatch("a.ticker_symbol", filter)
                 + " and exists(select 1 from watchlists w where w.id=" + filter.watchlistId() + " and w.user_id=s.user_id) and "
                 + WatchlistSignalScope.matches(kind,"d.id","s.stock_asset_id","'"+kind+"'","'DAILY'","'ANY'",filter.watchlistId().toString());
         if (filter.state().equals("unread")) where += " and d.read_at is null";
         if (filter.state().equals("active")) where += " and false";
-        return "select '"+kind+"'::text kind,d.id,a.ticker_symbol ticker,a.company_name company,null::text interval,null::integer confidence,'RECORDED'::text status,"
+        return new Branch("select '"+kind+"'::text kind,d.id,a.ticker_symbol ticker,a.company_name company,null::text interval,null::integer confidence,'RECORDED'::text status,"
                 + "d.created_at::timestamp received,d.read_at::timestamp,t.transaction_type title,t."+actor+" actor,t.transaction_date,null::float8 trade_return"
-                + " from "+prefix+"_deliveries d join "+prefix+"_subscriptions s on s.id=d.subscription_id join "+prefix+"s t on t.id=d.trade_id join stock_assets a on a.id=s.stock_asset_id where "+where;
+                + " from "+prefix+"_deliveries d join "+prefix+"_subscriptions s on s.id=d.subscription_id join "+prefix+"s t on t.id=d.trade_id join stock_assets a on a.id=s.stock_asset_id where "+where,
+                java.util.Arrays.asList(userId, stockId, stockId, filter.ticker()));
     }
-    private Result mixedPage(String technicalWhere,long userId,Long stockId,String sort,boolean ascending,int requestedPage,int size,SignalArchiveFilter filter) {
-        String activity = " union all " + activityRows("CONGRESS","congressional_trade","member_name",filter)
-                + " union all " + activityRows("INSIDER","insider_trade","insider_name",filter);
-        var params = new java.util.ArrayList<Object>();
-        java.util.Collections.addAll(params,userId,stockId,stockId,filter.ticker());
-        for (int i=0;i<2;i++) java.util.Collections.addAll(params,userId,stockId,stockId,filter.ticker(),filter.ticker());
-        long count = jdbc.queryForObject("select count(*) from ("+technicalRows(technicalWhere,false)+activity+") archive",Long.class,params.toArray());
-        int pages = (int)((count+size-1)/size), page = Math.min(Math.max(0,requestedPage),Math.max(0,pages-1));
-        boolean outcomes = sort.equals("trade-return");
-        if (outcomes) {
-            params.addAll(0,List.of(completion.firstIncompleteCandleTimestamp(TimeInterval.WEEKLY),
-                    completion.firstIncompleteCandleTimestamp(TimeInterval.MONTHLY),completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY)));
+
+    /** Triggers of alerts set on chart drawings and indicators; they are finished events, never active. */
+    private Branch chartRows(long userId, SignalArchiveFilter filter) {
+        String where = "c.user_id=? and e.deleted_at is null and " + tickerMatch("c.symbol", filter);
+        if (filter.state().equals("unread")) where += " and e.read_at is null";
+        if (filter.state().equals("active")) where += " and false";
+        return new Branch("select 'CHART'::text kind,e.id,c.symbol ticker,s.company_name company,c.interval,null::integer confidence,"
+                + "'TRIGGERED'::text status,e.created_at received,e.read_at,c.label title,c.condition actor,"
+                + "(to_timestamp(e.candle_timestamp) at time zone 'UTC')::date transaction_date,null::float8 trade_return"
+                + " from chart_alert_events e join chart_alerts c on c.id=e.alert_id"
+                + " left join stock_assets s on upper(s.ticker_symbol)=c.symbol where " + where,
+                java.util.Arrays.asList(userId, filter.ticker()));
+    }
+
+    /**
+     * Custom alert triggers. A trigger is active while its outcome window is still running. In a watchlist
+     * only triggers recorded for that list appear.
+     */
+    private Branch customRows(long userId, Long stockId, SignalArchiveFilter filter) {
+        String where = "c.user_id=? and e.deleted_at is null and (cast(? as bigint) is null or e.stock_asset_id=?) and "
+                + tickerMatch("a.ticker_symbol", filter);
+        List<Object> params = new java.util.ArrayList<>(java.util.Arrays.asList(userId, stockId, stockId, filter.ticker()));
+        if (filter.customAlertId() != null) {
+            where += " and c.id=?";
+            params.add(filter.customAlertId());
         }
-        String column = switch(sort) { case "ticker" -> "ticker"; case "interval" -> "interval"; case "confidence" -> "confidence"; case "status" -> "status"; case "trade-return" -> "trade_return"; default -> "received"; };
-        params.add(size); params.add(page*size);
-        var rows = jdbc.query("select * from ("+technicalRows(technicalWhere,outcomes)+activity+") archive order by "+column+(ascending?" asc":" desc")+" nulls last,received desc,kind,id desc limit ? offset ?",
-                (r,n) -> new ArchiveRow(r.getString("kind"),r.getLong("id"),r.getString("kind").equals("TECHNICAL")?null:
-                        new ActivitySignal(r.getString("kind"),r.getLong("id"),r.getString("ticker"),r.getString("company"),r.getString("title"),r.getString("actor"),r.getDate("transaction_date").toLocalDate(),r.getTimestamp("received").toLocalDateTime(),r.getTimestamp("read_at")!=null)),params.toArray());
-        return new Result(rows.stream().filter(row->row.activity()==null).map(ArchiveRow::id).toList(),page,pages,count,rows);
+        if (filter.watchlistId() != null) {
+            where += " and exists(select 1 from watchlist_notification_origins origin where origin.kind='CUSTOM'"
+                    + " and origin.notification_id=e.id and origin.watchlist_id=" + filter.watchlistId() + ")";
+        }
+        switch (filter.state()) {
+            case "unread" -> where += " and e.read_at is null";
+            case "active" -> where += " and e.outcome_status='PENDING'";
+            case "completed" -> where += " and e.outcome_status<>'PENDING'";
+            default -> { }
+        }
+        return new Branch("select 'CUSTOM'::text kind,e.id,a.ticker_symbol ticker,a.company_name company,c.interval,null::integer confidence,"
+                + "e.kind status,e.created_at::timestamp received,e.read_at::timestamp,c.name title,"
+                + "(e.matched_conditions||'/'||e.total_conditions) actor,"
+                + "(to_timestamp(e.candle_timestamp) at time zone 'UTC')::date transaction_date,e.outcome_return trade_return"
+                + " from custom_alert_events e join custom_alerts c on c.id=e.alert_id join stock_assets a on a.id=e.stock_asset_id"
+                + " where " + where, params);
     }
+
+    private Result mixedPage(String technicalWhere, List<String> others, long userId, Long stockId, String sort,
+                             boolean ascending, int requestedPage, int size, SignalArchiveFilter filter) {
+        boolean outcomes = sort.equals("trade-return");
+        List<Branch> branches = new java.util.ArrayList<>();
+        List<Branch> countBranches = new java.util.ArrayList<>();
+        if (technicalWhere != null) {
+            List<Object> params = java.util.Arrays.asList(userId, stockId, stockId, filter.ticker());
+            countBranches.add(new Branch(technicalRows(technicalWhere, false), params));
+            if (outcomes) {
+                List<Object> withBoundaries = new java.util.ArrayList<>(List.of(
+                        completion.firstIncompleteCandleTimestamp(TimeInterval.WEEKLY),
+                        completion.firstIncompleteCandleTimestamp(TimeInterval.MONTHLY),
+                        completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY)));
+                withBoundaries.addAll(params);
+                branches.add(new Branch(technicalRows(technicalWhere, true), withBoundaries));
+            } else {
+                branches.add(new Branch(technicalRows(technicalWhere, false), params));
+            }
+        }
+        for (String kind : others) {
+            Branch branch = switch (kind) {
+                case "CONGRESS" -> activityRows("CONGRESS", "congressional_trade", "member_name", userId, stockId, filter);
+                case "INSIDER" -> activityRows("INSIDER", "insider_trade", "insider_name", userId, stockId, filter);
+                case "CHART" -> chartRows(userId, filter);
+                case "CUSTOM" -> customRows(userId, stockId, filter);
+                default -> throw new IllegalStateException("Unknown archive kind " + kind);
+            };
+            branches.add(branch);
+            countBranches.add(branch);
+        }
+        if (branches.isEmpty()) return new Result(List.of(), 0, 0, 0, List.of());
+        long count = jdbc.queryForObject("select count(*) from (" + union(countBranches) + ") archive", Long.class,
+                parameters(countBranches).toArray());
+        int pages = (int)((count+size-1)/size), page = Math.min(Math.max(0,requestedPage),Math.max(0,pages-1));
+        String column = switch(sort) { case "ticker" -> "ticker"; case "interval" -> "interval"; case "confidence" -> "confidence"; case "status" -> "status"; case "trade-return" -> "trade_return"; default -> "received"; };
+        List<Object> params = parameters(branches);
+        params.add(size); params.add(page*size);
+        var rows = jdbc.query("select * from (" + union(branches) + ") archive order by "+column+(ascending?" asc":" desc")+" nulls last,received desc,kind,id desc limit ? offset ?",
+                (r,n) -> row(r), params.toArray());
+        return new Result(rows.stream().filter(row -> row.kind().equals("TECHNICAL")).map(ArchiveRow::id).toList(),page,pages,count,rows);
+    }
+
+    private static String union(List<Branch> branches) {
+        return String.join(" union all ", branches.stream().map(Branch::sql).toList());
+    }
+
+    private static List<Object> parameters(List<Branch> branches) {
+        List<Object> params = new java.util.ArrayList<>();
+        branches.forEach(branch -> params.addAll(branch.params()));
+        return params;
+    }
+
+    private static ArchiveRow row(java.sql.ResultSet r) throws java.sql.SQLException {
+        String kind = r.getString("kind");
+        long id = r.getLong("id");
+        return switch (kind) {
+            case "TECHNICAL" -> new ArchiveRow(kind, id, null, null);
+            case "CONGRESS", "INSIDER" -> new ArchiveRow(kind, id, new ActivitySignal(kind, id, r.getString("ticker"),
+                    r.getString("company"), r.getString("title"), r.getString("actor"),
+                    r.getDate("transaction_date").toLocalDate(), r.getTimestamp("received").toLocalDateTime(),
+                    r.getTimestamp("read_at") != null), null);
+            default -> new ArchiveRow(kind, id, null, new AlertTrigger(kind, id, r.getString("ticker"),
+                    r.getString("company"), r.getString("title"), r.getString("actor"),
+                    TimeInterval.valueOf(r.getString("interval")), r.getString("status"),
+                    r.getDate("transaction_date").toLocalDate(), r.getTimestamp("received").toLocalDateTime(),
+                    r.getTimestamp("read_at") != null, r.getObject("trade_return") == null ? null : r.getDouble("trade_return")));
+        };
+    }
+
     public record ActivitySignal(String kind,long id,String symbol,String companyName,String transaction,String actor,
                                  java.time.LocalDate transactionDate,java.time.LocalDateTime received,boolean hasBeenRead) {
         public String familyLabel() { return kind.equals("CONGRESS")?"Congressional activity":"Insider activity"; }
@@ -175,7 +316,28 @@ public class SignalArchiveQuery {
         public String key() { return (kind.equals("CONGRESS")?"CONGRESSIONAL":"INSIDER")+":"+id; }
         public String title() { return transaction.replace('_',' ').toLowerCase(java.util.Locale.ROOT); }
     }
-    public record ArchiveRow(String kind,long id,ActivitySignal activity) {}
+
+    /**
+     * A chart alert or custom alert trigger in the archive.
+     *
+     * @param title  the alert's name
+     * @param detail the chart alert's condition, or "matched/total" conditions of a custom alert
+     * @param status TRIGGERED, or MATCHED_ON_APPLY for a custom alert that already matched when it was applied
+     */
+    public record AlertTrigger(String kind, long id, String symbol, String companyName, String title, String detail,
+                               TimeInterval interval, String status, java.time.LocalDate candleDate,
+                               java.time.LocalDateTime received, boolean hasBeenRead, Double outcomeReturn) {
+        public boolean custom() { return kind.equals("CUSTOM"); }
+        public String key() { return kind + ":" + id; }
+        public String detailUrl() {
+            return custom() ? "/custom-alerts/triggers/" + id
+                    : "/stock/" + org.springframework.web.util.UriUtils.encodePathSegment(symbol, java.nio.charset.StandardCharsets.UTF_8)
+                    + "?chartAlert=" + id + "#general";
+        }
+    }
+
+    /** A row of a mixed archive page; technical rows are loaded by id, the others carry their own view. */
+    public record ArchiveRow(String kind, long id, ActivitySignal activity, AlertTrigger trigger) {}
     public record Result(List<Long> ids, int page, int pages, long count,List<ArchiveRow> rows) {
         public Result(List<Long> ids,int page,int pages,long count) { this(ids,page,pages,count,List.of()); }
     }

@@ -5,7 +5,7 @@
    th:with="active=${archive.sort() == key},next=${active ? (archive.direction() == 'asc' ? 'desc' : 'asc') : initialDirection},currentWord=${archive.direction() == 'asc' ? #messages.msg('archive.sort.ascending') : #messages.msg('archive.sort.descending')},nextWord=${next == 'asc' ? #messages.msg('archive.sort.ascending') : #messages.msg('archive.sort.descending')}"
    class="archive-column-sort"
    th:classappend="${active ? 'is-' + archive.direction() : ''}"
-   th:href="${filter != null} ? @{${path}(sort=${key},direction=${next},page=0,state=${filter.state()},ticker=${filter.ticker()})} : @{${path}(sort=${key},direction=${next},page=0)}"
+   th:href="${filter != null} ? @{${path}(sort=${key},direction=${next},page=0,state=${filter.state()},ticker=${filter.ticker()},type=${filter.typeParameter()})} : @{${path}(sort=${key},direction=${next},page=0)}"
    th:attr="data-sort-key=${key},data-sort-direction=${active ? archive.direction() : 'none'},aria-label=${active ? #messages.msg('archive.sort.ariaActive', label, currentWord, nextWord) : #messages.msg('archive.sort.aria', label, nextWord)},title=${#messages.msg('archive.sort.title', label, nextWord)}">
   <span th:text="${label}">Ticker</span>
   <svg viewBox="0 0 12 16" aria-hidden="true" focusable="false">

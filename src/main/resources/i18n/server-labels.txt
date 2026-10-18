@@ -5594,3 +5594,214 @@ pl: Okres profilu wolumenu
 
 en: VWAP period
 pl: Okres kroczącego VWAP
+
+# --- Chart and custom alert triggers in the archive (AlertRuleService group labels) ---------------------
+
+en: Triggered
+pl: Wyzwolony
+
+en: Matched at save
+pl: Spełniony przy zapisie
+
+# --- Custom alert emails (CustomAlertText, CustomAlertEngine) ---------------------------------------------
+
+en: Custom alert: {0} for {1} stocks
+pl: Alert własny: {0} – spółki: {1}
+
+en: Custom alert: {0} for {1}
+pl: Alert własny: {0} – {1}
+
+en: Custom alert: {0}
+pl: Alert własny: {0}
+
+en: Rule:
+pl: Reguła:
+
+en: Every group must be true:
+pl: Muszą być spełnione wszystkie grupy:
+
+en: At least one group must be true:
+pl: Musi być spełniona co najmniej jedna grupa:
+
+en: All of these:
+pl: Wszystkie poniższe warunki:
+
+en: Any of these:
+pl: Dowolny z poniższych warunków:
+
+en: Not: {0}
+pl: Nie: {0}
+
+en: {0} at least once in the last {1} candles
+pl: {0} co najmniej raz w ostatnich {1} świecach
+
+en: {0} on each of the last {1} candles
+pl: {0} na każdej z ostatnich {1} świec
+
+en: {0} is above {1}
+pl: {0} powyżej {1}
+
+en: {0} is below {1}
+pl: {0} poniżej {1}
+
+en: {0} crosses above {1}
+pl: {0} przecina w górę {1}
+
+en: {0} crosses below {1}
+pl: {0} przecina w dół {1}
+
+en: {0} is between {1} and {2}
+pl: {0} między {1} a {2}
+
+en: {0} is outside {1} to {2}
+pl: {0} poza przedziałem {1}–{2}
+
+en: {0} rises for {1} candles in a row
+pl: {0} rośnie przez kolejne świece: {1}
+
+en: {0} falls for {1} candles in a row
+pl: {0} spada przez kolejne świece: {1}
+
+en: {0} rises at least {1}% over {2} candles
+pl: {0} rośnie o co najmniej {1}% w ciągu świec: {2}
+
+en: {0} falls at least {1}% over {2} candles
+pl: {0} spada o co najmniej {1}% w ciągu świec: {2}
+
+en: {0} makes a new {1}-candle high
+pl: {0} osiąga nowe maksimum z ostatnich świec: {1}
+
+en: {0} makes a new {1}-candle low
+pl: {0} osiąga nowe minimum z ostatnich świec: {1}
+
+
+
+
+en: Candlestick pattern detected in the last {0} candles.
+pl: Formacja świecowa wykryta w ostatnich {0} świecach.
+
+en: Bullish candlestick pattern detected in the last {0} candles.
+pl: Wzrostowa formacja świecowa wykryta w ostatnich {0} świecach.
+
+en: Bearish candlestick pattern detected in the last {0} candles.
+pl: Spadkowa formacja świecowa wykryta w ostatnich {0} świecach.
+
+en: Elliott Wave signal detected in the last {0} candles.
+pl: Sygnał fal Elliotta wykryty w ostatnich {0} świecach.
+
+en: Bullish Elliott Wave signal detected in the last {0} candles.
+pl: Sygnał wzrostowego układu fal Elliotta wykryty w ostatnich {0} świecach.
+
+en: Bearish Elliott Wave signal detected in the last {0} candles.
+pl: Sygnał spadkowego układu fal Elliotta wykryty w ostatnich {0} świecach.
+
+en: Harmonic pattern detected in the last {0} candles.
+pl: Formacja harmoniczna wykryta w ostatnich {0} świecach.
+
+en: Bullish harmonic pattern detected in the last {0} candles.
+pl: Wzrostowa formacja harmoniczna wykryta w ostatnich {0} świecach.
+
+en: Bearish harmonic pattern detected in the last {0} candles.
+pl: Spadkowa formacja harmoniczna wykryta w ostatnich {0} świecach.
+
+en: Patterns: {0}.
+pl: Formacje: {0}.
+
+en: Score at least {0}.
+pl: Ocena co najmniej {0}.
+
+en: Confirmed patterns only.
+pl: Tylko potwierdzone formacje.
+
+en: Stop not breached.
+pl: Poziom stop loss nie został przekroczony.
+
+en: Wave II end
+pl: Koniec fali II
+
+en: Wave III end
+pl: Koniec fali III
+
+en: Wave IV end
+pl: Koniec fali IV
+
+en: Wave V end
+pl: Koniec fali V
+
+en: correction end
+pl: koniec korekty
+
+en: Insiders bought in the last {0} days.
+pl: Insiderzy kupowali w ostatnich {0} dniach.
+
+en: Insiders sold in the last {0} days.
+pl: Insiderzy sprzedawali w ostatnich {0} dniach.
+
+en: Members of Congress bought in the last {0} days.
+pl: Członkowie Kongresu USA kupowali w ostatnich {0} dniach.
+
+en: Members of Congress sold in the last {0} days.
+pl: Członkowie Kongresu USA sprzedawali w ostatnich {0} dniach.
+
+en: At least {0} people.
+pl: Co najmniej {0} osoby.
+
+en: At least ${0} in total.
+pl: Łącznie co najmniej {0} USD.
+
+en: Roles: {0}.
+pl: Funkcje: {0}.
+
+en: officers
+pl: członkowie kadry kierowniczej
+
+en: directors
+pl: dyrektorzy
+
+en: 10% owners
+pl: akcjonariusze z ponad 10% akcji
+
+en: Senate only.
+pl: Tylko Senat.
+
+en: House only.
+pl: Tylko Izba Reprezentantów.
+
+en: Automated outlook at least slight buy
+pl: Automatyczna ocena techniczna co najmniej: słaby sygnał kupna
+
+en: Automated outlook at least moderate buy
+pl: Automatyczna ocena techniczna co najmniej: umiarkowany sygnał kupna
+
+en: Automated outlook at least strong buy
+pl: Automatyczna ocena techniczna co najmniej: silny sygnał kupna
+
+en: Automated outlook at least slight sell
+pl: Automatyczna ocena techniczna co najmniej: słaby sygnał sprzedaży
+
+en: Automated outlook at least moderate sell
+pl: Automatyczna ocena techniczna co najmniej: umiarkowany sygnał sprzedaży
+
+en: Automated outlook at least strong sell
+pl: Automatyczna ocena techniczna co najmniej: silny sygnał sprzedaży
+
+en: Conditions met: {0} of {1}
+pl: Spełnione warunki: {0} z {1}
+
+en: And {0} more
+pl: I jeszcze {0}
+
+en: Open price
+pl: Cena otwarcia
+
+en: High price
+pl: Maksimum
+
+en: Low price
+pl: Minimum
+
+en: Close price
+pl: Cena zamknięcia
+
+en: Informational only, not financial advice.
+pl: Wyłącznie informacyjnie, nie jest to porada finansowa.
