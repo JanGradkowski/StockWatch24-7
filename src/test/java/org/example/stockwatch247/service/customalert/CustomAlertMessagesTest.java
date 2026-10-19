@@ -36,6 +36,7 @@ class CustomAlertMessagesTest {
                 "Members of Congress sold in the last 45 days. Senate only.", "Automated outlook at least moderate buy",
                 "Not: Volume makes a new 20-candle high", "MACD histogram (12, 26, 9) rises for 2 candles in a row",
                 "Completed candle: 14 Oct 2026", "Close: 182.4", "Conditions met: 3 of 3", "And 14 more",
+                "Earlier triggers (2): 13 Oct 2026, 12 Oct 2026",
                 "Informational only, not financial advice.",
                 "Custom alert: Oversold bounce for AAPL", "Custom alert: Oversold bounce for 6 stocks")) {
             String polish = ServerMessages.translateLines(line, AppLanguage.PL.locale());

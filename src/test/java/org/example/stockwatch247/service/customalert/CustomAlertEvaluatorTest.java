@@ -164,6 +164,19 @@ class CustomAlertEvaluatorTest {
     }
 
     @Test
+    void aRedrawnWaveCountDoesNotExistBeforeTheCandleThatFirstShowedIt() {
+        Stub facts = new Stub(10, 10, 10, 10, 10, 10, 10, 10);
+        // Confirmed on candle 2, but only the count as of candle 5 contained it (a replay reads counts as they stood).
+        facts.patterns.add(new PatternHit("ELLIOTT_WAVE", "ELLIOTT_BULLISH_WAVE_II_END", "WAVE_II_END", true, 72,
+                facts.at(2), facts.at(1), null, null, 9.5, null, facts.at(5)));
+        var definition = rule(single("{\"id\":\"c1\",\"kind\":\"PATTERN\",\"family\":\"ELLIOTT_WAVE\",\"direction\":\"ANY\","
+                + "\"window\":{\"mode\":\"ANY\",\"candles\":5}}"));
+        assertThat(CustomAlertEvaluator.evaluate(definition, facts, 3).matched()).as("confirmed, but not in the count yet").isFalse();
+        assertThat(CustomAlertEvaluator.evaluate(definition, facts, 5).matched()).as("in the count, confirmed within 5 candles").isTrue();
+        assertThat(CustomAlertEvaluator.evaluate(definition, facts, 7).matched()).as("confirmation left the window").isFalse();
+    }
+
+    @Test
     void confirmedCandlesticksCountOnlyOnceTheirConfirmingCloseHasHappened() {
         Stub facts = new Stub(10, 10, 10, 10, 10, 10);
         facts.patterns.add(new PatternHit("CANDLESTICK", "BULLISH_ENGULFING", "BULLISH_ENGULFING", true, 80,

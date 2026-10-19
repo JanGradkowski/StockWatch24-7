@@ -60,10 +60,17 @@ public final class CustomAlertEvaluator {
 
     /**
      * One detected pattern. {@code availableAt} is the candle on which it became known (a wave end is known
-     * some candles after the turn); {@code anchorAt} is the pattern's own candle or turning point.
+     * some candles after the turn); {@code anchorAt} is the pattern's own candle or turning point. In a replay
+     * a redrawn Elliott count can first appear later than its own confirmation: {@code knownAt} is that first
+     * candle, before which the hit does not exist.
      */
     public record PatternHit(String family, String code, String type, boolean bullish, int score, long availableAt,
-                             long anchorAt, String status, Long resolvedAt, double price, Object source) { }
+                             long anchorAt, String status, Long resolvedAt, double price, Object source, long knownAt) {
+        public PatternHit(String family, String code, String type, boolean bullish, int score, long availableAt,
+                          long anchorAt, String status, Long resolvedAt, double price, Object source) {
+            this(family, code, type, bullish, score, availableAt, anchorAt, status, resolvedAt, price, source, availableAt);
+        }
+    }
 
     public record OutlookFact(long candleTimestamp, String classification, double score) { }
 
@@ -202,7 +209,7 @@ public final class CustomAlertEvaluator {
         long to = candles.get(index).getTimestamp();
         PatternHit best = null;
         for (PatternHit hit : facts.patterns(condition)) {
-            if (hit.availableAt() < from || hit.availableAt() > to) continue;
+            if (hit.availableAt() < from || hit.availableAt() > to || hit.knownAt() > to) continue;
             if (!"ANY".equals(condition.direction()) && hit.bullish() != "BULLISH".equals(condition.direction())) continue;
             if (!condition.patterns().isEmpty() && !condition.patterns().contains(hit.type())) continue;
             if (condition.minScore() != null && hit.score() < condition.minScore()) continue;

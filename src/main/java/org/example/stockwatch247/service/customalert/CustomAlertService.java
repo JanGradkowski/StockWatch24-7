@@ -73,6 +73,13 @@ public class CustomAlertService {
         this.guard = guard;
     }
 
+    private org.springframework.context.ApplicationEventPublisher events;
+
+    @Autowired(required = false)
+    void configureEvents(org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
+    }
+
     public int maximumActive() { return maximumActive; }
 
     // ------------------------------------------------------------------ views
@@ -382,6 +389,7 @@ public class CustomAlertService {
                 join custom_alerts a on a.id = t.alert_id where t.alert_id = ?
                 on conflict (alert_id, stock_asset_id) do nothing
                 """, notifyExisting, id);
+        if (events != null) events.publishEvent(new CustomAlertsChanged(id));
     }
 
     @Transactional

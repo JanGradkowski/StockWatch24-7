@@ -64,10 +64,14 @@ public class CustomAlertEngine {
     private AnalysisPreferencesService preferences;
     private BackgroundJobDispatcher dispatcher;
     private final boolean scheduleEnabled;
+    private final long baselineSliceMillis;
+    private final int baselineThreads;
 
     public CustomAlertEngine(JdbcTemplate db, ObjectMapper json, CustomAlertFactsLoader facts, ChartIndicatorCatalog catalog,
                              StockAssetRepository assets, UserRepository users, TransactionTemplate transactions,
-                             @Value("${custom-alerts.background-enabled:${alerts.schedule.enabled:true}}") boolean scheduleEnabled) {
+                             @Value("${custom-alerts.background-enabled:${alerts.schedule.enabled:true}}") boolean scheduleEnabled,
+                             @Value("${custom-alerts.baseline-slice-ms:120000}") long baselineSliceMillis,
+                             @Value("${custom-alerts.baseline-threads:0}") int baselineThreads) {
         this.db = db;
         this.json = json;
         this.facts = facts;
@@ -76,6 +80,10 @@ public class CustomAlertEngine {
         this.users = users;
         this.transactions = transactions;
         this.scheduleEnabled = scheduleEnabled;
+        this.baselineSliceMillis = Math.max(1000, baselineSliceMillis);
+        // 0 means a quarter of the processors, at most four: small machines keep one, so pages stay responsive.
+        this.baselineThreads = baselineThreads > 0 ? baselineThreads
+                : Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 4));
     }
 
     @Autowired(required = false)
@@ -87,6 +95,13 @@ public class CustomAlertEngine {
     @Autowired(required = false)
     void configureDispatcher(BackgroundJobDispatcher dispatcher) {
         this.dispatcher = dispatcher;
+    }
+
+    private org.example.stockwatch247.service.MarketDataService marketData;
+
+    @Autowired(required = false)
+    void configureMarketData(org.example.stockwatch247.service.MarketDataService marketData) {
+        this.marketData = marketData;
     }
 
     public record EvaluationResult(int checked, int triggered) { }
@@ -137,11 +152,41 @@ public class CustomAlertEngine {
         CustomAlertFactsLoader.StockData data = null;
         int triggered = 0;
         if (!targets.isEmpty()) {
+            refreshHigherTimeframes(asset.getTickerSymbol(), targets);
             data = facts.load(asset, interval, scheduledFor == null ? null : scheduledFor.getEpochSecond());
+            // Elliott counts validate subdivisions on the next-lower timeframe, kept fresh as the built-in check does.
+            if (targets.stream().anyMatch(target -> target.definition().contains("\"family\":\"ELLIOTT_WAVE\""))) data.refreshLowerDegree();
             triggered = evaluateTargets(data, targets, false);
         }
         updateOutcomes(asset, interval, data);
+        // Every scheduled check is of a followed stock: its shared snapshot and Elliott histories follow the new candle.
+        if (sharedStore != null) sharedStore.followed(asset, interval);
         return new EvaluationResult(targets.size(), triggered);
+    }
+
+    private SharedAnalysisStore sharedStore;
+
+    @Autowired(required = false)
+    void configureSharedStore(SharedAnalysisStore sharedStore) {
+        this.sharedStore = sharedStore;
+    }
+
+    /**
+     * The scheduled check refreshes only the alert's own interval. A rule that reads a weekly or monthly indicator
+     * on daily candles needs those candles current too, or it would keep reading the last week that happened to be
+     * stored (a weekly bar counts once the next one has started). A small delta refresh per check keeps them so.
+     */
+    private void refreshHigherTimeframes(String symbol, List<Target> targets) {
+        if (marketData == null) return;
+        for (String timeframe : List.of("1wk", "1mo")) {
+            if (targets.stream().noneMatch(target -> target.definition().contains("\"timeframe\":\"" + timeframe + "\""))) continue;
+            try {
+                marketData.syncCandlesForAnalysis(symbol, timeframe, 300);
+            } catch (RuntimeException unavailable) {
+                if (org.example.stockwatch247.service.InfrastructureRecovery.isDatabaseUnavailable(unavailable)) throw unavailable;
+                log.warn("Custom alert {} candles could not be refreshed for {}: {}", timeframe, symbol, unavailable.getClass().getSimpleName());
+            }
+        }
     }
 
     private int evaluateTargets(CustomAlertFactsLoader.StockData data, List<Target> targets, boolean baselineOnly) {
@@ -154,6 +199,12 @@ public class CustomAlertEngine {
                 saveState(target, data.asset().getId(), null, false, "FAILED", "The rule could not be read.", false);
             }
         }
+        // A check of the latest candle alone does not need to know which waves the previous candle's count showed
+        // (only a catch-up of earlier candles does), which saves an Elliott scan per stock.
+        List<Candle> series = data.candles();
+        long previousCandle = series.size() > 1 ? series.get(series.size() - 2).getTimestamp() : Long.MIN_VALUE;
+        data.evaluatesLatestOnly(baselineOnly || targets.stream().allMatch(target -> target.needsBaseline()
+                || target.lastEvaluated() >= previousCandle));
         // Every indicator setting of every alert on this stock, computed in one batch.
         int lookback = definitions.values().stream().mapToInt(CustomAlertDefinition::lookbackCandles).max().orElse(1) + MAX_CATCH_UP;
         try {
@@ -181,11 +232,14 @@ public class CustomAlertEngine {
 
     private int evaluateTarget(CustomAlertFactsLoader.StockData data, Target target, CustomAlertDefinition definition, User owner) {
         long assetId = data.asset().getId();
-        // The state row is locked so a background baseline and a scheduled check cannot both handle a candle.
-        db.update("""
-                insert into custom_alert_states (alert_id, stock_asset_id, revision) values (?, ?, ?)
-                on conflict (alert_id, stock_asset_id) do nothing
-                """, target.alertId(), assetId, target.revision());
+        // The state row is locked so a background baseline and a scheduled check cannot both handle a candle
+        // (saving the alert created it; it is created here only when it is missing).
+        if (target.stateRevision() == null) {
+            db.update("""
+                    insert into custom_alert_states (alert_id, stock_asset_id, revision) values (?, ?, ?)
+                    on conflict (alert_id, stock_asset_id) do nothing
+                    """, target.alertId(), assetId, target.revision());
+        }
         Target current = db.query("""
                 select s.revision, s.last_evaluated_timestamp, s.last_result, s.last_triggered_timestamp, s.triggered_once,
                        s.notify_on_baseline from custom_alert_states s where s.alert_id = ? and s.stock_asset_id = ? for update
@@ -193,7 +247,9 @@ public class CustomAlertEngine {
                 target.revision(), target.triggerMode(), target.quietCandles(), target.outcomeCandles(), target.emailEnabled(),
                 row.getInt("revision"), (Long) row.getObject("last_evaluated_timestamp"), (Boolean) row.getObject("last_result"),
                 (Long) row.getObject("last_triggered_timestamp"), row.getBoolean("triggered_once"),
-                row.getBoolean("notify_on_baseline")), target.alertId(), assetId).getFirst();
+                row.getBoolean("notify_on_baseline")), target.alertId(), assetId).stream().findFirst().orElse(null);
+        // The stock stopped being covered since the targets were read.
+        if (current == null) return 0;
         List<Candle> candles = data.candles();
         if (candles.size() < 2) {
             saveState(current, assetId, null, false, "INSUFFICIENT_HISTORY", "Not enough completed candles are stored yet.",
@@ -215,6 +271,8 @@ public class CustomAlertEngine {
         for (int index = last; index >= 0 && candles.get(index).getTimestamp() > current.lastEvaluated(); index--) start = index;
         if (start > last) return 0;
         start = Math.max(1, Math.max(start, last - MAX_CATCH_UP + 1));
+        // Earlier candles read waves as their own counts showed them (the state may have moved since the targets were read).
+        if (start < last) data.needEarlierCandles();
         boolean previous = Boolean.TRUE.equals(current.lastResult());
         Long lastTriggered = current.lastTriggered();
         boolean once = current.triggeredOnce();
@@ -355,44 +413,111 @@ public class CustomAlertEngine {
 
     // ------------------------------------------------------------------ background baselines
 
-    @Scheduled(fixedDelayString = "${custom-alerts.baseline-delay-ms:15000}", initialDelayString = "${custom-alerts.baseline-initial-delay-ms:20000}")
+    @Scheduled(fixedDelayString = "${custom-alerts.baseline-delay-ms:5000}", initialDelayString = "${custom-alerts.baseline-initial-delay-ms:20000}")
     public void dispatchBaselines() {
         if (!scheduleEnabled || dispatcher == null) return;
         dispatcher.submit("custom-alerts", this::establishBaselines);
     }
 
+    /** A saved alert gets its baselines as soon as the save is committed, not at the next tick. */
+    @org.springframework.transaction.event.TransactionalEventListener(fallbackExecution = true)
+    public void onAlertsChanged(CustomAlertsChanged changed) {
+        dispatchBaselines();
+    }
+
     /**
      * Sets baselines for stocks newly covered by an alert (or after a rule change) from stored candles, so
      * the alert can say which stocks match right away. Stocks with no stored history wait for their check.
+     * Works back to back, newest change first, until nothing is waiting or the run's time is up; a stock that
+     * could not be handled is not taken again in the same run, so it cannot hold up the others.
      */
     public int establishBaselines() {
-        List<Object[]> pending = db.query("""
-                select t.stock_asset_id, a.interval from custom_alert_effective_targets t
-                join custom_alerts a on a.id = t.alert_id
-                left join custom_alert_states s on s.alert_id = t.alert_id and s.stock_asset_id = t.stock_asset_id
-                where a.active and (s.alert_id is null or s.revision <> a.revision
-                    or (s.last_evaluated_timestamp is null and s.updated_at < current_timestamp - interval '6 hours')
-                    or (s.last_evaluated_timestamp is null and s.status = 'OK'))
-                group by t.stock_asset_id, a.interval order by min(t.alert_id) limit 20
-                """, (row, index) -> new Object[]{row.getLong(1), row.getString(2)});
+        long deadline = System.nanoTime() + baselineSliceMillis * 1_000_000L;
+        java.util.Set<String> seen = new java.util.HashSet<>();
         int handled = 0;
-        for (Object[] item : pending) {
-            StockAsset asset = assets.findById((Long) item[0]).orElse(null);
-            if (asset == null) continue;
-            TimeInterval interval = TimeInterval.valueOf((String) item[1]);
-            List<Target> targets = targets(asset.getId(), interval, null).stream().filter(Target::needsBaseline).toList();
-            if (targets.isEmpty()) continue;
-            try {
-                evaluateTargets(facts.load(asset, interval, null), targets, true);
-            } catch (RuntimeException failure) {
-                log.warn("Custom alert baselines failed for {} {}", asset.getTickerSymbol(), interval, failure);
-                // Retried after a pause, so one broken stock cannot hold up the others.
-                targets.forEach(target -> saveState(target, asset.getId(), null, false, "FAILED",
-                        "The stock could not be checked yet.", target.notifyOnBaseline()));
-            }
-            handled += targets.size();
+        while (System.nanoTime() < deadline) {
+            List<Object[]> pending = db.query("""
+                    select t.stock_asset_id, a.interval from custom_alert_effective_targets t
+                    join custom_alerts a on a.id = t.alert_id
+                    left join custom_alert_states s on s.alert_id = t.alert_id and s.stock_asset_id = t.stock_asset_id
+                    where a.active and (s.alert_id is null or s.revision <> a.revision
+                        or (s.last_evaluated_timestamp is null and s.updated_at < current_timestamp - interval '6 hours')
+                        or (s.last_evaluated_timestamp is null and s.status = 'OK'))
+                    group by t.stock_asset_id, a.interval order by max(a.updated_at) desc, min(t.alert_id), t.stock_asset_id limit ?
+                    """, (row, index) -> new Object[]{row.getLong(1), row.getString(2)}, 20 + seen.size()).stream()
+                    .filter(item -> !seen.contains(item[0] + ":" + item[1])).toList();
+            if (pending.isEmpty()) break;
+            pending.forEach(item -> seen.add(item[0] + ":" + item[1]));
+            handled += baselineBatch(pending, deadline);
         }
         return handled;
+    }
+
+    /**
+     * Baselines for a batch of stocks. Each stock is independent (its own data, its own state rows), so on a machine
+     * with cores to spare several are set at once ({@code custom-alerts.baseline-threads}; one on small machines).
+     */
+    private int baselineBatch(List<Object[]> pending, long deadline) {
+        // A caller inside a transaction stays on its thread: other threads would not see its uncommitted work.
+        if (baselineThreads <= 1 || pending.size() == 1
+                || org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+            int handled = 0;
+            for (Object[] item : pending) {
+                handled += baseline((Long) item[0], TimeInterval.valueOf((String) item[1]));
+                if (System.nanoTime() >= deadline) break;
+            }
+            return handled;
+        }
+        List<java.util.concurrent.Future<Integer>> running = new ArrayList<>();
+        for (Object[] item : pending) {
+            running.add(baselineWorkers().submit(() -> System.nanoTime() >= deadline ? 0
+                    : baseline((Long) item[0], TimeInterval.valueOf((String) item[1]))));
+        }
+        int handled = 0;
+        for (var future : running) {
+            try {
+                handled += future.get();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (java.util.concurrent.ExecutionException failure) {
+                if (failure.getCause() instanceof RuntimeException runtime
+                        && org.example.stockwatch247.service.InfrastructureRecovery.isDatabaseUnavailable(runtime)) throw runtime;
+                log.warn("Custom alert baseline failed", failure.getCause());
+            }
+        }
+        return handled;
+    }
+
+    private java.util.concurrent.ExecutorService baselineWorkers;
+
+    private synchronized java.util.concurrent.ExecutorService baselineWorkers() {
+        if (baselineWorkers == null) {
+            baselineWorkers = java.util.concurrent.Executors.newFixedThreadPool(baselineThreads,
+                    Thread.ofPlatform().daemon(true).name("custom-alert-baseline-", 0).factory());
+        }
+        return baselineWorkers;
+    }
+
+    @jakarta.annotation.PreDestroy
+    synchronized void stopBaselineWorkers() {
+        if (baselineWorkers != null) baselineWorkers.shutdownNow();
+    }
+
+    private int baseline(long assetId, TimeInterval interval) {
+        StockAsset asset = assets.findById(assetId).orElse(null);
+        if (asset == null) return 0;
+        List<Target> targets = targets(asset.getId(), interval, null).stream().filter(Target::needsBaseline).toList();
+        if (targets.isEmpty()) return 0;
+        try {
+            evaluateTargets(facts.load(asset, interval, null), targets, true);
+        } catch (RuntimeException failure) {
+            log.warn("Custom alert baselines failed for {} {}", asset.getTickerSymbol(), interval, failure);
+            // Retried after a pause, so one broken stock cannot hold up the others.
+            targets.forEach(target -> saveState(target, asset.getId(), null, false, "FAILED",
+                    "The stock could not be checked yet.", target.notifyOnBaseline()));
+        }
+        return targets.size();
     }
 
     // ------------------------------------------------------------------ email
@@ -400,7 +525,8 @@ public class CustomAlertEngine {
     @Scheduled(fixedDelayString = "${custom-alerts.email-delay-ms:60000}", initialDelayString = "${custom-alerts.email-initial-delay-ms:45000}")
     public void dispatchEmails() {
         if (!scheduleEnabled || dispatcher == null) return;
-        dispatcher.submit("custom-alerts", this::sendPendingEmails);
+        // Its own queue: a batch of baselines for a large watchlist can take a minute.
+        dispatcher.submit("custom-alert-email", this::sendPendingEmails);
     }
 
     /**
@@ -435,7 +561,7 @@ public class CustomAlertEngine {
                        s.ticker_symbol, s.company_name
                 from custom_alert_events e join stock_assets s on s.id = e.stock_asset_id
                 where e.alert_id = ? and e.email_status = 'PENDING' and e.deleted_at is null
-                order by s.ticker_symbol for update of e skip locked
+                order by s.ticker_symbol, e.candle_timestamp desc for update of e skip locked
                 """, alertId);
         if (events.isEmpty()) return false;
         Long[] ids = events.stream().map(row -> ((Number) row.get("id")).longValue()).toArray(Long[]::new);
@@ -446,9 +572,11 @@ public class CustomAlertEngine {
         if (allowed) {
             String name = (String) alert.get("name");
             TimeInterval interval = TimeInterval.valueOf((String) alert.get("interval"));
-            String subject = events.size() == 1
+            // A check that caught up on missed candles can bring several triggers for one stock.
+            long stocks = events.stream().map(row -> row.get("ticker_symbol")).distinct().count();
+            String subject = stocks == 1
                     ? "Custom alert: " + name + " for " + events.getFirst().get("ticker_symbol")
-                    : "Custom alert: " + name + " for " + events.size() + " stocks";
+                    : "Custom alert: " + name + " for " + stocks + " stocks";
             sent = notifications.sendCustomAlertEmail(owner, subject, digestBody(name, interval, events),
                     events.size() == 1 ? "/custom-alerts/triggers/" + ids[0] : "/signals?customAlertId=" + alertId,
                     "custom-alert:" + alertId + ":" + ids[ids.length - 1]);
@@ -467,28 +595,45 @@ public class CustomAlertEngine {
         return queued;
     }
 
-    private String digestBody(String name, TimeInterval interval, List<Map<String, Object>> events) {
+    static String digestBody(String name, TimeInterval interval, List<Map<String, Object>> events) {
         StringBuilder body = new StringBuilder()
                 .append("Custom alert: ").append(name).append('\n')
                 .append("Interval: ").append(interval.analysisLabel()).append('\n');
         String rule = (String) events.getFirst().get("rule_text");
         body.append('\n').append("Rule:").append('\n').append(rule).append('\n').append('\n');
+        // Events arrive by stock, newest candle first: each stock shows its latest trigger in full and the
+        // dates of earlier ones (a check that caught up on missed candles).
+        Map<Object, List<Map<String, Object>>> byStock = new LinkedHashMap<>();
+        for (Map<String, Object> event : events) byStock.computeIfAbsent(event.get("ticker_symbol"), symbol -> new ArrayList<>()).add(event);
         int shown = 0;
-        for (Map<String, Object> event : events) {
+        for (List<Map<String, Object>> triggers : byStock.values()) {
             if (shown++ == 25) {
-                body.append("And ").append(events.size() - 25).append(" more").append('\n');
+                body.append("And ").append(byStock.size() - 25).append(" more").append('\n');
                 break;
             }
-            long candle = ((Number) event.get("candle_timestamp")).longValue();
-            String date = EMAIL_DATE.format(LocalDate.ofInstant(Instant.ofEpochSecond(candle), ZoneOffset.UTC));
-            body.append(event.get("ticker_symbol")).append(" · ").append(event.get("company_name") == null ? "" : event.get("company_name"))
-                    .append('\n')
-                    .append("Completed candle: ").append(date).append('\n')
-                    .append("Close: ").append(CustomAlertText.number(((Number) event.get("close_price")).doubleValue())).append('\n')
-                    .append("Conditions met: ").append(event.get("matched_conditions")).append(" of ").append(event.get("total_conditions"))
-                    .append('\n').append('\n');
+            Map<String, Object> latest = triggers.getFirst();
+            String symbol = (String) latest.get("ticker_symbol");
+            String company = (String) latest.get("company_name");
+            body.append(symbol);
+            if (company != null && !company.isBlank() && !company.equalsIgnoreCase(symbol)) body.append(" · ").append(company);
+            body.append('\n')
+                    .append("Completed candle: ").append(emailDate(latest)).append('\n')
+                    .append("Close: ").append(CustomAlertText.number(((Number) latest.get("close_price")).doubleValue())).append('\n')
+                    .append("Conditions met: ").append(latest.get("matched_conditions")).append(" of ").append(latest.get("total_conditions"))
+                    .append('\n');
+            if (triggers.size() > 1) {
+                List<String> dates = triggers.subList(1, Math.min(triggers.size(), 9)).stream().map(CustomAlertEngine::emailDate).toList();
+                body.append("Earlier triggers (").append(triggers.size() - 1).append("): ").append(String.join(", ", dates))
+                        .append(triggers.size() > 9 ? ", …" : "").append('\n');
+            }
+            body.append('\n');
         }
         body.append("Informational only, not financial advice.");
         return body.toString();
+    }
+
+    private static String emailDate(Map<String, Object> event) {
+        long candle = ((Number) event.get("candle_timestamp")).longValue();
+        return EMAIL_DATE.format(LocalDate.ofInstant(Instant.ofEpochSecond(candle), ZoneOffset.UTC));
     }
 }

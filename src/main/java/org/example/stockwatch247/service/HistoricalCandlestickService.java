@@ -192,8 +192,7 @@ public class HistoricalCandlestickService {
         ScanProfile profile = ScanProfile.forApiInterval(apiInterval);
         synchronizeCandles(symbol, apiInterval);
         if (historicalCache != null) return historicalCache.getOrCompute(HistoricalSignalCacheService.Family.CANDLESTICK,
-                symbol, apiInterval, SCORE_VERSION + "-risk-v5-next-open", List.of(trendRules, definitions,
-                        completionService.firstIncompleteCandleTimestamp(profile.interval()), companyName(symbol)),
+                symbol, apiInterval, SCORE_VERSION + "-risk-v5-next-open", List.of(trendRules, definitions, companyName(symbol)),
                 HistoricalScan.class, () -> calculateAll(symbol, apiInterval, trendRules, definitions));
         return calculateAll(symbol, apiInterval, trendRules, definitions);
     }

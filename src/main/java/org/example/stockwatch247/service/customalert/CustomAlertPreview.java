@@ -44,6 +44,8 @@ public class CustomAlertPreview {
     private final WatchlistService watchlists;
     private MarketDataService marketData;
     private TrackedInstrumentGuard guard;
+    /** Time an Elliott replay may spend reading counts as they stood on each candle (newest candles first). */
+    private long elliottBudgetMillis = 6000;
 
     public CustomAlertPreview(ChartIndicatorCatalog catalog, CustomAlertFactsLoader facts, StockAssetRepository assets,
                               JdbcTemplate db, WatchlistService watchlists) {
@@ -52,6 +54,11 @@ public class CustomAlertPreview {
         this.assets = assets;
         this.db = db;
         this.watchlists = watchlists;
+    }
+
+    @Autowired
+    void configureBudget(@org.springframework.beans.factory.annotation.Value("${custom-alerts.preview-elliott-budget-ms:6000}") long elliottBudgetMillis) {
+        this.elliottBudgetMillis = Math.max(500, elliottBudgetMillis);
     }
 
     @Autowired(required = false)
@@ -74,7 +81,8 @@ public class CustomAlertPreview {
     public record PreviewView(String symbol, String companyName, boolean available, String unavailableReason, Long latestCandle,
                               Double latestClose, boolean matched, boolean applicable, int matchedConditions, int totalConditions,
                               List<ConditionResult> conditions, List<HistoryPoint> history, long firstReplayed, long replayedCandles,
-                              Double medianReturn, Double positiveShare, Coverage coverage) { }
+                              Double medianReturn, Double positiveShare, Coverage coverage, String shortenedBy,
+                              String elliottHistory) { }
 
     public PreviewView preview(User user, PreviewCommand command) {
         if (command == null) throw new UserInputException("Add at least one condition.");
@@ -105,9 +113,22 @@ public class CustomAlertPreview {
         data.prepare(definition.operands(), candles.size() - first + definition.lookbackCandles());
         data.coverPatterns(candles.size() - first + definition.lookbackCandles());
         data.rememberScans();
+        data.replayFrom(first, elliottBudgetMillis);
         CustomAlertEvaluator.Facts ownerFacts = data.forOwner(user);
         int last = candles.size() - 1;
         Result latest = CustomAlertEvaluator.evaluate(definition, ownerFacts, last);
+        // An Elliott count is replayed as it stood on each candle, within a time budget: replay only what it covered.
+        Long elliottFrom = data.elliottReplayedFrom();
+        boolean shortened = false;
+        if (elliottFrom != null) {
+            for (int index = first; index <= last; index++) {
+                if (candles.get(index).getTimestamp() >= elliottFrom) {
+                    shortened = index > first;
+                    first = Math.max(first, index);
+                    break;
+                }
+            }
+        }
 
         String mode = command.triggerMode() == null ? "BECOMES_TRUE" : command.triggerMode().trim().toUpperCase(Locale.ROOT);
         int quiet = command.quietCandles() == null ? 0 : Math.max(0, Math.min(60, command.quietCandles()));
@@ -142,12 +163,12 @@ public class CustomAlertPreview {
         return new PreviewView(symbol, asset.getCompanyName(), true, null, candles.get(last).getTimestamp(),
                 candles.get(last).getClosePrice(), latest.matched(), latest.applicable(), latest.matchedConditions(),
                 latest.totalConditions(), latest.conditions(), history, candles.get(first).getTimestamp(), last - first + 1L,
-                median, positive, coverage);
+                median, positive, coverage, shortened ? "ELLIOTT_WAVE" : null, data.elliottHistoryStatus());
     }
 
     private static PreviewView empty(String symbol, String company, String reason, Coverage coverage) {
         return new PreviewView(symbol, company, false, reason, null, null, false, true, 0, 0, List.of(), List.of(), 0, 0,
-                null, null, coverage);
+                null, null, coverage, null, null);
     }
 
     /** How many stocks the draft would cover, how many are new to monitoring, and the room left. */

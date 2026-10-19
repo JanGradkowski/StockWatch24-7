@@ -43,6 +43,9 @@
   let preview = null;
   let previewTimer = null;
   let previewSequence = 0;
+  // While a stock's Elliott history is prepared in the background, the preview re-runs itself (up to ten minutes).
+  let elliottRetry = null;
+  let elliottRetries = 0;
   let counter = 0;
   const newId = prefix => `${prefix}${Date.now().toString(36)}${(counter++).toString(36)}`;
   const conditions = () => state.definition.groups.flatMap(group => group.conditions);
@@ -824,11 +827,13 @@
 
   function schedulePreview() {
     clearTimeout(previewTimer);
-    previewTimer = setTimeout(runPreview, 600);
+    previewTimer = setTimeout(() => runPreview(), 600);
   }
 
-  async function runPreview() {
+  async function runPreview(retrying = false) {
     const sequence = ++previewSequence;
+    clearTimeout(elliottRetry);
+    if (!retrying) elliottRetries = 0;
     const draft = snapshot();
     if (!conditions().length) {
       preview = null;
@@ -837,6 +842,13 @@
       return;
     }
     nodes.result.setAttribute('aria-busy', 'true');
+    // A first test on a stock can take a few seconds (Elliott counts most of all): say so instead of looking stuck.
+    const elliott = conditions().some(condition => condition.kind === 'PATTERN' && condition.family === 'ELLIOTT_WAVE');
+    const slow = setTimeout(() => {
+      if (sequence !== previewSequence) return;
+      nodes.result.querySelector('.ca-preview-wait')?.remove();
+      nodes.result.prepend(el('p', 'wl-status ca-preview-wait', i18n.t(elliott ? 'ca.preview.waitElliott' : 'ca.preview.wait')));
+    }, 1200);
     try {
       const result = await api('/api/custom-alerts/preview', { method: 'POST', body: JSON.stringify({
         interval: draft.interval, definition: draft.definition, symbol: nodes.testSymbol.value.trim(), triggerMode: draft.triggerMode,
@@ -844,6 +856,10 @@
       if (sequence !== previewSequence) return;
       preview = result;
       renderPreview(result);
+      if (result.elliottHistory === 'PREPARING' && elliottRetries < 40) {
+        elliottRetries++;
+        elliottRetry = setTimeout(() => { if (sequence === previewSequence) runPreview(true); }, 15000);
+      }
     } catch (error) {
       if (sequence !== previewSequence) return;
       preview = null;
@@ -852,7 +868,11 @@
       nodes.result.replaceChildren(problem);
       nodes.coverage.replaceChildren();
     } finally {
-      if (sequence === previewSequence) nodes.result.removeAttribute('aria-busy');
+      clearTimeout(slow);
+      if (sequence === previewSequence) {
+        nodes.result.removeAttribute('aria-busy');
+        nodes.result.querySelector('.ca-preview-wait')?.remove();
+      }
       renderReadouts();
     }
   }
@@ -914,8 +934,16 @@
       statsLine.dataset.learn = LEARN_OPTIONS.outcome;
       statsLine.dataset.learnTitle = i18n.t('ca.preview.afterTitle');
       box.append(statsLine);
-    } else if (!result.history.length) {
+    } else if (!result.history.length && result.elliottHistory !== 'PREPARING') {
+      // While the Elliott history is prepared the replay is short: "loosen a condition" would mislead.
       box.append(el('p', 'wl-muted', i18n.t('ca.preview.noHistory')));
+    }
+    // Elliott counts are replayed as they stood on each candle. A background job prepares that history once per
+    // stock; until it is ready the replay covers the latest candles only.
+    if (result.elliottHistory === 'PREPARING') {
+      box.append(el('p', 'wl-status ca-preview-preparing', i18n.t('ca.preview.elliottPreparing', result.symbol, result.replayedCandles)));
+    } else if (result.shortenedBy === 'ELLIOTT_WAVE') {
+      box.append(el('p', 'wl-muted', i18n.t('ca.preview.elliottShort', result.replayedCandles)));
     }
     box.append(el('p', 'ca-disclaimer', i18n.t('ca.preview.disclaimer')));
     return box;
@@ -1053,7 +1081,7 @@
       addCondition(state.definition.groups.at(-1));
       renderGroups();
     });
-    form.querySelector('[data-ca-test]').addEventListener('click', runPreview);
+    form.querySelector('[data-ca-test]').addEventListener('click', () => runPreview());
     nodes.testSymbol.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); runPreview(); } });
     window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
     form.addEventListener('submit', save);
@@ -1089,6 +1117,8 @@
 
   async function init() {
     bindBasics();
+    // Saving waits until the alert, template or chart alert is loaded and drawn.
+    nodes.save.disabled = true;
     try {
       [catalog, lists] = await Promise.all([text.catalog(), api('/api/watchlists')]);
     } catch (error) {
@@ -1139,6 +1169,7 @@
     renderStart();
     renderGroups();
     renderTargets();
+    nodes.save.disabled = false;
     nodes.summary.textContent = text.summary(snapshot(), catalog.byType);
     dirty = Boolean(page.dataset.startTemplate || page.dataset.startChartAlert);
     runPreview();

@@ -60,6 +60,38 @@
     nodes.push(visible.length ? list : el('p', 'wl-muted', i18n.t('ca.list.noMatches')));
     nodes.push(templateGallery(true));
     root.replaceChildren(...nodes);
+    refreshWhileChecking();
+  }
+
+  // While stocks of a new or edited alert are being checked, the counts are re-read every few seconds; a tick
+  // is skipped while the user is in a menu, a dialog, an expanded state list or a field, so nothing jumps.
+  let refreshTimer;
+  function refreshWhileChecking() {
+    clearTimeout(refreshTimer);
+    if (!alerts.some(alert => alert.active && alert.checking > 0)) return;
+    refreshTimer = setTimeout(async () => {
+      const busy = document.hidden || document.querySelector('details.ca-menu[open], dialog[open], .ca-card-states:not([hidden])')
+        || root.contains(document.activeElement) || document.activeElement?.matches?.('input, textarea, select');
+      if (busy) { refreshWhileChecking(); return; }
+      try {
+        alerts = await api('/api/custom-alerts');
+        render();
+      } catch (ignored) {
+        refreshWhileChecking();
+      }
+    }, 4000);
+  }
+
+  /** How far the checks of a newly covered alert are, with a native progress bar (no inline styles under the CSP). */
+  function progress(alert) {
+    const box = el('div', 'ca-progress');
+    const done = Math.max(0, alert.stocks - alert.checking);
+    const bar = el('progress');
+    bar.max = Math.max(1, alert.stocks);
+    bar.value = done;
+    bar.setAttribute('aria-label', i18n.t('ca.card.progressAria', alert.name));
+    box.append(el('span', null, i18n.plural('ca.card.progress', alert.stocks, done, alert.stocks)), bar);
+    return box;
   }
 
   function emptyState() {
@@ -126,6 +158,7 @@
     const where = el('p', `ca-card-targets${targets ? '' : ' is-warning'}`, targets
       ? i18n.t('ca.card.appliedTo', targets) : i18n.t('ca.card.notApplied'));
     main.append(where);
+    if (alert.active && alert.checking > 0 && alert.stocks > 0) main.append(progress(alert));
 
     const stats = el('div', 'ca-card-stats');
     const matching = el('button', 'ca-stat ca-stat-button');

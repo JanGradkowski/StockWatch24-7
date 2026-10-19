@@ -2124,10 +2124,17 @@ public class ElliottWaveDetectionService {
     public List<DevelopingImpulse> findDevelopingImpulses(
             List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles) {
-        return findDevelopingImpulses(
-                recentCandles, lowerDegreeCandles, AnalysisComputationScope.memo(
-                        List.of("elliott-leg-context", detectionRules, scoringModel, presentSignalLookbackCandles),
-                        DevelopingScanContext::new));
+        return findDevelopingImpulses(recentCandles, lowerDegreeCandles, sharedScanContext());
+    }
+
+    /**
+     * The leg context the scans of one symbol job share (a new one outside a job). Counts as of neighbouring
+     * candles reuse the lower-degree validation of the legs they have in common, in either order.
+     */
+    public DevelopingScanContext sharedScanContext() {
+        return AnalysisComputationScope.memo(
+                List.of("elliott-leg-context", detectionRules, scoringModel, presentSignalLookbackCandles),
+                DevelopingScanContext::new);
     }
 
     /**

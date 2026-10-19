@@ -468,7 +468,8 @@ trigger per `(alert, stock, candle)` (unique constraint, so retries are idempote
   `custom-alert:{eventId}`.
 - **Digest**: when one check run triggers an alert for several stocks (common for a
   500-stock watchlist), one email lists them (first 25 with key values, then "and 14 more"
-  with a link), keyed `custom-alert:{alertId}:{scheduledFor}`.
+  with a link), keyed `custom-alert:{alertId}:{scheduledFor}`. *As built*: keyed by the alert
+  and its newest trigger, grouped by stock (see Implementation notes).
 - Gated by the alert's own email switch, the account email pause and the server email
   switch — not by outlook or pattern preferences (fix 4).
 
@@ -705,10 +706,65 @@ What the build does differently from the design above, and why:
 - **"Matched when applied"** is labelled "Matched at save".
 - **Previews** replay up to 500 candles; candlestick detections cover the whole replay and are
   kept briefly (48 scans) so edits do not repeat the slowest step.
-- **Configuration**: `custom-alerts.max-active-per-user` (default 25) and
-  `custom-alerts.background-enabled` (baselines and digest emails; follows
-  `alerts.schedule.enabled`). Migrations: `V90__chart_alert_archive.sql`,
-  `V91__custom_alerts.sql`.
+- **Elliott Wave counts** are read exactly as the built-in Elliott alerts read them
+  (`ElliottAlertInputs`, shared by both): the parent candles in their valid context, with leg
+  subdivisions validated on the next-lower timeframe (60-minute candles for a daily count, daily for
+  weekly, weekly for monthly). A scheduled check refreshes a stale child cache as the built-in check
+  does; previews and the background history read stored candles only. A wave the previous candle's
+  count did not show is known from the current candle (`knownAt`), as in the built-in alerts.
+- **Elliott Wave in previews**: today's wave count drops waves that later candles redrew, so a
+  replay from it misses signals a live alert did fire (AAPL: 6 instead of 22 on the same 350
+  candles). A replay must read the count as it stood on each candle: one wave scan per candle,
+  0.05–2 s each. A background job (`ElliottHistoryBuilder`, V92 tables
+  `custom_alert_elliott_coverage` and `custom_alert_elliott_signals`) does that once per stock,
+  interval and detection settings, in 20-second slices, oldest candle first, and stores what each
+  candle's count showed. Previews read the stored history and read only the candles after it
+  themselves (newest first, within `custom-alerts.preview-elliott-budget-ms`, default 6000). The
+  first Elliott test on a stock asks for the history, replays the latest candles it can, and
+  says the history is being prepared; the builder page re-runs the preview until it is ready.
+  Measured: CSCO 20 s, AAPL 1 min, MSFT 8 min to build; afterwards a full 500-candle replay
+  takes 0.7–2 s. A history a preview falls behind on is extended; histories unused for 60 days
+  are removed. Changing Elliott settings files the counts under a new fingerprint.
+- **Higher timeframes**: a weekly bar counts once the next weekly bar has started. Scheduled checks
+  refresh only their own interval, so a check whose rules read weekly or monthly indicators also
+  delta-refreshes those candles.
+- **Filings in replays** are loaded from the first replayed candle back by the longest window
+  (730 days insider, 365 congress), so older replayed candles see their filings.
+- **Verification**: rules were replayed over cached history for nine instruments and compared
+  candle by candle with independent calculations from the stored candles and filings (indicators,
+  crosses, ranges, windows, logic, trigger modes, higher timeframes, weekly alerts, filings), with
+  the chart's own pattern overlays, and with a copy of the history cut 150–300 candles earlier
+  (no rule changed its answer when later candles were added).
+- **Live run**: with scheduled checks, insider polling and email on, real provider data and a local
+  mail catcher, ten alerts of every kind on an 11-stock list. Stocks 17–30 candles behind caught up
+  in one check each (134 triggers, none on the stocks that were current); every trigger equals the
+  preview's replay of the same candles (50 alert–stock pairs, Elliott included), outcomes equal the
+  stored closes, and the digests arrived.
+- **Digest emails** group the triggers of one check by stock: the latest trigger with its close and
+  conditions, then "Earlier triggers (n)" with their dates when the check caught up on missed
+  candles. The subject counts stocks. Emails have their own background queue
+  (`custom-alert-email`), so a batch of baselines for a large list cannot hold them up.
+- **Load**: `CustomAlertLoadTest` (run with `-DcustomAlertsLoadTest=true`) puts 25 alerts of every
+  kind on up to 300 stocks of the local candle cache, in a rolled-back schema. Measured on 60
+  stocks: a daily check takes 2.05 s per stock (p95 3.8 s), 0.63 s without the two Elliott alerts;
+  baselines 2.4 s per stock; a 20-candle catch-up about as long as one candle; the pages that list
+  alerts 5–15 ms. The latest candle's Elliott count and the previous candle's share their validated
+  legs (30% less Elliott time); in a scheduled check both scans are shared with the stock's built-in
+  Elliott alerts.
+- **Setup time** (how long a saved alert takes until every stock shows its state) is addressed by the
+  [shared analysis store](shared-analysis-store-plan.md):
+  - Baselines start as soon as a save is committed and run back to back, several stocks at a time
+    where the machine has cores to spare, newest change first.
+  - They read each stock's stored pattern snapshot instead of scanning it.
+  - When only the latest candle is evaluated, they skip the previous candle's Elliott count.
+  - The alerts page shows "Checked 120 of 300 stocks" until they are done.
+- **Configuration**: `custom-alerts.max-active-per-user` (default 25),
+  `custom-alerts.background-enabled` (baselines, digest emails and Elliott histories; follows
+  `alerts.schedule.enabled`), `custom-alerts.preview-elliott-budget-ms` (6000),
+  `custom-alerts.elliott-history-slice-ms` (20000), `custom-alerts.baseline-slice-ms` (120000),
+  `custom-alerts.baseline-delay-ms` (5000) and `custom-alerts.baseline-threads` (0: a quarter of the
+  processors, at most four). Migrations: `V90__chart_alert_archive.sql`, `V91__custom_alerts.sql`,
+  `V92__custom_alert_elliott_history.sql`, `V93__shared_analysis_store.sql`.
 
 ## Open questions
 

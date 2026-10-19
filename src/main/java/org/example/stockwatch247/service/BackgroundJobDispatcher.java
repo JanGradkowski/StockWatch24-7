@@ -14,7 +14,8 @@ public class BackgroundJobDispatcher {
     @org.springframework.beans.factory.annotation.Autowired
     private InfrastructureRecovery recovery = new InfrastructureRecovery();
     private final Map<String, Semaphore> slots = Map.of("alerts", new Semaphore(1), "insider", new Semaphore(1),
-            "email", new Semaphore(1), "imports", new Semaphore(1), "custom-alerts", new Semaphore(1));
+            "email", new Semaphore(1), "imports", new Semaphore(1), "custom-alerts", new Semaphore(1),
+            "custom-alert-email", new Semaphore(1), "elliott-history", new Semaphore(1), "analysis-store", new Semaphore(1));
     private final ExecutorService workers = Executors.newFixedThreadPool(4, Thread.ofPlatform().daemon(true).name("durable-worker-", 0).factory());
     public void submit(String queue, Runnable work) {
         if (!recovery.ready()) return;

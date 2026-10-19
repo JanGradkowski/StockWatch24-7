@@ -77,6 +77,8 @@
 .ca-card-description { margin: 6px 0 0; color: var(--text-soft); font-size: var(--fs-sm); }
 .ca-card-targets { margin: 4px 0 0; font-size: var(--fs-sm); color: var(--muted-text); overflow-wrap: anywhere; }
 .ca-card-targets.is-warning { color: var(--warning); }
+.ca-progress { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: var(--fs-sm); color: var(--muted-text); }
+.ca-progress progress { flex: 1 1 auto; max-width: 220px; height: 6px; accent-color: var(--accent-color); }
 .ca-card-stats { display: grid; grid-template-columns: repeat(2, minmax(90px, auto)); gap: var(--space-3) var(--space-5); }
 .ca-card-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .ca-card-actions .btn-secondary { padding: 7px 12px; font-size: var(--fs-sm); }

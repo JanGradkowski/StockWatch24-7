@@ -5791,6 +5791,9 @@ pl: Spełnione warunki: {0} z {1}
 en: And {0} more
 pl: I jeszcze {0}
 
+en: Earlier triggers ({0}): {1}
+pl: Wcześniejsze wyzwolenia ({0}): {1}
+
 en: Open price
 pl: Cena otwarcia
 
