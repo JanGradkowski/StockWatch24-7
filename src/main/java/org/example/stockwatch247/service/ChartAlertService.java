@@ -130,6 +130,26 @@ public class ChartAlertService {
                 toLocal(row.getTimestamp("last_triggered_at")), toLocal(row.getTimestamp("created_at"))), userId, symbol);
     }
 
+    /** Every chart alert of the account, for the Custom alerts page; newest first. */
+    @Transactional(readOnly = true)
+    public List<AlertView> listAll(long userId) {
+        return db.query("""
+                select id, symbol, interval, source_kind, source_id, label, condition, frequency, definition, active,
+                       trigger_count, last_triggered_at, created_at
+                from chart_alerts where user_id = ? order by active desc, created_at desc, id desc limit 500
+                """, (row, index) -> new AlertView(row.getLong("id"), row.getString("symbol"),
+                chartInterval(TimeInterval.valueOf(row.getString("interval"))), row.getString("source_kind"),
+                row.getString("source_id"), row.getString("label"), row.getString("condition"), row.getString("frequency"),
+                read(row.getString("definition")), row.getBoolean("active"), row.getInt("trigger_count"),
+                toLocal(row.getTimestamp("last_triggered_at")), toLocal(row.getTimestamp("created_at"))), userId);
+    }
+
+    /** One chart alert of the account, for turning it into a custom alert. */
+    @Transactional(readOnly = true)
+    public AlertView get(long userId, long id) {
+        return find(userId, id);
+    }
+
     @Transactional
     public AlertView create(long userId, CreateCommand command) {
         if (command == null) throw new UserInputException("Describe the alert.");
@@ -227,7 +247,7 @@ public class ChartAlertService {
     @Transactional(readOnly = true)
     public List<LatestChartAlertView> latestUnread(long userId, int requestedLimit) {
         int limit = Math.max(1, Math.min(50, requestedLimit));
-        return db.query(EVENT_QUERY + " where a.user_id = ? and e.read_at is null order by e.created_at desc, e.id desc limit ?",
+        return db.query(EVENT_QUERY + " where a.user_id = ? and e.read_at is null and e.deleted_at is null order by e.created_at desc, e.id desc limit ?",
                 ChartAlertService::eventView, userId, limit);
     }
 
@@ -260,7 +280,7 @@ public class ChartAlertService {
     public int markAllRead(long userId) {
         return db.update("""
                 update chart_alert_events e set read_at = current_timestamp from chart_alerts a
-                where a.id = e.alert_id and a.user_id = ? and e.read_at is null
+                where a.id = e.alert_id and a.user_id = ? and e.read_at is null and e.deleted_at is null
                 """, userId);
     }
 

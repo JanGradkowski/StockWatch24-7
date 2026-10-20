@@ -33,8 +33,16 @@ public class InsiderActivityCheckJobStore {
                     )
                     select distinct asset.id, asset.ticker_symbol, inserted_run.scheduled_for, 'PENDING'
                     from inserted_run
-                    join insider_trade_subscriptions subscription on subscription.active = true
-                    join stock_assets asset on asset.id = subscription.stock_asset_id
+                    join (
+                        select stock_asset_id from insider_trade_subscriptions where active = true
+                        union
+                        -- Stocks whose insider filings a custom alert reads, though nobody follows them for filings.
+                        select t.stock_asset_id from custom_alert_effective_targets t
+                        join custom_alerts a on a.id = t.alert_id
+                        where a.active and jsonb_path_exists(a.definition::jsonb,
+                            '$.groups[*].conditions[*] ? (@.kind == "INSIDER")')
+                    ) needed on true
+                    join stock_assets asset on asset.id = needed.stock_asset_id
                     on conflict (stock_asset_id, scheduled_for) do nothing
                     returning id
                 )

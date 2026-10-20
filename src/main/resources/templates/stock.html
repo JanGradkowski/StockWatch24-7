@@ -8,6 +8,8 @@
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
+  <script th:src="@{/js/custom-alert-text.js}" defer></script>
+  <script th:src="@{/js/stock-custom-alerts.js}" defer></script>
   <!-- TradingView Lightweight Charts (Industry Standard) -->
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
@@ -555,6 +557,23 @@
         </div>
         <p class="outlook-alert-note" th:text="#{stock.outlookFollowNote}">The first check records the current outlook. Later changes appear in Latest signals and are emailed if email alerts are on.</p>
       </div>
+    </div>
+  </section>
+
+  <section class="alert-panel stock-custom-alerts" aria-labelledby="stockCustomAlertsTitle" data-stock-custom-alerts th:attr="data-symbol=${symbol}">
+    <div class="alert-header">
+      <div>
+        <h2 id="stockCustomAlertsTitle" class="alert-title"><span class="learn-label"><th:block th:text="#{stock.customAlerts.heading}">Custom alerts for this stock</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.stockSection', #{stock.customAlerts.heading})}"></span></span></h2>
+        <p class="alert-description" th:text="#{stock.customAlerts.help}">Your own rules, built from indicators, chart patterns and insider or congressional trades. Tick the ones that should watch this stock, then save.</p>
+      </div>
+      <div class="alert-header-actions">
+        <a class="btn-secondary" th:href="@{/custom-alerts/new(symbol=${symbol})}" th:text="#{stock.customAlerts.create}">New alert for this stock</a>
+      </div>
+    </div>
+    <div data-stock-custom-list><p class="wl-muted" th:text="#{stock.customAlerts.loading}">Loading custom alerts…</p></div>
+    <div class="stock-custom-actions">
+      <span class="alert-draft-status" data-stock-custom-status role="status" aria-live="polite"></span>
+      <button type="button" class="btn-accent" data-stock-custom-save disabled th:text="#{stock.customAlerts.save}">Save custom alerts</button>
     </div>
   </section>
 

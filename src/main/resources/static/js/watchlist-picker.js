@@ -19,16 +19,17 @@
     return value;
   }
   let pending = null;
-  function choose(symbol, { mode = 'signals', signalTypes = [] } = {}) {
+  // texts: optional { title, intro, submit } for callers whose wording differs from following signals.
+  function choose(symbol, { mode = 'signals', signalTypes = [], texts = {} } = {}) {
     if (pending) return pending;
     pending = new Promise(resolve => {
       const previousFocus = document.activeElement;
       const dialog = node('dialog', null, 'wl-dialog wl-picker');
       const form = node('form');
       const applyingSignals = mode === 'signals';
-      const title = node('h2', i18n.t(applyingSignals ? 'watchlistPicker.applyTitle' : 'watchlistPicker.addTitle', symbol)); title.id = 'wl-picker-title';
+      const title = node('h2', texts.title || i18n.t(applyingSignals ? 'watchlistPicker.applyTitle' : 'watchlistPicker.addTitle', symbol)); title.id = 'wl-picker-title';
       dialog.setAttribute('aria-labelledby', title.id);
-      const intro = node('p', i18n.t(applyingSignals ? 'watchlistPicker.applyIntro' : 'watchlistPicker.addIntro'), 'wl-muted');
+      const intro = node('p', texts.intro || i18n.t(applyingSignals ? 'watchlistPicker.applyIntro' : 'watchlistPicker.addIntro'), 'wl-muted');
       const options = node('fieldset', null, 'wl-picker-options'); options.append(node('legend', i18n.t('watchlistPicker.yourWatchlists')));
       const status = node('p', i18n.t('watchlistPicker.loading'), 'wl-status'); status.setAttribute('role', 'status');
       const label = node('label', i18n.t('watchlistPicker.orCreate'), 'wl-field');
@@ -36,7 +37,7 @@
       label.append(name);
       const actions = node('div', null, 'wl-actions');
       const cancel = node('button', i18n.t('common.cancel'), 'btn-secondary'); cancel.type = 'button';
-      const save = node('button', i18n.t(applyingSignals ? 'watchlistPicker.apply' : 'watchlistPicker.add'), 'btn-accent'); save.type = 'submit'; save.disabled = true;
+      const save = node('button', texts.submit || i18n.t(applyingSignals ? 'watchlistPicker.apply' : 'watchlistPicker.add'), 'btn-accent'); save.type = 'submit'; save.disabled = true;
       actions.append(cancel, save); form.append(title, intro, options, label, status, actions); dialog.append(form);
       let finished = false;
       function finish(value) {
@@ -65,7 +66,7 @@
             const blocked = applyingSignals && list.allowedTypes ? signalTypes.filter(type => !list.allowedTypes.includes(type)) : [];
             if (blocked.length) {
               input.checked = false; input.disabled = true;
-              const known = ['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION', 'OUTLOOK', 'CONGRESS', 'INSIDER'];
+              const known = ['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION', 'OUTLOOK', 'CONGRESS', 'INSIDER', 'CUSTOM'];
               const names = blocked.map(type => known.includes(type) ? i18n.t(`followType.${type}`) : type).join(', ');
               text.append(node('small', i18n.t('watchlistPicker.notAllowed', names), 'wl-picker-membership'));
             }

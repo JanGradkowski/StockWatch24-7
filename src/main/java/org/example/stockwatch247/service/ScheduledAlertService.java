@@ -77,7 +77,6 @@ public class ScheduledAlertService {
     private static final int DEFAULT_SIGNAL_CANDLES = 100;
     private static final int HIGHER_INTERVAL_SIGNAL_CANDLES = 100;
     private static final int ELLIOTT_PARENT_CANDLES = SignalInputPreparation.ELLIOTT_PARENT_CANDLES;
-    private static final int LOWER_DEGREE_ELLIOTT_CACHE_CANDLES = 1_000;
 
     private final AlertRuleRepository alertRuleRepository;
     private final AlertEventRepository alertEventRepository;
@@ -208,6 +207,13 @@ public class ScheduledAlertService {
     @Autowired(required = false)
     void configureChartAlerts(ChartAlertService chartAlerts) {
         this.chartAlertService = chartAlerts;
+    }
+
+    private org.example.stockwatch247.service.customalert.CustomAlertEngine customAlertEngine;
+
+    @Autowired(required = false)
+    void configureCustomAlerts(org.example.stockwatch247.service.customalert.CustomAlertEngine engine) {
+        this.customAlertEngine = engine;
     }
 
     ScheduledAlertService(AlertRuleRepository alertRuleRepository,
@@ -463,7 +469,7 @@ public class ScheduledAlertService {
         }
 
         if (rules.isEmpty()) {
-            evaluateTrackedOutlook(symbol, interval);
+            evaluateFollowerStages(symbol, interval, scheduledFor, new java.util.ArrayList<>());
             return;
         }
 
@@ -568,22 +574,37 @@ public class ScheduledAlertService {
                 familyFailures.add(stageFailure("developing Elliott", failure));
             }
         }
+        evaluateFollowerStages(symbol, interval, scheduledFor, familyFailures);
+    }
+
+    /**
+     * Outlook follows, chart alerts and custom alerts. They run whether or not the symbol has pattern rules,
+     * because each is queued for checking on its own; one failing stage does not stop the others.
+     */
+    private void evaluateFollowerStages(String symbol, TimeInterval interval, Instant scheduledFor,
+                                        List<RuntimeException> failures) {
         try {
             evaluateTrackedOutlook(symbol, interval);
         } catch (RuntimeException failure) {
             AnalysisWork.rethrowInfrastructure(failure);
-            familyFailures.add(stageFailure("automated outlook", failure));
+            failures.add(stageFailure("automated outlook", failure));
         }
         try {
             evaluateChartAlerts(symbol, interval);
         } catch (RuntimeException failure) {
             AnalysisWork.rethrowInfrastructure(failure);
-            familyFailures.add(stageFailure("chart alerts", failure));
+            failures.add(stageFailure("chart alerts", failure));
         }
-        if (!familyFailures.isEmpty()) {
-            var failure = new IllegalStateException("Technical stage failed: " + familyFailures.getFirst().getMessage(),
-                    familyFailures.getFirst());
-            familyFailures.stream().skip(1).forEach(failure::addSuppressed);
+        try {
+            evaluateCustomAlerts(symbol, interval, scheduledFor);
+        } catch (RuntimeException failure) {
+            AnalysisWork.rethrowInfrastructure(failure);
+            failures.add(stageFailure("custom alerts", failure));
+        }
+        if (!failures.isEmpty()) {
+            var failure = new IllegalStateException("Technical stage failed: " + failures.getFirst().getMessage(),
+                    failures.getFirst());
+            failures.stream().skip(1).forEach(failure::addSuppressed);
             throw failure;
         }
     }
@@ -613,6 +634,17 @@ public class ScheduledAlertService {
         if (result.triggered() > 0) {
             log.info("Chart alerts evaluated for " + symbol + " " + interval + ": "
                     + result.triggered() + " of " + result.checked() + " triggered.");
+        }
+    }
+
+    /** Custom alerts covering this stock, checked on the candles refreshed above. */
+    private void evaluateCustomAlerts(String symbol, TimeInterval interval, Instant scheduledFor) {
+        if (customAlertEngine == null) return;
+        technicalStage(symbol, interval, "evaluating custom alerts");
+        var result = customAlertEngine.evaluate(symbol, interval, scheduledFor);
+        if (result.triggered() > 0) {
+            log.info("Custom alerts evaluated for " + symbol + " " + interval + ": "
+                    + result.triggered() + " trigger(s) from " + result.checked() + " alert(s).");
         }
     }
 
@@ -668,6 +700,9 @@ public class ScheduledAlertService {
                         event.setElliottDevelopmentKey(candidate.developmentKey());
                     }
                 }
+                // A stored signal's rule is a lazy reference that cannot load outside a session (the trade plan reads
+                // its owner); the rule this check already loaded is the same row.
+                if (event != null) event.setAlertRule(rule);
                 if (event == null) {
                     if (rule.getTradeSignal() != candidate.expectedMove()) continue;
                     event = new AlertEvent();
@@ -806,91 +841,9 @@ public class ScheduledAlertService {
                 rule -> rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE)) {
             return List.of();
         }
-        String childApiInterval;
-        TimeInterval childInterval;
-        switch (parentInterval) {
-            case DAILY -> {
-                childApiInterval = "60min";
-                childInterval = TimeInterval.ONE_HOUR;
-            }
-            case WEEKLY -> {
-                childApiInterval = "1d";
-                childInterval = TimeInterval.DAILY;
-            }
-            case MONTHLY -> {
-                childApiInterval = "1wk";
-                childInterval = TimeInterval.WEEKLY;
-            }
-            default -> {
-                return List.of();
-            }
-        }
-        if (!hasFreshLowerDegreeCache(symbol, childApiInterval, scheduledFor)) {
-            try {
-                // Bootstrap a persisted child-series cache once. Later scans request only
-                // a small latest-candle delta and share the normal provider cooldown.
-                MarketDataService.CandleSyncResult sync = marketDataService
-                        .syncCandlesForAnalysis(
-                                symbol, childApiInterval, LOWER_DEGREE_ELLIOTT_CACHE_CANDLES);
-                if (sync != null && !sync.successful()
-                        && sync.source() != MarketDataService.CandleSource.CACHE_REFRESH_IN_PROGRESS) {
-                    log.warn("Lower-degree Elliott refresh failed for " + symbol + " "
-                            + childApiInterval + ": " + sync.failureMessage());
-                }
-            } catch (RuntimeException exception) {
-                AnalysisWork.rethrowInfrastructure(exception);
-                log.warn("Lower-degree Elliott refresh failed for " + symbol + " "
-                        + childApiInterval + ": " + exception.getMessage());
-            }
-        }
-        long firstParentTimestamp = parentCandles.getFirst().timestamp();
-        List<Candle> stored = candleRepository
-                .findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(
-                        symbol, childApiInterval, firstParentTimestamp);
-        if (stored == null || stored.isEmpty()) return List.of();
-        long asOfExclusive = scheduledFor == null
-                ? Long.MAX_VALUE : scheduledFor.getEpochSecond();
-        List<Candle> childCandles = stored.stream()
-                .filter(candle -> candle.getTimestamp() < asOfExclusive)
-                .sorted(Comparator.comparing(Candle::getTimestamp))
-                .toList();
-        long firstParentPeriodEnd = parentCandles.size() > 1
-                ? parentCandles.get(1).timestamp() : Long.MAX_VALUE;
-        if (childCandles.isEmpty()
-                || childCandles.getFirst().getTimestamp() >= firstParentPeriodEnd) {
-            return List.of();
-        }
-        try {
-            return enrichmentService.enrichForElliott(
-                    childCandles, childCandles.size(), childInterval);
-        } catch (RuntimeException exception) {
-            AnalysisWork.rethrowInfrastructure(exception);
-            // Child data improves structural validation, but a bad optional child
-            // cache must not abort every alert family for the parent symbol.
-            log.warn("Lower-degree Elliott enrichment failed for " + symbol + " "
-                    + childApiInterval + ": " + exception.getMessage()
-                    + ". Falling back to parent-series subdivision validation.");
-            return List.of();
-        }
-    }
-
-    private boolean hasFreshLowerDegreeCache(
-            String symbol, String childApiInterval, Instant scheduledFor) {
-        if (scheduledFor == null
-                || candleRepository.countBySymbolAndTimeInterval(symbol, childApiInterval)
-                < LOWER_DEGREE_ELLIOTT_CACHE_CANDLES) {
-            return false;
-        }
-        List<Candle> latest = candleRepository
-                .findTop1BySymbolAndTimeIntervalOrderByTimestampDesc(symbol, childApiInterval);
-        if (latest == null || latest.isEmpty()) return false;
-        long toleratedAgeSeconds = switch (childApiInterval) {
-            case "60min" -> Duration.ofDays(2).toSeconds();
-            case "1d" -> Duration.ofDays(4).toSeconds();
-            case "1wk" -> Duration.ofDays(14).toSeconds();
-            default -> 0L;
-        };
-        return latest.getFirst().getTimestamp() >= scheduledFor.getEpochSecond() - toleratedAgeSeconds;
+        // Shared with custom alerts, so both read the same subdivisions.
+        return ElliottAlertInputs.lowerDegree(candleRepository, marketDataService, enrichmentService, symbol,
+                parentInterval, parentCandles, scheduledFor, Long.MAX_VALUE);
     }
 
     private void applyDevelopingElliott(

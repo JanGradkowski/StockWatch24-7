@@ -39,7 +39,7 @@
         <div class="panel-heading">
           <div>
             <div class="panel-kicker" th:text="#{home.newSignalsKicker}">New signals and outlook changes</div>
-            <h2 id="latest-signals-heading" class="panel-title"><span th:text="#{home.latestSignals}">Latest signals</span> <span class="panel-count" th:text="${#lists.size(latestSignalItems)}">0</span></h2>
+            <h2 id="latest-signals-heading" class="panel-title"><span th:text="#{home.latestSignals}">Latest signals</span> <span class="panel-count" th:text="${latestSignalUnreadCount}">0</span></h2>
           </div>
           <div class="panel-heading-actions">
             <a th:href="@{/signals(state='unread')}" class="text-link" th:text="#{js.watchlists.column.unread}">Unread signals</a>
@@ -189,6 +189,55 @@
             </a>
             </th:block>
           </div>
+        </div>
+      </section>
+
+      <section id="customAlertsDashboard" class="glass-panel dashboard-panel custom-dash"
+               data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}" aria-labelledby="custom-alerts-heading">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker" th:text="#{home.custom.kicker}">Your own alert rules</div>
+            <h2 id="custom-alerts-heading" class="panel-title"><span class="learn-label"><th:block th:text="#{sidebar.customAlerts}">Custom alerts</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.dashboard', #{sidebar.customAlerts})}"></span></span> <span class="panel-count" th:text="${customAlertUnreadCount}">0</span></h2>
+          </div>
+          <div class="panel-heading-actions">
+            <a th:unless="${#lists.isEmpty(customAlertSummaries)}" th:href="@{/custom-alerts}" class="text-link" th:text="#{home.custom.manage}">Manage custom alerts</a>
+            <a th:href="@{/custom-alerts/new}" class="btn-accent" th:text="#{home.custom.create}">New custom alert</a>
+          </div>
+        </div>
+
+        <div th:if="${#lists.isEmpty(customAlertSummaries)}" class="custom-dash-empty">
+          <p th:text="#{home.custom.emptyText}">Combine indicators, chart patterns and insider or congressional trades into one rule, and StockWatch tells you when a stock on your watchlists matches it. Start from an example and adjust it:</p>
+          <div class="custom-dash-templates">
+            <a th:href="@{/custom-alerts/new(template='oversold-bounce')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.oversold-bounce.name')}">Oversold bounce</a>
+            <a th:href="@{/custom-alerts/new(template='golden-cross')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.golden-cross.name')}">Golden cross with volume</a>
+            <a th:href="@{/custom-alerts/new(template='insider-cluster')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.insider-cluster.name')}">Insider cluster buy</a>
+            <a th:href="@{/custom-alerts}" class="custom-dash-template is-more" th:text="#{home.custom.moreExamples}">More examples</a>
+          </div>
+        </div>
+
+        <ul th:if="${!#lists.isEmpty(customAlertTriggers)}" class="custom-dash-triggers">
+          <li th:each="trigger : ${customAlertTriggers}">
+            <a th:href="@{/custom-alerts/triggers/{id}(id=${trigger.id()})}" class="custom-dash-trigger"
+               th:aria-label="#{home.custom.openAria(${trigger.alertName()}, ${trigger.symbol()})}">
+              <span class="unread-dot" aria-hidden="true"></span>
+              <span class="custom-dash-stock"><strong th:text="${trigger.symbol()}">MSFT</strong><span th:text="${trigger.companyName()}">Microsoft Corp.</span></span>
+              <span class="custom-dash-rule"><strong th:text="${trigger.alertName()}">Above the 50-day average</strong><span th:text="${#messages.msg('common.interval.' + trigger.interval().name()) + ' · ' + #messages.msg('signals.conditionsMet', trigger.matchedConditions() + '/' + trigger.totalConditions())}">Daily · 1/1 conditions met</span></span>
+              <span class="signal-lifecycle-pill confirmed" th:text="${trigger.kind() == 'MATCHED_ON_APPLY'} ? #{signals.matchedWhenApplied} : #{home.chartAlertTriggered}">Triggered</span>
+              <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+            </a>
+          </li>
+        </ul>
+
+        <div th:if="${#lists.isEmpty(customAlertTriggers) and !#lists.isEmpty(customAlertSummaries)}">
+          <p class="custom-dash-caught-up" th:text="#{home.custom.caughtUp}">No new triggers. Your alerts check again after every completed candle.</p>
+          <ul class="custom-dash-alerts">
+            <li th:each="alert : ${customAlertSummaries}">
+              <a th:href="@{/signals(customAlertId=${alert.id()})}" class="custom-dash-alert" th:classappend="${alert.active()} ? '' : ' is-paused'">
+                <strong th:text="${alert.name()}">Oversold bounce</strong>
+                <span th:text="${alert.active() ? #messages.msg('home.custom.matching', alert.matching(), alert.stocks()) : #messages.msg('home.custom.paused')}">2 of 14 stocks match now</span>
+              </a>
+            </li>
+          </ul>
         </div>
       </section>
 
@@ -586,9 +635,14 @@
         </article>
         <article class="metric-card">
           <span class="metric-label" th:text="#{js.watchlists.column.unread}">Unread signals</span>
-          <strong class="metric-value" th:text="${#lists.size(latestSignalItems)}">0</strong>
+          <strong class="metric-value" th:text="${latestSignalUnreadCount}">0</strong>
           <span class="metric-note" th:text="#{home.newSignalsKicker}">New signals and outlook changes</span>
         </article>
+        <a class="metric-card metric-card-link" th:href="@{/custom-alerts}">
+          <span class="metric-label" th:text="#{home.custom.metric}">Unread custom alerts</span>
+          <strong class="metric-value" th:text="${customAlertUnreadCount}">0</strong>
+          <span class="metric-note" th:text="#{home.custom.metricHelp}">Triggers of your own alert rules</span>
+        </a>
         <a class="metric-card metric-card-link" th:href="@{/ticker-alerts}">
           <span class="metric-label" th:text="#{home.unreadTickerAlerts}">Unread ticker alerts</span>
           <strong class="metric-value" th:text="${tickerNotificationUnreadCount}">0</strong>

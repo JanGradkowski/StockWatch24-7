@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="#{customAlerts.pageTitle}">Custom alerts — StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}"><link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/custom-alerts.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
+  <script th:src="@{/js/custom-alert-text.js}" defer></script>
+  <script th:src="@{/js/custom-alerts.js}" defer></script>
+</head>
+<body>
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+<main class="dashboard-container custom-alerts-page" th:attr="data-maximum-active=${maximumActive}">
+  <header class="app-hero">
+    <div class="app-hero-copy">
+      <div class="eyebrow" th:text="#{sidebar.group.monitor}">Monitor</div>
+      <h1><span class="learn-term" data-term="customAlert" th:text="#{customAlerts.heading}">Custom alerts</span></h1>
+      <p class="welcome-subtitle" th:text="#{customAlerts.subtitle}">Your own alert rules: combine indicators, chart patterns and insider or congressional trades, then let StockWatch watch your watchlists for the moment they all line up.</p>
+    </div>
+    <div class="wl-hero-actions">
+      <a th:href="@{/custom-alerts/new}" class="btn-accent" th:text="#{customAlerts.new}">New custom alert</a>
+      <button type="button" class="btn-secondary" data-ca-read-all th:text="#{signals.markAllRead}">Mark all as read</button>
+      <span data-ca-read-status role="status" class="panel-meta"></span>
+    </div>
+  </header>
+
+  <details class="ca-guide" data-ca-guide>
+    <summary><span th:text="#{customAlerts.guide.title}">How custom alerts work</span><small th:text="#{customAlerts.guide.hint}">Four steps, about a minute to read</small></summary>
+    <ol class="ca-guide-steps">
+      <li><strong th:text="#{customAlerts.guide.step1.title}">Describe the moment you care about</strong><p th:text="#{customAlerts.guide.step1.text}">Add conditions such as “RSI below 30”, “a bullish Elliott Wave II end in the last 5 candles” or “insiders bought in the last 30 days”. Join them with All (every condition must be true) or Any (one is enough).</p></li>
+      <li><strong th:text="#{customAlerts.guide.step2.title}">Choose when it fires</strong><p th:text="#{customAlerts.guide.step2.text}">Usually when the whole rule becomes true. It then stays quiet while the rule stays true and re-arms once it is false again. You can also fire once per stock or on every candle.</p></li>
+      <li><strong th:text="#{customAlerts.guide.step3.title}">Point it at your stocks</strong><p th:text="#{customAlerts.guide.step3.text}">Apply it to a whole watchlist (stocks you add later are included) or to chosen stocks. The same alert can watch several lists.</p></li>
+      <li><strong th:text="#{customAlerts.guide.step4.title}">Read why it fired</strong><p th:text="#{customAlerts.guide.step4.text}">Each trigger lists every condition with the value that met it, and keeps measuring how the price moved afterwards. Click an alert to see all its triggers.</p></li>
+    </ol>
+    <p class="ca-guide-note" th:text="#{customAlerts.guide.note}">Alerts read completed candles only, so a candle that is still forming can never trigger them. Informational only, not financial advice.</p>
+  </details>
+
+  <section class="glass-panel dashboard-panel ca-panel" aria-labelledby="ca-list-heading">
+    <div class="panel-heading">
+      <h2 id="ca-list-heading" class="panel-title" th:text="#{customAlerts.yours}">Your custom alerts</h2>
+      <div class="ca-toolbar">
+        <div class="ca-tabs" role="group" th:aria-label="#{customAlerts.filterAria}" aria-label="Show alerts">
+          <button type="button" data-ca-tab="all" aria-pressed="true" th:text="#{customAlerts.tab.all}">All</button>
+          <button type="button" data-ca-tab="active" aria-pressed="false" th:text="#{customAlerts.tab.active}">Active</button>
+          <button type="button" data-ca-tab="paused" aria-pressed="false" th:text="#{customAlerts.tab.paused}">Paused</button>
+          <button type="button" data-ca-tab="chart" aria-pressed="false" class="learn-control" data-learn="customAlerts.chartTab" th:attr="data-learn-title=#{customAlerts.tab.chart}" th:text="#{customAlerts.tab.chart}">Chart alerts</button>
+        </div>
+        <label class="ca-search"><span class="visually-hidden" th:text="#{customAlerts.search}">Search alerts</span>
+          <input type="search" data-ca-search th:placeholder="#{customAlerts.searchPlaceholder}" placeholder="Search by name or ticker" autocomplete="off"></label>
+      </div>
+    </div>
+    <div data-ca-list aria-live="polite"><p class="wl-status" role="status" th:text="#{customAlerts.loading}">Loading your alerts…</p></div>
+  </section>
+</main>
+</body>
+</html>

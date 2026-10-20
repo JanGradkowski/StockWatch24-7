@@ -9,7 +9,7 @@ import java.util.*;
 /** Permissions are independent of the defaults used when following instruments. */
 @Service
 public class WatchlistAllowedSignals {
-    public static final List<String> TYPES = List.of("CANDLESTICK", "ELLIOTT_WAVE", "HARMONIC_FORMATION", "OUTLOOK", "CONGRESS", "INSIDER");
+    public static final List<String> TYPES = List.of("CANDLESTICK", "ELLIOTT_WAVE", "HARMONIC_FORMATION", "OUTLOOK", "CONGRESS", "INSIDER", "CUSTOM");
     private final JdbcTemplate db;
     private final ApplicationEventPublisher events;
     public WatchlistAllowedSignals(JdbcTemplate db, ApplicationEventPublisher events) { this.db = db; this.events = events; }

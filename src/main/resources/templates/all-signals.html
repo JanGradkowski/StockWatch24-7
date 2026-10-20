@@ -3,12 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title th:text="${companyArchive != null ? #messages.msg('signals.companyPageTitle', companyArchive.symbol()) : #messages.msg('signals.pageTitle')}">All signals &mdash; StockWatch 24/7</title>
+  <title th:text="${customAlert != null ? #messages.msg('customAlerts.archive.pageTitle', customAlert.alert().name()) : companyArchive != null ? #messages.msg('signals.companyPageTitle', companyArchive.symbol()) : #messages.msg('signals.pageTitle')}">All signals &mdash; StockWatch 24/7</title>
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <script defer th:src="@{/js/signal-archive-selection.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
+  <th:block th:if="${customAlert != null}">
+    <link rel="stylesheet" th:href="@{/css/custom-alerts.css}">
+    <script th:src="@{/js/custom-alert-text.js}" defer></script>
+    <script th:src="@{/js/custom-alert-archive.js}" defer></script>
+  </th:block>
 </head>
 <body>
 
@@ -20,17 +25,17 @@
     <span aria-hidden="true">/</span>
     <a th:if="${watchlistName != null}" th:href="@{/watchlists/{id}(id=${archiveFilter.watchlistId()})}" th:text="${watchlistName}">Watchlist</a>
     <span th:if="${watchlistName != null}" aria-hidden="true">/</span>
-    <a th:if="${companyArchive != null}" th:href="@{/signals}" th:text="#{signals.all}">All signals</a>
-    <span th:if="${companyArchive != null}" aria-hidden="true">/</span>
-    <span th:text="${companyArchive != null ? companyArchive.symbol() : #messages.msg('signals.all')}">All signals</span>
+    <a th:if="${companyArchive != null or customAlert != null}" th:href="${customAlert != null ? '/custom-alerts' : '/signals'}" th:text="${customAlert != null ? #messages.msg('customAlerts.heading') : #messages.msg('signals.all')}">All signals</a>
+    <span th:if="${companyArchive != null or customAlert != null}" aria-hidden="true">/</span>
+    <span th:text="${customAlert != null ? customAlert.alert().name() : companyArchive != null ? companyArchive.symbol() : #messages.msg('signals.all')}">All signals</span>
   </nav>
 
   <header class="signal-archive-header technical-signal-archive-header">
     <div>
-      <div class="eyebrow" th:text="${companyArchive != null ? #messages.msg('signals.eyebrow.company') : (watchlistName != null ? #messages.msg('signals.eyebrow.watchlist') : #messages.msg('signals.eyebrow.all'))}">Technical signals</div>
-      <h1 class="title" th:text="${companyArchive != null ? #messages.msg('signals.companyHeading', companyArchive.symbol()) : #messages.msg('signals.all')}">All signals</h1>
+      <div class="eyebrow" th:text="${customAlert != null ? #messages.msg('customAlerts.archive.eyebrow') : companyArchive != null ? #messages.msg('signals.eyebrow.company') : (watchlistName != null ? #messages.msg('signals.eyebrow.watchlist') : #messages.msg('signals.eyebrow.all'))}">Technical signals</div>
+      <h1 class="title" th:text="${customAlert != null ? customAlert.alert().name() : companyArchive != null ? #messages.msg('signals.companyHeading', companyArchive.symbol()) : #messages.msg('signals.all')}">All signals</h1>
       <p th:if="${watchlistName != null}" class="panel-meta" th:text="${watchlistName + ' · ' + (archiveFilter.ticker().isEmpty() ? #messages.msg('signals.allTickers') : archiveFilter.ticker())}">Watchlist signals</p>
-      <p class="subtitle" th:text="${watchlistName != null ? #messages.msg('signals.subtitle.watchlist') : companyArchive != null ? #messages.msg('signals.subtitle.company', companyArchive.companyName()) : #messages.msg('signals.subtitle.all')}">Your saved technical signals.</p>
+      <p class="subtitle" th:text="${customAlert != null ? #messages.msg('customAlerts.archive.subtitle') : watchlistName != null ? #messages.msg('signals.subtitle.watchlist') : companyArchive != null ? #messages.msg('signals.subtitle.company', companyArchive.companyName()) : #messages.msg('signals.subtitle.all')}">Your saved technical signals.</p>
       <a th:if="${companyArchive != null}" class="btn-secondary company-signal-market-link" th:href="@{/stock/{symbol}(symbol=${companyArchive.symbol()})}" th:text="#{signals.openChart}">Open stock chart &rarr;</a>
     </div>
     <div class="signal-archive-total" aria-label="Total recorded signals" th:aria-label="#{signals.totalAria}">
@@ -39,6 +44,37 @@
       <span th:if="${archiveFilter.applied()}" th:text="#{signals.matching}">matching signals</span>
     </div>
   </header>
+
+  <section th:if="${customAlert != null}" th:with="alert=${customAlert.alert()},performance=${customAlert.performance()}"
+           class="glass-panel ca-archive-header" aria-labelledby="ca-archive-rule"
+           th:attr="data-ca-archive=${alert.id()},data-definition=${alert.definition().toString()},data-interval=${alert.interval()},data-trigger-mode=${alert.triggerMode()},data-active=${alert.active()}">
+    <div class="ca-archive-main">
+      <h2 id="ca-archive-rule" class="panel-title">
+        <span th:text="#{customAlerts.archive.rule}">The rule</span>
+        <span class="ca-status" th:classappend="${alert.active()} ? ' active' : ' paused'" th:text="${alert.active()} ? #{customAlerts.status.active} : #{customAlerts.status.paused}">Active</span>
+      </h2>
+      <p th:if="${!#strings.isEmpty(alert.description())}" class="ca-card-description" th:text="${alert.description()}">Note</p>
+      <p class="ca-summary" data-ca-archive-summary></p>
+      <div data-ca-archive-chips></div>
+      <p class="ca-card-targets" th:if="${!#lists.isEmpty(alert.targets())}">
+        <span th:text="#{customAlerts.archive.appliedTo}">Watches:</span>
+        <th:block th:each="target, row : ${alert.targets()}"><a th:href="@{/watchlists/{id}(id=${target.watchlistId()})}" class="text-link" th:text="${target.watchlistName()}">List</a><span th:text="${target.scope() == 'ALL_MEMBERS' ? ' (' + #messages.msg('customAlerts.archive.allStocks', target.stocks()) + ')' : ' (' + #strings.listJoin(target.symbols(), ', ') + ')'}"></span><span th:unless="${row.last}"> · </span></th:block>
+      </p>
+      <p class="ca-card-targets is-warning" th:if="${#lists.isEmpty(alert.targets())}" th:text="#{customAlerts.archive.notApplied}">Not applied to any watchlist yet.</p>
+    </div>
+    <div class="ca-archive-stats">
+      <div class="ca-stat"><strong th:text="${alert.matching()}">3</strong><span class="learn-term" data-learn="customAlerts.matching" th:attr="data-learn-title=#{customAlerts.archive.matchingNow}" th:text="#{customAlerts.archive.matchingOf(${alert.stocks()})}">of 42 match now</span></div>
+      <div class="ca-stat"><strong th:text="${performance.triggers()}">14</strong><span th:text="#{customAlerts.archive.triggers}">triggers</span></div>
+      <div class="ca-stat" th:if="${performance.completed() > 0}"><strong th:text="${#numbers.formatDecimal(performance.positiveShare(), 1, 0) + '%'}">64%</strong><span class="learn-term" data-learn="customAlerts.outcome" th:attr="data-learn-title=#{customAlerts.archive.higherAfterTitle}" th:text="#{customAlerts.archive.higherAfter(${alert.outcomeCandles()})}">higher after 10 candles</span></div>
+      <div class="ca-stat" th:if="${performance.medianReturn() != null}"><strong th:text="${(performance.medianReturn() >= 0 ? '+' : '') + #numbers.formatDecimal(performance.medianReturn(), 1, 2) + '%'}">+2.10%</strong><span th:text="#{customAlerts.archive.median}">median change</span></div>
+    </div>
+    <div class="ca-archive-actions">
+      <a class="btn-secondary" th:href="@{/custom-alerts/{id}/edit(id=${alert.id()})}" th:text="#{customAlerts.archive.edit}">Edit alert</a>
+      <button type="button" class="btn-secondary" data-ca-archive-toggle th:text="${alert.active()} ? #{customAlerts.archive.pause} : #{customAlerts.archive.resume}">Pause</button>
+      <span class="wl-status" role="status" data-ca-archive-status></span>
+    </div>
+    <p class="ca-disclaimer" th:if="${performance.completed() > 0}" th:text="#{customAlerts.archive.disclaimer}">Price changes are measured close to close after each trigger. Informational only, not financial advice.</p>
+  </section>
 
   <section class="signal-archive-shell" aria-labelledby="signal-archive-heading">
     <div class="signal-archive-toolbar">
@@ -67,6 +103,11 @@
             class="signal-archive-sort-form archive-filter-form"
             th:aria-label="${companyArchive != null ? #messages.msg('signals.sortCompanyAria', companyArchive.symbol()) : #messages.msg('signals.sortAllAria')}">
         <input th:if="${archiveFilter.watchlistId() != null}" type="hidden" name="watchlistId" th:value="${archiveFilter.watchlistId()}">
+        <input th:if="${archiveFilter.customAlertId() != null}" type="hidden" name="customAlertId" th:value="${archiveFilter.customAlertId()}">
+        <fieldset th:if="${archiveTypes != null and !#lists.isEmpty(archiveTypes)}" class="archive-state-filter archive-type-filter">
+          <legend><span class="learn-label"><th:block th:text="#{signals.types}">Signal types</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('signals.types', #{signals.types})}"></span></span></legend>
+          <label th:each="type : ${archiveTypes}"><input type="checkbox" name="type" th:value="${type}" th:checked="${archiveFilter.types().contains(type)}"><span th:text="#{${'signals.type.' + type}}">Candlestick</span></label>
+        </fieldset>
         <fieldset class="archive-state-filter">
           <legend><span class="learn-label"><th:block th:text="#{signals.showSignals}">Show signals</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('signals.state', #{signals.showSignals})}"></span></span></legend>
           <label><input type="radio" name="state" value="all" th:checked="${archiveFilter.state() == 'all'}"><span th:text="#{signals.state.all}">All</span></label>
@@ -119,7 +160,7 @@
 
     <form th:if="${!#lists.isEmpty(archive.signals())}"
           method="post"
-          th:action="${companyArchive != null} ? @{/alerts/{id}/signals/delete(id=${companyArchive.representativeAlertId()})} : (${watchlistName != null} ? @{/signals/mixed/delete} : @{/signals/delete})"
+          th:action="${companyArchive != null} ? @{/alerts/{id}/signals/delete(id=${companyArchive.representativeAlertId()})} : @{/signals/mixed/delete}"
           class="signal-delete-form"
           data-signal-delete-form
           data-archive-kind="signal">
@@ -129,6 +170,8 @@
       <input type="hidden" name="state" th:value="${archiveFilter.state()}">
       <input type="hidden" name="ticker" th:value="${archiveFilter.ticker()}">
       <input th:if="${archiveFilter.watchlistId() != null}" type="hidden" name="watchlistId" th:value="${archiveFilter.watchlistId()}">
+      <input th:if="${archiveFilter.customAlertId() != null}" type="hidden" name="customAlertId" th:value="${archiveFilter.customAlertId()}">
+      <input type="hidden" name="type" th:value="${archiveFilter.typeParameter()}">
 
       <div class="signal-delete-toolbar">
         <label class="signal-select-all-control">
@@ -183,7 +226,43 @@
               </details>
               <details class="archive-row-details"><summary th:text="#{signals.transactionDetails}">Transaction details</summary><div class="archive-row-detail-content"><span th:text="#{signals.transactionDate(${#temporals.format(activity.transactionDate(), 'dd MMM yyyy')})}"></span></div></details>
             </div>
-            <div th:if="${entry.activity() == null}" class="signal-archive-record">
+            <div th:if="${entry.trigger() != null}" th:with="trigger=${entry.trigger()}" class="signal-archive-record">
+              <label class="signal-select-control">
+                <input type="checkbox" name="signalKeys" th:value="${trigger.key()}" class="signal-select-checkbox" data-signal-checkbox th:aria-label="#{signals.selectAria(${trigger.title()}, ${trigger.symbol()})}">
+              </label>
+              <a th:href="${trigger.custom()} ? @{${trigger.detailUrl()}(returnTo=${archiveReturnUrl})} : @{${trigger.detailUrl()}}" class="signal-archive-row" th:classappend="${trigger.hasBeenRead()} ? ' is-read' : ' is-unread'"
+                 th:aria-label="${#messages.msg(trigger.hasBeenRead() ? 'signals.openAria.read' : 'signals.openAria.unread', trigger.title(), trigger.symbol())}">
+                <div class="signal-archive-pattern">
+                  <strong><span th:unless="${trigger.hasBeenRead()}" class="unread-dot" title="Unread" th:title="#{signals.state.unread}"><span class="visually-hidden" th:text="#{signals.unreadPrefix}">Unread: </span></span><span th:text="${trigger.title()}">Breakout line</span></strong>
+                  <div class="latest-signal-tags">
+                    <span class="latest-family-tag" th:classappend="${trigger.custom()} ? ' custom-alert-tag' : ' chart-alert-tag'" th:text="${trigger.custom()} ? #{signals.type.custom} : #{signals.type.chart}">Chart alert</span>
+                    <span th:if="${trigger.custom()}" class="latest-direction-tag" th:text="#{signals.conditionsMet(${trigger.detail()})}">3/3 conditions met</span>
+                    <span th:unless="${trigger.custom()}" class="latest-direction-tag" th:text="${#messages.msgOrNull('chartAlert.condition.' + trigger.detail()) ?: trigger.detail()}">Crossed up</span>
+                  </div>
+                </div>
+                <div class="signal-archive-company"><strong th:text="${trigger.symbol()}">AAPL</strong><span th:text="${trigger.companyName()}">Apple Inc.</span></div>
+                <span class="latest-interval" th:text="${#messages.msg('common.interval.' + trigger.interval().name())}">Daily</span>
+                <div class="signal-archive-date"><time th:text="${#temporals.format(trigger.received(), 'dd MMM yyyy, HH:mm')}">02 Aug 2026, 11:30</time></div>
+                <span class="signal-lifecycle-pill confirmed" th:text="${trigger.status() == 'MATCHED_ON_APPLY'} ? #{signals.matchedWhenApplied} : #{home.chartAlertTriggered}">Triggered</span>
+                <div class="latest-confidence"><strong aria-hidden="true">&mdash;</strong><span class="visually-hidden" th:text="#{signals.setupScoreUnavailable}">Setup score unavailable</span></div>
+                <div th:if="${trigger.custom()}" class="signal-archive-result outcome">
+                  <strong th:if="${trigger.outcomeReturn() != null}" th:classappend="${trigger.outcomeReturn() >= 0} ? ' positive' : ' negative'"
+                          th:text="${(trigger.outcomeReturn() >= 0 ? '+' : '') + #numbers.formatDecimal(trigger.outcomeReturn(), 1, 2) + '%'}">+2.00%</strong>
+                  <strong th:unless="${trigger.outcomeReturn() != null}" class="unavailable" th:text="#{signals.outcomePending}">Pending</strong>
+                  <span th:text="#{signals.priceSinceTrigger}">Price since the trigger</span>
+                </div>
+                <div th:unless="${trigger.custom()}" class="signal-archive-result"><strong th:text="#{common.notAvailable}">N/A</strong><span th:text="#{signals.noTradePlan}">No technical trade plan</span></div>
+                <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+              </a>
+              <details class="row-menu">
+                <summary th:aria-label="#{signals.moreActionsAria(${trigger.title()}, ${trigger.symbol()})}" title="More actions" th:title="#{virtualTrades.moreActions}"><span aria-hidden="true">&middot;&middot;&middot;</span></summary>
+                <div class="row-menu-panel">
+                  <button type="submit" name="singleSignalKey" th:value="${trigger.key()}" class="signal-archive-delete-button" data-single-delete th:data-signal-label="#{signals.itemLabel(${trigger.title()}, ${trigger.symbol()})}" th:aria-label="#{signals.deleteAria(${trigger.title()}, ${trigger.symbol()})}" th:text="#{virtualTrades.delete}">Delete</button>
+                </div>
+              </details>
+              <details class="archive-row-details"><summary th:text="#{signals.candleDetails}">Candle and price details</summary><div class="archive-row-detail-content"><span th:text="#{signals.triggerCandle(${#temporals.format(trigger.candleDate(), 'dd MMM yyyy')})}">Completed candle 14 Oct 2026</span></div></details>
+            </div>
+            <div th:if="${entry.signal() != null}" class="signal-archive-record">
               <label class="signal-select-control">
                 <input type="checkbox"
                        name="signalIds"
@@ -276,11 +355,11 @@
 
     <nav th:if="${archive.totalPages() > 1}" class="signal-archive-pagination" aria-label="Signal archive pages" th:aria-label="#{signals.pagesAria}">
       <a th:if="${archive.hasPrevious()}"
-         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()})}"
+         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()},type=${archiveFilter.typeParameter()},customAlertId=${archiveFilter.customAlertId()})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() - 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()},type=${archiveFilter.typeParameter()},customAlertId=${archiveFilter.customAlertId()})}"
          class="btn-secondary" th:text="#{common.previousArrow}">&larr; Previous</a>
       <span th:text="#{common.pageOf(${archive.displayPage()}, ${archive.totalPages()})}">Page 1 of 3</span>
       <a th:if="${archive.hasNext()}"
-         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()})}"
+         th:href="${companyArchive != null} ? @{/alerts/{id}(id=${companyArchive.representativeAlertId()},sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()},type=${archiveFilter.typeParameter()},customAlertId=${archiveFilter.customAlertId()})} : @{/signals(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page() + 1},state=${archiveFilter.state()},ticker=${archiveFilter.ticker()},watchlistId=${archiveFilter.watchlistId()},type=${archiveFilter.typeParameter()},customAlertId=${archiveFilter.customAlertId()})}"
          class="btn-secondary" th:text="#{common.nextArrow}">Next &rarr;</a>
     </nav>
   </section>

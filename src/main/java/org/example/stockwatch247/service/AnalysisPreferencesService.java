@@ -71,7 +71,9 @@ public class AnalysisPreferencesService {
                 checked(form, "email.signals"),
                 checked(form, "email.signals"),
                 checked(form, "email.buy"),
-                checked(form, "email.sell")
+                checked(form, "email.sell"),
+                checked(form, "email.chartAlerts"),
+                checked(form, "email.customAlerts")
         );
         StoredPreferences stored = new StoredPreferences(PROFILE_VERSION, profiles, email);
         String payload = write(stored);
@@ -189,6 +191,18 @@ public class AnalysisPreferencesService {
 
     public boolean allowsTechnicalOutlookEmail(User user, TimeInterval interval) {
         return get(user).email().intervalEnabled(interval);
+    }
+
+    /** Chart alert emails need the shared signal-email switch and their own choice. */
+    public boolean allowsChartAlertEmail(User user, TimeInterval interval) {
+        EmailPreferences email = get(user).email();
+        return email.intervalEnabled(interval) && email.chartAlertsEnabled();
+    }
+
+    /** Custom alert emails need the shared signal-email switch and their own choice (each alert has its own too). */
+    public boolean allowsCustomAlertEmail(User user) {
+        EmailPreferences email = get(user).email();
+        return email.signalsEnabled() && email.customAlertsEnabled();
     }
 
     @Transactional(readOnly = true)
@@ -504,12 +518,24 @@ public class AnalysisPreferencesService {
                                    boolean confirmed, boolean invalidated, boolean expired,
                                    boolean insider, boolean congressional,
                                    boolean daily, boolean weekly, boolean monthly,
-                                   boolean buy, boolean sell) {
+                                   boolean buy, boolean sell, Boolean chartAlerts, Boolean customAlerts) {
         public EmailPreferences {
             newHarmonic = newHarmonic == null ? Boolean.TRUE : newHarmonic;
+            // Saved before these choices existed: chart alerts were emailed with every signal email.
+            chartAlerts = chartAlerts == null ? Boolean.TRUE : chartAlerts;
+            customAlerts = customAlerts == null ? Boolean.TRUE : customAlerts;
             // Keep legacy JSON fields readable, with one delivery choice for all intervals.
             weekly = daily;
             monthly = daily;
+        }
+
+        public EmailPreferences(boolean newCandlestick, boolean newElliott, Boolean newHarmonic,
+                                boolean confirmed, boolean invalidated, boolean expired,
+                                boolean insider, boolean congressional,
+                                boolean daily, boolean weekly, boolean monthly,
+                                boolean buy, boolean sell) {
+            this(newCandlestick, newElliott, newHarmonic, confirmed, invalidated, expired,
+                    insider, congressional, daily, weekly, monthly, buy, sell, true, true);
         }
 
         public EmailPreferences(boolean newCandlestick, boolean newElliott,
@@ -523,12 +549,16 @@ public class AnalysisPreferencesService {
 
         public static EmailPreferences factory() {
             return new EmailPreferences(true, true, true, true, true, true, true, true,
-                    true, true, true, true, true);
+                    true, true, true, true, true, true, true);
         }
 
         public boolean signalsEnabled() { return daily; }
 
         public boolean harmonicEnabled() { return Boolean.TRUE.equals(newHarmonic); }
+
+        public boolean chartAlertsEnabled() { return Boolean.TRUE.equals(chartAlerts); }
+
+        public boolean customAlertsEnabled() { return Boolean.TRUE.equals(customAlerts); }
 
         public boolean intervalEnabled(TimeInterval interval) {
             return daily;

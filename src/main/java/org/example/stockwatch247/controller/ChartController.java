@@ -111,6 +111,13 @@ public class ChartController {
         this.corporateActionService = service;
     }
 
+    private org.example.stockwatch247.service.customalert.SharedAnalysisStore sharedAnalysis;
+
+    @Autowired(required = false)
+    void configureSharedAnalysis(org.example.stockwatch247.service.customalert.SharedAnalysisStore sharedAnalysis) {
+        this.sharedAnalysis = sharedAnalysis;
+    }
+
     /** Splits found in the stored history, for split markers on the price chart. */
     @GetMapping("/{symbol}/splits")
     public List<CorporateActionService.SplitView> getSplits(@PathVariable String symbol,
@@ -120,16 +127,27 @@ public class ChartController {
         return corporateActionService == null ? List.of() : corporateActionService.splits(symbol, interval);
     }
 
+    public CandlePageResponse getHistoricalCandles(String symbol, String interval, Long before, int limit) {
+        return getHistoricalCandles(symbol, interval, before, limit, null);
+    }
+
     @GetMapping("/{symbol}/candles")
     public CandlePageResponse getHistoricalCandles(
             @PathVariable String symbol,
             @RequestParam(defaultValue = "1d") String interval,
             @RequestParam(required = false) Long before,
-            @RequestParam(defaultValue = "1000") int limit) {
+            @RequestParam(defaultValue = "1000") int limit,
+            Principal principal) {
         symbol = SecurityInputValidator.requireMarketSymbol(symbol);
         interval = SecurityInputValidator.requireInterval(interval);
         before = SecurityInputValidator.requireBeforeTimestamp(before);
         MarketDataService.CandlePage page = marketDataService.loadCandlePage(symbol, interval, before, limit);
+        // A stock opened with its daily candles stored gets its analysis prepared in the background (not followed).
+        if (before == null && "1d".equals(interval) && principal != null && sharedAnalysis != null && userRepository != null) {
+            String opened = symbol;
+            org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).ifPresent(user ->
+                    stockAssetRepository.findByTickerSymbolIgnoreCase(opened).ifPresent(asset -> sharedAnalysis.lookup(user, asset)));
+        }
         return new CandlePageResponse(
                 page.candles().stream().map(CandleResponse::from).toList(),
                 page.nextCursor(),
@@ -255,7 +273,8 @@ public class ChartController {
                 symbol,
                 validatedInterval,
                 ElliottWaveDetectionService.DETECTION_RULE_VERSION,
-                java.util.Arrays.asList(settings, completionCutoff(waveInterval)),
+                // The completed candles are fingerprinted by the store: one entry per profile, replaced as candles complete.
+                java.util.Arrays.asList(settings),
                 ElliottWaveHistoryOverlay.class,
                 () -> calculateHistoricalElliottWaves(
                         cacheSymbol, validatedInterval, null, historicalDetector, waveInterval));
@@ -419,8 +438,7 @@ public class ChartController {
                 symbol,
                 validatedInterval,
                 HarmonicPatternDetectionService.RULE_VERSION,
-                java.util.Arrays.asList(preferences.version(), preferences.rules(), preferences.patternRules(),
-                        completionCutoff(harmonicInterval(validatedInterval))),
+                java.util.Arrays.asList(preferences.version(), preferences.rules(), preferences.patternRules()),
                 HarmonicHistoryOverlay.class,
                 () -> calculateHistoricalHarmonicFormations(
                         cacheSymbol, validatedInterval, null, historicalDetector));

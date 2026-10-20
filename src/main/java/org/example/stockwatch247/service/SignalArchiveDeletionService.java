@@ -23,6 +23,12 @@ public class SignalArchiveDeletionService {
     private final AlertEventRepository alertEventRepository;
     private final CongressionalTradeDeliveryRepository congressionalDeliveryRepository;
     private final InsiderTradeDeliveryRepository insiderDeliveryRepository;
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureJdbc(org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
 
     public SignalArchiveDeletionService(
             AlertEventRepository alertEventRepository,
@@ -34,14 +40,54 @@ public class SignalArchiveDeletionService {
     }
 
     @Transactional
-    public int deleteMixedSignals(User user, Collection<Long> signalIds, Collection<String> activityKeys) {
+    public int deleteMixedSignals(User user, Collection<Long> signalIds, Collection<String> keys) {
+        // Chart and custom alert triggers share the archive's keyed selection with filings.
+        List<String> alertKeys = keys == null ? List.of() : keys.stream()
+                .filter(key -> key != null && (key.startsWith("CHART:") || key.startsWith("CUSTOM:"))).toList();
+        List<String> activityKeys = keys == null ? List.of() : keys.stream().filter(key -> !alertKeys.contains(key)).toList();
         int technicalCount = signalIds == null ? 0 : signalIds.size();
-        int activityCount = activityKeys == null ? 0 : activityKeys.size();
-        if (technicalCount + activityCount == 0 || technicalCount + activityCount > MAX_DELETE_SELECTION)
+        int activityCount = activityKeys.size();
+        int total = technicalCount + activityCount + alertKeys.size();
+        if (total == 0 || total > MAX_DELETE_SELECTION)
             throw new IllegalArgumentException("Select between 1 and 100 signals to delete.");
-        // One transaction: a foreign or invalid activity ID also rolls back technical deletions.
+        // One transaction: a foreign or invalid ID also rolls back the other deletions.
         return (technicalCount == 0 ? 0 : deleteTechnicalSignals(user, signalIds))
-                + (activityCount == 0 ? 0 : deleteActivitySignals(user, activityKeys));
+                + (activityCount == 0 ? 0 : deleteActivitySignals(user, activityKeys))
+                + (alertKeys.isEmpty() ? 0 : deleteAlertTriggers(user, alertKeys));
+    }
+
+    /** Chart and custom alert triggers ("CHART:12", "CUSTOM:7"); they stay out of every archive and count. */
+    @Transactional
+    public int deleteAlertTriggers(User user, Collection<String> requestedKeys) {
+        requireUser(user);
+        java.util.Map<String, List<Long>> ids = new java.util.HashMap<>();
+        for (String key : new LinkedHashSet<>(requestedKeys)) {
+            int separator = key.indexOf(':');
+            try {
+                long id = Long.parseLong(key.substring(separator + 1));
+                if (id <= 0) throw new NumberFormatException("Non-positive id");
+                ids.computeIfAbsent(key.substring(0, separator), kind -> new java.util.ArrayList<>()).add(id);
+            } catch (RuntimeException invalid) {
+                throw new IllegalArgumentException("The signal selection is invalid.");
+            }
+        }
+        int deleted = 0;
+        int requested = 0;
+        for (var entry : ids.entrySet()) {
+            requested += entry.getValue().size();
+            String table = entry.getKey().equals("CHART") ? "chart_alert_events" : "custom_alert_events";
+            String owner = entry.getKey().equals("CHART") ? "chart_alerts" : "custom_alerts";
+            Long[] values = entry.getValue().toArray(Long[]::new);
+            deleted += jdbc.update(connection -> {
+                var statement = connection.prepareStatement("update " + table + " e set deleted_at = current_timestamp from "
+                        + owner + " a where a.id = e.alert_id and a.user_id = ? and e.deleted_at is null and e.id = any(?)");
+                statement.setLong(1, user.getId());
+                statement.setArray(2, connection.createArrayOf("bigint", values));
+                return statement;
+            });
+        }
+        requireCompleteOwnership(requested, deleted);
+        return deleted;
     }
 
     @Transactional

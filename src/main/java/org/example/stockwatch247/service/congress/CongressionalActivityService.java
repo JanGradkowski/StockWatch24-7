@@ -126,6 +126,34 @@ public class CongressionalActivityService {
         return getState(user, symbol);
     }
 
+    /**
+     * Loads one stock's disclosure history for custom alerts that read it when nobody follows the stock for
+     * congressional trades (the regular poll only sees recent disclosures). Uses the same cache, daily cooldown
+     * and request budget as a user's refresh. Returns true when a provider request was made.
+     */
+    public boolean backfillForCustomAlerts(StockAsset asset) {
+        if (!enabled || asset.getInstrumentType() != InstrumentType.EQUITY) return false;
+        LocalDate windowEnd = LocalDate.now(ZoneOffset.UTC);
+        LocalDate windowStart = windowEnd.minusDays(historyDays - 1L);
+        String owner = cacheOwner + "-alerts-" + asset.getId();
+        // User 0 is the background budget: two uncached refreshes a minute across all custom alerts.
+        HistoryCacheClaim claim = tradeStore.claimHistoryRefresh(asset.getId(), 0L, windowStart, windowEnd, cacheTtl, cacheLease, owner);
+        if (claim.status() != CacheClaimStatus.CLAIMED) return false;
+        try {
+            List<ProviderTrade> trades = provider.fetchTickerHistory(asset.getTickerSymbol()).trades().stream()
+                    .filter(trade -> asset.getTickerSymbol().equalsIgnoreCase(trade.ticker()))
+                    .filter(trade -> !trade.transactionDate().isBefore(windowStart) && !trade.transactionDate().isAfter(windowEnd))
+                    .toList();
+            tradeStore.upsertTrades(asset, provider.providerName(), trades);
+            tradeStore.completeHistoryRefresh(asset.getId(), windowStart, windowEnd, owner);
+        } catch (RuntimeException exception) {
+            tradeStore.failHistoryRefresh(asset.getId(), owner, exception);
+            log.warn("Congressional history for custom alerts on {} is unavailable after {}.",
+                    asset.getTickerSymbol(), exception.getClass().getSimpleName());
+        }
+        return true;
+    }
+
     public HistoryResponse getHistory(User user, String symbol) {
         StockAsset asset = requireEligibleStock(symbol);
         LocalDate windowEnd = LocalDate.now(ZoneOffset.UTC);

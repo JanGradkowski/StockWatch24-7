@@ -76,13 +76,30 @@ public class CongressionalActivityPollingService {
         this.deliveryOwner = "congress-delivery-" + instanceId;
     }
 
+    /** Stocks no one follows for congressional trades but whose disclosures a custom alert reads. */
+    private org.example.stockwatch247.service.customalert.CustomAlertActivityTargets customAlertTargets;
+    private org.example.stockwatch247.repository.StockAssetRepository stockAssets;
+    private CongressionalActivityService activityService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureCustomAlerts(org.example.stockwatch247.service.customalert.CustomAlertActivityTargets customAlertTargets,
+                               org.example.stockwatch247.repository.StockAssetRepository stockAssets,
+                               CongressionalActivityService activityService) {
+        this.customAlertTargets = customAlertTargets;
+        this.stockAssets = stockAssets;
+        this.activityService = activityService;
+    }
+
     @Scheduled(
             fixedDelayString = "${congressional-activity.poll-check-delay-ms:60000}",
             initialDelayString = "${congressional-activity.poll-initial-delay-ms:30000}")
     public void pollForNewDisclosures() {
-        if (!enabled || subscriptionRepository.countByActiveTrue() == 0) {
+        List<StockAsset> alertAssets = enabled && customAlertTargets != null && stockAssets != null
+                ? stockAssets.findAllById(customAlertTargets.assets("CONGRESS")) : List.of();
+        if (!enabled || subscriptionRepository.countByActiveTrue() == 0 && alertAssets.isEmpty()) {
             return;
         }
+        backfillAlertHistory(alertAssets);
         PollClaimStatus claim = tradeStore.claimProviderPoll(
                 provider.providerName(),
                 pollInterval,
@@ -101,6 +118,8 @@ public class CongressionalActivityPollingService {
                 StockAsset asset = subscription.getStockAsset();
                 trackedAssets.putIfAbsent(asset.getTickerSymbol().toUpperCase(Locale.ROOT), asset);
             }
+            // Disclosures for custom alerts are stored like any other; deliveries still go only to followers.
+            alertAssets.forEach(asset -> trackedAssets.putIfAbsent(asset.getTickerSymbol().toUpperCase(Locale.ROOT), asset));
 
             log.info("Congressional activity check started for {} followed stock(s).",
                     trackedAssets.size());
@@ -139,6 +158,20 @@ public class CongressionalActivityPollingService {
             tradeStore.failProviderPoll(provider.providerName(), pollOwner, exception);
             log.warn("Congressional activity poll could not be completed: {}",
                     exception.getClass().getSimpleName());
+        }
+    }
+
+    /** At most one history request per check, for a custom-alert stock whose history was never loaded. */
+    private void backfillAlertHistory(List<StockAsset> alertAssets) {
+        if (activityService == null) return;
+        for (StockAsset asset : alertAssets) {
+            if (tradeStore.historyLastSuccess(asset.getId()) != null) continue;
+            try {
+                if (activityService.backfillForCustomAlerts(asset)) return;
+            } catch (RuntimeException exception) {
+                log.warn("Congressional history backfill for {} failed: {}", asset.getTickerSymbol(), exception.getClass().getSimpleName());
+                return;
+            }
         }
     }
 

@@ -2124,10 +2124,17 @@ public class ElliottWaveDetectionService {
     public List<DevelopingImpulse> findDevelopingImpulses(
             List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles) {
-        return findDevelopingImpulses(
-                recentCandles, lowerDegreeCandles, AnalysisComputationScope.memo(
-                        List.of("elliott-leg-context", detectionRules, scoringModel, presentSignalLookbackCandles),
-                        DevelopingScanContext::new));
+        return findDevelopingImpulses(recentCandles, lowerDegreeCandles, sharedScanContext());
+    }
+
+    /**
+     * The leg context the scans of one symbol job share (a new one outside a job). Counts as of neighbouring
+     * candles reuse the lower-degree validation of the legs they have in common, in either order.
+     */
+    public DevelopingScanContext sharedScanContext() {
+        return AnalysisComputationScope.memo(
+                List.of("elliott-leg-context", detectionRules, scoringModel, presentSignalLookbackCandles),
+                DevelopingScanContext::new);
     }
 
     /**
@@ -2393,7 +2400,15 @@ public class ElliottWaveDetectionService {
 
     List<DevelopingObservation> newConfluenceObservations(List<EnrichedCandle> current,
             List<EnrichedCandle> previous, DevelopingScanContext context) {
-        String inputKey = AnalysisWork.key(List.of(current, previous));
+        return newConfluenceObservations(current, previous, context, AnalysisWork.key(List.of(current, previous)));
+    }
+
+    /**
+     * As above, with {@code inputKey} naming the two prefixes exactly (a caller that cuts both from one candle list
+     * names them by that list and their ends, instead of spelling out every candle of both).
+     */
+    List<DevelopingObservation> newConfluenceObservations(List<EnrichedCandle> current,
+            List<EnrichedCandle> previous, DevelopingScanContext context, String inputKey) {
         String observationKey = AnalysisWork.key(List.of(inputKey, detectionRules, scoringModel,
                 presentSignalLookbackCandles, reuseCorrectionSuffixes()));
         long now = java.time.Instant.now().getEpochSecond();

@@ -18,7 +18,9 @@ function setup() {
 
 test('all types are allowed by default without enabling any follows', () => {
   const s = setup();
-  assert.equal(s.settings.allowedTypes().length, 6);
+  assert.equal(s.settings.allowedTypes().length, 7);
+  // Saving sends the allowed list, so a type missing here would be switched off on every save.
+  assert.ok(s.settings.allowedTypes().includes('CUSTOM'));
   assert.equal(s.settings.read().some(value => value.watch), false);
   assert.equal(s.settings.restrictionsChanged(), false);
   s.dom.window.close();

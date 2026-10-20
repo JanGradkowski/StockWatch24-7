@@ -24,11 +24,17 @@ public class TrackedInstrumentGuard {
             select stock_asset_id from alert_rules where user_id = ? and is_active = true
             union
             select stock_asset_id from technical_outlook_subscriptions where user_id = ? and is_active = true
+            union
+            select target.stock_asset_id from custom_alert_effective_targets target
+            join custom_alerts alert on alert.id = target.alert_id where alert.user_id = ? and alert.active
             """;
     private static final String TRACKED_GLOBALLY = """
             select stock_asset_id from alert_rules where is_active = true
             union
             select stock_asset_id from technical_outlook_subscriptions where is_active = true
+            union
+            select target.stock_asset_id from custom_alert_effective_targets target
+            join custom_alerts alert on alert.id = target.alert_id where alert.active
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -151,9 +157,72 @@ public class TrackedInstrumentGuard {
         }
     }
 
+    /**
+     * Whether adding these instruments keeps the account and the deployment within their capacity: the
+     * check for applying a custom alert to many stocks at once. Instruments already tracked cost nothing.
+     */
+    public void enforceCapacity(User user, Collection<Long> assetIds) {
+        enforceCapacity(user, assetIds, null);
+    }
+
+    /**
+     * The same check for a custom alert being saved: its own stocks are left out of what is already tracked,
+     * so the stocks it is about to cover count as new.
+     */
+    public void enforceCapacity(User user, Collection<Long> assetIds, Long customAlertId) {
+        if (assetIds.isEmpty()) return;
+        long except = customAlertId == null ? -1 : customAlertId;
+        jdbcTemplate.queryForObject(
+                "select lock_name from security_resource_locks where lock_name = ? for update",
+                String.class, QUOTA_LOCK);
+        Long[] ids = assetIds.toArray(Long[]::new);
+        String trackedExcept = TRACKED_FOR_USER.replace("where alert.user_id = ? and alert.active",
+                "where alert.user_id = ? and alert.active and alert.id <> ?");
+        long newForUser = count(connection -> {
+            var statement = connection.prepareStatement("select count(*) from unnest(?) id where id not in (" + trackedExcept + ")");
+            statement.setArray(1, connection.createArrayOf("bigint", ids));
+            for (int index = 2; index <= 4; index++) statement.setLong(index, user.getId());
+            statement.setLong(5, except);
+            return statement;
+        });
+        long tracked = count(connection -> {
+            var statement = connection.prepareStatement("select count(*) from (" + trackedExcept + ") tracked");
+            for (int index = 1; index <= 3; index++) statement.setLong(index, user.getId());
+            statement.setLong(4, except);
+            return statement;
+        });
+        long room = Math.max(0, maximumPerUser - tracked);
+        if (newForUser > room) {
+            throw new TechnicalOutlookCapacityException("This alert would track " + newForUser
+                    + " more instruments, but your account has room for " + room
+                    + ". Apply it to fewer stocks or stop following others.");
+        }
+        long newGlobally = count(connection -> {
+            var statement = connection.prepareStatement("select count(*) from unnest(?) id where id not in ("
+                    + TRACKED_GLOBALLY.replace("where alert.active", "where alert.active and alert.id <> ?") + ")");
+            statement.setArray(1, connection.createArrayOf("bigint", ids));
+            statement.setLong(2, except);
+            return statement;
+        });
+        long globallyTracked = count(connection -> {
+            var statement = connection.prepareStatement("select count(*) from ("
+                    + TRACKED_GLOBALLY.replace("where alert.active", "where alert.active and alert.id <> ?") + ") tracked");
+            statement.setLong(1, except);
+            return statement;
+        });
+        if (newGlobally > 0 && globallyTracked + newGlobally > maximumGlobal) {
+            throw new TechnicalOutlookCapacityException("Global market-data tracking capacity has been reached.");
+        }
+    }
+
+    private long count(org.springframework.jdbc.core.PreparedStatementCreator query) {
+        Long value = jdbcTemplate.query(query, result -> result.next() ? result.getLong(1) : 0L);
+        return value == null ? 0 : value;
+    }
+
     public long trackedCount(User user) {
         Long count = jdbcTemplate.queryForObject("select count(*) from (" + TRACKED_FOR_USER + ") tracked",
-                Long.class, user.getId(), user.getId());
+                Long.class, user.getId(), user.getId(), user.getId());
         return count == null ? 0 : count;
     }
 
@@ -162,6 +231,7 @@ public class TrackedInstrumentGuard {
         if (symbols.isEmpty()) return Set.of();
         String placeholders = String.join(",", java.util.Collections.nCopies(symbols.size(), "?"));
         java.util.List<Object> arguments = new java.util.ArrayList<>();
+        arguments.add(user.getId());
         arguments.add(user.getId());
         arguments.add(user.getId());
         arguments.addAll(symbols);
@@ -185,7 +255,7 @@ public class TrackedInstrumentGuard {
     private boolean tracksForUser(User user, StockAsset asset) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "select exists (select 1 from (" + TRACKED_FOR_USER + ") tracked where stock_asset_id = ?)",
-                Boolean.class, user.getId(), user.getId(), asset.getId()));
+                Boolean.class, user.getId(), user.getId(), user.getId(), asset.getId()));
     }
 
     private boolean trackedGlobally(StockAsset asset) {

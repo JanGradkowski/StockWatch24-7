@@ -1602,7 +1602,7 @@ public class AlertNotificationService {
      */
     public boolean sendChartAlertEmail(User user, org.example.stockwatch247.model.enums.TimeInterval interval,
                                        String subject, String body, long eventId) {
-        if (!emailEnabled || preferencesService != null && !preferencesService.allowsTechnicalOutlookEmail(user, interval)) {
+        if (!emailEnabled || preferencesService != null && !preferencesService.allowsChartAlertEmail(user, interval)) {
             return false;
         }
         SimpleMailMessage message = baseMessage(user, subject);
@@ -1610,6 +1610,23 @@ public class AlertNotificationService {
         localize(message);
         if (outbox != null) {
             outbox.enqueue(message, null, java.time.Duration.ofDays(7), "chart-alert:" + eventId, "INITIAL");
+        } else {
+            send(message);
+        }
+        return true;
+    }
+
+    /**
+     * A custom alert triggered for one or more stocks in one check. The caller has already checked the
+     * alert's own email switch and the account's choices; the outbox drops it if the account paused emails.
+     */
+    public boolean sendCustomAlertEmail(User user, String subject, String body, String viewPath, String deduplicationKey) {
+        if (!emailEnabled) return false;
+        SimpleMailMessage message = baseMessage(user, subject);
+        message.setText(body);
+        localize(message, viewPath);
+        if (outbox != null) {
+            outbox.enqueue(message, null, java.time.Duration.ofDays(7), deduplicationKey, "INITIAL");
         } else {
             send(message);
         }

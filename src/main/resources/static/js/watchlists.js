@@ -11,6 +11,8 @@
     i18n.plural('watchlists.followed', list.monitored, list.monitored), i18n.plural('watchlists.unread', list.unread, list.unread)].join(' · ');
   const stockCount = count => i18n.plural('watchlists.stocks', count, count);
   const root = document.querySelector('[data-named-watchlists]');
+  // Learning-mode explanations (js.learn.<key>) used on this page.
+  const LEARN_OPTIONS = { customStrip: 'customAlerts.watchlistStrip', customChip: 'customAlerts.watchlistChip' };
   let lists = [];
   const selections = new Map();
   const button = (text, handler, style = 'btn-secondary') => {
@@ -143,7 +145,7 @@
       });
     }
     bulk.append(pageLabel, selectedCount, viewSelected, manageSelected, removeSelected, clear);
-    body.append(actions, toolbar, bulk, status, tableArea, pages); updateSelection();
+    body.append(actions, customAlerts(list), toolbar, bulk, status, tableArea, pages); updateSelection();
     let page = 0, sequence = 0, timer;
     async function load() {
       const request = ++sequence; status.textContent = i18n.t('watchlists.loadingInstruments');
@@ -190,6 +192,7 @@
             group.append(periods); following.append(group);
           });
           if (!groups.size) following.append(n('span', i18n.t('watchlists.noFollows'), 'wl-no-follows'));
+          following.dataset.followingSymbol = item.symbol;
           const unread = n('td', null, 'wl-unread-cell'), count = item.unreadSignalCount || 0;
           const badge = n('span', null, `wl-unread-badge${count > 0 ? ' has-unread' : ''}`);
           badge.append(n('strong', String(count)), n('span', i18n.plural('watchlists.unreadBadge', count))); unread.append(badge);
@@ -214,12 +217,116 @@
         }
         if (data.items.length) tableArea.append(table);
         updateSelection();
+        memberCustomAlerts(list, data.items, tbody, request);
         const previous = button(i18n.t('watchlists.previous'), () => { page--; load(); }), next = button(i18n.t('watchlists.next'), () => { page++; load(); });
         previous.disabled = page === 0; next.disabled = (page + 1) * data.pageSize >= data.total; pages.append(previous, next);
       } catch (error) { if (request === sequence) { status.textContent = error.message; pages.replaceChildren(button(i18n.t('common.retry'), load)); } }
     }
     search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { page = 0; load(); }, 250); });
     group.input.addEventListener('change', () => { page = 0; load(); }); load();
+
+    /** Custom alerts covering the shown stocks, as chips beside their follows (one request per page). */
+    async function memberCustomAlerts(current, items, tbody, request) {
+      if (!items.length) return;
+      try {
+        const bySymbol = await api(`/api/custom-alerts/for-watchlist/${current.id}/members?${new URLSearchParams({ symbols: items.map(item => item.symbol).join(',') })}`);
+        if (request !== sequence) return;
+        tbody.querySelectorAll('[data-following-symbol]').forEach(cell => {
+          const found = bySymbol[cell.dataset.followingSymbol] || [];
+          if (!found.length) return;
+          cell.querySelector('.wl-no-follows')?.remove();
+          const group = n('div', null, 'wl-follow-group wl-custom-follow'); group.setAttribute('role', 'group');
+          group.setAttribute('aria-label', i18n.t('watchlists.custom.chipsAria', cell.dataset.followingSymbol));
+          const type = n('span', i18n.t('followType.CUSTOM'), 'dashboard-chip wl-type-chip wl-type-custom learn-term');
+          type.dataset.learn = LEARN_OPTIONS.customChip; type.dataset.learnTitle = i18n.t('followType.CUSTOM');
+          group.append(type);
+          found.forEach(alert => {
+            const chip = link(alert.name, `/signals?${new URLSearchParams({ customAlertId: alert.id, ticker: cell.dataset.followingSymbol })}`);
+            chip.className = `dashboard-chip wl-custom-chip${alert.active ? '' : ' is-paused'}`;
+            if (!alert.active) chip.title = i18n.t('watchlists.custom.paused');
+            group.append(chip);
+          });
+          cell.append(group);
+        });
+      } catch (error) { /* The follows above still show; custom chips are an extra. */ }
+    }
+  }
+
+  /** The custom alerts that watch this list: open one, stop it here, or apply another alert to the whole list. */
+  function customAlerts(list) {
+    const box = n('section', null, 'wl-custom-alerts');
+    const headingId = `wl-custom-${list.id}`;
+    box.setAttribute('aria-labelledby', headingId);
+    const head = n('div', null, 'wl-custom-head');
+    const heading = n('h3'); heading.id = headingId;
+    const title = n('span', i18n.t('watchlists.custom.title'), 'learn-term');
+    title.dataset.learn = LEARN_OPTIONS.customStrip; title.dataset.learnTitle = i18n.t('watchlists.custom.title');
+    heading.append(title);
+    const create = link(i18n.t('watchlists.custom.create'), `/custom-alerts/new?watchlistId=${list.id}`);
+    head.append(heading, create);
+    const items = n('div', null, 'wl-custom-items');
+    const add = n('div', null, 'wl-custom-add');
+    const status = n('p', '', 'wl-status'); status.setAttribute('role', 'status');
+    items.append(n('p', i18n.t('watchlists.custom.loading'), 'wl-muted'));
+    box.append(head, items, add, status);
+    const allowed = !list.allowedTypes || list.allowedTypes.includes('CUSTOM');
+
+    async function setApplied(alert, applied) {
+      await api(`/api/custom-alerts/${alert.id}/watchlists/${list.id}?applied=${applied}`, { method: 'POST' });
+      await load();
+    }
+    function item(alert) {
+      const row = n('div', null, `wl-custom-item${alert.active ? '' : ' is-paused'}`);
+      const name = link(alert.name, `/signals?${new URLSearchParams({ customAlertId: alert.id })}`);
+      const facts = [i18n.t(`interval.${alert.interval}`),
+        alert.scope === 'SELECTED' ? i18n.plural('watchlists.custom.chosen', alert.stocks, alert.stocks) : i18n.plural('watchlists.custom.all', alert.stocks, alert.stocks),
+        i18n.plural('watchlists.custom.matching', alert.matching, alert.matching)];
+      if (!alert.active) facts.push(i18n.t('watchlists.custom.paused'));
+      const text = n('div', null, 'wl-custom-text');
+      text.append(name, n('small', facts.join(' · ')));
+      row.append(text);
+      if (alert.unread) row.append(n('span', i18n.plural('watchlists.custom.unread', alert.unread, alert.unread), 'wl-custom-unread'));
+      const remove = button(i18n.t('watchlists.custom.remove'), async () => {
+        remove.disabled = true;
+        try {
+          await setApplied(alert, false);
+          status.replaceChildren(n('span', i18n.t('watchlists.custom.removed', alert.name) + ' '));
+          const undo = button(i18n.t('watchlists.custom.undo'), async () => {
+            undo.disabled = true;
+            try { await setApplied(alert, true); status.textContent = ''; } catch (error) { status.textContent = error.message; }
+          });
+          status.append(undo);
+        } catch (error) { status.textContent = error.message; remove.disabled = false; }
+      }, 'btn-secondary wl-custom-remove');
+      remove.setAttribute('aria-label', i18n.t('watchlists.custom.removeAria', alert.name));
+      row.append(remove);
+      return row;
+    }
+    function render(applied, all) {
+      items.replaceChildren(...(applied.length ? applied.map(item) : [n('p', i18n.t('watchlists.custom.empty'), 'wl-muted')]));
+      add.replaceChildren();
+      if (!allowed) { add.append(n('p', i18n.t('watchlists.custom.notAllowed'), 'wl-muted')); return; }
+      const appliedIds = new Set(applied.map(alert => alert.id));
+      const others = all.filter(alert => !appliedIds.has(alert.id));
+      if (!others.length) return;
+      const choice = select(i18n.t('watchlists.custom.applyLabel'), [['', i18n.t('watchlists.custom.applyChoose')], ...others.map(alert => [String(alert.id), alert.name])]);
+      const apply = button(i18n.t('watchlists.custom.apply'), async () => {
+        const alert = others.find(value => String(value.id) === choice.input.value);
+        if (!alert) { choice.input.focus(); return; }
+        apply.disabled = true;
+        try { await setApplied(alert, true); status.textContent = i18n.t('watchlists.custom.applied', alert.name); }
+        catch (error) { status.textContent = error.message; apply.disabled = false; }
+      });
+      add.append(choice.label, apply);
+    }
+    async function load() {
+      try {
+        const [applied, all] = await Promise.all([api(`/api/custom-alerts/for-watchlist/${list.id}`), api('/api/custom-alerts')]);
+        render(applied, all);
+      } catch (error) { items.replaceChildren(n('p', error.message, 'wl-status')); }
+    }
+    load();
+    return box;
   }
   async function manageFollows(list, symbols) {
     const d = modal(i18n.t('watchlists.manageFollowsTitle', i18n.plural('watchlists.selected', symbols.length, symbols.length)));

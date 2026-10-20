@@ -122,6 +122,7 @@ async function run(browser, { language, catalog }) {
       if (pathname === `/api/alerts/${symbol}`) return json({ trackedStocks: 0, maxTrackedStocks: 300, rules: [] });
       if (pathname === `/api/alerts/${symbol}/elliott-cards`) return json([]);
       if (pathname === '/api/chart-state/drawings') return json({ drawings: [] });
+      if (pathname.startsWith('/api/custom-alerts/for-stock/')) return json([]);
       if (pathname.startsWith('/api/chart-state/drawings/')) {
         return json({ id: decodeURIComponent(pathname.split('/').pop()), version: 1, payload: JSON.parse(request.postData() || '{}') });
       }

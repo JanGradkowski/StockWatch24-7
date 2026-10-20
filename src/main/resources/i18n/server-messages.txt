@@ -1895,3 +1895,169 @@ pl: E-maile z alertami są ponownie włączone.
 
 en: Candle refresh failed.
 internal
+
+# --- Archive, chart alerts and custom alerts ------------------------------------------------------------
+
+en: Unknown archive kind {0}
+internal
+
+en: A custom alert reads indicators from the price, not from other indicators.
+pl: Alert własny odczytuje wskaźniki z ceny, a nie z innych wskaźników.
+
+en: Add at least one condition.
+pl: Dodaj co najmniej jeden warunek.
+
+en: An alert can have at most 12 conditions.
+pl: Alert może mieć najwyżej 12 warunków.
+
+en: An alert can have at most 4 groups.
+pl: Alert może mieć najwyżej 4 grupy.
+
+en: An alert can use at most 8 different indicators.
+pl: Alert może korzystać z najwyżej 8 różnych wskaźników.
+
+en: Choose 1 to 60 candles to follow the price.
+pl: Wybierz od 1 do 60 świec obserwacji ceny.
+
+en: Choose a quiet period of 0 to 60 candles.
+pl: Wybierz okres wyciszenia od 0 do 60 świec.
+
+en: Choose all members or chosen members.
+pl: Wybierz wszystkie spółki z listy albo wybrane spółki.
+
+en: Choose an indicator or price to watch.
+pl: Wybierz wskaźnik albo cenę do obserwowania.
+
+en: Choose at least one stock from the watchlist {0}.
+pl: Wybierz co najmniej jedną spółkę z listy obserwowanych {0}.
+
+en: Choose at most 2000 stocks per watchlist.
+pl: Wybierz najwyżej 2000 spółek z jednej listy obserwowanych.
+
+en: Choose bullish, bearish or either.
+pl: Wybierz kierunek wzrostowy, spadkowy lub dowolny.
+
+en: Choose daily, weekly or monthly candles.
+pl: Wybierz świece dzienne, tygodniowe lub miesięczne.
+
+en: Choose how the value is compared.
+pl: Wybierz sposób porównania wartości.
+
+en: Choose patterns from the list.
+pl: Wybierz formacje z listy.
+
+en: Choose purchases or sales.
+pl: Wybierz zakupy albo sprzedaże.
+
+en: Choose the close, open, high, low or volume.
+pl: Wybierz zamknięcie, otwarcie, maksimum, minimum lub wolumen.
+
+en: Choose the outlook direction and strength.
+pl: Wybierz kierunek i siłę oceny technicznej.
+
+en: Choose the pattern family.
+pl: Wybierz rodzaj formacji.
+
+en: Choose what the condition checks.
+pl: Wybierz, co sprawdza warunek.
+
+en: Choose what the value is compared with.
+pl: Wybierz, z czym porównać wartość.
+
+en: Choose when the alert triggers.
+pl: Wybierz, kiedy alert ma się uruchamiać.
+
+en: Choose whether all or any of the groups must be true.
+pl: Wybierz, czy muszą być spełnione wszystkie, czy dowolne grupy.
+
+en: Compare the value with something else.
+pl: Porównaj wartość z czymś innym.
+
+en: Enter a percentage from 0 to 1000.
+pl: Wpisz wartość procentową od 0 do 1000.
+
+en: Enter the minimum amount in dollars.
+pl: Wpisz minimalną kwotę w dolarach.
+
+en: Every group needs at least one condition.
+pl: Każda grupa musi mieć co najmniej jeden warunek.
+
+en: Set the indicator offset to 0 for an alert.
+pl: W alercie ustaw przesunięcie wskaźnika na 0.
+
+en: The custom alert trigger was not found.
+pl: Nie znaleziono uruchomienia alertu własnego.
+
+en: The custom alert was not found.
+pl: Nie znaleziono alertu własnego.
+
+en: The lower level must be below the upper one.
+pl: Dolny poziom musi być niższy od górnego.
+
+en: The watchlist {0} does not allow custom alerts. Allow them in its settings or choose another list.
+pl: Lista obserwowanych {0} nie dopuszcza alertów własnych. Zezwól na nie w ustawieniach listy albo wybierz inną listę.
+
+en: This alert was saved by a newer version of StockWatch.
+pl: Ten alert zapisała nowsza wersja StockWatch.
+
+en: This alert would track {0} more instruments, but your account has room for {1}. Apply it to fewer stocks or stop following others.
+pl: Ten alert obserwowałby {0} kolejnych instrumentów, a Twoje konto ma miejsce na {1}. Zastosuj go do mniejszej liczby spółek albo przestań obserwować inne.
+
+en: This indicator cannot be used in a custom alert.
+pl: Tego wskaźnika nie można użyć w alercie własnym.
+
+en: Use at most 500 characters for the description.
+pl: Opis może mieć najwyżej 500 znaków.
+
+en: {0} is not in the watchlist {1}.
+pl: {0} nie należy do listy obserwowanych {1}.
+
+en: You already have {0} active custom alerts. Pause or delete one first.
+pl: Masz już aktywne alerty własne: {0}. Najpierw wstrzymaj lub usuń jeden z nich.
+
+en: Choose {0} to {1} candles.
+pl: Wybierz od {0} do {1} świec.
+
+en: Choose {0} to {1} days.
+pl: Wybierz od {0} do {1} dni.
+
+en: Choose {0} to {1} people.
+pl: Wybierz od {0} do {1} osób.
+
+en: Enter both levels of the range.
+pl: Wpisz oba poziomy przedziału.
+
+en: Enter the value to compare with.
+pl: Wpisz wartość do porównania.
+
+en: Enter the percentage change.
+pl: Wpisz zmianę procentową.
+
+en: Enter a minimum score from 0 to 100.
+pl: Wpisz minimalną ocenę od 0 do 100.
+
+en: Too many symbols.
+internal
+
+# Custom alert states and previews (status texts shown in the custom alert pages).
+
+en: Choose a stock to test the rule on.
+pl: Wybierz spółkę, na której chcesz sprawdzić regułę.
+
+en: Open this stock's chart once so its history is stored, then test again.
+pl: Otwórz raz wykres tej spółki, aby zapisać jej historię, a potem sprawdź ponownie.
+
+en: No completed candles are stored for this stock yet.
+pl: Dla tej spółki nie zapisano jeszcze żadnych zamkniętych świec.
+
+en: Not enough completed candles are stored yet.
+pl: Zapisano jeszcze za mało zamkniętych świec.
+
+en: A condition does not apply to this instrument.
+pl: Jeden z warunków nie dotyczy tego instrumentu.
+
+en: The rule could not be read.
+pl: Nie udało się odczytać reguły.
+
+en: The stock could not be checked yet.
+pl: Tej spółki nie udało się jeszcze sprawdzić.

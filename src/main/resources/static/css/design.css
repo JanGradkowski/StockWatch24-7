@@ -89,7 +89,7 @@
 :root[data-theme] .dashboard-score-help p { margin-top: .5rem; font-size: var(--fs-sm); line-height: 1.6; }
 :root[data-theme] .dashboard-container .grid-layout { grid-template-columns: minmax(0,1fr); }
 :root[data-theme] .dashboard-main-stack, :root[data-theme] .dashboard-technical-sidebar { min-width: 0; }
-:root[data-theme] .dashboard-sidebar-metrics { grid-template-columns: repeat(4,minmax(0,1fr)); }
+:root[data-theme] .dashboard-sidebar-metrics { grid-template-columns: repeat(auto-fit,minmax(190px,1fr)); }
 :root[data-theme] .dashboard-technical-sidebar { display: grid; gap: 1rem; }
 :root[data-theme] .system-pulse-panel { min-height: 0; }
 :root[data-theme] .system-pulse-panel summary { cursor: pointer; font-size: var(--fs-md); color: var(--text-soft); }
@@ -386,6 +386,7 @@
     :root[data-theme] .auth-card { padding: 1.5rem; }
     :root[data-theme] .portfolio-value-breakdown { flex-wrap: wrap; }
     :root[data-theme] .dashboard-sidebar-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    :root[data-theme] .dashboard-sidebar-metrics > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 
 /* ==========================================================================
@@ -613,3 +614,45 @@
 
 /* Alert switch grids: keep the column headings visibly apart. */
 :root[data-theme] .alert-grid { column-gap: var(--space-4); }
+
+/* Sidebar unread badges: a count beside the label; a dot on the icon in the collapsed rail. */
+.app-sidebar-links a .app-sidebar-badge { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--primary-color) 16%, var(--surface)); color: var(--text-color); font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.5; text-align: center; }
+@media (min-width: 1025px) {
+    :root[data-sidebar-collapsed="true"] .app-sidebar-links a .app-sidebar-badge { position: absolute; top: 8px; left: 34px; min-width: 0; width: 9px; height: 9px; padding: 0; overflow: hidden; color: transparent; background: var(--primary-color); }
+}
+
+
+/* Stock page: the custom alerts that watch this stock (ticked) and the rest of the user's alerts. */
+.stock-custom-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: 8px; }
+.stock-custom-item { padding: 10px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface); }
+.stock-custom-item.is-paused { opacity: .75; }
+.stock-custom-check { display: flex; align-items: center; gap: 10px; font-weight: 700; cursor: pointer; }
+.stock-custom-check input { width: 18px; height: 18px; accent-color: var(--accent-color); }
+.stock-custom-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0 0 28px; color: var(--muted-text); font-size: var(--fs-sm); }
+.stock-custom-state { padding: 2px 8px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 700; background: var(--surface-raised); color: var(--text-soft); }
+.stock-custom-state.matching { color: var(--accent-color); background: color-mix(in srgb, var(--accent-color) 12%, var(--surface)); }
+.stock-custom-state.waiting, .stock-custom-state.skipped { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--surface)); }
+.stock-custom-paused { font-weight: 650; }
+.stock-custom-rule { margin: 6px 0 0 28px; color: var(--text-soft); font-size: var(--fs-sm); line-height: 1.45; }
+.stock-custom-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: var(--space-3); }
+@media (max-width: 640px) { .stock-custom-facts, .stock-custom-rule { margin-left: 0; } .stock-custom-actions { justify-content: stretch; } .stock-custom-actions .btn-accent { width: 100%; } }
+
+/* Dashboard: custom alert triggers, or the alerts themselves once everything is read. */
+.custom-dash-empty p { margin: 0 0 var(--space-3); color: var(--text-soft); max-width: 70ch; }
+.custom-dash-templates { display: flex; flex-wrap: wrap; gap: 8px; }
+.custom-dash-template { padding: 8px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-color); font-weight: 650; text-decoration: none; }
+.custom-dash-template:hover { border-color: var(--primary-color); }
+.custom-dash-template.is-more { color: var(--primary-color); background: transparent; }
+.custom-dash-triggers, .custom-dash-alerts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.custom-dash-trigger { display: grid; grid-template-columns: auto minmax(110px, 1fr) minmax(0, 2fr) auto auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-color); text-decoration: none; }
+.custom-dash-trigger:hover, .custom-dash-trigger:focus-visible { border-color: color-mix(in srgb, var(--primary-color) 45%, var(--glass-border)); }
+.custom-dash-stock, .custom-dash-rule { display: flex; flex-direction: column; min-width: 0; }
+.custom-dash-stock span, .custom-dash-rule span { color: var(--muted-text); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.custom-dash-rule strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.custom-dash-caught-up { margin: 0 0 var(--space-3); color: var(--text-soft); }
+.custom-dash-alerts { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.custom-dash-alert { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-color); text-decoration: none; }
+.custom-dash-alert span { color: var(--muted-text); font-size: var(--fs-sm); }
+.custom-dash-alert:hover { border-color: var(--primary-color); }
+.custom-dash-alert.is-paused { opacity: .7; }
+@media (max-width: 640px) { .custom-dash-trigger { grid-template-columns: auto minmax(0, 1fr) auto; } .custom-dash-rule { grid-column: 2 / -1; grid-row: 2; } .custom-dash-trigger .latest-signal-arrow { display: none; } }
