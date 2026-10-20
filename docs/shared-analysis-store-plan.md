@@ -333,15 +333,46 @@ What the build does differently from the design above, and why:
   Results are unchanged: with snapshots stored, the 25 alerts match the same 1,198 of 6,750 alert-stock
   pairs as when computed from scratch. The live run's 134 triggers still equal the preview's replay on
   all 50 alert-stock pairs.
+- **On a simulated 2-core machine** (the JVM limited with `-XX:ActiveProcessorCount=2`, so baselines
+  use one thread; the cores themselves stay as fast as this laptop's, so a real weak machine with slower
+  cores takes proportionally longer). 270 stocks in the load test, 250 live; before and after the faster
+  confluence:
+
+  | Case | Before | After |
+  | --- | --- | --- |
+  | 25 alerts, snapshots stored (load test) | 45.5 s | 46.0 s |
+  | 25 alerts on 250 followed stocks, live, one thread | — | every state set 56.1 s after the first save |
+  | One new alert, snapshots stored / empty store | 9.8 s / 298 s | 9.7 s / 300 s |
+  | 25 alerts, empty store | 470 s | 465 s |
+  | Background snapshots per followed stock | 1.53 s | 1.51 s |
+  | Cold daily check per stock, 25 alerts (without the store) | 1.67 s (1.65 s) | 1.67 s (1.65 s) |
+  | Daily check without the Elliott alerts | 0.60 s | 0.58 s |
+
+  The faster confluence halves repeat candlestick scans (previews re-run on every edit, chart reloads,
+  re-baselines within ten minutes), because the old code built its expensive keys even when the answer
+  was cached. A stock's first scan of a new candle, which is what the daily run and the background
+  work do, is unchanged: there the harmonic and wave prefixes must really be computed, and scoring
+  rarely reads a prefix twice. Making that cheaper means computing harmonic patterns incrementally
+  across prefixes inside the detector, which is a detector rewrite.
 - **The cost moved to the background.** Keeping followed stocks' snapshots current costs about 2.4–3.7 s
   per stock after each daily run, roughly 15 minutes for 250 followed stocks. Building histories for
   followed stocks (`analysis-store.followed-histories`) costs 20 s to 8 min per stock, once. Both run
   after the scheduled checks, and both can be switched off.
 - **Profiling the non-Elliott cost.** A cold check spends most of its non-Elliott time in the
   candlestick scan (0.3–0.7 s per stock). Most of that is the harmonic scan that candlestick scoring
-  runs for its cross-pattern confluence, once per candlestick candidate, plus Elliott confluence keys
-  built from candle text. The store serves that scan in 10–20 ms once it has been computed. Memoising
-  the confluence's harmonic prefix scans is the next optimisation, if the scheduled run needs one.
+  runs for its cross-pattern confluence, plus Elliott confluence keys built from candle text. The
+  store serves that scan in 10–20 ms once it has been computed.
+- **Faster confluence (built after the store).** Scoring walks back up to eight candles from each
+  candidate. Before, every step back read two harmonic prefixes and two wave prefixes, and spelled out
+  both prefixes' candles to build a cache key. Now each prefix's result is kept by its end within the
+  scan, and keys name the prefixes by one fingerprint of the scan's candles plus their ends. The
+  candlestick scan alerts use went from 650 ms to 317 ms on eight real stocks, with output identical
+  to the old code on 30 real stocks (`PatternScanEquivalenceTest`, compared as JSON trees).
+- **Snapshots inside the scheduled check were not built.** The idea was to compute a followed stock's
+  snapshot in its check, reusing the scans the built-in alerts had just made. But the check enriches
+  its own candle window (its length set by the follows, and including the forming candle), so the
+  indicator warm-up and therefore the scan inputs differ from the snapshot's. Nothing would be shared;
+  the daily run would only take longer. Aligning those inputs would change the built-in alerts.
 
 ## Open questions
 

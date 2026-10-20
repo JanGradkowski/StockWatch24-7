@@ -241,6 +241,7 @@ class CustomAlertLoadTest {
                 select c.symbol from public.candles c join public.stock_assets a on a.ticker_symbol = c.symbol
                 where c.time_interval = '1d' and c.symbol not like 'ZZ%' group by c.symbol having count(*) >= 300 order by c.symbol limit ?
                 """, String.class, Integer.getInteger("customAlertsLoadTestStocks", 300));
+        line("Processors available to this JVM: %d", Runtime.getRuntime().availableProcessors());
         line("Stocks with at least 300 stored daily candles: %d", symbols.size());
         assertThat(symbols).as("needs a local database with cached candles").hasSizeGreaterThan(50);
         String[] tickers = symbols.toArray(String[]::new);

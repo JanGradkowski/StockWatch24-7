@@ -60,6 +60,13 @@ public class CrossPatternConfluenceService {
         Map<AlertPatternFamily, ReplayWindow> windows = new EnumMap<>(AlertPatternFamily.class);
         CausalCandlePrefixes wavePrefixes = new CausalCandlePrefixes(enriched);
         Map<Object, Integer> pointIds = new java.util.HashMap<>();
+        // Scoring walks back from each candidate, so the same prefixes are read again and again: what each one shows
+        // is kept by its end. Wave signals per prefix end; harmonic observations per candle index.
+        Map<Long, List<DetectedSignal>> waveSignals = new java.util.HashMap<>();
+        Map<Integer, PrefixObservations> harmonicPrefixes = new java.util.HashMap<>();
+        // Confluence keys name the two prefixes by the candles they come from and their ends, instead of spelling
+        // out every candle of both for every candle read.
+        String[] candleKey = new String[1];
         return new Timeline(candles.stream().map(Candle::getTimestamp).toList(), observations, (index, family) -> {
             if (family == AlertPatternFamily.CANDLESTICK) {
                 long timestamp = candles.get(index).getTimestamp();
@@ -77,19 +84,37 @@ public class CrossPatternConfluenceService {
                 var priorPrefix = wavePrefixes.at(priorTimestamp);
                 var result = new java.util.LinkedHashSet<Observation>();
                 var oldSignals = new java.util.HashSet<SignalKey>();
-                for (var signal : waves.detect(priorPrefix)) {
+                for (var signal : waveSignals.computeIfAbsent(priorTimestamp, ignored -> waves.detect(priorPrefix))) {
                     if (signal.candleTimestamp() == priorTimestamp) oldSignals.add(
                             new SignalKey(signal.pattern(), signal.tradeSignal(), signal.trendStartTimestamp()));
                 }
-                for (var signal : waves.detect(currentPrefix)) {
+                for (var signal : waveSignals.computeIfAbsent(timestamp, ignored -> waves.detect(currentPrefix))) {
                     if (signal.candleTimestamp() == timestamp && !oldSignals.contains(
                             new SignalKey(signal.pattern(), signal.tradeSignal(), signal.trendStartTimestamp()))) {
                         result.add(new Observation(family, signal.tradeSignal(), timestamp, signal.pattern()));
                     }
                 }
-                for (var candidate : waves.newConfluenceObservations(currentPrefix, priorPrefix, window.waveContext))
+                if (candleKey[0] == null) candleKey[0] = AnalysisWork.key(enriched);
+                String inputKey = AnalysisWork.key(List.of("prefixes", candleKey[0], timestamp, priorTimestamp));
+                for (var candidate : waves.newConfluenceObservations(currentPrefix, priorPrefix, window.waveContext, inputKey))
                     result.add(new Observation(family, candidate.expectedMove(), timestamp, candidate.pattern()));
                 return List.copyOf(result);
+            }
+            if (family == AlertPatternFamily.HARMONIC_FORMATION) {
+                // What became available on this candle: shown by its prefix and not by the previous candle's.
+                java.util.function.IntFunction<PrefixObservations> shown = at -> harmonicPrefixes.computeIfAbsent(at, ignored -> {
+                    var found = new PrefixObservations();
+                    prefixObservations(candles, enriched, at, family, waves, harmonics, pointIds, window.waveContext, found::add);
+                    return found;
+                });
+                java.util.Set<Object> previous = index > 0 ? shown.apply(index - 1).keys() : java.util.Set.of();
+                var newlyAvailable = new java.util.LinkedHashSet<Observation>();
+                long availableAt = candles.get(index).getTimestamp();
+                for (var entry : shown.apply(index).entries()) {
+                    if (!previous.contains(entry.getKey())) newlyAvailable.add(new Observation(entry.getValue().family(),
+                            entry.getValue().direction(), availableAt, entry.getValue().pattern()));
+                }
+                return List.copyOf(newlyAvailable);
             }
             if (window.index != index - 1) {
                 window.keys = java.util.Set.of();
@@ -155,6 +180,21 @@ public class CrossPatternConfluenceService {
     }
 
     private record SignalKey(CandlePattern pattern, TradeSignal direction, Long trendStart) { }
+
+    /** What one prefix shows: every (key, observation) in the order the detector reported them, and the keys. */
+    private static final class PrefixObservations {
+        private final List<Map.Entry<Object, Observation>> entries = new ArrayList<>();
+        private final java.util.Set<Object> keys = new java.util.HashSet<>();
+
+        void add(Object key, Observation observation) {
+            entries.add(Map.entry(key, observation));
+            keys.add(key);
+        }
+
+        List<Map.Entry<Object, Observation>> entries() { return entries; }
+
+        java.util.Set<Object> keys() { return keys; }
+    }
 
     private static final class GeometryKey {
         private final Object pattern;

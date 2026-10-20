@@ -2400,7 +2400,15 @@ public class ElliottWaveDetectionService {
 
     List<DevelopingObservation> newConfluenceObservations(List<EnrichedCandle> current,
             List<EnrichedCandle> previous, DevelopingScanContext context) {
-        String inputKey = AnalysisWork.key(List.of(current, previous));
+        return newConfluenceObservations(current, previous, context, AnalysisWork.key(List.of(current, previous)));
+    }
+
+    /**
+     * As above, with {@code inputKey} naming the two prefixes exactly (a caller that cuts both from one candle list
+     * names them by that list and their ends, instead of spelling out every candle of both).
+     */
+    List<DevelopingObservation> newConfluenceObservations(List<EnrichedCandle> current,
+            List<EnrichedCandle> previous, DevelopingScanContext context, String inputKey) {
         String observationKey = AnalysisWork.key(List.of(inputKey, detectionRules, scoringModel,
                 presentSignalLookbackCandles, reuseCorrectionSuffixes()));
         long now = java.time.Instant.now().getEpochSecond();
