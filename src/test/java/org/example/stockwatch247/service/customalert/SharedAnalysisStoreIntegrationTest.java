@@ -67,6 +67,9 @@ class SharedAnalysisStoreIntegrationTest {
 
     /** Copies a stock and its daily and 60-minute candles from the local database's public schema. */
     private StockAsset copy(String symbol) {
+        // A fresh database (CI) has no cached candles, and no tables outside the test's own schema.
+        assumeThat(jdbc.queryForObject("select to_regclass('public.candles') is not null", Boolean.class))
+                .as("needs the local database's cached candles").isTrue();
         Integer stored = jdbc.queryForObject("select count(*) from public.candles where symbol = ? and time_interval = '1d'", Integer.class, symbol);
         assumeThat(stored).as("needs " + symbol + "'s cached candles in the local database").isGreaterThan(300);
         jdbc.update("""

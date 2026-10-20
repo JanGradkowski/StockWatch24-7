@@ -237,6 +237,8 @@ class CustomAlertLoadTest {
     }
 
     private void run() {
+        org.assertj.core.api.Assumptions.assumeThat(jdbc.queryForObject("select to_regclass('public.candles') is not null", Boolean.class))
+                .as("needs a local database with cached candles").isTrue();
         List<String> symbols = jdbc.queryForList("""
                 select c.symbol from public.candles c join public.stock_assets a on a.ticker_symbol = c.symbol
                 where c.time_interval = '1d' and c.symbol not like 'ZZ%' group by c.symbol having count(*) >= 300 order by c.symbol limit ?
