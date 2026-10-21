@@ -393,7 +393,7 @@
     const search = field(i18n.t('watchlists.searchTickers'), 'search'), results = n('div', null, 'wl-results'), resultsNote = n('p', '', 'wl-muted wl-results-note');
     search.input.placeholder = i18n.t('watchlists.searchTickersPlaceholder'); instruments.append(search.label, results, resultsNote);
     // The search is a combobox like the global one: arrows move through the results and Enter picks one.
-    results.id = `wl-results-${Date.now()}`; results.setAttribute('role', 'listbox'); results.setAttribute('aria-label', i18n.t('watchlists.searchTickers'));
+    results.id = `wl-results-${Date.now()}`; results.setAttribute('role', 'listbox'); results.setAttribute('aria-label', i18n.t('watchlists.searchResults'));
     resultsNote.setAttribute('role', 'status');
     Object.entries({ role: 'combobox', 'aria-autocomplete': 'list', 'aria-controls': results.id, 'aria-expanded': 'false' })
       .forEach(([name, value]) => search.input.setAttribute(name, value));
