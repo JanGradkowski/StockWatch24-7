@@ -35,12 +35,38 @@ class ApiExceptionHandlerTest {
     @Test
     void missingStaticResourceReturnsNotFound() {
         MockHttpServletRequest request = request("GET", "/favicon.ico");
+        request.addHeader(HttpHeaders.ACCEPT, "image/avif,image/webp,*/*");
 
-        ResponseEntity<Void> response = handler.missingResource(
-                mock(NoResourceFoundException.class), request);
+        Object response = handler.missingResource(mock(NoResourceFoundException.class), request);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(response.getBody()).isNull();
+        assertThat(response).isInstanceOfSatisfying(ResponseEntity.class, entity -> {
+            assertThat(entity.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(entity.getBody()).isNull();
+        });
+    }
+
+    @Test
+    void mistypedPageAddressGetsTheNotFoundPage() {
+        MockHttpServletRequest page = request("GET", "/no-such-page");
+        page.addHeader(HttpHeaders.ACCEPT, "text/html,application/xhtml+xml,*/*;q=0.8");
+
+        Object response = handler.missingResource(mock(NoResourceFoundException.class), page);
+
+        assertThat(response).isInstanceOfSatisfying(ModelAndView.class, view -> {
+            assertThat(view.getViewName()).isEqualTo("error");
+            assertThat(view.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(view.getModel()).containsEntry("status", 404);
+        });
+    }
+
+    @Test
+    void missingApiPathStaysAnEmptyNotFound() {
+        MockHttpServletRequest api = request("GET", "/api/no-such-endpoint");
+        api.addHeader(HttpHeaders.ACCEPT, "text/html");
+
+        assertThat(handler.missingResource(mock(NoResourceFoundException.class), api))
+                .isInstanceOfSatisfying(ResponseEntity.class,
+                        entity -> assertThat(entity.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     @Test

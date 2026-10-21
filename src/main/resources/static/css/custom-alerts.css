@@ -42,6 +42,9 @@
 
 /* ---------------------------------------------------------------- list page */
 
+/* Stays in the page while empty, so screen readers still announce messages written into it. */
+.ca-hero-status { margin: 0; }
+.ca-hero-status:not(:empty) { margin-top: var(--space-2); }
 .ca-guide { margin: 0 0 var(--space-6); border: 1px solid var(--glass-border); border-radius: var(--radius-md); background: var(--surface); }
 .ca-guide > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; padding: var(--space-4) var(--space-5); cursor: pointer; font-weight: 700; list-style: none; }
 .ca-guide > summary::-webkit-details-marker { display: none; }

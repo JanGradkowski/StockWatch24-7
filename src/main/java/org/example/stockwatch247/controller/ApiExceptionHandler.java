@@ -110,11 +110,15 @@ public class ApiExceptionHandler {
                 Map.of("error", "The request could not be completed.", "requestId", requestId), null, requestId);
     }
 
+    /** A mistyped address in the browser gets the error page; a missing asset or API path stays an empty 404. */
     @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<Void> missingResource(NoResourceFoundException exception,
-                                                HttpServletRequest request) {
+    public Object missingResource(NoResourceFoundException exception,
+                                  HttpServletRequest request) {
         log.debug("Resource not found on {} {}", request.getMethod(), request.getRequestURI());
-        return ResponseEntity.notFound().build();
+        if (!rendersPage(request, null)) {
+            return ResponseEntity.notFound().build();
+        }
+        return new ModelAndView("error", Map.of("status", HttpStatus.NOT_FOUND.value()), HttpStatus.NOT_FOUND);
     }
 
     @ExceptionHandler(AsyncRequestNotUsableException.class)

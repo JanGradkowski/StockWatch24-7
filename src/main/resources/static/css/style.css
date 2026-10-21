@@ -1675,10 +1675,11 @@ a:hover .button-arrow {
     line-height: 1.45;
 }
 
+/* Theme tokens keep the message readable in both themes; a fixed pink is unreadable on light surfaces. */
 .error-msg {
-    border-color: rgba(255, 100, 124, 0.23);
-    background: rgba(255, 100, 124, 0.07);
-    color: #ff93a4;
+    border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+    color: var(--danger);
 }
 
 .success-msg {
@@ -8384,6 +8385,8 @@ html[data-theme='light'] .historical-candlestick-hit-target.cluster {
 
 .historical-elliott-detail-page {
     display: grid;
+    /* Without minmax(0, 1fr) the chart's minimum width stretches the page past the window. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
 }
 
@@ -14053,6 +14056,13 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .signal-event-metrics > div {
     border-color: rgba(42, 82, 45, 0.13);
     background: #eaf5e8;
+}
+
+/* The rule above also matches filled segments; without this a high score draws as an empty bar. */
+:root[data-theme="light"] .signal-score-segment.active {
+    border-color: var(--score-accent);
+    background: linear-gradient(180deg, var(--score-accent), color-mix(in srgb, var(--score-accent) 55%, #ffffff));
+    box-shadow: none;
 }
 
 :root[data-theme="light"] .signal-evidence-card {

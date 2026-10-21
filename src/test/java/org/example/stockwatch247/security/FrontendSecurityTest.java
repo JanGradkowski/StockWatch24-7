@@ -384,7 +384,7 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("<body class=\"history-back-disabled\">"));
 
         for (String template : List.of(
-                "all-signals.html", "all-activity-signals.html", "alert-history.html",
+                "all-signals.html", "all-activity-signals.html",
                 "virtual-trades.html", "signal-detail.html", "activity-signal-detail.html",
                 "technical-outlook.html", "historical-candlestick-detail.html",
                 "historical-elliott-detail.html", "settings.html", "stock.html",
@@ -434,7 +434,6 @@ class FrontendSecurityTest {
                 "resend-verification.html",
                 "home.html",
                 "stock.html",
-                "alert-history.html",
                 "all-signals.html",
                 "all-activity-signals.html",
                 "activity-signal-detail.html",

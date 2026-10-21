@@ -390,8 +390,13 @@
     const columns = n('div', null, 'wl-editor-columns'), instruments = n('section', null, 'wl-editor-instruments');
     instruments.setAttribute('aria-label', i18n.t('watchlists.chooseInstruments'));
     instruments.append(n('h3', i18n.t('watchlists.chooseInstruments')));
-    const search = field(i18n.t('watchlists.searchTickers'), 'search'), results = n('div', null, 'wl-results');
-    search.input.placeholder = i18n.t('watchlists.searchTickersPlaceholder'); instruments.append(search.label, results);
+    const search = field(i18n.t('watchlists.searchTickers'), 'search'), results = n('div', null, 'wl-results'), resultsNote = n('p', '', 'wl-muted wl-results-note');
+    search.input.placeholder = i18n.t('watchlists.searchTickersPlaceholder'); instruments.append(search.label, results, resultsNote);
+    // The search is a combobox like the global one: arrows move through the results and Enter picks one.
+    results.id = `wl-results-${Date.now()}`; results.setAttribute('role', 'listbox'); results.setAttribute('aria-label', i18n.t('watchlists.searchTickers'));
+    resultsNote.setAttribute('role', 'status');
+    Object.entries({ role: 'combobox', 'aria-autocomplete': 'list', 'aria-controls': results.id, 'aria-expanded': 'false' })
+      .forEach(([name, value]) => search.input.setAttribute(name, value));
     const market = n('section', null, 'wl-market-browser'); market.setAttribute('aria-label', i18n.t('watchlists.browseIndexes'));
     market.append(n('h3', i18n.t('watchlists.browseIndexes')), n('p', i18n.t('watchlists.browseIndexesHelp'), 'wl-muted'));
     const regions = n('div', null, 'wl-region-options'); regions.setAttribute('role', 'group'); regions.setAttribute('aria-label', i18n.t('watchlists.continents'));
@@ -502,17 +507,51 @@
         catalogStatus.replaceChildren(n('span', `${i18n.t('watchlists.indexesFailed')} `), button(i18n.t('common.retry'), loadCatalog));
       }
     }
-    let searchSequence = 0, timer;
+    let searchSequence = 0, timer, activeOption = -1;
+    const options = () => Array.from(results.querySelectorAll('[role="option"]'));
+    function showResults(rows, note = '') {
+      results.replaceChildren(...rows); resultsNote.textContent = note; activeOption = -1;
+      search.input.removeAttribute('aria-activedescendant'); search.input.setAttribute('aria-expanded', String(rows.length > 0));
+    }
+    function setActiveOption(index) {
+      const rows = options(); activeOption = rows.length ? (index + rows.length) % rows.length : -1;
+      rows.forEach((row, position) => {
+        const active = position === activeOption;
+        row.classList.toggle('is-active', active); row.setAttribute('aria-selected', String(active));
+        if (active) row.scrollIntoView({ block: 'nearest' });
+      });
+      if (activeOption >= 0) search.input.setAttribute('aria-activedescendant', rows[activeOption].id);
+    }
+    function resultOption(item, index) {
+      const option = button(`${item.symbol} · ${item.name} · ${item.region || item.country || ''}`, () => {
+        selected.set(item.symbol, item); search.input.value = ''; showResults([]); changed(); search.input.focus();
+      }, 'wl-result');
+      option.id = `${results.id}-${index}`; option.tabIndex = -1;
+      option.setAttribute('role', 'option'); option.setAttribute('aria-selected', 'false');
+      return option;
+    }
+    search.input.addEventListener('keydown', event => {
+      const rows = options();
+      if (event.key === 'Enter') {
+        // Enter picks a result; it must never submit, and so save, the whole editor.
+        event.preventDefault();
+        if (rows.length) rows[Math.max(0, activeOption)].click();
+      } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && rows.length) {
+        event.preventDefault(); setActiveOption(activeOption + (event.key === 'ArrowDown' ? 1 : -1));
+      } else if (event.key === 'Escape' && rows.length) {
+        // The first Escape closes the results; the next one closes the dialog.
+        event.preventDefault(); showResults([]);
+      }
+    });
     search.input.addEventListener('input', () => {
       clearTimeout(timer); const seq = ++searchSequence;
       timer = setTimeout(async () => {
-        const q = search.input.value.trim(); if (q.length < 1) { results.replaceChildren(); return; }
+        const q = search.input.value.trim(); if (q.length < 1) { showResults([]); return; }
         try {
           const found = await api(`/api/stocks/search?q=${encodeURIComponent(q)}`);
-          if (seq !== searchSequence || !d.isConnected) return; results.replaceChildren();
-          for (const item of found) results.append(button(`${item.symbol} · ${item.name} · ${item.region || item.country || ''}`, () => { selected.set(item.symbol, item); search.input.value = ''; results.replaceChildren(); changed(); }));
-          if (!found.length) results.append(n('p', i18n.t('watchlists.noInstrumentsFound'), 'wl-muted'));
-        } catch (error) { if (seq === searchSequence) results.replaceChildren(n('p', error.message, 'wl-status')); }
+          if (seq !== searchSequence || !d.isConnected) return;
+          showResults(found.map(resultOption), found.length ? '' : i18n.t('watchlists.noInstrumentsFound'));
+        } catch (error) { if (seq === searchSequence) showResults([], error.message); }
       }, 300);
     });
     form.addEventListener('submit', async event => {
@@ -557,11 +596,13 @@
   }
   async function showImport(id) {
     const d = modal(i18n.t('watchlists.importTitle')), status = n('p', '', 'wl-status'), errors = n('div');
-    const actions = n('div', null, 'wl-actions'); actions.append(button(i18n.t('watchlists.closeInBackground'), () => d.close())); d.append(status, errors, actions);
+    const actions = n('div', null, 'wl-actions'), close = button(i18n.t('watchlists.closeInBackground'), () => d.close());
+    actions.append(close); d.append(status, errors, actions);
     async function poll() {
       try {
         const job = await api(`/api/watchlists/imports/${id}`);
         status.textContent = i18n.t('watchlists.importProgress', job.completed, job.total, job.failed, job.pending);
+        close.textContent = i18n.t(job.pending ? 'watchlists.closeInBackground' : 'watchlists.importDone');
         errors.replaceChildren(); job.errors.forEach(error => errors.append(n('p', `${error.symbol}: ${error.error}`, 'wl-muted')));
         if (job.pending) setTimeout(poll, d.isConnected ? 2000 : 10000);
         else {

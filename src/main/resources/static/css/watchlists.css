@@ -92,6 +92,10 @@
 .wl-selections button { border:1px solid var(--glass-border); border-radius:6px; background:var(--surface-soft); color:var(--text-color); padding:6px 9px; cursor:pointer; }
 .wl-results { max-height:190px; overflow:auto; border-radius:8px; }
 .wl-results button { display:block; width:100%; text-align:left; padding:10px; border:0; border-bottom:1px solid var(--glass-border); background:var(--surface-soft); color:var(--text-color); cursor:pointer; }
+.wl-results button:hover, .wl-results button.is-active { background:var(--surface-raised); box-shadow:inset 3px 0 0 var(--primary-color); }
+.wl-results button:focus-visible { outline:2px solid var(--primary-color); outline-offset:-2px; }
+.wl-results-note { margin:6px 0 0; }
+.wl-results-note:empty { margin:0; }
 .wl-monitoring { border:1px solid var(--glass-border); border-radius:8px; padding:12px 16px; margin-top:16px; }
 .wl-monitoring .wl-check { display:inline-flex; margin-right:15px; }
 .wl-empty { text-align:center; padding:40px 20px; }

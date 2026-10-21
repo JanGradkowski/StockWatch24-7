@@ -170,11 +170,12 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     assert.deepEqual(mutations[1].body.indexIds, ['sp500']);
     assert.equal(mutations[1].body.allowedTypes.length, 7, 'New lists allow every signal type');
     assert.ok(mutations[1].body.allowedTypes.includes('CUSTOM'), 'Saving a list keeps custom alerts allowed');
-    await page.getByRole('button', { name: 'Close', exact: false }).click();
+    // A finished import offers Done rather than "Close — continue in background".
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
     await page.getByRole('button', { name: 'Recent imports' }).click();
     await page.getByRole('button', { name: /Import 9:/ }).click();
     await page.getByText('503 of 503 updated', { exact: false }).waitFor();
-    await page.getByRole('button', { name: 'Close', exact: false }).click();
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
 
     await page.locator('.wl-overview').getByRole('button', { name: 'Add instruments / edit' }).click();
     await dialog.getByLabel('Enable email notifications', { exact: true }).waitFor();

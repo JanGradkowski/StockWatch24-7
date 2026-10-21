@@ -15,7 +15,8 @@
     <span th:case="*" th:text="#{error.generic}">Something went wrong</span>
   </h2>
   <p class="auth-description" th:if="${userMessage != null}" th:text="${userMessage}"></p>
-  <p class="auth-description" th:if="${userMessage == null}" th:text="#{error.retry}">Go back and try again. If the problem continues, try again in a few minutes.</p>
+  <p class="auth-description" th:if="${userMessage == null and code == 404}" th:text="#{error.404.help}">Check the address, or open the page from your dashboard or the search.</p>
+  <p class="auth-description" th:if="${userMessage == null and code != 404}" th:text="#{error.retry}">Go back and try again. If the problem continues, try again in a few minutes.</p>
   <p class="auth-description" th:if="${requestId != null}"><span th:text="#{error.reference}">Reference:</span> <code th:text="${requestId}"></code></p>
   <p class="auth-switch"><a th:href="@{/}" class="text-link" th:text="#{error.home}">Return to the dashboard</a></p>
 </section></main></body></html>
