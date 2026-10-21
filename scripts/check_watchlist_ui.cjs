@@ -223,7 +223,8 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'No page-wide horizontal overflow on mobile');
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto('http://watchlist.test/home');
-    const accountSignals = page.getByRole('link', { name: 'All signals', exact: true });
+    // The header's button; with nothing unread, the caught-up message adds its own "All signals" text link.
+    const accountSignals = page.locator('header.app-hero').getByRole('link', { name: 'All signals', exact: true });
     assert.equal(await accountSignals.getAttribute('href'), '/signals', 'Account-wide link has no ticker or watchlist filter');
     const greetingBounds = await page.locator('.app-hero-copy').boundingBox();
     const allSignalsBounds = await accountSignals.boundingBox();
