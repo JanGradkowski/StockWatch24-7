@@ -18,11 +18,12 @@
   <script th:src="@{/js/chart-indicators.js}"></script>
   <script th:src="@{/js/chart-alerts.js}"></script>
   <script th:src="@{/js/elliott-wave-hierarchy.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <style th:attr="nonce=${cspNonce}">
     /* Page styling lives in the local stylesheet; the nonce keeps this template CSP-safe. */
   </style>
 </head>
-<body class="stock-is-loading">
+<body class="stock-is-loading ui-refresh">
 <div id="stockPageLoader"
      class="stock-page-loader"
      role="status"
