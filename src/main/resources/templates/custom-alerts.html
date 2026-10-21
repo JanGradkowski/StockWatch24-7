@@ -18,11 +18,12 @@
       <div class="eyebrow" th:text="#{sidebar.group.monitor}">Monitor</div>
       <h1><span class="learn-term" data-term="customAlert" th:text="#{customAlerts.heading}">Custom alerts</span></h1>
       <p class="welcome-subtitle" th:text="#{customAlerts.subtitle}">Your own alert rules: combine indicators, chart patterns and insider or congressional trades, then let StockWatch watch your watchlists for the moment they all line up.</p>
+      <!-- Status messages sit under the subtitle so a long one cannot squeeze the heading. -->
+      <p data-ca-read-status role="status" class="panel-meta ca-hero-status"></p>
     </div>
     <div class="wl-hero-actions">
       <a th:href="@{/custom-alerts/new}" class="btn-accent" th:text="#{customAlerts.new}">New custom alert</a>
       <button type="button" class="btn-secondary" data-ca-read-all th:text="#{signals.markAllRead}">Mark all as read</button>
-      <span data-ca-read-status role="status" class="panel-meta"></span>
     </div>
   </header>
 

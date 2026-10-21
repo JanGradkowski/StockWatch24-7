@@ -27,7 +27,7 @@
     <div th:if="${firstName != null}" class="search-container">
       <label for="globalTickerSearch" hidden th:text="#{nav.search.label}">Search stocks or indexes</label>
       <input type="search" id="globalTickerSearch" placeholder="Search stocks or indexes — AAPL, S&amp;P 500..." th:placeholder="#{nav.search.placeholder}"
-             class="global-ticker-search" autocomplete="off" aria-controls="globalSuggestionsDropdown"
+             class="global-ticker-search" autocomplete="off" role="combobox" aria-controls="globalSuggestionsDropdown"
              aria-autocomplete="list" aria-expanded="false">
       <div id="globalSuggestionsDropdown" class="global-suggestions" role="listbox" hidden></div>
     </div>

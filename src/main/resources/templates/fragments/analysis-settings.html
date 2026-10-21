@@ -52,7 +52,7 @@
              th:each="profile, stat : ${preferences.profiles()}"
              th:id="${'analysis-' + profile.key()}">
       <div class="settings-card-heading interval-profile-heading">
-        <div><span class="settings-number" th:text="${'0' + (stat.index + 3)}">03</span><div><h2 th:text="#{analysis.heading}">Analysis settings</h2><p th:text="#{analysis.profile.note}">The same periods apply to completed candles on every analysis interval.</p></div></div>
+        <div><span class="settings-number" th:text="${'0' + (stat.index + 3)}">03</span><div><h2 th:text="#{analysis.profile.heading}">Periods and thresholds</h2><p th:text="#{analysis.profile.note}">The same periods apply to completed candles on every analysis interval.</p></div></div>
         <button type="button" class="danger-outline-button analysis-reset-trigger"
                 data-reset-scope="analysis" data-reset-label="shared analysis" th:attr="data-reset-label=#{analysis.resetLabel.shared}" th:text="#{analysis.reset}">Reset settings</button>
       </div>

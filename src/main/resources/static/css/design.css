@@ -508,11 +508,14 @@
 .row-menu > summary::-webkit-details-marker { display: none; }
 .row-menu > summary:hover, .row-menu[open] > summary { border-color: var(--glass-border); background: var(--surface-raised); color: var(--text-color); }
 .row-menu > summary:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-.row-menu-panel { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; min-width: 150px; padding: var(--space-1); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-lg); }
+.row-menu-panel { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; min-width: 12rem; padding: var(--space-1); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-lg); }
 .row-menu.opens-up .row-menu-panel { top: auto; bottom: calc(100% + 4px); }
 .row-menu-panel form { display: block; }
-:root[data-theme] .row-menu-panel .signal-archive-delete-button { display: block; width: 100%; min-height: 36px; padding: var(--space-2) var(--space-3); border: 0; border-radius: 6px; background: transparent; color: var(--danger); font-size: var(--fs-md); font-weight: 600; text-align: left; cursor: pointer; }
-:root[data-theme] .row-menu-panel .signal-archive-delete-button:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+/* Every item in a row menu is styled here, whichever page or script builds the menu. */
+:root[data-theme] .row-menu-panel :is(button, a) { display: block; width: 100%; min-height: 36px; padding: var(--space-2) var(--space-3); border: 0; border-radius: 6px; background: transparent; color: var(--text-color); font: inherit; font-size: var(--fs-md); font-weight: 600; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; }
+:root[data-theme] .row-menu-panel :is(button, a):hover { background: var(--surface-raised); }
+:root[data-theme] .row-menu-panel :is(.signal-archive-delete-button, .danger-text) { color: var(--danger); }
+:root[data-theme] .row-menu-panel :is(.signal-archive-delete-button, .danger-text):hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 
 /* Signal lists: a dot marks unread items, names wrap instead of being cut off. */
 .unread-dot { display: inline-block; width: 8px; height: 8px; margin-right: var(--space-2); border-radius: 50%; background: var(--primary-color); vertical-align: 1px; }
