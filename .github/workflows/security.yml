@@ -5,7 +5,8 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "19 3 * * 1"
+    # Daily, so the vulnerability database cached on main is never more than a day behind the NVD.
+    - cron: "19 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -84,8 +85,46 @@ jobs:
           npm ci --no-audit --no-fund
           npm test
 
+      # The audit (OWASP dependency-check) works from a local copy of the NVD. That copy used to live in
+      # ~/.m2 and ride along in setup-java's Maven cache, which is saved only when pom.xml changes, so
+      # every run had to fetch all NVD changes since one old snapshot. Once that backlog reached ~28k
+      # records, the NVD API's slow change queries kept the audit running into the job timeout. The copy
+      # now has a cache of its own, saved at most once a day per branch, so a run fetches about a day of
+      # changes (a run with no cache at all downloads the full NVD, which takes a few minutes).
+      - name: Locate vulnerability database
+        id: nvd-db
+        run: |
+          echo "DEPENDENCY_CHECK_DATA=$HOME/.cache/dependency-check" >> "$GITHUB_ENV"
+          echo "cache-key=dependency-check-${{ runner.os }}-$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vulnerability database
+        id: nvd-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.DEPENDENCY_CHECK_DATA }}
+          key: ${{ steps.nvd-db.outputs.cache-key }}
+          restore-keys: dependency-check-${{ runner.os }}-
+
+      # Bounded, so a slow or unavailable NVD API fails here with a message instead of using up the job.
+      - name: Update vulnerability database
+        id: nvd-update
+        timeout-minutes: 20
+        run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DdataDirectory="$DEPENDENCY_CHECK_DATA" dependency-check:update-only
+
+      - name: Explain a failed vulnerability database update
+        if: failure() && steps.nvd-update.outcome == 'failure'
+        run: echo "::error title=NVD update failed::Updating the vulnerability database from the NVD API failed or took over 20 minutes, so the dependency audit did not run. This is not a vulnerability finding; the Update vulnerability database step shows the NVD responses. Re-run the job once the NVD API answers again."
+
+      - name: Save vulnerability database
+        if: steps.nvd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.DEPENDENCY_CHECK_DATA }}
+          key: ${{ steps.nvd-db.outputs.cache-key }}
+
       - name: Audit dependencies
-        run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DskipTests verify
+        timeout-minutes: 10
+        run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DskipTests -DdataDirectory="$DEPENDENCY_CHECK_DATA" -DautoUpdate=false verify
 
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
