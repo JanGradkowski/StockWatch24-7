@@ -1,4 +1,5 @@
-/* Visual refresh. Pages opt in with <body class="ui-refresh"> and load this file after design.css.
+/* Visual refresh. Every page loads this file after design.css and carries <body class="ui-refresh">; the class
+   keeps these rules ahead of the older layers, including stylesheets that fragments link later in the page.
    Direction: flat surfaces with one border and no glows, one lime primary action per page, neutral
    secondary controls, sentence-case labels and a compact header so content (the chart above all)
    starts high on the page. Everything comes from tokens.css, so both themes follow. No blur, large
@@ -42,7 +43,9 @@
     box-shadow: none;
     backdrop-filter: none;
 }
-:root[data-theme] .ui-refresh .theme-toggle { top: 12px; right: 20px; transform: none; border-color: var(--rf-line); background: var(--rf-panel); }
+:root[data-theme] .ui-refresh .theme-toggle { border-color: var(--rf-line); background: var(--rf-panel); box-shadow: none; backdrop-filter: none; }
+/* Only the app's top bar moves the switch; the landing and about bars keep it centred in their own bar. */
+:root[data-theme] .ui-refresh .app-navigation .theme-toggle { top: 12px; right: 20px; transform: none; }
 :root[data-theme] .ui-refresh .navbar :is(.global-ticker-search) { height: 40px; border-radius: var(--rf-radius-control); background: var(--rf-panel); }
 :root[data-theme] .ui-refresh .navbar :is(.logout-btn, .history-back-button) {
     min-height: 36px; padding: 0 12px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius-control);
@@ -475,6 +478,261 @@
     color: var(--text-soft); text-transform: none; letter-spacing: 0; font-size: var(--fs-xs); font-weight: 600;
 }
 
+/* ------------------------------------------------------------------ every page: headers, panels and labels */
+
+/* One page title size and a quiet kicker above it, whichever page family the header belongs to. */
+:root[data-theme] .ui-refresh :is(.signal-archive-header .title, .settings-header h1, .app-hero h1, .watchlist-heading h1,
+    .ca-builder-header h1, .ca-trigger-header h1, .signal-report-header h1) {
+    margin: 4px 0 0; font-size: clamp(1.6rem, 2.4vw, 2rem); font-weight: 700; line-height: 1.2; letter-spacing: -.02em;
+}
+:root[data-theme] .ui-refresh :is(.signal-archive-header, .app-hero, .watchlist-heading, .ca-builder-header, .ca-trigger-header) .subtitle,
+:root[data-theme] .ui-refresh :is(.app-hero, .settings-header) :is(.welcome-subtitle, p:not(.eyebrow)) { color: var(--text-soft); font-size: var(--fs-md); }
+:root[data-theme] .ui-refresh :is(.signal-report-eyebrow, .settings-sidebar-label, .technical-outlook-control-label, .unsaved-alert-kicker,
+    .outlook-state-label, .lifecycle-step-label, .portfolio-value-label, .watchlist-top-label) {
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-report-eyebrow, .signal-section-kicker)::before { display: none; }
+
+/* Panels on the remaining pages: the same flat card as the pilot pages. */
+:root[data-theme] .ui-refresh :is(.signal-archive-shell, .settings-card, .technical-outlook-panel, .technical-outlook-controlbar,
+    .technical-outlook-summary, .technical-relative-chart-card, .demo-portfolio, .virtual-trade-launch-card, .virtual-trade-chart-card,
+    .virtual-trade-summary, .virtual-trade-comparison, .historical-outcome-section, .outlook-state-card, .watchlist-board,
+    .watchlist-summary-card, .ca-panel, .ca-section, .ca-trigger-panel, .ca-guide, .about-callout, .about-trust-note) {
+    border: 1px solid var(--rf-line); border-radius: var(--rf-radius); background: var(--rf-panel); background-image: none;
+    box-shadow: none; backdrop-filter: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-archive-shell, .settings-card, .technical-outlook-panel, .technical-outlook-summary,
+    .virtual-trade-launch-card, .demo-portfolio, .historical-outcome-section, .outlook-state-card, .watchlist-board)::before,
+:root[data-theme] .ui-refresh :is(.signal-archive-shell, .settings-card, .technical-outlook-panel, .technical-outlook-summary,
+    .virtual-trade-launch-card, .demo-portfolio, .historical-outcome-section, .outlook-state-card, .watchlist-board)::after { display: none; }
+:root[data-theme] .ui-refresh :is(.signal-archive-shell, .settings-card, .demo-portfolio) { padding: 20px; }
+
+/* Tiles inside panels: a hairline box, no fill of their own. */
+:root[data-theme] .ui-refresh :is(.technical-vote, .technical-category-card, .signal-evidence-card, .harmonic-geometry-item,
+    .virtual-trade-summary-grid > *, .virtual-trade-results-metrics > *, .outlook-delta-grid > *, .watchlist-summary-grid > *) {
+    border: 1px solid var(--rf-line-soft); border-radius: 10px; background: transparent; background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.technical-vote, .technical-category-card) > span,
+:root[data-theme] .ui-refresh :is(.signal-evidence-card .evidence-category, .harmonic-geometry-group-heading) {
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+:root[data-theme] .ui-refresh .technical-vote strong { font-size: var(--fs-2xl); font-weight: 700; }
+:root[data-theme] .ui-refresh :is(.technical-vote.buy, .technical-category-card.buy) strong { color: var(--rf-buy); }
+:root[data-theme] .ui-refresh :is(.technical-vote.sell, .technical-category-card.sell) strong { color: var(--rf-sell); }
+
+/* Section filters use the pilot's underline tabs. */
+:root[data-theme] .ui-refresh .ca-tabs { display: flex; gap: 4px; padding: 0; border: 0; border-bottom: 1px solid var(--rf-line); border-radius: 0; background: transparent; box-shadow: none; }
+:root[data-theme] .ui-refresh .ca-tabs :is(button, a) {
+    min-height: 40px; margin: 0 0 -1px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+    background: transparent; box-shadow: none; color: var(--text-soft); font-size: var(--fs-md); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .ca-tabs :is(button, a):is(.active, [aria-selected="true"], [aria-pressed="true"]) {
+    border-bottom-color: var(--primary-color); background: transparent; color: var(--text-color);
+}
+/* Interval switches (daily, weekly, monthly) are the pilot's segmented control. */
+:root[data-theme] .ui-refresh :is(.outlook-interval-tabs, .virtual-trade-interval-tabs, .watchlist-tabs) {
+    display: inline-flex; width: auto; gap: 0; padding: 2px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius-control); background: var(--rf-panel); box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.outlook-interval-tabs, .virtual-trade-interval-tabs) .signal-view-tab,
+:root[data-theme] .ui-refresh .watchlist-tabs button {
+    min-height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh :is(.outlook-interval-tabs, .virtual-trade-interval-tabs) .signal-view-tab:is(.active, [aria-selected="true"]),
+:root[data-theme] .ui-refresh .watchlist-tabs button[aria-pressed="true"] {
+    border: 0; background: var(--rf-raised); box-shadow: none; color: var(--text-color);
+}
+
+/* Status pills: small, sentence case, coloured by meaning only. */
+:root[data-theme] .ui-refresh :is(.signal-lifecycle-pill, .virtual-trade-status-pill, .virtual-trade-side-pill, .security-status, .wl-status) {
+    display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 6px; box-shadow: none;
+    font-size: var(--fs-xs); font-weight: 650; letter-spacing: 0; text-transform: none;
+}
+
+/* Breadcrumb links and disclosure toggles reach the 24px minimum target height. */
+:root[data-theme] .ui-refresh .signal-breadcrumb a { display: inline-flex; align-items: center; min-height: 24px; }
+/* Kept weak on purpose: any summary that sets its own height (row menus, the about page's rules) keeps it. */
+.ui-refresh :where(main details) > summary { min-height: 24px; }
+
+/* Dialogs: one flat surface. */
+:root[data-theme] .ui-refresh :is(.unsaved-alert-dialog, .settings-dialog, .watchlist-dialog) { background: var(--rf-panel); background-image: none; backdrop-filter: none; }
+
+/* ------------------------------------------------------------------ archives: signals, ticker alerts, demo trades */
+
+/* The total is a figure beside the title, not a card. */
+:root[data-theme] .ui-refresh .signal-archive-header { align-items: flex-end; margin: 0 0 16px; }
+:root[data-theme] .ui-refresh .signal-archive-total { min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+:root[data-theme] .ui-refresh .signal-archive-total strong { color: var(--text-color); font-size: var(--fs-2xl); font-weight: 700; line-height: 1.1; }
+:root[data-theme] .ui-refresh .signal-archive-total span { color: var(--muted-text); }
+
+/* Filters: compact choice chips; the selected one is filled, not outlined in lime. */
+:root[data-theme] .ui-refresh .archive-state-filter legend { color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; }
+:root[data-theme] .ui-refresh .archive-state-filter label {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 12px;
+    border: 1px solid var(--rf-line); border-radius: 999px; background: transparent; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .archive-state-filter label:has(input:checked) {
+    border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); color: var(--text-color);
+}
+:root[data-theme] .ui-refresh .signal-archive-sort-form label > span { color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; }
+:root[data-theme] .ui-refresh .signal-archive-sort-form :is(input, select) { min-height: var(--rf-control-h); height: var(--rf-control-h); }
+:root[data-theme] .ui-refresh .signal-archive-toolbar { padding-bottom: 16px; }
+
+/* Selection bar: a plain row above the table. */
+:root[data-theme] .ui-refresh .signal-delete-toolbar {
+    min-height: 44px; padding: 6px 0; border: 0; border-top: 1px solid var(--rf-line-soft); border-radius: 0; background: transparent;
+}
+:root[data-theme] .ui-refresh .signal-select-all-control { color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] .ui-refresh .signal-bulk-delete-button { min-height: 32px; border-radius: var(--rf-radius-control); background: transparent; background-image: none; box-shadow: none; }
+:root[data-theme] .ui-refresh .signal-bulk-delete-button:disabled { border-color: var(--rf-line); color: var(--muted-text); opacity: 1; }
+
+/* The archive reads as one table: rows split by hairlines instead of a card per row. */
+:root[data-theme] .ui-refresh :is(.signal-archive-head, .activity-signal-archive-head, .virtual-trade-archive-head) {
+    padding-bottom: 8px; border-bottom: 1px solid var(--rf-line); color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+/* Wide screens: the heading row spans the table; padding (not margin) keeps its columns over the row's. */
+@media (min-width: 1025px) {
+    :root[data-theme] .ui-refresh :is(.signal-archive-head, .activity-signal-archive-head) { margin: 0; padding: 0 calc(48px + .95rem) 8px calc(42px + .95rem); }
+}
+:root[data-theme] .ui-refresh .signal-archive-list, :root[data-theme] .ui-refresh .signal-archive-entry { gap: 0; }
+:root[data-theme] .ui-refresh .signal-archive-row .latest-signal-tags { gap: 4px; }
+:root[data-theme] .ui-refresh .signal-archive-row :is(.latest-family-tag, .latest-direction-tag) { min-height: 22px; padding: 0 7px; }
+:root[data-theme] .ui-refresh :is(.signal-archive-record, .virtual-trade-archive-record) { align-items: center; border-bottom: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh :is(.signal-archive-record, .virtual-trade-archive-record):hover { background: var(--rf-raised); }
+:root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row, .virtual-trade-archive-row) {
+    border: 0; border-radius: 0; background: transparent; background-image: none; box-shadow: none; transform: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row, .virtual-trade-archive-row):hover {
+    border: 0; background: transparent; box-shadow: none; transform: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row).is-unread { box-shadow: inset 3px 0 0 var(--primary-color); }
+:root[data-theme] .ui-refresh .signal-select-control { border: 0; border-radius: 0; background: transparent; }
+:root[data-theme] .ui-refresh .signal-archive-group-label { padding: 16px 0 6px; border-bottom: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh .signal-archive-group-label strong,
+:root[data-theme] .ui-refresh .signal-archive-group-label.date-group strong { color: var(--text-color); font-size: var(--fs-sm); font-weight: 650; letter-spacing: 0; }
+:root[data-theme] .ui-refresh .archive-row-details { padding: 0 12px 10px; }
+:root[data-theme] .ui-refresh .archive-row-details summary { color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .signal-archive-pagination { padding-top: 16px; }
+
+/* A cell's value and its note sit on separate lines at every width (on phones they ran together, as in "MSFTMSFT"). */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row > div > :is(strong, span, small, time):not(.virtual-trade-side-pill) { display: block; }
+/* The pill names its own state; a column label inside it reads "StatusTracking". */
+:root[data-theme] .ui-refresh .virtual-trade-status-pill[data-mobile-label]::before { display: none; }
+@media (max-width: 1024px) {
+    /* Stacked rows read down the left edge instead of centring each cell. */
+    :root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row, .virtual-trade-archive-row) > * { justify-self: start; text-align: left; }
+    /* In the two-column stack the date is one cell among others, so the divider meant for a full-width row goes. */
+    :root[data-theme] .ui-refresh .signal-archive-date { padding-top: 0; border-top: 0; }
+    :root[data-theme] .ui-refresh .signal-archive-row .latest-signal-tags { flex-wrap: wrap; }
+    :root[data-theme] .ui-refresh .signal-archive-row :is(.latest-family-tag, .latest-direction-tag) { max-width: 100%; white-space: normal; }
+}
+
+/* Demo trading: the portfolio figure leads; period tiles are quiet until chosen. */
+:root[data-theme] .ui-refresh .portfolio-value { font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700; letter-spacing: -.03em; }
+:root[data-theme] .ui-refresh .portfolio-period { border-color: var(--rf-line-soft); border-radius: 10px; background: transparent; }
+:root[data-theme] .ui-refresh .portfolio-period.is-selected { border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); box-shadow: none; }
+:root[data-theme] .ui-refresh .portfolio-ranking { border-color: var(--rf-line-soft); background: transparent; }
+
+/* ------------------------------------------------------------------ reports: outlook, history, ticker alerts, demo trade */
+
+:root[data-theme] .ui-refresh .technical-outlook-controlbar { padding: 14px 20px; }
+:root[data-theme] .ui-refresh .technical-outlook-summary { padding: 20px; }
+/* A tab's panel only groups the cards inside it; a frame of its own would put cards inside a card. */
+:root[data-theme] .ui-refresh .technical-outlook-panel { padding: 0; border: 0; background: transparent; }
+:root[data-theme] .ui-refresh .technical-outlook-panel > * + * { margin-top: 16px; }
+:root[data-theme] .ui-refresh .technical-outlook-freshness { color: var(--muted-text); font-size: var(--fs-xs); }
+/* The demo-trade card names a page action, so it is a plain panel; its buttons keep their buy and sell meaning. */
+:root[data-theme] .ui-refresh .virtual-trade-launch-card { padding: 18px 20px; }
+:root[data-theme] .ui-refresh .virtual-trade-launch-card :is(h2, h3) { font-size: var(--fs-base); font-weight: 650; }
+:root[data-theme] .ui-refresh .virtual-trade-launch-card p { color: var(--text-soft); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .technical-chart-note, :root[data-theme] .ui-refresh .chart-legend-note { color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh :is(.signal-lifecycle-step, .lifecycle-step-marker) { box-shadow: none; background-image: none; }
+:root[data-theme] .ui-refresh .outlook-change-arrow { background: var(--rf-raised); box-shadow: none; }
+
+/* ------------------------------------------------------------------ settings */
+
+/* The section switcher stays a row of links above the content (the app sidebar is already on the left). */
+/* The same left edge as every other page; the forms keep a readable width. */
+:root[data-theme] .ui-refresh .settings-shell { width: 100%; max-width: 1440px; margin: 0 auto; padding: 20px var(--rf-gutter) 56px; gap: 16px; }
+:root[data-theme] .ui-refresh .settings-content { max-width: 1100px; }
+:root[data-theme] .ui-refresh .settings-header { margin-bottom: 16px; }
+:root[data-theme] .ui-refresh .inline-security-form button { white-space: nowrap; }
+:root[data-theme] .ui-refresh .settings-sidebar { padding: 0; border: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+:root[data-theme] .ui-refresh .settings-sidebar-label { display: none; }
+:root[data-theme] .ui-refresh .settings-sidebar nav { gap: 6px; }
+:root[data-theme] .ui-refresh .settings-sidebar-link {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px;
+    border: 1px solid var(--rf-line); border-radius: 999px; background: transparent; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .settings-sidebar-link:hover { background: var(--rf-raised); color: var(--text-color); }
+:root[data-theme] .ui-refresh .settings-sidebar-link.active { border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); color: var(--text-color); }
+:root[data-theme] .ui-refresh .settings-sidebar-link svg { width: 16px; height: 16px; color: var(--muted-text); }
+:root[data-theme] .ui-refresh .settings-sidebar-link.active svg { color: var(--primary-color); }
+:root[data-theme] .ui-refresh .settings-header { margin: 8px 0 4px; }
+:root[data-theme] .ui-refresh .settings-card h2 { font-size: var(--fs-base); font-weight: 650; letter-spacing: -.01em; }
+:root[data-theme] .ui-refresh .settings-number { min-width: 0; padding: 0; background: transparent; color: var(--muted-text); font-family: var(--font-mono); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh :is(.appearance-fieldset, .theme-choice, .elliott-color-choice, .analysis-safety-strip, .scoring-safety-strip,
+    .scoring-confluence-block, .analysis-setting-groups fieldset, .recovery-code-panel, .password-code-request) {
+    border-color: var(--rf-line-soft); background: transparent; background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .theme-choice:has(input:checked) { border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); }
+:root[data-theme] .ui-refresh :is(.analysis-factory-zone, .analysis-profile-overview, .detection-interval-card, .scoring-overview-card) {
+    border-color: var(--rf-line-soft); background: transparent; background-image: none; box-shadow: none;
+}
+/* The save bar floats over the form, so it keeps a solid fill. */
+:root[data-theme] .ui-refresh .analysis-save-card { border-color: var(--rf-line); background: var(--rf-panel); background-image: none; }
+:root[data-theme] .ui-refresh :is(.analysis-profile-state, .elliott-rule-kicker, .scoring-family-label) {
+    font-size: var(--fs-xs); font-weight: 650; letter-spacing: 0; text-transform: none;
+}
+:root[data-theme] .ui-refresh .danger-zone { background: transparent; background-image: none; }
+
+/* ------------------------------------------------------------------ lists: watchlists, followed outlooks, custom alerts */
+
+:root[data-theme] .ui-refresh .app-hero { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin: 4px 0 20px; }
+:root[data-theme] .ui-refresh .app-hero .wl-hero-actions { flex-wrap: wrap; }
+:root[data-theme] .ui-refresh .watchlist-heading { margin: 4px 0 20px; }
+:root[data-theme] .ui-refresh .watchlist-board { overflow: hidden; }
+:root[data-theme] .ui-refresh .watchlist-summary-card header { border-bottom: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh :is(.watchlist-summary-card, .watchlist-changes) h3 { font-size: var(--fs-base); font-weight: 650; }
+:root[data-theme] .ui-refresh .ca-guide { padding: 14px 20px; }
+
+/* ------------------------------------------------------------------ sign-in, error and public pages */
+
+/* One flat card; the pitch side keeps its words but loses the glow and gradient type. */
+:root[data-theme] body.ui-refresh.auth-page { background: var(--bg-color); }
+:root[data-theme] .ui-refresh .auth-shell { border: 1px solid var(--rf-line); border-radius: 16px; background: var(--rf-panel); background-image: none; box-shadow: none; animation: none; }
+:root[data-theme] .ui-refresh .auth-showcase { background: var(--surface-soft); background-image: none; }
+:root[data-theme] .ui-refresh .auth-card { border: 0; background: transparent; background-image: none; box-shadow: none; }
+:root[data-theme] .ui-refresh .auth-card h2 { font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -.02em; }
+:root[data-theme] .ui-refresh .auth-pitch h1 { font-size: clamp(1.9rem, 3.4vw, 2.75rem); font-weight: 700; letter-spacing: -.03em; }
+:root[data-theme] .ui-refresh .text-gradient { background: none; -webkit-text-fill-color: currentColor; color: var(--text-soft); }
+:root[data-theme] .ui-refresh .auth-signal-card { border: 1px solid var(--rf-line); background: var(--rf-panel); box-shadow: none; backdrop-filter: none; }
+:root[data-theme] .ui-refresh .auth-card .btn-accent { width: 100%; min-height: 44px; }
+:root[data-theme] .ui-refresh :is(.auth-switch, .auth-help) .text-link { font-weight: 600; }
+
+/* Landing and about: the product pictures stay; cards, labels and the closing call to action follow the app. */
+:root[data-theme] body.ui-refresh.landing-page { background: var(--bg-color); }
+:root[data-theme] .ui-refresh .landing-nav { box-shadow: none; backdrop-filter: none; }
+:root[data-theme] .ui-refresh :is(.feature-number, .about-section-number, .terminal-label, .floating-signal-head,
+    :is(.about-definition-grid, .about-function-grid, .about-monitoring-flow, .about-history-grid, .about-limit-grid) article > span) {
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none;
+}
+:root[data-theme] .ui-refresh :is(.feature-card, .about-definition-grid article, .about-function-grid article) {
+    border: 1px solid var(--rf-line); border-radius: var(--rf-radius); background: var(--rf-panel); background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta) {
+    border: 1px solid var(--rf-line); border-radius: 16px; background: var(--surface-soft); background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta)::before,
+:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta)::after { display: none; }
+/* About: every explanatory card is the plain panel (the light theme gave them a gradient, so their text could not be
+   checked for contrast); the diagrams keep their own drawing. */
+:root[data-theme] body.ui-refresh.about-page main article { background: var(--rf-panel); background-image: none; box-shadow: none; }
+:root[data-theme] .ui-refresh .about-signal { letter-spacing: 0; }
+:root[data-theme] .ui-refresh .about-signal.buy { background: color-mix(in srgb, var(--rf-buy) 12%, transparent); color: var(--rf-buy); }
+:root[data-theme] .ui-refresh .about-signal.sell { background: color-mix(in srgb, var(--rf-sell) 12%, transparent); color: var(--rf-sell); }
+:root[data-theme] .ui-refresh .wave-bar { background: color-mix(in srgb, var(--violet) 55%, transparent); box-shadow: none; }
+:root[data-theme] .ui-refresh .wave-bar:nth-child(6) { background: var(--primary-color); }
+
 /* ------------------------------------------------------------------ narrow screens */
 
 @media (max-width: 1100px) {
@@ -508,6 +766,13 @@
     :root[data-theme] .ui-refresh .signal-score-card, :root[data-theme] .ui-refresh .signal-snapshot-card, :root[data-theme] .ui-refresh .signal-chart-card { padding: 16px; }
     :root[data-theme] .ui-refresh .signal-score-visual { grid-template-columns: 1fr; justify-items: start; }
 }
-@media (max-width: 480px) {
-    :root[data-theme] .ui-refresh .navbar { padding-right: 64px; }
+@media (max-width: 768px) {
+    /* The theme switch joins the top bar here, so the bar needs no room for it on the right. */
+    :root[data-theme] .ui-refresh .app-navigation .navbar { padding-right: var(--rf-gutter); }
+    /* The form stacks into a column here, where a flex basis would become a 180px-tall empty field group. */
+    :root[data-theme] .ui-refresh .inline-security-form .form-group { flex: 0 0 auto; }
+    /* Sign-in pages fill the phone; the pitch is hidden here, so its side shrinks to the logo row. */
+    /* The shell fills the screen height; without fixed rows the spare height went to the logo row too. */
+    :root[data-theme] .ui-refresh .auth-shell { grid-template-rows: auto 1fr; border: 0; border-radius: 0; }
+    :root[data-theme] .ui-refresh .auth-showcase { min-height: 0; padding: 16px 20px; border-bottom: 1px solid var(--rf-line); box-shadow: none; }
 }

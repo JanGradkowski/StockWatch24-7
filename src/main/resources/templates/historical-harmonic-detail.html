@@ -10,9 +10,10 @@
   <th:block th:replace="~{fragments/chart-workbench :: pageAssets}"></th:block>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
-<body>
+<body class="ui-refresh">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
 <main class="page-container signal-detail-page historical-harmonic-detail-page">
@@ -90,7 +91,7 @@
         <span class="signal-confidence-pill" th:text="${#tr.text(displayScore.strengthLabel())}">High compliance</span>
       </div>
       <div class="signal-score-visual">
-        <div class="signal-score-orbit" aria-hidden="true"><div class="signal-score-orbit-core">
+        <div class="signal-score-orbit" aria-hidden="true" th:attr="data-score-percent=${displayScore.score()}"><div class="signal-score-orbit-core">
           <strong th:text="${displayScore.score()}">94</strong><span>/100</span>
         </div></div>
         <div class="signal-score-summary">

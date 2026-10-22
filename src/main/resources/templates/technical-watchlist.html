@@ -8,12 +8,13 @@
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <link rel="stylesheet" th:href="@{/css/technical-watchlist.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/technical-watchlist.js}" defer></script>
   <meta name="_csrf" th:content="${_csrf.token}">
   <meta name="_csrf_header" th:content="${_csrf.headerName}">
 </head>
-<body>
+<body class="ui-refresh">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 <main id="technicalWatchlist" class="page-container watchlist-page"
       th:attr="data-endpoint=@{/api/technical-watchlist},data-stock-base=@{/stock/},data-change-base=@{/technical-outlook/changes/}">

@@ -6,12 +6,13 @@
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}"><link rel="stylesheet" th:href="@{/css/design.css}">
   <link rel="stylesheet" th:href="@{/css/custom-alerts.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/mark-read-on-view.js}" defer></script>
   <script th:src="@{/js/custom-alert-text.js}" defer></script>
   <script th:src="@{/js/custom-alert-trigger.js}" defer></script>
 </head>
-<body>
+<body class="ui-refresh">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 <main class="page-container ca-trigger-page"
       th:attr="data-mark-read-endpoint=${'/api/custom-alerts/triggers/' + trigger.id() + '/read'},data-trigger-id=${trigger.id()},data-alert-id=${trigger.alertId()},data-symbol=${trigger.symbol()},data-candle=${trigger.candleTimestamp()},data-evidence=${triggerEvidence},data-prices=${triggerPrices},data-outcome-candles=${trigger.outcomeCandles()}">

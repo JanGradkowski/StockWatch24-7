@@ -2,10 +2,11 @@
 <html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title th:with="navKey=${settingsTab == 'candlestick-patterns' ? 'candlestick' : (settingsTab == 'elliott-waves' ? 'elliott' : (settingsTab == 'harmonic-formations' ? 'harmonic' : settingsTab))}" th:text="|${#messages.msg('settings.nav.' + navKey)} · #{settings.title} — StockWatch 24/7|">Settings — StockWatch 24/7</title><script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script><link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 <script defer th:src="@{/js/settings-security.js}"></script>
 </head>
-<body class="settings-page">
+<body class="settings-page ui-refresh">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 <main class="settings-shell">
   <aside class="settings-sidebar"><p class="settings-sidebar-label" th:text="#{settings.sidebarLabel}">Settings</p><nav aria-label="Settings sections" th:aria-label="#{settings.sectionsAria}">
