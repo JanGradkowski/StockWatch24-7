@@ -198,6 +198,11 @@
             check();
         });
     }
+    /** Score rings fill to their score: the markup carries the number and CSS draws the arc from it. */
+    function scoreRings() {
+        document.querySelectorAll('[data-score-percent]').forEach(ring =>
+            ring.style.setProperty('--score-percent', String(Math.max(0, Math.min(100, Number(ring.dataset.scorePercent) || 0)))));
+    }
     labelRows(); settingsChanges(); appearancePreview(); fieldErrors();
-    filterableMenus(); rowMenus(); expandableStatus(); passwordByteLimits();
+    filterableMenus(); rowMenus(); expandableStatus(); passwordByteLimits(); scoreRings();
 })();

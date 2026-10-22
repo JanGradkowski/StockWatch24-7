@@ -381,7 +381,7 @@ class FrontendSecurityTest {
         assertTrue(stylesheet.contains(".history-back-disabled .history-back-button"));
         assertTrue(navbar.contains("firstName != null"));
         assertTrue(navbar.contains("fragments/history-back :: historyBack"));
-        assertTrue(dashboard.contains("<body class=\"history-back-disabled\">"));
+        assertTrue(dashboard.matches("(?s).*<body class=\"[^\"]*\\bhistory-back-disabled\\b[^\"]*\">.*"));
 
         for (String template : List.of(
                 "all-signals.html", "all-activity-signals.html",
@@ -858,7 +858,7 @@ class FrontendSecurityTest {
         String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
         String stylesheet = stylesheets();
 
-        assertTrue(stock.contains("<body class=\"stock-is-loading\">"));
+        assertTrue(stock.matches("(?s).*<body class=\"[^\"]*\\bstock-is-loading\\b[^\"]*\">.*"));
         assertTrue(stock.contains("id=\"stockPageLoader\""));
         assertTrue(stock.contains("role=\"status\""));
         assertTrue(stock.contains("aria-live=\"polite\""));

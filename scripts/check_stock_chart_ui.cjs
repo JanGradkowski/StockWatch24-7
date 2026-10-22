@@ -306,6 +306,9 @@ async function run(browser, { language, catalog }) {
   await shot('light');
 
   // Performance budget from the plan: 30 indicators and 200 drawings pan without long frames.
+  // The pointer stays wherever the last click left it; park it off the chart so the result does not depend on
+  // where the layout happens to put the full-screen button (a pointer on the chart also drives the crosshair).
+  await page.mouse.move(0, 0);
   const timing = await page.evaluate(async () => {
     const types = ['EMA', 'SMA', 'MACD', 'ATR', 'CCI', 'WMA', 'HMA', 'OBV', 'MFI', 'ADX_DMI', 'STOCHASTIC', 'VWAP', 'DONCHIAN', 'KELTNER',
       'AROON', 'TRIX', 'CMO', 'ROC', 'MOMENTUM', 'WILLIAMS_R', 'DEMA', 'TEMA', 'ALMA', 'KAMA', 'VWMA', 'SMMA', 'LSMA', 'ZLEMA'];

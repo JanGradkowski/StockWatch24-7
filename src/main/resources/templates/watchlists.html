@@ -5,9 +5,10 @@
   <title th:text="${watchlistName != null ? watchlistName + ' — StockWatch 24/7' : #messages.msg('watchlists.pageTitle')}">Watchlists — StockWatch 24/7</title>
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}"><link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
-<body>
+<body class="ui-refresh">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 <main class="dashboard-container">
   <header class="app-hero"><div class="app-hero-copy"><div class="eyebrow" th:text="#{watchlists.eyebrow}">Your workspace</div>

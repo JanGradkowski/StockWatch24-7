@@ -12,10 +12,11 @@
   <script defer th:src="@{/js/detail-chart-intervals.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/mark-read-on-view.js}" defer></script>
 </head>
-<body>
+<body class="ui-refresh">
 
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
@@ -113,7 +114,7 @@
       </div>
 
       <div class="signal-score-visual">
-        <div class="signal-score-orbit" aria-hidden="true">
+        <div class="signal-score-orbit" aria-hidden="true" th:attr="data-score-percent=${displayScore.score()}">
           <div class="signal-score-orbit-core">
             <strong th:text="${displayScore.score()}">88</strong>
             <span>/100</span>

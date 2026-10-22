@@ -6,11 +6,12 @@
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}"><link rel="stylesheet" th:href="@{/css/design.css}">
   <link rel="stylesheet" th:href="@{/css/custom-alerts.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/custom-alert-text.js}" defer></script>
   <script th:src="@{/js/custom-alerts.js}" defer></script>
 </head>
-<body>
+<body class="ui-refresh">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 <main class="dashboard-container custom-alerts-page" th:attr="data-maximum-active=${maximumActive}">
   <header class="app-hero">

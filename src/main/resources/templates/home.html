@@ -7,10 +7,11 @@
   <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/dashboard.js}" defer></script>
 </head>
-<body class="history-back-disabled">
+<body class="history-back-disabled ui-refresh">
 
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
@@ -649,12 +650,14 @@
           <span class="metric-note" th:text="#{home.unreadTickerAlertsHelp}">Insider and congressional trades</span>
         </a>
       </section>
-
-      <details id="systemPulsePanel" class="glass-panel dashboard-panel system-pulse-panel">
-        <summary th:text="#{home.aboutMonitoring}">About monitoring</summary>
-        <p th:text="#{home.aboutMonitoringText}">Checks run in the background while StockWatch is running. Missed scheduled checks resume after a restart.</p>
-      </details>
     </aside>
+
+    <!-- Background information, so it comes after the panels rather than with the counters. -->
+    <details id="systemPulsePanel" class="glass-panel dashboard-panel system-pulse-panel"
+             data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}">
+      <summary th:text="#{home.aboutMonitoring}">About monitoring</summary>
+      <p th:text="#{home.aboutMonitoringText}">Checks run in the background while StockWatch is running. Missed scheduled checks resume after a restart.</p>
+    </details>
   </div>
 </main>
 

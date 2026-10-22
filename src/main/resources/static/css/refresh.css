@@ -1,0 +1,778 @@
+/* Visual refresh. Every page loads this file after design.css and carries <body class="ui-refresh">; the class
+   keeps these rules ahead of the older layers, including stylesheets that fragments link later in the page.
+   Direction: flat surfaces with one border and no glows, one lime primary action per page, neutral
+   secondary controls, sentence-case labels and a compact header so content (the chart above all)
+   starts high on the page. Everything comes from tokens.css, so both themes follow. No blur, large
+   shadows or animation: repainted area stays small on weaker graphics hardware. */
+
+:root {
+    --rf-radius: 12px;
+    --rf-radius-control: 8px;
+    --rf-line: var(--glass-border);
+    --rf-line-soft: color-mix(in srgb, var(--glass-border) 60%, transparent);
+    --rf-panel: var(--surface);
+    --rf-raised: var(--surface-raised);
+    --rf-gutter: 28px;
+    --rf-control-h: 36px;
+    --rf-buy: var(--accent-color);
+    --rf-sell: var(--danger);
+}
+
+/* ------------------------------------------------------------------ page and shell */
+
+:root[data-theme] body.ui-refresh { background: var(--bg-color); }
+:root[data-theme] .ui-refresh :is(.dashboard-container, .stock-page, .page-container) {
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 20px var(--rf-gutter) 56px;
+}
+
+/* The top bar is a flat strip joined to the sidebar instead of a floating card. */
+:root[data-theme] .ui-refresh .app-navigation .navbar {
+    top: 0;
+    width: 100%;
+    max-width: none;
+    min-height: 64px;
+    margin: 0;
+    padding: 12px 76px 12px var(--rf-gutter);
+    border: 0;
+    border-bottom: 1px solid var(--rf-line);
+    border-radius: 0;
+    background: var(--bg-color);
+    box-shadow: none;
+    backdrop-filter: none;
+}
+:root[data-theme] .ui-refresh .theme-toggle { border-color: var(--rf-line); background: var(--rf-panel); box-shadow: none; backdrop-filter: none; }
+/* Only the app's top bar moves the switch; the landing and about bars keep it centred in their own bar. */
+:root[data-theme] .ui-refresh .app-navigation .theme-toggle { top: 12px; right: 20px; transform: none; }
+:root[data-theme] .ui-refresh .navbar :is(.global-ticker-search) { height: 40px; border-radius: var(--rf-radius-control); background: var(--rf-panel); }
+:root[data-theme] .ui-refresh .navbar :is(.logout-btn, .history-back-button) {
+    min-height: 36px; padding: 0 12px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius-control);
+    background: transparent; color: var(--text-soft); font-weight: 600; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .navbar :is(.logout-btn, .history-back-button):hover { background: var(--rf-raised); color: var(--text-color); }
+
+:root[data-theme] .ui-refresh .app-sidebar { background: var(--surface-soft); box-shadow: none; }
+:root[data-theme] .ui-refresh .app-sidebar-brand { min-height: 64px; margin-bottom: 8px; }
+:root[data-theme] .ui-refresh .app-sidebar-links a { min-height: 38px; padding: 8px 12px; border-radius: var(--rf-radius-control); font-size: var(--fs-md); font-weight: 550; }
+:root[data-theme] .ui-refresh .app-sidebar-links a[aria-current="page"] {
+    border-color: transparent; background: var(--rf-raised); color: var(--text-color);
+}
+:root[data-theme] .ui-refresh .app-sidebar-links a[aria-current="page"]::before { top: 9px; bottom: 9px; }
+:root[data-theme] .ui-refresh .app-sidebar-group-label { font-size: 11px; letter-spacing: .08em; }
+
+/* ------------------------------------------------------------------ surfaces */
+
+:root[data-theme] .ui-refresh :is(.glass-panel, .dashboard-panel, .alert-panel, .stock-workspace-action-card,
+    .chart-wrapper, .signal-score-card, .signal-snapshot-card, .signal-chart-card, .signal-trade-plan,
+    .signal-lifecycle-section, .signal-evidence-section, .signal-method-note, .signal-results-section,
+    .elliott-projection-section, .metric-card) {
+    border: 1px solid var(--rf-line);
+    border-radius: var(--rf-radius);
+    background: var(--rf-panel);
+    background-image: none;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+/* Decorative glows go: the chart card's was a blurred circle that repainted with every chart frame. */
+:root[data-theme] .ui-refresh :is(.glass-panel, .dashboard-panel, .metric-card, .signal-score-card, .signal-chart-card,
+    .signal-snapshot-card, .chart-wrapper)::before,
+:root[data-theme] .ui-refresh :is(.glass-panel, .dashboard-panel, .metric-card, .signal-score-card, .signal-chart-card,
+    .signal-snapshot-card)::after { display: none; }
+:root[data-theme] .ui-refresh .dashboard-panel { padding: 20px; }
+
+/* ------------------------------------------------------------------ type */
+
+:root[data-theme] .ui-refresh h1 { letter-spacing: -.02em; }
+:root[data-theme] .ui-refresh :is(.panel-title, .chart-panel-title, .signal-section-heading h2, .signal-chart-card h2,
+    .signal-snapshot-card h2, .signal-score-card h2) {
+    font-size: var(--fs-base); font-weight: 650; letter-spacing: -.01em; color: var(--text-color);
+}
+/* Small labels: sentence case and readable contrast instead of spaced capitals in the faintest grey. */
+:root[data-theme] .ui-refresh :is(.eyebrow, .panel-kicker, .signal-section-kicker, .toolbar-label, .metric-label) {
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none;
+}
+:root[data-theme] .ui-refresh .eyebrow::before { display: none; }
+
+/* ------------------------------------------------------------------ controls */
+
+:root[data-theme] .ui-refresh :is(.btn-accent, .btn-primary, .btn-secondary) {
+    min-height: var(--rf-control-h);
+    padding: 0 14px;
+    border-radius: var(--rf-radius-control);
+    font-size: var(--fs-md);
+    font-weight: 600;
+    line-height: 1;
+    box-shadow: none;
+    transform: none;
+    filter: none;
+}
+:root[data-theme] .ui-refresh .btn-accent::after { display: none; }
+:root[data-theme] .ui-refresh :is(.btn-primary, .btn-secondary) { border: 1px solid var(--rf-line); background: transparent; color: var(--text-color); }
+:root[data-theme] .ui-refresh :is(.btn-primary, .btn-secondary):hover { background: var(--rf-raised); border-color: var(--muted-text); }
+:root[data-theme] .ui-refresh .btn-accent:hover { filter: brightness(1.06); }
+:root[data-theme] .ui-refresh svg:is(.btn-accent > svg, .btn-secondary > svg) { width: 16px; height: 16px; }
+
+/* Links that act as panel actions are quiet; links inside sentences keep the accent and an underline. */
+:root[data-theme] .ui-refresh :is(.panel-heading-actions, .wl-hero-actions) > .text-link {
+    display: inline-flex; align-items: center; min-height: var(--rf-control-h); padding: 0 12px;
+    border: 1px solid var(--rf-line); border-radius: var(--rf-radius-control);
+    color: var(--text-color); font-size: var(--fs-md); font-weight: 600; text-decoration: none;
+}
+:root[data-theme] .ui-refresh :is(.panel-heading-actions, .wl-hero-actions) > .text-link:hover { background: var(--rf-raised); }
+:root[data-theme] .ui-refresh p .text-link { text-decoration: underline; text-underline-offset: 2px; }
+
+:root[data-theme] .ui-refresh .panel-count {
+    display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 7px; margin-left: 6px;
+    border: 0; border-radius: 999px; background: var(--rf-raised); color: var(--text-soft);
+    font-size: var(--fs-xs); font-weight: 650; vertical-align: 2px;
+}
+
+/* Tabs: one underline style for page sections. */
+:root[data-theme] .ui-refresh :is(.stock-workspace-tabs, .signal-view-tabs) {
+    display: flex; gap: 4px; width: 100%; max-width: none; margin: 0; padding: 0;
+    border: 0; border-bottom: 1px solid var(--rf-line); border-radius: 0; background: transparent; box-shadow: none;
+    overflow-x: auto; scrollbar-width: none;
+}
+:root[data-theme] .ui-refresh :is(.stock-workspace-tab, .signal-view-tab) {
+    display: inline-flex; flex: 0 0 auto; align-items: center; min-width: 0; min-height: 44px; margin: 0 0 -1px; padding: 0 14px;
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; box-shadow: none;
+    color: var(--text-soft); font-size: var(--fs-md); font-weight: 600; text-align: left; white-space: nowrap;
+}
+:root[data-theme] .ui-refresh :is(.stock-workspace-tab, .signal-view-tab):hover { color: var(--text-color); background: transparent; }
+:root[data-theme] .ui-refresh :is(.stock-workspace-tab.active, .signal-view-tab.active, .signal-view-tab[aria-selected="true"]) {
+    border-bottom-color: var(--primary-color); background: transparent; color: var(--text-color);
+}
+:root[data-theme] .ui-refresh :is(.stock-workspace-tab, .signal-view-tab) :is(small, .signal-tab-icon) { display: none; }
+:root[data-theme] .ui-refresh .signal-view-tab strong { font-weight: inherit; }
+:root[data-theme] .ui-refresh :is(.stock-workspace-tab, .signal-view-tab)::before { display: none; }
+
+/* Chips: neutral by default; direction chips carry the buy or sell colour. */
+:root[data-theme] .ui-refresh :is(.signal-report-tag, .latest-family-tag, .latest-interval, .instrument-type-badge) {
+    display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px;
+    border: 1px solid var(--rf-line); border-radius: 6px; background: transparent;
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-report-tag.direction, .latest-direction-tag) {
+    display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 6px;
+    font-size: var(--fs-xs); font-weight: 650; text-transform: none; letter-spacing: 0;
+}
+:root[data-theme] .ui-refresh :is(.signal-report-tag.direction.buy, .latest-direction-tag.buy) {
+    border: 1px solid color-mix(in srgb, var(--rf-buy) 40%, transparent); background: color-mix(in srgb, var(--rf-buy) 10%, transparent); color: var(--rf-buy);
+}
+:root[data-theme] .ui-refresh :is(.signal-report-tag.direction.sell, .latest-direction-tag.sell) {
+    border: 1px solid color-mix(in srgb, var(--rf-sell) 40%, transparent); background: color-mix(in srgb, var(--rf-sell) 10%, transparent); color: var(--rf-sell);
+}
+
+/* ------------------------------------------------------------------ home */
+
+:root[data-theme] .ui-refresh .welcome-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin: 4px 0 20px; }
+:root[data-theme] .ui-refresh .welcome-header .eyebrow { display: none; }
+:root[data-theme] .ui-refresh .welcome-text { margin: 0; font-size: clamp(1.5rem, 2vw, 1.75rem); font-weight: 650; }
+:root[data-theme] .ui-refresh .welcome-text .primary-text { color: inherit; }
+:root[data-theme] .ui-refresh .welcome-subtitle { margin: 6px 0 0; color: var(--muted-text); font-size: var(--fs-md); }
+:root[data-theme] .ui-refresh .wl-hero-actions { display: flex; align-items: center; gap: 8px; }
+
+/* Summary first: the five counters become one strip under the greeting. */
+:root[data-theme] .ui-refresh .dashboard-container .grid-layout { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+:root[data-theme] .ui-refresh .dashboard-container .grid-layout > * { width: auto; max-width: none; }
+:root[data-theme] .ui-refresh .dashboard-technical-sidebar { order: -1; display: block; align-self: stretch; width: auto; }
+:root[data-theme] .ui-refresh .grid-layout > .system-pulse-panel { order: 1; }
+:root[data-theme] .ui-refresh .dashboard-sidebar-metrics {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 0;
+    border: 1px solid var(--rf-line); border-radius: var(--rf-radius); background: var(--rf-panel); overflow: hidden;
+}
+:root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-card {
+    display: flex; flex-direction: column; gap: 4px; min-height: 0; padding: 14px 18px;
+    border: 0; border-right: 1px solid var(--rf-line-soft); border-radius: 0; background: transparent;
+}
+:root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-card:last-child { border-right: 0; }
+:root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-card-link:hover { background: var(--rf-raised); }
+:root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-value {
+    order: 2; margin: 0; color: var(--text-color); font-size: var(--fs-2xl); font-weight: 650; line-height: 1.15; font-variant-numeric: tabular-nums;
+}
+:root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-label { order: 1; margin: 0; }
+/* The longer explanations stay available to screen readers and as the tile's tooltip. */
+:root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-note {
+    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+:root[data-theme] .ui-refresh .dashboard-main-stack { display: grid; gap: 16px; }
+
+:root[data-theme] .ui-refresh .panel-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+:root[data-theme] .ui-refresh .panel-heading > div:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* The kicker reads as a caption under the title. */
+:root[data-theme] .ui-refresh .panel-heading .panel-kicker { order: 2; color: var(--muted-text); font-weight: 500; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .panel-heading .panel-title { margin: 0; }
+:root[data-theme] .ui-refresh .panel-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* A secondary style for panel actions: the page keeps one lime button. */
+:root[data-theme] .ui-refresh .dashboard-panel .panel-heading-actions .btn-accent {
+    border: 1px solid var(--rf-line); background: transparent; color: var(--text-color);
+}
+:root[data-theme] .ui-refresh .dashboard-panel .panel-heading-actions .btn-accent:hover { background: var(--rf-raised); filter: none; }
+
+:root[data-theme] .ui-refresh .latest-signals-empty {
+    display: flex; align-items: flex-start; gap: 14px; padding: 18px; border: 1px dashed var(--rf-line); border-radius: 10px; background: transparent;
+}
+:root[data-theme] .ui-refresh .latest-signals-empty h3 { margin: 0 0 4px; font-size: var(--fs-md); }
+:root[data-theme] .ui-refresh .latest-signals-empty p { margin: 0; color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .latest-empty-pulse { flex: 0 0 auto; width: 28px; height: 28px; animation: none; border: 0; background: color-mix(in srgb, var(--accent-color) 14%, transparent); border-radius: 50%; }
+:root[data-theme] .ui-refresh .latest-empty-pulse * { animation: none; }
+
+/* Latest signals read as a table: rows split by hairlines, not cards. */
+:root[data-theme] .ui-refresh .latest-signal-head { padding: 0 12px 8px; border-bottom: 1px solid var(--rf-line); color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; text-transform: none; letter-spacing: 0; }
+:root[data-theme] .ui-refresh .latest-signal-list { display: block; }
+:root[data-theme] .ui-refresh .latest-signal-row {
+    margin: 0; padding: 12px; border: 0; border-bottom: 1px solid var(--rf-line-soft); border-radius: 0; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .latest-signal-row:hover { background: var(--rf-raised); transform: none; }
+:root[data-theme] .ui-refresh .latest-signal-row.is-unread { box-shadow: inset 3px 0 0 var(--primary-color); }
+:root[data-theme] .ui-refresh .latest-signal-row::before, :root[data-theme] .ui-refresh .latest-signal-row::after { display: none; }
+:root[data-theme] .ui-refresh .latest-confidence { border: 0; background: transparent; }
+:root[data-theme] .ui-refresh .latest-confidence strong { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+
+:root[data-theme] .ui-refresh .custom-dash-empty > p, :root[data-theme] .ui-refresh .custom-dash-caught-up { margin: 0 0 12px; color: var(--text-soft); font-size: var(--fs-md); line-height: 1.55; }
+:root[data-theme] .ui-refresh :is(.custom-dash-template, .custom-dash-alert, .custom-dash-trigger) {
+    border: 1px solid var(--rf-line); border-radius: 10px; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.custom-dash-template, .custom-dash-alert, .custom-dash-trigger):hover { background: var(--rf-raised); }
+:root[data-theme] .ui-refresh .custom-dash-alerts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+:root[data-theme] .ui-refresh .wl-accordion { border-color: var(--rf-line); border-radius: 10px; background: transparent; box-shadow: none; }
+:root[data-theme] .ui-refresh .system-pulse-panel { padding: 12px 20px; }
+:root[data-theme] .ui-refresh .system-pulse-panel summary { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+
+/* ------------------------------------------------------------------ stock workspace */
+
+/* Ticker, price and practice actions share one slim bar; the interval label repeats the switch, so it goes. */
+:root[data-theme] .ui-refresh .price-header {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "identity quote actions";
+    align-items: center; gap: 8px 24px; min-height: 0; margin: 0 0 8px; padding: 4px 0 12px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .price-header::before, :root[data-theme] .ui-refresh .price-header::after { display: none; }
+:root[data-theme] .ui-refresh .market-identity { grid-area: identity; min-width: 0; }
+:root[data-theme] .ui-refresh .quote-block { grid-area: quote; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; padding: 0; border: 0; background: transparent; }
+:root[data-theme] .ui-refresh .price-header-demo-trading { grid-area: actions; }
+:root[data-theme] .ui-refresh .ticker-name { display: flex; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -.02em; }
+:root[data-theme] .ui-refresh .interval-label { display: none; }
+:root[data-theme] .ui-refresh .quote-label { order: 3; flex-basis: 100%; display: none; }
+:root[data-theme] .ui-refresh .quote-value { display: flex; align-items: baseline; gap: 10px; }
+:root[data-theme] .ui-refresh .live-price { font-size: var(--fs-2xl); font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+:root[data-theme] .ui-refresh .price-change { font-size: var(--fs-md); font-weight: 650; font-variant-numeric: tabular-nums; }
+:root[data-theme] .ui-refresh .quote-meta { margin: 0; color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .virtual-trade-launch-actions { display: flex; gap: 8px; }
+:root[data-theme] .ui-refresh .virtual-trade-launch-actions .btn-secondary { min-height: 34px; height: 34px; padding: 0 12px; font-size: var(--fs-sm); }
+
+:root[data-theme] .ui-refresh .stock-workspace-navigation { margin: 0 0 12px; padding: 0; border: 0; background: transparent; }
+
+/* The chart controls become one toolbar row above the chart; labels return in learning mode. */
+:root[data-theme] .ui-refresh .chart-toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+    margin: 0 0 10px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .chart-toolbar::before { display: none; }
+:root[data-theme] .ui-refresh .toolbar-cluster { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; }
+:root[data-theme] .ui-refresh .toolbar-controls-row {
+    display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 6px; width: auto;
+}
+:root[data-theme] .ui-refresh .toolbar-view-cluster { flex: 1 1 auto; }
+/* The two control groups flow as one row of buttons (they have no role of their own), so lines fill evenly. */
+:root[data-theme] .ui-refresh .toolbar-direct-controls, :root[data-theme] .ui-refresh .toolbar-menu-group { display: contents; }
+:root[data-theme] .ui-refresh .chart-toolbar .chart-control-menu-trigger { min-width: 0; width: auto; gap: 8px; }
+:root[data-theme] .ui-refresh .chart-toolbar .toolbar-label { display: none; }
+:root[data-theme][data-learning-mode="on"] .ui-refresh .chart-toolbar .toolbar-label { display: inline-flex; }
+:root[data-theme] .ui-refresh .chart-toolbar :is(.view-toggle, .chart-control-menu-trigger):not(.chart-control-menu-item) {
+    min-height: 32px; height: 32px; padding: 0 10px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius-control);
+    background: var(--rf-panel); color: var(--text-color); font-size: var(--fs-sm); font-weight: 600; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .chart-toolbar :is(.view-toggle, .chart-control-menu-trigger):not(.chart-control-menu-item):hover { background: var(--rf-raised); }
+:root[data-theme] .ui-refresh .chart-toolbar .view-toggle.active:not(.chart-control-menu-item) {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, var(--rf-line)); background: color-mix(in srgb, var(--primary-color) 12%, var(--rf-panel)); color: var(--text-color);
+}
+/* Daily, weekly and monthly read as one segmented control. */
+:root[data-theme] .ui-refresh .interval-button-group { display: inline-flex; gap: 0; padding: 2px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius-control); background: var(--rf-panel); }
+:root[data-theme] .ui-refresh .interval-button-group .view-toggle {
+    height: 26px; min-height: 26px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text-soft);
+}
+:root[data-theme] .ui-refresh .interval-button-group .view-toggle.active { background: var(--rf-raised); color: var(--text-color); border: 0; }
+
+/* clip, not hidden: nothing pokes out, and focusing an off-screen wave point cannot scroll the card sideways. */
+:root[data-theme] .ui-refresh .chart-wrapper { padding: 0; overflow: clip; }
+/* The heading is announced but not shown: the toolbar and legend already name the chart. */
+:root[data-theme] .ui-refresh .chart-panel-head {
+    position: relative; display: flex; align-items: center; justify-content: flex-end; min-height: 0; margin: 0; padding: 8px 10px 0;
+}
+:root[data-theme] .ui-refresh .chart-panel-head > div:first-child {
+    position: absolute; top: 0; left: 0; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+:root[data-theme] .ui-refresh .chart-panel-head .chart-panel-meta { display: none; }
+:root[data-theme] .ui-refresh .chart-panel-actions { display: flex; gap: 4px; }
+:root[data-theme] .ui-refresh .chart-icon-button { width: 32px; height: 32px; border: 1px solid transparent; border-radius: var(--rf-radius-control); background: transparent; box-shadow: none; }
+:root[data-theme] .ui-refresh .chart-icon-button:hover { border-color: var(--rf-line); background: var(--rf-raised); }
+:root[data-theme] .ui-refresh :is(.elliott-overlay-status, .chart-status-line):not(:empty) {
+    margin: 4px 12px 0; padding: 6px 10px; border: 0; border-radius: 6px; background: var(--rf-raised); color: var(--text-soft); font-size: var(--fs-xs); box-shadow: none;
+}
+:root[data-theme] .ui-refresh .chart-workbench-body { padding: 8px 10px 0; }
+:root[data-theme] .ui-refresh .chart-footer-bar { padding: 8px 12px 10px; border-top: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh .chart-range-button { min-height: 28px; border-radius: 6px; font-size: var(--fs-xs); }
+/* Selected states use full-strength text on a raised fill; tinted accent text fell just under 4.5:1 in light mode. */
+:root[data-theme] .ui-refresh :is(.chart-range-button.active, .chart-range-button[aria-pressed="true"], .chart-control-menu-item.is-selected) {
+    background: var(--rf-raised); color: var(--text-color);
+}
+
+:root[data-theme] .ui-refresh :is(.stock-workspace-action-card, .alert-panel) { margin: 0 0 16px; padding: 20px; }
+:root[data-theme] .ui-refresh .stock-workspace-action-kicker { color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none; }
+/* The launcher links to another page, so its button is secondary; the tab keeps one primary action (Apply). */
+:root[data-theme] .ui-refresh .stock-workspace-action-card .btn-accent { border: 1px solid var(--rf-line); background: transparent; color: var(--text-color); }
+:root[data-theme] .ui-refresh .stock-workspace-action-card .btn-accent:hover { background: var(--rf-raised); filter: none; }
+:root[data-theme] .ui-refresh .alert-section {
+    border: 1px solid var(--rf-line-soft); border-radius: 10px; background: transparent; background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .alert-section-title { font-size: var(--fs-md); font-weight: 650; }
+:root[data-theme] .ui-refresh .alert-section-copy { color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .alert-grid-label { color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0; text-transform: none; }
+/* Congress and insider panels: the same flat card; the source is named in words, not by a tint. */
+:root[data-theme] .ui-refresh .congressional-activity-panel {
+    margin: 0 0 16px; padding: 20px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius);
+    background: var(--rf-panel); background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .congressional-activity-panel::before, :root[data-theme] .ui-refresh .congressional-activity-panel::after { display: none; }
+:root[data-theme] .ui-refresh .congressional-panel-kicker { color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none; }
+:root[data-theme] .ui-refresh .congressional-activity-panel h2 { margin: 2px 0 4px; font-size: var(--fs-base); font-weight: 650; letter-spacing: -.01em; }
+:root[data-theme] .ui-refresh .congressional-activity-panel p { color: var(--text-soft); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .congressional-panel-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+:root[data-theme] .ui-refresh .congressional-activity-status {
+    padding: 10px 12px; border: 1px solid var(--rf-line-soft); border-radius: 8px; background: transparent; color: var(--text-soft); font-size: var(--fs-sm);
+}
+
+/* ------------------------------------------------------------------ signal report */
+
+:root[data-theme] .ui-refresh .signal-breadcrumb { margin: 0 0 12px; color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .signal-breadcrumb a { color: var(--text-soft); }
+:root[data-theme] .ui-refresh .signal-report-header {
+    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 0 0 16px; padding: 0;
+    border: 0; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .signal-report-title-row { display: flex; align-items: baseline; gap: 12px; }
+:root[data-theme] .ui-refresh .signal-report-header .title { margin: 4px 0 0; font-size: clamp(1.6rem, 2.4vw, 2rem); font-weight: 700; }
+:root[data-theme] .ui-refresh .signal-report-id { padding: 0; border: 0; background: transparent; color: var(--muted-text); font-family: var(--font-mono); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .signal-report-header .subtitle { margin: 4px 0 12px; color: var(--text-soft); font-size: var(--fs-md); }
+:root[data-theme] .ui-refresh .signal-report-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+:root[data-theme] .ui-refresh .signal-view-tabs { margin-bottom: 16px; }
+
+/* Score and snapshot: one compact band, so the chart starts on the first screen. */
+:root[data-theme] .ui-refresh .signal-score-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; margin: 0 0 16px; }
+:root[data-theme] .ui-refresh .signal-score-card, :root[data-theme] .ui-refresh .signal-snapshot-card { min-height: 0; padding: 18px 20px; }
+:root[data-theme] .ui-refresh .signal-score-card-topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+:root[data-theme] .ui-refresh .signal-score-card-topline > div { display: flex; flex-direction: column; gap: 2px; }
+:root[data-theme] .ui-refresh .signal-score-card-topline .signal-section-kicker { order: 2; color: var(--muted-text); font-weight: 500; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .signal-score-card-topline h2 { order: 1; margin: 0; }
+:root[data-theme] .ui-refresh .signal-confidence-pill {
+    padding: 3px 10px; border: 1px solid color-mix(in srgb, var(--score-accent) 40%, transparent); border-radius: 999px;
+    background: color-mix(in srgb, var(--score-accent) 10%, transparent); color: var(--score-accent); font-size: var(--fs-xs); font-weight: 650; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .signal-score-visual { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 20px; }
+/* A still ring whose arc is the score (the old ring spun forever and did not show the value). */
+:root[data-theme] .ui-refresh .signal-score-orbit {
+    display: grid; place-items: center; width: 108px; height: 108px; padding: 0; border: 0; border-radius: 50%;
+    box-shadow: none; filter: none; animation: none;
+    background:
+        radial-gradient(closest-side, var(--rf-panel) 84%, transparent 85%),
+        conic-gradient(var(--score-accent) calc(var(--score-percent, 100) * 1%), var(--rf-raised) 0);
+}
+:root[data-theme] .ui-refresh .signal-score-orbit::before, :root[data-theme] .ui-refresh .signal-score-orbit::after { display: none; }
+:root[data-theme] .ui-refresh .signal-score-orbit-core {
+    display: flex; align-items: baseline; justify-content: center; gap: 1px; width: auto; height: auto; border: 0; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .signal-score-orbit-core strong { font-size: 2.1rem; font-weight: 700; letter-spacing: -.03em; color: var(--text-color); }
+:root[data-theme] .ui-refresh .signal-score-orbit-core span { color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .signal-score-summary > p { margin: 0 0 8px; color: var(--text-soft); font-size: var(--fs-sm); line-height: 1.55; }
+:root[data-theme] .ui-refresh .signal-score-rail { gap: 2px; margin: 10px 0 8px; }
+:root[data-theme] .ui-refresh .signal-score-segment {
+    height: 8px; border: 0; border-radius: 2px; background: var(--rf-raised); box-shadow: none; transform: none;
+}
+:root[data-theme] .ui-refresh .signal-score-segment.active { background: var(--score-accent); box-shadow: none; }
+:root[data-theme] .ui-refresh .signal-score-thresholds { gap: 4px 14px; color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .signal-score-thresholds span { color: var(--text-soft); }
+
+:root[data-theme] .ui-refresh .signal-snapshot-card > .signal-section-kicker { color: var(--muted-text); font-weight: 500; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .signal-snapshot-card h2 { margin: 2px 0 12px; }
+:root[data-theme] .ui-refresh .signal-snapshot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh .signal-snapshot-item {
+    display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--rf-line-soft); border-radius: 0; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .signal-snapshot-item > span { color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; text-transform: none; letter-spacing: 0; }
+:root[data-theme] .ui-refresh .signal-snapshot-item strong { color: var(--text-color); font-size: var(--fs-md); font-weight: 650; font-variant-numeric: tabular-nums; }
+/* Wide screens: the four snapshot facts sit in one row so both cards stay short. */
+@media (min-width: 1280px) {
+    :root[data-theme] .ui-refresh .signal-snapshot-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 16px; }
+}
+:root[data-theme] .ui-refresh .snapshot-direction.buy { color: var(--rf-buy); }
+:root[data-theme] .ui-refresh .snapshot-direction.sell { color: var(--rf-sell); }
+:root[data-theme] .ui-refresh .signal-email-status { margin-top: 12px; padding: 0; border: 0; background: transparent; color: var(--muted-text); font-size: var(--fs-xs); box-shadow: none; }
+:root[data-theme] .ui-refresh .signal-email-status strong { color: var(--text-soft); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .signal-email-status time { color: var(--text-soft); }
+
+:root[data-theme] .ui-refresh .signal-chart-card { padding: 18px 20px 20px; }
+:root[data-theme] .ui-refresh .signal-chart-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+:root[data-theme] .ui-refresh .signal-chart-heading > div:first-child { display: flex; flex-direction: column; gap: 2px; max-width: 70ch; }
+:root[data-theme] .ui-refresh .signal-chart-heading .signal-section-kicker { order: 2; color: var(--muted-text); font-weight: 500; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .signal-chart-heading h2 { order: 1; margin: 0; }
+:root[data-theme] .ui-refresh .signal-chart-heading p { order: 3; margin: 4px 0 0; color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .signal-chart-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+:root[data-theme] .ui-refresh .signal-chart-cache-badge { padding: 3px 8px; border: 0; border-radius: 6px; background: var(--rf-raised); color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; box-shadow: none; }
+:root[data-theme] .ui-refresh .signal-detail-interval-switcher { display: inline-flex; gap: 0; padding: 2px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius-control); background: var(--rf-panel); }
+:root[data-theme] .ui-refresh .signal-detail-interval-button {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 12px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .signal-detail-interval-button.active { background: var(--rf-raised); color: var(--text-color); }
+:root[data-theme] .ui-refresh .signal-detail-interval-button small { color: var(--muted-text); font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+:root[data-theme] .ui-refresh .signal-chart-legend { gap: 6px; margin-bottom: 10px; }
+:root[data-theme] .ui-refresh .signal-chart-legend > span { padding: 3px 8px; border: 0; border-radius: 6px; background: var(--rf-raised); color: var(--text-soft); font-size: var(--fs-xs); box-shadow: none; }
+
+/* Sections further down the report share the panel look and a quiet heading. */
+:root[data-theme] .ui-refresh :is(.signal-trade-plan-card, .signal-lifecycle-section, .signal-evidence-section, .signal-method-note,
+    .elliott-projection-section, .signal-results-section, .harmonic-geometry-section) {
+    margin: 0 0 16px; padding: 18px 20px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius);
+    background: var(--rf-panel); background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-trade-plan-card, .signal-lifecycle-section, .signal-evidence-section, .signal-method-note)::before,
+:root[data-theme] .ui-refresh :is(.signal-trade-plan-card, .signal-lifecycle-section, .signal-evidence-section, .signal-method-note)::after { display: none; }
+:root[data-theme] .ui-refresh :is(.signal-trade-plan-heading, .signal-lifecycle-heading, .elliott-projection-heading) {
+    display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; margin: 0 0 12px;
+}
+:root[data-theme] .ui-refresh :is(.signal-trade-plan-heading, .signal-lifecycle-heading, .elliott-projection-heading) > div:first-child { display: flex; flex-direction: column; gap: 2px; }
+:root[data-theme] .ui-refresh :is(.signal-trade-plan-heading, .signal-lifecycle-heading, .elliott-projection-heading) .signal-section-kicker { order: 2; color: var(--muted-text); font-weight: 500; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh :is(.signal-trade-plan-card, .signal-lifecycle-section, .signal-evidence-section, .signal-method-note, .elliott-projection-section) h2 {
+    margin: 0; color: var(--text-color); font-size: var(--fs-base); font-weight: 650; letter-spacing: -.01em;
+}
+:root[data-theme] .ui-refresh :is(.signal-trade-plan-card, .signal-lifecycle-section, .signal-evidence-section, .signal-method-note) p {
+    color: var(--text-soft); font-size: var(--fs-sm); line-height: 1.55;
+}
+:root[data-theme] .ui-refresh .signal-trade-plan-heading p { order: 3; margin: 4px 0 0; }
+:root[data-theme] .ui-refresh .signal-chart-card { margin-bottom: 16px; }
+:root[data-theme] .ui-refresh .signal-trade-plan-summary { margin: 12px 0 0; color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .signal-trade-plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0; border-top: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh .signal-trade-plan-grid > article {
+    display: flex; flex-direction: column; gap: 3px; min-height: 0; padding: 12px 16px 12px 0;
+    border: 0; border-bottom: 1px solid var(--rf-line-soft); border-radius: 0; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .signal-trade-plan-grid > article > span:first-child {
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+:root[data-theme] .ui-refresh .signal-trade-plan-grid > article strong { color: var(--text-color); font-size: var(--fs-md); font-weight: 650; font-variant-numeric: tabular-nums; }
+:root[data-theme] .ui-refresh .signal-trade-plan-grid > article.risk strong { color: var(--rf-sell); }
+:root[data-theme] .ui-refresh .signal-trade-plan-grid > article.reward strong { color: var(--rf-buy); }
+:root[data-theme] .ui-refresh .signal-trade-plan-grid > article.time strong { color: var(--warning); }
+:root[data-theme] .ui-refresh .signal-trade-plan-grid > article :is(small, p) { margin: 0; color: var(--muted-text); font-size: var(--fs-xs); line-height: 1.45; }
+:root[data-theme] .ui-refresh .method-note-index { display: none; }
+:root[data-theme] .ui-refresh .signal-lifecycle-pill { border-radius: 6px; font-size: var(--fs-xs); letter-spacing: 0; text-transform: none; box-shadow: none; }
+
+/* Tiles further down the report: plain label and value pairs. */
+:root[data-theme] .ui-refresh :is(.signal-lifecycle-grid > div, .signal-event-metrics > div, .signal-results-metrics article, .signal-evidence-card, .signal-plan-grid > div, .signal-trade-plan-grid > div) {
+    border: 1px solid var(--rf-line-soft); border-radius: 10px; background: transparent; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-lifecycle-grid > div, .signal-event-metrics > div, .signal-results-metrics article, .signal-plan-grid > div, .signal-trade-plan-grid > div) > span:first-child {
+    color: var(--text-soft); text-transform: none; letter-spacing: 0; font-size: var(--fs-xs); font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ every page: headers, panels and labels */
+
+/* One page title size and a quiet kicker above it, whichever page family the header belongs to. */
+:root[data-theme] .ui-refresh :is(.signal-archive-header .title, .settings-header h1, .app-hero h1, .watchlist-heading h1,
+    .ca-builder-header h1, .ca-trigger-header h1, .signal-report-header h1) {
+    margin: 4px 0 0; font-size: clamp(1.6rem, 2.4vw, 2rem); font-weight: 700; line-height: 1.2; letter-spacing: -.02em;
+}
+:root[data-theme] .ui-refresh :is(.signal-archive-header, .app-hero, .watchlist-heading, .ca-builder-header, .ca-trigger-header) .subtitle,
+:root[data-theme] .ui-refresh :is(.app-hero, .settings-header) :is(.welcome-subtitle, p:not(.eyebrow)) { color: var(--text-soft); font-size: var(--fs-md); }
+:root[data-theme] .ui-refresh :is(.signal-report-eyebrow, .settings-sidebar-label, .technical-outlook-control-label, .unsaved-alert-kicker,
+    .outlook-state-label, .lifecycle-step-label, .portfolio-value-label, .watchlist-top-label) {
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-report-eyebrow, .signal-section-kicker)::before { display: none; }
+
+/* Panels on the remaining pages: the same flat card as the pilot pages. */
+:root[data-theme] .ui-refresh :is(.signal-archive-shell, .settings-card, .technical-outlook-panel, .technical-outlook-controlbar,
+    .technical-outlook-summary, .technical-relative-chart-card, .demo-portfolio, .virtual-trade-launch-card, .virtual-trade-chart-card,
+    .virtual-trade-summary, .virtual-trade-comparison, .historical-outcome-section, .outlook-state-card, .watchlist-board,
+    .watchlist-summary-card, .ca-panel, .ca-section, .ca-trigger-panel, .ca-guide, .about-callout, .about-trust-note) {
+    border: 1px solid var(--rf-line); border-radius: var(--rf-radius); background: var(--rf-panel); background-image: none;
+    box-shadow: none; backdrop-filter: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-archive-shell, .settings-card, .technical-outlook-panel, .technical-outlook-summary,
+    .virtual-trade-launch-card, .demo-portfolio, .historical-outcome-section, .outlook-state-card, .watchlist-board)::before,
+:root[data-theme] .ui-refresh :is(.signal-archive-shell, .settings-card, .technical-outlook-panel, .technical-outlook-summary,
+    .virtual-trade-launch-card, .demo-portfolio, .historical-outcome-section, .outlook-state-card, .watchlist-board)::after { display: none; }
+:root[data-theme] .ui-refresh :is(.signal-archive-shell, .settings-card, .demo-portfolio) { padding: 20px; }
+
+/* Tiles inside panels: a hairline box, no fill of their own. */
+:root[data-theme] .ui-refresh :is(.technical-vote, .technical-category-card, .signal-evidence-card, .harmonic-geometry-item,
+    .virtual-trade-summary-grid > *, .virtual-trade-results-metrics > *, .outlook-delta-grid > *, .watchlist-summary-grid > *) {
+    border: 1px solid var(--rf-line-soft); border-radius: 10px; background: transparent; background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.technical-vote, .technical-category-card) > span,
+:root[data-theme] .ui-refresh :is(.signal-evidence-card .evidence-category, .harmonic-geometry-group-heading) {
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+:root[data-theme] .ui-refresh .technical-vote strong { font-size: var(--fs-2xl); font-weight: 700; }
+:root[data-theme] .ui-refresh :is(.technical-vote.buy, .technical-category-card.buy) strong { color: var(--rf-buy); }
+:root[data-theme] .ui-refresh :is(.technical-vote.sell, .technical-category-card.sell) strong { color: var(--rf-sell); }
+
+/* Section filters use the pilot's underline tabs. */
+:root[data-theme] .ui-refresh .ca-tabs { display: flex; gap: 4px; padding: 0; border: 0; border-bottom: 1px solid var(--rf-line); border-radius: 0; background: transparent; box-shadow: none; }
+:root[data-theme] .ui-refresh .ca-tabs :is(button, a) {
+    min-height: 40px; margin: 0 0 -1px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+    background: transparent; box-shadow: none; color: var(--text-soft); font-size: var(--fs-md); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .ca-tabs :is(button, a):is(.active, [aria-selected="true"], [aria-pressed="true"]) {
+    border-bottom-color: var(--primary-color); background: transparent; color: var(--text-color);
+}
+/* Interval switches (daily, weekly, monthly) are the pilot's segmented control. */
+:root[data-theme] .ui-refresh :is(.outlook-interval-tabs, .virtual-trade-interval-tabs, .watchlist-tabs) {
+    display: inline-flex; width: auto; gap: 0; padding: 2px; border: 1px solid var(--rf-line); border-radius: var(--rf-radius-control); background: var(--rf-panel); box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.outlook-interval-tabs, .virtual-trade-interval-tabs) .signal-view-tab,
+:root[data-theme] .ui-refresh .watchlist-tabs button {
+    min-height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh :is(.outlook-interval-tabs, .virtual-trade-interval-tabs) .signal-view-tab:is(.active, [aria-selected="true"]),
+:root[data-theme] .ui-refresh .watchlist-tabs button[aria-pressed="true"] {
+    border: 0; background: var(--rf-raised); box-shadow: none; color: var(--text-color);
+}
+
+/* Status pills: small, sentence case, coloured by meaning only. */
+:root[data-theme] .ui-refresh :is(.signal-lifecycle-pill, .virtual-trade-status-pill, .virtual-trade-side-pill, .security-status, .wl-status) {
+    display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 6px; box-shadow: none;
+    font-size: var(--fs-xs); font-weight: 650; letter-spacing: 0; text-transform: none;
+}
+
+/* Breadcrumb links and disclosure toggles reach the 24px minimum target height. */
+:root[data-theme] .ui-refresh .signal-breadcrumb a { display: inline-flex; align-items: center; min-height: 24px; }
+/* Kept weak on purpose: any summary that sets its own height (row menus, the about page's rules) keeps it. */
+.ui-refresh :where(main details) > summary { min-height: 24px; }
+
+/* Dialogs: one flat surface. */
+:root[data-theme] .ui-refresh :is(.unsaved-alert-dialog, .settings-dialog, .watchlist-dialog) { background: var(--rf-panel); background-image: none; backdrop-filter: none; }
+
+/* ------------------------------------------------------------------ archives: signals, ticker alerts, demo trades */
+
+/* The total is a figure beside the title, not a card. */
+:root[data-theme] .ui-refresh .signal-archive-header { align-items: flex-end; margin: 0 0 16px; }
+:root[data-theme] .ui-refresh .signal-archive-total { min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+:root[data-theme] .ui-refresh .signal-archive-total strong { color: var(--text-color); font-size: var(--fs-2xl); font-weight: 700; line-height: 1.1; }
+:root[data-theme] .ui-refresh .signal-archive-total span { color: var(--muted-text); }
+
+/* Filters: compact choice chips; the selected one is filled, not outlined in lime. */
+:root[data-theme] .ui-refresh .archive-state-filter legend { color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; }
+:root[data-theme] .ui-refresh .archive-state-filter label {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 12px;
+    border: 1px solid var(--rf-line); border-radius: 999px; background: transparent; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .archive-state-filter label:has(input:checked) {
+    border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); color: var(--text-color);
+}
+:root[data-theme] .ui-refresh .signal-archive-sort-form label > span { color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; }
+:root[data-theme] .ui-refresh .signal-archive-sort-form :is(input, select) { min-height: var(--rf-control-h); height: var(--rf-control-h); }
+:root[data-theme] .ui-refresh .signal-archive-toolbar { padding-bottom: 16px; }
+
+/* Selection bar: a plain row above the table. */
+:root[data-theme] .ui-refresh .signal-delete-toolbar {
+    min-height: 44px; padding: 6px 0; border: 0; border-top: 1px solid var(--rf-line-soft); border-radius: 0; background: transparent;
+}
+:root[data-theme] .ui-refresh .signal-select-all-control { color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] .ui-refresh .signal-bulk-delete-button { min-height: 32px; border-radius: var(--rf-radius-control); background: transparent; background-image: none; box-shadow: none; }
+:root[data-theme] .ui-refresh .signal-bulk-delete-button:disabled { border-color: var(--rf-line); color: var(--muted-text); opacity: 1; }
+
+/* The archive reads as one table: rows split by hairlines instead of a card per row. */
+:root[data-theme] .ui-refresh :is(.signal-archive-head, .activity-signal-archive-head, .virtual-trade-archive-head) {
+    padding-bottom: 8px; border-bottom: 1px solid var(--rf-line); color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+/* Wide screens: the heading row spans the table; padding (not margin) keeps its columns over the row's. */
+@media (min-width: 1025px) {
+    :root[data-theme] .ui-refresh :is(.signal-archive-head, .activity-signal-archive-head) { margin: 0; padding: 0 calc(48px + .95rem) 8px calc(42px + .95rem); }
+}
+:root[data-theme] .ui-refresh .signal-archive-list, :root[data-theme] .ui-refresh .signal-archive-entry { gap: 0; }
+:root[data-theme] .ui-refresh .signal-archive-row .latest-signal-tags { gap: 4px; }
+:root[data-theme] .ui-refresh .signal-archive-row :is(.latest-family-tag, .latest-direction-tag) { min-height: 22px; padding: 0 7px; }
+:root[data-theme] .ui-refresh :is(.signal-archive-record, .virtual-trade-archive-record) { align-items: center; border-bottom: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh :is(.signal-archive-record, .virtual-trade-archive-record):hover { background: var(--rf-raised); }
+:root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row, .virtual-trade-archive-row) {
+    border: 0; border-radius: 0; background: transparent; background-image: none; box-shadow: none; transform: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row, .virtual-trade-archive-row):hover {
+    border: 0; background: transparent; box-shadow: none; transform: none;
+}
+:root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row).is-unread { box-shadow: inset 3px 0 0 var(--primary-color); }
+:root[data-theme] .ui-refresh .signal-select-control { border: 0; border-radius: 0; background: transparent; }
+:root[data-theme] .ui-refresh .signal-archive-group-label { padding: 16px 0 6px; border-bottom: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh .signal-archive-group-label strong,
+:root[data-theme] .ui-refresh .signal-archive-group-label.date-group strong { color: var(--text-color); font-size: var(--fs-sm); font-weight: 650; letter-spacing: 0; }
+:root[data-theme] .ui-refresh .archive-row-details { padding: 0 12px 10px; }
+:root[data-theme] .ui-refresh .archive-row-details summary { color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .signal-archive-pagination { padding-top: 16px; }
+
+/* A cell's value and its note sit on separate lines at every width (on phones they ran together, as in "MSFTMSFT"). */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row > div > :is(strong, span, small, time):not(.virtual-trade-side-pill) { display: block; }
+/* The pill names its own state; a column label inside it reads "StatusTracking". */
+:root[data-theme] .ui-refresh .virtual-trade-status-pill[data-mobile-label]::before { display: none; }
+@media (max-width: 1024px) {
+    /* Stacked rows read down the left edge instead of centring each cell. */
+    :root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row, .virtual-trade-archive-row) > * { justify-self: start; text-align: left; }
+    /* In the two-column stack the date is one cell among others, so the divider meant for a full-width row goes. */
+    :root[data-theme] .ui-refresh .signal-archive-date { padding-top: 0; border-top: 0; }
+    :root[data-theme] .ui-refresh .signal-archive-row .latest-signal-tags { flex-wrap: wrap; }
+    :root[data-theme] .ui-refresh .signal-archive-row :is(.latest-family-tag, .latest-direction-tag) { max-width: 100%; white-space: normal; }
+}
+
+/* Demo trading: the portfolio figure leads; period tiles are quiet until chosen. */
+:root[data-theme] .ui-refresh .portfolio-value { font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700; letter-spacing: -.03em; }
+:root[data-theme] .ui-refresh .portfolio-period { border-color: var(--rf-line-soft); border-radius: 10px; background: transparent; }
+:root[data-theme] .ui-refresh .portfolio-period.is-selected { border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); box-shadow: none; }
+:root[data-theme] .ui-refresh .portfolio-ranking { border-color: var(--rf-line-soft); background: transparent; }
+
+/* ------------------------------------------------------------------ reports: outlook, history, ticker alerts, demo trade */
+
+:root[data-theme] .ui-refresh .technical-outlook-controlbar { padding: 14px 20px; }
+:root[data-theme] .ui-refresh .technical-outlook-summary { padding: 20px; }
+/* A tab's panel only groups the cards inside it; a frame of its own would put cards inside a card. */
+:root[data-theme] .ui-refresh .technical-outlook-panel { padding: 0; border: 0; background: transparent; }
+:root[data-theme] .ui-refresh .technical-outlook-panel > * + * { margin-top: 16px; }
+:root[data-theme] .ui-refresh .technical-outlook-freshness { color: var(--muted-text); font-size: var(--fs-xs); }
+/* The demo-trade card names a page action, so it is a plain panel; its buttons keep their buy and sell meaning. */
+:root[data-theme] .ui-refresh .virtual-trade-launch-card { padding: 18px 20px; }
+:root[data-theme] .ui-refresh .virtual-trade-launch-card :is(h2, h3) { font-size: var(--fs-base); font-weight: 650; }
+:root[data-theme] .ui-refresh .virtual-trade-launch-card p { color: var(--text-soft); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .technical-chart-note, :root[data-theme] .ui-refresh .chart-legend-note { color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh :is(.signal-lifecycle-step, .lifecycle-step-marker) { box-shadow: none; background-image: none; }
+:root[data-theme] .ui-refresh .outlook-change-arrow { background: var(--rf-raised); box-shadow: none; }
+
+/* ------------------------------------------------------------------ settings */
+
+/* The section switcher stays a row of links above the content (the app sidebar is already on the left). */
+/* The same left edge as every other page; the forms keep a readable width. */
+:root[data-theme] .ui-refresh .settings-shell { width: 100%; max-width: 1440px; margin: 0 auto; padding: 20px var(--rf-gutter) 56px; gap: 16px; }
+:root[data-theme] .ui-refresh .settings-content { max-width: 1100px; }
+:root[data-theme] .ui-refresh .settings-header { margin-bottom: 16px; }
+:root[data-theme] .ui-refresh .inline-security-form button { white-space: nowrap; }
+:root[data-theme] .ui-refresh .settings-sidebar { padding: 0; border: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+:root[data-theme] .ui-refresh .settings-sidebar-label { display: none; }
+:root[data-theme] .ui-refresh .settings-sidebar nav { gap: 6px; }
+:root[data-theme] .ui-refresh .settings-sidebar-link {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px;
+    border: 1px solid var(--rf-line); border-radius: 999px; background: transparent; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .settings-sidebar-link:hover { background: var(--rf-raised); color: var(--text-color); }
+:root[data-theme] .ui-refresh .settings-sidebar-link.active { border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); color: var(--text-color); }
+:root[data-theme] .ui-refresh .settings-sidebar-link svg { width: 16px; height: 16px; color: var(--muted-text); }
+:root[data-theme] .ui-refresh .settings-sidebar-link.active svg { color: var(--primary-color); }
+:root[data-theme] .ui-refresh .settings-header { margin: 8px 0 4px; }
+:root[data-theme] .ui-refresh .settings-card h2 { font-size: var(--fs-base); font-weight: 650; letter-spacing: -.01em; }
+:root[data-theme] .ui-refresh .settings-number { min-width: 0; padding: 0; background: transparent; color: var(--muted-text); font-family: var(--font-mono); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh :is(.appearance-fieldset, .theme-choice, .elliott-color-choice, .analysis-safety-strip, .scoring-safety-strip,
+    .scoring-confluence-block, .analysis-setting-groups fieldset, .recovery-code-panel, .password-code-request) {
+    border-color: var(--rf-line-soft); background: transparent; background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh .theme-choice:has(input:checked) { border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); }
+:root[data-theme] .ui-refresh :is(.analysis-factory-zone, .analysis-profile-overview, .detection-interval-card, .scoring-overview-card) {
+    border-color: var(--rf-line-soft); background: transparent; background-image: none; box-shadow: none;
+}
+/* The save bar floats over the form, so it keeps a solid fill. */
+:root[data-theme] .ui-refresh .analysis-save-card { border-color: var(--rf-line); background: var(--rf-panel); background-image: none; }
+:root[data-theme] .ui-refresh :is(.analysis-profile-state, .elliott-rule-kicker, .scoring-family-label) {
+    font-size: var(--fs-xs); font-weight: 650; letter-spacing: 0; text-transform: none;
+}
+:root[data-theme] .ui-refresh .danger-zone { background: transparent; background-image: none; }
+
+/* ------------------------------------------------------------------ lists: watchlists, followed outlooks, custom alerts */
+
+:root[data-theme] .ui-refresh .app-hero { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin: 4px 0 20px; }
+:root[data-theme] .ui-refresh .app-hero .wl-hero-actions { flex-wrap: wrap; }
+:root[data-theme] .ui-refresh .watchlist-heading { margin: 4px 0 20px; }
+:root[data-theme] .ui-refresh .watchlist-board { overflow: hidden; }
+:root[data-theme] .ui-refresh .watchlist-summary-card header { border-bottom: 1px solid var(--rf-line-soft); }
+:root[data-theme] .ui-refresh :is(.watchlist-summary-card, .watchlist-changes) h3 { font-size: var(--fs-base); font-weight: 650; }
+:root[data-theme] .ui-refresh .ca-guide { padding: 14px 20px; }
+
+/* ------------------------------------------------------------------ sign-in, error and public pages */
+
+/* One flat card; the pitch side keeps its words but loses the glow and gradient type. */
+:root[data-theme] body.ui-refresh.auth-page { background: var(--bg-color); }
+:root[data-theme] .ui-refresh .auth-shell { border: 1px solid var(--rf-line); border-radius: 16px; background: var(--rf-panel); background-image: none; box-shadow: none; animation: none; }
+:root[data-theme] .ui-refresh .auth-showcase { background: var(--surface-soft); background-image: none; }
+:root[data-theme] .ui-refresh .auth-card { border: 0; background: transparent; background-image: none; box-shadow: none; }
+:root[data-theme] .ui-refresh .auth-card h2 { font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -.02em; }
+:root[data-theme] .ui-refresh .auth-pitch h1 { font-size: clamp(1.9rem, 3.4vw, 2.75rem); font-weight: 700; letter-spacing: -.03em; }
+:root[data-theme] .ui-refresh .text-gradient { background: none; -webkit-text-fill-color: currentColor; color: var(--text-soft); }
+:root[data-theme] .ui-refresh .auth-signal-card { border: 1px solid var(--rf-line); background: var(--rf-panel); box-shadow: none; backdrop-filter: none; }
+:root[data-theme] .ui-refresh .auth-card .btn-accent { width: 100%; min-height: 44px; }
+:root[data-theme] .ui-refresh :is(.auth-switch, .auth-help) .text-link { font-weight: 600; }
+
+/* Landing and about: the product pictures stay; cards, labels and the closing call to action follow the app. */
+:root[data-theme] body.ui-refresh.landing-page { background: var(--bg-color); }
+:root[data-theme] .ui-refresh .landing-nav { box-shadow: none; backdrop-filter: none; }
+:root[data-theme] .ui-refresh :is(.feature-number, .about-section-number, .terminal-label, .floating-signal-head,
+    :is(.about-definition-grid, .about-function-grid, .about-monitoring-flow, .about-history-grid, .about-limit-grid) article > span) {
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none;
+}
+:root[data-theme] .ui-refresh :is(.feature-card, .about-definition-grid article, .about-function-grid article) {
+    border: 1px solid var(--rf-line); border-radius: var(--rf-radius); background: var(--rf-panel); background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta) {
+    border: 1px solid var(--rf-line); border-radius: 16px; background: var(--surface-soft); background-image: none; box-shadow: none;
+}
+:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta)::before,
+:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta)::after { display: none; }
+/* About: every explanatory card is the plain panel (the light theme gave them a gradient, so their text could not be
+   checked for contrast); the diagrams keep their own drawing. */
+:root[data-theme] body.ui-refresh.about-page main article { background: var(--rf-panel); background-image: none; box-shadow: none; }
+:root[data-theme] .ui-refresh .about-signal { letter-spacing: 0; }
+:root[data-theme] .ui-refresh .about-signal.buy { background: color-mix(in srgb, var(--rf-buy) 12%, transparent); color: var(--rf-buy); }
+:root[data-theme] .ui-refresh .about-signal.sell { background: color-mix(in srgb, var(--rf-sell) 12%, transparent); color: var(--rf-sell); }
+:root[data-theme] .ui-refresh .wave-bar { background: color-mix(in srgb, var(--violet) 55%, transparent); box-shadow: none; }
+:root[data-theme] .ui-refresh .wave-bar:nth-child(6) { background: var(--primary-color); }
+
+/* ------------------------------------------------------------------ narrow screens */
+
+@media (max-width: 1100px) {
+    :root[data-theme] .ui-refresh .dashboard-sidebar-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    :root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-card { border-bottom: 1px solid var(--rf-line-soft); }
+}
+@media (max-width: 900px) {
+    :root[data-theme] .ui-refresh .signal-score-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 768px) {
+    :root { --rf-gutter: 16px; }
+    :root[data-theme] .ui-refresh :is(.dashboard-container, .stock-page, .page-container) { padding-top: 14px; }
+    :root[data-theme] .ui-refresh .dashboard-sidebar-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    :root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-card { padding: 12px 14px; }
+    :root[data-theme] .ui-refresh .dashboard-sidebar-metrics .metric-card:nth-child(2n) { border-right: 0; }
+    :root[data-theme] .ui-refresh .dashboard-panel { padding: 16px; }
+    :root[data-theme] .ui-refresh .welcome-header { align-items: flex-start; }
+    :root[data-theme] .ui-refresh .panel-heading-actions { justify-content: flex-start; }
+    :root[data-theme] .ui-refresh .price-header {
+        grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "identity quote" "actions actions"; gap: 10px 12px;
+    }
+    :root[data-theme] .ui-refresh .quote-block { justify-content: flex-end; text-align: right; }
+    :root[data-theme] .ui-refresh .quote-meta { flex-basis: 100%; }
+    :root[data-theme] .ui-refresh .virtual-trade-launch-actions .btn-secondary { flex: 1 1 0; }
+    :root[data-theme] .ui-refresh .live-price, :root[data-theme] .ui-refresh .ticker-name { font-size: var(--fs-xl); }
+    :root[data-theme] .ui-refresh .chart-toolbar { gap: 6px; }
+    :root[data-theme] .ui-refresh .toolbar-interval-cluster { width: 100%; }
+    :root[data-theme] .ui-refresh .interval-button-group { width: 100%; }
+    :root[data-theme] .ui-refresh .interval-button-group .view-toggle { flex: 1 1 0; }
+    :root[data-theme] .ui-refresh .chart-workbench-body { padding: 6px 4px 0; }
+    :root[data-theme] .ui-refresh .signal-score-card, :root[data-theme] .ui-refresh .signal-snapshot-card, :root[data-theme] .ui-refresh .signal-chart-card { padding: 16px; }
+    :root[data-theme] .ui-refresh .signal-score-visual { grid-template-columns: 1fr; justify-items: start; }
+}
+@media (max-width: 768px) {
+    /* The theme switch joins the top bar here, so the bar needs no room for it on the right. */
+    :root[data-theme] .ui-refresh .app-navigation .navbar { padding-right: var(--rf-gutter); }
+    /* The form stacks into a column here, where a flex basis would become a 180px-tall empty field group. */
+    :root[data-theme] .ui-refresh .inline-security-form .form-group { flex: 0 0 auto; }
+    /* Sign-in pages fill the phone; the pitch is hidden here, so its side shrinks to the logo row. */
+    /* The shell fills the screen height; without fixed rows the spare height went to the logo row too. */
+    :root[data-theme] .ui-refresh .auth-shell { grid-template-rows: auto 1fr; border: 0; border-radius: 0; }
+    :root[data-theme] .ui-refresh .auth-showcase { min-height: 0; padding: 16px 20px; border-bottom: 1px solid var(--rf-line); box-shadow: none; }
+}
