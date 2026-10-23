@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Downloads the NVD JSON 2.0 data feeds that OWASP dependency-check needs into a local folder, which the
 # audit then reads through a file:// URL instead of calling the NVD API. The NVD has been slow for days at a
-# time (in October 2026 it served about 50 KB/s and the API stalled on single pages), so every file is
-# downloaded with stall detection, resumed on the next attempt, and checked before it is used.
+# time (in October 2026 it served 17-75 KB/s per file and the API stalled on single pages), so every file
+# is downloaded with stall detection, resumed for as long as that makes progress, and checked before use.
 #
 # Usage: download-nvd-feeds.sh <target folder> [date of the cached database, YYYY-MM-DD]
 #
@@ -22,19 +22,27 @@ if [ -n "$cached_on" ]; then
 fi
 if [ -z "$age_days" ] || [ "$age_days" -gt 5 ]; then
   echo "No vulnerability database from the last 5 days; downloading every yearly feed."
-  for ((year = 2002; year <= $(date -u +%Y); year++)); do
+  # Newest first: recent years are the largest feeds, so they start before the small ones.
+  for ((year = $(date -u +%Y); year >= 2002; year--)); do
     feeds+=("$year")
   done
 else
   echo "The cached vulnerability database is $age_days day(s) old; downloading the recent changes only."
 fi
 
+size() {
+  stat -c %s "$1" 2> /dev/null || echo 0
+}
+
 fetch() {
-  local name=$1 file=$target/$1 attempt started status resume=()
+  local name=$1 file=$target/$1 started status before stalled=0 resume=()
   # Feeds are resumed where an attempt stopped; the small .meta files are simply fetched again.
   [[ $name == *.gz ]] && resume=(--continue-at -)
   started=$(date +%s)
-  for attempt in 1 2 3 4 5 6 7 8; do
+  # Attempts go on while they make progress (a 38 MB feed can take a dozen); five in a row that add
+  # nothing end the download. The workflow step's time limit bounds the whole run.
+  while [ "$stalled" -lt 5 ]; do
+    before=$(size "$file")
     # --speed-limit/--speed-time end a transfer that has stalled instead of waiting on it.
     status=0
     curl --fail --silent --show-error --location "${resume[@]}" \
@@ -52,19 +60,24 @@ fetch() {
       fi
     fi
     if [ "$status" -eq 0 ]; then
-      echo "Downloaded $name ($(stat -c %s "$file") bytes, $(($(date +%s) - started)) s)"
+      echo "Downloaded $name ($(size "$file") bytes, $(($(date +%s) - started)) s)"
       return 0
     fi
-    echo "Attempt $attempt of 8 for $name failed"
-    sleep $((attempt * 15))
+    if [[ $name == *.gz ]] && [ "$(size "$file")" -gt "$before" ]; then
+      stalled=0
+    else
+      stalled=$((stalled + 1))
+    fi
+    echo "Download of $name stopped at $(size "$file") bytes; trying again"
+    sleep $((10 + stalled * 20))
   done
-  echo "::error::Could not download $base/$name"
+  echo "::error::Could not download $base/$name: five attempts in a row made no progress"
   return 1
 }
-export -f fetch
+export -f size fetch
 export target base
 
 mkdir -p "$target"
 for feed in "${feeds[@]}"; do
   printf 'nvdcve-2.0-%s.meta\nnvdcve-2.0-%s.json.gz\n' "$feed" "$feed"
-done | xargs -P 3 -I {} bash -c 'fetch "$1"' _ {}
+done | xargs -P 6 -I {} bash -c 'fetch "$1"' _ {}
