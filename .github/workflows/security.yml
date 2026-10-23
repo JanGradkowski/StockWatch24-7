@@ -5,7 +5,8 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "19 3 * * 1"
+    # Daily, so the vulnerability database cached on main is never more than a day behind the NVD.
+    - cron: "19 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -19,7 +20,8 @@ jobs:
   verify:
     name: Test, scan, and analyze
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Room for a run without a cached vulnerability database (see Download NVD data feeds).
+    timeout-minutes: 150
     permissions:
       actions: read
       contents: read
@@ -45,7 +47,6 @@ jobs:
       DB_URL: jdbc:postgresql://localhost:5432/uptodate_db
       DB_USERNAME: uptodate
       DB_PASSWORD: ci-only-password
-      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
     steps:
       - name: Check out source
@@ -84,8 +85,57 @@ jobs:
           npm ci --no-audit --no-fund
           npm test
 
+      # The audit (OWASP dependency-check) works from a local copy of the NVD. That copy used to live in
+      # ~/.m2 and ride along in setup-java's Maven cache, which is saved only when pom.xml changes, so
+      # every run had to ask the NVD API for all changes since one old snapshot. Once that backlog reached
+      # ~28k records, the API's slow pages kept the audit running into the job timeout. The copy now has a
+      # cache of its own, saved at most once a day per branch, and is updated from the NVD's static data
+      # feeds, which carry the same records gzipped and do not depend on the API.
+      - name: Locate vulnerability database
+        id: nvd-db
+        run: |
+          echo "DEPENDENCY_CHECK_DATA=$HOME/.cache/dependency-check" >> "$GITHUB_ENV"
+          echo "NVD_FEEDS=$RUNNER_TEMP/nvd-feeds" >> "$GITHUB_ENV"
+          echo "cache-key=dependency-check-${{ runner.os }}-$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vulnerability database
+        id: nvd-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.DEPENDENCY_CHECK_DATA }}
+          key: ${{ steps.nvd-db.outputs.cache-key }}
+          restore-keys: dependency-check-${{ runner.os }}-
+
+      # With a cached database from the last few days this is the ~15 MB feed of recent changes. Without
+      # one it is every yearly feed (~255 MB), which at the NVD's slowest takes over an hour.
+      - name: Download NVD data feeds
+        id: nvd-feeds
+        timeout-minutes: 120
+        env:
+          # The cache key ends in the date the restored database was saved.
+          CACHED_KEY: ${{ steps.nvd-cache.outputs.cache-matched-key }}
+        run: |
+          bash .github/scripts/download-nvd-feeds.sh "$NVD_FEEDS" "${CACHED_KEY: -10}"
+
+      - name: Update vulnerability database
+        id: nvd-update
+        timeout-minutes: 15
+        run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DdataDirectory="$DEPENDENCY_CHECK_DATA" -DnvdDatafeedUrl="file://$NVD_FEEDS/nvdcve-2.0-{0}.json.gz" dependency-check:update-only
+
+      - name: Explain a failed vulnerability database update
+        if: failure() && (steps.nvd-feeds.outcome == 'failure' || steps.nvd-update.outcome == 'failure')
+        run: echo "::error title=NVD update failed::The NVD data feeds could not be downloaded or loaded in time, so the dependency audit did not run. This is not a vulnerability finding; the two steps above show what the NVD returned. Re-run the job once nvd.nist.gov responds normally."
+
+      - name: Save vulnerability database
+        if: steps.nvd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.DEPENDENCY_CHECK_DATA }}
+          key: ${{ steps.nvd-db.outputs.cache-key }}
+
       - name: Audit dependencies
-        run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DskipTests verify
+        timeout-minutes: 10
+        run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DskipTests -DdataDirectory="$DEPENDENCY_CHECK_DATA" -DautoUpdate=false verify
 
       - name: Analyze with CodeQL
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
