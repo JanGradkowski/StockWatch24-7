@@ -20,7 +20,8 @@ jobs:
   verify:
     name: Test, scan, and analyze
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Room for a run without a cached vulnerability database (see Download NVD data feeds).
+    timeout-minutes: 150
     permissions:
       actions: read
       contents: read
@@ -46,7 +47,6 @@ jobs:
       DB_URL: jdbc:postgresql://localhost:5432/uptodate_db
       DB_USERNAME: uptodate
       DB_PASSWORD: ci-only-password
-      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
     steps:
       - name: Check out source
@@ -87,14 +87,15 @@ jobs:
 
       # The audit (OWASP dependency-check) works from a local copy of the NVD. That copy used to live in
       # ~/.m2 and ride along in setup-java's Maven cache, which is saved only when pom.xml changes, so
-      # every run had to fetch all NVD changes since one old snapshot. Once that backlog reached ~28k
-      # records, the NVD API's slow change queries kept the audit running into the job timeout. The copy
-      # now has a cache of its own, saved at most once a day per branch, so a run fetches about a day of
-      # changes (a run with no cache at all downloads the full NVD, which takes a few minutes).
+      # every run had to ask the NVD API for all changes since one old snapshot. Once that backlog reached
+      # ~28k records, the API's slow pages kept the audit running into the job timeout. The copy now has a
+      # cache of its own, saved at most once a day per branch, and is updated from the NVD's static data
+      # feeds, which carry the same records gzipped and do not depend on the API.
       - name: Locate vulnerability database
         id: nvd-db
         run: |
           echo "DEPENDENCY_CHECK_DATA=$HOME/.cache/dependency-check" >> "$GITHUB_ENV"
+          echo "NVD_FEEDS=$RUNNER_TEMP/nvd-feeds" >> "$GITHUB_ENV"
           echo "cache-key=dependency-check-${{ runner.os }}-$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Restore vulnerability database
@@ -105,15 +106,25 @@ jobs:
           key: ${{ steps.nvd-db.outputs.cache-key }}
           restore-keys: dependency-check-${{ runner.os }}-
 
-      # Bounded, so a slow or unavailable NVD API fails here with a message instead of using up the job.
+      # With a cached database from the last few days this is the ~15 MB feed of recent changes. Without
+      # one it is every yearly feed (~255 MB), which at the NVD's slowest takes over an hour.
+      - name: Download NVD data feeds
+        id: nvd-feeds
+        timeout-minutes: 120
+        env:
+          # The cache key ends in the date the restored database was saved.
+          CACHED_KEY: ${{ steps.nvd-cache.outputs.cache-matched-key }}
+        run: |
+          bash .github/scripts/download-nvd-feeds.sh "$NVD_FEEDS" "${CACHED_KEY: -10}"
+
       - name: Update vulnerability database
         id: nvd-update
-        timeout-minutes: 20
-        run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DdataDirectory="$DEPENDENCY_CHECK_DATA" dependency-check:update-only
+        timeout-minutes: 15
+        run: ./mvnw --batch-mode --no-transfer-progress -Psecurity-scan -DdataDirectory="$DEPENDENCY_CHECK_DATA" -DnvdDatafeedUrl="file://$NVD_FEEDS/nvdcve-2.0-{0}.json.gz" dependency-check:update-only
 
       - name: Explain a failed vulnerability database update
-        if: failure() && steps.nvd-update.outcome == 'failure'
-        run: echo "::error title=NVD update failed::Updating the vulnerability database from the NVD API failed or took over 20 minutes, so the dependency audit did not run. This is not a vulnerability finding; the Update vulnerability database step shows the NVD responses. Re-run the job once the NVD API answers again."
+        if: failure() && (steps.nvd-feeds.outcome == 'failure' || steps.nvd-update.outcome == 'failure')
+        run: echo "::error title=NVD update failed::The NVD data feeds could not be downloaded or loaded in time, so the dependency audit did not run. This is not a vulnerability finding; the two steps above show what the NVD returned. Re-run the job once nvd.nist.gov responds normally."
 
       - name: Save vulnerability database
         if: steps.nvd-cache.outputs.cache-hit != 'true'
