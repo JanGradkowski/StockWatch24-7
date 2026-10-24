@@ -250,3 +250,8 @@
     :root[data-theme] .ui-refresh .settings-nav-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     :root[data-theme] .ui-refresh .settings-nav-group-label { flex-basis: 100%; }
 }
+
+/* ------------------------------------------------------------------ fixes found in the full-page check */
+
+/* A fixed grey (#697069) that read at 3.6:1 on the dark panels; the muted token passes in both themes. */
+:root[data-theme] .ui-refresh .congressional-dashboard-note { color: var(--muted-text); }
