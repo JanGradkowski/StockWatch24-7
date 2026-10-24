@@ -46,14 +46,14 @@
     }
     function palette() {
         return light()
-            ? {text: '#526174', grid: 'rgba(24,34,48,.08)', border: 'rgba(24,34,48,.18)', separator: 'rgba(24,34,48,.14)', separatorHover: 'rgba(24,34,48,.08)'}
-            : {text: '#94a3b8', grid: 'rgba(232,237,243,.06)', border: 'rgba(232,237,243,.16)', separator: 'rgba(232,237,243,.12)', separatorHover: 'rgba(232,237,243,.06)'};
+            ? {text: '#5b6474', grid: 'rgba(14,20,32,.07)', border: 'rgba(14,20,32,.16)', separator: 'rgba(14,20,32,.12)', separatorHover: 'rgba(14,20,32,.07)'}
+            : {text: '#8a94a6', grid: 'rgba(232,236,243,.06)', border: 'rgba(232,236,243,.14)', separator: 'rgba(232,236,243,.11)', separatorHover: 'rgba(232,236,243,.06)'};
     }
     function base(options = {}) {
         const colors = palette();
         return {...paint(options),
             layout: {...options.layout, textColor: colors.text, fontSize: 12,
-                fontFamily: '"Inter Variable", Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+                fontFamily: '"Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
                 panes: {...options.layout?.panes, separatorColor: colors.separator, separatorHoverColor: colors.separatorHover}},
             grid: {vertLines: {...options.grid?.vertLines, color: colors.grid}, horzLines: {...options.grid?.horzLines, color: colors.grid}},
             rightPriceScale: {...options.rightPriceScale, borderColor: colors.border},

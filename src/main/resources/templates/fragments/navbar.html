@@ -9,8 +9,9 @@
     <script th:src="@{/js/watchlists.js}" defer></script>
     <script th:src="@{/js/notifications-read.js}" defer></script>
     <script th:src="@{/js/learning-mode.js}" defer></script>
-    <th:block th:replace="~{fragments/app-sidebar :: sidebar}"></th:block>
   </th:block>
+  <!-- Row one of the app's top bar. The main navigation (app-sidebar) follows it as row two on wide screens
+       and opens as a drawer from the menu button below 1025px, so focus moves through the bar top to bottom. -->
   <nav class="navbar" aria-label="Application navigation" th:aria-label="#{nav.aria}">
     <button th:if="${showAppNavigation == true}" id="appMenuToggle" type="button" class="app-nav-icon-button app-menu-toggle"
             aria-label="Open navigation" th:aria-label="#{nav.openMenu}" aria-controls="appSidebar" aria-expanded="false">
@@ -44,6 +45,9 @@
     <span th:if="${firstName != null}" id="accountThemeSync" hidden
           th:attr="data-theme-endpoint=@{/api/settings/theme},data-csrf-token=${_csrf.token}"></span>
   </nav>
+  <th:block th:if="${showAppNavigation == true}">
+    <th:block th:replace="~{fragments/app-sidebar :: sidebar}"></th:block>
+  </th:block>
 
   <script th:if="${showAppNavigation == true}" th:src="@{/js/app-navigation.js}"></script>
 

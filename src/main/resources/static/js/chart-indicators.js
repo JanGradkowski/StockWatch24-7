@@ -240,7 +240,7 @@
                     ctx.strokeStyle = color;
                     ctx.fillStyle = color;
                     ctx.lineWidth = 1;
-                    ctx.font = '600 11px "Inter Variable", Inter, sans-serif';
+                    ctx.font = '600 11px "Geist", sans-serif';
                     switch (shape.kind) {
                         case 'segment':
                         case 'level': this.line(ctx, points, shape, width, color); break;
