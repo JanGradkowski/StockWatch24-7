@@ -10,6 +10,7 @@
   <script th:src="@{/js/design-ui.js}" defer></script>
   <script th:src="@{/js/custom-alert-text.js}" defer></script>
   <script th:src="@{/js/stock-custom-alerts.js}" defer></script>
+  <script th:src="@{/js/stock-overview.js}" defer></script>
   <!-- TradingView Lightweight Charts (Industry Standard) -->
   <script th:src="@{/js/vendor/lightweight-charts/5.2.1/lightweight-charts.standalone.production.js}"></script>
   <script th:src="@{/js/chart-theme.js}"></script>
@@ -87,7 +88,14 @@
   <header class="price-header">
     <div class="market-identity">
       <h1 class="ticker-name"><span th:text="${symbol}">AAPL</span><span id="instrumentTypeDisplay" class="instrument-type-badge" data-instrument-type="EQUITY" th:text="#{stock.instrumentStock}">Stock</span></h1>
+      <!-- stock-workspace.js writes the interval into the element right after the ticker, so this stays second. -->
       <div class="interval-label" th:text="#{stock.intervalLabel.DAILY}">Daily Interval</div>
+      <!-- Filled from the instrument's metadata once it loads. -->
+      <p class="company-identity"><span id="companyNameDisplay" class="company-name"></span><span id="exchangeDisplay" class="exchange-badge" hidden></span></p>
+    </div>
+    <div class="price-header-actions">
+      <button type="button" class="btn-secondary" data-stock-watchlists th:attr="data-symbol=${symbol}" th:text="#{stock.addToWatchlist}">Add to watchlist</button>
+      <a class="btn-secondary" th:href="@{/custom-alerts/new(symbol=${symbol})}" th:text="#{stock.newAlert}">New alert</a>
     </div>
     <section class="price-header-demo-trading" aria-labelledby="stockDemoTradeTitle">
       <h2 id="stockDemoTradeTitle" class="visually-hidden" th:text="#{stock.demoTradeHeading}">Demo trade at the current quote, no real order</h2>
@@ -437,18 +445,50 @@
        data-stock-workspace-panel="technical-analysis"
        hidden>
 
-  <section class="stock-workspace-action-card technical-outlook-launcher"
-           aria-labelledby="fullTechnicalOutlookTitle">
-    <div>
-      <span class="stock-workspace-action-kicker" th:text="#{activityDetail.tab.technical}">Technical analysis</span>
-      <h2 id="fullTechnicalOutlookTitle"><span class="learn-term" data-term="outlook" th:text="#{stock.technicalOutlook}">Technical Outlook</span></h2>
-      <p th:text="#{stock.outlookHelp}">See the overall outlook, individual indicators and recent signals.</p>
-    </div>
-    <a class="btn-accent full-technical-outlook-button"
-       th:href="@{/stock/{symbol}/technical-outlook(symbol=${symbol})}" th:text="#{virtualTrade.openOutlook}">
-      Open Technical Outlook
-    </a>
-  </section>
+  <!-- The overview: the outlook verdict, what this account follows here, and the newest signals.
+       stock-overview.js fills the outlook and signals; stock-workspace.js keeps the follow summary current. -->
+  <div class="stock-overview" data-stock-overview th:attr="data-symbol=${symbol}">
+    <section class="stock-overview-section stock-outlook-summary" aria-labelledby="fullTechnicalOutlookTitle">
+      <div class="stock-overview-head">
+        <h2 id="fullTechnicalOutlookTitle"><span class="learn-term" data-term="outlook" th:text="#{stock.technicalOutlook}">Technical Outlook</span></h2>
+        <a class="text-link full-technical-outlook-button" data-overview-report
+           th:href="@{/stock/{symbol}/technical-outlook(symbol=${symbol})}" th:text="#{stock.overview.fullReport}">Full report</a>
+      </div>
+      <div class="stock-overview-intervals" role="group" aria-label="Outlook interval" th:aria-label="#{stock.overview.intervalAria}">
+        <button type="button" data-overview-interval="1d" aria-pressed="true" th:text="#{common.interval.DAILY}">Daily</button>
+        <button type="button" data-overview-interval="1wk" aria-pressed="false" th:text="#{common.interval.WEEKLY}">Weekly</button>
+        <button type="button" data-overview-interval="1mo" aria-pressed="false" th:text="#{common.interval.MONTHLY}">Monthly</button>
+      </div>
+      <p class="stock-overview-status" data-overview-status role="status" aria-live="polite" th:text="#{stock.overview.loading}">Loading the outlook…</p>
+      <div class="stock-outlook-result" data-overview-result hidden>
+        <p class="stock-outlook-verdict"><strong data-overview-verdict></strong> <span data-overview-score></span></p>
+        <div class="stock-outlook-gauge" aria-hidden="true"><span class="stock-outlook-gauge-marker" data-overview-marker></span></div>
+        <div class="stock-outlook-gauge-labels" aria-hidden="true">
+          <span th:text="#{analysis.email.sell}">Sell/Short</span><span th:text="#{technicalWatchlist.filter.neutral}">Neutral</span><span th:text="#{technicalWatchlist.filter.buy}">Buy</span>
+        </div>
+        <p class="stock-outlook-votes" data-overview-votes></p>
+        <ul class="stock-outlook-categories" data-overview-categories></ul>
+        <p class="stock-outlook-freshness" data-overview-freshness></p>
+      </div>
+    </section>
+
+    <section class="stock-overview-section stock-follow-summary" aria-labelledby="stockFollowSummaryTitle">
+      <div class="stock-overview-head">
+        <h2 id="stockFollowSummaryTitle" th:text="#{stock.overview.youFollow}">You follow</h2>
+        <button type="button" class="text-link" data-follow-summary-edit th:text="#{stock.overview.editFollows}">Edit</button>
+      </div>
+      <ul class="stock-follow-chips" data-follow-summary aria-live="polite"><li class="stock-follow-chip is-loading" th:text="#{stock.loadingAlertState}">Loading follow state...</li></ul>
+      <p class="stock-follow-note" data-follow-summary-note hidden></p>
+    </section>
+
+    <section class="stock-overview-section stock-recent-signals" aria-labelledby="stockRecentSignalsTitle" data-overview-signals-section hidden>
+      <div class="stock-overview-head">
+        <h2 id="stockRecentSignalsTitle" th:text="#{stock.overview.recentSignals}">Recent signals</h2>
+        <a class="text-link" th:href="@{/signals(ticker=${symbol})}" th:text="#{stock.overview.allSignals(${symbol})}">All AAPL signals</a>
+      </div>
+      <ul class="stock-recent-signal-list" data-overview-signals></ul>
+    </section>
+  </div>
 
   <section class="alert-panel alert-star-panel">
     <div class="alert-header">

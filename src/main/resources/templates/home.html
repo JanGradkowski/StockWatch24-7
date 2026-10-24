@@ -18,13 +18,13 @@
 
 <main class="dashboard-container">
   <header th:unless="${dashboardView == 'alerts'}" class="app-hero welcome-header">
-    <div class="app-hero-copy">
-      <!-- The headline is the status (what is waiting); the greeting moves above it. -->
-      <div class="eyebrow welcome-greeting"><span th:text="#{home.greeting}">Good to see you,</span> <span th:text="${firstName}">Trader</span></div>
+    <div class="app-hero-copy" th:with="unreadTotal=${latestSignalUnreadCount + customAlertUnreadCount + tickerNotificationUnreadCount}">
+      <!-- The headline is the status (what is waiting); the date and greeting sit above it, the breakdown below. -->
+      <div class="eyebrow welcome-greeting"><span th:text="${#temporals.format(#temporals.createNow(), 'EEEE d MMMM')}">Saturday 24 October</span> <span aria-hidden="true">·</span> <span th:text="#{home.greeting}">Good to see you,</span> <span th:text="${firstName}">Trader</span></div>
       <h1 class="welcome-text"
-          th:with="unreadTotal=${latestSignalUnreadCount + customAlertUnreadCount + tickerNotificationUnreadCount}"
           th:text="${unreadTotal == 0 ? #messages.msg('home.caughtUp') : #messages.msg(#tr.pluralKey('home.status.unread', unreadTotal), unreadTotal)}">You're all caught up</h1>
-      <p class="welcome-subtitle" th:text="#{home.subtitle}">Search for a stock, ETF, or index to view its chart or set up alerts.</p>
+      <p class="welcome-subtitle"
+         th:text="${unreadTotal == 0 ? #messages.msg('home.subtitle') : #messages.msg('home.status.breakdown', latestSignalUnreadCount, tickerNotificationUnreadCount, customAlertUnreadCount)}">Search for a stock, ETF, or index to view its chart or set up alerts.</p>
     </div>
     <div class="wl-hero-actions">
       <a th:href="@{/signals}" class="btn-accent wl-account-signals">
@@ -34,6 +34,30 @@
       <a th:href="@{/settings/analysis-alerts}" class="text-link hero-settings-link" th:text="#{home.alertSettings}">Alert settings</a>
     </div>
   </header>
+
+  <!-- Stocks from the watchlists with their latest completed daily close; prices come from stored candles. -->
+  <section th:if="${homeStocks != null and !#lists.isEmpty(homeStocks)}" class="home-stocks" data-dashboard-view="technical"
+           aria-labelledby="homeStocksTitle">
+    <div class="home-stocks-head">
+      <h2 id="homeStocksTitle" th:text="#{home.stocks.title}">Your stocks</h2>
+      <span class="home-stocks-note" th:text="#{home.stocks.note}">Latest completed daily close and the change from the close before</span>
+    </div>
+    <ul class="home-stock-cards">
+      <li th:each="stock : ${homeStocks}">
+        <a class="home-stock-card" th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}" th:classappend="${stock.rising()} ? ' is-up' : ' is-down'">
+          <span class="home-stock-top">
+            <strong class="home-stock-symbol" th:text="${stock.symbol()}">AAPL</strong>
+            <span class="home-stock-change" th:text="${(stock.rising() ? '+' : '−') + #numbers.formatDecimal(stock.changeMagnitude(), 1, 2) + '%'}">+0.48%</span>
+          </span>
+          <span class="home-stock-price"><th:block th:text="${#numbers.formatDecimal(stock.close(), 1, 'DEFAULT', 2, 'DEFAULT')}">232.10</th:block> <small th:text="${stock.currency()}">USD</small></span>
+          <svg class="home-stock-spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path th:attr="d=${stock.sparkline()}"/></svg>
+          <span class="home-stock-name" th:text="${stock.companyName()}">Apple Inc.</span>
+          <span th:if="${stock.outlook() != null}" class="home-stock-outlook" th:classappend="${' is-' + stock.outlookTone()}"
+                th:text="${#messages.msg('home.stocks.dailyOutlook', #tr.text(stock.outlook()))}">Daily: Slight buy outlook</span>
+        </a>
+      </li>
+    </ul>
+  </section>
 
   <div class="grid-layout" data-dashboard-view-layout th:attr="data-active-view=${dashboardView}">
     <div class="dashboard-main-stack">
@@ -194,55 +218,6 @@
             </a>
             </th:block>
           </div>
-        </div>
-      </section>
-
-      <section id="customAlertsDashboard" class="glass-panel dashboard-panel custom-dash"
-               data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}" aria-labelledby="custom-alerts-heading">
-        <div class="panel-heading">
-          <div>
-            <div class="panel-kicker" th:text="#{home.custom.kicker}">Your own alert rules</div>
-            <h2 id="custom-alerts-heading" class="panel-title"><span class="learn-label"><th:block th:text="#{sidebar.customAlerts}">Custom alerts</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.dashboard', #{sidebar.customAlerts})}"></span></span> <span class="panel-count" th:text="${customAlertUnreadCount}">0</span></h2>
-          </div>
-          <div class="panel-heading-actions">
-            <a th:unless="${#lists.isEmpty(customAlertSummaries)}" th:href="@{/custom-alerts}" class="text-link" th:text="#{home.custom.manage}">Manage custom alerts</a>
-            <a th:href="@{/custom-alerts/new}" class="btn-accent" th:text="#{home.custom.create}">New custom alert</a>
-          </div>
-        </div>
-
-        <div th:if="${#lists.isEmpty(customAlertSummaries)}" class="custom-dash-empty">
-          <p th:text="#{home.custom.emptyText}">Combine indicators, chart patterns and insider or congressional trades into one rule, and StockWatch tells you when a stock on your watchlists matches it. Start from an example and adjust it:</p>
-          <div class="custom-dash-templates">
-            <a th:href="@{/custom-alerts/new(template='oversold-bounce')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.oversold-bounce.name')}">Oversold bounce</a>
-            <a th:href="@{/custom-alerts/new(template='golden-cross')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.golden-cross.name')}">Golden cross with volume</a>
-            <a th:href="@{/custom-alerts/new(template='insider-cluster')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.insider-cluster.name')}">Insider cluster buy</a>
-            <a th:href="@{/custom-alerts}" class="custom-dash-template is-more" th:text="#{home.custom.moreExamples}">More examples</a>
-          </div>
-        </div>
-
-        <ul th:if="${!#lists.isEmpty(customAlertTriggers)}" class="custom-dash-triggers">
-          <li th:each="trigger : ${customAlertTriggers}">
-            <a th:href="@{/custom-alerts/triggers/{id}(id=${trigger.id()})}" class="custom-dash-trigger"
-               th:aria-label="#{home.custom.openAria(${trigger.alertName()}, ${trigger.symbol()})}">
-              <span class="unread-dot" aria-hidden="true"></span>
-              <span class="custom-dash-stock"><strong th:text="${trigger.symbol()}">MSFT</strong><span th:text="${trigger.companyName()}">Microsoft Corp.</span></span>
-              <span class="custom-dash-rule"><strong th:text="${trigger.alertName()}">Above the 50-day average</strong><span th:text="${#messages.msg('common.interval.' + trigger.interval().name()) + ' · ' + #messages.msg('signals.conditionsMet', trigger.matchedConditions() + '/' + trigger.totalConditions())}">Daily · 1/1 conditions met</span></span>
-              <span class="signal-lifecycle-pill confirmed" th:text="${trigger.kind() == 'MATCHED_ON_APPLY'} ? #{signals.matchedWhenApplied} : #{home.chartAlertTriggered}">Triggered</span>
-              <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
-
-        <div th:if="${#lists.isEmpty(customAlertTriggers) and !#lists.isEmpty(customAlertSummaries)}">
-          <p class="custom-dash-caught-up" th:text="#{home.custom.caughtUp}">No new triggers. Your alerts check again after every completed candle.</p>
-          <ul class="custom-dash-alerts">
-            <li th:each="alert : ${customAlertSummaries}">
-              <a th:href="@{/signals(customAlertId=${alert.id()})}" class="custom-dash-alert" th:classappend="${alert.active()} ? '' : ' is-paused'">
-                <strong th:text="${alert.name()}">Oversold bounce</strong>
-                <span th:text="${alert.active() ? #messages.msg('home.custom.matching', alert.matching(), alert.stocks()) : #messages.msg('home.custom.paused')}">2 of 14 stocks match now</span>
-              </a>
-            </li>
-          </ul>
         </div>
       </section>
 
@@ -624,7 +599,83 @@
 
     <aside class="dashboard-technical-sidebar"
            data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}"
-           aria-label="Signal alerts summary" th:aria-label="#{home.summaryAria}">
+           aria-label="Custom alerts, demo trading and alert counts" th:aria-label="#{home.asideAria}">
+      <section id="customAlertsDashboard" class="glass-panel dashboard-panel custom-dash"
+               data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}" aria-labelledby="custom-alerts-heading">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker" th:text="#{home.custom.kicker}">Your own alert rules</div>
+            <h2 id="custom-alerts-heading" class="panel-title"><span class="learn-label"><th:block th:text="#{sidebar.customAlerts}">Custom alerts</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.dashboard', #{sidebar.customAlerts})}"></span></span> <span class="panel-count" th:text="${customAlertUnreadCount}">0</span></h2>
+          </div>
+          <div class="panel-heading-actions">
+            <a th:unless="${#lists.isEmpty(customAlertSummaries)}" th:href="@{/custom-alerts}" class="text-link" th:text="#{home.custom.manage}">Manage custom alerts</a>
+            <a th:href="@{/custom-alerts/new}" class="btn-accent" th:text="#{home.custom.create}">New custom alert</a>
+          </div>
+        </div>
+
+        <div th:if="${#lists.isEmpty(customAlertSummaries)}" class="custom-dash-empty">
+          <p th:text="#{home.custom.emptyText}">Combine indicators, chart patterns and insider or congressional trades into one rule, and StockWatch tells you when a stock on your watchlists matches it. Start from an example and adjust it:</p>
+          <div class="custom-dash-templates">
+            <a th:href="@{/custom-alerts/new(template='oversold-bounce')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.oversold-bounce.name')}">Oversold bounce</a>
+            <a th:href="@{/custom-alerts/new(template='golden-cross')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.golden-cross.name')}">Golden cross with volume</a>
+            <a th:href="@{/custom-alerts/new(template='insider-cluster')}" class="custom-dash-template" th:text="${#messages.msg('js.ca.template.insider-cluster.name')}">Insider cluster buy</a>
+            <a th:href="@{/custom-alerts}" class="custom-dash-template is-more" th:text="#{home.custom.moreExamples}">More examples</a>
+          </div>
+        </div>
+
+        <ul th:if="${!#lists.isEmpty(customAlertTriggers)}" class="custom-dash-triggers">
+          <li th:each="trigger : ${customAlertTriggers}">
+            <a th:href="@{/custom-alerts/triggers/{id}(id=${trigger.id()})}" class="custom-dash-trigger"
+               th:aria-label="#{home.custom.openAria(${trigger.alertName()}, ${trigger.symbol()})}">
+              <span class="unread-dot" aria-hidden="true"></span>
+              <span class="custom-dash-stock"><strong th:text="${trigger.symbol()}">MSFT</strong><span th:text="${trigger.companyName()}">Microsoft Corp.</span></span>
+              <span class="custom-dash-rule"><strong th:text="${trigger.alertName()}">Above the 50-day average</strong><span th:text="${#messages.msg('common.interval.' + trigger.interval().name()) + ' · ' + #messages.msg('signals.conditionsMet', trigger.matchedConditions() + '/' + trigger.totalConditions())}">Daily · 1/1 conditions met</span></span>
+              <span class="signal-lifecycle-pill confirmed" th:text="${trigger.kind() == 'MATCHED_ON_APPLY'} ? #{signals.matchedWhenApplied} : #{home.chartAlertTriggered}">Triggered</span>
+              <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+            </a>
+          </li>
+        </ul>
+
+        <div th:if="${#lists.isEmpty(customAlertTriggers) and !#lists.isEmpty(customAlertSummaries)}">
+          <p class="custom-dash-caught-up" th:text="#{home.custom.caughtUp}">No new triggers. Your alerts check again after every completed candle.</p>
+          <ul class="custom-dash-alerts">
+            <li th:each="alert : ${customAlertSummaries}">
+              <a th:href="@{/signals(customAlertId=${alert.id()})}" class="custom-dash-alert" th:classappend="${alert.active()} ? '' : ' is-paused'">
+                <strong th:text="${alert.name()}">Oversold bounce</strong>
+                <span th:text="${alert.active() ? #messages.msg('home.custom.matching', alert.matching(), alert.stocks()) : #messages.msg('home.custom.paused')}">2 of 14 stocks match now</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- The demo portfolio in brief: value and the last trading day's change, per currency. -->
+      <section id="homeDemoTrading" class="glass-panel dashboard-panel home-demo"
+               data-dashboard-view="technical" th:hidden="${dashboardView == 'alerts'}" aria-labelledby="home-demo-heading">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker" th:text="#{home.demo.kicker}">Practice only, no real orders</div>
+            <h2 id="home-demo-heading" class="panel-title"><span class="learn-term" data-term="demoTrade" th:text="#{sidebar.demo}">Demo trading</span></h2>
+          </div>
+          <div class="panel-heading-actions"><a th:href="@{/virtual-trades}" class="text-link" th:text="#{home.demo.open}">Open demo trading</a></div>
+        </div>
+        <th:block th:if="${homePortfolio != null and !homePortfolio.currencies().isEmpty()}">
+          <div th:each="balance : ${homePortfolio.currencies()}" class="home-demo-balance">
+            <span class="home-demo-label" th:text="#{virtualTrades.portfolioValue(${balance.currency()})}">USD portfolio value</span>
+            <strong class="home-demo-value" th:text="${balance.value() != null ? #numbers.formatDecimal(balance.value(), 1, 'DEFAULT', 2, 'DEFAULT') + ' ' + balance.currency() : #messages.msg('virtualTrades.unavailable')}">10,000.00 USD</strong>
+            <span class="home-demo-change"
+                  th:with="period=${balance.selected()}"
+                  th:classappend="${period.returnPercent() == null ? '' : (period.returnPercent().signum() >= 0 ? ' is-up' : ' is-down')}"
+                  th:text="${#tr.text(period.label()) + ': ' + (period.returnPercent() != null ? (period.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(period.returnPercent(), 1, 2) + '%' : #messages.msg('common.notAvailable'))}">Last trading day: +0.09%</span>
+            <span class="home-demo-meta" th:text="${#messages.msg(#tr.pluralKey('home.demo.trades', balance.trades()), balance.trades())}">1 sized trade</span>
+          </div>
+        </th:block>
+        <p th:unless="${homePortfolio != null and !homePortfolio.currencies().isEmpty()}" class="home-demo-empty">
+          <strong th:text="#{virtualTrades.noSizedTitle}">No sized buy trades yet</strong>
+          <span th:text="#{virtualTrades.noSizedText}">Create a demo buy with a quantity or investment amount to track portfolio value.</span>
+        </p>
+      </section>
+
       <section id="technicalDashboardMetrics"
                class="metrics-grid dashboard-sidebar-metrics"
                aria-label="Signal alerts overview" th:aria-label="#{home.overviewAria}">

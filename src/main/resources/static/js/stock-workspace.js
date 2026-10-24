@@ -1222,6 +1222,7 @@
           const instrumentTypeDisplay = document.getElementById('instrumentTypeDisplay');
           instrumentTypeDisplay.dataset.instrumentType = instrumentType;
           instrumentTypeDisplay.textContent = i18n.t(`sw.instrument.${instrumentType === 'INDEX' || instrumentType === 'ETF' ? instrumentType : 'EQUITY'}`);
+          showInstrumentIdentity(metaJson);
           updateTickerAlertsEligibility(instrumentType);
           await Promise.all([
             configureCongressionalActivity(instrumentType),
@@ -3171,6 +3172,17 @@
     await loadCongressionalActivityState();
   }
 
+  // The header names the company and its exchange; metadata without a real name repeats the symbol, so skip it.
+  function showInstrumentIdentity(meta) {
+    const name = String(meta.name || '').trim();
+    const companyName = document.getElementById('companyNameDisplay');
+    companyName.textContent = name && name.toUpperCase() !== String(meta.symbol || '').toUpperCase() ? name : '';
+    const exchange = String(meta.exchange || '').trim();
+    const exchangeDisplay = document.getElementById('exchangeDisplay');
+    exchangeDisplay.textContent = exchange;
+    exchangeDisplay.hidden = !exchange;
+  }
+
   function updateTickerAlertsEligibility(instrumentType) {
     const isEligible = instrumentType === 'EQUITY';
     const notice = document.getElementById('tickerAlertsEligibilityNotice');
@@ -4382,8 +4394,62 @@
     return changedAlertInputs().length + changedOutlookInputs().length > 0;
   }
 
+  // The overview's "You follow" chips: what is saved for this stock (not the unapplied draft), one chip per
+  // family with the intervals followed in either direction.
+  function renderFollowSummary(changedCount) {
+    const list = document.querySelector('[data-follow-summary]');
+    if (!list) return;
+    const FOLLOW_SUMMARY_FAMILIES = ['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION'];
+    const FOLLOW_SUMMARY_INTERVALS = ['DAILY', 'WEEKLY', 'MONTHLY'];
+    const note = document.querySelector('[data-follow-summary-note]');
+    if (!alertStateLoaded) {
+      list.replaceChildren(followSummaryChip(i18n.t('sw.alertsUnavailable'), null, false));
+      note.hidden = true;
+      return;
+    }
+    const savedIntervals = family => FOLLOW_SUMMARY_INTERVALS.filter(interval => alertInputs().some(input =>
+            (input.dataset.alertFamily || 'CANDLESTICK') === family && input.dataset.alertInterval === interval
+            && persistedAlertState.get(alertControlKey(input))));
+    const rows = FOLLOW_SUMMARY_FAMILIES.map(family => [family, savedIntervals(family)]);
+    if (outlookFollowStateLoaded) {
+      rows.push(['OUTLOOK', FOLLOW_SUMMARY_INTERVALS.filter(interval => outlookFollowInputs().some(input =>
+              input.dataset.outlookFollowInterval === interval && input.dataset.persisted === 'true'))]);
+    }
+    list.replaceChildren(...rows.map(([family, intervals]) => {
+      const name = i18n.t(`stockOverview.family.${family}`);
+      const shortText = intervals.length
+              ? intervals.map(interval => i18n.t(`stockOverview.short.${interval}`)).join(' ')
+              : i18n.t('stockOverview.off');
+      const spokenText = intervals.length
+              ? intervals.map(interval => i18n.t(`interval.${interval}`)).join(', ')
+              : i18n.t('stockOverview.notFollowed');
+      return followSummaryChip(`${name} · ${shortText}`, i18n.t('stockOverview.followAria', name, spokenText),
+              intervals.length > 0);
+    }));
+    note.textContent = i18n.t('stockOverview.unapplied');
+    note.hidden = changedCount === 0;
+  }
+
+  function followSummaryChip(text, spokenText, followed) {
+    const chip = document.createElement('li');
+    chip.className = `stock-follow-chip${followed ? ' is-followed' : ''}`;
+    if (!spokenText) {
+      chip.textContent = text;
+      return chip;
+    }
+    const visible = document.createElement('span');
+    visible.setAttribute('aria-hidden', 'true');
+    visible.textContent = text;
+    const spoken = document.createElement('span');
+    spoken.className = 'visually-hidden';
+    spoken.textContent = spokenText;
+    chip.append(visible, spoken);
+    return chip;
+  }
+
   function updateAlertDraftUi() {
     const changedCount = changedAlertInputs().length + changedOutlookInputs().length;
+    renderFollowSummary(changedCount);
     const applyButton = document.getElementById('applyAlertChangesBtn');
     const draftStatus = document.getElementById('alertDraftStatus');
     const alertPanel = document.querySelector('.alert-panel');
