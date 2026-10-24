@@ -858,7 +858,7 @@ a:hover .button-arrow {
 .hero-copy h1 {
     max-width: 790px;
     margin-top: 1.5rem;
-    color: #f8faf5;
+    color: #f8f9fd;
     font-size: clamp(3.4rem, 6vw, 6.6rem);
     font-weight: 810;
     letter-spacing: -0.075em;
@@ -866,7 +866,7 @@ a:hover .button-arrow {
 }
 
 .text-gradient {
-    background: linear-gradient(110deg, #f8faf5 15%, var(--primary-color) 56%, var(--accent-color));
+    background: linear-gradient(110deg, #f8f9fd 15%, var(--primary-color) 56%, var(--accent-color));
     background-clip: text;
     color: transparent;
 }
@@ -1250,7 +1250,7 @@ a:hover .button-arrow {
 
 .section-heading h2 {
     margin-top: 1.25rem;
-    color: #f4f6f1;
+    color: #f4f5f9;
     font-size: clamp(2.4rem, 4.8vw, 4.6rem);
     font-weight: 800;
     letter-spacing: -0.065em;
@@ -8352,7 +8352,7 @@ body.chart-panel-resizing * {
 }
 
 html[data-theme='light'] .elliott-wave-hover-card {
-    border-color: rgba(92, 134, 27, 0.25);
+    border-color: rgba(75, 91, 230, 0.25);
     background: rgba(255, 255, 255, 0.97);
     box-shadow: 0 18px 40px rgba(45, 58, 43, 0.22);
 }
@@ -8367,7 +8367,7 @@ html[data-theme='light'] .elliott-wave-card-outcome strong.negative {
 
 html[data-theme='light'] .historical-candlestick-hit-target {
     border-color: rgba(0, 120, 93, 0.42);
-    background: rgba(235, 250, 244, 0.97);
+    background: rgba(245, 246, 250, 0.97);
     color: #00785d;
 }
 
@@ -11698,7 +11698,7 @@ a.notification-filing-button:focus-visible {
     position: relative;
     --fib-selection: #d7ff78;
     --fib-label-bg: rgba(13, 18, 15, .9);
-    --fib-label-text: #edf3ee;
+    --fib-label-text: #f0f1f5;
     --fib-handle-fill: #111713;
 }
 
@@ -12074,7 +12074,7 @@ a.notification-filing-button:focus-visible {
 .theme-preview i { display: block; border-radius: 3px; }
 .theme-preview i:first-child { grid-row: 1 / 3; }
 .dark-preview { background: #090d0b; border: 1px solid #273029; }.dark-preview i { background: #263028; }.dark-preview i:last-child { background: #7b8cff; }
-.light-preview { background: #f5f7f2; border: 1px solid #cfd7ce; }.light-preview i { background: #d9e0d8; }.light-preview i:last-child { background: #4b5be6; }
+.light-preview { background: #f5f6fa; border: 1px solid #cfd7ce; }.light-preview i { background: #d9e0d8; }.light-preview i:last-child { background: #4b5be6; }
 .settings-submit { grid-column: 1 / -1; justify-self: start; }
 
 .appearance-settings-form,
@@ -12234,7 +12234,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .signup-appearance-fieldset,
 :root[data-theme="light"] .elliott-color-choice {
     border-color: rgba(42, 82, 45, 0.14);
-    background: #edf6eb;
+    background: #f2f3f7;
 }
 
 @media (max-width: 1024px) {
@@ -13274,7 +13274,7 @@ a.notification-filing-button:focus-visible {
 }
 
 :root[data-theme="light"] ::selection {
-    background: rgba(92, 134, 27, 0.23);
+    background: rgba(75, 91, 230, 0.23);
     color: #172019;
 }
 
@@ -13340,7 +13340,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .cta-panel,
 :root[data-theme="light"] .about-final-cta {
     background:
-        radial-gradient(circle at 82% 18%, rgba(92, 134, 27, 0.13), transparent 24rem),
+        radial-gradient(circle at 82% 18%, rgba(75, 91, 230, 0.13), transparent 24rem),
         radial-gradient(circle at 15% 90%, rgba(101, 87, 214, 0.09), transparent 20rem),
         rgba(255, 255, 255, 0.82);
 }
@@ -13375,9 +13375,9 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] input:focus,
 :root[data-theme="light"] select:focus,
 :root[data-theme="light"] textarea:focus {
-    border-color: rgba(92, 134, 27, 0.48);
+    border-color: rgba(75, 91, 230, 0.48);
     background-color: #ffffff;
-    box-shadow: 0 0 0 4px rgba(92, 134, 27, 0.1);
+    box-shadow: 0 0 0 4px rgba(75, 91, 230, 0.1);
 }
 
 :root[data-theme="light"] .btn-primary,
@@ -13426,7 +13426,7 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] .signal-results-chart {
     border-color: rgba(27, 43, 33, 0.1);
-    background: rgba(244, 247, 243, 0.72);
+    background: rgba(245, 246, 250, 0.72);
 }
 
 :root[data-theme="light"] .btn-primary:hover,
@@ -13439,7 +13439,7 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] .anchored-volume-profile-summary,
 :root[data-theme="light"] .anchored-volume-profile-metric {
-    border-color: rgba(92, 134, 27, 0.14);
+    border-color: rgba(75, 91, 230, 0.14);
     background: rgba(255, 255, 255, 0.72);
 }
 
@@ -13457,12 +13457,12 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .stock-page-loader {
     background:
         radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.96), transparent 34rem),
-        linear-gradient(145deg, #f8faf7, #e9eee7 68%);
+        linear-gradient(145deg, #f8faf7, #ebecf0 68%);
 }
 
 :root[data-theme="light"] .stock-loader-market {
     background:
-        radial-gradient(circle at 80% 10%, rgba(92, 134, 27, 0.09), transparent 16rem),
+        radial-gradient(circle at 80% 10%, rgba(75, 91, 230, 0.09), transparent 16rem),
         rgba(255, 255, 255, 0.72);
 }
 
@@ -13477,12 +13477,12 @@ a.notification-filing-button:focus-visible {
 }
 
 :root[data-theme="light"] .recovery-node {
-    border-color: rgba(92, 134, 27, 0.22);
-    background: #f6f9f3;
+    border-color: rgba(75, 91, 230, 0.22);
+    background: #f7f8fc;
 }
 
 :root[data-theme="light"] .about-hero-visual figcaption {
-    color: #e7ece7;
+    color: #eaebef;
 }
 
 :root[data-theme="light"] .market-strip::before {
@@ -13694,7 +13694,7 @@ a.notification-filing-button:focus-visible {
     background:
         radial-gradient(circle at 8% 0%, rgba(71, 154, 70, 0.11), transparent 31rem),
         radial-gradient(circle at 94% 5%, rgba(26, 171, 132, 0.075), transparent 29rem),
-        linear-gradient(180deg, #fbfff9 0%, #f1f8ee 50%, #e5f0e5 100%);
+        linear-gradient(180deg, #fdfeff 0%, #f5f6fa 50%, #ecedf1 100%);
 }
 
 :root[data-theme="light"] body::before {
@@ -13736,12 +13736,12 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .about-score-components article,
 :root[data-theme="light"] .about-elliott-details article {
     border-color: rgba(42, 82, 45, 0.15);
-    background: linear-gradient(145deg, rgba(253, 255, 252, 0.97), rgba(244, 251, 242, 0.96));
+    background: linear-gradient(145deg, rgba(253, 255, 252, 0.97), rgba(248, 249, 253, 0.96));
     box-shadow: 0 10px 28px rgba(34, 70, 39, 0.08);
 }
 
 :root[data-theme="light"] .navbar {
-    background: rgba(250, 255, 249, 0.93);
+    background: rgba(253, 254, 255, 0.93);
     box-shadow: 0 8px 24px rgba(34, 70, 39, 0.075);
 }
 
@@ -13775,7 +13775,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .about-final-cta {
     border-color: rgba(28, 44, 34, 0.14);
     background:
-        radial-gradient(circle at 84% 12%, rgba(71, 122, 18, 0.14), transparent 23rem),
+        radial-gradient(circle at 84% 12%, rgba(59, 76, 224, 0.14), transparent 23rem),
         radial-gradient(circle at 10% 96%, rgba(91, 80, 201, 0.1), transparent 20rem),
         #ffffff;
     box-shadow: 0 14px 38px rgba(30, 43, 34, 0.09);
@@ -13788,7 +13788,7 @@ a.notification-filing-button:focus-visible {
     background:
         linear-gradient(rgba(28, 44, 34, 0.035) 1px, transparent 1px),
         linear-gradient(90deg, rgba(28, 44, 34, 0.035) 1px, transparent 1px),
-        #f7faf6;
+        #f8f9fd;
     box-shadow: 0 12px 30px rgba(30, 43, 34, 0.09);
 }
 
@@ -13800,7 +13800,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .floating-signal,
 :root[data-theme="light"] .floating-insight {
     border-color: rgba(42, 82, 45, 0.13);
-    background: #edf6eb;
+    background: #f2f3f7;
     box-shadow: none;
 }
 
@@ -13814,7 +13814,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .btn-accent:hover {
     border-color: #2b39b8;
     background: linear-gradient(135deg, #3b4ce0, #2b39b8);
-    box-shadow: 0 13px 28px rgba(49, 95, 8, 0.24);
+    box-shadow: 0 13px 28px rgba(43, 57, 184, 0.24);
     color: #ffffff;
 }
 
@@ -13823,7 +13823,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .historical-candlestick-open-button,
 :root[data-theme="light"] .congressional-history-button {
     border-color: rgba(28, 44, 34, 0.18);
-    background: #f4f7f3;
+    background: #f5f6fa;
     box-shadow: 0 4px 12px rgba(30, 43, 34, 0.055);
     color: var(--text-color);
 }
@@ -13832,8 +13832,8 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .alert-eye-toggle:hover .alert-eye-graphic,
 :root[data-theme="light"] .historical-candlestick-open-button:hover,
 :root[data-theme="light"] .congressional-history-button:hover {
-    border-color: rgba(71, 122, 18, 0.4);
-    background: #edf4e8;
+    border-color: rgba(59, 76, 224, 0.4);
+    background: #f1f2f6;
     color: var(--primary-strong);
 }
 
@@ -13857,7 +13857,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .dashboard-view-tab,
 :root[data-theme="light"] .watch-filter-tabs {
     border-color: rgba(42, 82, 45, 0.14);
-    background: #edf6eb;
+    background: #f2f3f7;
     box-shadow: none;
 }
 
@@ -13868,13 +13868,13 @@ a.notification-filing-button:focus-visible {
 }
 
 :root[data-theme="light"] .dashboard-view-tab.active {
-    border-color: rgba(71, 122, 18, 0.35);
-    background: linear-gradient(145deg, #edf6e7, #f7faf5);
+    border-color: rgba(59, 76, 224, 0.35);
+    background: linear-gradient(145deg, #f2f3f7, #f8f9fd);
 }
 
 :root[data-theme="light"] .dashboard-view-tab[data-dashboard-view-button="alerts"].active {
     border-color: rgba(0, 120, 93, 0.32);
-    background: linear-gradient(145deg, #e8f6f1, #f7faf8);
+    background: linear-gradient(145deg, #f2f3f7, #f7faf8);
 }
 
 :root[data-theme="light"] .dashboard-view-link {
@@ -13897,7 +13897,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .insider-dashboard-row,
 :root[data-theme="light"] .activity-signal-archive-row {
     border-color: rgba(42, 82, 45, 0.13);
-    background: #edf6eb;
+    background: #f2f3f7;
     box-shadow: none;
 }
 
@@ -13905,21 +13905,21 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .latest-signal-row:hover,
 :root[data-theme="light"] .congressional-dashboard-row:hover,
 :root[data-theme="light"] .insider-dashboard-row:hover {
-    border-color: rgba(71, 122, 18, 0.25);
+    border-color: rgba(59, 76, 224, 0.25);
     background: #f8faf7;
     box-shadow: 0 7px 18px rgba(30, 43, 34, 0.07);
 }
 
 :root[data-theme="light"] .latest-signal-row.is-unread {
-    border-color: rgba(71, 122, 18, 0.19);
-    background: #edf6eb;
+    border-color: rgba(59, 76, 224, 0.19);
+    background: #f2f3f7;
 }
 
 :root[data-theme="light"] .signal-event-card.is-unread,
 :root[data-theme="light"] .signal-archive-row.is-unread,
 :root[data-theme="light"] .activity-signal-archive-row.is-unread {
-    border-color: rgba(71, 122, 18, 0.2);
-    background: #edf6eb;
+    border-color: rgba(59, 76, 224, 0.2);
+    background: #f2f3f7;
 }
 
 :root[data-theme="light"] .signal-event-card.is-read,
@@ -14055,7 +14055,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .signal-lifecycle-grid > div,
 :root[data-theme="light"] .signal-event-metrics > div {
     border-color: rgba(42, 82, 45, 0.13);
-    background: #eaf5e8;
+    background: #f1f2f6;
 }
 
 /* The rule above also matches filled segments; without this a high score draws as an empty bar. */
@@ -14068,13 +14068,13 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .signal-evidence-card {
     min-height: 0;
     border-color: rgba(47, 104, 49, 0.17);
-    background: linear-gradient(145deg, #fdfffc, #f6fcf4);
+    background: linear-gradient(145deg, #fdfffc, #f9fafe);
     box-shadow: 0 6px 16px rgba(34, 70, 39, 0.065);
 }
 
 :root[data-theme="light"] .signal-evidence-card:hover {
-    border-color: rgba(71, 122, 18, 0.36);
-    background: #fbfff9;
+    border-color: rgba(59, 76, 224, 0.36);
+    background: #fdfeff;
 }
 
 :root[data-theme="light"] .signal-evidence-card.caution {
@@ -14084,7 +14084,7 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] .evidence-detail-list li {
     border: 1px solid rgba(47, 104, 49, 0.13);
-    background: #eaf4e8;
+    background: #f0f1f5;
     color: var(--text-soft);
 }
 
@@ -14099,7 +14099,7 @@ a.notification-filing-button:focus-visible {
 /* Stock workspace and market activity panels. */
 :root[data-theme="light"] .stock-workspace-navigation {
     border-color: rgba(28, 44, 34, 0.15);
-    background: linear-gradient(135deg, #ffffff, #f3f7f2);
+    background: linear-gradient(135deg, #ffffff, #f5f6fa);
     box-shadow: 0 12px 30px rgba(30, 43, 34, 0.11);
 }
 
@@ -14118,7 +14118,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .stock-workspace-action-card,
 :root[data-theme="light"] .ticker-alerts-eligibility-notice {
     border-color: rgba(0, 120, 93, 0.17);
-    background: linear-gradient(140deg, #ffffff, #f0f8f4);
+    background: linear-gradient(140deg, #ffffff, #f5f6fa);
     box-shadow: 0 10px 28px rgba(30, 43, 34, 0.08);
 }
 
@@ -14144,7 +14144,7 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] .congressional-activity-panel {
     border-color: rgba(0, 120, 93, 0.22);
-    background: linear-gradient(145deg, #ffffff 35%, #eef8f4);
+    background: linear-gradient(145deg, #ffffff 35%, #f5f6fa);
     box-shadow: 0 10px 28px rgba(30, 43, 34, 0.08);
 }
 
@@ -14162,7 +14162,7 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] .congressional-activity-status {
     border-color: rgba(0, 120, 93, 0.2);
-    background: #e9f6f1;
+    background: #f2f3f7;
     color: var(--accent-color);
 }
 
@@ -14200,7 +14200,7 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] .congressional-dialog-close {
     border-color: rgba(28, 44, 34, 0.14);
-    background: #f0f3ef;
+    background: #f1f2f6;
     color: var(--text-soft);
 }
 
@@ -14211,7 +14211,7 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] .congressional-history-table th {
     border-color: rgba(28, 44, 34, 0.12);
-    background: #e9eeea;
+    background: #ecedf1;
     color: #4f6056;
 }
 
@@ -14227,7 +14227,7 @@ a.notification-filing-button:focus-visible {
 
 :root[data-theme="light"] .historical-candlestick-result-row:hover,
 :root[data-theme="light"] .historical-candlestick-result-row:focus-visible {
-    background: #edf5e9;
+    background: #f1f2f6;
 }
 
 :root[data-theme="light"] .historical-candlestick-view-option,
@@ -14235,7 +14235,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .historical-candlestick-lookback-preview,
 :root[data-theme="light"] .historical-outcome-grid > div {
     border-color: rgba(28, 44, 34, 0.13);
-    background: #f0f3ef;
+    background: #f1f2f6;
 }
 
 /* Settings keep the same surface hierarchy as the rest of the application. */
@@ -14243,12 +14243,12 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .theme-choice,
 :root[data-theme="light"] .security-event-list article {
     border-color: rgba(42, 82, 45, 0.14);
-    background: #edf6eb;
+    background: #f2f3f7;
 }
 
 :root[data-theme="light"] .theme-choice:has(input:checked) {
     border-color: var(--primary-color);
-    background: #edf6e7;
+    background: #f2f3f7;
 }
 
 :root[data-theme="light"] .danger-zone {
@@ -14277,23 +14277,23 @@ a.notification-filing-button:focus-visible {
     border-color: rgba(47, 104, 49, 0.17);
     background:
         radial-gradient(circle at 94% 5%, rgba(142, 210, 117, 0.1), transparent 24rem),
-        linear-gradient(145deg, rgba(253, 255, 252, 0.98), rgba(243, 251, 241, 0.97));
+        linear-gradient(145deg, rgba(253, 255, 252, 0.98), rgba(248, 249, 253, 0.97));
 }
 
 :root[data-theme="light"] .signal-view-tabs,
 :root[data-theme="light"] .signal-chart-card {
     border-color: rgba(47, 104, 49, 0.17);
-    background: linear-gradient(145deg, rgba(253, 255, 252, 0.96), rgba(241, 250, 239, 0.95));
+    background: linear-gradient(145deg, rgba(253, 255, 252, 0.96), rgba(246, 247, 251, 0.95));
     box-shadow: var(--shadow-sm), inset 0 1px rgba(255, 255, 255, 0.8);
 }
 
 :root[data-theme="light"] .signal-view-tab.active {
-    border-color: rgba(71, 122, 18, 0.24);
+    border-color: rgba(59, 76, 224, 0.24);
     background: linear-gradient(135deg, rgba(162, 213, 88, 0.2), rgba(62, 180, 143, 0.08));
 }
 
 :root[data-theme="light"] .signal-tab-icon {
-    border-color: rgba(71, 122, 18, 0.22);
+    border-color: rgba(59, 76, 224, 0.22);
     background: rgba(137, 193, 58, 0.13);
     color: #3b4ce0;
 }
@@ -14319,7 +14319,7 @@ a.notification-filing-button:focus-visible {
 }
 
 :root[data-theme="light"] .signal-detail-interval-button.active {
-    border-color: rgba(71, 122, 18, 0.24);
+    border-color: rgba(59, 76, 224, 0.24);
     background: linear-gradient(145deg, rgba(162, 213, 88, 0.2), rgba(62, 180, 143, 0.07));
     color: #3b4ce0;
 }
@@ -14361,10 +14361,10 @@ a.notification-filing-button:focus-visible {
 }
 
 :root[data-theme="light"] .signal-pattern-callout.detection .signal-pattern-callout-label {
-    border-color: rgba(71, 122, 18, 0.42);
-    background: rgba(244, 252, 232, 0.98);
+    border-color: rgba(59, 76, 224, 0.42);
+    background: rgba(248, 249, 253, 0.98);
     color: #365f0c;
-    box-shadow: 0 7px 18px rgba(42, 72, 11, 0.13), 0 0 15px rgba(71, 122, 18, 0.1);
+    box-shadow: 0 7px 18px rgba(42, 72, 11, 0.13), 0 0 15px rgba(59, 76, 224, 0.1);
 }
 
 :root[data-theme="light"] .signal-chart-legend > span {
@@ -14384,7 +14384,7 @@ a.notification-filing-button:focus-visible {
 :root[data-theme="light"] .historical-outcome-section,
 :root[data-theme="light"] .alert-panel {
     border-color: rgba(47, 104, 49, 0.16);
-    background: linear-gradient(145deg, rgba(252, 255, 251, 0.96), rgba(240, 249, 238, 0.95));
+    background: linear-gradient(145deg, rgba(253, 254, 255, 0.96), rgba(245, 246, 250, 0.95));
 }
 /* Candlestick pattern definitions follow the established analysis/scoring settings system. */
 .candlestick-pattern-settings-stack,

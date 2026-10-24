@@ -22,7 +22,7 @@
     --draw-selection: #2962ff;
     --wb-panel: rgba(255, 255, 255, 0.98);
     --wb-hover: rgba(24, 34, 48, 0.06);
-    --wb-active: rgba(71, 122, 18, 0.14);
+    --wb-active: rgba(59, 76, 224, 0.14);
     --chart-tools-border: rgba(31, 67, 40, 0.12);
     --chart-tools-panel: rgba(255, 255, 255, 0.5);
 }

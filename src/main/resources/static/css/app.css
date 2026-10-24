@@ -226,3 +226,27 @@
 @media (max-width: 768px) {
     :root[data-theme] .ui-refresh .alert-grid.outlook-alert-grid { grid-template-columns: 62px minmax(110px, 1fr); }
 }
+
+/* ------------------------------------------------------------------ settings: a grouped section menu beside the form */
+
+:root[data-theme] .ui-refresh .settings-nav-group-label { color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.01em; }
+/* The app's navigation is a top bar now, so settings can have its own menu column again on wide screens. */
+@media (min-width: 1100px) {
+    :root[data-theme] .ui-refresh .settings-shell {
+        display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 32px; align-items: start; max-width: 1440px;
+    }
+    :root[data-theme] .ui-refresh .settings-sidebar { position: sticky; top: 16px; }
+    :root[data-theme] .ui-refresh .settings-sidebar nav { display: flex; flex-direction: column; gap: 18px; }
+    :root[data-theme] .ui-refresh .settings-nav-group { display: flex; flex-direction: column; gap: 2px; }
+    :root[data-theme] .ui-refresh .settings-nav-group-label { padding: 0 10px 4px; }
+    :root[data-theme] .ui-refresh .settings-sidebar-link {
+        justify-content: flex-start; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent;
+    }
+    :root[data-theme] .ui-refresh .settings-sidebar-link.active { background: var(--surface-raised); color: var(--text-color); }
+    :root[data-theme] .ui-refresh .settings-content { max-width: 1000px; }
+}
+@media (max-width: 1099px) {
+    :root[data-theme] .ui-refresh .settings-sidebar nav { display: flex; flex-direction: column; gap: 10px; }
+    :root[data-theme] .ui-refresh .settings-nav-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    :root[data-theme] .ui-refresh .settings-nav-group-label { flex-basis: 100%; }
+}
