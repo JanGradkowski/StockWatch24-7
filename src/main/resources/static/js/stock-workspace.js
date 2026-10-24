@@ -255,7 +255,7 @@
     return {
       layout: {
         textColor: light ? '#526158' : '#858c82',
-        fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+        fontFamily: '"Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
         background: { type: 'solid', color: 'transparent' }
       },
       grid: {
@@ -731,12 +731,12 @@
     context.drawImage(chartCanvas, 0, Math.round(header * ratio));
     context.scale(ratio, ratio);
     context.fillStyle = styles.color || (StockWatchCharts.isLight() ? '#182230' : '#e8edf3');
-    context.font = '600 13px "Inter Variable", Inter, sans-serif';
+    context.font = '600 13px "Geist", sans-serif';
     const stamp = i18n.date(new Date(), { year: 'numeric', month: 'short', day: 'numeric' });
     const typeName = priceOnly ? ` · ${i18n.t(`sw.chartType.${chartType}`)}` : '';
     context.fillText(`${ticker} · ${i18n.t(`draw.interval.${currentInterval}`)}${typeName} · ${stamp} · StockWatch 24/7`, 10, 20);
     // Legends are page elements, so their text is written onto the image at the same place.
-    context.font = '500 11px "Inter Variable", Inter, sans-serif';
+    context.font = '500 11px "Geist", sans-serif';
     if (!priceOnly) stage.querySelectorAll('.ind-legend:not([hidden])').forEach(legend => {
       const top = parseFloat(legend.style.top) || 0;
       const left = parseFloat(legend.style.left) || 0;
@@ -2331,7 +2331,7 @@
     context.lineTo(anchorCoordinate, height - 24);
     context.stroke();
     context.setLineDash([]);
-    context.font = '600 12px "Inter Variable", Inter, sans-serif';
+    context.font = '600 12px "Geist", sans-serif';
     const labelWidth = context.measureText('ANCHOR').width + 12;
     const labelLeft = Math.max(4, Math.min(
             anchorCoordinate + 6,
@@ -4765,10 +4765,17 @@
     });
   }
 
+  // Wide screens keep the chart in view and show the other sections in a side panel beside it (app.css lays
+  // the page out); the Chart tab is hidden there, so choosing it shows technical analysis beside the chart.
+  const STOCK_WORKSPACE_SIDE_BY_SIDE = window.matchMedia('(min-width: 1360px)');
+
   function activateStockWorkspace(section, updateHash = true, moveFocus = false) {
-    const nextSection = STOCK_WORKSPACE_SECTIONS.includes(section) ? section : 'general';
+    const requestedSection = STOCK_WORKSPACE_SECTIONS.includes(section) ? section : 'general';
+    const sideBySide = STOCK_WORKSPACE_SIDE_BY_SIDE.matches;
+    const nextSection = sideBySide && requestedSection === 'general' ? 'technical-analysis' : requestedSection;
     const tabs = [...document.querySelectorAll('[data-stock-workspace-tab]')];
 
+    document.documentElement.classList.toggle('stock-workspace-side-by-side', sideBySide);
     tabs.forEach(tab => {
       const isActive = tab.dataset.stockWorkspaceTab === nextSection;
       tab.classList.toggle('active', isActive);
@@ -4778,16 +4785,17 @@
     });
 
     document.querySelectorAll('[data-stock-workspace-panel]').forEach(panel => {
-      const isActive = panel.dataset.stockWorkspacePanel === nextSection;
+      const isActive = panel.dataset.stockWorkspacePanel === nextSection
+        || (sideBySide && panel.dataset.stockWorkspacePanel === 'general');
       panel.hidden = !isActive;
       panel.classList.toggle('active', isActive);
     });
 
-    if (updateHash && window.location.hash !== `#${nextSection}`) {
+    if (updateHash && !(sideBySide && requestedSection === 'general') && window.location.hash !== `#${nextSection}`) {
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${nextSection}`);
     }
 
-    if (nextSection === 'general') {
+    if (nextSection === 'general' || sideBySide) {
       window.requestAnimationFrame(() => window.requestAnimationFrame(resizeGeneralWorkspaceCharts));
     }
   }
@@ -4809,6 +4817,9 @@
     });
 
     window.addEventListener('hashchange', () => {
+      activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
+    });
+    STOCK_WORKSPACE_SIDE_BY_SIDE.addEventListener('change', () => {
       activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
     });
     activateStockWorkspace(stockWorkspaceSectionFromHash(), false);

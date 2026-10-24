@@ -1,0 +1,257 @@
+/* Option A, "Night desk": the app's layout and visual language. Loaded last on every page, after refresh.css,
+   with the same `:root[data-theme] .ui-refresh` prefix so it wins over the older layers at equal specificity.
+   Colours and type come from tokens.css; this file arranges the shell and the pages. Ids, data attributes and
+   class names that scripts use are never renamed: only their layout and look change here. */
+
+:root {
+    --app-gutter: clamp(12px, 2.4vw, 28px);
+    --app-bar-row: 56px;
+}
+
+/* ------------------------------------------------------------------ shell: a two-row top bar */
+
+/* Content uses the full width: the main navigation is a row under the top bar, not a column beside it. */
+:root[data-theme] body.ui-refresh:has(.app-sidebar) { padding-left: 0; }
+
+:root[data-theme] .ui-refresh .app-navigation {
+    position: relative;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+/* Row one: logo, back, search, then account and theme. */
+:root[data-theme] .ui-refresh .app-navigation .navbar {
+    position: static;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 460px) minmax(0, 1fr) auto auto;
+    grid-template-areas: "logo back search . links theme";
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: none;
+    min-height: var(--app-bar-row);
+    margin: 0;
+    padding: 8px var(--app-gutter) 4px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+:root[data-theme] .ui-refresh .app-navigation .app-header-logo { display: inline-flex; grid-area: logo; margin-right: 8px; }
+:root[data-theme] .ui-refresh .app-navigation .navbar > .history-back-button { grid-area: back; }
+:root[data-theme] .ui-refresh .app-navigation .navbar .search-container { grid-area: search; width: 100%; max-width: none; }
+:root[data-theme] .ui-refresh .app-navigation .nav-links { grid-area: links; justify-self: end; display: flex; align-items: center; gap: 6px; }
+:root[data-theme] .ui-refresh .app-navigation .theme-toggle.theme-toggle-in-navbar {
+    grid-area: theme; position: static; inset: auto; width: 40px; height: 40px; margin: 0; transform: none;
+    border: 0; background: transparent; color: var(--text-soft);
+}
+:root[data-theme] .ui-refresh .app-navigation .theme-toggle.theme-toggle-in-navbar:hover { background: var(--surface-raised); color: var(--text-color); transform: none; }
+
+/* The brand: a solid accent tile with the chevron in the accent's ink colour. */
+:root[data-theme] .ui-refresh .logo { gap: 10px; font-size: var(--fs-base); font-weight: 650; letter-spacing: -0.015em; }
+:root[data-theme] .ui-refresh .logo-mark { width: 30px; height: 30px; flex: 0 0 30px; border: 0; border-radius: 8px; background: var(--primary-color); box-shadow: none; }
+:root[data-theme] .ui-refresh .logo-mark::before, :root[data-theme] .ui-refresh .logo-mark::after { width: 14px; height: 2.5px; background: var(--on-primary); }
+:root[data-theme] .ui-refresh .logo-mark::before { transform: translate(-1px, 3px) rotate(-43deg); }
+:root[data-theme] .ui-refresh .logo-mark::after { transform: translate(6px, -3px) rotate(43deg); }
+:root[data-theme] .ui-refresh .logo-word span { color: var(--muted-text); font-weight: 500; }
+
+:root[data-theme] .ui-refresh .navbar .global-ticker-search {
+    height: 38px; min-height: 38px; padding-left: 36px; border: 1px solid var(--glass-border); border-radius: 9px;
+    background: var(--bg-color); color: var(--text-color); font-size: var(--fs-md);
+}
+:root[data-theme] .ui-refresh .navbar .history-back-button {
+    min-height: 38px; height: 38px; padding: 0 10px; border: 1px solid var(--glass-border); border-radius: 9px;
+    background: transparent; color: var(--text-soft); box-shadow: none;
+}
+:root[data-theme] .ui-refresh .navbar .history-back-button:hover { background: var(--surface-raised); color: var(--text-color); }
+:root[data-theme] .ui-refresh .navbar .nav-user {
+    display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 4px; border-radius: 999px; color: var(--text-color); font-weight: 600;
+}
+/* The status dot becomes an initials badge; the name stays as text beside it. */
+:root[data-theme] .ui-refresh .navbar .nav-user-dot { width: 8px; height: 8px; margin: 0 4px; border-radius: 50%; background: var(--accent-color); box-shadow: none; }
+:root[data-theme] .ui-refresh .navbar .logout-btn {
+    min-height: 36px; height: 36px; padding: 0 12px; border: 1px solid var(--glass-border); border-radius: 9px;
+    background: transparent; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .navbar .logout-btn:hover { background: var(--surface-raised); color: var(--text-color); }
+
+/* Row two (wide screens): the main navigation laid out as underline tabs, with settings, help and
+   learning mode at the end. The same element is the drawer below 1025px, so none of this applies there. */
+@media (min-width: 1025px) {
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar,
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar[open] {
+        position: static;
+        inset: auto;
+        z-index: auto;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 2px;
+        width: auto;
+        max-width: none;
+        height: auto;
+        min-height: 44px;
+        margin: 0;
+        padding: 0 calc(var(--app-gutter) - 8px);
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar :is(.app-sidebar-brand, .app-sidebar-caption, .app-sidebar-group-label,
+        .wl-sidebar-shortcuts, .app-sidebar-learning-hint, .app-sidebar-collapse) { display: none; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links { display: flex; flex-direction: row; align-items: stretch; gap: 2px; margin: 0; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar > .app-sidebar-links { flex: 1 0 auto; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-group { display: contents; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a {
+        position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; height: 44px; padding: 0 10px; margin: 0;
+        border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted-text);
+        font-size: var(--fs-md); font-weight: 600; white-space: nowrap;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a span { display: inline; white-space: nowrap; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a svg { display: none; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a:hover { background: transparent; color: var(--text-color); }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a[aria-current="page"] {
+        border-bottom-color: var(--primary-color); background: transparent; color: var(--text-color);
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a[aria-current="page"]::before { display: none; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a .app-sidebar-badge {
+        position: static; display: inline-grid; place-items: center; width: auto; min-width: 20px; height: 20px; margin: 0; padding: 0 6px;
+        overflow: visible; border-radius: 999px; background: var(--primary-color); color: var(--on-primary); font-size: 11.5px; font-weight: 700;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-footer {
+        display: flex; align-items: center; gap: 2px; margin: 0 0 0 auto; padding: 0 0 0 12px; flex: none;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-footer .app-sidebar-links { gap: 2px; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-footer .app-sidebar-links a { padding: 0 8px; font-weight: 500; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-learning {
+        width: auto; min-height: 36px; margin: 0 0 0 6px; padding: 0 8px; gap: 8px; border: 0; border-radius: 8px;
+        color: var(--muted-text); font-size: var(--fs-md); font-weight: 500; white-space: nowrap;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-learning svg { display: none; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-learning :is(.app-sidebar-learning-label, .app-sidebar-learning-switch) { display: inline-block; }
+}
+
+/* Narrow screens: menu, logo and the account controls on the first line; search below on phones. */
+@media (max-width: 1024px) {
+    :root[data-theme] .ui-refresh .app-navigation .navbar {
+        grid-template-columns: 40px auto auto minmax(0, 1fr) auto auto;
+        grid-template-areas: "menu logo back search links theme";
+        padding: 8px var(--app-gutter);
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-menu-toggle { grid-area: menu; }
+}
+@media (max-width: 768px) {
+    :root[data-theme] .ui-refresh .app-navigation .navbar {
+        grid-template-columns: 40px auto auto minmax(0, 1fr) auto auto;
+        grid-template-areas: "menu logo back . links theme" "search search search search search search";
+        row-gap: 8px;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .nav-user { max-width: 110px; padding-right: 4px; }
+    :root[data-theme] .ui-refresh .app-navigation .history-back-label { display: none; }
+}
+
+/* ------------------------------------------------------------------ home: status first, then the inbox */
+
+/* The greeting sits above a headline that says what is waiting. */
+:root[data-theme] .ui-refresh .welcome-header .eyebrow.welcome-greeting {
+    display: block; margin: 0 0 4px; color: var(--muted-text); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; text-transform: none;
+}
+:root[data-theme] .ui-refresh .welcome-text { font-size: clamp(1.7rem, 2.6vw, 2.15rem); font-weight: 650; letter-spacing: -0.025em; }
+
+/* Wide screens: latest signals (the inbox) beside custom alerts, watchlists across the full width below. */
+@media (min-width: 1100px) {
+    :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] .dashboard-main-stack {
+        display: grid;
+        grid-template-columns: minmax(0, 1.65fr) minmax(320px, 1fr);
+        grid-template-areas: "inbox custom" "lists lists";
+        align-items: start;
+        gap: 16px;
+    }
+    :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] #latestTechnicalSignals { grid-area: inbox; }
+    :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] #customAlertsDashboard { grid-area: custom; }
+    :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] #technicalWatchDesk { grid-area: lists; }
+}
+
+/* ------------------------------------------------------------------ stock workspace: chart first, sections beside it */
+
+:root[data-theme] .ui-refresh .stock-page { max-width: 1760px; }
+
+/* From 1360px the chart stays in view on the left and technical analysis or ticker alerts sit in a side panel
+   on the right (stock-workspace.js keeps the chart panel shown and hides the Chart tab's need). */
+@media (min-width: 1360px) {
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 440px;
+        grid-template-areas: "header header" "chart tabs" "chart side";
+        grid-template-rows: auto auto 1fr;
+        column-gap: 20px;
+        align-items: start;
+    }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > .price-header { grid-area: header; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > .stock-workspace-navigation { grid-area: tabs; margin: 0 0 14px; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > [data-stock-workspace-panel="general"] { grid-area: chart; min-width: 0; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > :is([data-stock-workspace-panel="technical-analysis"], [data-stock-workspace-panel="ticker-alerts"]) {
+        grid-area: side; min-width: 0;
+    }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-workspace-tab[data-stock-workspace-tab="general"] { display: none; }
+}
+
+/* The side panel is about 440px wide, so its sections use their narrow-screen layouts (style.css applies those
+   by screen width below 768px and 1024px; here they follow the panel instead). */
+@media (min-width: 1360px) {
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-sections-layout { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-header { display: block; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-status { margin-top: 0.6rem; text-align: left; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-header-actions { min-width: 0; align-items: flex-start; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page :is(.alert-overall-follow-row, .alert-apply-row) { flex-wrap: wrap; justify-content: flex-start; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-grid { grid-template-columns: 62px repeat(2, minmax(110px, 1fr)); overflow-x: auto; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-grid.outlook-alert-grid { grid-template-columns: 62px minmax(110px, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .stock-workspace-action-card { align-items: stretch; flex-direction: column; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-header { display: block; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-actions { display: grid; min-width: 0; justify-content: stretch; margin-top: 0.85rem; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-actions button { width: 100%; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-meta { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .stock-custom-actions { justify-content: stretch; }
+}
+
+/* The outlook grid has one switch column; the narrow two-direction grid rule gave it three, so labels ran into
+   the switches ("FollowWeekly") on phones and in the side panel. */
+@media (max-width: 768px) {
+    :root[data-theme] .ui-refresh .alert-grid.outlook-alert-grid { grid-template-columns: 62px minmax(110px, 1fr); }
+}
+
+/* ------------------------------------------------------------------ settings: a grouped section menu beside the form */
+
+:root[data-theme] .ui-refresh .settings-nav-group-label { color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.01em; }
+/* The app's navigation is a top bar now, so settings can have its own menu column again on wide screens. */
+@media (min-width: 1100px) {
+    :root[data-theme] .ui-refresh .settings-shell {
+        display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 32px; align-items: start; max-width: 1440px;
+    }
+    :root[data-theme] .ui-refresh .settings-sidebar { position: sticky; top: 16px; }
+    :root[data-theme] .ui-refresh .settings-sidebar nav { display: flex; flex-direction: column; gap: 18px; }
+    :root[data-theme] .ui-refresh .settings-nav-group { display: flex; flex-direction: column; gap: 2px; }
+    :root[data-theme] .ui-refresh .settings-nav-group-label { padding: 0 10px 4px; }
+    :root[data-theme] .ui-refresh .settings-sidebar-link {
+        justify-content: flex-start; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent;
+    }
+    :root[data-theme] .ui-refresh .settings-sidebar-link.active { background: var(--surface-raised); color: var(--text-color); }
+    :root[data-theme] .ui-refresh .settings-content { max-width: 1000px; }
+}
+@media (max-width: 1099px) {
+    :root[data-theme] .ui-refresh .settings-sidebar nav { display: flex; flex-direction: column; gap: 10px; }
+    :root[data-theme] .ui-refresh .settings-nav-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    :root[data-theme] .ui-refresh .settings-nav-group-label { flex-basis: 100%; }
+}
+
+/* ------------------------------------------------------------------ fixes found in the full-page check */
+
+/* A fixed grey (#697069) that read at 3.6:1 on the dark panels; the muted token passes in both themes. */
+:root[data-theme] .ui-refresh .congressional-dashboard-note { color: var(--muted-text); }
