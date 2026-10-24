@@ -19,8 +19,11 @@
 <main class="dashboard-container">
   <header th:unless="${dashboardView == 'alerts'}" class="app-hero welcome-header">
     <div class="app-hero-copy">
-      <div class="eyebrow"><span class="learn-term" data-term="watchlist" th:text="#{watchlists.yours}">Your watchlists</span></div>
-      <h1 class="welcome-text"><span th:text="#{home.greeting}">Good to see you,</span> <span class="primary-text" th:text="${firstName}">Trader</span>.</h1>
+      <!-- The headline is the status (what is waiting); the greeting moves above it. -->
+      <div class="eyebrow welcome-greeting"><span th:text="#{home.greeting}">Good to see you,</span> <span th:text="${firstName}">Trader</span></div>
+      <h1 class="welcome-text"
+          th:with="unreadTotal=${latestSignalUnreadCount + customAlertUnreadCount + tickerNotificationUnreadCount}"
+          th:text="${unreadTotal == 0 ? #messages.msg('home.caughtUp') : #messages.msg(#tr.pluralKey('home.status.unread', unreadTotal), unreadTotal)}">You're all caught up</h1>
       <p class="welcome-subtitle" th:text="#{home.subtitle}">Search for a stock, ETF, or index to view its chart or set up alerts.</p>
     </div>
     <div class="wl-hero-actions">
