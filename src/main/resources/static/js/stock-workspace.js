@@ -4765,10 +4765,17 @@
     });
   }
 
+  // Wide screens keep the chart in view and show the other sections in a side panel beside it (app.css lays
+  // the page out); the Chart tab is hidden there, so choosing it shows technical analysis beside the chart.
+  const STOCK_WORKSPACE_SIDE_BY_SIDE = window.matchMedia('(min-width: 1360px)');
+
   function activateStockWorkspace(section, updateHash = true, moveFocus = false) {
-    const nextSection = STOCK_WORKSPACE_SECTIONS.includes(section) ? section : 'general';
+    const requestedSection = STOCK_WORKSPACE_SECTIONS.includes(section) ? section : 'general';
+    const sideBySide = STOCK_WORKSPACE_SIDE_BY_SIDE.matches;
+    const nextSection = sideBySide && requestedSection === 'general' ? 'technical-analysis' : requestedSection;
     const tabs = [...document.querySelectorAll('[data-stock-workspace-tab]')];
 
+    document.documentElement.classList.toggle('stock-workspace-side-by-side', sideBySide);
     tabs.forEach(tab => {
       const isActive = tab.dataset.stockWorkspaceTab === nextSection;
       tab.classList.toggle('active', isActive);
@@ -4778,16 +4785,17 @@
     });
 
     document.querySelectorAll('[data-stock-workspace-panel]').forEach(panel => {
-      const isActive = panel.dataset.stockWorkspacePanel === nextSection;
+      const isActive = panel.dataset.stockWorkspacePanel === nextSection
+        || (sideBySide && panel.dataset.stockWorkspacePanel === 'general');
       panel.hidden = !isActive;
       panel.classList.toggle('active', isActive);
     });
 
-    if (updateHash && window.location.hash !== `#${nextSection}`) {
+    if (updateHash && !(sideBySide && requestedSection === 'general') && window.location.hash !== `#${nextSection}`) {
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${nextSection}`);
     }
 
-    if (nextSection === 'general') {
+    if (nextSection === 'general' || sideBySide) {
       window.requestAnimationFrame(() => window.requestAnimationFrame(resizeGeneralWorkspaceCharts));
     }
   }
@@ -4809,6 +4817,9 @@
     });
 
     window.addEventListener('hashchange', () => {
+      activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
+    });
+    STOCK_WORKSPACE_SIDE_BY_SIDE.addEventListener('change', () => {
       activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
     });
     activateStockWorkspace(stockWorkspaceSectionFromHash(), false);

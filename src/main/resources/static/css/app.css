@@ -178,3 +178,51 @@
     :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] #customAlertsDashboard { grid-area: custom; }
     :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] #technicalWatchDesk { grid-area: lists; }
 }
+
+/* ------------------------------------------------------------------ stock workspace: chart first, sections beside it */
+
+:root[data-theme] .ui-refresh .stock-page { max-width: 1760px; }
+
+/* From 1360px the chart stays in view on the left and technical analysis or ticker alerts sit in a side panel
+   on the right (stock-workspace.js keeps the chart panel shown and hides the Chart tab's need). */
+@media (min-width: 1360px) {
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 440px;
+        grid-template-areas: "header header" "chart tabs" "chart side";
+        grid-template-rows: auto auto 1fr;
+        column-gap: 20px;
+        align-items: start;
+    }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > .price-header { grid-area: header; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > .stock-workspace-navigation { grid-area: tabs; margin: 0 0 14px; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > [data-stock-workspace-panel="general"] { grid-area: chart; min-width: 0; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > :is([data-stock-workspace-panel="technical-analysis"], [data-stock-workspace-panel="ticker-alerts"]) {
+        grid-area: side; min-width: 0;
+    }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-workspace-tab[data-stock-workspace-tab="general"] { display: none; }
+}
+
+/* The side panel is about 440px wide, so its sections use their narrow-screen layouts (style.css applies those
+   by screen width below 768px and 1024px; here they follow the panel instead). */
+@media (min-width: 1360px) {
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-sections-layout { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-header { display: block; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-status { margin-top: 0.6rem; text-align: left; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-header-actions { min-width: 0; align-items: flex-start; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page :is(.alert-overall-follow-row, .alert-apply-row) { flex-wrap: wrap; justify-content: flex-start; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-grid { grid-template-columns: 62px repeat(2, minmax(110px, 1fr)); overflow-x: auto; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-grid.outlook-alert-grid { grid-template-columns: 62px minmax(110px, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .stock-workspace-action-card { align-items: stretch; flex-direction: column; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-header { display: block; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-actions { display: grid; min-width: 0; justify-content: stretch; margin-top: 0.85rem; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-actions button { width: 100%; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-meta { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .stock-custom-actions { justify-content: stretch; }
+}
+
+/* The outlook grid has one switch column; the narrow two-direction grid rule gave it three, so labels ran into
+   the switches ("FollowWeekly") on phones and in the side panel. */
+@media (max-width: 768px) {
+    :root[data-theme] .ui-refresh .alert-grid.outlook-alert-grid { grid-template-columns: 62px minmax(110px, 1fr); }
+}
