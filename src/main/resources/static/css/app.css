@@ -1,0 +1,497 @@
+/* Option A, "Night desk": the app's layout and visual language. Loaded last on every page, after refresh.css,
+   with the same `:root[data-theme] .ui-refresh` prefix so it wins over the older layers at equal specificity.
+   Colours and type come from tokens.css; this file arranges the shell and the pages. Ids, data attributes and
+   class names that scripts use are never renamed: only their layout and look change here. */
+
+:root {
+    --app-gutter: clamp(12px, 2.4vw, 28px);
+    --app-bar-row: 56px;
+}
+
+/* ------------------------------------------------------------------ shell: a two-row top bar */
+
+/* Content uses the full width: the main navigation is a row under the top bar, not a column beside it. */
+:root[data-theme] body.ui-refresh:has(.app-sidebar) { padding-left: 0; }
+
+:root[data-theme] .ui-refresh .app-navigation {
+    position: relative;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+/* Row one: logo, back, search, then account and theme. */
+:root[data-theme] .ui-refresh .app-navigation .navbar {
+    position: static;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 460px) minmax(0, 1fr) auto auto;
+    grid-template-areas: "logo back search . links theme";
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: none;
+    min-height: var(--app-bar-row);
+    margin: 0;
+    padding: 8px var(--app-gutter) 4px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+:root[data-theme] .ui-refresh .app-navigation .app-header-logo { display: inline-flex; grid-area: logo; margin-right: 8px; }
+:root[data-theme] .ui-refresh .app-navigation .navbar > .history-back-button { grid-area: back; }
+:root[data-theme] .ui-refresh .app-navigation .navbar .search-container { grid-area: search; width: 100%; max-width: none; }
+:root[data-theme] .ui-refresh .app-navigation .nav-links { grid-area: links; justify-self: end; display: flex; align-items: center; gap: 6px; }
+:root[data-theme] .ui-refresh .app-navigation .theme-toggle.theme-toggle-in-navbar {
+    grid-area: theme; position: static; inset: auto; width: 40px; height: 40px; margin: 0; transform: none;
+    border: 0; background: transparent; color: var(--text-soft);
+}
+:root[data-theme] .ui-refresh .app-navigation .theme-toggle.theme-toggle-in-navbar:hover { background: var(--surface-raised); color: var(--text-color); transform: none; }
+
+/* The brand: a solid accent tile with the chevron in the accent's ink colour. */
+:root[data-theme] .ui-refresh .logo { gap: 10px; font-size: var(--fs-base); font-weight: 650; letter-spacing: -0.015em; }
+:root[data-theme] .ui-refresh .logo-mark { width: 30px; height: 30px; flex: 0 0 30px; border: 0; border-radius: 8px; background: var(--primary-color); box-shadow: none; }
+:root[data-theme] .ui-refresh .logo-mark::before, :root[data-theme] .ui-refresh .logo-mark::after { width: 14px; height: 2.5px; background: var(--on-primary); }
+:root[data-theme] .ui-refresh .logo-mark::before { transform: translate(-1px, 3px) rotate(-43deg); }
+:root[data-theme] .ui-refresh .logo-mark::after { transform: translate(6px, -3px) rotate(43deg); }
+:root[data-theme] .ui-refresh .logo-word span { color: var(--muted-text); font-weight: 500; }
+
+:root[data-theme] .ui-refresh .navbar .global-ticker-search {
+    height: 38px; min-height: 38px; padding-left: 36px; border: 1px solid var(--glass-border); border-radius: 9px;
+    background: var(--bg-color); color: var(--text-color); font-size: var(--fs-md);
+}
+:root[data-theme] .ui-refresh .navbar .history-back-button {
+    min-height: 38px; height: 38px; padding: 0 10px; border: 1px solid var(--glass-border); border-radius: 9px;
+    background: transparent; color: var(--text-soft); box-shadow: none;
+}
+:root[data-theme] .ui-refresh .navbar .history-back-button:hover { background: var(--surface-raised); color: var(--text-color); }
+:root[data-theme] .ui-refresh .navbar .nav-user {
+    display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 4px; border-radius: 999px; color: var(--text-color); font-weight: 600;
+}
+/* The status dot becomes an initials badge; the name stays as text beside it. */
+:root[data-theme] .ui-refresh .navbar .nav-user-dot { width: 8px; height: 8px; margin: 0 4px; border-radius: 50%; background: var(--accent-color); box-shadow: none; }
+:root[data-theme] .ui-refresh .navbar .logout-btn {
+    min-height: 36px; height: 36px; padding: 0 12px; border: 1px solid var(--glass-border); border-radius: 9px;
+    background: transparent; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .navbar .logout-btn:hover { background: var(--surface-raised); color: var(--text-color); }
+
+/* Row two (wide screens): the main navigation laid out as underline tabs, with settings, help and
+   learning mode at the end. The same element is the drawer below 1025px, so none of this applies there. */
+@media (min-width: 1025px) {
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar,
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar[open] {
+        position: static;
+        inset: auto;
+        z-index: auto;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 2px;
+        width: auto;
+        max-width: none;
+        height: auto;
+        min-height: 44px;
+        margin: 0;
+        padding: 0 calc(var(--app-gutter) - 8px);
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar :is(.app-sidebar-brand, .app-sidebar-caption, .app-sidebar-group-label,
+        .wl-sidebar-shortcuts, .app-sidebar-learning-hint, .app-sidebar-collapse) { display: none; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links { display: flex; flex-direction: row; align-items: stretch; gap: 2px; margin: 0; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar > .app-sidebar-links { flex: 1 0 auto; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-group { display: contents; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a {
+        position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; height: 44px; padding: 0 10px; margin: 0;
+        border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted-text);
+        font-size: var(--fs-md); font-weight: 600; white-space: nowrap;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a span { display: inline; white-space: nowrap; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a svg { display: none; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a:hover { background: transparent; color: var(--text-color); }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a[aria-current="page"] {
+        border-bottom-color: var(--primary-color); background: transparent; color: var(--text-color);
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a[aria-current="page"]::before { display: none; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a .app-sidebar-badge {
+        position: static; display: inline-grid; place-items: center; width: auto; min-width: 20px; height: 20px; margin: 0; padding: 0 6px;
+        overflow: visible; border-radius: 999px; background: var(--primary-color); color: var(--on-primary); font-size: 11.5px; font-weight: 700;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-footer {
+        display: flex; align-items: center; gap: 2px; margin: 0 0 0 auto; padding: 0 0 0 12px; flex: none;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-footer .app-sidebar-links { gap: 2px; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-footer .app-sidebar-links a { padding: 0 8px; font-weight: 500; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-learning {
+        width: auto; min-height: 36px; margin: 0 0 0 6px; padding: 0 8px; gap: 8px; border: 0; border-radius: 8px;
+        color: var(--muted-text); font-size: var(--fs-md); font-weight: 500; white-space: nowrap;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-learning svg { display: none; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-learning :is(.app-sidebar-learning-label, .app-sidebar-learning-switch) { display: inline-block; }
+}
+
+/* Narrow screens: menu, logo and the account controls on the first line; search below on phones. */
+@media (max-width: 1024px) {
+    :root[data-theme] .ui-refresh .app-navigation .navbar {
+        grid-template-columns: 40px auto auto minmax(0, 1fr) auto auto;
+        grid-template-areas: "menu logo back search links theme";
+        padding: 8px var(--app-gutter);
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-menu-toggle { grid-area: menu; }
+}
+@media (max-width: 768px) {
+    :root[data-theme] .ui-refresh .app-navigation .navbar {
+        grid-template-columns: 40px auto auto minmax(0, 1fr) auto auto;
+        grid-template-areas: "menu logo back . links theme" "search search search search search search";
+        row-gap: 8px;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .nav-user { max-width: 110px; padding-right: 4px; }
+    :root[data-theme] .ui-refresh .app-navigation .history-back-label { display: none; }
+}
+
+/* ------------------------------------------------------------------ home: status first, then the inbox */
+
+/* The greeting sits above a headline that says what is waiting. */
+:root[data-theme] .ui-refresh .welcome-header .eyebrow.welcome-greeting {
+    display: block; margin: 0 0 4px; color: var(--muted-text); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; text-transform: none;
+}
+:root[data-theme] .ui-refresh .welcome-text { font-size: clamp(1.7rem, 2.6vw, 2.15rem); font-weight: 650; letter-spacing: -0.025em; }
+
+/* Your stocks: one card per watchlist stock with the latest close, the change on the day and a sparkline. */
+:root[data-theme] .ui-refresh .home-stocks { display: flex; flex-direction: column; gap: 10px; margin: 0 0 16px; }
+:root[data-theme] .ui-refresh .home-stocks[hidden] { display: none; }
+:root[data-theme] .ui-refresh .home-stocks-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+:root[data-theme] .ui-refresh .home-stocks-head h2 { margin: 0; color: var(--text-color); font-size: var(--fs-md); font-weight: 650; letter-spacing: 0; text-transform: none; }
+:root[data-theme] .ui-refresh .home-stocks-note { color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .home-stock-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none;
+}
+/* Four or more cards share the row; one to three keep a card's width instead of stretching across the page. */
+:root[data-theme] .ui-refresh .home-stock-cards:has(> li:only-child) { max-width: 340px; }
+:root[data-theme] .ui-refresh .home-stock-cards:has(> li:nth-child(2):last-child) { max-width: 692px; }
+:root[data-theme] .ui-refresh .home-stock-cards:has(> li:nth-child(3):last-child) { max-width: 1044px; }
+@media (max-width: 600px) {
+    :root[data-theme] .ui-refresh .home-stock-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    :root[data-theme] .ui-refresh .home-stock-card { padding: 12px 12px 10px; }
+    :root[data-theme] .ui-refresh .home-stock-price { font-size: var(--fs-base); }
+}
+:root[data-theme] .ui-refresh .home-stock-card {
+    display: flex; flex-direction: column; gap: 4px; height: 100%; min-width: 0; padding: 14px 14px 12px;
+    border: 1px solid var(--glass-border); border-radius: 12px; background: var(--surface); color: var(--text-color); text-decoration: none;
+}
+:root[data-theme] .ui-refresh .home-stock-card:hover { border-color: var(--glass-border-bright); }
+:root[data-theme] .ui-refresh .home-stock-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+:root[data-theme] .ui-refresh .home-stock-symbol { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] .ui-refresh .home-stock-change { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] .ui-refresh .home-stock-card.is-up .home-stock-change { color: var(--accent-color); }
+:root[data-theme] .ui-refresh .home-stock-card.is-down .home-stock-change { color: var(--danger); }
+:root[data-theme] .ui-refresh .home-stock-price { font-family: var(--font-mono); font-size: 1.25rem; font-weight: 500; letter-spacing: -0.02em; }
+:root[data-theme] .ui-refresh .home-stock-price small { color: var(--muted-text); font-family: var(--font-sans); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0; }
+:root[data-theme] .ui-refresh .home-stock-spark { display: block; width: 100%; height: 30px; overflow: visible; }
+:root[data-theme] .ui-refresh .home-stock-spark path { fill: none; stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+:root[data-theme] .ui-refresh .home-stock-card.is-up .home-stock-spark path { stroke: var(--accent-color); }
+:root[data-theme] .ui-refresh .home-stock-card.is-down .home-stock-spark path { stroke: var(--danger); }
+:root[data-theme] .ui-refresh .home-stock-name { overflow: hidden; color: var(--muted-text); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
+:root[data-theme] .ui-refresh .home-stock-outlook {
+    align-self: flex-start; max-width: 100%; margin-top: 2px; padding: 1px 7px; overflow: hidden; border-radius: 6px;
+    background: var(--surface-raised); color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; text-overflow: ellipsis; white-space: nowrap;
+}
+:root[data-theme] .ui-refresh .home-stock-outlook.is-buy { background: color-mix(in srgb, var(--accent-color) 9%, var(--surface)); color: var(--accent-color); }
+:root[data-theme] .ui-refresh .home-stock-outlook.is-sell { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
+
+/* Inbox rows on two lines: the signal and its tags; company and watchlists; date and research horizon; status and
+   interval; the score. Every cell names itself, so the column header row is not needed. Phones keep their stacked
+   rows from design.css. */
+@media (min-width: 769px) {
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-head { display: none; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-grid.latest-signal-row {
+        display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr) auto auto 14px;
+        grid-template-areas: "type company date lifecycle confidence arrow" "type origin horizon interval confidence .";
+        align-items: center; gap: 4px 16px; padding: 12px 14px;
+    }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-row > * { order: 0; display: block; min-width: 0; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-row > [data-mobile-label]:not(.wl-notification-origin)::before { content: none; display: none; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-type { grid-area: type; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-company { grid-area: company; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .wl-notification-origin { grid-area: origin; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-date { grid-area: date; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-horizon { grid-area: horizon; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-lifecycle { grid-area: lifecycle; justify-self: end; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-interval { grid-area: interval; justify-self: end; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-confidence { grid-area: confidence; min-width: 56px; text-align: right; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-arrow { grid-area: arrow; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-type strong { display: block; margin-bottom: 4px; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-tags { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-signal-tags > * { max-width: 100%; white-space: normal; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals :is(.latest-company, .latest-signal-date, .latest-horizon) {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals :is(.latest-company, .latest-signal-date, .latest-horizon) > * { display: inline; white-space: nowrap; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals :is(.latest-company, .latest-signal-date, .latest-horizon) > * + * { margin-left: 6px; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-company strong { font-family: var(--font-mono); }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals :is(.latest-company span, .latest-signal-date span, .latest-horizon span) { color: var(--muted-text); font-size: var(--fs-sm); }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .latest-horizon strong { font-size: var(--fs-sm); font-weight: 600; }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .wl-notification-origin {
+        display: flex; align-items: center; gap: 6px; overflow: hidden; color: var(--muted-text); font-size: var(--fs-sm);
+    }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .wl-notification-origin::before {
+        content: ""; flex: none; width: 13px; height: 13px; background: currentColor;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+    :root[data-theme] .ui-refresh #latestTechnicalSignals .wl-notification-origin > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+/* The side column holds custom alerts, demo trading and the counts; on narrow screens it follows the inbox. */
+:root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] > .dashboard-technical-sidebar { order: 0; display: flex; flex-direction: column; gap: 16px; }
+:root[data-theme] .ui-refresh .home-demo-balance { display: flex; flex-direction: column; gap: 2px; padding: 10px 0 0; }
+:root[data-theme] .ui-refresh .home-demo-balance + .home-demo-balance { margin-top: 10px; border-top: 1px solid var(--glass-border); }
+:root[data-theme] .ui-refresh .home-demo-label, :root[data-theme] .ui-refresh .home-demo-meta { color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .home-demo-value { font-family: var(--font-mono); font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.02em; }
+:root[data-theme] .ui-refresh .home-demo-change { color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] .ui-refresh .home-demo-change.is-up { color: var(--accent-color); }
+:root[data-theme] .ui-refresh .home-demo-change.is-down { color: var(--danger); }
+:root[data-theme] .ui-refresh .home-demo-empty { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 0; color: var(--text-soft); font-size: var(--fs-sm); }
+
+/* Wide screens: the inbox and watchlists on the left, the side column on the right, the counts as a short list. */
+@media (min-width: 1100px) {
+    :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] {
+        display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(330px, 1fr); align-items: start; gap: 16px 20px;
+    }
+    :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] > .dashboard-main-stack { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; gap: 16px; }
+    :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] > .dashboard-technical-sidebar { grid-column: 2; grid-row: 1; }
+    :root[data-theme] .ui-refresh .grid-layout[data-active-view="technical"] > .system-pulse-panel { grid-column: 1 / -1; }
+    :root[data-theme] .ui-refresh .dashboard-technical-sidebar .dashboard-sidebar-metrics { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme] .ui-refresh .dashboard-technical-sidebar .dashboard-sidebar-metrics .metric-card {
+        flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px;
+        border-right: 0; border-bottom: 1px solid var(--rf-line-soft);
+    }
+    :root[data-theme] .ui-refresh .dashboard-technical-sidebar .dashboard-sidebar-metrics .metric-card:last-child { border-bottom: 0; }
+    :root[data-theme] .ui-refresh .dashboard-technical-sidebar .dashboard-sidebar-metrics .metric-value { font-size: var(--fs-lg); }
+}
+
+/* ------------------------------------------------------------------ stock workspace: chart first, sections beside it */
+
+:root[data-theme] .ui-refresh .stock-page { max-width: 1760px; }
+
+/* From 1360px the chart stays in view on the left and technical analysis or ticker alerts sit in a side panel
+   on the right (stock-workspace.js keeps the chart panel shown and hides the Chart tab's need). */
+@media (min-width: 1360px) {
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 440px;
+        grid-template-areas: "header header" "chart tabs" "chart side";
+        grid-template-rows: auto auto 1fr;
+        column-gap: 20px;
+        align-items: start;
+    }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > .price-header { grid-area: header; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > .stock-workspace-navigation { grid-area: tabs; margin: 0 0 14px; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > [data-stock-workspace-panel="general"] { grid-area: chart; min-width: 0; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > :is([data-stock-workspace-panel="technical-analysis"], [data-stock-workspace-panel="ticker-alerts"]) {
+        grid-area: side; min-width: 0;
+    }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-workspace-tab[data-stock-workspace-tab="general"] { display: none; }
+}
+
+/* The side panel is about 440px wide, so its sections use their narrow-screen layouts (style.css applies those
+   by screen width below 768px and 1024px; here they follow the panel instead). */
+@media (min-width: 1360px) {
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-sections-layout { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-header { display: block; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-status { margin-top: 0.6rem; text-align: left; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-header-actions { min-width: 0; align-items: flex-start; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page :is(.alert-overall-follow-row, .alert-apply-row) { flex-wrap: wrap; justify-content: flex-start; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-grid { grid-template-columns: 62px repeat(2, minmax(110px, 1fr)); overflow-x: auto; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-grid.outlook-alert-grid { grid-template-columns: 62px minmax(110px, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .stock-workspace-action-card { align-items: stretch; flex-direction: column; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-header { display: block; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-actions { display: grid; min-width: 0; justify-content: stretch; margin-top: 0.85rem; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-actions button { width: 100%; }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-meta { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .stock-custom-actions { justify-content: stretch; }
+}
+
+/* Beside the chart the side panel takes the chart's height and scrolls on its own, so a long alert form does not
+   leave an empty column under the chart. Size containment keeps the panel out of the row height. */
+@media (min-width: 1360px) {
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page > :is([data-stock-workspace-panel="technical-analysis"], [data-stock-workspace-panel="ticker-alerts"]) {
+        align-self: stretch; min-height: 520px; contain: size; overflow-y: auto; overscroll-behavior: contain;
+        padding-right: 4px; scrollbar-width: thin; scrollbar-gutter: stable;
+    }
+}
+
+/* The header: ticker in the figures face, the company and its exchange under it, quick actions at the end. */
+:root[data-theme] .ui-refresh .price-header {
+    grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "identity quote tools actions";
+}
+:root[data-theme] .ui-refresh .ticker-name > span:first-child { font-family: var(--font-mono); font-weight: 600; letter-spacing: -0.03em; }
+:root[data-theme] .ui-refresh .company-identity {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 2px 0 0; color: var(--text-soft); font-size: var(--fs-md);
+}
+:root[data-theme] .ui-refresh .company-identity:has(.company-name:empty):has(.exchange-badge[hidden]) { display: none; }
+:root[data-theme] .ui-refresh .company-name:empty { display: none; }
+:root[data-theme] .ui-refresh .exchange-badge {
+    padding: 0 7px; border: 1px solid var(--glass-border); border-radius: 6px; color: var(--muted-text);
+    font-size: var(--fs-xs); font-weight: 600; line-height: 20px;
+}
+:root[data-theme] .ui-refresh .exchange-badge[hidden] { display: none; }
+:root[data-theme] .ui-refresh .price-header-actions { grid-area: tools; display: flex; flex-wrap: wrap; gap: 8px; }
+:root[data-theme] .ui-refresh .price-header-actions > * { white-space: nowrap; }
+@media (max-width: 1100px) {
+    :root[data-theme] .ui-refresh .price-header {
+        grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "identity quote" "tools actions";
+    }
+}
+/* Phones: the identity (ticker, company, exchange) on its own row, then the price, then the two button rows. */
+@media (max-width: 768px) {
+    :root[data-theme] .ui-refresh .price-header {
+        grid-template-columns: minmax(0, 1fr); grid-template-areas: "identity" "quote" "tools" "actions";
+    }
+    :root[data-theme] .ui-refresh .price-header .quote-block { justify-content: flex-start; text-align: left; }
+    :root[data-theme] .ui-refresh .price-header .quote-value { justify-content: flex-start; }
+    :root[data-theme] .ui-refresh .price-header-actions > * { flex: 1 1 0; justify-content: center; }
+}
+
+/* The overview card: outlook verdict, follow summary and recent signals. One column in the side panel; the three
+   sections sit side by side when the card is wide (the technical analysis tab below 1360px). */
+:root[data-theme] .ui-refresh .stock-overview {
+    container-type: inline-size; display: grid; grid-template-columns: minmax(0, 1fr); margin: 0 0 16px;
+    border: 1px solid var(--glass-border); border-radius: var(--radius-md); background: var(--surface);
+}
+:root[data-theme] .ui-refresh .stock-overview-section { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px; }
+:root[data-theme] .ui-refresh .stock-overview-section + .stock-overview-section { border-top: 1px solid var(--glass-border); }
+:root[data-theme] .ui-refresh .stock-overview-section[hidden] { display: none; }
+@container (min-width: 900px) {
+    :root[data-theme] .ui-refresh .stock-overview-section { padding: 18px 20px; }
+}
+@media (min-width: 1100px) {
+    :root[data-theme] .ui-refresh .stock-overview:has(> .stock-overview-section:nth-child(3):not([hidden])) { grid-template-columns: 1.3fr 1fr 1fr; }
+    :root[data-theme] .ui-refresh .stock-overview { grid-template-columns: 1.3fr 1fr; }
+    :root[data-theme] .ui-refresh .stock-overview-section + .stock-overview-section { border-top: 0; border-left: 1px solid var(--glass-border); }
+}
+@media (min-width: 1360px) {
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-overview,
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-overview:has(> .stock-overview-section:nth-child(3):not([hidden])) { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-overview-section + .stock-overview-section {
+        border-left: 0; border-top: 1px solid var(--glass-border);
+    }
+}
+:root[data-theme] .ui-refresh .stock-overview-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+:root[data-theme] .ui-refresh .stock-overview-head h2 {
+    margin: 0; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0; text-transform: none;
+}
+/* Text links with a 28px-tall hit area, so they meet the minimum target size. */
+:root[data-theme] .ui-refresh .stock-overview-head .text-link {
+    display: inline-flex; align-items: center; min-height: 28px; padding: 0 4px; margin-right: -4px; border: 0; background: none;
+    color: var(--primary-color); font: inherit; font-size: var(--fs-sm); font-weight: 600; text-decoration: none; cursor: pointer;
+}
+:root[data-theme] .ui-refresh .stock-overview-head .text-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+:root[data-theme] .ui-refresh .stock-overview-intervals {
+    display: inline-flex; align-self: flex-start; gap: 2px; padding: 2px; border: 1px solid var(--glass-border); border-radius: 9px; background: var(--bg-color);
+}
+:root[data-theme] .ui-refresh .stock-overview-intervals button {
+    min-height: 0; height: 30px; padding: 0 11px; border: 0; border-radius: 7px; background: transparent; color: var(--muted-text);
+    font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
+}
+:root[data-theme] .ui-refresh .stock-overview-intervals button:hover { color: var(--text-color); }
+:root[data-theme] .ui-refresh .stock-overview-intervals button[aria-pressed="true"] { background: var(--surface-raised); color: var(--text-color); box-shadow: var(--shadow-sm); }
+:root[data-theme] .ui-refresh .stock-overview-status { margin: 0; color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .stock-overview-status[hidden], :root[data-theme] .ui-refresh .stock-outlook-result[hidden] { display: none; }
+:root[data-theme] .ui-refresh .stock-outlook-result { display: flex; flex-direction: column; gap: 10px; }
+:root[data-theme] .ui-refresh .stock-outlook-verdict { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 0; }
+:root[data-theme] .ui-refresh .stock-outlook-verdict strong { font-size: 1.375rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
+:root[data-theme] .ui-refresh .stock-outlook-verdict span { color: var(--muted-text); font-family: var(--font-mono); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .stock-outlook-tone-buy { color: var(--accent-color); }
+:root[data-theme] .ui-refresh .stock-outlook-tone-sell { color: var(--danger); }
+:root[data-theme] .ui-refresh .stock-outlook-tone-neutral { color: var(--text-color); }
+/* From sell/short on the left to buy on the right; the marker is the net score. */
+:root[data-theme] .ui-refresh .stock-outlook-gauge {
+    position: relative; height: 8px; margin: 6px 0 0; border-radius: 999px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--danger) 34%, var(--surface-raised)), var(--surface-raised) 50%,
+            color-mix(in srgb, var(--accent-color) 34%, var(--surface-raised)));
+}
+:root[data-theme] .ui-refresh .stock-outlook-gauge::after {
+    content: ""; position: absolute; top: -2px; bottom: -2px; left: 50%; width: 1px; background: var(--muted-text); opacity: 0.6;
+}
+:root[data-theme] .ui-refresh .stock-outlook-gauge-marker {
+    position: absolute; z-index: 1; top: -4px; left: 50%; width: 4px; height: 16px; margin-left: -2px; border-radius: 2px;
+    background: currentColor; box-shadow: 0 0 0 2px var(--surface);
+}
+:root[data-theme] .ui-refresh .stock-outlook-gauge-labels { display: flex; justify-content: space-between; gap: 8px; color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .stock-outlook-votes { margin: 0; color: var(--text-soft); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .stock-outlook-categories { margin: 0; padding: 0; list-style: none; }
+:root[data-theme] .ui-refresh .stock-outlook-category {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0;
+    border-top: 1px solid var(--glass-border); font-size: var(--fs-sm);
+}
+:root[data-theme] .ui-refresh .stock-outlook-category-name { color: var(--text-soft); }
+:root[data-theme] .ui-refresh .stock-outlook-pill {
+    display: inline-flex; align-items: center; flex: none; height: 22px; padding: 0 8px; border-radius: 6px;
+    background: var(--surface-raised); font-size: var(--fs-xs); font-weight: 650; white-space: nowrap;
+}
+:root[data-theme] .ui-refresh .stock-outlook-pill.stock-outlook-tone-buy { background: color-mix(in srgb, var(--accent-color) 9%, var(--surface)); }
+:root[data-theme] .ui-refresh .stock-outlook-pill.stock-outlook-tone-sell { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+:root[data-theme] .ui-refresh .stock-outlook-pill.stock-outlook-tone-neutral { color: var(--text-soft); }
+:root[data-theme] .ui-refresh .stock-outlook-freshness { margin: 0; color: var(--muted-text); font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .stock-follow-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+:root[data-theme] .ui-refresh .stock-follow-chip {
+    display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border: 1px dashed var(--glass-border); border-radius: 7px;
+    color: var(--muted-text); font-size: var(--fs-sm); font-weight: 600;
+}
+:root[data-theme] .ui-refresh .stock-follow-chip.is-followed {
+    border: 1px solid transparent; background: color-mix(in srgb, var(--primary-color) 13%, var(--surface)); color: var(--primary-strong);
+}
+:root[data-theme] .ui-refresh .stock-follow-chip.is-loading { border-style: solid; }
+:root[data-theme] .ui-refresh .stock-follow-note { margin: 0; color: var(--warning); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .stock-follow-note[hidden] { display: none; }
+:root[data-theme] .ui-refresh .stock-recent-signal-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+:root[data-theme] .ui-refresh .stock-recent-signal {
+    display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--glass-border); border-radius: 10px;
+    color: var(--text-color); text-decoration: none;
+}
+:root[data-theme] .ui-refresh .stock-recent-signal:hover { background: var(--surface-raised); }
+:root[data-theme] .ui-refresh .stock-recent-signal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+:root[data-theme] .ui-refresh .stock-recent-signal-meta { color: var(--muted-text); font-size: var(--fs-sm); }
+
+/* The outlook grid has one switch column; the narrow two-direction grid rule gave it three, so labels ran into
+   the switches ("FollowWeekly") on phones and in the side panel. */
+@media (max-width: 768px) {
+    :root[data-theme] .ui-refresh .alert-grid.outlook-alert-grid { grid-template-columns: 62px minmax(110px, 1fr); }
+}
+
+/* ------------------------------------------------------------------ settings: a grouped section menu beside the form */
+
+:root[data-theme] .ui-refresh .settings-nav-group-label { color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.01em; }
+/* The app's navigation is a top bar now, so settings can have its own menu column again on wide screens. */
+@media (min-width: 1100px) {
+    :root[data-theme] .ui-refresh .settings-shell {
+        display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 32px; align-items: start; max-width: 1440px;
+    }
+    :root[data-theme] .ui-refresh .settings-sidebar { position: sticky; top: 16px; }
+    :root[data-theme] .ui-refresh .settings-sidebar nav { display: flex; flex-direction: column; gap: 18px; }
+    :root[data-theme] .ui-refresh .settings-nav-group { display: flex; flex-direction: column; gap: 2px; }
+    :root[data-theme] .ui-refresh .settings-nav-group-label { padding: 0 10px 4px; }
+    :root[data-theme] .ui-refresh .settings-sidebar-link {
+        justify-content: flex-start; width: 100%; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent;
+    }
+    :root[data-theme] .ui-refresh .settings-sidebar-link.active { background: var(--surface-raised); color: var(--text-color); }
+    :root[data-theme] .ui-refresh .settings-content { max-width: 1000px; }
+}
+@media (max-width: 1099px) {
+    :root[data-theme] .ui-refresh .settings-sidebar nav { display: flex; flex-direction: column; gap: 10px; }
+    :root[data-theme] .ui-refresh .settings-nav-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    :root[data-theme] .ui-refresh .settings-nav-group-label { flex-basis: 100%; }
+}
+
+/* ------------------------------------------------------------------ fixes found in the full-page check */
+
+/* A fixed grey (#697069) that read at 3.6:1 on the dark panels; the muted token passes in both themes. */
+:root[data-theme] .ui-refresh .congressional-dashboard-note { color: var(--muted-text); }

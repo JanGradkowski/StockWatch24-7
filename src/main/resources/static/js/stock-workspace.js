@@ -255,7 +255,7 @@
     return {
       layout: {
         textColor: light ? '#526158' : '#858c82',
-        fontFamily: 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+        fontFamily: '"Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
         background: { type: 'solid', color: 'transparent' }
       },
       grid: {
@@ -731,12 +731,12 @@
     context.drawImage(chartCanvas, 0, Math.round(header * ratio));
     context.scale(ratio, ratio);
     context.fillStyle = styles.color || (StockWatchCharts.isLight() ? '#182230' : '#e8edf3');
-    context.font = '600 13px "Inter Variable", Inter, sans-serif';
+    context.font = '600 13px "Geist", sans-serif';
     const stamp = i18n.date(new Date(), { year: 'numeric', month: 'short', day: 'numeric' });
     const typeName = priceOnly ? ` · ${i18n.t(`sw.chartType.${chartType}`)}` : '';
     context.fillText(`${ticker} · ${i18n.t(`draw.interval.${currentInterval}`)}${typeName} · ${stamp} · StockWatch 24/7`, 10, 20);
     // Legends are page elements, so their text is written onto the image at the same place.
-    context.font = '500 11px "Inter Variable", Inter, sans-serif';
+    context.font = '500 11px "Geist", sans-serif';
     if (!priceOnly) stage.querySelectorAll('.ind-legend:not([hidden])').forEach(legend => {
       const top = parseFloat(legend.style.top) || 0;
       const left = parseFloat(legend.style.left) || 0;
@@ -1222,6 +1222,7 @@
           const instrumentTypeDisplay = document.getElementById('instrumentTypeDisplay');
           instrumentTypeDisplay.dataset.instrumentType = instrumentType;
           instrumentTypeDisplay.textContent = i18n.t(`sw.instrument.${instrumentType === 'INDEX' || instrumentType === 'ETF' ? instrumentType : 'EQUITY'}`);
+          showInstrumentIdentity(metaJson);
           updateTickerAlertsEligibility(instrumentType);
           await Promise.all([
             configureCongressionalActivity(instrumentType),
@@ -2331,7 +2332,7 @@
     context.lineTo(anchorCoordinate, height - 24);
     context.stroke();
     context.setLineDash([]);
-    context.font = '600 12px "Inter Variable", Inter, sans-serif';
+    context.font = '600 12px "Geist", sans-serif';
     const labelWidth = context.measureText('ANCHOR').width + 12;
     const labelLeft = Math.max(4, Math.min(
             anchorCoordinate + 6,
@@ -3169,6 +3170,17 @@
     panel.hidden = !congressionalActivityEligible;
     if (!congressionalActivityEligible) return;
     await loadCongressionalActivityState();
+  }
+
+  // The header names the company and its exchange; metadata without a real name repeats the symbol, so skip it.
+  function showInstrumentIdentity(meta) {
+    const name = String(meta.name || '').trim();
+    const companyName = document.getElementById('companyNameDisplay');
+    companyName.textContent = name && name.toUpperCase() !== String(meta.symbol || '').toUpperCase() ? name : '';
+    const exchange = String(meta.exchange || '').trim();
+    const exchangeDisplay = document.getElementById('exchangeDisplay');
+    exchangeDisplay.textContent = exchange;
+    exchangeDisplay.hidden = !exchange;
   }
 
   function updateTickerAlertsEligibility(instrumentType) {
@@ -4382,8 +4394,62 @@
     return changedAlertInputs().length + changedOutlookInputs().length > 0;
   }
 
+  // The overview's "You follow" chips: what is saved for this stock (not the unapplied draft), one chip per
+  // family with the intervals followed in either direction.
+  function renderFollowSummary(changedCount) {
+    const list = document.querySelector('[data-follow-summary]');
+    if (!list) return;
+    const FOLLOW_SUMMARY_FAMILIES = ['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION'];
+    const FOLLOW_SUMMARY_INTERVALS = ['DAILY', 'WEEKLY', 'MONTHLY'];
+    const note = document.querySelector('[data-follow-summary-note]');
+    if (!alertStateLoaded) {
+      list.replaceChildren(followSummaryChip(i18n.t('sw.alertsUnavailable'), null, false));
+      note.hidden = true;
+      return;
+    }
+    const savedIntervals = family => FOLLOW_SUMMARY_INTERVALS.filter(interval => alertInputs().some(input =>
+            (input.dataset.alertFamily || 'CANDLESTICK') === family && input.dataset.alertInterval === interval
+            && persistedAlertState.get(alertControlKey(input))));
+    const rows = FOLLOW_SUMMARY_FAMILIES.map(family => [family, savedIntervals(family)]);
+    if (outlookFollowStateLoaded) {
+      rows.push(['OUTLOOK', FOLLOW_SUMMARY_INTERVALS.filter(interval => outlookFollowInputs().some(input =>
+              input.dataset.outlookFollowInterval === interval && input.dataset.persisted === 'true'))]);
+    }
+    list.replaceChildren(...rows.map(([family, intervals]) => {
+      const name = i18n.t(`stockOverview.family.${family}`);
+      const shortText = intervals.length
+              ? intervals.map(interval => i18n.t(`stockOverview.short.${interval}`)).join(' ')
+              : i18n.t('stockOverview.off');
+      const spokenText = intervals.length
+              ? intervals.map(interval => i18n.t(`interval.${interval}`)).join(', ')
+              : i18n.t('stockOverview.notFollowed');
+      return followSummaryChip(`${name} · ${shortText}`, i18n.t('stockOverview.followAria', name, spokenText),
+              intervals.length > 0);
+    }));
+    note.textContent = i18n.t('stockOverview.unapplied');
+    note.hidden = changedCount === 0;
+  }
+
+  function followSummaryChip(text, spokenText, followed) {
+    const chip = document.createElement('li');
+    chip.className = `stock-follow-chip${followed ? ' is-followed' : ''}`;
+    if (!spokenText) {
+      chip.textContent = text;
+      return chip;
+    }
+    const visible = document.createElement('span');
+    visible.setAttribute('aria-hidden', 'true');
+    visible.textContent = text;
+    const spoken = document.createElement('span');
+    spoken.className = 'visually-hidden';
+    spoken.textContent = spokenText;
+    chip.append(visible, spoken);
+    return chip;
+  }
+
   function updateAlertDraftUi() {
     const changedCount = changedAlertInputs().length + changedOutlookInputs().length;
+    renderFollowSummary(changedCount);
     const applyButton = document.getElementById('applyAlertChangesBtn');
     const draftStatus = document.getElementById('alertDraftStatus');
     const alertPanel = document.querySelector('.alert-panel');
@@ -4765,10 +4831,17 @@
     });
   }
 
+  // Wide screens keep the chart in view and show the other sections in a side panel beside it (app.css lays
+  // the page out); the Chart tab is hidden there, so choosing it shows technical analysis beside the chart.
+  const STOCK_WORKSPACE_SIDE_BY_SIDE = window.matchMedia('(min-width: 1360px)');
+
   function activateStockWorkspace(section, updateHash = true, moveFocus = false) {
-    const nextSection = STOCK_WORKSPACE_SECTIONS.includes(section) ? section : 'general';
+    const requestedSection = STOCK_WORKSPACE_SECTIONS.includes(section) ? section : 'general';
+    const sideBySide = STOCK_WORKSPACE_SIDE_BY_SIDE.matches;
+    const nextSection = sideBySide && requestedSection === 'general' ? 'technical-analysis' : requestedSection;
     const tabs = [...document.querySelectorAll('[data-stock-workspace-tab]')];
 
+    document.documentElement.classList.toggle('stock-workspace-side-by-side', sideBySide);
     tabs.forEach(tab => {
       const isActive = tab.dataset.stockWorkspaceTab === nextSection;
       tab.classList.toggle('active', isActive);
@@ -4778,16 +4851,17 @@
     });
 
     document.querySelectorAll('[data-stock-workspace-panel]').forEach(panel => {
-      const isActive = panel.dataset.stockWorkspacePanel === nextSection;
+      const isActive = panel.dataset.stockWorkspacePanel === nextSection
+        || (sideBySide && panel.dataset.stockWorkspacePanel === 'general');
       panel.hidden = !isActive;
       panel.classList.toggle('active', isActive);
     });
 
-    if (updateHash && window.location.hash !== `#${nextSection}`) {
+    if (updateHash && !(sideBySide && requestedSection === 'general') && window.location.hash !== `#${nextSection}`) {
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${nextSection}`);
     }
 
-    if (nextSection === 'general') {
+    if (nextSection === 'general' || sideBySide) {
       window.requestAnimationFrame(() => window.requestAnimationFrame(resizeGeneralWorkspaceCharts));
     }
   }
@@ -4809,6 +4883,9 @@
     });
 
     window.addEventListener('hashchange', () => {
+      activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
+    });
+    STOCK_WORKSPACE_SIDE_BY_SIDE.addEventListener('change', () => {
       activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
     });
     activateStockWorkspace(stockWorkspaceSectionFromHash(), false);

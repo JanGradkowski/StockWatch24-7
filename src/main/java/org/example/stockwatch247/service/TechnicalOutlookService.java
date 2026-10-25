@@ -1250,6 +1250,19 @@ public class TechnicalOutlookService {
         }
     }
 
+    /** The parts of an outlook a page shows as a summary: no candles, indicator series or market report. */
+    public record OutlookSummaryView(String symbol, String interval, String intervalLabel, boolean available,
+                                     Long candleTimestamp, String freshness, ScoreView headlineScore,
+                                     List<CategoryView> categories, List<RecentSignalView> recentSignals) {
+        static final int RECENT_SIGNALS = 3;
+
+        public static OutlookSummaryView of(OutlookView outlook) {
+            return new OutlookSummaryView(outlook.symbol(), outlook.interval(), outlook.intervalLabel(),
+                    outlook.available(), outlook.candleTimestamp(), outlook.freshness(), outlook.headlineScore(),
+                    outlook.categories(), outlook.recentSignals().stream().limit(RECENT_SIGNALS).toList());
+        }
+    }
+
     public record ScoreView(int buy, int neutral, int sell, int net, int denominator,
                             double normalizedScore, String classification) { }
     public record CategoryView(String key, String label, int vote, String classification,

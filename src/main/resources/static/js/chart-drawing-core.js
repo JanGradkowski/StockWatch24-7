@@ -12,7 +12,7 @@
     const HIT = 7;
     const HANDLE = 5;
     const MAX_UNDO = 100;
-    const FONT = '"Inter Variable", Inter, ui-sans-serif, -apple-system, "Segoe UI", sans-serif';
+    const FONT = '"Geist", ui-sans-serif, -apple-system, "Segoe UI", sans-serif';
     const tools = new Map();
     const managers = new Set();
     let activeManager = null;

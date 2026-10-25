@@ -68,6 +68,15 @@ public class TechnicalOutlookController {
         return outlookService.getSummaryOutlook(user, normalizedSymbol, normalizedInterval);
     }
 
+    /** The verdict, category votes and newest signals for the stock page, without the outlook's chart data. */
+    @GetMapping("/api/stocks/{symbol}/technical-outlook/summary")
+    @ResponseBody
+    public TechnicalOutlookService.OutlookSummaryView outlookSummary(@PathVariable String symbol,
+                                                                     @RequestParam(defaultValue = "1d") String interval,
+                                                                     Principal principal) {
+        return TechnicalOutlookService.OutlookSummaryView.of(outlook(symbol, interval, principal));
+    }
+
     @GetMapping("/api/stocks/{symbol}/technical-outlook/score-report")
     @ResponseBody
     public TechnicalOutlookService.ScoreReportView scoreReport(

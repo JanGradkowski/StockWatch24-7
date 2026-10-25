@@ -88,6 +88,10 @@ public class AuthController {
     private ActivityArchiveQuery activityArchiveQuery;
     @Autowired(required = false)
     private org.example.stockwatch247.service.UnreadCountService unreadCounts;
+    @Autowired(required = false)
+    private org.example.stockwatch247.service.HomeStocksService homeStocks;
+    @Autowired(required = false)
+    private org.example.stockwatch247.service.DemoPortfolioService demoPortfolio;
     /** Already signed in, the login and signup forms have nothing to offer, so the dashboard opens. */
     @GetMapping("/login")
     public String loginPage(Principal principal) {return principal == null ? "login" : "redirect:/home";}
@@ -345,6 +349,11 @@ public class AuthController {
                 model.addAttribute("technicalInstrumentCount", summary.get("instruments"));
                 model.addAttribute("activeRuleCount", summary.get("rules"));
                 model.addAttribute("trackedInstrumentCount", summary.get("tracked"));
+            }
+            // The overview strip and the demo trading card belong to the technical view only.
+            if ("technical".equals(model.getAttribute("dashboardView"))) {
+                model.addAttribute("homeStocks", homeStocks == null ? java.util.List.of() : homeStocks.cards(currentUser));
+                model.addAttribute("homePortfolio", demoPortfolio == null ? null : demoPortfolio.portfolio(currentUser.getId(), "day"));
             }
         } else {
             model.addAttribute("firstName", "Trader");

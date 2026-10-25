@@ -162,7 +162,7 @@ test('outlook star changes only mark the draft and activate Apply and the naviga
   w.fetch = () => { throw new Error('Starring must not save'); };
   w.i18n = StockWatchI18n;
   // Keep state and functions in one evaluation so lexical bindings remain available.
-  const names = ['outlookFollowInputs', 'hydrateOutlookFollowState', 'changedOutlookInputs', 'hasUnappliedAlertChanges', 'updateAlertDraftUi', 'hasAnyTechnicalFollow', 'toggleAllTechnicalMonitoring'];
+  const names = ['outlookFollowInputs', 'hydrateOutlookFollowState', 'changedOutlookInputs', 'hasUnappliedAlertChanges', 'renderFollowSummary', 'followSummaryChip', 'updateAlertDraftUi', 'hasAnyTechnicalFollow', 'toggleAllTechnicalMonitoring'];
   const functions = names.map(name => {
     const start = stockSource.indexOf(`  function ${name}(`);
     const rest = stockSource.slice(start + 1);
@@ -184,5 +184,40 @@ test('outlook star changes only mark the draft and activate Apply and the naviga
   assert.equal(w.hasUnappliedAlertChanges(), true);
   w.toggleAllTechnicalMonitoring();
   assert.equal(star.checked, false); assert.equal(w.hasUnappliedAlertChanges(), false);
+  dom.window.close();
+});
+
+test('the follow summary shows what is saved for the stock, not the unapplied draft', () => {
+  const dom = new JSDOM(`<ul data-follow-summary></ul><p data-follow-summary-note hidden></p>
+    <input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="DAILY" data-alert-signal="BUY">
+    <input type="checkbox" data-alert-family="CANDLESTICK" data-alert-interval="WEEKLY" data-alert-signal="SELL">
+    <input type="checkbox" data-alert-family="HARMONIC_FORMATION" data-alert-interval="DAILY" data-alert-signal="BUY">
+    <input type="checkbox" data-outlook-follow-interval="MONTHLY" data-persisted="true">`, { runScripts: 'outside-only' });
+  const w = dom.window;
+  w.i18n = StockWatchI18n;
+  const names = ['alertInputs', 'alertControlKey', 'outlookFollowInputs', 'renderFollowSummary', 'followSummaryChip'];
+  const functions = names.map(name => {
+    const start = stockSource.indexOf(`  function ${name}(`);
+    const rest = stockSource.slice(start + 1);
+    const next = rest.search(/\n  (?:async )?function /);
+    return stockSource.slice(start, next < 0 ? stockSource.length : start + 1 + next);
+  }).join('\n');
+  w.eval('var alertStateLoaded = true, outlookFollowStateLoaded = true;\n'
+    + 'var persistedAlertState = new Map([["CANDLESTICK|DAILY|BUY", true], ["CANDLESTICK|WEEKLY|SELL", true], ["HARMONIC_FORMATION|DAILY|BUY", false]]);\n'
+    + functions);
+  // Harmonic is switched on in the draft only, so it still reads as off.
+  w.document.querySelector('[data-alert-family="HARMONIC_FORMATION"]').checked = true;
+  w.renderFollowSummary(1);
+  const chips = Array.from(w.document.querySelectorAll('[data-follow-summary] li'));
+  assert.deepEqual(chips.map(chip => chip.querySelector('[aria-hidden]').textContent),
+    ['Candlestick · D W', 'Elliott Wave · off', 'Harmonic · off', 'Outlook · M']);
+  assert.equal(chips[0].querySelector('.visually-hidden').textContent, 'Candlestick: Daily, Weekly');
+  assert.deepEqual(chips.map(chip => chip.classList.contains('is-followed')), [true, false, false, true]);
+  assert.equal(w.document.querySelector('[data-follow-summary-note]').hidden, false);
+  w.renderFollowSummary(0);
+  assert.equal(w.document.querySelector('[data-follow-summary-note]').hidden, true);
+  w.eval('alertStateLoaded = false');
+  w.renderFollowSummary(0);
+  assert.deepEqual(Array.from(w.document.querySelectorAll('[data-follow-summary] li'), chip => chip.textContent), ['Alerts unavailable']);
   dom.window.close();
 });

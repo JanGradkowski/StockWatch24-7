@@ -3,6 +3,7 @@
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title th:text="|#{error.title} — StockWatch 24/7|">Something went wrong — StockWatch 24/7</title><script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script><link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <link rel="stylesheet" th:href="@{/css/refresh.css}">
+  <link rel="stylesheet" th:href="@{/css/app.css}">
   <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
 <body class="auth-page ui-refresh"><main class="auth-shell auth-shell-compact"><section class="auth-showcase"><a class="logo" th:href="@{/}" aria-label="Back to StockWatch 24/7" th:aria-label="#{auth.backHome}"><span class="logo-mark" aria-hidden="true"></span><span class="logo-word">StockWatch <span>24/7</span></span></a><div class="auth-pitch"><div class="eyebrow" th:text="${status != null} ? #{error.eyebrow.status(${status})} : #{error.eyebrow}">Error</div><h1><span th:text="#{error.headline1}">This page</span><br><span class="text-gradient" th:text="#{error.headline2}">could not be shown.</span></h1></div></section>
