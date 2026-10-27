@@ -6,29 +6,46 @@
 #
 # Usage: download-nvd-feeds.sh <target folder> [date of the cached database, YYYY-MM-DD]
 #
-# dependency-check only reads the "modified" feed (the last 8 days of changes) when its database was updated
-# within the last 7 days. Otherwise it also reads every yearly feed that changed, so without a recent
-# database all of them are downloaded (about 255 MB).
+# Every update starts by reading the .meta file of the "modified" feed and of every year since 2002 (the
+# local folder has no cache.properties, so dependency-check builds its view of the feeds from those). They
+# are about 170 bytes each and always downloaded. Of the feeds themselves, dependency-check only reads the
+# "modified" feed (the last 8 days of changes) when its database was updated within the last 7 days and
+# already holds every required year. Otherwise it also reads every yearly feed that changed, so without a
+# recent database all of them are downloaded (about 255 MB).
 set -euo pipefail
 
 target=$1
 cached_on=${2:-}
 base=https://nvd.nist.gov/feeds/json/cve/2.0
 
-feeds=(modified)
+# dependency-check requires a year's feed once it is January 2 everywhere (12:00 UTC). Until then it skips
+# a missing one, and the NVD may not have published it yet.
+newest_year=$(date -u -d '36 hours ago' +%Y)
 age_days=
 if [ -n "$cached_on" ]; then
   age_days=$(( ($(date -u +%s) - $(date -u -d "$cached_on" +%s)) / 86400 ))
 fi
 if [ -z "$age_days" ] || [ "$age_days" -gt 5 ]; then
   echo "No vulnerability database from the last 5 days; downloading every yearly feed."
-  # Newest first: recent years are the largest feeds, so they start before the small ones.
-  for ((year = $(date -u +%Y); year >= 2002; year--)); do
-    feeds+=("$year")
-  done
+  all_years=true
+elif [[ $cached_on < $newest_year-01-03 ]]; then
+  # A database saved before the newest year was required does not hold it yet, which makes
+  # dependency-check reload every year.
+  echo "The cached vulnerability database predates the $newest_year feed; downloading every yearly feed."
+  all_years=true
 else
   echo "The cached vulnerability database is $age_days day(s) old; downloading the recent changes only."
+  all_years=false
 fi
+
+files=(nvdcve-2.0-modified.meta nvdcve-2.0-modified.json.gz)
+# Newest first: recent years are the largest feeds, so they start before the small ones.
+for ((year = newest_year; year >= 2002; year--)); do
+  files+=("nvdcve-2.0-$year.meta")
+  if [ "$all_years" = true ]; then
+    files+=("nvdcve-2.0-$year.json.gz")
+  fi
+done
 
 size() {
   stat -c %s "$1" 2> /dev/null || echo 0
@@ -78,6 +95,4 @@ export -f size fetch
 export target base
 
 mkdir -p "$target"
-for feed in "${feeds[@]}"; do
-  printf 'nvdcve-2.0-%s.meta\nnvdcve-2.0-%s.json.gz\n' "$feed" "$feed"
-done | xargs -P 6 -I {} bash -c 'fetch "$1"' _ {}
+printf '%s\n' "${files[@]}" | xargs -P 6 -I {} bash -c 'fetch "$1"' _ {}
