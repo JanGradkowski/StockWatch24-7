@@ -2,7 +2,8 @@
 # Downloads the NVD JSON 2.0 data feeds that OWASP dependency-check needs into a local folder, which the
 # audit then reads through a file:// URL instead of calling the NVD API. The NVD has been slow for days at a
 # time (in October 2026 it served 17-75 KB/s per file and the API stalled on single pages), so every file
-# is downloaded with stall detection, resumed for as long as that makes progress, and checked before use.
+# is downloaded with stall detection, resumed for as long as that makes progress, waited for while the NVD
+# republishes it, and checked before use.
 #
 # Usage: download-nvd-feeds.sh <target folder> [date of the cached database, YYYY-MM-DD]
 #
@@ -52,7 +53,7 @@ size() {
 }
 
 fetch() {
-  local name=$1 file=$target/$1 started status before stalled=0 resume=()
+  local name=$1 file=$target/$1 started status code before stalled=0 missing_since= resume=()
   # Feeds are resumed where an attempt stopped; the small .meta files are simply fetched again.
   [[ $name == *.gz ]] && resume=(--continue-at -)
   started=$(date +%s)
@@ -62,9 +63,25 @@ fetch() {
     before=$(size "$file")
     # --speed-limit/--speed-time end a transfer that has stalled instead of waiting on it.
     status=0
-    curl --fail --silent --show-error --location "${resume[@]}" \
+    code=$(curl --fail --silent --show-error --location "${resume[@]}" \
       --connect-timeout 30 --speed-limit 1024 --speed-time 60 \
-      --output "$file" "$base/$name" || status=$?
+      --write-out '%{http_code}' --output "$file" "$base/$name") || status=$?
+    # When the NVD republishes a feed, one of its files can be missing for a while: on 2026-10-27 the
+    # new modified .meta and .json.zip were up at 10:15Z, but the .json.gz returned 404 until 10:40Z.
+    # A missing file is waited for (up to 45 minutes) instead of counting as an attempt without progress.
+    if [ "$code" = 404 ]; then
+      missing_since=${missing_since:-$(date +%s)}
+      if [ $(($(date +%s) - missing_since)) -ge 2700 ]; then
+        echo "::error::$base/$name has been missing (HTTP 404) for 45 minutes"
+        return 1
+      fi
+      echo "$name is missing on the NVD server (HTTP 404), probably while it is republished; trying again in a minute"
+      # Bytes already downloaded belong to the previous version of the file.
+      rm -f "$file"
+      sleep 60
+      continue
+    fi
+    missing_since=
     if [[ $name == *.gz ]]; then
       # A complete feed passes the gzip check even when curl reports an error (416 on a finished resume).
       if gzip --test "$file" 2> /dev/null; then
