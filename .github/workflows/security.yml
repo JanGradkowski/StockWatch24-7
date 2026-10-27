@@ -106,8 +106,9 @@ jobs:
           key: ${{ steps.nvd-db.outputs.cache-key }}
           restore-keys: dependency-check-${{ runner.os }}-
 
-      # With a cached database from the last few days this is the ~15 MB feed of recent changes. Without
-      # one it is every yearly feed (~255 MB), which at the NVD's slowest takes over an hour.
+      # With a cached database from the last few days this is the ~15 MB feed of recent changes plus the small
+      # .meta file of every year, which the update always reads. Without one it is every yearly feed
+      # (~255 MB), which at the NVD's slowest takes over an hour.
       - name: Download NVD data feeds
         id: nvd-feeds
         timeout-minutes: 120
