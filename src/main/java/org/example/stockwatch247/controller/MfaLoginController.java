@@ -86,6 +86,7 @@ public class MfaLoginController {
             return "redirect:/login?expired=true";
         }
         request.changeSessionId();
+        boolean remember = Boolean.TRUE.equals(request.getSession().getAttribute(AccountSession.MFA_PENDING_REMEMBER));
         Object pendingTarget = request.getSession().getAttribute(AccountSession.MFA_PENDING_TARGET);
         String target = pendingTarget instanceof String path
                 ? org.example.stockwatch247.security.PostLoginRedirect.safeTarget(path, "")
@@ -95,6 +96,7 @@ public class MfaLoginController {
         context.setAuthentication(authentication); SecurityContextHolder.setContext(context);
         clearPendingLogin(request.getSession());
         request.getSession().setAttribute(AccountSession.SECURITY_VERSION, identity.securityVersion());
+        if (remember) org.example.stockwatch247.security.RememberedSessions.apply(request);
         contextRepository.saveContext(context, request, response);
         if (knownDevices != null) knownDevices.remember(request, response, identity.email());
         return "redirect:" + ("/" + org.example.stockwatch247.security.PostLoginRedirect.pathAfterSlash(target));
@@ -120,5 +122,6 @@ public class MfaLoginController {
         session.removeAttribute(AccountSession.MFA_PENDING_VERSION);
         session.removeAttribute(AccountSession.MFA_PENDING_FAILURES);
         session.removeAttribute(AccountSession.MFA_PENDING_TARGET);
+        session.removeAttribute(AccountSession.MFA_PENDING_REMEMBER);
     }
 }

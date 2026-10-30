@@ -23,7 +23,9 @@ public class AbsoluteSessionTimeoutFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         HttpSession session = request.getSession(false);
-        if (session != null && System.currentTimeMillis() - session.getCreationTime() >= maximumLifetimeMillis) {
+        long lifetime = RememberedSessions.remembered(session)
+                ? Math.max(maximumLifetimeMillis, RememberedSessions.LIFETIME.toMillis()) : maximumLifetimeMillis;
+        if (session != null && System.currentTimeMillis() - session.getCreationTime() >= lifetime) {
             session.invalidate();
             if (request.getRequestURI().startsWith("/api/")) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

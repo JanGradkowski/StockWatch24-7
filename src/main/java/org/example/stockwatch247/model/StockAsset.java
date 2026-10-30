@@ -67,7 +67,13 @@ public class StockAsset {
     /** A provider has supplied a real name and venue, not the placeholder created for an unknown ticker. */
     public boolean hasConfirmedListing() {
         return exchange != null && !exchange.isBlank() && !"UNKNOWN".equalsIgnoreCase(exchange)
-                && companyName != null && !companyName.isBlank() && !companyName.equalsIgnoreCase(tickerSymbol);
+                && hasRealName(this);
+    }
+
+    /** The stored name is a company's name, not the ticker that stands in for one until a provider names it. */
+    public static boolean hasRealName(StockAsset asset) {
+        String name = asset == null ? null : asset.companyName;
+        return name != null && !name.isBlank() && !name.equalsIgnoreCase(asset.tickerSymbol);
     }
 
     public Long getId() {

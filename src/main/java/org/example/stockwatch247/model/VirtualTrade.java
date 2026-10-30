@@ -93,6 +93,21 @@ public class VirtualTrade {
     @Column(name = "client_request_id", nullable = false, length = 36)
     private String clientRequestId;
 
+    /** Optional exit plan: the trade closes by itself on the first completed candle that reaches a level. */
+    @Column(name = "stop_price", precision = 24, scale = 8)
+    private BigDecimal stopPrice;
+
+    @Column(name = "target_price", precision = 24, scale = 8)
+    private BigDecimal targetPrice;
+
+    /** MANUAL, STOP or TARGET once closed; null for trades closed before exit plans existed. */
+    @Column(name = "exit_reason", length = 16)
+    private String exitReason;
+
+    /** The signal whose trade plan this trade practises, when it was opened from one. */
+    @Column(name = "source_alert_event_id")
+    private Long sourceAlertEventId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -103,6 +118,14 @@ public class VirtualTrade {
     private Instant deletedAt;
 
     public Long getId() { return id; }
+    public BigDecimal getStopPrice() { return stopPrice; }
+    public void setStopPrice(BigDecimal stopPrice) { this.stopPrice = stopPrice; }
+    public BigDecimal getTargetPrice() { return targetPrice; }
+    public void setTargetPrice(BigDecimal targetPrice) { this.targetPrice = targetPrice; }
+    public String getExitReason() { return exitReason; }
+    public void setExitReason(String exitReason) { this.exitReason = exitReason; }
+    public Long getSourceAlertEventId() { return sourceAlertEventId; }
+    public void setSourceAlertEventId(Long sourceAlertEventId) { this.sourceAlertEventId = sourceAlertEventId; }
     public User getUser() { return user; }
     public StockAsset getStockAsset() { return stockAsset; }
     public VirtualTradeSide getSide() { return side; }

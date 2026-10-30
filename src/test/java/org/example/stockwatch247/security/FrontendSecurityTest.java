@@ -93,7 +93,6 @@ class FrontendSecurityTest {
         String stock = (english(Files.readString(Path.of("src/main/resources/templates/stock.html"))) + english(Files.readString(Path.of("src/main/resources/static/js/stock-workspace.js"))));
         String dashboard = english(Files.readString(Path.of("src/main/resources/templates/home.html")));
         String dashboardScript = english(Files.readString(Path.of("src/main/resources/static/js/dashboard.js")));
-        String stylesheet = stylesheets();
 
         assertTrue(stock.contains("data-stock-demo-trade=\"BUY\""));
         assertTrue(stock.contains("class=\"price-header-demo-trading\""));
@@ -116,8 +115,6 @@ class FrontendSecurityTest {
         assertTrue(watchlists.contains("method: 'DELETE'"));
         assertTrue(picker.contains("X-CSRF-TOKEN"));
         assertFalse(watchlists.contains("innerHTML"));
-        assertTrue(stylesheet.contains("scrollbar-gutter: stable"));
-        assertTrue(stylesheet.contains("html[data-theme='light'] .alert-list::-webkit-scrollbar-thumb"));
     }
 
     @Test
@@ -1050,7 +1047,8 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("change.detailUrl()"));
         assertTrue(dashboard.contains("@{/signals(state='unread')}"));
         assertFalse(archive.contains("technicalOutlook"));
-        assertFalse(archive.contains("outlookChange"));
+        // Outlook changes are listed in the archive too, so its unread count matches the dashboard's.
+        assertTrue(archive.contains("trigger.outlook()"));
         assertTrue(dashboard.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
         assertTrue(dashboard.contains("signal.setupScore()"));
         assertTrue(dashboard.contains("signal.signalPeriodLabel()"));

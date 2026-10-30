@@ -170,11 +170,11 @@ class AlertNotificationServiceTest {
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getSubject()).contains("harmonic gartley", "BUY", "AAPL");
+        assertThat(messageCaptor.getValue().getSubject()).contains("harmonic gartley", "Buy", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Ticker: AAPL",
                 "Formation: GARTLEY",
-                "Interval: DAILY",
+                "Interval: Daily",
                 "Completion point: D",
                 "Completion price: 120.5000",
                 "Confirmation candle close: 121.7500",
@@ -307,7 +307,7 @@ class AlertNotificationServiceTest {
         verify(mailSender).send(messageCaptor.capture());
         SimpleMailMessage message = messageCaptor.getValue();
         assertThat(message.getTo()).containsExactly("customer@example.com");
-        assertThat(message.getSubject()).contains("BULLISH_ENGULFING", "SAP.DE");
+        assertThat(message.getSubject()).contains("Bullish Engulfing", "SAP.DE");
         assertThat(message.getText()).contains(
                 "Heuristic setup score: 91/100",
                 "Score model: " + CandlePatternDetectionService.SETUP_SCORE_VERSION,
@@ -432,7 +432,7 @@ class AlertNotificationServiceTest {
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getSubject()).contains("confirmed", "HAMMER", "AAPL");
+        assertThat(messageCaptor.getValue().getSubject()).contains("confirmed", "Hammer", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Status: CONFIRMED",
                 "CONFIRMED means the profit target closed successfully",
@@ -527,10 +527,10 @@ class AlertNotificationServiceTest {
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getSubject()).contains("candidate rejected", "HANGING_MAN", "AAPL");
+        assertThat(messageCaptor.getValue().getSubject()).contains("candidate rejected", "Hanging Man", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Status: REJECTED — NO TRADE OPENED",
-                "Potential direction: SELL",
+                "Potential direction: Sell/Short",
                 "required red-body close below the candidate close at 100.0000",
                 "candidate never became a detected trade",
                 "Planned stop: 105.0000",
@@ -557,7 +557,7 @@ class AlertNotificationServiceTest {
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getSubject()).contains("signal detected", "HAMMER", "AAPL");
+        assertThat(messageCaptor.getValue().getSubject()).contains("signal detected", "Hammer", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Status: DETECTED — TRADE OPEN",
                 "mandatory next-candle gate passed",
@@ -603,7 +603,7 @@ class AlertNotificationServiceTest {
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getSubject()).contains("invalidated", "BULLISH_ENGULFING", "AAPL");
+        assertThat(messageCaptor.getValue().getSubject()).contains("invalidated", "Bullish Engulfing", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Status: INVALIDATED",
                 "configured stop loss and ended the trade",
@@ -646,7 +646,7 @@ class AlertNotificationServiceTest {
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getSubject()).contains("expired", "BEARISH_ENGULFING", "AAPL");
+        assertThat(messageCaptor.getValue().getSubject()).contains("expired", "Bearish Engulfing", "AAPL");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "Status: EXPIRED",
                 "candle 8's completed close ended the trade",
@@ -724,7 +724,7 @@ class AlertNotificationServiceTest {
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getSubject()).contains("Elliott wave C completed", "BUY", "SAP.DE");
+        assertThat(messageCaptor.getValue().getSubject()).contains("Elliott wave C completed", "Buy", "SAP.DE");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "End of Elliott correction (wave C)",
                 "Signal candle period: 13\u201317 Jul 2026");
@@ -769,7 +769,7 @@ class AlertNotificationServiceTest {
         org.mockito.ArgumentCaptor<SimpleMailMessage> messageCaptor =
                 org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(mailSender).send(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getSubject()).contains("Elliott wave V completed", "SELL", "SAP.DE");
+        assertThat(messageCaptor.getValue().getSubject()).contains("Elliott wave V completed", "Sell/Short", "SAP.DE");
         assertThat(messageCaptor.getValue().getText()).contains(
                 "End of Elliott impulse (wave V)",
                 "Signal candle period: July 2026",

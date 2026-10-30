@@ -896,7 +896,7 @@ public class TechnicalOutlookService {
                 .map(event -> new RecentSignalView(
                         event.getId(),
                         event.getAlertRule().getPatternFamily().name(),
-                        humanize(event.getPattern().name()),
+                        event.getPattern().label(),
                         event.getTradeSignal().name(),
                         event.getAlertRule().getInterval().name(),
                         intervalLabel(event.getAlertRule().getInterval()),

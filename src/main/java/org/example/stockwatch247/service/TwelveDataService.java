@@ -165,9 +165,7 @@ public class TwelveDataService {
         String responseCurrency = normalizeSymbol(meta.path("currency").asText(""));
         if (responseCurrency.isBlank()) return;
         stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).ifPresent(asset -> {
-            boolean established = asset.getExchange() != null && !asset.getExchange().isBlank()
-                    && !"UNKNOWN".equalsIgnoreCase(asset.getExchange())
-                    && asset.getCompanyName() != null && !asset.getCompanyName().equalsIgnoreCase(symbol);
+            boolean established = asset.hasConfirmedListing();
             String expected = normalizeSymbol(asset.getCurrency());
             if (established && !expected.isBlank() && !expected.equals(responseCurrency)) {
                 throw new IllegalStateException("Twelve Data returned a " + responseCurrency
@@ -340,8 +338,14 @@ public class TwelveDataService {
         StockAsset asset = existing.orElseGet(StockAsset::new);
 
         asset.setTickerSymbol(symbol);
-        asset.setCompanyName(safeProviderText(companyName, symbol, 255));
-        asset.setExchange(safeProviderText(exchange, "UNKNOWN", 255));
+        // Time-series metadata names no company and an exchange only sometimes. A missing value keeps what
+        // an earlier lookup stored, so a candle sync cannot turn "Apple Inc." back into "AAPL".
+        String safeName = safeProviderText(companyName, symbol, 255);
+        if (!safeName.equalsIgnoreCase(symbol) || !StockAsset.hasRealName(asset)) asset.setCompanyName(safeName);
+        String safeExchange = safeProviderText(exchange, "UNKNOWN", 255);
+        if (!"UNKNOWN".equalsIgnoreCase(safeExchange) || asset.getExchange() == null || asset.getExchange().isBlank()) {
+            asset.setExchange(safeExchange);
+        }
         String safeCurrency = normalizeSymbol(defaultIfBlank(currency, "USD"));
         asset.setCurrency(safeCurrency.matches("[A-Z0-9]{1,10}") ? safeCurrency : "USD");
         InstrumentType resolvedType = MarketIndexCatalog.isIndexSymbol(symbol)
@@ -587,7 +591,7 @@ public class TwelveDataService {
 
         return Optional.of(upsertStockAsset(
                 symbol,
-                defaultIfBlank(meta.path("name").asText(""), symbol),
+                meta.path("name").asText(""),
                 defaultIfBlank(meta.path("exchange").asText(""), meta.path("mic_code").asText("UNKNOWN")),
                 meta.path("currency").asText(),
                 instrumentTypeFor(symbol, defaultIfBlank(
@@ -612,7 +616,7 @@ public class TwelveDataService {
             return;
         }
 
-        String name = defaultIfBlank(meta.path("name").asText(""), canonicalSymbol);
+        String name = meta.path("name").asText("");
         String exchange = defaultIfBlank(meta.path("exchange").asText(""), meta.path("mic_code").asText("UNKNOWN"));
         String currency = defaultIfBlank(meta.path("currency").asText(""), "");
         if (currency.isBlank()) {

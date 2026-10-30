@@ -560,6 +560,17 @@
     <p class="signal-trade-plan-summary" th:text="#{signalDetail.harmonicPlanRules}">Legacy harmonic plans retain their eight-bar stop-only rules. New plans qualify against a primary target, retain the structural stop and use a pattern-specific horizon. Confirmation-bar prices are excluded from subsequent outcomes.</p>
   </section>
 
+  <section th:if="${signal.lifecycle().stopLossPrice() != null and signal.lifecycle().profitTargetPrice() != null and signal.tradeSignal().name() != 'HOLD'}"
+           class="signal-practice-plan" aria-labelledby="practice-plan-heading">
+    <div>
+      <h2 id="practice-plan-heading" th:text="#{signalDetail.practiceTitle}">Practise this plan</h2>
+      <p th:text="#{signalDetail.practiceText}">Open a demo trade at the current price with this plan's stop loss and target. It closes by itself when a completed candle reaches either level.</p>
+    </div>
+    <button type="button" class="btn-secondary" data-practice-plan
+            th:attr="data-symbol=${signal.symbol()},data-side=${signal.tradeSignal().name()},data-interval=${signal.interval().name()},data-stop=${signal.lifecycle().stopLossPrice()},data-target=${signal.lifecycle().profitTargetPrice()},data-signal-id=${signal.id()}"
+            th:text="#{signalDetail.practiceButton}">Create demo trade with this plan</button>
+  </section>
+
   <section th:if="${signal.chart().harmonic() != null}"
            class="signal-method-note harmonic-geometry-note"
            aria-labelledby="harmonic-geometry-heading">

@@ -18,8 +18,8 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 
 ## Features
 
-- User signup, email verification, login, and session security
-- [Named watchlists](docs/named-watchlists.md) with shared monitoring, geographic index imports, and a watchlist picker when applying stock follows
+- User signup, email verification, login, and session security; sessions are stored in PostgreSQL, so restarts keep people signed in, and "Keep me signed in on this device" lasts 30 days
+- [Named watchlists](docs/named-watchlists.md) with shared monitoring, geographic index imports, pasted ticker lists, a watchlist picker when applying stock follows, and each member's latest close, daily change, sparkline and followed outlook (from stored candles, sortable by change)
 - Symbol search, historical candlestick charts, and live-price lookup
 - Persistent light and dark display themes available from every page
 - Optional learning mode, switched on from the sidebar and saved per account: "?" marks explain options and underlined terms show plain-language definitions in English and Polish
@@ -30,7 +30,8 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 - Weekly and monthly Elliott-wave analysis
 - Per-user BUY, SELL, and HOLD alert rules
 - Stock-only congressional purchase/sale follows, cached history, dashboard activity, and email notifications
-- SMTP email delivery to every user with a matching active alert
+- SMTP email delivery to every user with a matching active alert, one email per alert or one summary per check run (a setting per account)
+- Demo trading with an optional stop loss and target, prefilled from a position drawing or a signal's trade plan; a trade closes by itself when a completed candle reaches either level
 - Durable PostgreSQL alert jobs, retries, leases, and missed-run recovery
 - Distributed rate limits, provider cooldowns, and shared quote caching
 - Flyway database migrations and a restricted production database-role model

@@ -1038,7 +1038,7 @@
       features: { alerts: typeof StockWatchChartAlerts !== 'undefined', demoTrade: true },
       toolbarHost: document.getElementById('drawingToolbarHost')
     });
-    manager.on('demo-trade', ({ side }) => openStockDemoTradeDialog(side, true));
+    manager.on('demo-trade', ({ side, stop, target }) => openStockDemoTradeDialog(side, true, { stop, target }));
     manager.on('alert-request', drawing => {
       if (typeof StockWatchChartAlerts !== 'undefined') StockWatchChartAlerts.openForDrawing(drawing);
     });
@@ -4891,8 +4891,15 @@
     activateStockWorkspace(stockWorkspaceSectionFromHash(), false);
   }
 
-  /** {@code fromChart}: opened from a long or short position drawn on the chart. */
-  function openStockDemoTradeDialog(side, fromChart = false) {
+  /** A stop or target price for the dialog's fields, rounded to the precision prices are shown with. */
+  function demoPlanText(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return '';
+    return String(Number(number.toFixed(number < 1 ? 6 : 4)));
+  }
+
+  /** {@code fromChart}: opened from a long or short position drawn on the chart, whose stop and target prefill the plan. */
+  function openStockDemoTradeDialog(side, fromChart = false, plan = {}) {
     const dialog = document.getElementById('stockDemoTradeDialog');
     const status = document.getElementById('stockDemoTradeStatus');
     const sizeInput = document.getElementById('stockDemoTradeSizeInput');
@@ -4907,6 +4914,8 @@
     });
     sizeField.hidden = true;
     sizeInput.value = '';
+    document.getElementById('stockDemoTradeStop').value = demoPlanText(plan.stop);
+    document.getElementById('stockDemoTradeTarget').value = demoPlanText(plan.target);
     document.getElementById('stockDemoTradeDialogTitle').textContent =
             i18n.t(pendingStockDemoTradeSide === 'BUY' ? 'outlook.demoBuyTitle' : 'outlook.demoSellTitle', ticker);
     document.getElementById('stockDemoTradeExplanation').textContent =
@@ -4962,7 +4971,9 @@
             interval: pendingStockDemoTradeInterval,
             quantity: stockDemoTradeSizeMode === 'quantity' ? size : null,
             notionalValue: stockDemoTradeSizeMode === 'notional' ? size : null,
-            clientRequestId: pendingStockDemoTradeRequestId
+            clientRequestId: pendingStockDemoTradeRequestId,
+            stopPrice: document.getElementById('stockDemoTradeStop').value || null,
+            targetPrice: document.getElementById('stockDemoTradeTarget').value || null
           })
         });
         if (!response.ok) {
@@ -5008,7 +5019,7 @@
     button.addEventListener('click', () => togglePriceScale(button.dataset.chartScale));
   });
   document.querySelectorAll('[data-chart-icon]').forEach(button => {
-    const names = { data: 'dataWindow', camera: 'camera', fullscreen: 'fullscreen' };
+    const names = { data: 'dataWindow', camera: 'camera', fullscreen: 'fullscreen', draw: 'trendLine' };
     if (typeof StockWatchDrawingIcons !== 'undefined') button.append(StockWatchDrawingIcons.icon(names[button.dataset.chartIcon], 16));
   });
   document.getElementById('goToDateForm').addEventListener('submit', goToDate);
@@ -5016,6 +5027,14 @@
   document.getElementById('dataWindowToggle').addEventListener('click', toggleDataWindow);
   document.getElementById('chartScreenshotButton').addEventListener('click', saveChartScreenshot);
   document.getElementById('chartFullscreenButton').addEventListener('click', toggleChartFullscreen);
+  // On phones the drawing rail is folded away until asked for; wider screens always show it.
+  document.getElementById('drawingRailToggle').addEventListener('click', event => {
+    const host = document.getElementById('drawingToolbarHost');
+    const open = host.classList.toggle('is-open');
+    event.currentTarget.setAttribute('aria-expanded', String(open));
+    event.currentTarget.setAttribute('aria-pressed', String(open));
+    requestAnimationFrame(() => { if (!refitChartToWindow()) scheduleGeneralWorkspaceChartResize(); });
+  });
   document.getElementById('splitMarkersToggle').addEventListener('click', toggleSplitMarkers);
   document.getElementById('chartAlertsButton').addEventListener('click', () => {
     if (typeof StockWatchChartAlerts !== 'undefined') StockWatchChartAlerts.openManager();

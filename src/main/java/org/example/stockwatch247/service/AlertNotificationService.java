@@ -63,14 +63,21 @@ public class AlertNotificationService {
      * translated line by line.
      */
     private void localize(SimpleMailMessage message, String viewPath) {
+        localize(message, viewPath, true);
+    }
+
+    /** {@code settingsLinks} is false for an email held for a summary, which carries those links once. */
+    private void localize(SimpleMailMessage message, String viewPath, boolean settingsLinks) {
         String[] recipients = message.getTo();
         if (links != null && recipients != null && recipients.length > 0) {
             StringBuilder text = new StringBuilder(message.getText() == null ? "" : message.getText().stripTrailing())
                     .append("\n\n");
             if (viewPath != null) text.append("View in StockWatch: ").append(links.baseUrl()).append(viewPath).append('\n');
-            text.append("Manage alert emails: ").append(links.baseUrl()).append(NotificationEmailLinks.MANAGE_PATH).append('\n');
-            links.account(recipients[0]).ifPresent(account ->
-                    text.append("Stop all alert emails: ").append(links.unsubscribeUrl(account.getId())).append('\n'));
+            if (settingsLinks) {
+                text.append("Manage alert emails: ").append(links.baseUrl()).append(NotificationEmailLinks.MANAGE_PATH).append('\n');
+                links.account(recipients[0]).ifPresent(account ->
+                        text.append("Stop all alert emails: ").append(links.unsubscribeUrl(account.getId())).append('\n'));
+            }
             message.setText(text.toString());
         }
         if (languages == null || recipients == null || recipients.length == 0) return;
@@ -88,20 +95,32 @@ public class AlertNotificationService {
         return links != null && links.account(recipient).map(User::isNotificationEmailsPaused).orElse(false);
     }
 
+    /** The recipient's account when it collects signal, lifecycle and outlook emails into summaries. */
+    private java.util.Optional<User> summaryAccount(SimpleMailMessage message) {
+        String[] recipients = message.getTo();
+        if (outbox == null || links == null || recipients == null || recipients.length == 0) return java.util.Optional.empty();
+        return links.account(recipients[0]).filter(User::isAlertEmailDigest);
+    }
+
     private void queueInitial(SimpleMailMessage message, AlertEvent event) {
-        localize(message, signalPath(event));
+        var summary = event == null || event.getId() == null ? java.util.Optional.<User>empty() : summaryAccount(message);
+        localize(message, signalPath(event), summary.isEmpty());
         if (outbox == null) send(message);
+        else if (summary.isPresent()) outbox.hold(message, summary.get().getId(), event.getId(), null,
+                "initial-alert:" + event.getId(), "INITIAL");
         else outbox.enqueue(message, event == null ? null : event.getId(), java.time.Duration.ofDays(7));
     }
 
     private void queueFollowUp(SimpleMailMessage message, AlertEvent event, String transition) {
-        localize(message, signalPath(event));
+        var summary = summaryAccount(message);
+        localize(message, signalPath(event), summary.isEmpty());
         if (outbox == null) send(message);
         else {
             if (event == null || event.getId() == null)
                 throw new IllegalStateException("A persisted event is required for a technical follow-up.");
-            outbox.enqueue(message, event.getId(), java.time.Duration.ofDays(7),
-                    "follow-up:" + event.getId() + ":" + transition, "FOLLOW_UP");
+            String key = "follow-up:" + event.getId() + ":" + transition;
+            if (summary.isPresent()) outbox.hold(message, summary.get().getId(), event.getId(), null, key, "FOLLOW_UP");
+            else outbox.enqueue(message, event.getId(), java.time.Duration.ofDays(7), key, "FOLLOW_UP");
         }
     }
 
@@ -227,6 +246,40 @@ public class AlertNotificationService {
         return sendSignalEmail(rule, signal, null);
     }
 
+    // Readable values for alert emails, as the pages show them; the translation tables carry their Polish forms.
+    static String patternLabel(CandlePattern pattern) {
+        return pattern == null ? "Unknown pattern" : pattern.label();
+    }
+
+    static String familyLabel(AlertPatternFamily family) {
+        return switch (family == null ? AlertPatternFamily.CANDLESTICK : family) {
+            case CANDLESTICK -> "Candlestick";
+            case ELLIOTT_WAVE -> "Elliott Wave";
+            case HARMONIC_FORMATION -> "Harmonic Formation";
+        };
+    }
+
+    static String directionLabel(TradeSignal direction) {
+        if (direction == null) return "Hold";
+        return switch (direction) {
+            case BUY -> "Buy";
+            case SELL -> "Sell/Short";
+            default -> "Hold";
+        };
+    }
+
+    static String intervalLabel(org.example.stockwatch247.model.enums.TimeInterval interval) {
+        if (interval == null) return "";
+        String text = interval.name().toLowerCase(Locale.ROOT).replace('_', ' ');
+        return Character.toUpperCase(text.charAt(0)) + text.substring(1);
+    }
+
+    /** "AAPL (Apple Inc.)", or the ticker alone while no provider has named the company. */
+    static String stockLabel(org.example.stockwatch247.model.StockAsset asset) {
+        return org.example.stockwatch247.model.StockAsset.hasRealName(asset)
+                ? asset.getTickerSymbol() + " (" + asset.getCompanyName() + ")" : asset.getTickerSymbol();
+    }
+
     public boolean sendSignalEmail(AlertRule rule, DetectedSignal signal, AlertEvent lifecycleEvent) {
         if (rule.getPatternFamily() == AlertPatternFamily.HARMONIC_FORMATION) {
             return sendHarmonicSignalEmail(rule, signal, lifecycleEvent);
@@ -238,16 +291,16 @@ public class AlertNotificationService {
         boolean endOfWaveV = rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
                 && isElliottWaveVEnd(signal.pattern());
         String subject = endOfWaveC
-                ? "StockWatch Elliott wave C completed: " + signal.tradeSignal()
+                ? "StockWatch Elliott wave C completed: " + directionLabel(signal.tradeSignal())
                     + " on " + rule.getStockAsset().getTickerSymbol()
                 : endOfWaveV
-                ? "StockWatch Elliott wave V completed: " + signal.tradeSignal()
+                ? "StockWatch Elliott wave V completed: " + directionLabel(signal.tradeSignal())
                     + " on " + rule.getStockAsset().getTickerSymbol()
                 : requiresNextCandleConfirmation
                 ? "StockWatch potential " + signal.tradeSignal().name().toLowerCase()
-                    + " pattern awaiting detection gate: " + signal.pattern()
+                    + " pattern awaiting detection gate: " + patternLabel(signal.pattern())
                     + " on " + rule.getStockAsset().getTickerSymbol()
-                : "StockWatch pattern detected: " + signal.pattern()
+                : "StockWatch pattern detected: " + patternLabel(signal.pattern())
                     + " on " + rule.getStockAsset().getTickerSymbol();
         String eventDescription = endOfWaveC
                 ? "End of Elliott correction (wave C)"
@@ -299,19 +352,19 @@ public class AlertNotificationService {
                 Close price: %.2f
                 """.formatted(
                 requiresNextCandleConfirmation ? "A potential" : "A",
-                rule.getStockAsset().getTickerSymbol(),
-                rule.getPatternFamily(),
-                signal.pattern(),
+                stockLabel(rule.getStockAsset()),
+                familyLabel(rule.getPatternFamily()),
+                patternLabel(signal.pattern()),
                 eventDescription,
                 requiresNextCandleConfirmation
                         ? "POTENTIAL " + signal.tradeSignal() + " — AWAITING DETECTION GATE"
-                        : signal.tradeSignal(),
+                        : directionLabel(signal.tradeSignal()),
                 setupStrengthLabel(signal.strength()),
                 signal.setupScore(),
                 scoreVersion,
                 scoreNote,
                 scoreBreakdown,
-                rule.getInterval(),
+                intervalLabel(rule.getInterval()),
                 researchHorizonSection,
                 lifecycleSection,
                 SignalPeriodFormatter.format(signal.candleTimestamp(), rule.getInterval(), signalTimeZone),
@@ -367,7 +420,7 @@ public class AlertNotificationService {
 
                         This count is closed. StockWatch will continue searching for a new valid origin and alternate count.
                         """.formatted(
-                        symbol, rule.getInterval(), stage, signal.closePrice(),
+                        symbol, intervalLabel(rule.getInterval()), stage, signal.closePrice(),
                         event.getLifecycleResolutionReason() == null
                                 ? "A hard Elliott structure boundary was crossed."
                                 : event.getLifecycleResolutionReason())
@@ -390,9 +443,9 @@ public class AlertNotificationService {
                         The stop and target are rule-based projections, not guarantees or financial advice.
                         """.formatted(
                         symbol,
-                        rule.getInterval(),
+                        intervalLabel(rule.getInterval()),
                         stage,
-                        signal.tradeSignal(),
+                        directionLabel(signal.tradeSignal()),
                         SignalPeriodFormatter.format(
                                 signal.candleTimestamp(), rule.getInterval(), signalTimeZone),
                         signal.closePrice(),
@@ -491,7 +544,7 @@ public class AlertNotificationService {
                 A structural invalidation closes the Elliott count itself. A buffered-stop outcome closes only this possible-trade plan unless a hard Elliott rule was also broken. This is a rule-based projection, not financial advice.
                 """.formatted(
                 symbol,
-                rule.getInterval(),
+                intervalLabel(rule.getInterval()),
                 plan.getStage(),
                 plan.getExpectedMove(),
                 outcome,
@@ -580,8 +633,8 @@ public class AlertNotificationService {
                 symbol,
                 symbol,
                 patternLabel,
-                signal.tradeSignal(),
-                rule.getInterval(),
+                directionLabel(signal.tradeSignal()),
+                intervalLabel(rule.getInterval()),
                 endpointLabel,
                 SignalPeriodFormatter.format(
                         event.getHarmonicEndpointTimestamp(), rule.getInterval(), signalTimeZone),
@@ -604,7 +657,7 @@ public class AlertNotificationService {
         message.setFrom(fromAddress);
         message.setTo(rule.getUser().getEmail());
         message.setSubject("StockWatch harmonic " + patternLabel.toLowerCase()
-                + ": " + signal.tradeSignal() + " on " + symbol);
+                + ": " + directionLabel(signal.tradeSignal()) + " on " + symbol);
         message.setText(body);
         queueInitial(message, event);
         return true;
@@ -691,7 +744,7 @@ public class AlertNotificationService {
 
                 Harmonic detection and the original saved geometry were not recalculated. This is a rule-based stop outcome, not financial advice.
                 """.formatted(
-                symbol, symbol, patternLabel, event.getTradeSignal(), rule.getInterval(),
+                symbol, symbol, patternLabel, directionLabel(event.getTradeSignal()), intervalLabel(rule.getInterval()),
                 event.getTradeEntryPrice(), event.getHarmonicEndpointPrice(),
                 event.getStructuralStopPrice(), event.getHarmonicStopBasis(),
                 event.getHarmonicStopBufferPercent(), event.getHarmonicStopBufferAmount(),
@@ -995,9 +1048,9 @@ public class AlertNotificationService {
                 symbol,
                 statusLabel,
                 outcome,
-                event.getPattern(),
+                patternLabel(event.getPattern()),
                 directionClassification,
-                rule.getInterval(),
+                intervalLabel(rule.getInterval()),
                 SignalPeriodFormatter.format(
                         event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                 rangeLabel,
@@ -1026,7 +1079,7 @@ public class AlertNotificationService {
         message.setFrom(fromAddress);
         message.setTo(rule.getUser().getEmail());
         message.setSubject("StockWatch pattern " + statusLabel.toLowerCase()
-                + ": " + event.getPattern() + " on " + symbol);
+                + ": " + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText(body);
         queueLifecycle(message, event);
         return true;
@@ -1116,9 +1169,9 @@ public class AlertNotificationService {
                 symbol,
                 status,
                 statusMeaning,
-                event.getPattern(),
-                event.getTradeSignal(),
-                rule.getInterval(),
+                patternLabel(event.getPattern()),
+                directionLabel(event.getTradeSignal()),
+                intervalLabel(rule.getInterval()),
                 SignalPeriodFormatter.format(
                         event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                 event.getTradeEntryPrice(),
@@ -1145,7 +1198,7 @@ public class AlertNotificationService {
         message.setFrom(fromAddress);
         message.setTo(rule.getUser().getEmail());
         message.setSubject("StockWatch candlestick trade " + status.name().toLowerCase(Locale.ROOT)
-                + ": " + event.getPattern() + " on " + symbol);
+                + ": " + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText(body);
         queueLifecycle(message, event);
         return true;
@@ -1230,7 +1283,7 @@ public class AlertNotificationService {
         message.setFrom(fromAddress);
         message.setTo(rule.getUser().getEmail());
         message.setSubject("StockWatch candlestick record update unavailable: "
-                + event.getPattern() + " on " + symbol);
+                + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText("""
                 A stored candlestick record changed for %s, but it predates the current close-based candlestick trade plan.
 
@@ -1244,9 +1297,9 @@ public class AlertNotificationService {
                 Those current statuses require a stored entry, configured stop loss, interval R:R target, and candle 8 time stop.
                 """.formatted(
                 symbol,
-                event.getPattern(),
-                event.getTradeSignal(),
-                rule.getInterval(),
+                patternLabel(event.getPattern()),
+                directionLabel(event.getTradeSignal()),
+                intervalLabel(rule.getInterval()),
                 SignalPeriodFormatter.format(
                         event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone)));
         queueLifecycle(message, event);
@@ -1269,7 +1322,7 @@ public class AlertNotificationService {
 
                 Trades enter at the open of the candle after the signal. This one opened beyond its stop or target, so there is no entry and no trade result.
                 """.formatted(
-                symbol, event.getPattern(), event.getTradeSignal(),
+                symbol, patternLabel(event.getPattern()), directionLabel(event.getTradeSignal()),
                 SignalPeriodFormatter.format(event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                 event.getTradeEntryTimestamp() == null ? "unavailable"
                         : SignalPeriodFormatter.format(event.getTradeEntryTimestamp(), rule.getInterval(), signalTimeZone),
@@ -1277,7 +1330,7 @@ public class AlertNotificationService {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
         message.setTo(rule.getUser().getEmail());
-        message.setSubject("StockWatch trade not filled: " + event.getPattern() + " on " + symbol);
+        message.setSubject("StockWatch trade not filled: " + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText(body);
         queueLifecycle(message, event);
         return true;
@@ -1309,8 +1362,8 @@ public class AlertNotificationService {
                     This stored candidate predates the close-based candlestick trade-plan model. Retired confirmation-boundary results are not substituted for the current close-based trade statuses.
                     """.formatted(
                     symbol,
-                    event.getPattern(),
-                    event.getTradeSignal(),
+                    patternLabel(event.getPattern()),
+                    directionLabel(event.getTradeSignal()),
                     SignalPeriodFormatter.format(
                             event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone));
         } else if (detected && event.getTradeEntryPrice() != null
@@ -1329,8 +1382,8 @@ public class AlertNotificationService {
                     %s
                     """.formatted(
                     symbol,
-                    event.getPattern(),
-                    event.getTradeSignal(),
+                    patternLabel(event.getPattern()),
+                    directionLabel(event.getTradeSignal()),
                     SignalPeriodFormatter.format(
                             event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                     gatePeriod,
@@ -1361,8 +1414,8 @@ public class AlertNotificationService {
                      CONFIRMED means the target closed successfully, INVALIDATED means the stop was hit, and EXPIRED means candle 8 closed the trade.
                     """.formatted(
                         symbol,
-                        event.getPattern(),
-                        event.getTradeSignal(),
+                        patternLabel(event.getPattern()),
+                        directionLabel(event.getTradeSignal()),
                         SignalPeriodFormatter.format(
                                 event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                         gatePeriod,
@@ -1382,7 +1435,7 @@ public class AlertNotificationService {
                     Detection candle: %s
 
                     No retired confirmation-boundary status is substituted.
-                    """.formatted(symbol, event.getPattern(), event.getTradeSignal(), gatePeriod);
+                    """.formatted(symbol, patternLabel(event.getPattern()), directionLabel(event.getTradeSignal()), gatePeriod);
         } else {
             body = """
                      One-candle candidate rejected for %s.
@@ -1401,8 +1454,8 @@ public class AlertNotificationService {
                     No entry, profit target, time-stop trade, or trade return exists because the trade never opened.
                     """.formatted(
                         symbol,
-                        event.getPattern(),
-                        event.getTradeSignal(),
+                        patternLabel(event.getPattern()),
+                        directionLabel(event.getTradeSignal()),
                         SignalPeriodFormatter.format(
                                 event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone),
                         gatePeriod,
@@ -1423,7 +1476,7 @@ public class AlertNotificationService {
         message.setFrom(fromAddress);
         message.setTo(rule.getUser().getEmail());
         message.setSubject("StockWatch " + (detected ? "signal detected" : "candidate rejected")
-                + ": " + event.getPattern() + " on " + symbol);
+                + ": " + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText(body);
         queueLifecycle(message, event);
         return true;
@@ -1587,8 +1640,11 @@ public class AlertNotificationService {
         }
         SimpleMailMessage message = baseMessage(user, subject);
         message.setText(body);
-        localize(message);
-        if (outbox != null && notificationId != null) {
+        boolean summary = notificationId != null && summaryAccount(message).isPresent();
+        localize(message, null, !summary);
+        if (summary) {
+            outbox.hold(message, user.getId(), null, notificationId, "outlook:" + notificationId, "INITIAL");
+        } else if (outbox != null && notificationId != null) {
             outbox.enqueueOutlook(message, notificationId, java.time.Duration.ofDays(7));
         } else {
             send(message);

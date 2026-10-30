@@ -14,7 +14,7 @@ import java.util.Set;
  */
 public record SignalArchiveFilter(String state, String ticker, Long watchlistId, Set<String> types, Long customAlertId) {
     /** Every type the archive can filter by, in the order the filter shows them. */
-    public static final List<String> TYPES = List.of("candlestick", "elliott", "harmonic", "chart", "custom", "congress", "insider");
+    public static final List<String> TYPES = List.of("candlestick", "elliott", "harmonic", "outlook", "chart", "custom", "congress", "insider");
 
     public SignalArchiveFilter(String state, String ticker) { this(state, ticker, null, Set.of(), null); }
 

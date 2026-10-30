@@ -134,8 +134,10 @@
               <strong th:text="#{virtualTrades.intervalOutlook(${#tr.text(trade.intervalLabel())})}">Daily outlook</strong>
             </div>
             <div><strong th:text="${trade.symbol()}">AAPL</strong><span th:text="${trade.companyName()}">Apple Inc.</span></div>
-            <div><strong th:text="${#numbers.formatDecimal(trade.entryPrice(), 1, 4) + ' ' + trade.currency()}">100 USD</strong><time th:text="${#temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')}">08 Aug</time></div>
-            <div><strong th:text="${#numbers.formatDecimal(trade.evaluationPrice(), 1, 4) + ' ' + trade.currency()}">105 USD</strong><span th:text="${#tr.text(trade.evaluationSource())}">Latest completed candle</span></div>
+            <div><strong th:text="${#numbers.formatDecimal(trade.entryPrice(), 1, trade.priceDigits(trade.entryPrice())) + ' ' + trade.currency()}">100 USD</strong><time th:text="${#temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')}">08 Aug</time>
+              <small th:if="${trade.stopPrice() != null or trade.targetPrice() != null}" class="virtual-trade-plan-line"
+                     th:text="${#messages.msg('virtualTrade.planLine', trade.stopPrice() != null ? #numbers.formatDecimal(trade.stopPrice(), 1, trade.priceDigits(trade.stopPrice())) : '–', trade.targetPrice() != null ? #numbers.formatDecimal(trade.targetPrice(), 1, trade.priceDigits(trade.targetPrice())) : '–')}">Stop 95.00 · Target 110.00</small></div>
+            <div><strong th:text="${#numbers.formatDecimal(trade.evaluationPrice(), 1, trade.priceDigits(trade.evaluationPrice())) + ' ' + trade.currency()}">105 USD</strong><span th:text="${#tr.text(trade.evaluationSource())}">Latest completed candle</span></div>
             <div class="virtual-trade-position-value" th:if="${trade.evaluatedPositionValue() != null}">
               <strong th:text="${#numbers.formatDecimal(trade.notionalValue(), 1, 2) + ' ' + trade.currency()}">1,000.00 USD</strong>
               <span th:text="${trade.side() == 'BUY' ? #messages.msg('virtualTrades.investedAtEntry') : #messages.msg('virtualTrades.valueAtSellDecision')}">Invested at entry</span>
@@ -145,6 +147,7 @@
             <div class="virtual-trade-outcome" th:classappend="${trade.resultPercent() >= 0 ? ' positive' : ' negative'}">
               <strong th:text="${(trade.resultPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.resultPercent(), 1, 2) + '%'}">+5.00%</strong>
               <span th:text="${#tr.text(trade.outcomeLabel())}">Gain</span>
+              <small th:if="${trade.exitReason() == 'STOP' or trade.exitReason() == 'TARGET'}" class="virtual-trade-exit-reason" th:text="${#tr.text(trade.exitReasonLabel())}">Closed at the target</small>
               <small th:text="#{virtualTrades.fromEntry(${#temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')})}">From captured entry · 08 Aug 2026, 10:00</small>
               <small th:if="${trade.monetaryResult() != null}" class="virtual-trade-monetary-result" th:text="${(trade.monetaryResult().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.monetaryResult(), 1, 2) + ' ' + trade.currency()}">+50 USD</small>
             </div>

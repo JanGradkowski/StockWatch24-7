@@ -2775,25 +2775,7 @@ public class AlertRuleService {
     }
 
     private String patternLabel(CandlePattern pattern) {
-        if (pattern == null) {
-            return "Unknown pattern";
-        }
-        StringBuilder label = new StringBuilder();
-        String rawName = pattern.name().startsWith("HARMONIC_")
-                ? pattern.name().substring("HARMONIC_".length())
-                : pattern.name();
-        for (String word : rawName.toLowerCase(Locale.ROOT).split("_")) {
-            if (!label.isEmpty()) {
-                label.append(' ');
-            }
-            // Wave numbers (II, IV, V) and harmonic legs (AB, CD) stay upper case.
-            if (word.matches("i{2,3}|iv|v|ab|cd")) {
-                label.append(word.toUpperCase(Locale.ROOT));
-            } else {
-                label.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
-            }
-        }
-        return label.toString();
+        return pattern == null ? "Unknown pattern" : pattern.label();
     }
 
     private static String directionDisplayLabel(CandlePattern pattern,

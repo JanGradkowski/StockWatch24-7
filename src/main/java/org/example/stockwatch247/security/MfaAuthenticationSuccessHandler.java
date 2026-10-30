@@ -44,12 +44,14 @@ public class MfaAuthenticationSuccessHandler implements AuthenticationSuccessHan
             request.getSession().setAttribute(AccountSession.MFA_PENDING_USER_ID, user.getId());
             request.getSession().setAttribute(AccountSession.MFA_PENDING_VERSION, user.getSecurityVersion());
             request.getSession().setAttribute(AccountSession.MFA_PENDING_AT, clock.instant().getEpochSecond());
+            if (RememberedSessions.requested(request)) request.getSession().setAttribute(AccountSession.MFA_PENDING_REMEMBER, Boolean.TRUE);
             SecurityContextHolder.clearContext();
             request.getSession().removeAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
             response.sendRedirect(request.getContextPath() + "/login/2fa");
             return;
         }
         request.getSession().setAttribute(AccountSession.SECURITY_VERSION, user.getSecurityVersion());
+        if (RememberedSessions.requested(request)) RememberedSessions.apply(request);
         if (knownDevices != null) knownDevices.remember(request, response, user.getEmail());
         // Host-relative by construction: a constant slash followed by a validated path on this site.
         response.sendRedirect(request.getContextPath() + ("/" + PostLoginRedirect.pathAfterSlash(target)));

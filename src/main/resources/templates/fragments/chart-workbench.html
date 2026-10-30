@@ -49,6 +49,14 @@
       <input id="chartDemoTradeSizeInput" type="number" min="0.00000001" max="1000000000000" step="any" inputmode="decimal">
       <small id="chartDemoTradeSizeHelp" th:text="#{js.outlook.positiveSize}">Enter a positive virtual size.</small>
     </label>
+    <fieldset class="virtual-trade-plan-fields">
+      <legend th:text="#{virtualTrade.planLegend}">Exit plan (optional)</legend>
+      <label><span th:text="#{virtualTrade.stopPrice}">Stop loss</span>
+        <input id="chartDemoTradeStop" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label><span th:text="#{virtualTrade.targetPrice}">Target</span>
+        <input id="chartDemoTradeTarget" type="number" min="0" step="any" inputmode="decimal"></label>
+      <small th:text="#{virtualTrade.planHelp}">The trade closes by itself when a completed candle of its interval reaches either level.</small>
+    </fieldset>
     <div id="chartDemoTradeStatus" class="technical-outlook-freshness" role="status"></div>
     <div class="unsaved-alert-dialog-actions">
       <button id="cancelChartDemoTrade" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>

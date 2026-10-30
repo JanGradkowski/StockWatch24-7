@@ -180,8 +180,7 @@
 :root[data-theme] .ui-refresh .home-stock-cards:has(> li:nth-child(3):last-child) { max-width: 1044px; }
 @media (max-width: 600px) {
     :root[data-theme] .ui-refresh .home-stock-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-    :root[data-theme] .ui-refresh .home-stock-card { padding: 12px 12px 10px; }
-    :root[data-theme] .ui-refresh .home-stock-price { font-size: var(--fs-base); }
+
 }
 :root[data-theme] .ui-refresh .home-stock-card {
     display: flex; flex-direction: column; gap: 4px; height: 100%; min-width: 0; padding: 14px 14px 12px;
@@ -311,7 +310,7 @@
     :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page :is(.alert-overall-follow-row, .alert-apply-row) { flex-wrap: wrap; justify-content: flex-start; }
     :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-grid { grid-template-columns: 62px repeat(2, minmax(110px, 1fr)); overflow-x: auto; }
     :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-grid.outlook-alert-grid { grid-template-columns: 62px minmax(110px, 1fr); }
-    :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .stock-workspace-action-card { align-items: stretch; flex-direction: column; }
+
     :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-header { display: block; }
     :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-actions { display: grid; min-width: 0; justify-content: stretch; margin-top: 0.85rem; }
     :root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .congressional-panel-actions button { width: 100%; }
@@ -495,3 +494,22 @@
 
 /* A fixed grey (#697069) that read at 3.6:1 on the dark panels; the muted token passes in both themes. */
 :root[data-theme] .ui-refresh .congressional-dashboard-note { color: var(--muted-text); }
+
+/* The stock header's two button groups share one container. On wide screens it steps aside, so each group keeps
+   its grid area; on phones the ticker and price share the first row and the four buttons one swipeable row, and the
+   chart controls get slimmer chips (two rows instead of three), so the chart starts higher. */
+:root[data-theme] .ui-refresh .price-header-buttons { display: contents; }
+@media (max-width: 768px) {
+    :root[data-theme] .ui-refresh .price-header {
+        grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "identity quote" "buttons buttons"; gap: 10px 12px;
+    }
+    :root[data-theme] .ui-refresh .price-header .quote-block { justify-content: flex-end; text-align: right; max-width: 52vw; }
+    :root[data-theme] .ui-refresh .price-header .quote-value { justify-content: flex-end; }
+    :root[data-theme] .ui-refresh .price-header-buttons { grid-area: buttons; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+    :root[data-theme] .ui-refresh .price-header-buttons::-webkit-scrollbar { display: none; }
+    :root[data-theme] .ui-refresh .price-header-buttons :is(.price-header-actions, .price-header-demo-trading, .virtual-trade-launch-actions) {
+        display: flex; flex: none; flex-wrap: nowrap; gap: 6px; margin: 0;
+    }
+    :root[data-theme] .ui-refresh .price-header-buttons :is(.btn-secondary) { flex: none; min-height: 34px; padding: 0 12px; font-size: var(--fs-sm); }
+    :root[data-theme] .ui-refresh .chart-toolbar .toolbar-controls-row .view-toggle:not(.chart-control-menu-item) { padding-inline: 7px; }
+}

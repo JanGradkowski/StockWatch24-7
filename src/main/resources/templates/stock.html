@@ -93,19 +93,22 @@
       <!-- Filled from the instrument's metadata once it loads. -->
       <p class="company-identity"><span id="companyNameDisplay" class="company-name"></span><span id="exchangeDisplay" class="exchange-badge" hidden></span></p>
     </div>
-    <div class="price-header-actions">
-      <button type="button" class="btn-secondary" data-stock-watchlists th:attr="data-symbol=${symbol}" th:text="#{stock.addToWatchlist}">Add to watchlist</button>
-      <a class="btn-secondary" th:href="@{/custom-alerts/new(symbol=${symbol})}" th:text="#{stock.newAlert}">New alert</a>
-    </div>
-    <section class="price-header-demo-trading" aria-labelledby="stockDemoTradeTitle">
-      <h2 id="stockDemoTradeTitle" class="visually-hidden" th:text="#{stock.demoTradeHeading}">Demo trade at the current quote, no real order</h2>
-      <div class="virtual-trade-launch-actions">
-        <button type="button" class="btn-secondary virtual-buy-button learn-control" data-term="demoTrade" data-stock-demo-trade="BUY"
-                title="Record a practice buy at the current quote. No real order is placed." th:text="#{js.virtualTrade.marker.buy}" th:title="#{stock.demoBuyTitle}">Demo buy</button>
-        <button type="button" class="btn-secondary virtual-sell-button learn-control" data-term="demoTrade" data-stock-demo-trade="SELL"
-                title="Record a practice sell at the current quote. No real order is placed." th:text="#{js.virtualTrade.marker.sell}" th:title="#{stock.demoSellTitle}">Demo sell</button>
+    <!-- Its two groups sit in the header grid on wide screens and share one swipeable row on phones. -->
+    <div class="price-header-buttons">
+      <div class="price-header-actions">
+        <button type="button" class="btn-secondary" data-stock-watchlists th:attr="data-symbol=${symbol}" th:text="#{stock.addToWatchlist}">Add to watchlist</button>
+        <a class="btn-secondary" th:href="@{/custom-alerts/new(symbol=${symbol})}" th:text="#{stock.newAlert}">New alert</a>
       </div>
-    </section>
+      <section class="price-header-demo-trading" aria-labelledby="stockDemoTradeTitle">
+        <h2 id="stockDemoTradeTitle" class="visually-hidden" th:text="#{stock.demoTradeHeading}">Demo trade at the current quote, no real order</h2>
+        <div class="virtual-trade-launch-actions">
+          <button type="button" class="btn-secondary virtual-buy-button learn-control" data-term="demoTrade" data-stock-demo-trade="BUY"
+                  title="Record a practice buy at the current quote. No real order is placed." th:text="#{js.virtualTrade.marker.buy}" th:title="#{stock.demoBuyTitle}">Demo buy</button>
+          <button type="button" class="btn-secondary virtual-sell-button learn-control" data-term="demoTrade" data-stock-demo-trade="SELL"
+                  title="Record a practice sell at the current quote. No real order is placed." th:text="#{js.virtualTrade.marker.sell}" th:title="#{stock.demoSellTitle}">Demo sell</button>
+        </div>
+      </section>
+    </div>
     <div class="quote-block">
       <div id="quoteLabel" class="quote-label" th:text="#{stock.lastClose}">Last close</div>
       <div class="quote-value">
@@ -272,6 +275,9 @@
         <span class="chart-panel-meta" th:text="#{stock.scrollHistory}">Scroll horizontally to explore history</span>
       </div>
       <div class="chart-panel-actions" role="group" aria-label="Chart view" th:aria-label="#{stock.chartViewAria}">
+        <!-- Phones only: the drawing tools fold away so the chart gets the full width. -->
+        <button id="drawingRailToggle" type="button" class="chart-icon-button chart-rail-toggle" aria-expanded="false" aria-controls="drawingToolbarHost"
+                title="Drawing tools" th:title="#{stock.drawingTools}" aria-label="Drawing tools" th:aria-label="#{stock.drawingTools}" data-chart-icon="draw"></button>
         <button id="dataWindowToggle" type="button" class="chart-icon-button" aria-pressed="false" title="Data window" th:title="#{stock.dataWindow}" aria-label="Data window" th:aria-label="#{stock.dataWindow}" data-chart-icon="data"></button>
         <button id="chartScreenshotButton" type="button" class="chart-icon-button" title="Save chart image" th:title="#{stock.screenshot}" aria-label="Save chart image" th:aria-label="#{stock.screenshot}" data-chart-icon="camera"></button>
         <button id="chartFullscreenButton" type="button" class="chart-icon-button" aria-pressed="false" title="Full screen" th:title="#{stock.fullscreen}" aria-label="Full screen" th:aria-label="#{stock.fullscreen}" data-chart-icon="fullscreen"></button>
@@ -985,6 +991,14 @@
         <input id="stockDemoTradeSizeInput" type="number" min="0.00000001" max="1000000000000" step="any" inputmode="decimal">
         <small id="stockDemoTradeSizeHelp" th:text="#{js.outlook.positiveSize}">Enter a positive virtual size.</small>
       </label>
+      <fieldset class="virtual-trade-plan-fields">
+        <legend th:text="#{virtualTrade.planLegend}">Exit plan (optional)</legend>
+        <label><span th:text="#{virtualTrade.stopPrice}">Stop loss</span>
+          <input id="stockDemoTradeStop" type="number" min="0" step="any" inputmode="decimal"></label>
+        <label><span th:text="#{virtualTrade.targetPrice}">Target</span>
+          <input id="stockDemoTradeTarget" type="number" min="0" step="any" inputmode="decimal"></label>
+        <small th:text="#{virtualTrade.planHelp}">The trade closes by itself when a completed candle of its interval reaches either level.</small>
+      </fieldset>
       <div id="stockDemoTradeStatus" class="technical-outlook-freshness" role="status"></div>
       <div class="unsaved-alert-dialog-actions">
         <button id="cancelStockDemoTrade" type="button" class="btn-secondary" th:text="#{common.cancel}">Cancel</button>

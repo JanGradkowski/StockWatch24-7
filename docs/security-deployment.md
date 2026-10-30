@@ -10,6 +10,7 @@ A public deployment must use the `prod` profile and a trusted TLS reverse proxy.
 - The runtime role needs `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on application tables plus sequence usage. It must not own the schema or have `CREATE`, `ALTER`, or `DROP`.
 - Keep PostgreSQL private. The development Compose file binds it to loopback; production should remove `ports` and use a private network.
 - Encrypt backups and restrict database/log access. The database contains identity data, password hashes, alert settings, and alert history.
+- Signed-in sessions are stored in the `spring_session` and `spring_session_attributes` tables (V96), so restarts and deployments keep people signed in and several instances share them. The runtime role needs the same privileges on them as on the other tables. A session row signs its holder in, so treat the tables like the rest of the database. Ordinary sessions still end after `SESSION_TIMEOUT` idle (30 minutes) and `SESSION_ABSOLUTE_TIMEOUT_SECONDS` (12 hours); "Keep me signed in" sessions last 30 days. Signing out, a password change and "sign out everywhere" end them either way.
 
 Build once, then migrate before starting the web process:
 

@@ -5808,3 +5808,20 @@ pl: Cena zamknięcia
 
 en: Informational only, not financial advice.
 pl: Wyłącznie informacyjnie, nie jest to porada finansowa.
+
+# --- Demo trade exit plans (VirtualTradeService) --------------------------------------------------
+
+en: Stop loss
+pl: Stop loss
+
+en: Target
+pl: Cel
+
+en: Closed at the stop loss
+pl: Zamknięta na poziomie stop loss
+
+en: Closed at the target
+pl: Zamknięta na poziomie celu
+
+en: Closed by you
+pl: Zamknięta przez Ciebie

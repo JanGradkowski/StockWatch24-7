@@ -228,6 +228,61 @@ class ReviewDurabilityIntegrationTest {
         } finally { jdbc.update("delete from users where id=?",user); jdbc.update("delete from stock_assets where id=?",asset); }
     }
 
+    @Test void heldAlertEmailsGoOutAsOneSummaryOnceAndRecordEveryReceipt() throws Exception {
+        @SuppressWarnings("unchecked") ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
+        var sender = mock(JavaMailSender.class);
+        when(provider.getIfAvailable()).thenReturn(sender);
+        when(sender.createMimeMessage()).thenAnswer(invocation -> new jakarta.mail.internet.MimeMessage((jakarta.mail.Session)null));
+        var outbox = new EmailOutboxService(jdbc, crypto, mapper, provider, manager);
+        String tag = UUID.randomUUID().toString();
+        Long user = jdbc.queryForObject("insert into users(email,password_hash,first_name,last_name,alert_email_digest) values (?,'unused','Digest','Test',true) returning id",Long.class,tag+"@example.test");
+        Long asset = jdbc.queryForObject("insert into stock_assets(ticker_symbol,company_name,exchange) values (?,'Digest test','TEST') returning id",Long.class,"DIG"+tag.substring(0,8));
+        try {
+            Long rule = jdbc.queryForObject("insert into alert_rules(user_id,stock_asset_id,interval,target_pattern,pattern_family,trade_signal) values (?,?,'DAILY','HAMMER','CANDLESTICK','BUY') returning id",Long.class,user,asset);
+            Long first = jdbc.queryForObject("insert into alert_events(alert_rule_id,pattern,trade_signal,signal_candle_timestamp,confidence_score,close_price) values (?,'HAMMER','BUY',1700000000,90,100) returning id",Long.class,rule);
+            Long second = jdbc.queryForObject("insert into alert_events(alert_rule_id,pattern,trade_signal,signal_candle_timestamp,confidence_score,close_price) values (?,'HAMMER','BUY',1700086400,80,101) returning id",Long.class,rule);
+            outbox.hold(email(tag, "StockWatch pattern detected: Hammer on DIG one", "First signal body"), user, first, null, "initial-alert:" + first, "INITIAL");
+            // A retried check holds the same email once.
+            outbox.hold(email(tag, "StockWatch pattern detected: Hammer on DIG one", "First signal body"), user, first, null, "initial-alert:" + first, "INITIAL");
+            outbox.hold(email(tag, "StockWatch pattern detected: Hammer on DIG two", "Second signal body"), user, second, null, "initial-alert:" + second, "INITIAL");
+            assertThat(jdbc.queryForObject("select count(*) from email_digest_items where user_id=?",Integer.class,user)).isEqualTo(2);
+
+            // While the checks are still busy (the newest held email is recent) nothing goes out.
+            outbox.flushDigests();
+            assertThat(jdbc.queryForObject("select count(*) from email_outbox where deduplication_key like ?",Integer.class,"digest:"+user+":%")).isZero();
+
+            jdbc.update("update email_digest_items set created_at=current_timestamp - interval '11 minutes' where user_id=?",user);
+            outbox.flushDigests();
+            outbox.flushDigests();
+            assertThat(jdbc.queryForObject("select count(*) from email_digest_items where user_id=?",Integer.class,user)).isZero();
+            assertThat(jdbc.queryForObject("select count(*) from email_outbox where deduplication_key like ?",Integer.class,"digest:"+user+":%")).isEqualTo(1);
+            assertThat(jdbc.queryForObject("select count(*) from alert_events where id in (?,?) and initial_email_sent_at is null",Integer.class,first,second)).isEqualTo(2);
+
+            outbox.deliverPending();
+            var captor = org.mockito.ArgumentCaptor.forClass(jakarta.mail.internet.MimeMessage.class);
+            verify(sender, times(1)).send(captor.capture());
+            assertThat(captor.getValue().getSubject()).isEqualTo("StockWatch summary: 2 alerts");
+            assertThat((String) captor.getValue().getContent()).contains("- StockWatch pattern detected: Hammer on DIG one",
+                    "- StockWatch pattern detected: Hammer on DIG two", "First signal body", "Second signal body");
+            assertThat(jdbc.queryForObject("select count(*) from alert_events where id in (?,?) and initial_email_sent_at is not null",Integer.class,first,second)).isEqualTo(2);
+            // Switching the summary off sends what is still held without waiting.
+            jdbc.update("update users set alert_email_digest=false where id=?",user);
+            outbox.hold(email(tag, "StockWatch pattern confirmed: Hammer on DIG two", "Follow-up body"), user, second, null, "follow-up:" + second + ":x", "FOLLOW_UP");
+            outbox.flushDigests();
+            assertThat(jdbc.queryForObject("select count(*) from email_digest_items where user_id=?",Integer.class,user)).isZero();
+            assertThat(jdbc.queryForObject("select count(*) from email_outbox where deduplication_key like ?",Integer.class,"digest:"+user+":%")).isEqualTo(2);
+        } finally {
+            jdbc.update("delete from email_outbox where deduplication_key like ?","digest:"+user+":%");
+            jdbc.update("delete from users where id=?",user); jdbc.update("delete from stock_assets where id=?",asset);
+        }
+    }
+
+    private static SimpleMailMessage email(String tag, String subject, String text) {
+        var message = new SimpleMailMessage();
+        message.setFrom("alerts@example.test"); message.setTo(tag + "@example.test"); message.setSubject(subject); message.setText(text);
+        return message;
+    }
+
     @Test void expiredEmailLeaseStillReceivesBackoffWhenNoOtherWorkerOwnsIt() {
         @SuppressWarnings("unchecked") ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
         var sender=mock(JavaMailSender.class); when(provider.getIfAvailable()).thenReturn(sender);

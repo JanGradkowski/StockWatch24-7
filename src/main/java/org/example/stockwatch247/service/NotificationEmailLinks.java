@@ -47,6 +47,16 @@ public class NotificationEmailLinks {
                 && crypto.verify(userId, CONTEXT, token);
     }
 
+    /** Sends the account's signal, lifecycle and outlook emails one by one, or as one summary per check run. */
+    @Transactional
+    public boolean setDigest(long userId, boolean digest) {
+        return users.findById(userId).map(user -> {
+            user.setAlertEmailDigest(digest);
+            users.save(user);
+            return true;
+        }).orElse(false);
+    }
+
     /** Pauses or resumes every alert and notification email for the account. */
     @Transactional
     public boolean setPaused(long userId, boolean paused) {

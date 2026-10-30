@@ -151,7 +151,10 @@
                         interval: demo.interval,
                         quantity: demo.sizeMode === 'quantity' ? size : null,
                         notionalValue: demo.sizeMode === 'notional' ? size : null,
-                        clientRequestId: demo.requestId
+                        clientRequestId: demo.requestId,
+                        stopPrice: planValue('chartDemoTradeStop'),
+                        targetPrice: planValue('chartDemoTradeTarget'),
+                        sourceSignalId: demo.sourceSignalId || null
                     })
                 });
                 if (!response.ok) {
@@ -168,21 +171,41 @@
         });
     }
 
-    /** As on the stock page: a demo trade at the current quote; the drawn entry, target and stop stay on the chart. */
-    function openDemoTrade(symbol, side, interval) {
+    function planValue(id) {
+        const value = document.getElementById(id)?.value;
+        return value === undefined || value === '' ? null : value;
+    }
+
+    /** A price for a stop or target field: rounded to the precision prices are shown with. */
+    function planText(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number) || number <= 0) return '';
+        return String(Number(number.toFixed(number < 1 ? 6 : 4)));
+    }
+
+    /**
+     * A demo trade at the current quote. {@code plan} prefills the stop and target: a long or short position
+     * drawing's levels, or a signal's trade plan (with the signal it came from).
+     */
+    function openDemoTrade(symbol, side, interval, plan = {}) {
         const dialog = demoDialog();
         if (!dialog) return;
         if (!demo) {
             demo = {};
             wireDemoDialog(dialog);
         }
-        Object.assign(demo, {symbol, side: side === 'SELL' ? 'SELL' : 'BUY', interval, requestId: crypto.randomUUID()});
+        Object.assign(demo, {symbol, side: side === 'SELL' ? 'SELL' : 'BUY', interval: normalizeInterval(interval),
+            requestId: crypto.randomUUID(), sourceSignalId: plan.sourceSignalId || null});
         setDemoSizeMode('none');
         document.getElementById('chartDemoTradeSizeInput').value = '';
+        const stop = document.getElementById('chartDemoTradeStop'), target = document.getElementById('chartDemoTradeTarget');
+        if (stop) stop.value = planText(plan.stop);
+        if (target) target.value = planText(plan.target);
         document.getElementById('chartDemoTradeTitle').textContent = i18n.t(demo.side === 'BUY' ? 'outlook.demoBuyTitle' : 'outlook.demoSellTitle', symbol);
         document.getElementById('chartDemoTradeExplanation').textContent = i18n.t(demo.side === 'BUY' ? 'outlook.demoBuyText' : 'outlook.demoSellText');
-        document.getElementById('chartDemoTradeStatus').textContent =
-            `${i18n.t(`sw.demo.analysisSaved.${API_INTERVALS[interval] || 'DAILY'}`)} ${i18n.t('sw.demo.fromPosition')}`;
+        document.getElementById('chartDemoTradeStatus').textContent = plan.sourceSignalId
+            ? i18n.t(`sw.demo.analysisSaved.${API_INTERVALS[demo.interval] || 'DAILY'}`)
+            : `${i18n.t(`sw.demo.analysisSaved.${API_INTERVALS[demo.interval] || 'DAILY'}`)} ${i18n.t('sw.demo.fromPosition')}`;
         const confirm = document.getElementById('confirmChartDemoTrade');
         confirm.disabled = false;
         confirm.textContent = i18n.t('outlook.createDemoTrade');
@@ -250,13 +273,22 @@
                 window.StockWatchChartAlerts.openForDrawing(drawing);
             });
         }
-        manager.on('demo-trade', ({side}) => {
+        manager.on('demo-trade', ({side, stop, target}) => {
             current = manager;
-            if (options.onDemoTrade) options.onDemoTrade(side);
-            else openDemoTrade(symbol, side, manager.interval || interval);
+            if (options.onDemoTrade) options.onDemoTrade(side, {stop, target});
+            else openDemoTrade(symbol, side, manager.interval || interval, {stop, target});
         });
         return manager;
     }
 
-    window.StockWatchChartTools = Object.freeze({attach, normalizeInterval});
+    // A signal page's "Practise this plan": the signal's own stop and target, linked to the signal. This
+    // script runs in the page head, so the click is caught on the document.
+    document.addEventListener('click', event => {
+        const button = event.target.closest?.('[data-practice-plan]');
+        if (!button) return;
+        openDemoTrade(button.dataset.symbol, button.dataset.side, button.dataset.interval,
+            {stop: button.dataset.stop, target: button.dataset.target, sourceSignalId: button.dataset.signalId});
+    });
+
+    window.StockWatchChartTools = Object.freeze({attach, normalizeInterval, openDemoTrade});
 })();
