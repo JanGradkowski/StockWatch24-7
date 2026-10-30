@@ -57,8 +57,9 @@ public class WatchlistController {
     }
     @GetMapping("/api/watchlists/{id}/members") @ResponseBody
     public WatchlistService.MemberPage members(Principal principal,@PathVariable long id,
-            @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="all") String group,@RequestParam(defaultValue="") String q) {
-        return lists.members(user(principal),id,page,group,q);
+            @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="all") String group,@RequestParam(defaultValue="") String q,
+            @RequestParam(defaultValue="symbol") String sort) {
+        return lists.members(user(principal),id,page,group,q,sort);
     }
     @DeleteMapping("/api/watchlists/{id}/members/{symbol}") @ResponseBody
     public void remove(Principal principal,@PathVariable long id,@PathVariable String symbol) { lists.remove(user(principal),id,symbol); }

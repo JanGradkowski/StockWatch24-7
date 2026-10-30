@@ -39,8 +39,8 @@ public class UnreadCountService {
     public record Counts(long technical, long outlook, long chart, long custom, long activity) {
         public static final Counts NONE = new Counts(0, 0, 0, 0, 0);
 
-        /** Everything the Technical signals page lists: pattern signals and chart alert triggers. */
-        public long signals() { return technical + chart; }
+        /** Everything the Technical signals page lists: pattern signals, outlook changes and chart alert triggers. */
+        public long signals() { return technical + outlook + chart; }
 
         /** The dashboard's Latest signals panel: pattern signals, outlook changes and chart alerts. */
         public long latestSignals() { return technical + outlook + chart; }

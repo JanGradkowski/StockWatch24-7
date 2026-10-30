@@ -96,6 +96,54 @@ class VirtualTradeServiceTest {
     }
 
     @Test
+    void storesAnExitPlanOnTheCorrectSideOfTheEntryAndRejectsOneOnTheWrongSide() {
+        when(pricingService.getLatestPrice("AAPL")).thenReturn(quote(100.0, 1_770_000_000L));
+
+        service.create(user, "AAPL", new VirtualTradeService.CreateCommand("BUY", "1d", null, null,
+                "5d0c1e39-2f4e-4b1a-9d41-7a2b3c4d5e6f", new BigDecimal("95"), new BigDecimal("110"), null));
+        ArgumentCaptor<VirtualTrade> captor = ArgumentCaptor.forClass(VirtualTrade.class);
+        verify(tradeRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getStopPrice()).isEqualByComparingTo("95");
+        assertThat(captor.getValue().getTargetPrice()).isEqualByComparingTo("110");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.create(user, "AAPL",
+                        new VirtualTradeService.CreateCommand("BUY", "1d", null, null,
+                                "6e1d2f4a-3a5f-4c2b-8e52-8b3c4d5e6f70", new BigDecimal("101"), null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("For a demo buy, the stop loss must be below the current price of 100.");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.create(user, "AAPL",
+                        new VirtualTradeService.CreateCommand("SELL", "1d", null, null,
+                                "7f2e3a5b-4b6a-4d3c-9f63-9c4d5e6f7081", null, new BigDecimal("105"), null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("For a demo sell, the target must be below the current price of 100.");
+    }
+
+    @Test
+    void planExitsFillAtTheLevelOrAtAGappedOpenAndPreferTheStopWhenOneCandleReachesBoth() {
+        var buy = org.example.stockwatch247.model.enums.VirtualTradeSide.BUY;
+        var sell = org.example.stockwatch247.model.enums.VirtualTradeSide.SELL;
+        BigDecimal stop = new BigDecimal("95"), target = new BigDecimal("110");
+        assertThat(VirtualTradeService.planExit(buy, stop, target, candle(100, 104, 96, 103))).isNull();
+        assertThat(VirtualTradeService.planExit(buy, stop, target, candle(100, 101, 94, 96)))
+                .isEqualTo(new VirtualTradeService.PlanExit("STOP", stop));
+        assertThat(VirtualTradeService.planExit(buy, stop, target, candle(92, 93, 90, 91)).price()).isEqualByComparingTo("92");
+        assertThat(VirtualTradeService.planExit(buy, stop, target, candle(100, 111, 99, 109)))
+                .isEqualTo(new VirtualTradeService.PlanExit("TARGET", target));
+        assertThat(VirtualTradeService.planExit(buy, stop, target, candle(112, 115, 111, 114)).price()).isEqualByComparingTo("112");
+        assertThat(VirtualTradeService.planExit(buy, stop, target, candle(100, 112, 93, 100)).reason()).isEqualTo("STOP");
+        assertThat(VirtualTradeService.planExit(buy, null, target, candle(100, 101, 50, 60))).isNull();
+        // A sell is stopped by a rise and reaches its target by a fall.
+        assertThat(VirtualTradeService.planExit(sell, new BigDecimal("105"), new BigDecimal("90"), candle(100, 106, 99, 104)).reason())
+                .isEqualTo("STOP");
+        assertThat(VirtualTradeService.planExit(sell, new BigDecimal("105"), new BigDecimal("90"), candle(100, 101, 89, 92)).reason())
+                .isEqualTo("TARGET");
+    }
+
+    private static Candle candle(double open, double high, double low, double close) {
+        return new Candle("AAPL", "1d", 1_771_000_000L, open, high, low, close, 1_000L);
+    }
+
+    @Test
     void virtualSellReportsAvoidedLossWithoutPretendingToBeAShortSale() {
         when(pricingService.getLatestPrice("AAPL")).thenReturn(quote(100.0, 1_770_000_000L));
         service.create(user, "AAPL", new VirtualTradeService.CreateCommand("SELL", "1d",

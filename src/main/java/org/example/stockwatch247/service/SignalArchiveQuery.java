@@ -102,13 +102,14 @@ public class SignalArchiveQuery {
 
     /**
      * The archive's other row kinds. A watchlist adds its insider and congressional filings; the account
-     * archive adds chart alert triggers, which belong to a chart rather than a list. Custom alert triggers
-     * appear in both. A company archive stays technical.
+     * archive adds chart alert triggers, which belong to a chart rather than a list. Outlook changes and
+     * custom alert triggers appear in both. A company archive stays technical.
      */
     private static List<String> otherKinds(Long stockId, SignalArchiveFilter filter) {
         if (filter.customAlertId() != null) return List.of("CUSTOM");
         if (stockId != null) return List.of();
         List<String> kinds = new java.util.ArrayList<>();
+        if (filter.shows("outlook")) kinds.add("OUTLOOK");
         if (filter.watchlistId() != null) {
             if (filter.shows("congress")) kinds.add("CONGRESS");
             if (filter.shows("insider")) kinds.add("INSIDER");
@@ -211,6 +212,28 @@ public class SignalArchiveQuery {
     }
 
     /**
+     * Changes of a followed Automated Technical Outlook. They are finished events, never active; the
+     * score column holds the new outlook score on the ±100 scale.
+     */
+    private Branch outlookRows(long userId, SignalArchiveFilter filter) {
+        String where = "s.user_id=? and " + tickerMatch("a.ticker_symbol", filter);
+        if (filter.watchlistId() != null) {
+            where += " and exists(select 1 from watchlists w where w.id=" + filter.watchlistId() + " and w.user_id=s.user_id) and "
+                    + WatchlistSignalScope.matches("OUTLOOK", "n.id", "s.stock_asset_id", "'OUTLOOK'", "s.interval", "'ANY'",
+                    filter.watchlistId().toString());
+        }
+        if (filter.state().equals("unread")) where += " and n.read_at is null";
+        if (filter.state().equals("active")) where += " and false";
+        return new Branch("select 'OUTLOOK'::text kind,n.id,a.ticker_symbol ticker,a.company_name company,s.interval,"
+                + "round(n.current_score*100)::integer confidence,'CHANGED'::text status,n.created_at::timestamp received,"
+                + "n.read_at::timestamp,n.previous_classification title,n.current_classification actor,"
+                + "(to_timestamp(n.current_candle_timestamp) at time zone 'UTC')::date transaction_date,null::float8 trade_return"
+                + " from technical_outlook_notifications n join technical_outlook_subscriptions s on s.id=n.subscription_id"
+                + " join stock_assets a on a.id=s.stock_asset_id where " + where,
+                java.util.Arrays.asList(userId, filter.ticker()));
+    }
+
+    /**
      * Custom alert triggers. A trigger is active while its outcome window is still running. In a watchlist
      * only triggers recorded for that list appear.
      */
@@ -264,6 +287,7 @@ public class SignalArchiveQuery {
                 case "CONGRESS" -> activityRows("CONGRESS", "congressional_trade", "member_name", userId, stockId, filter);
                 case "INSIDER" -> activityRows("INSIDER", "insider_trade", "insider_name", userId, stockId, filter);
                 case "CHART" -> chartRows(userId, filter);
+                case "OUTLOOK" -> outlookRows(userId, filter);
                 case "CUSTOM" -> customRows(userId, stockId, filter);
                 default -> throw new IllegalStateException("Unknown archive kind " + kind);
             };
@@ -305,7 +329,8 @@ public class SignalArchiveQuery {
                     r.getString("company"), r.getString("title"), r.getString("actor"),
                     TimeInterval.valueOf(r.getString("interval")), r.getString("status"),
                     r.getDate("transaction_date").toLocalDate(), r.getTimestamp("received").toLocalDateTime(),
-                    r.getTimestamp("read_at") != null, r.getObject("trade_return") == null ? null : r.getDouble("trade_return")));
+                    r.getTimestamp("read_at") != null, r.getObject("trade_return") == null ? null : r.getDouble("trade_return"),
+                    r.getObject("confidence") == null ? null : r.getInt("confidence")));
         };
     }
 
@@ -318,18 +343,23 @@ public class SignalArchiveQuery {
     }
 
     /**
-     * A chart alert or custom alert trigger in the archive.
+     * A chart alert or custom alert trigger, or an outlook change, in the archive.
      *
-     * @param title  the alert's name
-     * @param detail the chart alert's condition, or "matched/total" conditions of a custom alert
-     * @param status TRIGGERED, or MATCHED_ON_APPLY for a custom alert that already matched when it was applied
+     * @param title  the alert's name; for an outlook change, the previous classification
+     * @param detail the chart alert's condition, "matched/total" conditions of a custom alert, or the new
+     *               outlook classification
+     * @param status TRIGGERED, MATCHED_ON_APPLY for a custom alert that already matched when it was applied,
+     *               or CHANGED for an outlook change
+     * @param score  the new outlook score on the ±100 scale; null for alert triggers
      */
     public record AlertTrigger(String kind, long id, String symbol, String companyName, String title, String detail,
                                TimeInterval interval, String status, java.time.LocalDate candleDate,
-                               java.time.LocalDateTime received, boolean hasBeenRead, Double outcomeReturn) {
+                               java.time.LocalDateTime received, boolean hasBeenRead, Double outcomeReturn, Integer score) {
         public boolean custom() { return kind.equals("CUSTOM"); }
+        public boolean outlook() { return kind.equals("OUTLOOK"); }
         public String key() { return kind + ":" + id; }
         public String detailUrl() {
+            if (outlook()) return "/technical-outlook/changes/" + id;
             return custom() ? "/custom-alerts/triggers/" + id
                     : "/stock/" + org.springframework.web.util.UriUtils.encodePathSegment(symbol, java.nio.charset.StandardCharsets.UTF_8)
                     + "?chartAlert=" + id + "#general";

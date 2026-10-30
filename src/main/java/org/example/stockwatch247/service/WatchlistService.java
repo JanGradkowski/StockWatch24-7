@@ -35,6 +35,9 @@ public class WatchlistService {
     private org.springframework.context.ApplicationEventPublisher events;
     @org.springframework.beans.factory.annotation.Autowired private WatchlistAllowedSignals permissions;
     @org.springframework.beans.factory.annotation.Autowired(required=false) private TrackedInstrumentGuard guard;
+    @org.springframework.beans.factory.annotation.Autowired(required=false) @org.springframework.context.annotation.Lazy
+    private HomeStocksService prices;
+    @org.springframework.beans.factory.annotation.Autowired(required=false) private CandleCompletionService completion;
     private final JdbcTemplate db;
     private final StockAssetRepository assets;
     private final TwelveDataService market;
@@ -173,6 +176,14 @@ public class WatchlistService {
     }
 
     public MemberPage members(User user,long id,int page,String group,String query) {
+        return members(user,id,page,group,query,"symbol");
+    }
+
+    /**
+     * One page of a list's members. {@code sort} is "symbol", "gain" or "loss": the last two sort by the change
+     * between the latest two completed daily closes, members without stored closes last.
+     */
+    public MemberPage members(User user,long id,int page,String group,String query,String sort) {
         requireOwned(user,id);
         int offset=Math.max(0,Math.min(page,100000))*50;
         String search=query==null?"":query.trim().toLowerCase(Locale.ROOT);
@@ -187,7 +198,20 @@ public class WatchlistService {
         long count=db.queryForObject("select count(*) "+where,Long.class,params);
         List<Object> paged=new ArrayList<>(Arrays.asList(params)); paged.add(offset);
         var tracked=new HashMap<String,AlertRuleService.TrackedCompanyView>();
-        List<MemberView> rows=db.query("select a.ticker_symbol,a.company_name,a.exchange,a.currency,a.instrument_type "+where+" order by a.ticker_symbol limit 50 offset ?",
+        String order="a.ticker_symbol";
+        if(("gain".equals(sort) || "loss".equals(sort)) && completion!=null) {
+            // The latest two completed daily closes, the same ones the price column shows.
+            where=where.replace("where m.watchlist_id=?","""
+                left join lateral (select (array_agg(c.close_price order by c.timestamp desc))[1]
+                        / nullif((array_agg(c.close_price order by c.timestamp desc))[2], 0) - 1 change
+                    from (select timestamp, close_price from candles where symbol=a.ticker_symbol and time_interval='1d'
+                        and timestamp<%d and close_price>0 and close_price<'Infinity'::float8
+                        order by timestamp desc limit 2) c
+                    having count(*)=2) q on true
+                where m.watchlist_id=?""".formatted(completion.firstIncompleteCandleTimestamp(org.example.stockwatch247.model.enums.TimeInterval.DAILY)));
+            order="q.change "+("gain".equals(sort)?"desc":"asc")+" nulls last, a.ticker_symbol";
+        }
+        List<MemberView> rows=db.query("select a.ticker_symbol,a.company_name,a.exchange,a.currency,a.instrument_type "+where+" order by "+order+" limit 50 offset ?",
             (r,n)->new MemberView(r.getString(1),r.getString(2),r.getString(3),r.getString(4),r.getString(5),tracked.get(r.getString(1))),paged.toArray());
         alerts.getActiveCompanyViews(user, rows.stream().map(MemberView::symbol).collect(java.util.stream.Collectors.toSet()))
                 .forEach(row -> tracked.put(row.symbol(), row));
@@ -206,7 +230,8 @@ public class WatchlistService {
                     + "where w.id=? and a.ticker_symbol in (" + String.join(",", Collections.nCopies(rows.size(), "?")) + ")",
                     r -> { unread.put(r.getString(1), r.getLong(2)); }, args.toArray());
         }
-        rows = rows.stream().map(row -> new MemberView(row.symbol(),row.companyName(),row.exchange(),row.currency(),row.instrumentType(),tracked.get(row.symbol()),requested.getOrDefault(row.symbol(),List.of()),unread.getOrDefault(row.symbol(),0L))).toList();
+        Map<String,HomeStocksService.Quote> quotes=prices==null||rows.isEmpty()?Map.of():prices.quotes(user,rows.stream().map(MemberView::symbol).toList());
+        rows = rows.stream().map(row -> new MemberView(row.symbol(),row.companyName(),row.exchange(),row.currency(),row.instrumentType(),tracked.get(row.symbol()),requested.getOrDefault(row.symbol(),List.of()),unread.getOrDefault(row.symbol(),0L),quotes.get(row.symbol()))).toList();
         return new MemberPage(rows,count,Math.max(0,page),50);
     }
 
@@ -226,9 +251,10 @@ public class WatchlistService {
         return value;
     }
     public record ListView(long id,String name,String description,boolean pinned,long instruments,long monitored,long unread,List<String> allowedTypes) {}
-    public record MemberView(String symbol,String companyName,String exchange,String currency,String instrumentType,AlertRuleService.TrackedCompanyView monitoring,List<WatchlistSignalSettingsService.Selection> signals,long unreadSignalCount) {
+    /** A list member; {@code quote} is its latest completed daily close from stored candles, or null without two. */
+    public record MemberView(String symbol,String companyName,String exchange,String currency,String instrumentType,AlertRuleService.TrackedCompanyView monitoring,List<WatchlistSignalSettingsService.Selection> signals,long unreadSignalCount,HomeStocksService.Quote quote) {
         public MemberView(String symbol,String companyName,String exchange,String currency,String instrumentType,AlertRuleService.TrackedCompanyView monitoring) {
-            this(symbol,companyName,exchange,currency,instrumentType,monitoring,List.of(),0);
+            this(symbol,companyName,exchange,currency,instrumentType,monitoring,List.of(),0,null);
         }
     }
 

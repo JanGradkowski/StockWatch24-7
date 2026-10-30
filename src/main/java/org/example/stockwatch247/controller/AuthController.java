@@ -473,8 +473,8 @@ public class AuthController {
         model.addAttribute("archive", archive);
         archiveNavigation(model, archive, filter, "/signals");
         model.addAttribute("archiveTypes", customAlertId != null ? List.of()
-                : watchlistId != null ? List.of("candlestick", "elliott", "harmonic", "custom", "congress", "insider")
-                : List.of("candlestick", "elliott", "harmonic", "chart", "custom"));
+                : watchlistId != null ? List.of("candlestick", "elliott", "harmonic", "outlook", "custom", "congress", "insider")
+                : List.of("candlestick", "elliott", "harmonic", "outlook", "chart", "custom"));
         return "all-signals";
     }
 

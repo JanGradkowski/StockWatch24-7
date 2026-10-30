@@ -39,6 +39,7 @@ public class ChartController {
     private static final int LATEST_WAVE_CANDLES = 100;
     private static final int HARMONIC_CONTEXT_CANDLES = 750;
     private static final java.time.Duration METADATA_REUSE = java.time.Duration.ofDays(30);
+    private static final java.time.Duration UNNAMED_METADATA_RETRY = java.time.Duration.ofDays(1);
 
     private final MarketDataService marketDataService;
     private final CandleRepository candleRepository;
@@ -564,10 +565,12 @@ public class ChartController {
         String requestedSymbol = symbol;
         String requestedMic = micCode;
         StockAsset stored = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol).orElse(null);
-        boolean fresh = stored != null && stored.hasConfirmedListing()
+        // A listing no provider could name is retried once a day, not on every page view.
+        boolean fresh = stored != null
                 && !isInconsistentUsMetadata(stored, symbol)
                 && stored.getMetadataRefreshedAt() != null
-                && stored.getMetadataRefreshedAt().isAfter(java.time.Instant.now().minus(METADATA_REUSE))
+                && stored.getMetadataRefreshedAt().isAfter(java.time.Instant.now().minus(
+                        stored.hasConfirmedListing() ? METADATA_REUSE : UNNAMED_METADATA_RETRY))
                 && (requestedMic == null || requestedMic.equalsIgnoreCase(stored.getMicCode()));
         // Every stock page view used to spend one or two credits from the shared provider allowance.
         StockAsset asset = fresh ? stored : twelveDataService.refreshStockAssetMetadata(requestedSymbol, requestedMic);
@@ -578,7 +581,7 @@ public class ChartController {
                 log.warn("Yahoo Finance metadata refresh unavailable for " + symbol + ": " + e.getMessage());
             }
         }
-        if (!fresh && asset.hasConfirmedListing() && asset.getId() != null) {
+        if (!fresh && asset.getId() != null) {
             asset.setMetadataRefreshedAt(java.time.Instant.now());
             StockAsset saved = stockAssetRepository.save(asset);
             if (saved != null) asset = saved;

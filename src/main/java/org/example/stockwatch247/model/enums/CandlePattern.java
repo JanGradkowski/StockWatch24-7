@@ -50,6 +50,22 @@ public enum CandlePattern {
     HARMONIC_ALTERNATE_AB_CD;
 
     /**
+     * The English name pages and emails show ("Elliott Bullish Wave IV End", "Gartley"); the translation
+     * tables key Polish names by it.
+     */
+    public String label() {
+        StringBuilder label = new StringBuilder();
+        String rawName = name().startsWith("HARMONIC_") ? name().substring("HARMONIC_".length()) : name();
+        for (String word : rawName.toLowerCase(java.util.Locale.ROOT).split("_")) {
+            if (!label.isEmpty()) label.append(' ');
+            // Wave numbers (II, IV, V) and harmonic legs (AB, CD) stay upper case.
+            if (word.matches("i{2,3}|iv|v|ab|cd")) label.append(word.toUpperCase(java.util.Locale.ROOT));
+            else label.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return label.toString();
+    }
+
+    /**
      * Learning-mode glossary id (js.glossary.&lt;id&gt;) that explains this pattern. Bullish and bearish
      * forms of an Elliott stage share one explanation; ANY has none.
      */

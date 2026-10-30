@@ -101,3 +101,69 @@ test('selection persists across pages and filters and bulk follows/removal send 
   assert.equal(new URL(doc.querySelector('.wl-view-action').href).searchParams.get('ticker'),'ABC.L');
   dom.window.close();
 });
+
+function harness(members) {
+  const dom = new JSDOM('<body><div data-named-watchlists data-selected-id="1"></div></body>',
+    { runScripts: 'outside-only', url: 'https://watchlist.test' });
+  const requests = [];
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new dom.window.Event('close')); };
+  dom.window.fetch = async (url, options = {}) => {
+    const path = new URL(url, 'https://watchlist.test');
+    requests.push({ path, body: options.body ? JSON.parse(options.body) : null });
+    let value;
+    if (path.pathname.endsWith('/imports/preview')) value = { uniqueCount: 3, duplicates: 0, alreadyPresent: 0, newlyMonitored: 0,
+      capacityRemaining: 290, allowed: true, warning: null, skippedTickerInstruments: 0, congressRemaining: 5, insiderRemaining: 5 };
+    else if (path.pathname.endsWith('/indexes')) value = [];
+    else if (path.pathname.endsWith('/members')) value = members;
+    else value = [{ id: 1, name: 'Research', instruments: 1 }];
+    return { ok: true, status: 200, text: async () => JSON.stringify(value), json: async () => value };
+  };
+  dom.window.StockWatchI18n = StockWatchI18n;
+  for (const file of ['watchlist-picker', 'watchlist-settings', 'watchlists']) dom.window.eval(fs.readFileSync(`src/main/resources/static/js/${file}.js`, 'utf8'));
+  return { dom, requests };
+}
+
+const settle = () => new Promise(resolve => setTimeout(resolve, 35));
+
+test('member rows show the latest stored close, its change, a sparkline and the followed outlook', async () => {
+  const { dom, requests } = harness({ total: 2, pageSize: 50, items: [
+    { symbol: 'AAPL', companyName: 'Apple Inc.', exchange: 'NASDAQ', currency: 'USD', signals: [],
+      quote: { close: 343.91, changePercent: -1.1, closeTimestamp: 1793059200, sparkline: 'M0.0 2.0 L100.0 30.0',
+        outlookLabel: 'Moderate buy outlook', outlookTone: 'buy' } },
+    { symbol: 'NEW', companyName: 'New listing', exchange: 'NYSE', currency: 'USD', signals: [], quote: null }] });
+  await settle();
+  const doc = dom.window.document, rows = doc.querySelectorAll('tbody tr');
+  assert.deepEqual([...doc.querySelectorAll('thead th')].map(th => th.textContent).slice(0, 2), ['Instrument', 'Last close']);
+  const price = rows[0].querySelector('.wl-price-cell');
+  assert.equal(price.querySelector('.wl-price strong').textContent, '343.91');
+  assert.equal(price.querySelector('.wl-price-change').textContent, '−1.10%');
+  assert.ok(price.querySelector('.wl-price-change').classList.contains('is-down'));
+  assert.equal(price.querySelector('.wl-spark path').getAttribute('d'), 'M0.0 2.0 L100.0 30.0');
+  assert.equal(price.querySelector('.wl-price-outlook').textContent, 'Daily: Moderate buy outlook');
+  assert.equal(rows[1].querySelector('.wl-price-cell').textContent, 'No daily closes stored yet');
+
+  const sort = doc.querySelector('[aria-label="Sort by"]');
+  sort.value = 'loss'; sort.dispatchEvent(new dom.window.Event('change')); await settle();
+  assert.equal(requests.filter(request => request.path.pathname === '/api/watchlists/1/members').at(-1).path.searchParams.get('sort'), 'loss');
+  dom.window.close();
+});
+
+test('pasted tickers are cleaned, de-duplicated and sent with the import preview', async () => {
+  const { dom, requests } = harness({ total: 0, pageSize: 50, items: [] });
+  await settle();
+  const doc = dom.window.document, button = (text, root = doc) => [...root.querySelectorAll('button')].find(b => b.textContent === text);
+  button('Add instruments / edit').click(); await settle();
+  const dialog = doc.querySelector('dialog.wl-editor');
+  const textarea = dialog.querySelector('.wl-paste textarea');
+  textarea.value = 'Symbol\n"aapl", MSFT;msft\tbrk.b\n$$$ bad/one';
+  button('Add tickers', dialog).click();
+  assert.equal(dialog.querySelector('.wl-paste [role="status"]').textContent, '3 tickers added. Not valid tickers: $$$, BAD/ONE');
+  assert.equal(textarea.value, '');
+  const pastedRow = [...dialog.querySelectorAll('.wl-selection-row')].find(row => row.textContent.includes('3 pasted tickers'));
+  assert.ok(pastedRow.textContent.includes('AAPL, MSFT, BRK.B'));
+  dialog.querySelector('form').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await settle();
+  const preview = requests.find(request => request.path.pathname.endsWith('/imports/preview'));
+  assert.deepEqual(preview.body.symbols, ['AAPL', 'MSFT', 'BRK.B']);
+  dom.window.close();
+});

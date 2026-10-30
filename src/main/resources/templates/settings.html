@@ -85,6 +85,16 @@
         <input type="hidden" name="paused" th:value="${!user.notificationEmailsPaused}" value="true">
         <button class="btn-secondary" type="submit" th:text="${user.notificationEmailsPaused} ? #{settings.alertEmails.resume} : #{settings.alertEmails.pause}">Pause all alert emails</button>
       </form>
+      <form th:action="@{/settings/alert-email-digest}" method="post" class="settings-digest-form">
+        <fieldset>
+          <legend th:text="#{settings.alertEmails.deliveryLegend}">How signal emails arrive</legend>
+          <label class="settings-radio"><input type="radio" name="digest" value="false" th:checked="${!user.alertEmailDigest}">
+            <span><strong th:text="#{settings.alertEmails.immediate}">One email per alert</strong><small th:text="#{settings.alertEmails.immediateNote}">Each signal, lifecycle update and outlook change is emailed as soon as a check records it.</small></span></label>
+          <label class="settings-radio"><input type="radio" name="digest" value="true" th:checked="${user.alertEmailDigest}">
+            <span><strong th:text="#{settings.alertEmails.digest}">One summary per check run</strong><small th:text="#{settings.alertEmails.digestNote}">Alerts are collected and sent together once your checks have been quiet for 10 minutes, at most an hour after the first one. Chart, custom, insider and congressional alerts keep their own emails.</small></span></label>
+        </fieldset>
+        <button class="btn-secondary" type="submit" th:text="#{settings.alertEmails.saveDelivery}">Save email delivery</button>
+      </form>
     </section>
 
     <th:block th:if="${settingsTab == 'analysis'}">

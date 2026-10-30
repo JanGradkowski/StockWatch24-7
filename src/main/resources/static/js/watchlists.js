@@ -40,6 +40,44 @@
     for (const [value, text] of options) { const o = n('option', text); o.value = value; input.append(o); }
     label.append(input); return { label, input };
   }
+  /**
+   * Tickers from pasted text: commas, semicolons, tabs, spaces and new lines separate them; quotes and a
+   * "Symbol"/"Ticker" header are dropped. Values the server would reject come back as invalid.
+   */
+  function parseTickers(text) {
+    const valid = [], invalid = [];
+    String(text || '').split(/[\s,;|]+/).map(value => value.replace(/^["']+|["']+$/g, '').trim().toUpperCase())
+      .filter(value => value && !['SYMBOL', 'TICKER', 'SYMBOLS', 'TICKERS'].includes(value))
+      .forEach(value => {
+        const target = /^[A-Z0-9^][A-Z0-9.^=&_-]{0,19}$/.test(value) ? valid : invalid;
+        if (!target.includes(value)) target.push(value);
+      });
+    return { valid, invalid };
+  }
+  /** Latest completed daily close, its change, a 30-close sparkline and the followed daily outlook. */
+  function priceCell(item) {
+    const cell = n('td', null, 'wl-price-cell'); cell.dataset.label = i18n.t('watchlists.column.price');
+    const quote = item.quote;
+    if (!quote) { cell.append(n('span', i18n.t('watchlists.noPrice'), 'wl-no-follows')); return cell; }
+    const rising = quote.changePercent >= 0;
+    const price = n('div', null, 'wl-price');
+    price.append(n('strong', i18n.number(quote.close, quote.close < 1 ? 4 : 2)),
+      n('small', item.currency || ''),
+      n('span', `${rising ? '+' : '−'}${i18n.number(Math.abs(quote.changePercent), 2)}%`,
+        `wl-price-change ${rising ? 'is-up' : 'is-down'}`));
+    cell.append(price);
+    if (quote.sparkline) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 100 32'); svg.setAttribute('preserveAspectRatio', 'none');
+      svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
+      svg.classList.add('wl-spark', rising ? 'is-up' : 'is-down');
+      const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', quote.sparkline);
+      svg.append(path); cell.append(svg);
+    }
+    cell.append(n('small', i18n.t('watchlists.closeOn', i18n.date(quote.closeTimestamp * 1000, { day: 'numeric', month: 'short', timeZone: 'UTC' })), 'wl-price-date'));
+    if (quote.outlookLabel) cell.append(n('span', i18n.t('watchlists.dailyOutlook', quote.outlookLabel), `wl-price-outlook is-${quote.outlookTone}`));
+    return cell;
+  }
   function modal(title) {
     const dialog = n('dialog', null, 'wl-dialog'); const heading = n('h2', title);
     heading.id = `wl-dialog-${Date.now()}`; dialog.setAttribute('aria-labelledby', heading.id); dialog.append(heading);
@@ -109,7 +147,8 @@
     const searchField = field(i18n.t('watchlists.search'), 'search'), search = searchField.input;
     search.placeholder = i18n.t('watchlists.searchPlaceholder'); search.setAttribute('aria-label', i18n.t('watchlists.searchAria', list.name));
     const group = select(i18n.t('watchlists.instrumentType'), ['all', 'stocks', 'funds'].map(value => [value, i18n.t(`watchlists.group.${value}`)]));
-    toolbar.append(searchField.label, group.label);
+    const sort = select(i18n.t('watchlists.sortBy'), ['symbol', 'gain', 'loss'].map(value => [value, i18n.t(`watchlists.sort.${value}`)]));
+    toolbar.append(searchField.label, group.label, sort.label);
     const status = n('p', '', 'wl-status'); status.setAttribute('role', 'status');
     const tableArea = n('div', null, 'wl-table-wrap'), pages = n('div', null, 'wl-actions');
     tableArea.tabIndex = 0; tableArea.setAttribute('role', 'region'); tableArea.setAttribute('aria-label', i18n.t('watchlists.tableAria', list.name));
@@ -150,7 +189,7 @@
     async function load() {
       const request = ++sequence; status.textContent = i18n.t('watchlists.loadingInstruments');
       try {
-        const data = await api(`/api/watchlists/${list.id}/members?${new URLSearchParams({ page, group: group.input.value, q: search.value })}`);
+        const data = await api(`/api/watchlists/${list.id}/members?${new URLSearchParams({ page, group: group.input.value, q: search.value, sort: sort.input.value })}`);
         if (request !== sequence || !body.isConnected) return;
         tableArea.replaceChildren(); pages.replaceChildren();
         status.textContent = data.total
@@ -158,7 +197,7 @@
           : i18n.t('watchlists.noInstruments');
         visibleSymbols = data.items.map(item => item.symbol);
         const table = n('table', null, 'wl-table'), head = n('thead'), row = n('tr'), tbody = n('tbody');
-        for (const column of ['instrument', 'following', 'unread', 'actions']) { const th = n('th', i18n.t(`watchlists.column.${column}`)); th.scope = 'col'; row.append(th); }
+        for (const column of ['instrument', 'price', 'following', 'unread', 'actions']) { const th = n('th', i18n.t(`watchlists.column.${column}`)); th.scope = 'col'; row.append(th); }
         head.append(row); table.append(head, tbody);
         for (const item of data.items) {
           const tr = n('tr'), instrument = n('td', null, 'wl-instrument-cell');
@@ -168,7 +207,7 @@
           const selectionLabel = n('label', null, 'wl-member-select'); selectionLabel.append(check, n('span', i18n.t('watchlists.select')));
           instrument.append(selectionLabel);
           const signalsUrl = `/signals?${new URLSearchParams({ watchlistId: list.id, ticker: item.symbol })}`;
-          instrument.append(link(item.symbol, signalsUrl), n('small', item.companyName), n('small', `${item.exchange} · ${item.currency}`)); tr.append(instrument);
+          instrument.append(link(item.symbol, signalsUrl), n('small', item.companyName), n('small', `${item.exchange} · ${item.currency}`)); tr.append(instrument, priceCell(item));
           const follows = item.signals || [];
           const types = ['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION', 'OUTLOOK', 'CONGRESS', 'INSIDER'];
           const following = n('td', null, 'wl-following-cell'); following.dataset.label = i18n.t('watchlists.column.following');
@@ -223,7 +262,8 @@
       } catch (error) { if (request === sequence) { status.textContent = error.message; pages.replaceChildren(button(i18n.t('common.retry'), load)); } }
     }
     search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { page = 0; load(); }, 250); });
-    group.input.addEventListener('change', () => { page = 0; load(); }); load();
+    group.input.addEventListener('change', () => { page = 0; load(); });
+    sort.input.addEventListener('change', () => { page = 0; load(); }); load();
 
     /** Custom alerts covering the shown stocks, as chips beside their follows (one request per page). */
     async function memberCustomAlerts(current, items, tbody, request) {
@@ -397,6 +437,20 @@
     resultsNote.setAttribute('role', 'status');
     Object.entries({ role: 'combobox', 'aria-autocomplete': 'list', 'aria-controls': results.id, 'aria-expanded': 'false' })
       .forEach(([name, value]) => search.input.setAttribute(name, value));
+    // A pasted list (a broker export column, a spreadsheet range) adds many tickers at once.
+    const paste = n('details', null, 'wl-paste'), pasteSummary = n('summary', i18n.t('watchlists.pasteTitle'));
+    const pasteField = field(i18n.t('watchlists.pasteLabel'), 'textarea'), pasteNote = n('p', '', 'wl-muted');
+    pasteField.input.rows = 4; pasteField.input.placeholder = i18n.t('watchlists.pastePlaceholder'); pasteNote.setAttribute('role', 'status');
+    const pasteButton = button(i18n.t('watchlists.pasteAdd'), () => {
+      const { valid, invalid } = parseTickers(pasteField.input.value);
+      const added = valid.filter(symbol => !selected.has(symbol) && !pasted.has(symbol));
+      added.forEach(symbol => pasted.add(symbol));
+      pasteNote.textContent = [i18n.plural('watchlists.pasteAdded', added.length, added.length),
+        invalid.length ? i18n.t('watchlists.pasteInvalid', invalid.slice(0, 10).join(', ') + (invalid.length > 10 ? ' …' : '')) : ''].filter(Boolean).join(' ');
+      if (added.length) { pasteField.input.value = ''; changed(); }
+    });
+    paste.append(pasteSummary, n('p', i18n.t('watchlists.pasteHelp'), 'wl-muted'), pasteField.label, pasteButton, pasteNote);
+    instruments.append(paste);
     const market = n('section', null, 'wl-market-browser'); market.setAttribute('aria-label', i18n.t('watchlists.browseIndexes'));
     market.append(n('h3', i18n.t('watchlists.browseIndexes')), n('p', i18n.t('watchlists.browseIndexesHelp'), 'wl-muted'));
     const regions = n('div', null, 'wl-region-options'); regions.setAttribute('role', 'group'); regions.setAttribute('aria-label', i18n.t('watchlists.continents'));
@@ -420,11 +474,11 @@
     const actions = n('div', null, 'wl-actions'); actions.append(button(i18n.t('common.cancel'), () => d.close()), save);
     const footer = n('footer', null, 'wl-editor-footer'), footerRow = n('div', null, 'wl-editor-footer-row'); footerRow.append(count, actions);
     footer.append(status, previewArea, footerRow); form.append(identity, columns, footer);
-    const selected = new Map(), indexChoices = new Map(), indexInputs = new Map();
+    const selected = new Map(), indexChoices = new Map(), indexInputs = new Map(), pasted = new Set();
     let catalog = [], activeRegion = '', activeCountry = '', previewed = false, busy = false, settingsLoaded = !list;
     const modes = Object.fromEntries(['index', 'stocks', 'both'].map(mode => [mode, i18n.t(`watchlists.mode.${mode}`)]));
     function additions() {
-      const symbols = new Set(selected.keys()), indexIds = [];
+      const symbols = new Set([...selected.keys(), ...pasted]), indexIds = [];
       indexChoices.forEach(({ entry, mode }) => {
         if (mode !== 'stocks') symbols.add(entry.symbol);
         if (mode !== 'index') indexIds.push(entry.id);
@@ -440,13 +494,16 @@
         const b = button('×', remove); b.setAttribute('aria-label', i18n.t('watchlists.removeAria', title)); actions.append(b); row.append(text, actions); selections.append(row);
       };
       selected.forEach((item, symbol) => itemRow(symbol, item.name || i18n.t('watchlists.individualInstrument'), null, () => { selected.delete(symbol); changed(); }));
+      if (pasted.size) itemRow(i18n.plural('watchlists.pastedTickers', pasted.size, pasted.size),
+        [...pasted].slice(0, 12).join(', ') + (pasted.size > 12 ? ' …' : ''), null, () => { pasted.clear(); changed(); });
       indexChoices.forEach(({ entry, mode }) => itemRow(entry.name, `${modes[mode]} · ${mode === 'index' ? entry.symbol
         : mode === 'both' ? i18n.t('watchlists.stocksAndIndex', stockCount(entry.count)) : stockCount(entry.count)}`,
         () => chooseIndex(entry), () => { indexChoices.delete(entry.id); changed(); }));
-      if (!selected.size && !indexChoices.size) selections.append(n('p', i18n.t('watchlists.selectionsEmpty'), 'wl-muted'));
+      if (!selected.size && !pasted.size && !indexChoices.size) selections.append(n('p', i18n.t('watchlists.selectionsEmpty'), 'wl-muted'));
       indexInputs.forEach((input, id) => { input.checked = indexChoices.has(id); });
-      count.textContent = `${i18n.plural('watchlists.individualTickers', selected.size, selected.size)} · ${i18n.plural('watchlists.indexSelections', indexChoices.size, indexChoices.size)}`;
-      save.textContent = selected.size || indexChoices.size || monitoring.restrictionsChanged() || list?.instruments > 0 && monitoring.monitoringChanged() ? i18n.t('watchlists.reviewChanges') : i18n.t(list ? 'watchlists.save' : 'watchlists.create');
+      const tickers = selected.size + pasted.size;
+      count.textContent = `${i18n.plural('watchlists.individualTickers', tickers, tickers)} · ${i18n.plural('watchlists.indexSelections', indexChoices.size, indexChoices.size)}`;
+      save.textContent = tickers || indexChoices.size || monitoring.restrictionsChanged() || list?.instruments > 0 && monitoring.monitoringChanged() ? i18n.t('watchlists.reviewChanges') : i18n.t(list ? 'watchlists.save' : 'watchlists.create');
     }
     function chooseIndex(entry) {
       const choice = modal(i18n.t('watchlists.addIndexTitle', entry.name)); choice.classList.add('wl-index-dialog');
@@ -560,11 +617,11 @@
       const payload = { ...additions(), monitor: false,
         families: [], intervals: [], selections: monitoring.read(), includeExisting: applyExisting, applySettings: !list || monitoring.monitoringChanged() };
       try {
-        if (monitoring.restrictionsChanged() && !previewed && !selected.size && !indexChoices.size && !applyExisting) {
+        if (monitoring.restrictionsChanged() && !previewed && !selected.size && !pasted.size && !indexChoices.size && !applyExisting) {
           previewArea.replaceChildren(n('p', monitoring.restrictionSummary(), 'wl-status'));
           previewed = true; save.textContent = i18n.t('watchlists.saveChanges'); return;
         }
-        if ((selected.size || indexChoices.size || applyExisting) && !previewed) {
+        if ((selected.size || pasted.size || indexChoices.size || applyExisting) && !previewed) {
           const preview = await api(`/api/watchlists/imports/preview${list ? `?watchlistId=${list.id}` : ''}`, { method: 'POST', body: JSON.stringify(payload) });
           previewArea.replaceChildren(n('p', [i18n.plural('watchlists.uniqueInstruments', preview.uniqueCount, preview.uniqueCount),
             i18n.plural('watchlists.duplicatesRemoved', preview.duplicates, preview.duplicates),

@@ -95,7 +95,7 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
       if (pathname === '/watchlists/1') return route.fulfill({ contentType: 'text/html', body: template('_watchlists_') });
       if (pathname === '/home') return route.fulfill({ contentType: 'text/html', body: template('_home-') });
       if (pathname === '/ticker-alerts') return route.fulfill({ contentType: 'text/html', body: template('_ticker-alerts-', 'data-read-scope="ACTIVITY"') });
-      if (pathname === '/signals') return route.fulfill({ contentType: 'text/html', body: template('_signals-', url.searchParams.has('watchlistId') ? 'name="signalKeys"' : 'Mark every notification in your account') });
+      if (pathname === '/signals') return route.fulfill({ contentType: 'text/html', body: template('_signals-', url.searchParams.has('watchlistId') ? '/activity-signals/' : 'Mark every notification in your account') });
       const relative = pathname.replace(/-[a-f0-9]{32}(?=\.(js|css)$)/, '');
       const file = path.join(repo, 'src/main/resources/static', relative);
       if (file.startsWith(path.join(repo, 'src/main/resources/static')) && fs.existsSync(file) && fs.statSync(file).isFile()) {

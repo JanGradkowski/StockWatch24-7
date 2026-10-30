@@ -115,7 +115,8 @@ class NamedWatchlistIntegrationTest {
         assertThat(lists.members(owner,overlap.id(),0,"all","").items().getFirst().unreadSignalCount()).isZero();
         assertThat(lists.members(owner,unrelated.id(),0,"all","").items().getFirst().unreadSignalCount()).isEqualTo(1);
         assertThat(db.queryForObject("select count(*) from alert_events where id in (?,?) and read_at is null",Long.class,foreignEvent,unrelatedEvent)).isEqualTo(2);
-        assertThat(archiveQuery.page(owner.getId(),null,"date",false,0,50,new SignalArchiveFilter("all","",selected)).count()).isEqualTo(62);
+        // The archive lists what the unread count counted: 60 signals, the outlook change and two filings.
+        assertThat(archiveQuery.page(owner.getId(),null,"date",false,0,50,new SignalArchiveFilter("all","",selected)).count()).isEqualTo(63);
         assertThat(archiveQuery.page(owner.getId(),null,"date",false,0,50,new SignalArchiveFilter("unread","",selected)).count()).isZero();
         mvc.perform(post("/api/notifications/read-all").param("watchlistId",String.valueOf(selected)).with(csrf())
                 .with(user(owner.getEmail())).sessionAttr(AccountSession.SECURITY_VERSION,owner.getSecurityVersion()))
@@ -705,5 +706,38 @@ class NamedWatchlistIntegrationTest {
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("data-watchlist-shortcuts"))));
         mvc.perform(get("/technical-watchlist").with(user(owner.getEmail())).sessionAttr(AccountSession.SECURITY_VERSION, owner.getSecurityVersion())).andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("data-watchlist-shortcuts"))));
+    }
+
+    @Test void memberRowsCarryStoredClosesAndSortByTheDailyChange() {
+        StockAsset falling=new StockAsset();falling.setTickerSymbol("WD"+UUID.randomUUID().toString().substring(0,8).toUpperCase());
+        falling.setCompanyName("Falling test");falling.setExchange("NYSE");falling.setCurrency("USD");assets.saveAndFlush(falling);
+        long day=java.time.LocalDate.of(2026,10,20).atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond();
+        try {
+            for(int i=0;i<3;i++) {
+                candle(asset.getTickerSymbol(),day+i*86_400L,100+i*5);
+                candle(falling.getTickerSymbol(),day+i*86_400L,50-i*2);
+            }
+            long list=lists.create(owner,"Prices","");
+            lists.attach(owner,asset.getTickerSymbol(),List.of(list),null);
+            lists.attach(owner,falling.getTickerSymbol(),List.of(list),null);
+
+            var byGain=lists.members(owner,list,0,"all","","gain").items();
+            assertThat(byGain).extracting(WatchlistService.MemberView::symbol).containsExactly(asset.getTickerSymbol(),falling.getTickerSymbol());
+            assertThat(byGain.getFirst().quote().close()).isEqualTo(110.0);
+            assertThat(byGain.getFirst().quote().changePercent()).isCloseTo(110.0/105.0*100-100,within(1e-9));
+            assertThat(byGain.getFirst().quote().sparkline()).startsWith("M0.0 ");
+            assertThat(lists.members(owner,list,0,"all","","loss").items()).extracting(WatchlistService.MemberView::symbol)
+                    .containsExactly(falling.getTickerSymbol(),asset.getTickerSymbol());
+        } finally {
+            db.update("delete from candles where symbol in (?,?)",asset.getTickerSymbol(),falling.getTickerSymbol());
+            db.update("delete from watchlists where user_id=?",owner.getId());
+            assets.deleteById(falling.getId());
+        }
+    }
+    private void candle(String symbol,long timestamp,double close) {
+        db.update("""
+                insert into candles (symbol, time_interval, timestamp, open_price, high_price, low_price, close_price, volume, updated_at)
+                values (?, '1d', ?, ?, ?, ?, ?, 1000000, current_timestamp)
+                """,symbol,timestamp,close,close+1,close-1,close);
     }
 }

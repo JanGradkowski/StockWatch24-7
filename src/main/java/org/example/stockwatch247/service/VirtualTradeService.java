@@ -57,6 +57,11 @@ public class VirtualTradeService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setClock(java.time.Clock clock) { this.clock = clock; }
 
+    private org.example.stockwatch247.repository.AlertEventRepository alertEvents;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAlertEvents(org.example.stockwatch247.repository.AlertEventRepository alertEvents) { this.alertEvents = alertEvents; }
+
     public VirtualTradeService(VirtualTradeRepository tradeRepository,
                                StockAssetRepository stockAssetRepository,
                                CandleRepository candleRepository,
@@ -100,9 +105,17 @@ public class VirtualTradeService {
             notional = quantity.multiply(quote.price(), MONEY_CONTEXT).setScale(8, RoundingMode.HALF_UP);
         }
 
+        BigDecimal stop = optionalPositive(command.stopPrice(), "Stop loss");
+        BigDecimal target = optionalPositive(command.targetPrice(), "Target");
+        requirePlanAround(side, quote.price(), stop, target);
+        Long sourceSignal = sourceSignal(user, asset, command.sourceSignalId());
+
         Instant now = Instant.now();
         VirtualTrade trade = new VirtualTrade();
         trade.setUser(user);
+        trade.setStopPrice(stop);
+        trade.setTargetPrice(target);
+        trade.setSourceAlertEventId(sourceSignal);
         trade.setStockAsset(asset);
         trade.setSide(side);
         trade.setStatus(VirtualTradeStatus.TRACKING);
@@ -133,6 +146,7 @@ public class VirtualTradeService {
                 user, trade.getStockAsset().getTickerSymbol(), interval(trade.getAnalysisInterval()));
         Instant now = Instant.now();
         trade.setStatus(VirtualTradeStatus.CLOSED);
+        trade.setExitReason("MANUAL");
         trade.setExitPrice(quote.price());
         trade.setExitAt(now);
         trade.setExitQuoteTimestamp(quote.timestamp());
@@ -303,8 +317,105 @@ public class VirtualTradeService {
                 percent, directionalDifference, monetary, outcome,
                 Duration.between(trade.getEntryAt(), trade.getStatus() == VirtualTradeStatus.CLOSED
                         ? trade.getExitAt() : Instant.now()).toDays(),
-                "/virtual-trades/" + trade.getId());
+                "/virtual-trades/" + trade.getId(),
+                trade.getStopPrice(), trade.getTargetPrice(), trade.getExitReason(), exitReasonLabel(trade.getExitReason()),
+                trade.getSourceAlertEventId() == null ? null : "/alerts/signals/" + trade.getSourceAlertEventId());
     }
+
+    private static String exitReasonLabel(String reason) {
+        if (reason == null) return null;
+        return switch (reason) {
+            case "STOP" -> "Closed at the stop loss";
+            case "TARGET" -> "Closed at the target";
+            default -> "Closed by you";
+        };
+    }
+
+    /**
+     * A buy's stop lies below the entry and its target above; a sell (which tracks the loss avoided by selling)
+     * is the mirror image: its target below the entry, its stop above.
+     */
+    private static void requirePlanAround(VirtualTradeSide side, BigDecimal entry, BigDecimal stop, BigDecimal target) {
+        String price = entry.stripTrailingZeros().toPlainString();
+        if (side == VirtualTradeSide.BUY) {
+            if (stop != null && stop.compareTo(entry) >= 0)
+                throw new IllegalArgumentException("For a demo buy, the stop loss must be below the current price of " + price + ".");
+            if (target != null && target.compareTo(entry) <= 0)
+                throw new IllegalArgumentException("For a demo buy, the target must be above the current price of " + price + ".");
+        } else {
+            if (stop != null && stop.compareTo(entry) <= 0)
+                throw new IllegalArgumentException("For a demo sell, the stop loss must be above the current price of " + price + ".");
+            if (target != null && target.compareTo(entry) >= 0)
+                throw new IllegalArgumentException("For a demo sell, the target must be below the current price of " + price + ".");
+        }
+    }
+
+    /** The signal a trade practises, when it is the account's own signal on the same stock. */
+    private Long sourceSignal(User user, StockAsset asset, Long signalId) {
+        if (signalId == null || alertEvents == null) return null;
+        return alertEvents.findOwnedByIdsAndUser(List.of(signalId), user).stream()
+                .filter(event -> event.getAlertRule().getStockAsset().getId().equals(asset.getId()))
+                .map(org.example.stockwatch247.model.AlertEvent::getId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("The signal for this trade plan was not found."));
+    }
+
+    /**
+     * Closes an open trade at its stop or target on the first completed candle of its interval that opened after
+     * the trade and reached a level. A gap through a level fills at the candle's open; when one candle reaches both,
+     * the stop counts, since the order within the candle is unknown. Returns true when the trade was closed.
+     */
+    @Transactional
+    public boolean closeAtPlanLevel(long tradeId) {
+        VirtualTrade trade = tradeRepository.findById(tradeId).orElse(null);
+        if (trade == null || trade.getStatus() != VirtualTradeStatus.TRACKING || trade.getDeletedAt() != null
+                || trade.getStopPrice() == null && trade.getTargetPrice() == null || completion == null) return false;
+        String apiInterval = interval(trade.getAnalysisInterval());
+        long completeBefore = completion.firstIncompleteCandleTimestamp(trade.getAnalysisInterval());
+        List<Candle> candles = candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                trade.getStockAsset().getTickerSymbol(), apiInterval, trade.getEntryAt().getEpochSecond() - 1, completeBefore,
+                org.springframework.data.domain.PageRequest.of(0, 1000));
+        for (Candle candle : candles) {
+            PlanExit exit = planExit(trade.getSide(), trade.getStopPrice(), trade.getTargetPrice(), candle);
+            if (exit == null) continue;
+            Instant now = clock.instant();
+            trade.setStatus(VirtualTradeStatus.CLOSED);
+            trade.setExitReason(exit.reason());
+            trade.setExitPrice(exit.price());
+            trade.setExitAt(now);
+            trade.setExitQuoteTimestamp(candle.getTimestamp());
+            trade.setExitQuoteSource("STOP".equals(exit.reason()) ? "Stop loss" : "Target");
+            try {
+                trade.setExitSnapshot(writeSnapshot(snapshot(outlookService.getOutlook(
+                        trade.getUser(), trade.getStockAsset().getTickerSymbol(), apiInterval), now)));
+            } catch (RuntimeException unavailable) {
+                // The exit price and reason are what matter; the comparison is shown when a snapshot exists.
+            }
+            trade.setUpdatedAt(now);
+            tradeRepository.saveAndFlush(trade);
+            return true;
+        }
+        return false;
+    }
+
+    static PlanExit planExit(VirtualTradeSide side, BigDecimal stop, BigDecimal target, Candle candle) {
+        BigDecimal open = BigDecimal.valueOf(candle.getOpenPrice());
+        BigDecimal high = BigDecimal.valueOf(candle.getHighPrice());
+        BigDecimal low = BigDecimal.valueOf(candle.getLowPrice());
+        boolean buy = side == VirtualTradeSide.BUY;
+        // A buy is stopped by falling prices and reaches its target by rising ones; a sell is the reverse.
+        boolean stopGap = stop != null && (buy ? open.compareTo(stop) <= 0 : open.compareTo(stop) >= 0);
+        boolean targetGap = target != null && (buy ? open.compareTo(target) >= 0 : open.compareTo(target) <= 0);
+        if (stopGap) return new PlanExit("STOP", open);
+        if (targetGap) return new PlanExit("TARGET", open);
+        boolean stopHit = stop != null && (buy ? low.compareTo(stop) <= 0 : high.compareTo(stop) >= 0);
+        boolean targetHit = target != null && (buy ? high.compareTo(target) >= 0 : low.compareTo(target) <= 0);
+        if (stopHit) return new PlanExit("STOP", stop);
+        if (targetHit) return new PlanExit("TARGET", target);
+        return null;
+    }
+
+    record PlanExit(String reason, BigDecimal price) { }
 
     private VirtualTrade owned(User user, Long id) {
         if (id == null || id <= 0) throw new IllegalArgumentException("A valid demo trade is required.");
@@ -470,7 +581,12 @@ public class VirtualTradeService {
     }
 
     public record CreateCommand(String side, String interval, BigDecimal quantity,
-                                BigDecimal notionalValue, String clientRequestId) { }
+                                BigDecimal notionalValue, String clientRequestId,
+                                BigDecimal stopPrice, BigDecimal targetPrice, Long sourceSignalId) {
+        public CreateCommand(String side, String interval, BigDecimal quantity, BigDecimal notionalValue, String clientRequestId) {
+            this(side, interval, quantity, notionalValue, clientRequestId, null, null, null);
+        }
+    }
 
     public record TradeView(Long id, String symbol, String companyName, String side, String sideLabel,
                             String status, String statusLabel, String analysisInterval, String intervalLabel,
@@ -480,7 +596,13 @@ public class VirtualTradeService {
                             BigDecimal evaluationPrice,
                             Instant evaluationAt, String evaluationSource, double resultPercent,
                             double directionalPriceDifference, BigDecimal monetaryResult, String outcomeLabel,
-                            long trackingDays, String detailUrl) { }
+                            long trackingDays, String detailUrl, BigDecimal stopPrice, BigDecimal targetPrice,
+                            String exitReason, String exitReasonLabel, String sourceSignalUrl) {
+        /** Prices show two decimals, and four below 1.00 where cents would hide the moves. */
+        public int priceDigits(BigDecimal price) {
+            return price != null && price.abs().compareTo(BigDecimal.ONE) < 0 ? 4 : 2;
+        }
+    }
 
     public record ArchiveView(List<TradeView> trades, String sort, String direction, int totalTrades, int page, int totalPages) {
         public ArchiveView(List<TradeView> trades, String sort, String direction, int totalTrades) {

@@ -13,10 +13,10 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Home's "Your stocks" strip: up to six stocks from the user's watchlists (pinned lists first) with the latest
- * completed daily close, the change from the close before it, a sparkline of recent closes and the followed daily
- * outlook. Everything comes from stored candles and outlook snapshots, so opening Home never asks the market data
- * provider for prices.
+ * Home's "Your stocks" strip and the price column of watchlist tables: the latest completed daily close, the change
+ * from the close before it, a sparkline of recent closes and the followed daily outlook. Home shows up to six stocks
+ * from the user's watchlists (pinned lists first). Everything comes from stored candles and outlook snapshots, so
+ * neither page asks the market data provider for prices.
  */
 @Service
 public class HomeStocksService {
@@ -51,7 +51,25 @@ public class HomeStocksService {
                 """, (rs, row) -> new Listed(rs.getString(1), rs.getString(2), rs.getString(3)), user.getId(), LIMIT);
         if (listed.isEmpty()) return List.of();
 
-        String[] symbols = listed.stream().map(Listed::symbol).toArray(String[]::new);
+        Map<String, Quote> quotes = quotes(user, listed.stream().map(Listed::symbol).toList());
+        List<StockCard> cards = new ArrayList<>();
+        for (Listed stock : listed) {
+            Quote quote = quotes.get(stock.symbol());
+            if (quote == null) continue;
+            cards.add(new StockCard(stock.symbol(), stock.companyName(), stock.currency() == null ? "USD" : stock.currency(),
+                    quote.close(), quote.changePercent(), quote.closeTimestamp(), quote.sparkline(), quote.outlookLabel()));
+        }
+        return cards;
+    }
+
+    /**
+     * Prices of the given symbols from stored daily candles, keyed by symbol. A symbol with fewer than two completed
+     * closes is left out; {@code outlookLabel} is set when the user follows the symbol's daily outlook.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Quote> quotes(User user, java.util.Collection<String> requested) {
+        String[] symbols = requested.stream().distinct().toArray(String[]::new);
+        if (symbols.length == 0) return Map.of();
         long completeBefore = completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY);
         Map<String, List<Double>> closes = new HashMap<>();
         Map<String, Long> lastTimestamps = new HashMap<>();
@@ -74,24 +92,23 @@ public class HomeStocksService {
             closes.computeIfAbsent(symbol, ignored -> new ArrayList<>()).add(rs.getDouble(3));
             lastTimestamps.put(symbol, rs.getLong(2));
         });
+        if (closes.isEmpty()) return Map.of();
 
         Map<String, String> dailyOutlooks = new HashMap<>();
-        outlooks.watchlist(user).tickers().forEach(ticker -> ticker.intervals().stream()
+        if (user != null) outlooks.watchlist(user).tickers().forEach(ticker -> ticker.intervals().stream()
                 .filter(interval -> interval.interval() == TimeInterval.DAILY && interval.available())
                 .findFirst()
                 .ifPresent(interval -> dailyOutlooks.put(ticker.symbol(), interval.classification())));
 
-        List<StockCard> cards = new ArrayList<>();
-        for (Listed stock : listed) {
-            List<Double> series = closes.getOrDefault(stock.symbol(), List.of());
-            if (series.size() < 2) continue;
+        Map<String, Quote> quotes = new HashMap<>();
+        closes.forEach((symbol, series) -> {
+            if (series.size() < 2) return;
             double close = series.getLast();
             double previous = series.get(series.size() - 2);
-            cards.add(new StockCard(stock.symbol(), stock.companyName(), stock.currency() == null ? "USD" : stock.currency(),
-                    close, (close / previous - 1) * 100, lastTimestamps.get(stock.symbol()), sparkline(series),
-                    dailyOutlooks.get(stock.symbol())));
-        }
-        return cards;
+            quotes.put(symbol, new Quote(close, (close / previous - 1) * 100, lastTimestamps.get(symbol), sparkline(series),
+                    dailyOutlooks.get(symbol)));
+        });
+        return quotes;
     }
 
     /** An SVG path through the closes, oldest on the left, scaled to fill the box's height. */
@@ -111,6 +128,20 @@ public class HomeStocksService {
     private record Listed(String symbol, String companyName, String currency) { }
 
     /**
+     * A symbol's latest completed daily close and the change from the close before it. {@code outlookLabel} is the
+     * followed daily outlook's classification (translated in JSON responses), or null when it is not followed.
+     */
+    public record Quote(double close, double changePercent, long closeTimestamp, String sparkline, String outlookLabel) {
+        public String outlookTone() { return tone(outlookLabel); }
+    }
+
+    static String tone(String outlook) {
+        if (outlook == null) return "neutral";
+        String text = outlook.toLowerCase(Locale.ROOT);
+        return text.contains("buy") ? "buy" : text.contains("sell") ? "sell" : "neutral";
+    }
+
+    /**
      * One stock on Home. {@code changePercent} compares the latest completed close with the one before it;
      * {@code outlook} is the followed daily outlook's classification, or null when it is not followed.
      */
@@ -120,10 +151,6 @@ public class HomeStocksService {
 
         public double changeMagnitude() { return Math.abs(changePercent); }
 
-        public String outlookTone() {
-            if (outlook == null) return "neutral";
-            String text = outlook.toLowerCase(Locale.ROOT);
-            return text.contains("buy") ? "buy" : text.contains("sell") ? "sell" : "neutral";
-        }
+        public String outlookTone() { return tone(outlook); }
     }
 }

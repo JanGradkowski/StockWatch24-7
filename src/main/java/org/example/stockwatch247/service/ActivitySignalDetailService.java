@@ -283,7 +283,7 @@ public class ActivitySignalDetailService {
         for (AlertEvent event : events) {
             RelatedSignalView view = new RelatedSignalView(
                     event.getId(),
-                    humanize(event.getPattern().name()),
+                    event.getPattern().label(),
                     event.getTradeSignal() == TradeSignal.SELL ? "Sell/Short" : "Buy",
                     humanize(event.getAlertRule().getInterval().name()),
                     epochDate(event.getSignalCandleTimestamp()),

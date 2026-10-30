@@ -31,17 +31,9 @@
 /* The top bar is a flat strip joined to the sidebar instead of a floating card. */
 :root[data-theme] .ui-refresh .app-navigation .navbar {
     top: 0;
-    width: 100%;
-    max-width: none;
-    min-height: 64px;
-    margin: 0;
-    padding: 12px 76px 12px var(--rf-gutter);
-    border: 0;
+
     border-bottom: 1px solid var(--rf-line);
-    border-radius: 0;
-    background: var(--bg-color);
-    box-shadow: none;
-    backdrop-filter: none;
+
 }
 :root[data-theme] .ui-refresh .theme-toggle { border-color: var(--rf-line); background: var(--rf-panel); box-shadow: none; backdrop-filter: none; }
 /* Only the app's top bar moves the switch; the landing and about bars keep it centred in their own bar. */
@@ -169,8 +161,8 @@
 
 :root[data-theme] .ui-refresh .welcome-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin: 4px 0 20px; }
 :root[data-theme] .ui-refresh .welcome-header .eyebrow { display: none; }
-:root[data-theme] .ui-refresh .welcome-text { margin: 0; font-size: clamp(1.5rem, 2vw, 1.75rem); font-weight: 650; }
-:root[data-theme] .ui-refresh .welcome-text .primary-text { color: inherit; }
+:root[data-theme] .ui-refresh .welcome-text { margin: 0; }
+
 :root[data-theme] .ui-refresh .welcome-subtitle { margin: 6px 0 0; color: var(--muted-text); font-size: var(--fs-md); }
 :root[data-theme] .ui-refresh .wl-hero-actions { display: flex; align-items: center; gap: 8px; }
 
@@ -246,7 +238,7 @@
 
 /* Ticker, price and practice actions share one slim bar; the interval label repeats the switch, so it goes. */
 :root[data-theme] .ui-refresh .price-header {
-    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "identity quote actions";
+    display: grid;
     align-items: center; gap: 8px 24px; min-height: 0; margin: 0 0 8px; padding: 4px 0 12px;
     border: 0; border-radius: 0; background: transparent; box-shadow: none;
 }
@@ -324,8 +316,7 @@
 :root[data-theme] .ui-refresh :is(.stock-workspace-action-card, .alert-panel) { margin: 0 0 16px; padding: 20px; }
 :root[data-theme] .ui-refresh .stock-workspace-action-kicker { color: var(--muted-text); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none; }
 /* The launcher links to another page, so its button is secondary; the tab keeps one primary action (Apply). */
-:root[data-theme] .ui-refresh .stock-workspace-action-card .btn-accent { border: 1px solid var(--rf-line); background: transparent; color: var(--text-color); }
-:root[data-theme] .ui-refresh .stock-workspace-action-card .btn-accent:hover { background: var(--rf-raised); filter: none; }
+
 :root[data-theme] .ui-refresh .alert-section {
     border: 1px solid var(--rf-line-soft); border-radius: 10px; background: transparent; background-image: none; box-shadow: none;
 }
@@ -752,7 +743,7 @@
     :root[data-theme] .ui-refresh .welcome-header { align-items: flex-start; }
     :root[data-theme] .ui-refresh .panel-heading-actions { justify-content: flex-start; }
     :root[data-theme] .ui-refresh .price-header {
-        grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "identity quote" "actions actions"; gap: 10px 12px;
+          gap: 10px 12px;
     }
     :root[data-theme] .ui-refresh .quote-block { justify-content: flex-end; text-align: right; }
     :root[data-theme] .ui-refresh .quote-meta { flex-basis: 100%; }

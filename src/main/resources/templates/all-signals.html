@@ -228,38 +228,43 @@
               </details>
               <details class="archive-row-details"><summary th:text="#{signals.transactionDetails}">Transaction details</summary><div class="archive-row-detail-content"><span th:text="#{signals.transactionDate(${#temporals.format(activity.transactionDate(), 'dd MMM yyyy')})}"></span></div></details>
             </div>
-            <div th:if="${entry.trigger() != null}" th:with="trigger=${entry.trigger()}" class="signal-archive-record">
+            <div th:if="${entry.trigger() != null}" th:with="trigger=${entry.trigger()},triggerName=${entry.trigger().outlook() ? #messages.msg('home.automatedOutlook') : entry.trigger().title()}" class="signal-archive-record">
               <label class="signal-select-control">
-                <input type="checkbox" name="signalKeys" th:value="${trigger.key()}" class="signal-select-checkbox" data-signal-checkbox th:aria-label="#{signals.selectAria(${trigger.title()}, ${trigger.symbol()})}">
+                <input type="checkbox" name="signalKeys" th:value="${trigger.key()}" class="signal-select-checkbox" data-signal-checkbox th:aria-label="#{signals.selectAria(${triggerName}, ${trigger.symbol()})}">
               </label>
               <a th:href="${trigger.custom()} ? @{${trigger.detailUrl()}(returnTo=${archiveReturnUrl})} : @{${trigger.detailUrl()}}" class="signal-archive-row" th:classappend="${trigger.hasBeenRead()} ? ' is-read' : ' is-unread'"
-                 th:aria-label="${#messages.msg(trigger.hasBeenRead() ? 'signals.openAria.read' : 'signals.openAria.unread', trigger.title(), trigger.symbol())}">
+                 th:aria-label="${#messages.msg(trigger.hasBeenRead() ? 'signals.openAria.read' : 'signals.openAria.unread', triggerName, trigger.symbol())}">
                 <div class="signal-archive-pattern">
-                  <strong><span th:unless="${trigger.hasBeenRead()}" class="unread-dot" title="Unread" th:title="#{signals.state.unread}"><span class="visually-hidden" th:text="#{signals.unreadPrefix}">Unread: </span></span><span th:text="${trigger.title()}">Breakout line</span></strong>
+                  <strong><span th:unless="${trigger.hasBeenRead()}" class="unread-dot" title="Unread" th:title="#{signals.state.unread}"><span class="visually-hidden" th:text="#{signals.unreadPrefix}">Unread: </span></span><span th:text="${triggerName}">Breakout line</span></strong>
                   <div class="latest-signal-tags">
-                    <span class="latest-family-tag" th:classappend="${trigger.custom()} ? ' custom-alert-tag' : ' chart-alert-tag'" th:text="${trigger.custom()} ? #{signals.type.custom} : #{signals.type.chart}">Chart alert</span>
+                    <span class="latest-family-tag" th:classappend="${trigger.custom()} ? ' custom-alert-tag' : (${trigger.outlook()} ? '' : ' chart-alert-tag')" th:text="${trigger.custom()} ? #{signals.type.custom} : (${trigger.outlook()} ? #{home.outlookChange} : #{signals.type.chart})">Chart alert</span>
                     <span th:if="${trigger.custom()}" class="latest-direction-tag" th:text="#{signals.conditionsMet(${trigger.detail()})}">3/3 conditions met</span>
-                    <span th:unless="${trigger.custom()}" class="latest-direction-tag" th:text="${#messages.msgOrNull('chartAlert.condition.' + trigger.detail()) ?: trigger.detail()}">Crossed up</span>
+                    <span th:if="${trigger.outlook()}" class="latest-direction-tag outlook-transition" th:text="${#tr.text(trigger.title()) + ' → ' + #tr.text(trigger.detail())}">Slight buy outlook → Neutral outlook</span>
+                    <span th:unless="${trigger.custom() or trigger.outlook()}" class="latest-direction-tag" th:text="${#messages.msgOrNull('chartAlert.condition.' + trigger.detail()) ?: trigger.detail()}">Crossed up</span>
                   </div>
                 </div>
                 <div class="signal-archive-company"><strong th:text="${trigger.symbol()}">AAPL</strong><span th:text="${trigger.companyName()}">Apple Inc.</span></div>
                 <span class="latest-interval" th:text="${#messages.msg('common.interval.' + trigger.interval().name())}">Daily</span>
                 <div class="signal-archive-date"><time th:text="${#temporals.format(trigger.received(), 'dd MMM yyyy, HH:mm')}">02 Aug 2026, 11:30</time></div>
-                <span class="signal-lifecycle-pill confirmed" th:text="${trigger.status() == 'MATCHED_ON_APPLY'} ? #{signals.matchedWhenApplied} : #{home.chartAlertTriggered}">Triggered</span>
-                <div class="latest-confidence"><strong aria-hidden="true">&mdash;</strong><span class="visually-hidden" th:text="#{signals.setupScoreUnavailable}">Setup score unavailable</span></div>
+                <span class="signal-lifecycle-pill confirmed" th:text="${trigger.outlook()} ? #{js.outlookChange.changed} : (${trigger.status() == 'MATCHED_ON_APPLY'} ? #{signals.matchedWhenApplied} : #{home.chartAlertTriggered})">Triggered</span>
+                <div th:if="${trigger.outlook() and trigger.score() != null}" class="latest-confidence outlook-score" th:aria-label="#{home.outlookScoreAria(${trigger.score()})}">
+                  <strong th:text="${(trigger.score() > 0 ? '+' : '') + trigger.score()}">+33</strong><span th:text="#{home.outlookScoreScale}">/±100</span>
+                </div>
+                <div th:unless="${trigger.outlook() and trigger.score() != null}" class="latest-confidence"><strong aria-hidden="true">&mdash;</strong><span class="visually-hidden" th:text="#{signals.setupScoreUnavailable}">Setup score unavailable</span></div>
                 <div th:if="${trigger.custom()}" class="signal-archive-result outcome">
                   <strong th:if="${trigger.outcomeReturn() != null}" th:classappend="${trigger.outcomeReturn() >= 0} ? ' positive' : ' negative'"
                           th:text="${(trigger.outcomeReturn() >= 0 ? '+' : '') + #numbers.formatDecimal(trigger.outcomeReturn(), 1, 2) + '%'}">+2.00%</strong>
                   <strong th:unless="${trigger.outcomeReturn() != null}" class="unavailable" th:text="#{signals.outcomePending}">Pending</strong>
                   <span th:text="#{signals.priceSinceTrigger}">Price since the trigger</span>
                 </div>
-                <div th:unless="${trigger.custom()}" class="signal-archive-result"><strong th:text="#{common.notAvailable}">N/A</strong><span th:text="#{signals.noTradePlan}">No technical trade plan</span></div>
+                <div th:if="${trigger.outlook()}" class="signal-archive-result"><strong th:text="#{home.snapshotComparison}">Snapshot comparison</strong><span th:text="#{home.previousVersusCurrent}">Previous completed candle versus current</span></div>
+                <div th:unless="${trigger.custom() or trigger.outlook()}" class="signal-archive-result"><strong th:text="#{common.notAvailable}">N/A</strong><span th:text="#{signals.noTradePlan}">No technical trade plan</span></div>
                 <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
               </a>
               <details class="row-menu">
-                <summary th:aria-label="#{signals.moreActionsAria(${trigger.title()}, ${trigger.symbol()})}" title="More actions" th:title="#{virtualTrades.moreActions}"><span aria-hidden="true">&middot;&middot;&middot;</span></summary>
+                <summary th:aria-label="#{signals.moreActionsAria(${triggerName}, ${trigger.symbol()})}" title="More actions" th:title="#{virtualTrades.moreActions}"><span aria-hidden="true">&middot;&middot;&middot;</span></summary>
                 <div class="row-menu-panel">
-                  <button type="submit" name="singleSignalKey" th:value="${trigger.key()}" class="signal-archive-delete-button" data-single-delete th:data-signal-label="#{signals.itemLabel(${trigger.title()}, ${trigger.symbol()})}" th:aria-label="#{signals.deleteAria(${trigger.title()}, ${trigger.symbol()})}" th:text="#{virtualTrades.delete}">Delete</button>
+                  <button type="submit" name="singleSignalKey" th:value="${trigger.key()}" class="signal-archive-delete-button" data-single-delete th:data-signal-label="#{signals.itemLabel(${triggerName}, ${trigger.symbol()})}" th:aria-label="#{signals.deleteAria(${triggerName}, ${trigger.symbol()})}" th:text="#{virtualTrades.delete}">Delete</button>
                 </div>
               </details>
               <details class="archive-row-details"><summary th:text="#{signals.candleDetails}">Candle and price details</summary><div class="archive-row-detail-content"><span th:text="#{signals.triggerCandle(${#temporals.format(trigger.candleDate(), 'dd MMM yyyy')})}">Completed candle 14 Oct 2026</span></div></details>

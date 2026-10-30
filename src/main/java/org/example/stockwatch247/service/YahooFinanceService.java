@@ -505,7 +505,7 @@ public class YahooFinanceService {
         String providerSymbol = normalizeSymbol(defaultIfBlank(
                 meta.path("symbol").asText(""), requestedProviderSymbol));
         asset.setTickerSymbol(requestedSymbol);
-        asset.setCompanyName(name.isBlank() ? requestedSymbol : name);
+        if (!name.isBlank() || !StockAsset.hasRealName(asset)) asset.setCompanyName(name.isBlank() ? requestedSymbol : name);
         if (!preserveCanonicalListing) {
             asset.setExchange(exchange.isBlank() ? "UNKNOWN" : exchange);
             // Record the venue so other providers request this same listing rather than a namesake.

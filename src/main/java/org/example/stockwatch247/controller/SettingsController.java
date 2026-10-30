@@ -504,6 +504,17 @@ public class SettingsController {
         return "redirect:/settings/analysis-alerts#alert-emails";
     }
 
+    /** One email per alert, or one summary per check run for signal, lifecycle and outlook emails. */
+    @PostMapping("/settings/alert-email-digest")
+    public String alertEmailDigest(@RequestParam boolean digest, Principal principal, RedirectAttributes redirect) {
+        if (notificationEmails != null && notificationEmails.setDigest(current(principal).getId(), digest)) {
+            redirect.addFlashAttribute("success", digest
+                    ? "Signal emails now arrive as one summary per check run."
+                    : "Signal emails now arrive one by one.");
+        }
+        return "redirect:/settings/analysis-alerts#alert-emails";
+    }
+
     @GetMapping(value = "/settings/export", produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
     public ResponseEntity<Map<String, Object>> export(Principal principal) {
@@ -516,6 +527,8 @@ public class SettingsController {
         data.put("firstName", user.getFirstName()); data.put("lastName", user.getLastName());
         data.put("createdAt", user.getCreatedAt()); data.put("theme", user.getThemePreference());
         data.put("learningMode", user.isLearningMode());
+        data.put("alertEmailsPaused", user.isNotificationEmailsPaused());
+        data.put("alertEmailSummary", user.isAlertEmailDigest());
         data.put("elliottMotiveColor", user.getElliottMotiveColor());
         data.put("elliottCorrectiveColor", user.getElliottCorrectiveColor());
         data.put("elliottSubwaveColor", user.getElliottSubwaveColor());

@@ -41,9 +41,10 @@ public class SignalArchiveDeletionService {
 
     @Transactional
     public int deleteMixedSignals(User user, Collection<Long> signalIds, Collection<String> keys) {
-        // Chart and custom alert triggers share the archive's keyed selection with filings.
+        // Chart and custom alert triggers and outlook changes share the archive's keyed selection with filings.
         List<String> alertKeys = keys == null ? List.of() : keys.stream()
-                .filter(key -> key != null && (key.startsWith("CHART:") || key.startsWith("CUSTOM:"))).toList();
+                .filter(key -> key != null && (key.startsWith("CHART:") || key.startsWith("CUSTOM:")
+                        || key.startsWith("OUTLOOK:"))).toList();
         List<String> activityKeys = keys == null ? List.of() : keys.stream().filter(key -> !alertKeys.contains(key)).toList();
         int technicalCount = signalIds == null ? 0 : signalIds.size();
         int activityCount = activityKeys.size();
@@ -56,7 +57,10 @@ public class SignalArchiveDeletionService {
                 + (alertKeys.isEmpty() ? 0 : deleteAlertTriggers(user, alertKeys));
     }
 
-    /** Chart and custom alert triggers ("CHART:12", "CUSTOM:7"); they stay out of every archive and count. */
+    /**
+     * Chart and custom alert triggers ("CHART:12", "CUSTOM:7") stay out of every archive and count. Outlook
+     * changes ("OUTLOOK:3") are removed, as the outlook's retention cleanup removes old ones.
+     */
     @Transactional
     public int deleteAlertTriggers(User user, Collection<String> requestedKeys) {
         requireUser(user);
@@ -77,10 +81,16 @@ public class SignalArchiveDeletionService {
             requested += entry.getValue().size();
             String table = entry.getKey().equals("CHART") ? "chart_alert_events" : "custom_alert_events";
             String owner = entry.getKey().equals("CHART") ? "chart_alerts" : "custom_alerts";
+            String sql = switch (entry.getKey()) {
+                case "OUTLOOK" -> "delete from technical_outlook_notifications e using technical_outlook_subscriptions s"
+                        + " where s.id = e.subscription_id and s.user_id = ? and e.id = any(?)";
+                case "CHART", "CUSTOM" -> "update " + table + " e set deleted_at = current_timestamp from "
+                        + owner + " a where a.id = e.alert_id and a.user_id = ? and e.deleted_at is null and e.id = any(?)";
+                default -> throw new IllegalArgumentException("The signal selection is invalid.");
+            };
             Long[] values = entry.getValue().toArray(Long[]::new);
             deleted += jdbc.update(connection -> {
-                var statement = connection.prepareStatement("update " + table + " e set deleted_at = current_timestamp from "
-                        + owner + " a where a.id = e.alert_id and a.user_id = ? and e.deleted_at is null and e.id = any(?)");
+                var statement = connection.prepareStatement(sql);
                 statement.setLong(1, user.getId());
                 statement.setArray(2, connection.createArrayOf("bigint", values));
                 return statement;

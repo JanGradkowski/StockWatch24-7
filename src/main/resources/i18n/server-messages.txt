@@ -1893,6 +1893,18 @@ pl: E-maile z alertami są wstrzymane. Wszystko pozostaje w serwisie.
 en: Alert emails switched back on.
 pl: E-maile z alertami są ponownie włączone.
 
+en: Signal emails now arrive as one summary per check run.
+pl: E-maile z sygnałami przychodzą teraz jako jedno podsumowanie na każde sprawdzenie.
+
+en: Signal emails now arrive one by one.
+pl: E-maile z sygnałami przychodzą teraz pojedynczo.
+
+en: StockWatch summary: {0} alerts
+pl: StockWatch – podsumowanie alertów ({0})
+
+en: This summary collects {0} alerts from your latest checks.
+pl: To podsumowanie zbiera alerty z ostatnich sprawdzeń (liczba: {0}).
+
 en: Candle refresh failed.
 internal
 
@@ -2061,3 +2073,20 @@ pl: Nie udało się odczytać reguły.
 
 en: The stock could not be checked yet.
 pl: Tej spółki nie udało się jeszcze sprawdzić.
+
+# --- Demo trade exit plans ----------------------------------------------------------------------
+
+en: For a demo buy, the stop loss must be below the current price of {0}.
+pl: Przy kupnie demo stop loss musi być poniżej bieżącej ceny {0}.
+
+en: For a demo buy, the target must be above the current price of {0}.
+pl: Przy kupnie demo cel musi być powyżej bieżącej ceny {0}.
+
+en: For a demo sell, the stop loss must be above the current price of {0}.
+pl: Przy sprzedaży demo stop loss musi być powyżej bieżącej ceny {0}.
+
+en: For a demo sell, the target must be below the current price of {0}.
+pl: Przy sprzedaży demo cel musi być poniżej bieżącej ceny {0}.
+
+en: The signal for this trade plan was not found.
+pl: Nie znaleziono sygnału, z którego pochodzi ten plan.

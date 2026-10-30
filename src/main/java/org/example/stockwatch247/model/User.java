@@ -55,6 +55,10 @@
         @Column(name = "notification_emails_paused", nullable = false)
         private boolean notificationEmailsPaused = false;
 
+        /** Signal, lifecycle and outlook emails arrive as one summary per check run instead of one each. */
+        @Column(name = "alert_email_digest", nullable = false)
+        private boolean alertEmailDigest = false;
+
         /** "en" or "pl"; null follows the browser language. */
         @Column(name = "preferred_language", length = 8)
         private String preferredLanguage;
@@ -223,6 +227,8 @@
         public void setLearningMode(boolean learningMode) { this.learningMode = learningMode; }
         public boolean isNotificationEmailsPaused() { return notificationEmailsPaused; }
         public void setNotificationEmailsPaused(boolean notificationEmailsPaused) { this.notificationEmailsPaused = notificationEmailsPaused; }
+        public boolean isAlertEmailDigest() { return alertEmailDigest; }
+        public void setAlertEmailDigest(boolean alertEmailDigest) { this.alertEmailDigest = alertEmailDigest; }
         public String getElliottMotiveColor() { return elliottMotiveColor; }
         public void setElliottMotiveColor(String value) { this.elliottMotiveColor = value; }
         public String getElliottCorrectiveColor() { return elliottCorrectiveColor; }

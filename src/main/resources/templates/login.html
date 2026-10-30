@@ -64,6 +64,11 @@
         <label for="loginPassword" th:text="#{auth.password}">Password</label>
         <input id="loginPassword" type="password" name="password" required autocomplete="current-password" placeholder="Enter your password" th:placeholder="#{auth.password.placeholder}">
       </div>
+      <label class="auth-remember">
+        <input type="checkbox" name="remember-me" value="true">
+        <span><span th:text="#{auth.login.remember}">Keep me signed in on this device</span>
+          <small th:text="#{auth.login.rememberHelp}">For 30 days. Leave it off on a shared computer.</small></span>
+      </label>
       <button type="submit" class="btn-accent auth-btn"><span th:text="#{auth.signIn}">Sign in</span> <span class="button-arrow" aria-hidden="true">→</span></button>
     </form>
     <p class="auth-switch"><span th:text="#{auth.login.newHere}">New to StockWatch?</span> <a th:href="@{/signup}" class="text-link" th:text="#{auth.login.createAccount}">Create an account</a></p>

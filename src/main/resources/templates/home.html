@@ -174,10 +174,10 @@
               <div class="latest-lifecycle" aria-label="Outlook status" th:aria-label="#{home.outlookStatusAria}">
                 <span class="signal-lifecycle-pill confirmed" th:text="#{js.outlookChange.changed}">Changed</span>
               </div>
-              <div class="latest-confidence outlook-score"
-                   th:aria-label="#{home.outlookScoreAria(${#numbers.formatDecimal(change.currentScore() * 100, 1, 1)})}">
-                <strong th:text="${#numbers.formatDecimal(change.currentScore() * 100, 1, 0)}">0</strong>
-                <span>%</span>
+              <div class="latest-confidence outlook-score" th:with="outlookScore=${T(java.lang.Math).round(change.currentScore() * 100)}"
+                   th:aria-label="#{home.outlookScoreAria(${outlookScore})}">
+                <strong th:text="${(outlookScore > 0 ? '+' : '') + outlookScore}">0</strong>
+                <span th:text="#{home.outlookScoreScale}">/±100</span>
               </div>
               <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
             </a>
