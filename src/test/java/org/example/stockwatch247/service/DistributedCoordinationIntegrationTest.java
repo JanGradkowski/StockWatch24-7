@@ -8,8 +8,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -35,8 +37,11 @@ class DistributedCoordinationIntegrationTest {
     @Autowired
     private SharedQuoteCache quoteCache;
 
-    @Autowired
-    private MarketDataProviderRequestBudget providerRequestBudget;
+    // The budget counts requests per clock minute, so a real clock that reaches the next minute mid-test resets it.
+    private MarketDataProviderRequestBudget budgetWithinOneMinute() {
+        return new MarketDataProviderRequestBudget(jdbcTemplate, 7, 760, 3, 250,
+                Clock.fixed(Instant.parse("2026-01-05T14:30:30Z"), ZoneOffset.UTC));
+    }
 
     @Test
     void rateLimitCounterIsAtomicAndSharedThroughPostgres() {
@@ -51,6 +56,7 @@ class DistributedCoordinationIntegrationTest {
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void twelveDataBudgetStopsAtTheConfiguredDistributedMinuteLimit() {
         jdbcTemplate.update("delete from market_data_provider_usage where provider like 'TWELVE_DATA%'");
+        MarketDataProviderRequestBudget providerRequestBudget = budgetWithinOneMinute();
 
         try (var ignored = MarketDataProviderRequestBudget.background()) {
             for (int request = 0; request < 7; request++) {
@@ -68,6 +74,7 @@ class DistributedCoordinationIntegrationTest {
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     void pageRequestsCannotSpendTheMinuteBudgetThatScheduledChecksNeed() {
         jdbcTemplate.update("delete from market_data_provider_usage where provider like 'TWELVE_DATA%'");
+        MarketDataProviderRequestBudget providerRequestBudget = budgetWithinOneMinute();
 
         for (int request = 0; request < 3; request++) {
             providerRequestBudget.reserveTwelveDataRequest();
