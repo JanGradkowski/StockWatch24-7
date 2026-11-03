@@ -11,15 +11,35 @@
 </head>
 <body class="ui-refresh">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
-<main class="dashboard-container">
-  <header class="app-hero"><div class="app-hero-copy"><div class="eyebrow" th:text="#{watchlists.eyebrow}">Your workspace</div>
-    <a th:if="${selectedWatchlistId != null}" th:href="@{/watchlists}" class="text-link" th:text="#{watchlists.all}">All watchlists</a>
-    <h1 th:text="${watchlistName != null ? watchlistName : #messages.msg('watchlists.heading')}">Watchlists</h1><p class="welcome-subtitle" th:text="${selectedWatchlistId != null ? #messages.msg('watchlists.subtitle.single') : #messages.msg('watchlists.subtitle.all')}">Organize instruments your way.</p>
-  </div></header>
-  <section class="glass-panel dashboard-panel" aria-label="Manage watchlists" th:aria-label="#{watchlists.manageAria}">
-    <div class="panel-heading"><h2 class="panel-title" th:text="${selectedWatchlistId != null ? #messages.msg('watchlists.overview') : #messages.msg('watchlists.yours')}">Your watchlists</h2><div class="wl-actions"><button type="button" class="btn-secondary" data-watchlist-imports th:text="#{watchlists.recentImports}">Recent imports</button><button type="button" class="btn-accent" data-create-watchlist th:text="#{watchlists.create}">Create watchlist</button></div></div>
-    <label th:if="${selectedWatchlistId == null}" class="wl-field"><span th:text="#{watchlists.find}">Find a watchlist</span><input type="search" data-watchlist-search placeholder="Search by name or description" th:placeholder="#{watchlists.searchPlaceholder}"></label>
-    <div data-named-watchlists data-management="true" th:attr="data-selected-id=${selectedWatchlistId}"><p role="status" th:text="#{watchlists.loading}">Loading watchlists…</p></div>
-  </section>
+<!-- All watchlists as cards, or one list's own page (watchlists.js fills the list's actions and content). -->
+<main class="dashboard-container wl-page" th:classappend="${selectedWatchlistId != null} ? 'wl-page-list' : 'wl-page-index'">
+  <header class="app-hero wl-page-header">
+    <div class="app-hero-copy">
+      <nav th:if="${selectedWatchlistId != null}" class="wl-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{watchlists.breadcrumbAria}">
+        <a th:href="@{/watchlists}" class="wl-back-link"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.5 5 7.5 12l7 7"/></svg><span th:text="#{watchlists.all}">All watchlists</span></a>
+      </nav>
+      <div th:if="${selectedWatchlistId == null}" class="eyebrow" th:text="#{watchlists.eyebrow}">Your workspace</div>
+      <div class="wl-title-row">
+        <h1 th:text="${watchlistName != null ? watchlistName : #messages.msg('watchlists.heading')}">Watchlists</h1>
+        <span th:if="${selectedWatchlistId != null}" class="wl-title-actions" data-watchlist-title-actions></span>
+      </div>
+      <p class="welcome-subtitle" data-watchlist-subtitle th:text="${selectedWatchlistId != null ? #messages.msg('watchlists.subtitle.single') : #messages.msg('watchlists.subtitle.all')}">Organize instruments your way.</p>
+    </div>
+    <div class="wl-hero-actions" data-watchlist-header-actions>
+      <th:block th:if="${selectedWatchlistId == null}">
+        <button type="button" class="btn-secondary" data-watchlist-imports th:text="#{watchlists.recentImports}">Recent imports</button>
+        <button type="button" class="btn-accent" data-create-watchlist th:text="#{watchlists.create}">Create watchlist</button>
+      </th:block>
+    </div>
+  </header>
+  <div th:if="${selectedWatchlistId == null}" class="wl-index-toolbar" data-watchlist-toolbar>
+    <label class="wl-search">
+      <svg class="wl-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Zm5-2 4 4"/></svg>
+      <span class="visually-hidden" th:text="#{watchlists.find}">Find a watchlist</span>
+      <input type="search" data-watchlist-search placeholder="Search by name or description" th:placeholder="#{watchlists.searchPlaceholder}">
+    </label>
+    <span class="wl-index-count" data-watchlist-count role="status"></span>
+  </div>
+  <div data-named-watchlists data-management="true" th:attr="data-selected-id=${selectedWatchlistId}"><p class="wl-loading" role="status" th:text="#{watchlists.loading}">Loading watchlists…</p></div>
 </main>
 </body></html>
