@@ -1,42 +1,111 @@
 # StockWatch 24/7
 
-## See StockWatch in action
+**Automated technical analysis and custom alerts for the stocks you follow.**
 
-[![Open the StockWatch 24/7 visual demo](img/starting_page.png)](DEMO.md)
+StockWatch 24/7 watches your watchlists around the clock. After every completed daily, weekly and monthly candle it runs a full technical analysis: candlestick patterns, Elliott Waves, harmonic patterns and a technical outlook built from trend, momentum, volatility and volume indicators. When something you follow appears, you get an email and a dashboard notification with the pattern drawn on the chart, a setup score, and an entry, stop and target. You can also write your own alerts that combine indicators, patterns and insider or congressional trades. A charting workspace with 121 indicators and 86 drawing tools covers your own analysis.
 
-### [Open the complete 14-screen visual demo &rarr;](DEMO.md)
+[![The StockWatch 24/7 stock workspace: an MSFT chart with an Elliott Wave count next to its technical outlook](img/stock-workspace.png)](DEMO.md)
 
-Explore the dashboard, market workspace, charts, congressional monitoring, company alert boards, and signal-score reports before installing the application.
+### [Open the 22-screen visual demo &rarr;](DEMO.md)
 
-## About StockWatch
+> StockWatch 24/7 is provided for educational and informational purposes. It is not financial advice. Scores, outlooks and trade plans are rule-based measurements, not predictions or probabilities of profit.
 
-StockWatch 24/7 is a Spring Boot web application for exploring market data, detecting technical signals, and delivering per-user email alerts. It supports candlestick-pattern alerts on daily, weekly, and monthly candles and Elliott-wave alerts on weekly and monthly candles.
+## Features at a glance
 
-The alert scheduler is backed by PostgreSQL. If the application is offline when a daily, weekly, or monthly check should run, it reconstructs the missed schedule after restart, processes the backlog oldest-first, and evaluates the candles that were available at each original scheduled time.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="DEMO.md#technical-outlook"><img src="img/technical-outlook.png" alt="MSFT technical outlook with seven indicator categories"></a>
+      <br><b>Automated technical analysis</b><br>A buy, neutral or sell outlook scored from −100 to +100 across seven indicator categories, for each interval.
+    </td>
+    <td width="50%" valign="top">
+      <a href="DEMO.md#custom-alert-builder"><img src="img/custom-alert-builder.png" alt="Custom alert builder with a live preview and history replay"></a>
+      <br><b>Custom alerts</b><br>Combine indicators, chart patterns and insider or congressional trades. A live preview tests the rule against past candles.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="DEMO.md#elliott-waves-on-the-chart"><img src="img/elliott-waves.png" alt="Elliott Wave impulse and correction counts drawn on an MSFT daily chart"></a>
+      <br><b>Elliott Waves</b><br>Impulse waves 1–5 and A-B-C corrections are counted and labeled on the chart, with Fibonacci targets and projections.
+    </td>
+    <td width="50%" valign="top">
+      <a href="DEMO.md#harmonic-patterns"><img src="img/harmonic-patterns.png" alt="Bullish and bearish harmonic patterns with X-A-B-C-D points on an NVDA chart"></a>
+      <br><b>Harmonic patterns</b><br>Gartley, Bat, Butterfly, Crab, Shark, Cypher, 5-0 and AB=CD patterns with labeled X-A-B-C-D points and a quality score.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="DEMO.md#candlestick-patterns"><img src="img/candlestick-patterns.png" alt="Candlestick signals on an AAPL chart with a Bullish Engulfing trade plan card"></a>
+      <br><b>Candlestick patterns</b><br>17 patterns, from Hammer and Engulfing to Morning Star and Three White Soldiers, each checked for the trend before it.
+    </td>
+    <td width="50%" valign="top">
+      <a href="DEMO.md#indicators"><img src="img/indicators.png" alt="Bollinger Bands, EMA, RSI and MACD on an AMZN chart"></a>
+      <br><b>Indicators</b><br>121 indicators in eight groups, on the price chart or in their own panes, with saved indicator sets.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="DEMO.md#drawing-on-the-chart"><img src="img/drawings.png" alt="Fibonacci retracement, trend line, long position and a note drawn on an NVDA chart"></a>
+      <br><b>Drawing</b><br>86 drawing tools: trend lines, Fibonacci and Gann tools, pitchforks, positions, pattern and Elliott tools, shapes and notes.
+    </td>
+    <td width="50%" valign="top">
+      <a href="DEMO.md#home-dashboard"><img src="img/home.png" alt="Home dashboard with followed stocks, latest signals and custom alerts"></a>
+      <br><b>One dashboard</b><br>Followed stocks, new signals, outlook changes, custom alert triggers and demo trades in one place.
+    </td>
+  </tr>
+</table>
 
-> StockWatch 24/7 is provided for educational and informational purposes. It is not financial advice.
+## What StockWatch does
 
-## Features
+### Automated technical analysis
 
-- User signup, email verification, login, and session security; sessions are stored in PostgreSQL, so restarts keep people signed in, and "Keep me signed in on this device" lasts 30 days
-- [Named watchlists](docs/named-watchlists.md) with shared monitoring, geographic index imports, pasted ticker lists, a watchlist picker when applying stock follows, and each member's latest close, daily change, sparkline and followed outlook (from stored candles, sortable by change)
-- Symbol search, historical candlestick charts, and live-price lookup
-- Persistent light and dark display themes available from every page
-- Optional learning mode, switched on from the sidebar and saved per account: "?" marks explain options and underlined terms show plain-language definitions in English and Polish
-- Twelve Data market data with Yahoo Finance fallback
-- Interactive classic anchored volume profiles with POC, 70% value area, cached historical candles, active-day 15-minute resolution, and two per-user live refreshes per active ticker candle
-- Geometry- and trend-validated candlestick detection with a stock-only heuristic setup score and frozen higher-interval pattern calibration; scoring evidence ranks valid patterns but never creates or suppresses alerts
-- Additive candlestick lifecycle emails: every detection remains immediate, then the first close-based `CONFIRMED`, `INVALIDATED`, or `EXPIRED` outcome is sent within a configurable completed-candle window
-- Weekly and monthly Elliott-wave analysis
-- Per-user BUY, SELL, and HOLD alert rules
-- Stock-only congressional purchase/sale follows, cached history, dashboard activity, and email notifications
-- SMTP email delivery to every user with a matching active alert, one email per alert or one summary per check run (a setting per account)
-- Demo trading with an optional stop loss and target, prefilled from a position drawing or a signal's trade plan; a trade closes by itself when a completed candle reaches either level
-- Durable PostgreSQL alert jobs, retries, leases, and missed-run recovery
-- Distributed rate limits, provider cooldowns, and shared quote caching
+- **Technical outlook.** Every stock gets an overall outlook on the daily, weekly and monthly interval, scored from −100 to +100. Seven categories feed it: trend (EMA 20/50, price against SMA 200, MACD), momentum (RSI, CCI), volatility (Bollinger Bands, ATR), volume (rolling VWAP, relative volume), price location (volume profile, support and resistance), strength against the market, and recent pattern signals. Indicator periods can be edited.
+- **Score report and market comparison.** Each outlook explains every input, and compares the stock with its market index.
+- **Followed outlooks.** Follow an outlook to see your strongest buys and sells at a glance and to be notified when an outlook changes, for example from *Moderate buy* to *Slight sell*.
+- **Setup scores.** Every detected pattern gets a 0–100 setup score from confluence with trend, higher-timeframe context, momentum, Bollinger location, support and resistance, relative volume, VWAP and volume profile. The score ranks patterns; it never creates or suppresses one.
+- **Trade plans and outcome tracking.** Signals carry an entry at the next candle's open, a structural stop, a target, a reward/risk ratio and a time stop. StockWatch then follows each signal to its result: confirmed, invalidated or expired, target or stop reached. See the [trade-plan risk model](docs/trade-plan-risk-model.md).
+
+### Pattern detection
+
+- **Candlestick patterns** on daily, weekly and monthly candles: Bullish and Bearish Engulfing, Doji, Hammer, Inverted Hammer, Hanging Man, Shooting Star, Morning and Evening Star, Piercing Line, Dark Cloud Cover, Bullish and Bearish Harami and Harami Cross, Three White Soldiers and Three Black Crows. Detection checks the candle geometry and the trend the pattern needs before it. Each detection is sent immediately, then a follow-up reports whether it was confirmed, invalidated or expired.
+- **Elliott Waves** on daily, weekly and monthly candles: impulse waves with the ends of waves II, III, IV and V (truncated fifths included), and zigzag, flat, expanded flat and running flat corrections. Fractal subwaves can be shown, developing cycles send notifications as each wave completes, and [adaptive projections](docs/adaptive-elliott-projections.md) draw Fibonacci target zones for the next wave.
+- **Harmonic patterns** on daily, weekly and monthly candles: bullish and bearish Gartley, Bat, Alternate Bat, Butterfly, Crab, Deep Crab, Shark, Cypher, 5-0, AB=CD and Alternate AB=CD, each with its X-A-B-C-D points, ratios, quality score and a structural stop. See [harmonic formations](docs/harmonic-formations.md).
+- **On the chart.** Candlestick signals, Elliott structures and harmonic patterns can be laid over any stock's chart, including their history. Click a pattern for its details and trade plan.
+- **Your settings.** Candlestick, Elliott Wave and harmonic detection, scoring and stop placement can be tuned per account in Settings.
+
+### Custom alerts
+
+- **Rules in plain language.** Build an alert from conditions such as "RSI (14) is below 30 at least once in the last 5 candles", "a bullish Elliott Wave II end in the last 5 candles" or "insiders bought in the last 30 days". Join them with *All of these* or *Any of these*.
+- **Indicators, patterns and trades.** Conditions can use price, 104 indicators, candlestick, Elliott Wave and harmonic patterns, the automated outlook, and insider and congressional trades: up to 12 conditions in up to 4 groups, and up to 25 active alerts per account.
+- **When it fires.** When the whole rule becomes true (it re-arms once it is false again), once per stock, or on every candle.
+- **Live preview.** While you build an alert, the preview shows whether a real stock matches now, how often the rule triggered over the last 500 candles, and how the price moved afterwards.
+- **Watchlists.** Point an alert at whole watchlists, so stocks you add later are included, or at chosen stocks. Each trigger lists the value that met every condition and keeps measuring the price move afterwards.
+- **Chart alerts.** Put an alert on a drawn line or shape, or on an indicator, straight from the chart.
+- **Followed signals.** For the built-in detectors, follow buy and sell signals per pattern family and interval on any stock or watchlist.
+
+### Charting
+
+- **Indicators.** 121 indicators in eight groups: moving averages, trend, momentum and oscillators, volatility, volume, levels (pivots, auto Fibonacci, auto trend lines and pitchforks), statistics and comparison (including custom formulas), and volume profiles. Each has its own inputs, style and visibility, and indicator sets can be saved and loaded.
+- **Drawing.** 86 tools in 13 groups: lines, channels, pitchforks, cycles, Fibonacci, Gann, chart patterns (XABCD, Cypher, ABCD, three drives, head and shoulders, triangle), Elliott Wave counts, long and short positions, measuring tools, volume tools, shapes and annotations. Drawings are saved to your account per stock, with undo, magnet, lock and hide.
+- **Chart types and tools.** 15 chart types, including Heikin Ashi, Renko, Kagi, line break and point & figure. Compare symbols, anchored volume profile with POC and value area, data window, log and percentage scales, full screen, and chart images.
+
+### Also included
+
+- **[Named watchlists](docs/named-watchlists.md)** with index imports, pasted ticker lists, each member's latest close, daily change, sparkline and outlook, and per-list follows.
+- **Signal archive.** Every signal stays available, filterable by type, status and ticker, with its setup score and trade outcome.
+- **Demo trading.** Record hypothetical buys and sells at the current quote, with an optional stop and target prefilled from a position drawing or a signal's trade plan. A trade closes by itself when a completed candle reaches either level. Nothing is a real order.
+- **Ticker alerts.** Follow congressional purchases and sales and corporate insider filings for a stock, with history and email notifications.
+- **Email.** One email per signal or one summary per check run, a setting per account.
+- **Light and dark themes**, English and Polish, and an optional learning mode that explains terms and options in plain language.
+- **Accounts.** Signup with email verification, authenticator-app sign-in, and sessions kept in PostgreSQL so restarts keep people signed in.
+
+## Under the hood
+
+- Twelve Data market data with Yahoo Finance fallback, shared quote caching, distributed rate limits and provider cooldowns
+- Durable PostgreSQL alert jobs with retries, leases and missed-run recovery: if the application is offline when a daily, weekly or monthly check should run, it rebuilds the missed schedule after restart, processes the backlog oldest-first, and evaluates the candles that were available at each original scheduled time
 - Flyway database migrations and a restricted production database-role model
-- Production HTTPS/proxy validation, security headers, and bounded request sizes
-- GitHub Actions tests, CodeQL, dependency auditing, and secret scanning
+- Production HTTPS/proxy validation, security headers and bounded request sizes
+- GitHub Actions tests, CodeQL, dependency auditing and secret scanning
 
 ## Technology
 
@@ -45,6 +114,7 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 - Spring Security, Spring Data JPA, Thymeleaf, and Spring Mail
 - PostgreSQL 16 and Flyway
 - TA4J
+- TradingView Lightweight Charts (bundled under `static/js/vendor`)
 - Maven Wrapper
 - Docker Compose for the local database
 
@@ -55,6 +125,7 @@ The alert scheduler is backed by PostgreSQL. If the application is offline when 
 - An SMTP account if email delivery is enabled
 - A Twelve Data API key for Twelve Data-backed search and market data; Yahoo Finance fallback remains available where supported
 - CongressInvests access for congressional activity (the current free REST tier does not require an API key)
+- An API Ninjas key for corporate insider filings (optional; the feature can be switched off with `INSIDER_ACTIVITY_ENABLED=false`)
 
 ## Local setup
 
@@ -124,7 +195,9 @@ Directional candlestick detections also start an additive lifecycle. The initial
 candles by default, the first close beyond the frozen pattern range produces
 either a `CONFIRMED` or `INVALIDATED` email; a setup that crosses neither
 boundary becomes `EXPIRED`. Pending lifecycle events remain durably scheduled
-through restarts and missed-run recovery. Elliott-wave alerts are unchanged.
+through restarts and missed-run recovery. Elliott Wave and harmonic signals
+follow their own trade-plan lifecycle, described in the
+[trade-plan risk model](docs/trade-plan-risk-model.md).
 
 ## Congressional activity
 
@@ -196,6 +269,8 @@ The complete development template is in [`.env.example`](.env.example). Importan
 | `CONGRESSIONAL_ACTIVITY_MAX_UNCACHED_REFRESHES_PER_USER_PER_MINUTE` | Per-user uncached ticker refresh ceiling (default `2`); cache hits do not count |
 | `CONGRESS_INVESTS_DAILY_REQUEST_BUDGET` | Shared UTC daily call ceiling (default `90`) |
 | `CONGRESS_INVESTS_API_KEY` | Optional paid-plan key; leave blank on the free tier |
+| `INSIDER_ACTIVITY_ENABLED` | Enables corporate insider filing history and follows |
+| `API_NINJAS_API_KEY` | API Ninjas key for insider filings |
 | `CONGRESSIONAL_ACTIVITY_POLL_INTERVAL_HOURS` | Minimum interval between shared provider polls (default `6`) |
 | `SPRING_PROFILES_ACTIVE=prod` | Enables production security requirements |
 
