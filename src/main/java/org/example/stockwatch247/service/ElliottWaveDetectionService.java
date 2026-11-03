@@ -2160,6 +2160,7 @@ public class ElliottWaveDetectionService {
             }
             CompletedScan completed = work == null ? null : work.store.read(durableKey, CompletedScan.class);
             if (completed != null) return completed.results();
+            CheckTimings.count("Elliott scans");
             var results = withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
                 recentCandles, lowerDegreeCandles, scanContext, true)).stream()
                 .sorted(Comparator.comparingLong(DevelopingImpulse::confirmationTimestamp)

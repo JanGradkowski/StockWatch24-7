@@ -152,6 +152,13 @@ public class MarketDataService {
     public CandleSyncResult syncCandlesForAnalysis(String rawSymbol,
                                                    String rawInterval,
                                                    int requiredCandles) {
+        CheckTimings.count("candle syncs");
+        try (var stage = CheckTimings.enter("candle download")) {
+            return syncAnalysisCandles(rawSymbol, rawInterval, requiredCandles);
+        }
+    }
+
+    private CandleSyncResult syncAnalysisCandles(String rawSymbol, String rawInterval, int requiredCandles) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         String interval = SecurityInputValidator.requireInterval(rawInterval);
         int required = Math.max(2, Math.min(1_000, requiredCandles));

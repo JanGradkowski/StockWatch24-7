@@ -145,6 +145,7 @@ public class HarmonicPatternDetectionService {
             completedScans.put(key, completed.formations(), now);
             return completed.formations();
         }
+        CheckTimings.count("harmonic scans");
         List<HarmonicFormation> result = calculateRange(historicalCandles, from, to);
         if (durableKey != null) work.store.write(durableKey, new CompletedFormations(result), 1);
         if (key != null && result.size() <= 10000) completedScans.put(key, result, now);

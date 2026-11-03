@@ -259,12 +259,14 @@ public class CandlestickSignalLifecycleService {
         int initialized = 0;
         for (AlertEvent event : events) {
             ElliottWaveDetectionService detector = elliottDetector(event, elliottWaveDetectionService);
+            var structureStage = CheckTimings.enter("lifecycle: Elliott structures");
             ElliottWaveDetectionService.ElliottWaveStructure structure = detector
                     .findStructureForSignal(
                             enrichedCandles,
                             event.getPattern(),
                             event.getSignalCandleTimestamp())
                     .orElse(null);
+            structureStage.close();
             if (initializeElliottTracking(event, structure)) {
                 alertEventRepository.save(event);
                 initialized++;
@@ -438,12 +440,14 @@ public class CandlestickSignalLifecycleService {
                 || elliottWaveDetectionService == null) {
             return false;
         }
+        var structureStage = CheckTimings.enter("lifecycle: Elliott structures");
         ElliottWaveDetectionService.ElliottWaveStructure revisedStructure =
                 elliottDetector(event, elliottWaveDetectionService).findLatestStructureForCycle(
                                 enrichedCandles,
                                 event.getElliottCycleKey(),
                                 event.getElliottSignalStage())
                         .orElse(null);
+        structureStage.close();
         if (revisedStructure == null) {
             return false;
         }

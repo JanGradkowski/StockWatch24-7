@@ -160,7 +160,9 @@ public class CustomAlertEngine {
         }
         updateOutcomes(asset, interval, data);
         // Every scheduled check is of a followed stock: its shared snapshot and Elliott histories follow the new candle.
-        if (sharedStore != null) sharedStore.followed(asset, interval);
+        try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: shared store")) {
+            if (sharedStore != null) sharedStore.followed(asset, interval);
+        }
         return new EvaluationResult(targets.size(), triggered);
     }
 

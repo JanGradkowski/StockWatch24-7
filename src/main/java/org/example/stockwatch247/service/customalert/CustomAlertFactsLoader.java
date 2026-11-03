@@ -302,6 +302,12 @@ public class CustomAlertFactsLoader {
             List<Operand> missing = operands.stream().filter(Operand::isIndicator)
                     .filter(operand -> !values.containsKey(operand.seriesKey())).toList();
             if (missing.isEmpty() || indicators == null) return;
+            try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: indicators")) {
+                prepareMissing(missing, lookback);
+            }
+        }
+
+        private void prepareMissing(List<Operand> missing, int lookback) {
             Map<String, IndicatorConfiguration> configurations = new java.util.LinkedHashMap<>();
             Map<String, String> configurationOf = new HashMap<>();
             for (Operand operand : missing) {
@@ -388,7 +394,9 @@ public class CustomAlertFactsLoader {
                 @Override public OutlookFact outlook() {
                     if (!outlookLoaded) {
                         outlookLoaded = true;
-                        outlook = data.outlook(owner);
+                        try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: outlook")) {
+                            outlook = data.outlook(owner);
+                        }
                     }
                     return outlook;
                 }
@@ -414,7 +422,7 @@ public class CustomAlertFactsLoader {
                     }
                     return known.hits();
                 }
-                try {
+                try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: " + family)) {
                     List<PatternHit> found = shared(family, owner, () -> switch (family) {
                         case "CANDLESTICK" -> candlestickHits(owner);
                         case "ELLIOTT_WAVE" -> elliottHits(owner);
