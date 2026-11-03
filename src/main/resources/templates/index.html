@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Automate technical analysis, detect candlestick, harmonic, and Elliott Wave patterns, track signals, and test ideas with demo trades." th:content="#{landing.meta}">
-    <title th:text="#{landing.title}">StockWatch 24/7 — Stock charts and alerts</title>
+    <meta name="description" content="Automated technical analysis and custom alerts for the stocks you follow: a technical outlook, Elliott Waves, harmonic and candlestick patterns, 121 chart indicators and 86 drawing tools." th:content="#{landing.meta}">
+    <title th:text="#{landing.title}">StockWatch 24/7 — Technical analysis and stock alerts</title>
     <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
     <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
@@ -31,9 +31,9 @@
     <main>
         <section class="landing-hero">
             <div class="hero-copy">
-                <div class="eyebrow" th:text="#{landing.eyebrow}">Stock analysis and alerts</div>
+                <div class="eyebrow" th:text="#{landing.eyebrow}">Technical analysis and custom alerts</div>
                 <h1><span th:text="#{landing.headline1}">Follow the market.</span><br><span class="text-gradient" th:text="#{landing.headline2}">Track the signals.</span></h1>
-                <p th:text="#{landing.pitch}">Automate your technical analysis across candlestick, harmonic, and Elliott Wave patterns. Track every signal, test ideas with demo trades, and get the updates that matter straight to your inbox.</p>
+                <p th:text="#{landing.pitch}">StockWatch analyzes the stocks you follow after every daily, weekly and monthly close: a technical outlook, Elliott Waves, harmonic patterns and candlestick patterns. Write your own alerts, and chart your ideas with 121 indicators and 86 drawing tools.</p>
                 <div class="hero-actions">
                     <a th:href="@{/signup}" class="btn-accent large"><span th:text="#{landing.buildWatchlist}">Build your watchlist</span> <span class="button-arrow" aria-hidden="true">→</span></a>
                     <a th:href="@{/login}" class="btn-primary large" th:text="#{landing.openDashboard}">Open dashboard</a>
@@ -44,7 +44,7 @@
                         <span class="proof-avatar">AI</span>
                         <span class="proof-avatar">24</span>
                     </div>
-                    <span th:text="#{landing.proof}">Analysis, signal tracking, and demo trades in one focused workspace.</span>
+                    <span th:text="#{landing.proof}">Technical analysis, custom alerts and charting in one workspace.</span>
                 </div>
             </div>
 
@@ -124,30 +124,30 @@
 
         <section id="platform" class="landing-section">
             <div class="section-heading">
-                <div class="eyebrow" th:text="#{landing.platform.eyebrow}">Charts, alerts and demo trading</div>
+                <div class="eyebrow" th:text="#{landing.platform.eyebrow}">Analysis, alerts and charting</div>
                 <h2><span th:text="#{landing.platform.headline1}">Less chart watching.</span><br><span th:text="#{landing.platform.headline2}">More signal clarity.</span></h2>
-                <p th:text="#{landing.platform.pitch}">View charts, find technical patterns, track outcomes and test ideas with demo trades. Get alerts for the stocks you follow.</p>
+                <p th:text="#{landing.platform.pitch}">Read an automated outlook, find Elliott Waves, harmonic and candlestick patterns, write alerts from your own rules and draw your analysis on the chart. Every signal is followed to its outcome, and demo trades test an idea without a real order.</p>
             </div>
 
             <div class="bento-grid">
                 <article class="feature-card large">
                     <div class="feature-content">
                         <span class="feature-number" th:text="#{landing.feature1.number}">01 / TECHNICAL OUTLOOK</span>
-                        <h3 th:text="#{landing.feature1.title}">Automated analysis, clearly explained</h3>
-                        <p th:text="#{landing.feature1.text}">Compare trend, momentum, volume and recent signals in one report.</p>
+                        <h3 th:text="#{landing.feature1.title}">Automated technical analysis</h3>
+                        <p th:text="#{landing.feature1.text}">A buy, neutral or sell outlook scored from −100 to +100 on the daily, weekly and monthly interval. Seven indicator categories feed it, from trend and momentum to volume and recent pattern signals, and every score explains its inputs.</p>
                     </div>
                     <div class="feature-visual signal-stack" aria-hidden="true">
                         <div class="signal-chip"><span th:text="#{landing.feature1.trend}">Trend</span><strong class="market-up" th:text="#{landing.feature1.bullish}">Bullish</strong></div>
                         <div class="signal-chip"><span th:text="#{landing.feature1.momentum}">Momentum</span><strong th:text="#{landing.feature1.neutral}">Neutral</strong></div>
-                        <div class="signal-chip"><span th:text="#{landing.preview.setupScore}">Setup score</span><strong class="market-up" th:text="#{landing.preview.strongScore}">Strong · 88/100</strong></div>
+                        <div class="signal-chip"><span th:text="#{landing.feature1.outlook}">Outlook</span><strong class="market-up" th:text="#{landing.feature1.moderateBuy}">Moderate buy · +46</strong></div>
                     </div>
                 </article>
 
                 <article class="feature-card medium">
                     <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature2.number}">02 / PATTERN ENGINE</span>
-                        <h3 th:text="#{landing.feature2.title}">Read more than one kind of pattern</h3>
-                        <p th:text="#{landing.feature2.text}">Detect candlestick setups, harmonic formations, and Elliott Wave structures across their supported intervals.</p>
+                        <span class="feature-number" th:text="#{landing.feature2.number}">02 / CUSTOM ALERTS</span>
+                        <h3 th:text="#{landing.feature2.title}">Alerts from your own rules</h3>
+                        <p th:text="#{landing.feature2.text}">Combine price, 104 indicators, candlestick, Elliott Wave and harmonic patterns, the outlook, and insider and congressional trades. A live preview replays the rule over the last 500 candles before you save it.</p>
                     </div>
                     <div class="feature-visual wave-visual" aria-hidden="true">
                         <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
@@ -156,28 +156,52 @@
 
                 <article class="feature-card third">
                     <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature3.number}">03 / DEMO TRADING</span>
-                        <h3 th:text="#{landing.feature3.title}">Test the idea without risking capital</h3>
-                        <p th:text="#{landing.feature3.text}">Record hypothetical buys and sells at the current quote, preserve the entry analysis, and follow the result—without placing a real order.</p>
+                        <span class="feature-number" th:text="#{landing.feature3.number}">03 / ELLIOTT WAVES</span>
+                        <h3 th:text="#{landing.feature3.title}">Wave counts on the chart</h3>
+                        <p th:text="#{landing.feature3.text}">Impulse waves 1–5 and A-B-C corrections on daily, weekly and monthly candles, labeled on the chart with Fibonacci targets and projections for the next wave.</p>
                     </div>
                 </article>
 
                 <article class="feature-card third">
                     <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature4.number}">04 / OUTCOME TRACKING</span>
-                        <h3 th:text="#{landing.feature4.title}">See what happened after the signal</h3>
-                        <p th:text="#{landing.feature4.text}">Follow confirmations, invalidations, targets, stops, and demo-trade performance from detection through resolution.</p>
+                        <span class="feature-number" th:text="#{landing.feature4.number}">04 / HARMONIC PATTERNS</span>
+                        <h3 th:text="#{landing.feature4.title}">11 harmonic patterns</h3>
+                        <p th:text="#{landing.feature4.text}">Gartley, Bat, Butterfly, Crab, Shark, Cypher, 5-0, AB=CD and their variants, each with labeled X-A-B-C-D points, ratios, a quality score and a structural stop.</p>
+                    </div>
+                </article>
+
+                <article class="feature-card third">
+                    <div class="feature-content">
+                        <span class="feature-number" th:text="#{landing.feature5.number}">05 / CANDLESTICK PATTERNS</span>
+                        <h3 th:text="#{landing.feature5.title}">17 candlestick patterns</h3>
+                        <p th:text="#{landing.feature5.text}">From Hammer and Engulfing to Morning Star and Three White Soldiers, each checked for the trend before it and followed until it is confirmed, invalidated or expires.</p>
+                    </div>
+                </article>
+
+                <article class="feature-card third">
+                    <div class="feature-content">
+                        <span class="feature-number" th:text="#{landing.feature6.number}">06 / INDICATORS</span>
+                        <h3 th:text="#{landing.feature6.title}">121 chart indicators</h3>
+                        <p th:text="#{landing.feature6.text}">Moving averages, trend, momentum, volatility, volume, levels, statistics and volume profiles, on the price chart or in their own panes, with indicator sets you can save.</p>
+                    </div>
+                </article>
+
+                <article class="feature-card third">
+                    <div class="feature-content">
+                        <span class="feature-number" th:text="#{landing.feature7.number}">07 / DRAWING</span>
+                        <h3 th:text="#{landing.feature7.title}">86 drawing tools</h3>
+                        <p th:text="#{landing.feature7.text}">Trend lines, channels, pitchforks, Fibonacci and Gann tools, long and short positions, pattern and Elliott Wave tools, shapes and notes, saved to your account for each stock.</p>
+                    </div>
+                </article>
+
+                <article class="feature-card third">
+                    <div class="feature-content">
+                        <span class="feature-number" th:text="#{landing.feature8.number}">08 / OUTCOMES &amp; DEMO TRADES</span>
+                        <h3 th:text="#{landing.feature8.title}">See what happened after the signal</h3>
+                        <p th:text="#{landing.feature8.text}">Every signal carries an entry, stop and target and is followed to its result. Demo trades test an idea at the current quote without placing a real order.</p>
                     </div>
                     <div class="feature-visual recovery-timeline" aria-hidden="true">
                         <span class="recovery-node">✓</span><span class="recovery-line"></span><span class="recovery-node">↻</span><span class="recovery-line"></span><span class="recovery-node">✓</span>
-                    </div>
-                </article>
-
-                <article class="feature-card third">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature5.number}">05 / ALERTS &amp; HISTORY</span>
-                        <h3 th:text="#{landing.feature5.title}">Receive email alerts</h3>
-                        <p th:text="#{landing.feature5.text}">Choose the market, interval, pattern family, and direction to monitor, receive matching emails, and review every alert later.</p>
                     </div>
                 </article>
             </div>
@@ -187,7 +211,7 @@
             <div class="cta-panel">
                 <div class="eyebrow" th:text="#{landing.cta.eyebrow}">Get started</div>
                 <h2><span th:text="#{landing.cta.headline1}">Follow the stocks</span><br><span class="text-gradient" th:text="#{landing.cta.headline2}">that matter to you.</span></h2>
-                <p th:text="#{landing.cta.pitch}">Create your account, run a full technical outlook, test an idea with a demo trade, or turn the setups you care about into automated monitoring.</p>
+                <p th:text="#{landing.cta.pitch}">Create your account, build a watchlist and let StockWatch analyze it after every close. Then write alerts for the setups you care about, or test an idea with a demo trade.</p>
                 <div class="hero-actions">
                     <a th:href="@{/signup}" class="btn-accent large"><span th:text="#{landing.startMonitoring}">Start monitoring</span> <span class="button-arrow" aria-hidden="true">→</span></a>
                 </div>
@@ -200,7 +224,7 @@
             <span class="logo-mark" aria-hidden="true"></span>
             <span class="logo-word">StockWatch <span>24/7</span></span>
         </a>
-        <span class="footer-tagline" th:text="#{landing.footer.tagline}">Automated technical market monitoring.</span>
+        <span class="footer-tagline" th:text="#{landing.footer.tagline}">Automated technical analysis and custom alerts.</span>
         <a th:href="@{/about}" th:text="#{landing.nav.about}">About</a>
         <span>© 2026 StockWatch 24/7</span>
     </footer>
