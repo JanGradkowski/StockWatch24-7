@@ -1,103 +1,159 @@
 # StockWatch 24/7 visual demo
 
-This walkthrough shows the main StockWatch 24/7 screens without requiring visitors to install and run the application first. Click any screenshot to open it at full size.
+This walkthrough shows StockWatch 24/7 as it looks today, so you can see it without installing it. It follows the main features: automated technical analysis, Elliott Waves, harmonic and candlestick patterns, indicators, drawing, and custom alerts. Click any screenshot to open it at full size.
 
-> The screenshots contain local demonstration data. Market prices, dates, signals, scores, and congressional disclosures shown here should not be treated as current market information or financial advice.
+> The screenshots were taken on a local development server with a test account. Prices, dates, signals, scores and outlooks in them are not current market information and are not financial advice.
 
-## Public landing and authentication
+**Contents:** [Start](#start) · [Automated technical analysis](#automated-technical-analysis) · [Elliott Waves](#elliott-waves) · [Harmonic patterns](#harmonic-patterns) · [Candlestick patterns](#candlestick-patterns) · [Indicators](#indicators) · [Drawing](#drawing) · [Custom alerts](#custom-alerts) · [Signals, watchlists and demo trading](#signals-watchlists-and-demo-trading)
+
+## Start
 
 ### Landing page
 
-[![StockWatch 24/7 public landing page](img/starting_page.png)](img/starting_page.png)
+[![StockWatch 24/7 public landing page](img/landing.png)](img/landing.png)
 
-The public landing page introduces the automated market-monitoring workflow, including candlestick signals, Elliott-wave structures, setup scores, and email delivery.
+The public landing page introduces the product: automated technical analysis across candlestick, harmonic and Elliott Wave patterns, signal tracking, demo trades and email updates.
 
-### Sign in
+### Home dashboard
 
-[![StockWatch 24/7 sign-in page](img/login.png)](img/login.png)
+[![Home dashboard with followed stocks, latest signals, custom alerts and demo trading](img/home.png)](img/home.png)
 
-The sign-in screen provides secure account access while keeping the product's market-monitoring context visible.
+Home brings everything new into one place. *Your stocks* shows each followed stock's latest daily close, change, sparkline and daily outlook. *Latest signals* lists new patterns and outlook changes with their setup score and status, next to custom alert triggers and the demo-trading portfolio.
 
-## Dashboard
+### Stock workspace
 
-### Technical-analysis overview
+[![MSFT stock workspace with an Elliott Wave count on the chart and the technical outlook panel](img/stock-workspace.png)](img/stock-workspace.png)
 
-[![Technical-analysis dashboard overview](img/dashboard1.png)](img/dashboard1.png)
+Every stock opens in a chart-first workspace. The toolbar switches chart types, adds indicators, compares symbols and lays pattern signals over the chart. Here MSFT's daily chart shows its Elliott Wave count, with the drawing tools on the left. The panel on the right shows the automated outlook for the daily, weekly or monthly interval, the signals this account follows for the stock, and its recent signals.
 
-Technical analysis is the default dashboard view. It summarizes followed instruments, active rules, recent signals, recovery status, the market watch desk, and the scheduler's current state.
+## Automated technical analysis
 
-### Latest detected signals
+### Technical outlook
 
-[![Latest technical signals on the dashboard](img/dashboard2.png)](img/dashboard2.png)
+[![MSFT technical outlook with seven indicator categories](img/technical-outlook.png)](img/technical-outlook.png)
 
-The latest-signals board presents each detected pattern with its company, interval, candle period, research measurement window, heuristic setup score, and additive lifecycle state. A detection remains immediate while later completed candles can resolve it as confirmed, invalidated, or expired. Selecting a row opens the full score report. The current candlestick score is versioned `CANDLE_V4_EXPERIMENTAL`; it is technical-confluence context, not a win probability.
+The technical outlook is StockWatch's automated analysis of a stock on one interval. Seven categories each vote buy, neutral or sell/short: trend (EMA 20/50, price against SMA 200, MACD), momentum (RSI 14, CCI 20), volatility (Bollinger Bands, ATR), volume (rolling VWAP, relative volume), price location (volume profile, support and resistance), strength against the market, and recent Elliott and candlestick signals. They combine into one outlook from −100 to +100. The *Score report* tab explains every input, *Market comparison* sets the stock against its broad market, and the indicator periods can be edited. A demo trade can be recorded at the current quote straight from the report.
 
-### Ticker-alert overview
+### Followed outlooks
 
-[![Ticker-alert dashboard with congressional monitoring](img/company_alerts.png)](img/company_alerts.png)
+[![Followed outlooks with the strongest buys, strongest sells and latest changes](img/followed-outlooks.png)](img/followed-outlooks.png)
 
-The Ticker alerts view separates company-event monitoring from chart-based analysis. It shows followed stocks and newly observed congressional disclosures, with room for additional ticker-level alert sources later.
+Followed outlooks rank every followed stock by its outlook score: the five strongest buys and sells, and the latest changes, such as AMZN moving from *Moderate buy* to *Slight sell*. Each change is also a notification on the dashboard.
 
-## Market workspace
+## Elliott Waves
 
-### Quote, intervals, and alert rules
+### Elliott Waves on the chart
 
-[![NVDA market workspace and technical alert controls](img/nvda1.png)](img/nvda1.png)
+[![Four Elliott Wave structures labeled on an MSFT daily chart](img/elliott-waves.png)](img/elliott-waves.png)
 
-An individual stock workspace combines the latest quote with line/candlestick controls, daily-to-monthly intervals, and draftable email-alert rules for candlestick and Elliott-wave patterns.
+StockWatch counts Elliott Waves on daily, weekly and monthly candles. In full-screen mode the MSFT daily chart shows four structures: motive waves labeled 1–5 and corrections labeled A-B-C, each with its quality score. Confirmed wave ends are marked, structures with guideline warnings are flagged, and fractal subwaves can be switched on.
 
-### Candlestick and volume charts
+### Elliott Wave projection
 
-[![NVDA candlestick and synchronized volume charts](img/nvda2.png)](img/nvda2.png)
+[![Elliott Bullish Wave II End signal with projected targets and candle windows](img/elliott-projection.png)](img/elliott-projection.png)
 
-The price-action chart supports horizontal historical exploration and is paired with synchronized trading-volume bars. Older candles continue loading as the user navigates left. Anchored volume-profile mode starts at the latest candle by default; selecting any loaded candle moves the anchor and draws its estimated price-volume distribution through the latest candle, including POC and the 70% value area. The active daily candle uses cached 15-minute bars so the current-day profile has meaningful internal structure instead of a single uniformly filled daily range.
+Each Elliott signal has its own page. For this *Bullish Wave II End*, the chart draws the recorded structure, the confirmation, a conditional projection for the next wave, and Fibonacci target zones with candle windows (a preferred target and two alternatives). The entry, invalidation level and stop are drawn on the price axis.
 
-### Line-chart view
+### Signal lifecycle
 
-[![AB historical line chart](img/ab3.png)](img/ab3.png)
+[![Score report of an Elliott Wave signal with entry, stop, target and invalidation boundary](img/signal-score-report.png)](img/signal-score-report.png)
 
-The same workspace can switch to a clean line-chart view for quickly inspecting longer price trends without candlestick detail.
+The signal's report follows it from detection onwards: the current-stage entry, buffered stop loss, next-wave target, the correction count, the confirmation trigger and the structural invalidation boundary. Confirmation uses completed-candle closes, and the first confirmed, invalidated or expired outcome is final.
 
-### Elliott-wave overlays
+## Harmonic patterns
 
-[![NVDA Elliott-wave structure overlay](img/nvda5.png)](img/nvda5.png)
+[![Eight bullish and bearish harmonic patterns with X-A-B-C-D points on an NVDA chart](img/harmonic-patterns.png)](img/harmonic-patterns.png)
 
-Weekly and monthly Elliott-wave analysis can be drawn directly over historical candles. Structure labels, confirmation points, quality scores, and reduced-confidence warnings remain visible with the chart.
+The harmonic overlay draws every confirmed harmonic pattern in the loaded history. On this NVDA daily chart there are eight: bearish Sharks, bullish and bearish AB=CDs and a bullish 5-0, each with its X-A-B-C-D points and a quality score (Q71–Q100). StockWatch detects bullish and bearish Gartley, Bat, Alternate Bat, Butterfly, Crab, Deep Crab, Shark, Cypher, 5-0, AB=CD and Alternate AB=CD patterns on daily, weekly and monthly candles. Clicking a pattern opens its details and outcome, with a link to the full historical signal page.
 
-## Congressional activity
+## Candlestick patterns
 
-### Follow controls and disclosure policy
+### Candlestick signals on the chart
 
-[![NVDA congressional activity follow controls](img/nvda3.png)](img/nvda3.png)
+[![Candlestick signals on an AAPL chart with a Bullish Engulfing card open](img/candlestick-patterns.png)](img/candlestick-patterns.png)
 
-For stocks, users can follow newly observed congressional purchases and sales or open the historical archive. The panel also explains the relevant history window, no-retroactive-alert baseline, filing delay, and data source.
+The candlestick overlay marks buy (B) and sell (S) signals on the chart; nearby signals are grouped into numbered markers. Clicking a marker opens the signal: here a *Bullish Engulfing* with the required downtrend before it highlighted, its entry, target, stop, reward/risk and time stop. When the target is too close for the minimum reward/risk, the plan is marked *projection only*. StockWatch detects 17 candlestick patterns, from Hammer and Engulfing to Morning Star and Three White Soldiers.
 
-### Cached congressional history
+### Candlestick trade plan
 
-[![Cached congressional trading history for NVDA](img/nvda4.png)](img/nvda4.png)
+[![MSFT Shooting Star signal chart with the required uptrend, entry, stop, target and time stop](img/candlestick-trade-plan.png)](img/candlestick-trade-plan.png)
 
-Historical disclosures are presented with the member, chamber, activity type, reported value range, transaction date, disclosure date, and official filing link. The cache status shows when the stored result was last refreshed.
+A candlestick signal's own page draws the whole setup: the required uptrend, the pattern candles, the detection candle, the entry at the next open, the stop loss and risk, the target and reward, and the time stop. This *Shooting Star* reached its target before the time stop.
 
-## Monitoring history and signal intelligence
+## Indicators
 
-### Company monitoring board
+### Indicators on the chart
 
-[![UBER company monitoring board](img/uber1.png)](img/uber1.png)
+[![Bollinger Bands, EMA 20, RSI and MACD on an AMZN daily chart](img/indicators.png)](img/indicators.png)
 
-The company board groups every followed method, direction, and interval combination into its own lane. Each lane shows either its recorded signals, delivery status, and candlestick lifecycle outcome or a waiting state when no validated match has occurred.
+Indicators sit on the price chart or in their own panes, sharing the time axis. This AMZN chart has Bollinger Bands and an EMA 20 on price, with RSI 14 and MACD (12, 26, 9) below the volume. Each indicator has its own inputs, style and visibility, and the legend shows its current values.
 
-### Setup-score report
+### Indicator browser
 
-[![AB Shooting Star setup-score report](img/ab1.png)](img/ab1.png)
+[![Indicator browser with categories, search and indicator sets](img/indicator-browser.png)](img/indicator-browser.png)
 
-A detected signal opens into a dedicated report containing its heuristic setup score, confluence band, score-model version, direction, interval, signal period, recorded close, email-delivery status, and—when applicable—the frozen confirmation range and follow-up outcome.
+The indicator browser holds 121 indicators in eight groups: moving averages, trend, momentum and oscillators, volatility, volume, levels, statistics and comparison, and volume profiles. Search by name, mark favorites, reuse recent ones, and save the indicators on a chart as a named set to load later.
 
-### Scoring evidence
+## Drawing
 
-[![Evidence behind the AB setup score](img/ab2.png)](img/ab2.png)
+### Drawing on the chart
 
-The evidence section explains why the score received its value. Supporting and cautionary factors are preserved with the signal across pattern quality, EMA/SMA/MACD trend evidence, completed higher-timeframe context, RSI/CCI momentum, Bollinger location, support/resistance, relative volume, rolling VWAP, and the disclosed OHLCV volume-profile approximation. Indicators rank confluence after detection and never suppress a structurally valid pattern.
+[![Fibonacci retracement, resistance line, support ray, long position and a note on an NVDA chart](img/drawings.png)](img/drawings.png)
+
+Drawings are saved to the account per stock. On this NVDA chart: a Fibonacci retracement from the March low to the May high, a rising resistance line, a support ray at the June low, a note on the 61.8% retracement, and a long position with its target, stop, reward/risk and quantity. A position drawing can prefill a demo trade.
+
+### Drawing tools
+
+[![Drawing tool menu with chart pattern, Elliott Wave and cycle tools](img/drawing-tools.png)](img/drawing-tools.png)
+
+The rail on the left holds 86 drawing tools in 13 groups: lines, channels, pitchforks, cycles, Fibonacci, Gann, chart patterns, Elliott Waves, positions, measuring and volume tools, shapes and annotations. The open menu shows the pattern tools (XABCD, Cypher, ABCD, three drives, head and shoulders, triangle) and the Elliott Wave counts (impulse, correction, triangle, double and triple combinations). Below them are the measure, zoom, magnet, lock, hide, delete, object list, undo and redo controls.
+
+## Custom alerts
+
+### Custom alerts
+
+[![Custom alerts list with an active Oversold bounce alert](img/custom-alerts.png)](img/custom-alerts.png)
+
+Custom alerts are your own rules. Each one shows whether it is active, its interval, when it fires, whether it emails, its conditions in plain language, which watchlists it watches, how many stocks match now and how often it has triggered. *Starting points* offer ready-made rules, and the *Chart alerts* tab lists alerts set on drawings and indicators from the chart.
+
+### Custom alert builder
+
+[![Custom alert builder with an RSI condition and a live preview](img/custom-alert-builder.png)](img/custom-alert-builder.png)
+
+The builder describes the moment to look for. This *Oversold bounce* alert is checked after every daily close and needs both conditions: RSI (14) below 30 at least once in the last 5 candles, and a bullish candlestick pattern in the same window. Conditions can use price, indicators, candlestick, Elliott Wave and harmonic patterns, the automated outlook, and insider and congressional trades. The preview restates the rule in plain language, tests it on a real stock (AAPL meets 0 of 2 conditions now), and replays it over the last 500 candles: one trigger, with a median move of +3.86% ten candles later.
+
+## Signals, watchlists and demo trading
+
+### Signal archive
+
+[![All signals archive with type, status and ticker filters](img/signals.png)](img/signals.png)
+
+Every signal the account receives stays in the archive, including signals from rules that are no longer followed. Filter by type (candlestick, Elliott Wave, harmonic, outlook change, chart alert, custom alert), by status and by ticker, and sort by signal status, setup score or trade outcome.
+
+### Ticker alerts
+
+[![NVDA ticker alerts tab with congressional and insider activity follows](img/ticker-alerts.png)](img/ticker-alerts.png)
+
+The *Ticker alerts* tab of a stock follows purchases and sales reported by members of Congress and by company insiders, and opens their history. New filings appear on the dashboard and can be emailed.
+
+### Watchlist
+
+[![Watchlist members with their followed signals, last close and outlook](img/watchlist.png)](img/watchlist.png)
+
+A watchlist shows each member's last close, daily change, sparkline and outlook, and exactly what is followed for it: candlestick, Elliott Wave and harmonic buy and sell signals per interval, the automated outlook, and the custom alerts that watch the list.
+
+### Demo trading
+
+[![Demo trading portfolio and trade history](img/demo-trading.png)](img/demo-trading.png)
+
+Demo trading records hypothetical buys and sells at the current quote. Buys track returns; sells track avoided losses or missed gains. A trade can carry a stop and target and then closes by itself when a completed candle reaches either level. No real orders are placed.
+
+### Light theme
+
+[![MSFT stock workspace in the light theme](img/light-theme.png)](img/light-theme.png)
+
+Every page has a light and a dark theme, saved per account. The app is available in English and Polish, and an optional learning mode explains terms and options in plain language.
 
 ## Continue exploring
 
-Return to the [main README](README.md) for features, architecture, local setup, configuration, and testing instructions.
+Return to the [main README](README.md) for the feature list, setup, configuration and testing instructions.
