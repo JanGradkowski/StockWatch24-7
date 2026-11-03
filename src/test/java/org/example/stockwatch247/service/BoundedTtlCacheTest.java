@@ -47,6 +47,15 @@ class BoundedTtlCacheTest {
     }
 
     @Test
+    void aResultTheCallerDeclinesToKeepIsReturnedButNotCached() {
+        BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
+        assertThat(cache.getOrCompute("one", () -> "too large", value -> false)).isEqualTo("too large");
+        assertThat(cache.size()).isZero();
+        assertThat(cache.getOrCompute("one", () -> "kept", value -> true)).isEqualTo("kept");
+        assertThat(cache.getOrCompute("one", () -> "recomputed")).isEqualTo("kept");
+    }
+
+    @Test
     void aComputationThatAsksForItsOwnKeyDoesNotWaitOnItself() {
         BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
         assertThat(cache.getOrCompute("outer", () -> "outer:" + cache.getOrCompute("outer", () -> "inner")))

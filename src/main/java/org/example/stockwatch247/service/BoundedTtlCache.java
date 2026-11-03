@@ -52,6 +52,11 @@ final class BoundedTtlCache<K, V> {
      * caller computes again itself rather than inheriting another caller's failure.
      */
     V getOrCompute(K key, Supplier<V> supplier) {
+        return getOrCompute(key, supplier, value -> true);
+    }
+
+    /** As above; a result {@code retain} rejects is handed to the callers waiting for it but not kept. */
+    V getOrCompute(K key, Supplier<V> supplier, Predicate<V> retain) {
         while (true) {
             V cached = get(key, java.time.Instant.now().getEpochSecond());
             if (cached != null) return cached;
@@ -69,7 +74,7 @@ final class BoundedTtlCache<K, V> {
             try {
                 cached = get(key, java.time.Instant.now().getEpochSecond());
                 V value = cached != null ? cached : supplier.get();
-                if (cached == null) put(key, value, java.time.Instant.now().getEpochSecond());
+                if (cached == null && retain.test(value)) put(key, value, java.time.Instant.now().getEpochSecond());
                 mine.result().complete(value);
                 return value;
             } catch (RuntimeException | Error failure) {

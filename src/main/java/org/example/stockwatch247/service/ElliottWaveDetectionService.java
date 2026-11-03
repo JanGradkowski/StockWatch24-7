@@ -171,6 +171,14 @@ public class ElliottWaveDetectionService {
         return new ElliottWaveDetectionService(presentSignalLookbackCandles, scoringModel, rules);
     }
 
+    /**
+     * Everything besides its inputs that a detection depends on. Detectors are created per rule, so results
+     * remembered within a check are keyed by this, not by the instance: followers with the same settings share them.
+     */
+    private List<Object> settingsKey() {
+        return List.of(detectionRules, scoringModel, presentSignalLookbackCandles, reuseCorrectionSuffixes(), rankingOnly.get());
+    }
+
     public int maximumConfirmationLagCandles() { return detectionRules.maximumConfirmationLagCandles(); }
 
     public int minimumSignalConfidence() {
@@ -252,8 +260,11 @@ public class ElliottWaveDetectionService {
 
     /** All confirmed endpoint counts; scoring and display overlap limits are not recognition rules. */
     public List<ElliottWaveStructure> findAllWaveStructures(List<EnrichedCandle> input) {
-        return PatternCandleIntegrity.enrichedSegments(input).stream()
-                .flatMap(segment -> findAllSegmentStructures(segment).stream()).toList();
+        if (input == null) return List.of();
+        // Every rule following a signal looks up its structure in the same candles.
+        return AnalysisComputationScope.memo(List.of("elliott-all-structures", settingsKey(), input),
+                () -> PatternCandleIntegrity.enrichedSegments(input).stream()
+                        .flatMap(segment -> findAllSegmentStructures(segment).stream()).toList());
     }
 
     private List<ElliottWaveStructure> findAllSegmentStructures(List<EnrichedCandle> input) {
@@ -375,6 +386,12 @@ public class ElliottWaveDetectionService {
         if (historicalCandles == null || historicalCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
+        // Each open Elliott signal of the stock looks up its cycle in the same structures.
+        return AnalysisComputationScope.memo(List.of("elliott-historical-structures", settingsKey(), historicalCandles),
+                () -> List.copyOf(computeHistoricalWaveStructures(historicalCandles)));
+    }
+
+    private List<ElliottWaveStructure> computeHistoricalWaveStructures(List<EnrichedCandle> historicalCandles) {
         List<EnrichedCandle> candles = ValidatedCandleWindow.latest(historicalCandles);
         if (candles.size() < detectionRules.minimumCandles()) {
             return List.of();
@@ -2150,29 +2167,46 @@ public class ElliottWaveDetectionService {
                 recentCandles == null ? List.of() : new ArrayList<>(recentCandles),
                 lowerDegreeCandles == null ? List.of() : new ArrayList<>(lowerDegreeCandles));
         return AnalysisComputationScope.memo(key, () -> {
-            long now = java.time.Instant.now().getEpochSecond();
             var work = AnalysisWork.current();
-            String durableKey = work == null ? null : AnalysisWork.key(List.of("ELLIOTT_COMPLETED_V1", key));
-            var reused = work == null || work.runsContinuously() ? completedPrimaryScans.get(key, now) : null;
-            if (reused != null) {
-                if (work != null) work.store.write(durableKey, new CompletedScan(reused), 1);
-                return reused;
-            }
-            CompletedScan completed = work == null ? null : work.store.read(durableKey, CompletedScan.class);
-            if (completed != null) return completed.results();
-            CheckTimings.count("Elliott scans");
-            var results = withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
+            if (work != null) return checkpointedPrimaryScan(key, work, recentCandles, lowerDegreeCandles, scanContext);
+            java.util.function.Supplier<List<DevelopingImpulse>> scan =
+                    () -> primaryScan(recentCandles, lowerDegreeCandles, scanContext);
+            if (recentCandles != null && recentCandles.size() > 2000
+                    || lowerDegreeCandles != null && lowerDegreeCandles.size() > 12000) return scan.get();
+            // Computed once across threads: a check and a page asking for the same count share one scan.
+            return completedPrimaryScans.getOrCompute(key, scan, results -> results.size() <= 1000);
+        });
+    }
+
+    private List<DevelopingImpulse> primaryScan(List<EnrichedCandle> recentCandles,
+            List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext) {
+        CheckTimings.count("Elliott scans");
+        return withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
                 recentCandles, lowerDegreeCandles, scanContext, true)).stream()
                 .sorted(Comparator.comparingLong(DevelopingImpulse::confirmationTimestamp)
                         .thenComparingInt(candidate -> candidate.stage().progressionOrder()))
                 .toList();
-            if (work != null) work.store.write(durableKey, new CompletedScan(results), 1);
-            if (results.size() <= 1000 && (recentCandles == null || recentCandles.size() <= 2000)
-                    && (lowerDegreeCandles == null || lowerDegreeCandles.size() <= 12000)) {
-                completedPrimaryScans.put(key, results, now);
-            }
-            return results;
-        });
+    }
+
+    /** A scan inside checkpointed work: its result is read from and written to the checkpoint store. */
+    private List<DevelopingImpulse> checkpointedPrimaryScan(Object key, AnalysisWork work, List<EnrichedCandle> recentCandles,
+            List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext) {
+        long now = java.time.Instant.now().getEpochSecond();
+        String durableKey = AnalysisWork.key(List.of("ELLIOTT_COMPLETED_V1", key));
+        var reused = work.runsContinuously() ? completedPrimaryScans.get(key, now) : null;
+        if (reused != null) {
+            work.store.write(durableKey, new CompletedScan(reused), 1);
+            return reused;
+        }
+        CompletedScan completed = work.store.read(durableKey, CompletedScan.class);
+        if (completed != null) return completed.results();
+        var results = primaryScan(recentCandles, lowerDegreeCandles, scanContext);
+        work.store.write(durableKey, new CompletedScan(results), 1);
+        if (results.size() <= 1000 && (recentCandles == null || recentCandles.size() <= 2000)
+                && (lowerDegreeCandles == null || lowerDegreeCandles.size() <= 12000)) {
+            completedPrimaryScans.put(key, results, now);
+        }
+        return results;
     }
 
     private record CompletedScan(List<DevelopingImpulse> results) { }
@@ -2412,19 +2446,30 @@ public class ElliottWaveDetectionService {
             List<EnrichedCandle> previous, DevelopingScanContext context, String inputKey) {
         String observationKey = AnalysisWork.key(List.of(inputKey, detectionRules, scoringModel,
                 presentSignalLookbackCandles, reuseCorrectionSuffixes()));
-        long now = java.time.Instant.now().getEpochSecond();
         var work = AnalysisWork.current();
+        // Computed once across threads, as the primary scans are.
+        if (work == null) return confluenceObservations.getOrCompute(observationKey,
+                () -> computeConfluenceObservations(current, previous, context, inputKey));
+        long now = java.time.Instant.now().getEpochSecond();
         String durableKey = AnalysisWork.key(List.of("ELLIOTT_CONFLUENCE_RESULT_V1", observationKey));
-        var reused = work == null || work.runsContinuously() ? confluenceObservations.get(observationKey, now) : null;
+        var reused = work.runsContinuously() ? confluenceObservations.get(observationKey, now) : null;
         if (reused != null) {
-            if (work != null) work.store.write(durableKey, new CompletedObservations(reused), 1);
+            work.store.write(durableKey, new CompletedObservations(reused), 1);
             return reused;
         }
-        CompletedObservations completed = work == null ? null : work.store.read(durableKey, CompletedObservations.class);
+        CompletedObservations completed = work.store.read(durableKey, CompletedObservations.class);
         if (completed != null) {
             confluenceObservations.put(observationKey, completed.observations(), now);
             return completed.observations();
         }
+        var observations = computeConfluenceObservations(current, previous, context, inputKey);
+        work.store.write(durableKey, new CompletedObservations(observations), 1);
+        confluenceObservations.put(observationKey, observations, now);
+        return observations;
+    }
+
+    private List<DevelopingObservation> computeConfluenceObservations(List<EnrichedCandle> current,
+            List<EnrichedCandle> previous, DevelopingScanContext context, String inputKey) {
         String saved = confluenceCheckpoint.get();
         boolean append = previous.isEmpty() || current.size() == previous.size() + 1
                 && current.subList(0, previous.size()).equals(previous);
@@ -2434,10 +2479,7 @@ public class ElliottWaveDetectionService {
             Map<String, DevelopingObservation> result = new LinkedHashMap<>();
             forEachNewDevelopingObservation(current, previous, context,
                     candidate -> result.putIfAbsent(candidate.pattern() + ":" + candidate.expectedMove(), candidate));
-            var observations = List.copyOf(result.values());
-            if (work != null) work.store.write(durableKey, new CompletedObservations(observations), 1);
-            confluenceObservations.put(observationKey, observations, now);
-            return observations;
+            return List.copyOf(result.values());
         } finally { if (saved == null) confluenceCheckpoint.remove(); else confluenceCheckpoint.set(saved); }
     }
 
@@ -3440,6 +3482,15 @@ public class ElliottWaveDetectionService {
                 && currentStage != ElliottSignalStage.WAVE_IV_END) {
             return java.util.Optional.empty();
         }
+        // Followers of the same count ask the same question within a check.
+        return AnalysisComputationScope.memo(List.of("elliott-mismatch", settingsKey(), recentCandles, currentStage,
+                List.copyOf(parentPoints)), () -> computeActionaryStructureMismatch(recentCandles, currentStage, parentPoints));
+    }
+
+    private java.util.Optional<DevelopingInvalidation> computeActionaryStructureMismatch(
+            List<EnrichedCandle> recentCandles,
+            ElliottSignalStage currentStage,
+            List<ElliottWavePoint> parentPoints) {
         List<EnrichedCandle> candles = ValidatedCandleWindow.latest(recentCandles);
         ElliottWavePoint startPoint = parentPoints.getLast();
         int startIndex = indexAtTimestamp(candles, startPoint.timestamp());
@@ -3538,6 +3589,16 @@ public class ElliottWaveDetectionService {
             String developmentKey,
             ElliottSignalStage currentStage) {
         if (developmentKey == null || currentStage == null) return false;
+        if (recentCandles == null) return computeViableDevelopingHypothesis(null, developmentKey, currentStage);
+        // Every follower's signal on the same count asks the same question within a check.
+        return AnalysisComputationScope.memo(List.of("elliott-viable", settingsKey(), recentCandles, developmentKey, currentStage),
+                () -> computeViableDevelopingHypothesis(recentCandles, developmentKey, currentStage));
+    }
+
+    private boolean computeViableDevelopingHypothesis(
+            List<EnrichedCandle> recentCandles,
+            String developmentKey,
+            ElliottSignalStage currentStage) {
         // The primary result is itself an admissible hypothesis. Usually it proves
         // viability without materializing every alternative again for each open event.
         for (DevelopingImpulse hypothesis : findDevelopingImpulses(recentCandles)) {

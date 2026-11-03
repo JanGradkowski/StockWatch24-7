@@ -517,7 +517,7 @@ public class ScheduledAlertService {
         signalEnrichStage.close();
         var rulesStage = CheckTimings.enter("rule events");
         long latestCompletedTimestamp = candles.getLast().getTimestamp();
-        Map<Long, CrossPatternConfluenceService.Timeline> confluenceTimelines = new java.util.HashMap<>();
+        Map<Object, CrossPatternConfluenceService.Timeline> confluenceTimelines = new java.util.HashMap<>();
         List<RuntimeException> familyFailures = new java.util.ArrayList<>();
         boolean developingProcessed = false;
         for (AlertRule rule : rules.stream().sorted(Comparator.comparingInt(rule ->
@@ -734,7 +734,7 @@ public class ScheduledAlertService {
             latestStage.close();
             for (ElliottWaveDetectionService.DevelopingImpulse observed : latestCount) {
                 ElliottWaveDetectionService.DevelopingImpulse available = newlyAvailableDeveloping(
-                        observed, detector, elliottCandles, lowerDegreeElliottCandles, candles.getLast());
+                        observed, detector, settings, elliottCandles, lowerDegreeElliottCandles, candles.getLast());
                 if (available == null) continue;
                 if (available.confidenceScore() < minimumConfidence) continue;
                 // The detector's preview is exact for a daily candidate at its own close; otherwise re-plan.
@@ -858,18 +858,20 @@ public class ScheduledAlertService {
     }
 
     private ElliottWaveDetectionService.DevelopingImpulse newlyAvailableDeveloping(
-            ElliottWaveDetectionService.DevelopingImpulse observed, ElliottWaveDetectionService detector,
+            ElliottWaveDetectionService.DevelopingImpulse observed, ElliottWaveDetectionService detector, Object settings,
             List<EnrichedCandle> parents, List<EnrichedCandle> children, Candle latest) {
         if (observed.confirmationTimestamp() == latest.getTimestamp()) return observed;
         if (observed.confirmationTimestamp() > latest.getTimestamp() || parents.size() < 2) return null;
-        List<EnrichedCandle> previous = parents.subList(0, parents.size()-1);
-        long cutoff = parents.getLast().timestamp();
-        List<EnrichedCandle> previousChildren = children == null ? List.of() : children.stream()
-                .filter(c -> c.timestamp() < cutoff).toList();
         var previousStage = CheckTimings.enter("Elliott previous-candle count");
-        var before = AnalysisComputationScope.memo(java.util.List.of("previous-developing-elliott", detector),
-                () -> previousChildren.isEmpty() ? detector.findDevelopingImpulses(previous)
-                        : detector.findDevelopingImpulses(previous, previousChildren));
+        // Detectors are created per rule; followers with the same settings share the previous candle's count.
+        var before = AnalysisComputationScope.memo(java.util.List.of("previous-developing-elliott", settings), () -> {
+            List<EnrichedCandle> previous = parents.subList(0, parents.size() - 1);
+            long cutoff = parents.getLast().timestamp();
+            List<EnrichedCandle> previousChildren = children == null ? List.of() : children.stream()
+                    .filter(c -> c.timestamp() < cutoff).toList();
+            return previousChildren.isEmpty() ? detector.findDevelopingImpulses(previous)
+                    : detector.findDevelopingImpulses(previous, previousChildren);
+        });
         previousStage.close();
         if (before.stream().anyMatch(c -> c.pattern() == observed.pattern()
                 && c.points().equals(observed.points()))) return null;
@@ -1194,23 +1196,8 @@ public class ScheduledAlertService {
             List<EnrichedCandle> candlestickCandles,
             List<EnrichedCandle> elliottCandles,
             TimeInterval interval,
-            Map<Long, CrossPatternConfluenceService.Timeline> timelines) {
-        Long userId = rule.getUser() == null || rule.getUser().getId() == null
-                ? -1L : rule.getUser().getId();
+            Map<Object, CrossPatternConfluenceService.Timeline> timelines) {
         try (var stage = CheckTimings.enter("confluence timeline")) {
-            return confluenceTimeline(rule, candles, candlestickCandles, elliottCandles, interval, timelines, userId);
-        }
-    }
-
-    private CrossPatternConfluenceService.Timeline confluenceTimeline(
-            AlertRule rule,
-            List<Candle> candles,
-            List<EnrichedCandle> candlestickCandles,
-            List<EnrichedCandle> elliottCandles,
-            TimeInterval interval,
-            Map<Long, CrossPatternConfluenceService.Timeline> timelines,
-            Long userId) {
-        return timelines.computeIfAbsent(userId, ignored -> {
             AnalysisPreferencesService.PreferencesView analysisPreferences = preferencesService == null
                     ? AnalysisPreferencesService.factoryPreferences()
                     : preferencesService.get(rule.getUser());
@@ -1219,18 +1206,26 @@ public class ScheduledAlertService {
                     patternPreferencesService == null
                             ? CandlestickPatternPreferencesService.factoryPreferences()
                             : patternPreferencesService.get(rule.getUser());
-            return crossPatternConfluenceService.buildTimeline(
+            CandlePatternDetectionService.TrendDetectionRules trendRules = preferencesService == null
+                    ? CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval)
+                    : preferencesService.trendDetectionRules(intervalProfile);
+            // A timeline depends on the detection settings, not on whose they are: followers who share them share it.
+            Object settings = List.of(trendRules, definitions, elliottSettings(rule, interval), harmonicSettings(rule));
+            return timelines.computeIfAbsent(settings, ignored -> crossPatternConfluenceService.buildTimeline(
                     candles,
                     candlestickCandles,
                     elliottCandles,
                     interval,
-                    preferencesService == null
-                            ? CandlePatternDetectionService.TrendDetectionRules.adaptiveFactory(interval)
-                            : preferencesService.trendDetectionRules(intervalProfile),
+                    trendRules,
                     definitions,
                     elliottDetector(rule),
-                    harmonicDetector(rule));
-        });
+                    harmonicDetector(rule)));
+        }
+    }
+
+    private Object elliottSettings(AlertRule rule, TimeInterval interval) {
+        return elliottWavePreferencesService == null || rule == null || rule.getUser() == null ? "factory"
+                : elliottWavePreferencesService.get(rule.getUser()).profile(interval).rules();
     }
 
     @org.springframework.beans.factory.annotation.Value("${alerts.harmonic.max-endpoint-age.daily:5}")
