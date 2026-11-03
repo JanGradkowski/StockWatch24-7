@@ -1327,11 +1327,14 @@ a:hover .button-arrow {
     height: 105px;
 }
 
+/* On a narrow card the chips wrap instead of overflowing; a chip alone on its row takes the full width. */
 .signal-stack {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.55rem;
 }
+
+.signal-stack > .signal-chip { flex: 1 1 7rem; }
 
 /* These landing-card visuals follow variable-length copy, so keep them in flow. */
 .feature-card.large > .feature-content {
@@ -1341,8 +1344,20 @@ a:hover .button-arrow {
 
 .feature-card.large > .signal-stack {
     position: static;
+    height: auto;
     min-height: 105px;
     margin: 0 1.8rem 1.8rem;
+}
+
+.feature-card.medium {
+    display: flex;
+    flex-direction: column;
+}
+
+.feature-card.medium > .wave-visual {
+    position: static;
+    flex: 0 0 105px;
+    margin-top: auto;
 }
 
 .signal-chip {
