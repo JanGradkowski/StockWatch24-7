@@ -304,6 +304,11 @@ public class CandlestickSignalLifecycleService {
             List<EnrichedCandle> enrichedCandles,
             ElliottWaveDetectionService elliottWaveDetectionService) {
         JobLeaseGuard.requireOwnership();
+        return evaluateEvents(openEvents(symbol, interval), availableCandles, enrichedCandles,
+                elliottWaveDetectionService, false);
+    }
+
+    private List<AlertEvent> openEvents(String symbol, TimeInterval interval) {
         List<AlertEvent> pendingEvents = new ArrayList<>();
         pendingEvents.addAll(alertEventRepository.findTrackedLifecycleEvents(
                 symbol, interval, SignalLifecycleStatus.POTENTIAL));
@@ -311,6 +316,51 @@ public class CandlestickSignalLifecycleService {
                 symbol, interval, SignalLifecycleStatus.DETECTED));
         pendingEvents.sort(Comparator.comparing(AlertEvent::getSignalCandleTimestamp)
                 .thenComparing(event -> event.getId() == null ? Long.MIN_VALUE : event.getId()));
+        return pendingEvents;
+    }
+
+    /** Open candlestick signals whose lifecycle anchor is older than the first loaded candle. */
+    private List<AlertEvent> staleEvents(String symbol, TimeInterval interval, long loadedFrom) {
+        return openEvents(symbol, interval).stream()
+                .filter(event -> !event.isElliottSignal()
+                        && event.getLifecycleEvaluationAnchorTimestamp() != null
+                        && event.getLifecycleEvaluationAnchorTimestamp() < loadedFrom)
+                .toList();
+    }
+
+    /** The earliest anchor of an open candlestick signal older than {@code loadedFrom}, or null. */
+    Long oldestStaleAnchor(String symbol, TimeInterval interval, long loadedFrom) {
+        return staleEvents(symbol, interval, loadedFrom).stream()
+                .map(AlertEvent::getLifecycleEvaluationAnchorTimestamp)
+                .min(Long::compare)
+                .orElse(null);
+    }
+
+    /**
+     * Brings open candlestick signals that are older than the regularly loaded candles to a result, using
+     * the stored history from before their anchor. They are long past, so results are recorded without
+     * emails. A candidate is confirmed and then traded, so this repeats while signals keep moving.
+     */
+    @Transactional
+    public int catchUpStaleSignals(String symbol, TimeInterval interval, List<Candle> history, long loadedFrom) {
+        JobLeaseGuard.requireOwnership();
+        int transitions = 0;
+        for (int round = 0; round < 3; round++) {
+            List<AlertEvent> stale = staleEvents(symbol, interval, loadedFrom);
+            if (stale.isEmpty()) break;
+            int moved = evaluateEvents(stale, history, List.of(), null, true).transitioned();
+            transitions += moved;
+            if (moved == 0) break;
+        }
+        return transitions;
+    }
+
+    private LifecycleEvaluationResult evaluateEvents(
+            List<AlertEvent> pendingEvents,
+            List<Candle> availableCandles,
+            List<EnrichedCandle> enrichedCandles,
+            ElliottWaveDetectionService elliottWaveDetectionService,
+            boolean quiet) {
         if (pendingEvents.isEmpty()) {
             return LifecycleEvaluationResult.empty();
         }
@@ -356,7 +406,7 @@ public class CandlestickSignalLifecycleService {
                     && outcome != SignalLifecycleStatus.DETECTED
                     && CandlestickSignalLifecyclePolicy.protectivePlan(event.getTradePlanVersion())
                     && Boolean.FALSE.equals(event.getTradeActionable());
-            if (!projectionResult && notificationService.sendSignalLifecycleEmail(event)
+            if (!quiet && !projectionResult && notificationService.sendSignalLifecycleEmail(event)
                     && !notificationService.usesDurableDelivery()) {
                 event.setFollowUpSentAt(LocalDateTime.now());
             }

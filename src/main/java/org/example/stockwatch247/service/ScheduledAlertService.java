@@ -467,6 +467,7 @@ public class ScheduledAlertService {
                         + " harmonic outcome plan(s) for " + symbol + " " + interval + ".");
             }
         }
+        catchUpStaleSignals(symbol, interval, apiInterval, candles);
 
         if (rules.isEmpty()) {
             evaluateFollowerStages(symbol, interval, scheduledFor, new java.util.ArrayList<>());
@@ -1067,6 +1068,53 @@ public class ScheduledAlertService {
             }
         }
         return List.copyOf(points);
+    }
+
+    /** Candles kept before the oldest stale signal, enough for its ATR and the pivots that cap its target. */
+    private static final int STALE_SIGNAL_LEAD_CANDLES = 120;
+
+    /**
+     * Every signal gets an outcome, also one whose entry is older than the candles this check loads (it was
+     * a projection before those were followed, or the check did not run for a long time). Such signals are
+     * replayed once over the stored history from before their entry, up to the same last candle. Results are
+     * recorded without emails because the moves are long past.
+     */
+    private void catchUpStaleSignals(String symbol, TimeInterval interval, String apiInterval, List<Candle> candles) {
+        if (candles.isEmpty()) return;
+        long loadedFrom = candles.getFirst().getTimestamp();
+        long loadedThrough = candles.getLast().getTimestamp();
+        Long oldest = java.util.stream.Stream.of(
+                        lifecycleService.oldestStaleAnchor(symbol, interval, loadedFrom),
+                        elliottTradePlanService == null ? null
+                                : elliottTradePlanService.oldestStaleProjection(symbol, interval, loadedFrom),
+                        harmonicStopPlanService == null ? null
+                                : harmonicStopPlanService.oldestStaleProjection(symbol, interval, loadedFrom))
+                .filter(java.util.Objects::nonNull)
+                .min(Long::compare)
+                .orElse(null);
+        if (oldest == null) return;
+        int lead = Math.max(STALE_SIGNAL_LEAD_CANDLES, lifecycleService.requiredCandlestickAtrHistory(symbol, interval) + 2);
+        List<Candle> before = candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                symbol, apiInterval, oldest, PageRequest.of(0, lead));
+        long from = before.isEmpty() ? oldest : before.getLast().getTimestamp();
+        List<Candle> history = candleRepository
+                .findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(symbol, apiInterval, from)
+                .stream()
+                .filter(candle -> candle.getTimestamp() <= loadedThrough)
+                .toList();
+        if (history.isEmpty() || history.getFirst().getTimestamp() >= loadedFrom) return;
+        technicalStage(symbol, interval, "replaying signals older than the loaded candles from " + history.size() + " stored candles");
+        int caughtUp = lifecycleService.catchUpStaleSignals(symbol, interval, history, loadedFrom);
+        if (elliottTradePlanService != null) {
+            caughtUp += elliottTradePlanService.catchUpStaleProjections(symbol, interval, history, loadedFrom);
+        }
+        if (harmonicStopPlanService != null) {
+            caughtUp += harmonicStopPlanService.catchUpStaleProjections(symbol, interval, history, loadedFrom);
+        }
+        if (caughtUp > 0) {
+            log.info("Caught up " + caughtUp + " signal outcome(s) older than the loaded candles for "
+                    + symbol + " " + interval + ".");
+        }
     }
 
     private int circuitBreakerAtrPeriod(AlertRule rule, TimeInterval interval) {

@@ -156,6 +156,28 @@ class ElliottTradePlanServiceTest {
     }
 
     @Test
+    void aProjectionOlderThanTheLoadedCandlesIsCaughtUpFromTheStoredHistory() {
+        var plan = awaitingFillPlan();
+        plan.setStatus(ElliottTradePlanStatus.PROJECTION_ONLY);
+        plan.setActionable(false);
+        when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY, List.of(ElliottTradePlanStatus.PROJECTION_ONLY)))
+                .thenReturn(List.of(plan));
+        Candle next = new Candle("TEST", "1d", 101L, 101.0, 116.0, 100.5, 114.0, 1_000L);
+
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY, List.of(next))).isZero();
+        assertThat(service.oldestStaleProjection("TEST", TimeInterval.DAILY, 101L)).isEqualTo(100L);
+        List<Candle> history = new java.util.ArrayList<>(quietHistory());
+        history.add(next);
+
+        assertThat(service.catchUpStaleProjections("TEST", TimeInterval.DAILY, history, 101L)).isEqualTo(1);
+
+        assertThat(plan.getStatus()).isEqualTo(ElliottTradePlanStatus.TARGET_REACHED);
+        assertThat(plan.getResolutionFillPrice()).isEqualTo(115.0);
+        assertThat(plan.isActionable()).isFalse();
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
     void protectiveVersionPreservesStopDespiteCountBoundaryAndModelsGapFill() {
         var plan = activeBuyPlan();
         plan.setPlanVersion(ElliottTradePlanPolicy.VERSION);

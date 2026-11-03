@@ -953,6 +953,13 @@ class AlertRuleServiceTest {
         when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc("RIOT", "1d"))
                 .thenReturn(List.of(new Candle(
                         "RIOT", "1d", 250L, 113.0, 115.0, 112.0, 114.0, 1_000L)));
+        // The older Wave IV plan has no exit rules, so it is measured from the next open (filled: 259 onward).
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                org.mockito.ArgumentMatchers.eq("RIOT"), org.mockito.ArgumentMatchers.eq("1d"),
+                org.mockito.ArgumentMatchers.eq(259L), org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(List.of(new Candle("RIOT", "1d", 260L, 110.0, 112.0, 109.0, 111.0, 1_000L),
+                        new Candle("RIOT", "1d", 261L, 111.0, 117.0, 110.0, 115.5, 1_000L)));
 
         var stages = service.getSignalArchive(user, "date", "desc", 0).signals().getFirst().stageOutcomes();
 
@@ -962,9 +969,10 @@ class AlertRuleServiceTest {
         assertThat(stages.get(0).projection()).isTrue();
         assertThat(stages.get(1).label()).isEqualTo("Projection · Wave III target reached");
         assertThat(stages.get(1).returnPercent()).isCloseTo(10.0, org.assertj.core.api.Assertions.within(1e-9));
-        // Plans of older versions were never given exit rules, so there is nothing to measure.
-        assertThat(stages.get(2).label()).isEqualTo("Wave IV projection only");
-        assertThat(stages.get(2).available()).isFalse();
+        // Plans of older versions were never given exit rules, so the horizon measures them instead.
+        assertThat(stages.get(2).label()).isEqualTo("Projection · Pending Wave IV outcome");
+        assertThat(stages.get(2).returnPercent()).isCloseTo(5.0, org.assertj.core.api.Assertions.within(1e-9));
+        assertThat(stages).noneMatch(stage -> stage.label().endsWith("projection only"));
     }
 
     @Test

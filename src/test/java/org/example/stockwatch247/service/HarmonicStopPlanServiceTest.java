@@ -211,7 +211,7 @@ class HarmonicStopPlanServiceTest {
     }
 
     @Test
-    void projectionOlderThanTheLoadedCandlesIsLeftOpen() {
+    void projectionOlderThanTheLoadedCandlesWaitsForTheCatchUp() {
         var event = awaitingFillEvent();
         event.setTradeActionable(false);
         event.setHarmonicStopStatus(HarmonicStopStatus.PROJECTION_ONLY.name());
@@ -221,6 +221,14 @@ class HarmonicStopPlanServiceTest {
 
         assertThat(event.getHarmonicStopStatus()).isEqualTo(HarmonicStopStatus.PROJECTION_ONLY.name());
         assertThat(event.getTradeFillStatus()).isEqualTo("AWAITING_FILL");
+
+        // The catch-up replays it over the stored history that reaches back before its entry.
+        assertThat(service.oldestStaleProjection("TEST", TimeInterval.DAILY, 101L)).isEqualTo(100L);
+        List<Candle> history = new java.util.ArrayList<>(quietHistory());
+        history.add(new Candle("TEST", "1d", 101L, 101.0, 116.0, 100.5, 114.0, 1_000L));
+        assertThat(service.catchUpStaleProjections("TEST", TimeInterval.DAILY, history, 101L)).isEqualTo(1);
+        assertThat(event.getHarmonicStopStatus()).isEqualTo("TARGET_REACHED");
+        assertThat(event.getTradeResolutionPrice()).isEqualTo(115.0);
         verifyNoInteractions(notificationService);
     }
 

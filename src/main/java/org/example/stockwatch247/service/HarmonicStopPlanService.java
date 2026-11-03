@@ -149,88 +149,17 @@ public class HarmonicStopPlanService {
         JobLeaseGuard.requireOwnership();
         if (symbol == null || symbol.isBlank() || interval == null
                 || availableCandles == null || availableCandles.isEmpty()) return 0;
-        List<Candle> candles = availableCandles.stream()
-                .filter(candle -> candle != null && candle.getTimestamp() != null
-                        && candle.getHighPrice() != null && candle.getLowPrice() != null
-                        && candle.getClosePrice() != null)
-                .sorted(Comparator.comparing(Candle::getTimestamp))
-                .toList();
+        List<Candle> candles = usable(availableCandles);
         int resolved = 0;
         for (AlertEvent event : eventRepository.findActiveHarmonicStopPlans(symbol, interval)) {
             // A projection-only plan is followed as a paper trade with the same rules, so the archive can show
-            // what it would have returned. It needs a current plan version and candles back to its entry.
+            // what it would have returned. One older than the loaded candles is left to catchUpStaleProjections.
             boolean qualified = HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion());
-            boolean projection = HarmonicStopStatus.PROJECTION_ONLY.name().equals(event.getHarmonicStopStatus())
-                    || qualified && !Boolean.TRUE.equals(event.getTradeActionable());
-            if (projection && (!qualified
-                    || event.getDetectionCandleTimestamp() == null || event.getStopLossPrice() == null
-                    || event.getProfitTargetPrice() == null || event.getTradeHorizonCandles() == null
+            boolean projection = projection(event);
+            if (projection && (!followable(event)
                     || candles.isEmpty() || candles.getFirst().getTimestamp() > event.getDetectionCandleTimestamp())) continue;
             if (qualified) {
-                if (event.awaitingFill()) {
-                    Candle fill = candles.stream().filter(c -> c.getTimestamp() > event.getDetectionCandleTimestamp())
-                            .findFirst().orElse(null);
-                    if (fill == null) continue;
-                    boolean filled = fillAtNextOpen(event, fill, candles, interval, projection);
-                    if (!filled && !projection && notificationService.sendHarmonicStopOutcomeEmail(event, fill)
-                            && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
-                    eventRepository.save(event);
-                    if (!filled) { resolved++; continue; }
-                    projection = !Boolean.TRUE.equals(event.getTradeActionable());
-                }
-                int horizon = event.getTradeHorizonCandles();
-                if (HarmonicStopPlanPolicy.scalesOut(event.getTradePlanVersion())
-                        && TradeRiskPolicy.FILLED.equals(event.getTradeFillStatus()) && event.getTradeEntryTimestamp() != null) {
-                    List<Candle> sinceEntry = candles.stream()
-                            .filter(c -> c.getTimestamp() >= event.getTradeEntryTimestamp()).limit(horizon).toList();
-                    ScaleOutExit exit = replayScaleOut(event.getTradeSignal(), event.getTradeEntryPrice(),
-                            event.getStopLossPrice(), event.getProfitTargetPrice(), event.getSecondaryTargetPrice(),
-                            sinceEntry, horizon);
-                    if (exit == null) continue;
-                    event.setHarmonicStopStatus(exit.status().name());
-                    event.setHarmonicStopResolutionTimestamp(exit.candle().getTimestamp());
-                    event.setHarmonicStopResolutionPrice(exit.averageExit());
-                    event.setTradeResolutionPrice(exit.averageExit());
-                    event.setHarmonicStopResolutionReason(exit.reason());
-                    markResolved(event, projection);
-                    if (!projection && exit.status() != HarmonicStopStatus.TIME_STOPPED
-                            && notificationService.sendHarmonicStopOutcomeEmail(event, exit.candle())
-                            && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
-                    eventRepository.save(event);
-                    resolved++;
-                    continue;
-                }
-                // A next-open fill is exposed for the rest of its entry candle, so that candle counts as the first.
-                boolean includesEntryCandle = TradeRiskPolicy.FILLED.equals(event.getTradeFillStatus())
-                        && event.getTradeEntryTimestamp() != null;
-                List<Candle> following = candles.stream().filter(c -> includesEntryCandle
-                                ? c.getTimestamp() >= event.getTradeEntryTimestamp()
-                                : c.getTimestamp() > event.getDetectionCandleTimestamp())
-                        .limit(horizon).toList();
-                boolean done = false;
-                boolean invalidData = false;
-                for (Candle bar : following) {
-                    if (!TradeRiskPolicy.valid(bar)) { invalidData = true; break; }
-                    var outcome = executionService == null
-                            ? TradeOutcomePolicy.evaluate(event.getTradeSignal(), event.getStopLossPrice(), event.getProfitTargetPrice(), bar)
-                            : executionService.evaluate(symbol, interval, event.getTradeSignal(), event.getStopLossPrice(), event.getProfitTargetPrice(), bar);
-                    if (outcome == null) continue;
-                    event.setHarmonicStopStatus(outcome.kind() == TradeOutcomePolicy.Kind.STOPPED ? "STOPPED" : "TARGET_REACHED");
-                    event.setHarmonicStopResolutionTimestamp(bar.getTimestamp());
-                    event.setHarmonicStopResolutionPrice(outcome.price());
-                    event.setTradeResolutionPrice(outcome.price());
-                    event.setHarmonicStopResolutionReason(outcome.reason());
-                    markResolved(event, projection);
-                    if (!projection && notificationService.sendHarmonicStopOutcomeEmail(event, bar)
-                            && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
-                    done = true;
-                    break;
-                }
-                if (!done && !invalidData && following.size() == horizon) {
-                    resolveTimeStop(event, following.getLast(), projection);
-                    done = true;
-                }
-                if (done) { eventRepository.save(event); resolved++; }
+                if (evaluateQualified(event, symbol, interval, candles, projection)) resolved++;
                 continue;
             }
             List<Candle> outcomeCandles = candles.stream()
@@ -250,6 +179,127 @@ public class HarmonicStopPlanService {
             resolved++;
         }
         return resolved;
+    }
+
+    /** Fills and follows one current-version plan; true when it was resolved. */
+    private boolean evaluateQualified(AlertEvent event, String symbol, TimeInterval interval,
+                                      List<Candle> candles, boolean projection) {
+        if (event.awaitingFill()) {
+            Candle fill = candles.stream().filter(c -> c.getTimestamp() > event.getDetectionCandleTimestamp())
+                    .findFirst().orElse(null);
+            if (fill == null) return false;
+            boolean filled = fillAtNextOpen(event, fill, candles, interval, projection);
+            if (!filled && !projection && notificationService.sendHarmonicStopOutcomeEmail(event, fill)
+                    && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
+            eventRepository.save(event);
+            if (!filled) return true;
+            projection = !Boolean.TRUE.equals(event.getTradeActionable());
+        }
+        int horizon = event.getTradeHorizonCandles();
+        if (HarmonicStopPlanPolicy.scalesOut(event.getTradePlanVersion())
+                && TradeRiskPolicy.FILLED.equals(event.getTradeFillStatus()) && event.getTradeEntryTimestamp() != null) {
+            List<Candle> sinceEntry = candles.stream()
+                    .filter(c -> c.getTimestamp() >= event.getTradeEntryTimestamp()).limit(horizon).toList();
+            ScaleOutExit exit = replayScaleOut(event.getTradeSignal(), event.getTradeEntryPrice(),
+                    event.getStopLossPrice(), event.getProfitTargetPrice(), event.getSecondaryTargetPrice(),
+                    sinceEntry, horizon);
+            if (exit == null) return false;
+            event.setHarmonicStopStatus(exit.status().name());
+            event.setHarmonicStopResolutionTimestamp(exit.candle().getTimestamp());
+            event.setHarmonicStopResolutionPrice(exit.averageExit());
+            event.setTradeResolutionPrice(exit.averageExit());
+            event.setHarmonicStopResolutionReason(exit.reason());
+            markResolved(event, projection);
+            if (!projection && exit.status() != HarmonicStopStatus.TIME_STOPPED
+                    && notificationService.sendHarmonicStopOutcomeEmail(event, exit.candle())
+                    && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
+            eventRepository.save(event);
+            return true;
+        }
+        // A next-open fill is exposed for the rest of its entry candle, so that candle counts as the first.
+        boolean includesEntryCandle = TradeRiskPolicy.FILLED.equals(event.getTradeFillStatus())
+                && event.getTradeEntryTimestamp() != null;
+        List<Candle> following = candles.stream().filter(c -> includesEntryCandle
+                        ? c.getTimestamp() >= event.getTradeEntryTimestamp()
+                        : c.getTimestamp() > event.getDetectionCandleTimestamp())
+                .limit(horizon).toList();
+        boolean done = false;
+        boolean invalidData = false;
+        for (Candle bar : following) {
+            if (!TradeRiskPolicy.valid(bar)) { invalidData = true; break; }
+            var outcome = executionService == null
+                    ? TradeOutcomePolicy.evaluate(event.getTradeSignal(), event.getStopLossPrice(), event.getProfitTargetPrice(), bar)
+                    : executionService.evaluate(symbol, interval, event.getTradeSignal(), event.getStopLossPrice(), event.getProfitTargetPrice(), bar);
+            if (outcome == null) continue;
+            event.setHarmonicStopStatus(outcome.kind() == TradeOutcomePolicy.Kind.STOPPED ? "STOPPED" : "TARGET_REACHED");
+            event.setHarmonicStopResolutionTimestamp(bar.getTimestamp());
+            event.setHarmonicStopResolutionPrice(outcome.price());
+            event.setTradeResolutionPrice(outcome.price());
+            event.setHarmonicStopResolutionReason(outcome.reason());
+            markResolved(event, projection);
+            if (!projection && notificationService.sendHarmonicStopOutcomeEmail(event, bar)
+                    && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
+            done = true;
+            break;
+        }
+        if (!done && !invalidData && following.size() == horizon) {
+            resolveTimeStop(event, following.getLast(), projection);
+            done = true;
+        }
+        if (done) eventRepository.save(event);
+        return done;
+    }
+
+    private static boolean projection(AlertEvent event) {
+        return HarmonicStopStatus.PROJECTION_ONLY.name().equals(event.getHarmonicStopStatus())
+                || HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())
+                && !Boolean.TRUE.equals(event.getTradeActionable());
+    }
+
+    /** A projection of a current version with the stop, target and horizon needed to follow it. */
+    private static boolean followable(AlertEvent event) {
+        return HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())
+                && event.getDetectionCandleTimestamp() != null && event.getStopLossPrice() != null
+                && event.getProfitTargetPrice() != null && event.getTradeHorizonCandles() != null;
+    }
+
+    private List<AlertEvent> staleProjections(String symbol, TimeInterval interval, long loadedFrom) {
+        return eventRepository.findActiveHarmonicStopPlans(symbol, interval).stream()
+                .filter(event -> projection(event) && followable(event)
+                        && event.getDetectionCandleTimestamp() < loadedFrom)
+                .toList();
+    }
+
+    /** The earliest entry of a followable projection older than {@code loadedFrom}, or null. */
+    Long oldestStaleProjection(String symbol, TimeInterval interval, long loadedFrom) {
+        return staleProjections(symbol, interval, loadedFrom).stream()
+                .map(AlertEvent::getDetectionCandleTimestamp).min(Long::compare).orElse(null);
+    }
+
+    /**
+     * Follows projections older than the regularly loaded candles through the stored history that reaches
+     * back before their entry. Projection results never send emails or mark the signal unread.
+     */
+    @Transactional
+    public int catchUpStaleProjections(String symbol, TimeInterval interval, List<Candle> history, long loadedFrom) {
+        JobLeaseGuard.requireOwnership();
+        if (history == null || history.isEmpty()) return 0;
+        List<Candle> candles = usable(history);
+        int resolved = 0;
+        for (AlertEvent event : staleProjections(symbol, interval, loadedFrom)) {
+            if (candles.isEmpty() || candles.getFirst().getTimestamp() > event.getDetectionCandleTimestamp()) continue;
+            if (evaluateQualified(event, symbol, interval, candles, true)) resolved++;
+        }
+        return resolved;
+    }
+
+    private static List<Candle> usable(List<Candle> availableCandles) {
+        return availableCandles.stream()
+                .filter(candle -> candle != null && candle.getTimestamp() != null
+                        && candle.getHighPrice() != null && candle.getLowPrice() != null
+                        && candle.getClosePrice() != null)
+                .sorted(Comparator.comparing(Candle::getTimestamp))
+                .toList();
     }
 
     private void resolveStop(AlertEvent event, Candle breached) {

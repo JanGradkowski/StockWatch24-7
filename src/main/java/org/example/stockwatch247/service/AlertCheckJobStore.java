@@ -56,7 +56,7 @@ public class AlertCheckJobStore {
                     from alert_events event
                     join alert_rules rule on rule.id = event.alert_rule_id
                     join stock_assets asset on asset.id = rule.stock_asset_id
-                    where event.lifecycle_status = 'DETECTED'
+                    where event.lifecycle_status in ('POTENTIAL', 'DETECTED')
                       and event.confirmation_window_candles is not null
                       and event.pattern_high is not null
                       and event.pattern_low is not null
@@ -67,8 +67,10 @@ public class AlertCheckJobStore {
                     from alert_events event
                     join alert_rules rule on rule.id = event.alert_rule_id
                     join stock_assets asset on asset.id = rule.stock_asset_id
-                    where event.trade_plan_version = 'HARMONIC_STOP_V1'
-                      and event.harmonic_stop_status = 'ACTIVE'
+                    where (event.harmonic_stop_status = 'ACTIVE'
+                             and event.trade_plan_version in ('HARMONIC_STOP_V1', 'HARMONIC_TRADE_V2', 'HARMONIC_TRADE_V3')
+                          or event.harmonic_stop_status = 'PROJECTION_ONLY'
+                             and event.trade_plan_version in ('HARMONIC_TRADE_V2', 'HARMONIC_TRADE_V3'))
                       and event.deleted_at is null
 
                     union
@@ -78,7 +80,9 @@ public class AlertCheckJobStore {
                     join alert_events event on event.id = plan.alert_event_id
                     join alert_rules rule on rule.id = event.alert_rule_id
                     join stock_assets asset on asset.id = rule.stock_asset_id
-                    where plan.status = 'ACTIVE'
+                    where (plan.status = 'ACTIVE'
+                          or plan.status = 'PROJECTION_ONLY'
+                             and plan.plan_version in ('ELLIOTT_FIB_RR_V3', 'ELLIOTT_FIB_RR_V4'))
                       and event.deleted_at is null
 
                     union

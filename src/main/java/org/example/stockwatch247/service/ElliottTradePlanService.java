@@ -244,40 +244,79 @@ public class ElliottTradePlanService {
         JobLeaseGuard.requireOwnership();
         if (symbol == null || symbol.isBlank() || interval == null
                 || availableCandles == null || availableCandles.isEmpty()) return 0;
-        List<Candle> candles = availableCandles.stream()
-                .filter(candle -> candle != null && candle.getTimestamp() != null
-                        && candle.getHighPrice() != null && candle.getLowPrice() != null
-                        && candle.getClosePrice() != null)
-                .sorted(Comparator.comparing(Candle::getTimestamp))
-                .toList();
+        List<Candle> candles = usable(availableCandles);
         int resolved = 0;
         for (ElliottStageTradePlan plan : planRepository.findOpenPlans(
                 symbol, interval, List.of(ElliottTradePlanStatus.ACTIVE, ElliottTradePlanStatus.PROJECTION_ONLY))) {
             // A projection-only plan is followed as a paper trade with the same entry and exit rules, so the
             // archive can show what it would have returned. Older plan versions have no such exit rules,
-            // and a plan whose entry is older than the loaded candles cannot be replayed faithfully.
+            // and a plan whose entry is older than the loaded candles is left to catchUpStaleProjections.
             if (plan.getStatus() == ElliottTradePlanStatus.PROJECTION_ONLY
                     && (!ElliottTradePlanPolicy.qualifiedPlan(plan.getPlanVersion())
                     || candles.isEmpty() || candles.getFirst().getTimestamp() > plan.getEntryTimestamp())) continue;
-            if (TradeRiskPolicy.AWAITING_FILL.equals(plan.getFillStatus())) {
-                Candle fill = candles.stream().filter(c -> c.getTimestamp() > plan.getEntryTimestamp())
-                        .findFirst().orElse(null);
-                if (fill == null) continue;
-                Resolution notFilled = fillAtNextOpen(plan, fill, candles, interval);
-                if (notFilled != null) {
-                    close(plan, notFilled);
-                    resolved++;
-                    continue;
-                }
-                planRepository.save(plan);
-                eventRepository.save(plan.getAlertEvent());
-            }
-            Resolution resolution = resolve(plan, candles);
-            if (resolution == null) continue;
-            close(plan, resolution);
-            resolved++;
+            if (evaluate(plan, candles, interval)) resolved++;
         }
         return resolved;
+    }
+
+    /** Followable projection plans whose entry is older than {@code loadedFrom}. */
+    private List<ElliottStageTradePlan> staleProjections(String symbol, TimeInterval interval, long loadedFrom) {
+        return planRepository.findOpenPlans(symbol, interval, List.of(ElliottTradePlanStatus.PROJECTION_ONLY)).stream()
+                .filter(plan -> ElliottTradePlanPolicy.qualifiedPlan(plan.getPlanVersion())
+                        && plan.getEntryTimestamp() < loadedFrom)
+                .toList();
+    }
+
+    /** The earliest entry of a followable projection plan older than {@code loadedFrom}, or null. */
+    Long oldestStaleProjection(String symbol, TimeInterval interval, long loadedFrom) {
+        return staleProjections(symbol, interval, loadedFrom).stream()
+                .map(ElliottStageTradePlan::getEntryTimestamp).min(Long::compare).orElse(null);
+    }
+
+    /**
+     * Follows projection plans older than the regularly loaded candles through the stored history that
+     * reaches back before their entry. Projection results never send emails.
+     */
+    @Transactional
+    public int catchUpStaleProjections(String symbol, TimeInterval interval, List<Candle> history, long loadedFrom) {
+        JobLeaseGuard.requireOwnership();
+        if (history == null || history.isEmpty()) return 0;
+        List<Candle> candles = usable(history);
+        int resolved = 0;
+        for (ElliottStageTradePlan plan : staleProjections(symbol, interval, loadedFrom)) {
+            if (candles.isEmpty() || candles.getFirst().getTimestamp() > plan.getEntryTimestamp()) continue;
+            if (evaluate(plan, candles, interval)) resolved++;
+        }
+        return resolved;
+    }
+
+    private static List<Candle> usable(List<Candle> availableCandles) {
+        return availableCandles.stream()
+                .filter(candle -> candle != null && candle.getTimestamp() != null
+                        && candle.getHighPrice() != null && candle.getLowPrice() != null
+                        && candle.getClosePrice() != null)
+                .sorted(Comparator.comparing(Candle::getTimestamp))
+                .toList();
+    }
+
+    /** Fills a plan at its next open when due, then resolves it; true when the plan was closed. */
+    private boolean evaluate(ElliottStageTradePlan plan, List<Candle> candles, TimeInterval interval) {
+        if (TradeRiskPolicy.AWAITING_FILL.equals(plan.getFillStatus())) {
+            Candle fill = candles.stream().filter(c -> c.getTimestamp() > plan.getEntryTimestamp())
+                    .findFirst().orElse(null);
+            if (fill == null) return false;
+            Resolution notFilled = fillAtNextOpen(plan, fill, candles, interval);
+            if (notFilled != null) {
+                close(plan, notFilled);
+                return true;
+            }
+            planRepository.save(plan);
+            eventRepository.save(plan.getAlertEvent());
+        }
+        Resolution resolution = resolve(plan, candles);
+        if (resolution == null) return false;
+        close(plan, resolution);
+        return true;
     }
 
     private void close(ElliottStageTradePlan plan, Resolution resolution) {

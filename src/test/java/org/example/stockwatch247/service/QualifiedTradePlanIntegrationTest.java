@@ -85,10 +85,14 @@ class QualifiedTradePlanIntegrationTest {
         assertThat(query.page(u.getId(),null,true,0,50).ids()).containsExactly(e.getId(),won.getId());
         assertThat(query.page(u.getId(),null,false,0,50).ids()).containsExactly(won.getId(),e.getId());
         events.delete(won);events.flush();
-        // Without a stored stop and target there is nothing to replay.
+        // Without a stored stop and target it is measured from the next open to the close 8 candles later.
         e.setStopLossPrice(null);e.setProfitTargetPrice(null);e.setTradePlanVersion(null);events.saveAndFlush(e);
+        var waiting=archives.getSignalArchive(u,"trade-return","desc",0).signals().getFirst().outcome();
+        assertThat(waiting.pending()).as("no candle after the signal yet").isTrue();
+        for(int i=1;i<=10;i++) candles.save(new Candle(a.getTickerSymbol(),"1d",1704067200L+i*86400L,100+i,101.5+i,99+i,100.5+i,100L));
+        candles.flush();
         var withoutPlan=archives.getSignalArchive(u,"trade-return","desc",0).signals().getFirst().outcome();
-        assertThat(withoutPlan.returnPercent()).isNull();
-        assertThat(withoutPlan.label()).isEqualTo("Projection only");
+        assertThat(withoutPlan.label()).isEqualTo("Projection · Close after 8 candles");
+        assertThat(withoutPlan.returnPercent()).isCloseTo((108.5-101)/101*100, within(1e-9));
     }
 }
