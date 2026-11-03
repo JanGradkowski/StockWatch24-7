@@ -97,6 +97,7 @@
             <li><strong th:text="#{signals.state.active}">Active</strong> <span th:text="#{signals.how.activeText}">signals are pending setups and projections.</span> <strong th:text="#{signals.state.completed}">Completed</strong> <span th:text="#{signals.how.completedText}">signals have resolved, been rejected, or are recorded filings.</span></li>
             <li><strong class="learn-term" data-term="setupScore" th:text="#{signals.column.setupScore}">Setup score</strong> <span th:text="#{signals.how.scoreText}">rates the evidence for a pattern out of 100. It is not a probability of profit.</span></li>
             <li><strong th:text="#{signals.column.tradeOutcome}">Trade outcome</strong> <span th:text="#{signals.how.outcomeText}">is the separately tracked price result, using each pattern family's stop, target and time-limit rules.</span></li>
+            <li th:text="#{signals.how.projectionText}">A result marked "Projection" comes from a plan that did not qualify as a trade (for example, too little reward for its risk). It is tracked with the same entry, stop, target and time limit, so it shows what the signal would have made or lost.</li>
           </ul>
         </details>
       </div>

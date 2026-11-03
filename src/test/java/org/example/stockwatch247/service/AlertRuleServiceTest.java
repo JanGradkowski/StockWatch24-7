@@ -922,6 +922,52 @@ class AlertRuleServiceTest {
     }
 
     @Test
+    void elliottArchiveShowsTheModeledReturnOfProjectionOnlyStages() {
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleService service = service(alertRuleRepository, alertEventRepository, candleRepository);
+        ElliottTradePlanService tradePlanService = mock(ElliottTradePlanService.class);
+        service.configureElliottTradePlans(tradePlanService);
+        User user = new User();
+        user.setEmail("elliott-projection@example.com");
+        AlertRule rule = rule(28L, user, stock(8L, "RIOT", "Riot Platforms, Inc."),
+                TimeInterval.DAILY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        AlertEvent event = new AlertEvent();
+        event.setId(309L);
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.ELLIOTT_BULLISH_WAVE_III_END);
+        event.setTradeSignal(TradeSignal.SELL);
+        event.setSignalCandleTimestamp(300L);
+        event.setSentAt(LocalDateTime.of(2026, 7, 21, 22, 15));
+        when(alertEventRepository.findByAlertRule_User(
+                org.mockito.ArgumentMatchers.eq(user), org.mockito.ArgumentMatchers.any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(event), PageRequest.of(0, 50), 1));
+        when(tradePlanService.history(309L, user)).thenReturn(List.of(
+                projectionPlan(ElliottSignalStage.WAVE_II_END, TradeSignal.BUY, ElliottTradePlanStatus.PROJECTION_ONLY,
+                        100L, 100.0, null, ElliottTradePlanPolicy.VERSION),
+                projectionPlan(ElliottSignalStage.WAVE_III_END, TradeSignal.SELL, ElliottTradePlanStatus.TARGET_REACHED,
+                        200L, 120.0, 108.0, ElliottTradePlanPolicy.VERSION),
+                projectionPlan(ElliottSignalStage.WAVE_IV_END, TradeSignal.BUY, ElliottTradePlanStatus.PROJECTION_ONLY,
+                        260L, 110.0, null, "ELLIOTT_FIB_V2")));
+        when(candleRepository.findTop100BySymbolAndTimeIntervalOrderByTimestampDesc("RIOT", "1d"))
+                .thenReturn(List.of(new Candle(
+                        "RIOT", "1d", 250L, 113.0, 115.0, 112.0, 114.0, 1_000L)));
+
+        var stages = service.getSignalArchive(user, "date", "desc", 0).signals().getFirst().stageOutcomes();
+
+        assertThat(stages).hasSize(3);
+        assertThat(stages.get(0).label()).isEqualTo("Projection · Pending Wave II outcome");
+        assertThat(stages.get(0).returnPercent()).isCloseTo(14.0, org.assertj.core.api.Assertions.within(1e-9));
+        assertThat(stages.get(0).projection()).isTrue();
+        assertThat(stages.get(1).label()).isEqualTo("Projection · Wave III target reached");
+        assertThat(stages.get(1).returnPercent()).isCloseTo(10.0, org.assertj.core.api.Assertions.within(1e-9));
+        // Plans of older versions were never given exit rules, so there is nothing to measure.
+        assertThat(stages.get(2).label()).isEqualTo("Wave IV projection only");
+        assertThat(stages.get(2).available()).isFalse();
+    }
+
+    @Test
     void signalArchiveSupportsConfidenceAndLifecycleStatusSorting() {
         AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
         AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
@@ -1541,6 +1587,24 @@ class AlertRuleServiceTest {
                 "Europe/Brussels",
                 Clock.fixed(MANUAL_CHECK_NOW, ZoneOffset.UTC)
         );
+    }
+
+    private ElliottTradePlanService.StagePlanView projectionPlan(
+            ElliottSignalStage stage,
+            TradeSignal expectedMove,
+            ElliottTradePlanStatus status,
+            long entryTimestamp,
+            double entryPrice,
+            Double resolutionPrice,
+            String version) {
+        return new ElliottTradePlanService.StagePlanView(
+                stage, 1, expectedMove, status, entryTimestamp, entryPrice,
+                95.0, 94.5, null,
+                110.0, 108.0, 112.0, 108.0,
+                "Test Fibonacci target", 1.0, 2.0, 1.2,
+                false, "Projection only: the primary target does not meet the minimum reward/risk.",
+                resolutionPrice == null ? null : entryTimestamp + 1,
+                resolutionPrice, resolutionPrice == null ? null : "Test resolution", null, 12, "FILLED", version);
     }
 
     private ElliottTradePlanService.StagePlanView stagePlan(

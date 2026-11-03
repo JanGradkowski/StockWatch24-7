@@ -25,7 +25,8 @@ public class SignalArchiveQuery {
             (case when r.pattern_family = 'ELLIOTT_WAVE' and e.elliott_trade_plan_status is not null
                 then e.elliott_trade_plan_status in ('ACTIVE', 'PROJECTION_ONLY')
              when r.pattern_family = 'HARMONIC_FORMATION' and e.harmonic_stop_status is not null
-                then e.harmonic_stop_status = 'ACTIVE'
+                then e.harmonic_stop_status = 'ACTIVE' or e.harmonic_stop_status = 'PROJECTION_ONLY'
+                    and e.trade_plan_version in ('HARMONIC_TRADE_V2','HARMONIC_TRADE_V3')
              else coalesce(e.lifecycle_status, 'DETECTED') in ('POTENTIAL', 'DETECTED') end)
             """;
         String where = "r.user_id = ? and e.deleted_at is null and (cast(? as bigint) is null or r.stock_asset_id = ?)"
@@ -158,7 +159,10 @@ public class SignalArchiveQuery {
                        case when first_plan.id is not null then first_plan.expected_move else e.trade_signal end as direction,
                        case
                        when r.pattern_family = 'ELLIOTT_WAVE' and first_plan.id is not null then
-                           case last_plan.status when 'PROJECTION_ONLY' then null when 'NOT_FILLED' then null
+                           case last_plan.status when 'PROJECTION_ONLY' then
+                               case when last_plan.plan_version in ('ELLIOTT_FIB_RR_V3','ELLIOTT_FIB_RR_V4')
+                                   and last_plan.fill_status is distinct from 'AWAITING_FILL' then recent.close_price end
+                           when 'NOT_FILLED' then null
                            when 'ACTIVE' then case when last_plan.fill_status = 'AWAITING_FILL' then null else recent.close_price end
                            else coalesce(last_plan.resolution_fill_price, last_plan.resolution_close_price) end
                        when r.pattern_family = 'ELLIOTT_WAVE' then
@@ -170,9 +174,12 @@ public class SignalArchiveQuery {
                            case when e.trade_plan_version in ('HARMONIC_STOP_V1','HARMONIC_TRADE_V2','HARMONIC_TRADE_V3') and e.stop_loss_price is not null then
                                case e.harmonic_stop_status when 'STOPPED' then coalesce(e.trade_resolution_price,e.harmonic_stop_resolution_price,e.stop_loss_price) when 'TARGET_REACHED' then e.harmonic_stop_resolution_price
                                when 'TIME_STOPPED' then e.harmonic_stop_resolution_price
-                               when 'ACTIVE' then case when e.trade_fill_status = 'AWAITING_FILL' then null else recent.close_price end end end
+                               when 'ACTIVE' then case when e.trade_fill_status = 'AWAITING_FILL' then null else recent.close_price end
+                               when 'PROJECTION_ONLY' then case when e.trade_plan_version in ('HARMONIC_TRADE_V2','HARMONIC_TRADE_V3')
+                                   and e.profit_target_price is not null and e.trade_horizon_candles is not null
+                                   and e.trade_fill_status is distinct from 'AWAITING_FILL' then recent.close_price end end end
                        else case when e.trade_plan_version in ('CANDLE_RR_V1','CANDLE_RR_V2','CANDLE_RR_V3','CANDLE_RR_V4','CANDLE_RR_V5')
-                           and e.trade_actionable is distinct from false and e.reward_risk_ratio is not null and e.stop_loss_price is not null and e.profit_target_price is not null then
+                           and e.reward_risk_ratio is not null and e.trade_entry_price is not null and e.stop_loss_price is not null and e.profit_target_price is not null then
                            case coalesce(e.lifecycle_status, 'DETECTED') when 'CONFIRMED' then e.profit_target_price
                            when 'DETECTED' then case when e.trade_fill_status = 'AWAITING_FILL' then null else recent.close_price end
                            when 'INVALIDATED' then coalesce(e.trade_resolution_price,e.stop_loss_price)

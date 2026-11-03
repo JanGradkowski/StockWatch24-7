@@ -57,6 +57,12 @@ New plans use completed-bar OHLC to detect protective stop and target touches. A
 
 For weekly/monthly bars, cached daily bars can resolve ordering only when their aggregate open, high, low, close and positive volume reconcile to the parent. Otherwise the conservative parent-bar rule applies. No additional provider request is made. This does not reconstruct tick-level execution or guarantee liquidity at a stop. Stored modeled fills are separate from observed closing prices and drive archive returns and sorting. Live displayed results are before costs; the offline diagnostic below applies explicit costs.
 
+### Projection-only plans
+
+A plan that does not qualify (reward/risk below the minimum, a stop too far away, missing volatility history) is still followed as a paper trade with exactly the rules above: entry at the next open (or not filled when that open is beyond the stop or target), the same stop, target and horizon. The archive's trade-outcome column then shows what the signal would have made or lost, labeled "Projection · …", and the database ordering by trade outcome uses the same return. A plan announced as projection only stays one even when the real open would qualify it, and a qualified plan that fails its check at the real open continues as a projection instead of stopping. Projection results send no outcome email and do not mark the signal unread.
+
+Only plans with a stored stop and target and a current plan version (`CANDLE_RR_V4`/`V5`, `ELLIOTT_FIB_RR_V3`/`V4`, `HARMONIC_TRADE_V2`/`V3`) are followed. A projection whose entry is older than the candles loaded by the scheduled check is left open rather than replayed from a partial history. When no stop and target could be built at all, there is nothing to replay and the archive keeps showing "Projection only".
+
 ## Validation and reproduction
 
 Deterministic tests cover mirrored buy/sell and daily/weekly/monthly calculations, invalid Elliott objectives, wide structural stops, missing volatility, non-positive prices, causal ATR/pivot inputs, gap fills, ambiguous bars, harmonic targets, horizons and legacy compatibility. Integration tests apply V68 and render new signal details in the dedicated `watchlist_permissions_test` schema.

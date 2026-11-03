@@ -63,7 +63,7 @@ class QualifiedTradePlanIntegrationTest {
         }
         assertThat(query.page(u.getId(),null,false,0,50).count()).isEqualTo(3);
     }
-    @Test void persistedGapFillControlsArchiveReturnAndProjectionHasNoTradeReturn() {
+    @Test void persistedGapFillControlsArchiveReturnAndProjectionShowsItsModeledReturn() {
         var u=new User();u.setEmail("gap-"+UUID.randomUUID()+"@example.com");u.setFirstName("Gap");u.setLastName("Test");u.setPasswordHash("test");u.setVerified(true);users.saveAndFlush(u);
         var a=new StockAsset();a.setTickerSymbol("QG"+UUID.randomUUID().toString().substring(0,8));a.setCompanyName("Gap");a.setExchange("NASDAQ");assets.saveAndFlush(a);
         var r=new AlertRule();r.setUser(u);r.setStockAsset(a);r.setInterval(TimeInterval.DAILY);r.setPatternFamily(AlertPatternFamily.CANDLESTICK);rules.saveAndFlush(r);
@@ -73,6 +73,22 @@ class QualifiedTradePlanIntegrationTest {
         assertThat(output.outcome().returnPercent()).isEqualTo(-10);
         assertThat(output.outcome().price()).isEqualTo(90);
         e.setTradeActionable(false);e.setTradeQualification("Valid pattern; entry risk too wide.");events.saveAndFlush(e);
-        assertThat(archives.getSignalArchive(u,"trade-return","desc",0).signals().getFirst().outcome().returnPercent()).isNull();
+        // A projection is followed with the same rules, so it shows what the signal would have returned.
+        var projection=archives.getSignalArchive(u,"trade-return","desc",0).signals().getFirst().outcome();
+        assertThat(projection.returnPercent()).isEqualTo(-10);
+        assertThat(projection.label()).isEqualTo("Projection · Stop loss reached");
+        assertThat(projection.valueLabel()).isEqualTo("90.00 (-10.00%)");
+        assertThat(projection.projection()).isTrue();
+        // The database ordering uses the same modeled return, so the projection's loss sorts below a gain.
+        var won=new AlertEvent();won.setAlertRule(r);won.setPattern(CandlePattern.BULLISH_ENGULFING);won.setTradeSignal(TradeSignal.BUY);won.setClosePrice(100.0);won.setSignalCandleTimestamp(1704153600L);
+        won.setTradePlanVersion("CANDLE_RR_V4");won.setTradeEntryPrice(100.0);won.setStructuralStopPrice(95.0);won.setStopLossPrice(94.8);won.setProfitTargetPrice(105.0);won.setRewardRiskRatio(2.0);won.setTradeActionable(true);won.setLifecycleStatus(SignalLifecycleStatus.CONFIRMED);events.saveAndFlush(won);
+        assertThat(query.page(u.getId(),null,true,0,50).ids()).containsExactly(e.getId(),won.getId());
+        assertThat(query.page(u.getId(),null,false,0,50).ids()).containsExactly(won.getId(),e.getId());
+        events.delete(won);events.flush();
+        // Without a stored stop and target there is nothing to replay.
+        e.setStopLossPrice(null);e.setProfitTargetPrice(null);e.setTradePlanVersion(null);events.saveAndFlush(e);
+        var withoutPlan=archives.getSignalArchive(u,"trade-return","desc",0).signals().getFirst().outcome();
+        assertThat(withoutPlan.returnPercent()).isNull();
+        assertThat(withoutPlan.label()).isEqualTo("Projection only");
     }
 }

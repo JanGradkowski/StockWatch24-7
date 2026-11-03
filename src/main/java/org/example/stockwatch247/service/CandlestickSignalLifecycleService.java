@@ -351,7 +351,13 @@ public class CandlestickSignalLifecycleService {
                 continue;
             }
 
-            if (notificationService.sendSignalLifecycleEmail(event) && !notificationService.usesDurableDelivery()) {
+            // A projection was never offered as a trade, so its modeled result is recorded without an email.
+            boolean projectionResult = !event.isElliottSignal()
+                    && outcome != SignalLifecycleStatus.DETECTED
+                    && CandlestickSignalLifecyclePolicy.protectivePlan(event.getTradePlanVersion())
+                    && Boolean.FALSE.equals(event.getTradeActionable());
+            if (!projectionResult && notificationService.sendSignalLifecycleEmail(event)
+                    && !notificationService.usesDurableDelivery()) {
                 event.setFollowUpSentAt(LocalDateTime.now());
             }
             alertEventRepository.save(event);
@@ -518,11 +524,17 @@ public class CandlestickSignalLifecycleService {
             return null;
         }
         if (CandlestickSignalLifecyclePolicy.protectivePlan(event.getTradePlanVersion())) {
-            if (Boolean.FALSE.equals(event.getTradeActionable())) return null;
+            // A projection-only plan is followed with exactly the same entry and exit rules as a qualified
+            // trade, so the archive can show what the signal would have made or lost. It stays a projection.
+            boolean projection = Boolean.FALSE.equals(event.getTradeActionable());
+            String projectionReason = event.getTradeQualification();
             if (event.awaitingFill()) {
                 if (subsequentCandles.isEmpty()) return null;
                 if (!fillAtNextOpen(event, subsequentCandles.getFirst(), candles)) return SignalLifecycleStatus.REJECTED;
-                if (Boolean.FALSE.equals(event.getTradeActionable())) return null;
+                if (projection) {
+                    event.setTradeActionable(false);
+                    event.setTradeQualification(projectionReason);
+                }
             }
             var protective = CandlestickSignalLifecyclePolicy.resolveProtective(event.getTradeSignal(),
                     event.getProfitTargetPrice(), event.getStopLossPrice(), subsequentCandles,

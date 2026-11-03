@@ -18,6 +18,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 class ElliottTradePlanServiceTest {
+    private static final List<ElliottTradePlanStatus> OPEN_STATUSES =
+            List.of(ElliottTradePlanStatus.ACTIVE, ElliottTradePlanStatus.PROJECTION_ONLY);
+
     private ElliottStageTradePlanRepository planRepository;
     private AlertEventRepository eventRepository;
     private AlertNotificationService notificationService;
@@ -35,7 +38,7 @@ class ElliottTradePlanServiceTest {
     void resolvesTargetOnlyFromACandleAfterEntryAndMirrorsOutcome() {
         ElliottStageTradePlan plan = activeBuyPlan();
         when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
-                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+                OPEN_STATUSES)).thenReturn(List.of(plan));
         when(notificationService.sendElliottTradePlanOutcomeEmail(plan)).thenReturn(true);
 
         int resolved = service.evaluateActivePlans("TEST", TimeInterval.DAILY, List.of(
@@ -54,7 +57,7 @@ class ElliottTradePlanServiceTest {
     void hardRuleWickInvalidationTakesPriorityOverCloseBasedBufferedStop() {
         ElliottStageTradePlan plan = activeBuyPlan();
         when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
-                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+                OPEN_STATUSES)).thenReturn(List.of(plan));
 
         int resolved = service.evaluateActivePlans("TEST", TimeInterval.DAILY,
                 List.of(candle(101L, 98, 89, 96)));
@@ -85,12 +88,70 @@ class ElliottTradePlanServiceTest {
     }
 
     @Test
-    void projectionOnlyPlansAreNotEvaluatedAsTrades() {
-        when(planRepository.findOpenPlans("TEST", TimeInterval.WEEKLY,
-                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of());
+    void projectionOnlyPlansAreFollowedAsPaperTradesWithoutAnEmailOrUnreadBump() {
+        var plan = awaitingFillPlan();
+        plan.setStatus(ElliottTradePlanStatus.PROJECTION_ONLY);
+        plan.setActionable(false);
+        plan.setQualification("Projection only: the primary target does not meet the minimum reward/risk.");
+        java.time.LocalDateTime sent = java.time.LocalDateTime.of(2026, 10, 1, 9, 0);
+        java.time.LocalDateTime read = sent.plusHours(1);
+        plan.getAlertEvent().setSentAt(sent);
+        plan.getAlertEvent().setReadAt(read);
+        List<Candle> candles = new java.util.ArrayList<>(quietHistory());
+        // The real open would qualify the plan, but it was announced as projection only and stays one.
+        candles.add(new Candle("TEST", "1d", 101L, 101.0, 116.0, 100.5, 114.0, 1_000L));
 
-        assertThat(service.evaluateActivePlans("TEST", TimeInterval.WEEKLY,
-                List.of(candle(101L, 120, 80, 100)))).isZero();
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY, candles)).isEqualTo(1);
+
+        assertThat(plan.getStatus()).isEqualTo(ElliottTradePlanStatus.TARGET_REACHED);
+        assertThat(plan.isActionable()).isFalse();
+        assertThat(plan.getQualification()).startsWith("Projection only");
+        assertThat(plan.getEntryPrice()).isEqualTo(101.0);
+        assertThat(plan.getResolutionFillPrice()).isEqualTo(115.0);
+        assertThat(plan.getAlertEvent().getTradeActionable()).isFalse();
+        assertThat(plan.getAlertEvent().getElliottTradePlanStatus()).isEqualTo("TARGET_REACHED");
+        assertThat(plan.getAlertEvent().getSentAt()).isEqualTo(sent);
+        assertThat(plan.getAlertEvent().getReadAt()).isEqualTo(read);
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void aPlanThatFailsQualificationAtTheRealOpenIsStillFollowedAsAProjection() {
+        var plan = awaitingFillPlan();
+        List<Candle> candles = new java.util.ArrayList<>(quietHistory());
+        // Entry 104 against a 94.8 stop and a 115 target gives 1:1.2, below the required 1:2.
+        candles.add(new Candle("TEST", "1d", 101L, 104.0, 105.0, 103.0, 104.5, 1_000L));
+        candles.add(new Candle("TEST", "1d", 102L, 104.5, 116.0, 104.0, 113.0, 1_000L));
+
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY, candles)).isEqualTo(1);
+
+        assertThat(plan.isActionable()).isFalse();
+        assertThat(plan.getQualification()).contains("minimum reward/risk");
+        assertThat(plan.getStatus()).isEqualTo(ElliottTradePlanStatus.TARGET_REACHED);
+        assertThat(plan.getResolutionTimestamp()).isEqualTo(102L);
+        assertThat(plan.getResolutionFillPrice()).isEqualTo(115.0);
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void legacyProjectionsAndProjectionsOlderThanTheLoadedCandlesAreLeftOpen() {
+        var legacy = activeBuyPlan();
+        legacy.setStatus(ElliottTradePlanStatus.PROJECTION_ONLY);
+        legacy.setPlanVersion("ELLIOTT_FIB_V2");
+        legacy.setEntryTimestamp(101L);
+        var beforeWindow = awaitingFillPlan();
+        beforeWindow.setStatus(ElliottTradePlanStatus.PROJECTION_ONLY);
+        when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY, OPEN_STATUSES))
+                .thenReturn(List.of(legacy, beforeWindow));
+
+        // The older version has no modeled exit rules (its wick through 90 is ignored), and the
+        // loaded candles start after the other plan's entry, so it cannot be replayed faithfully.
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(candle(101L, 116, 80, 100), candle(102L, 116, 80, 100)))).isZero();
+
+        assertThat(legacy.getStatus()).isEqualTo(ElliottTradePlanStatus.PROJECTION_ONLY);
+        assertThat(beforeWindow.getStatus()).isEqualTo(ElliottTradePlanStatus.PROJECTION_ONLY);
+        assertThat(beforeWindow.getFillStatus()).isEqualTo("AWAITING_FILL");
         verifyNoInteractions(notificationService);
     }
 
@@ -101,7 +162,7 @@ class ElliottTradePlanServiceTest {
         plan.setHorizonCandles(3);
         plan.setHardInvalidationPrice(96.0);
         when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
-                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+                OPEN_STATUSES)).thenReturn(List.of(plan));
         assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
                 List.of(new Candle("TEST", "1d", 101L, 100, 102, 95, 100.0, 100L)))).isZero();
         assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
@@ -118,7 +179,7 @@ class ElliottTradePlanServiceTest {
         plan.setPlanVersion(ElliottTradePlanPolicy.VERSION);
         plan.setHorizonCandles(2);
         when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
-                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+                OPEN_STATUSES)).thenReturn(List.of(plan));
         assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
                 List.of(candle(101L, 105, 96, 102), candle(102L, 104, 97, 101)))).isEqualTo(1);
         assertThat(plan.getStatus()).isEqualTo(ElliottTradePlanStatus.TIME_STOPPED);
@@ -131,7 +192,7 @@ class ElliottTradePlanServiceTest {
         plan.setPlanVersion(ElliottTradePlanPolicy.VERSION);
         plan.setHorizonCandles(1);
         when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
-                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+                OPEN_STATUSES)).thenReturn(List.of(plan));
         assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
                 List.of(candle(101L, 99, 101, 100)))).isZero();
         assertThat(plan.getStatus()).isEqualTo(ElliottTradePlanStatus.ACTIVE);
@@ -192,7 +253,7 @@ class ElliottTradePlanServiceTest {
         plan.setHardInvalidationPrice(null);
         plan.setHardInvalidationSide(null);
         when(planRepository.findOpenPlans("TEST", TimeInterval.DAILY,
-                List.of(ElliottTradePlanStatus.ACTIVE))).thenReturn(List.of(plan));
+                OPEN_STATUSES)).thenReturn(List.of(plan));
         return plan;
     }
 

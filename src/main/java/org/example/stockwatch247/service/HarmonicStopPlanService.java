@@ -104,9 +104,11 @@ public class HarmonicStopPlanService {
     /**
      * Enters at the open of the first candle after confirmation. The stop and the Fibonacci targets do
      * not depend on the entry, so they are kept; reward/risk and qualification are recomputed at the real
-     * entry. Returns false when that open is already beyond the stop or the primary target.
+     * entry. Returns false when that open is already beyond the stop or the primary target. A plan announced
+     * as projection only stays a projection, even when the real open would qualify it.
      */
-    private boolean fillAtNextOpen(AlertEvent event, Candle fill, List<Candle> candles, TimeInterval interval) {
+    private boolean fillAtNextOpen(AlertEvent event, Candle fill, List<Candle> candles, TimeInterval interval,
+                                   boolean projection) {
         double open = fill.getOpenPrice() == null ? Double.NaN : fill.getOpenPrice();
         String unfilled = TradeRiskPolicy.unfilledReason(event.getTradeSignal(), open,
                 event.getStopLossPrice(), event.getProfitTargetPrice());
@@ -117,23 +119,25 @@ public class HarmonicStopPlanService {
             event.setHarmonicStopResolutionTimestamp(fill.getTimestamp());
             event.setHarmonicStopResolutionPrice(Double.isFinite(open) && open > 0 ? open : fill.getClosePrice());
             event.setHarmonicStopResolutionReason(unfilled);
-            markResolved(event);
+            markResolved(event, projection);
             return false;
         }
+        String announcedReason = event.getTradeQualification();
         double atr = ElliottTradePlanService.averageTrueRange(candles, event.getDetectionCandleTimestamp(), 14);
         double blended = HarmonicStopPlanPolicy.blendedTarget(event.getProfitTargetPrice(), event.getSecondaryTargetPrice());
         var qualification = TradeRiskPolicy.qualify(event.getTradeSignal(), open, event.getStopLossPrice(),
                 blended, atr, interval, requiredRewardRisk(event, interval));
         double risk = TradeRiskPolicy.risk(event.getTradeSignal(), open, event.getStopLossPrice());
+        boolean actionable = !projection && qualification.actionable();
         event.setTradeEntryPrice(open);
         event.setRewardRiskRatio(TradeRiskPolicy.reward(event.getTradeSignal(), open, blended) / risk);
-        event.setTradeActionable(qualification.actionable());
-        event.setTradeQualification(qualification.reason());
+        event.setTradeActionable(actionable);
+        event.setTradeQualification(projection ? announcedReason : qualification.reason());
         event.setTradeRiskAtr(qualification.riskAtr());
         event.setTradeRiskPercent(qualification.riskPercent());
         event.setHarmonicStopDistancePercent(risk / open * 100.0);
         event.setTradeFillStatus(TradeRiskPolicy.FILLED);
-        if (!qualification.actionable()) event.setHarmonicStopStatus(HarmonicStopStatus.PROJECTION_ONLY.name());
+        if (!actionable) event.setHarmonicStopStatus(HarmonicStopStatus.PROJECTION_ONLY.name());
         return true;
     }
 
@@ -153,18 +157,26 @@ public class HarmonicStopPlanService {
                 .toList();
         int resolved = 0;
         for (AlertEvent event : eventRepository.findActiveHarmonicStopPlans(symbol, interval)) {
-            if (HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())) {
-                if (!Boolean.TRUE.equals(event.getTradeActionable())) continue;
+            // A projection-only plan is followed as a paper trade with the same rules, so the archive can show
+            // what it would have returned. It needs a current plan version and candles back to its entry.
+            boolean qualified = HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion());
+            boolean projection = HarmonicStopStatus.PROJECTION_ONLY.name().equals(event.getHarmonicStopStatus())
+                    || qualified && !Boolean.TRUE.equals(event.getTradeActionable());
+            if (projection && (!qualified
+                    || event.getDetectionCandleTimestamp() == null || event.getStopLossPrice() == null
+                    || event.getProfitTargetPrice() == null || event.getTradeHorizonCandles() == null
+                    || candles.isEmpty() || candles.getFirst().getTimestamp() > event.getDetectionCandleTimestamp())) continue;
+            if (qualified) {
                 if (event.awaitingFill()) {
                     Candle fill = candles.stream().filter(c -> c.getTimestamp() > event.getDetectionCandleTimestamp())
                             .findFirst().orElse(null);
                     if (fill == null) continue;
-                    boolean filled = fillAtNextOpen(event, fill, candles, interval);
-                    if (!filled && notificationService.sendHarmonicStopOutcomeEmail(event, fill)
+                    boolean filled = fillAtNextOpen(event, fill, candles, interval, projection);
+                    if (!filled && !projection && notificationService.sendHarmonicStopOutcomeEmail(event, fill)
                             && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
                     eventRepository.save(event);
                     if (!filled) { resolved++; continue; }
-                    if (!Boolean.TRUE.equals(event.getTradeActionable())) continue;
+                    projection = !Boolean.TRUE.equals(event.getTradeActionable());
                 }
                 int horizon = event.getTradeHorizonCandles();
                 if (HarmonicStopPlanPolicy.scalesOut(event.getTradePlanVersion())
@@ -180,8 +192,8 @@ public class HarmonicStopPlanService {
                     event.setHarmonicStopResolutionPrice(exit.averageExit());
                     event.setTradeResolutionPrice(exit.averageExit());
                     event.setHarmonicStopResolutionReason(exit.reason());
-                    markResolved(event);
-                    if (exit.status() != HarmonicStopStatus.TIME_STOPPED
+                    markResolved(event, projection);
+                    if (!projection && exit.status() != HarmonicStopStatus.TIME_STOPPED
                             && notificationService.sendHarmonicStopOutcomeEmail(event, exit.candle())
                             && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
                     eventRepository.save(event);
@@ -208,12 +220,16 @@ public class HarmonicStopPlanService {
                     event.setHarmonicStopResolutionPrice(outcome.price());
                     event.setTradeResolutionPrice(outcome.price());
                     event.setHarmonicStopResolutionReason(outcome.reason());
-                    markResolved(event);
-                    if (notificationService.sendHarmonicStopOutcomeEmail(event, bar) && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
+                    markResolved(event, projection);
+                    if (!projection && notificationService.sendHarmonicStopOutcomeEmail(event, bar)
+                            && !notificationService.usesDurableDelivery()) event.setFollowUpSentAt(LocalDateTime.now());
                     done = true;
                     break;
                 }
-                if (!done && !invalidData && following.size() == horizon) { resolveTimeStop(event, following.getLast()); done = true; }
+                if (!done && !invalidData && following.size() == horizon) {
+                    resolveTimeStop(event, following.getLast(), projection);
+                    done = true;
+                }
                 if (done) { eventRepository.save(event); resolved++; }
                 continue;
             }
@@ -250,13 +266,17 @@ public class HarmonicStopPlanService {
     }
 
     private void resolveTimeStop(AlertEvent event, Candle eighthCandle) {
+        resolveTimeStop(event, eighthCandle, false);
+    }
+
+    private void resolveTimeStop(AlertEvent event, Candle eighthCandle, boolean projection) {
         event.setHarmonicStopStatus(HarmonicStopStatus.TIME_STOPPED.name());
         event.setHarmonicStopResolutionTimestamp(eighthCandle.getTimestamp());
         event.setHarmonicStopResolutionPrice(eighthCandle.getClosePrice());
         if (HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())) event.setTradeResolutionPrice(eighthCandle.getClosePrice());
         event.setHarmonicStopResolutionReason(
                 "The saved harmonic trade horizon ended at the completed close.");
-        markResolved(event);
+        markResolved(event, projection);
     }
 
     private double requiredRewardRisk(AlertEvent event, TimeInterval interval) {
@@ -320,8 +340,15 @@ public class HarmonicStopPlanService {
     }
 
     private void markResolved(AlertEvent event) {
-        event.setSentAt(LocalDateTime.now());
-        event.setReadAt(null);
+        markResolved(event, false);
+    }
+
+    /** A trade result returns the signal to the top as unread; a projection's modeled result is recorded quietly. */
+    private void markResolved(AlertEvent event, boolean projection) {
+        if (!projection) {
+            event.setSentAt(LocalDateTime.now());
+            event.setReadAt(null);
+        }
         event.setLifecycleUpdatedAt(LocalDateTime.now());
     }
 

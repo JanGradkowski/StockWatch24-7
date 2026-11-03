@@ -248,7 +248,9 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
               and rule.interval = :interval
               and rule.patternFamily = org.example.stockwatch247.model.enums.AlertPatternFamily.HARMONIC_FORMATION
               and event.tradePlanVersion in ('HARMONIC_STOP_V1', 'HARMONIC_TRADE_V2', 'HARMONIC_TRADE_V3')
-              and event.harmonicStopStatus = 'ACTIVE'
+              and (event.harmonicStopStatus = 'ACTIVE'
+                   or event.harmonicStopStatus = 'PROJECTION_ONLY'
+                      and event.tradePlanVersion in ('HARMONIC_TRADE_V2', 'HARMONIC_TRADE_V3'))
               and event.deletedAt is null
             order by event.signalCandleTimestamp, event.id
             """)

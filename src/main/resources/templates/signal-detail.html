@@ -759,8 +759,12 @@
       <time th:text="${#temporals.format(signal.lifecycle().followUpSentAt(), 'dd MMM yyyy, HH:mm')}">21 Jul 2026, 08:15</time>
     </p>
     <p class="signal-lifecycle-delivery"
-       th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() == null}" th:text="#{signalDetail.noFollowUp}">
+       th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() == null and signal.lifecycle().tradeActionable() != false}" th:text="#{signalDetail.noFollowUp}">
       The outcome is known, but no follow-up email delivery was recorded.
+    </p>
+    <p class="signal-lifecycle-delivery"
+       th:if="${signal.lifecycle().terminal() and signal.lifecycle().followUpSentAt() == null and signal.lifecycle().tradeActionable() == false}" th:text="#{signalDetail.projectionNoFollowUp}">
+      This plan was projection only, so its modeled result is recorded without a follow-up email.
     </p>
     <p class="signal-lifecycle-note"
        th:text="${signal.patternFamily().name() == 'CANDLESTICK' ? (signal.lifecycle().tradeQualification() != null ? #messages.msg('signalDetail.note.qualified') : #messages.msg('signalDetail.note.candleLegacy')) : (signal.lifecycle().immediateConfirmationRequired() ? #messages.msg('signalDetail.note.gate') : #messages.msg('signalDetail.note.confirmation'))}">

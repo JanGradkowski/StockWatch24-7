@@ -21,6 +21,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,6 +72,39 @@ class CandlestickNextOpenFillTest {
         assertThat(event.getTradeFillStatus()).isEqualTo("NOT_FILLED");
         assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.REJECTED);
         assertThat(event.getLifecycleResolutionReason()).contains("beyond the target");
+    }
+
+    @Test
+    void aProjectionOnlyPlanIsFollowedWithTheTradeRulesAndStaysAProjectionWithoutAnEmail() {
+        AlertEvent event = detectedBullishEngulfing();
+        event.setTradeActionable(false);
+        event.setTradeQualification("Projection only: the primary target does not meet the minimum reward/risk.");
+
+        // The real open would qualify the plan, but it was announced as projection only.
+        evaluate(event, candle(1_700L, 101.0, 106.0, 100.5, 105.8));
+
+        assertThat(event.getTradeFillStatus()).isEqualTo("FILLED");
+        assertThat(event.getTradeEntryPrice()).isEqualTo(101.0);
+        assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.CONFIRMED);
+        assertThat(event.getTradeResolutionPrice()).isCloseTo(105.4, within(1e-8));
+        assertThat(event.getTradeActionable()).isFalse();
+        assertThat(event.getTradeQualification()).startsWith("Projection only");
+        verify(notifications, never()).sendSignalLifecycleEmail(event);
+    }
+
+    @Test
+    void aPlanThatFailsQualificationAtTheRealOpenIsStillFollowedAsAProjection() {
+        AlertEvent event = detectedBullishEngulfing();
+
+        // An open at 108 puts the 98.8 structural stop more than three ATR away; the same bar stops it.
+        evaluate(event, candle(1_700L, 108.0, 109.0, 98.0, 99.0));
+
+        assertThat(event.getTradeFillStatus()).isEqualTo("FILLED");
+        assertThat(event.getTradeActionable()).isFalse();
+        assertThat(event.getTradeQualification()).contains("entry risk too wide");
+        assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.INVALIDATED);
+        assertThat(event.getTradeResolutionPrice()).isEqualTo(98.8);
+        verify(notifications, never()).sendSignalLifecycleEmail(event);
     }
 
     @Test

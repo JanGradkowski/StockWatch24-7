@@ -177,6 +177,9 @@ pl: Hipotetyczna ocena z perspektywy czasu dla pierwszych 10 zamkniętych świec
 en: Projection only
 pl: Tylko projekcja
 
+en: Projection · {0}
+pl: Projekcja · {0}
+
 en: Outcome unavailable
 pl: Wynik niedostępny
 

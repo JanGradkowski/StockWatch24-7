@@ -694,7 +694,16 @@ public class AlertRuleService {
         if (family == AlertPatternFamily.ELLIOTT_WAVE) {
             return elliottArchiveOutcome(event);
         }
-        if (Boolean.FALSE.equals(event.getTradeActionable())) return SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
+        boolean projection = Boolean.FALSE.equals(event.getTradeActionable());
+        if (projection && (!event.hasCandlestickRiskRewardPlan() || event.getTradeEntryPrice() == null
+                || event.getStopLossPrice() == null || event.getProfitTargetPrice() == null)) {
+            return SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
+        }
+        SignalArchiveOutcome outcome = candlestickArchiveOutcome(event);
+        return projection ? outcome.asProjection() : outcome;
+    }
+
+    private SignalArchiveOutcome candlestickArchiveOutcome(AlertEvent event) {
         if (!event.hasCandlestickRiskRewardPlan()
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
@@ -745,6 +754,10 @@ public class AlertRuleService {
     }
 
     private SignalArchiveOutcome harmonicArchiveOutcome(AlertEvent event) {
+        if (Boolean.FALSE.equals(event.getTradeActionable()) && event.getHarmonicStopStatus() == null) {
+            // No positive stop and target could be built, so there is no plan to follow.
+            return SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
+        }
         if (!("HARMONIC_STOP_V1".equals(event.getTradePlanVersion()) || HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion()))
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
@@ -760,10 +773,23 @@ public class AlertRuleService {
             return SignalArchiveOutcome.unavailable(
                     "Outcome unavailable", "The stored harmonic outcome status is not recognized");
         }
-        if (status == HarmonicStopStatus.ACTIVE && event.awaitingFill()) return SignalArchiveOutcome.unavailable(
+        // A projection-only plan of a current version is followed with the trade rules; older ones never were.
+        boolean projection = status == HarmonicStopStatus.PROJECTION_ONLY
+                || HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())
+                && Boolean.FALSE.equals(event.getTradeActionable());
+        if (status == HarmonicStopStatus.PROJECTION_ONLY && (!HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())
+                || event.getProfitTargetPrice() == null || event.getTradeHorizonCandles() == null)) {
+            return SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
+        }
+        SignalArchiveOutcome outcome = harmonicArchiveOutcome(event, status, entry);
+        return projection ? outcome.asProjection() : outcome;
+    }
+
+    private SignalArchiveOutcome harmonicArchiveOutcome(AlertEvent event, HarmonicStopStatus status, double entry) {
+        if ((status == HarmonicStopStatus.ACTIVE || status == HarmonicStopStatus.PROJECTION_ONLY)
+                && event.awaitingFill()) return SignalArchiveOutcome.unavailable(
                 "Awaiting entry", "The trade enters at the next candle's open");
         return switch (status) {
-            case PROJECTION_ONLY -> SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
             case NOT_FILLED -> SignalArchiveOutcome.unavailable("Not filled", event.getHarmonicStopResolutionReason());
             case TARGET_REACHED -> terminalOutcome(entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
                     "Harmonic target reached", "Modeled primary-target exit");
@@ -775,7 +801,7 @@ public class AlertRuleService {
             case TIME_STOPPED -> terminalOutcome(
                     entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
                     "Time stop", "Trade closed at the saved horizon close");
-            case ACTIVE -> pendingOutcome(
+            case ACTIVE, PROJECTION_ONLY -> pendingOutcome(
                     event, closesCountedFrom(event), entry, event.getTradeSignal(),
                     "Pending harmonic outcome", "Current return before the saved trade horizon");
         };
@@ -787,7 +813,7 @@ public class AlertRuleService {
         if (plan == null) {
             return legacyElliottArchiveOutcome(event);
         }
-        if (plan.status() == ElliottTradePlanStatus.PROJECTION_ONLY) {
+        if (plan.status() == ElliottTradePlanStatus.PROJECTION_ONLY && !plan.trackedProjection()) {
             return SignalArchiveOutcome.unavailable(
                     "Projection only", plan.qualification());
         }
@@ -802,18 +828,32 @@ public class AlertRuleService {
             TradeSignal expectedMove,
             ElliottSignalStage notificationStage,
             ElliottTradePlanService.StagePlanView latestPlan) {
-        if (latestPlan.status() == ElliottTradePlanStatus.PROJECTION_ONLY) {
+        if (latestPlan.status() == ElliottTradePlanStatus.PROJECTION_ONLY && !latestPlan.trackedProjection()) {
             return SignalArchiveOutcome.unavailable(
                     elliottStageLabel(notificationStage) + " projection only", latestPlan.qualification());
         }
+        SignalArchiveOutcome outcome = elliottStageOutcome(
+                event, notificationTimestamp, notificationEntry, expectedMove, notificationStage, latestPlan);
+        // A projection-only plan is followed with the trade rules, so its result is the what-if return.
+        return latestPlan.trackedProjection() || !latestPlan.actionable() ? outcome.asProjection() : outcome;
+    }
+
+    private SignalArchiveOutcome elliottStageOutcome(
+            AlertEvent event,
+            long notificationTimestamp,
+            double notificationEntry,
+            TradeSignal expectedMove,
+            ElliottSignalStage notificationStage,
+            ElliottTradePlanService.StagePlanView latestPlan) {
         String stage = elliottStageLabel(notificationStage);
-        if (latestPlan.status() == ElliottTradePlanStatus.ACTIVE && latestPlan.awaitingFill()) {
+        if ((latestPlan.status() == ElliottTradePlanStatus.ACTIVE || latestPlan.trackedProjection())
+                && latestPlan.awaitingFill()) {
             return SignalArchiveOutcome.unavailable(stage + " awaiting entry", "The trade enters at the next candle's open");
         }
         // A plan filled at an open counts that candle's close; older plans entered at the notification close.
         long countedFrom = "FILLED".equals(latestPlan.fillStatus()) ? notificationTimestamp - 1 : notificationTimestamp;
         return switch (latestPlan.status()) {
-            case ACTIVE -> pendingOutcome(
+            case ACTIVE, PROJECTION_ONLY -> pendingOutcome(
                     event, countedFrom, notificationEntry, expectedMove,
                     "Pending " + stage + " outcome", "Current return since entry");
             case NOT_FILLED -> SignalArchiveOutcome.unavailable(stage + " not filled", latestPlan.resolutionReason());
@@ -834,7 +874,6 @@ public class AlertRuleService {
             case REVISED -> terminalOutcome(
                     notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
                     stage + " revised", "Measured through the replacement stage endpoint");
-            case PROJECTION_ONLY -> throw new IllegalStateException("Handled above");
         };
     }
 
@@ -1267,7 +1306,19 @@ public class AlertRuleService {
                     "The close-based risk/reward trade model applies to named candlestick patterns."
             );
         }
-        if (Boolean.FALSE.equals(event.getTradeActionable())) return ObservedPriceOutcomeView.unavailable(event.getTradeQualification());
+        boolean projection = Boolean.FALSE.equals(event.getTradeActionable());
+        if (projection && (!event.hasCandlestickRiskRewardPlan() || event.getTradeEntryPrice() == null
+                || event.getStopLossPrice() == null || event.getProfitTargetPrice() == null)) {
+            return ObservedPriceOutcomeView.unavailable(event.getTradeQualification());
+        }
+        ObservedPriceOutcomeView outcome = observedTradeOutcome(event, rule, chart);
+        // A projection is followed with the trade rules; its result is what the signal would have returned.
+        return projection && outcome.tracked() ? outcome.asProjection() : outcome;
+    }
+
+    private ObservedPriceOutcomeView observedTradeOutcome(AlertEvent event,
+                                                          AlertRule rule,
+                                                          SignalChartView chart) {
         if (!event.hasCandlestickRiskRewardPlan()
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
@@ -3067,6 +3118,8 @@ public class AlertRuleService {
         }
     }
 
+    private static final String PROJECTION_PREFIX = "Projection · ";
+
     public record SignalArchiveOutcome(
             boolean available,
             String label,
@@ -3085,11 +3138,23 @@ public class AlertRuleService {
             return new SignalArchiveOutcome(false, label, null, null, detail);
         }
 
+        /**
+         * The same result marked as a projection: the plan did not qualify as a trade, so this is what the
+         * signal would have made or lost had it been traded with the same entry, stop, target and horizon.
+         */
+        SignalArchiveOutcome asProjection() {
+            return new SignalArchiveOutcome(available, PROJECTION_PREFIX + label, returnPercent, price, detail);
+        }
+
+        public boolean projection() {
+            return label != null && label.startsWith(PROJECTION_PREFIX);
+        }
+
         public String valueLabel() {
             if (!available || returnPercent == null) {
                 return "N/A";
             }
-            if ("Stop loss reached".equals(label) && price != null) {
+            if (label != null && label.endsWith("Stop loss reached") && price != null) {
                 return String.format(Locale.ROOT, "%.2f (%+.2f%%)", price, returnPercent);
             }
             return String.format(Locale.ROOT, "%+.2f%%", returnPercent);
@@ -3350,6 +3415,13 @@ public class AlertRuleService {
                     false, false, reason, "Unavailable", "pending", reason, null,
                     null, null, null, null, null, null, null, null, "Outcome unavailable"
             );
+        }
+
+        private ObservedPriceOutcomeView asProjection() {
+            return new ObservedPriceOutcomeView(tracked, outcomeAvailable, unavailableReason,
+                    PROJECTION_PREFIX + statusLabel, statusClass, summary, timeStopLabel, patternHigh, patternLow,
+                    evaluationTimestamp, evaluationPeriodLabel, evaluationClose, directionalReturnPercent,
+                    bestDirectionalMovePercent, worstDirectionalMovePercent, impactLabel);
         }
 
     }
