@@ -33,9 +33,7 @@ import java.time.Instant;
 
 @Service
 public class ScheduledAlertService {
-    @Autowired private AnalysisCheckpointStore checkpoints;
     @Autowired private InfrastructureRecovery infrastructure = new InfrastructureRecovery();
-    @Value("${alerts.schedule.analysis-slice-seconds:30}") private long analysisSliceSeconds = 30;
     /** About one day of 30-minute retries before a series with no data is failed. */
     @Value("${alerts.schedule.maximum-deferrals:48}") private int maximumDeferrals = 48;
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ScheduledAlertService.class);
@@ -307,9 +305,9 @@ public class ScheduledAlertService {
         currentCheck.set(progress);
         log.info("Technical signal check started: {} {} scheduledFor={} attempt={}",
                 job.symbol(), job.interval(), job.scheduledFor(), job.attempts());
+        // Progress stays in memory (no durable checkpoints): a check that stops part-way starts again from the beginning.
         try (var priority = MarketDataProviderRequestBudget.background();
-             var claim = leaseGuard == null ? null : leaseGuard.protect(() -> jobStore.renew(job, jobLease), jobLease);
-             var work = checkpoints == null ? null : AnalysisWork.continuous(checkpoints, Duration.ofSeconds(Math.max(1, analysisSliceSeconds)))) {
+             var claim = leaseGuard == null ? null : leaseGuard.protect(() -> jobStore.renew(job, jobLease), jobLease)) {
             processSymbolInterval(job.symbol(), job.interval(), job.scheduledFor());
             try (var stage = CheckTimings.enter("complete job")) {
                 if (!jobStore.complete(job)) throw new IllegalStateException("Job ownership changed before acknowledgement.");
