@@ -185,6 +185,53 @@ class HarmonicStopPlanServiceTest {
         verify(notificationService).sendHarmonicStopOutcomeEmail(event, gap);
     }
 
+    @Test
+    void projectionOnlyPlanIsFollowedAsAPaperTradeWithoutAnEmailOrUnreadBump() {
+        var event = awaitingFillEvent();
+        event.setTradeActionable(false);
+        event.setHarmonicStopStatus(HarmonicStopStatus.PROJECTION_ONLY.name());
+        event.setTradeQualification("Projection only: the primary target does not meet the minimum reward/risk.");
+        java.time.LocalDateTime sent = java.time.LocalDateTime.of(2026, 10, 1, 9, 0);
+        event.setSentAt(sent);
+        event.setReadAt(sent.plusHours(1));
+        List<Candle> candles = new java.util.ArrayList<>(quietHistory());
+        candles.add(new Candle("TEST", "1d", 101L, 101.0, 116.0, 100.5, 114.0, 1_000L));
+
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY, candles)).isEqualTo(1);
+
+        assertThat(event.getTradeFillStatus()).isEqualTo("FILLED");
+        assertThat(event.getTradeEntryPrice()).isEqualTo(101.0);
+        assertThat(event.getHarmonicStopStatus()).isEqualTo("TARGET_REACHED");
+        assertThat(event.getTradeResolutionPrice()).isEqualTo(115.0);
+        assertThat(event.getTradeActionable()).isFalse();
+        assertThat(event.getTradeQualification()).startsWith("Projection only");
+        assertThat(event.getSentAt()).isEqualTo(sent);
+        assertThat(event.getReadAt()).isEqualTo(sent.plusHours(1));
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void projectionOlderThanTheLoadedCandlesWaitsForTheCatchUp() {
+        var event = awaitingFillEvent();
+        event.setTradeActionable(false);
+        event.setHarmonicStopStatus(HarmonicStopStatus.PROJECTION_ONLY.name());
+
+        assertThat(service.evaluateActivePlans("TEST", TimeInterval.DAILY,
+                List.of(new Candle("TEST", "1d", 101L, 101.0, 116.0, 100.5, 114.0, 1_000L)))).isZero();
+
+        assertThat(event.getHarmonicStopStatus()).isEqualTo(HarmonicStopStatus.PROJECTION_ONLY.name());
+        assertThat(event.getTradeFillStatus()).isEqualTo("AWAITING_FILL");
+
+        // The catch-up replays it over the stored history that reaches back before its entry.
+        assertThat(service.oldestStaleProjection("TEST", TimeInterval.DAILY, 101L)).isEqualTo(100L);
+        List<Candle> history = new java.util.ArrayList<>(quietHistory());
+        history.add(new Candle("TEST", "1d", 101L, 101.0, 116.0, 100.5, 114.0, 1_000L));
+        assertThat(service.catchUpStaleProjections("TEST", TimeInterval.DAILY, history, 101L)).isEqualTo(1);
+        assertThat(event.getHarmonicStopStatus()).isEqualTo("TARGET_REACHED");
+        assertThat(event.getTradeResolutionPrice()).isEqualTo(115.0);
+        verifyNoInteractions(notificationService);
+    }
+
     private AlertEvent awaitingFillEvent() {
         var event = activeEvent(TradeSignal.BUY, 95.0);
         event.setTradePlanVersion(HarmonicStopPlanPolicy.VERSION);

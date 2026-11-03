@@ -57,6 +57,24 @@ New plans use completed-bar OHLC to detect protective stop and target touches. A
 
 For weekly/monthly bars, cached daily bars can resolve ordering only when their aggregate open, high, low, close and positive volume reconcile to the parent. Otherwise the conservative parent-bar rule applies. No additional provider request is made. This does not reconstruct tick-level execution or guarantee liquidity at a stop. Stored modeled fills are separate from observed closing prices and drive archive returns and sorting. Live displayed results are before costs; the offline diagnostic below applies explicit costs.
 
+### Projection-only plans
+
+A plan that does not qualify (reward/risk below the minimum, a stop too far away, missing volatility history) is still followed as a paper trade with exactly the rules above: entry at the next open (or not filled when that open is beyond the stop or target), the same stop, target and horizon. The archive's trade-outcome column then shows what the signal would have made or lost, labeled "Projection · …", and the database ordering by trade outcome uses the same return. A plan announced as projection only stays one even when the real open would qualify it, and a qualified plan that fails its check at the real open continues as a projection instead of stopping. Projection results send no outcome email and do not mark the signal unread.
+
+Only plans with a stored stop and target and a current plan version (`CANDLE_RR_V4`/`V5`, `ELLIOTT_FIB_RR_V3`/`V4`, `HARMONIC_TRADE_V2`/`V3`) are followed this way.
+
+### Every signal has an outcome
+
+The archive's trade-outcome column (`AlertRuleService.signalArchiveOutcome`) gives every signal a value, in this order:
+
+1. **Stored plan.** The modeled result of the plan above, qualified or projection.
+2. **No position.** A plan that was not filled, or a one-candle candidate that failed its next-candle check, shows 0.00%, because following the plan opened nothing.
+3. **Horizon measurement.** Without a usable stop and target (none could be built, an Elliott count had no valid target, an older plan version without exit rules, or a signal from before stored plans), the signal is measured from the open of the next candle to the close of the family's horizon candle: 8 daily/weekly and 6 monthly candles for candlesticks, 12/10/8 for harmonics, 20/16/12 for Elliott waves (`SignalHorizonOutcome`). Until that candle closes it shows the current return.
+
+Only a signal whose next candle has not closed yet is shown as pending. `SignalArchiveQuery` computes the same values in SQL, so ordering by trade outcome matches what is rendered (`SignalOutcomeCoverageIntegrationTest`).
+
+A signal whose entry is older than the candles a scheduled check loads (for example a projection from before projections were followed) is replayed once by the same check over the stored history from 120 candles before its entry, up to the check's last candle (`ScheduledAlertService.catchUpStaleSignals`). These late results send no email. Symbols with open candidates or followable projections stay scheduled even when their rules are no longer active.
+
 ## Validation and reproduction
 
 Deterministic tests cover mirrored buy/sell and daily/weekly/monthly calculations, invalid Elliott objectives, wide structural stops, missing volatility, non-positive prices, causal ATR/pivot inputs, gap fills, ambiguous bars, harmonic targets, horizons and legacy compatibility. Integration tests apply V68 and render new signal details in the dedicated `watchlist_permissions_test` schema.

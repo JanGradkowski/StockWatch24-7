@@ -97,6 +97,8 @@
             <li><strong th:text="#{signals.state.active}">Active</strong> <span th:text="#{signals.how.activeText}">signals are pending setups and projections.</span> <strong th:text="#{signals.state.completed}">Completed</strong> <span th:text="#{signals.how.completedText}">signals have resolved, been rejected, or are recorded filings.</span></li>
             <li><strong class="learn-term" data-term="setupScore" th:text="#{signals.column.setupScore}">Setup score</strong> <span th:text="#{signals.how.scoreText}">rates the evidence for a pattern out of 100. It is not a probability of profit.</span></li>
             <li><strong th:text="#{signals.column.tradeOutcome}">Trade outcome</strong> <span th:text="#{signals.how.outcomeText}">is the separately tracked price result, using each pattern family's stop, target and time-limit rules.</span></li>
+            <li th:text="#{signals.how.everyOutcomeText}">Every signal gets a result. Without a stored stop and target it is measured from the next candle's open to the close a set number of candles later (6 to 8 for candlesticks, 8 to 12 for harmonics, 12 to 20 for Elliott waves), shown as the current return until then. A plan that never opened a position shows 0.00%. "Pending" means the next candle has not closed yet.</li>
+            <li th:text="#{signals.how.projectionText}">A result marked "Projection" comes from a plan that did not qualify as a trade (for example, too little reward for its risk). It is tracked with the same entry, stop, target and time limit, so it shows what the signal would have made or lost.</li>
           </ul>
         </details>
       </div>
@@ -312,17 +314,17 @@
                 </div>
                 <div th:if="${entry.stageOutcomes().isEmpty()}" class="signal-archive-result outcome" th:title="${#tr.text(entry.outcome().detail())}">
                   <strong th:if="${entry.outcome().available()}"
-                          th:classappend="${entry.outcome().returnPercent() >= 0} ? ' positive' : ' negative'"
+                          th:classappend="${entry.outcome().returnPercent() > 0 ? ' positive' : (entry.outcome().returnPercent() < 0 ? ' negative' : '')}"
                           th:text="${#tr.text(entry.outcome().valueLabel())}">+2.00%</strong>
-                  <strong th:unless="${entry.outcome().available()}" class="unavailable" th:text="#{common.notAvailable}">N/A</strong>
+                  <strong th:unless="${entry.outcome().available()}" class="unavailable" th:text="${entry.outcome().pending() ? #messages.msg('signals.outcomePending') : #messages.msg('common.notAvailable')}">Pending</strong>
                   <span th:text="${#tr.text(entry.outcome().label())}">Sold at target</span>
                 </div>
                 <div th:unless="${entry.stageOutcomes().isEmpty()}" class="signal-archive-stage-outcomes">
                   <div th:each="stageOutcome : ${entry.stageOutcomes()}" class="signal-archive-result outcome" th:title="${#tr.text(stageOutcome.detail())}">
                     <strong th:if="${stageOutcome.available()}"
-                            th:classappend="${stageOutcome.returnPercent() >= 0} ? ' positive' : ' negative'"
+                            th:classappend="${stageOutcome.returnPercent() > 0 ? ' positive' : (stageOutcome.returnPercent() < 0 ? ' negative' : '')}"
                             th:text="${#tr.text(stageOutcome.valueLabel())}">+2.00%</strong>
-                    <strong th:unless="${stageOutcome.available()}" class="unavailable" th:text="#{common.notAvailable}">N/A</strong>
+                    <strong th:unless="${stageOutcome.available()}" class="unavailable" th:text="${stageOutcome.pending() ? #messages.msg('signals.outcomePending') : #messages.msg('common.notAvailable')}">Pending</strong>
                     <span th:text="${#tr.text(stageOutcome.label())}">Wave II completed</span>
                   </div>
                 </div>

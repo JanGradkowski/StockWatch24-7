@@ -177,6 +177,45 @@ pl: Hipotetyczna ocena z perspektywy czasu dla pierwszych 10 zamkniętych świec
 en: Projection only
 pl: Tylko projekcja
 
+en: Projection · {0}
+pl: Projekcja · {0}
+
+en: Close after {0} candles
+pl: Zamknięcie po {0} świecach
+
+en: Wave II close after {0} candles
+pl: Fala II: zamknięcie po {0} świecach
+
+en: Wave III close after {0} candles
+pl: Fala III: zamknięcie po {0} świecach
+
+en: Wave IV close after {0} candles
+pl: Fala IV: zamknięcie po {0} świecach
+
+en: Wave V close after {0} candles
+pl: Fala V: zamknięcie po {0} świecach
+
+en: correction close after {0} candles
+pl: Korekta: zamknięcie po {0} świecach
+
+en: Elliott stage close after {0} candles
+pl: Etap fal Elliotta: zamknięcie po {0} świecach
+
+en: No stop and target were stored, so this runs from the next open to the close {0} candles later
+pl: Nie zapisano stop loss ani celu, więc wynik liczony jest od otwarcia następnej świecy do zamknięcia {0} świec później
+
+en: No stop and target were stored, so this is the return since the next open; it closes {0} candles after entry
+pl: Nie zapisano stop loss ani celu, więc jest to stopa zwrotu od otwarcia następnej świecy; pomiar kończy się {0} świec po wejściu
+
+en: The measurement starts at the next candle's open
+pl: Pomiar zaczyna się od ceny otwarcia następnej świecy
+
+en: The signal has no direction or candle to measure from
+pl: Sygnał nie ma kierunku ani świecy, od której można liczyć wynik
+
+en: The candles after this signal have no valid prices
+pl: Świece po tym sygnale nie mają prawidłowych cen
+
 en: Outcome unavailable
 pl: Wynik niedostępny
 

@@ -686,31 +686,55 @@ public class AlertRuleService {
                 .toList();
     }
 
+    /*
+     * Every archived signal gets an outcome. In order of preference:
+     *  1. the stored trade plan's modeled result (a projection-only plan is followed with the same rules
+     *     and marked "Projection"),
+     *  2. 0% when the plan says no position was ever opened (not filled, or a rejected candidate),
+     *  3. without a usable plan, the move from the next candle's open to the close a fixed number of
+     *     candles later (SignalHorizonOutcome).
+     * Only a signal whose next candle has not completed yet is pending. SignalArchiveQuery orders by the
+     * same values.
+     */
     private SignalArchiveOutcome signalArchiveOutcome(AlertEvent event) {
         AlertPatternFamily family = normalizeFamily(event.getAlertRule().getPatternFamily());
-        if (family == AlertPatternFamily.HARMONIC_FORMATION) {
-            return harmonicArchiveOutcome(event);
+        SignalArchiveOutcome outcome = switch (family) {
+            case HARMONIC_FORMATION -> harmonicArchiveOutcome(event);
+            case ELLIOTT_WAVE -> elliottArchiveOutcome(event);
+            default -> candlestickArchiveOutcome(event);
+        };
+        return withHorizonFallback(outcome, () -> horizonOutcome(event, family, horizonAnchor(event),
+                event.getTradeSignal(), null, Boolean.FALSE.equals(event.getTradeActionable())));
+    }
+
+    private SignalArchiveOutcome candlestickArchiveOutcome(AlertEvent event) {
+        SignalLifecycleStatus status = event.getLifecycleStatus() == null
+                ? SignalLifecycleStatus.DETECTED
+                : event.getLifecycleStatus();
+        if (status == SignalLifecycleStatus.POTENTIAL) return SignalArchiveOutcome.pending(
+                "Potential candidate", "Awaiting the mandatory next-candle detection gate");
+        boolean projection = Boolean.FALSE.equals(event.getTradeActionable());
+        if (status == SignalLifecycleStatus.REJECTED) {
+            SignalArchiveOutcome noTrade = event.notFilled()
+                    ? SignalArchiveOutcome.noTrade("Not filled", event.getLifecycleResolutionReason())
+                    : SignalArchiveOutcome.noTrade("No trade", "Candidate rejected before a trade was opened");
+            return projection ? noTrade.asProjection() : noTrade;
         }
-        if (family == AlertPatternFamily.ELLIOTT_WAVE) {
-            return elliottArchiveOutcome(event);
-        }
-        if (Boolean.FALSE.equals(event.getTradeActionable())) return SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
         if (!event.hasCandlestickRiskRewardPlan()
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
                 || event.getProfitTargetPrice() == null) {
-            return SignalArchiveOutcome.unavailable(
-                    "Outcome unavailable", "This signal predates the stored risk/reward trade plan");
+            return horizonOutcome(event, AlertPatternFamily.CANDLESTICK, horizonAnchor(event),
+                    event.getTradeSignal(), null, projection);
         }
+        SignalArchiveOutcome outcome = candlestickPlanOutcome(event, status);
+        return projection ? outcome.asProjection() : outcome;
+    }
 
+    private SignalArchiveOutcome candlestickPlanOutcome(AlertEvent event, SignalLifecycleStatus status) {
         double entry = event.getTradeEntryPrice();
-        SignalLifecycleStatus status = event.getLifecycleStatus() == null
-                ? SignalLifecycleStatus.DETECTED
-                : event.getLifecycleStatus();
-        if (status == SignalLifecycleStatus.DETECTED && event.awaitingFill()) return SignalArchiveOutcome.unavailable(
+        if (status == SignalLifecycleStatus.DETECTED && event.awaitingFill()) return SignalArchiveOutcome.pending(
                 "Awaiting entry", "The trade enters at the next candle's open");
-        if (status == SignalLifecycleStatus.REJECTED && event.notFilled()) return SignalArchiveOutcome.unavailable(
-                "Not filled", event.getLifecycleResolutionReason());
         return switch (status) {
             case CONFIRMED -> SignalArchiveOutcome.available(
                     "Sold at target",
@@ -737,45 +761,62 @@ public class AlertRuleService {
             case DETECTED -> pendingOutcome(
                     event, closesCountedFrom(event), entry, event.getTradeSignal(),
                     "Open · current return", "Current return since entry at the latest completed close");
-            case POTENTIAL -> SignalArchiveOutcome.unavailable(
+            // Answered before the plan is read (candlestickArchiveOutcome); kept for an exhaustive switch.
+            case POTENTIAL -> SignalArchiveOutcome.pending(
                     "Potential candidate", "Awaiting the mandatory next-candle detection gate");
-            case REJECTED -> SignalArchiveOutcome.unavailable(
-                    "No trade", "Candidate rejected before a trade was opened");
+            case REJECTED -> SignalArchiveOutcome.noTrade("No trade", "Candidate rejected before a trade was opened");
         };
     }
 
     private SignalArchiveOutcome harmonicArchiveOutcome(AlertEvent event) {
+        boolean projection = Boolean.FALSE.equals(event.getTradeActionable());
         if (!("HARMONIC_STOP_V1".equals(event.getTradePlanVersion()) || HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion()))
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
                 || event.getHarmonicStopStatus() == null) {
-            return SignalArchiveOutcome.unavailable(
-                    "Outcome unavailable", "This harmonic signal predates the stored eight-candle plan");
+            // No stored plan (none could be built, or the signal predates plans): measure the horizon instead.
+            return horizonOutcome(event, AlertPatternFamily.HARMONIC_FORMATION, horizonAnchor(event),
+                    event.getTradeSignal(), null, projection);
         }
         double entry = event.getTradeEntryPrice();
         HarmonicStopStatus status;
         try {
             status = HarmonicStopStatus.valueOf(event.getHarmonicStopStatus());
         } catch (IllegalArgumentException exception) {
-            return SignalArchiveOutcome.unavailable(
-                    "Outcome unavailable", "The stored harmonic outcome status is not recognized");
+            return horizonOutcome(event, AlertPatternFamily.HARMONIC_FORMATION, horizonAnchor(event),
+                    event.getTradeSignal(), null, projection);
         }
-        if (status == HarmonicStopStatus.ACTIVE && event.awaitingFill()) return SignalArchiveOutcome.unavailable(
+        // A projection-only plan of a current version is followed with the trade rules; older ones never were.
+        projection = status == HarmonicStopStatus.PROJECTION_ONLY
+                || HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion()) && projection;
+        if (status == HarmonicStopStatus.PROJECTION_ONLY && (!HarmonicStopPlanPolicy.qualifiedPlan(event.getTradePlanVersion())
+                || event.getProfitTargetPrice() == null || event.getTradeHorizonCandles() == null)) {
+            return horizonOutcome(event, AlertPatternFamily.HARMONIC_FORMATION, horizonAnchor(event),
+                    event.getTradeSignal(), null, true);
+        }
+        SignalArchiveOutcome outcome = harmonicArchiveOutcome(event, status, entry);
+        return projection ? outcome.asProjection() : outcome;
+    }
+
+    private SignalArchiveOutcome harmonicArchiveOutcome(AlertEvent event, HarmonicStopStatus status, double entry) {
+        if ((status == HarmonicStopStatus.ACTIVE || status == HarmonicStopStatus.PROJECTION_ONLY)
+                && event.awaitingFill()) return SignalArchiveOutcome.pending(
                 "Awaiting entry", "The trade enters at the next candle's open");
+        Double stopExit = event.getHarmonicStopResolutionPrice() != null ? event.getHarmonicStopResolutionPrice()
+                : event.getTradeResolutionPrice() != null ? event.getTradeResolutionPrice() : event.getStopLossPrice();
         return switch (status) {
-            case PROJECTION_ONLY -> SignalArchiveOutcome.unavailable("Projection only", event.getTradeQualification());
-            case NOT_FILLED -> SignalArchiveOutcome.unavailable("Not filled", event.getHarmonicStopResolutionReason());
+            case NOT_FILLED -> SignalArchiveOutcome.noTrade("Not filled", event.getHarmonicStopResolutionReason());
             case TARGET_REACHED -> terminalOutcome(entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
                     "Harmonic target reached", "Modeled primary-target exit");
             case STOPPED -> SignalArchiveOutcome.available(
                     "Harmonic stop reached",
-                    directionalReturnPercent(event.getTradeSignal(), entry, event.getHarmonicStopResolutionPrice()),
-                    event.getHarmonicStopResolutionPrice(),
+                    directionalReturnPercent(event.getTradeSignal(), entry, stopExit),
+                    stopExit,
                     "Modeled protective-stop exit");
             case TIME_STOPPED -> terminalOutcome(
                     entry, event.getTradeSignal(), event.getHarmonicStopResolutionPrice(),
                     "Time stop", "Trade closed at the saved horizon close");
-            case ACTIVE -> pendingOutcome(
+            case ACTIVE, PROJECTION_ONLY -> pendingOutcome(
                     event, closesCountedFrom(event), entry, event.getTradeSignal(),
                     "Pending harmonic outcome", "Current return before the saved trade horizon");
         };
@@ -786,10 +827,6 @@ public class AlertRuleService {
                 ? null : elliottTradePlanService.latestPlan(event).orElse(null);
         if (plan == null) {
             return legacyElliottArchiveOutcome(event);
-        }
-        if (plan.status() == ElliottTradePlanStatus.PROJECTION_ONLY) {
-            return SignalArchiveOutcome.unavailable(
-                    "Projection only", plan.qualification());
         }
         return elliottArchiveOutcome(
                 event, plan.entryTimestamp(), plan.entryPrice(), plan.expectedMove(), plan.stage(), plan);
@@ -802,21 +839,39 @@ public class AlertRuleService {
             TradeSignal expectedMove,
             ElliottSignalStage notificationStage,
             ElliottTradePlanService.StagePlanView latestPlan) {
-        if (latestPlan.status() == ElliottTradePlanStatus.PROJECTION_ONLY) {
-            return SignalArchiveOutcome.unavailable(
-                    elliottStageLabel(notificationStage) + " projection only", latestPlan.qualification());
-        }
-        String stage = elliottStageLabel(notificationStage);
-        if (latestPlan.status() == ElliottTradePlanStatus.ACTIVE && latestPlan.awaitingFill()) {
-            return SignalArchiveOutcome.unavailable(stage + " awaiting entry", "The trade enters at the next candle's open");
-        }
         // A plan filled at an open counts that candle's close; older plans entered at the notification close.
         long countedFrom = "FILLED".equals(latestPlan.fillStatus()) ? notificationTimestamp - 1 : notificationTimestamp;
+        java.util.function.Supplier<SignalArchiveOutcome> horizon = () -> horizonOutcome(
+                event, AlertPatternFamily.ELLIOTT_WAVE, countedFrom, expectedMove, notificationStage,
+                !latestPlan.actionable());
+        if (latestPlan.status() == ElliottTradePlanStatus.PROJECTION_ONLY && !latestPlan.trackedProjection()) {
+            // Plans of older versions were never given exit rules, so the horizon measures them.
+            return horizon.get();
+        }
+        SignalArchiveOutcome outcome = elliottStageOutcome(
+                event, countedFrom, notificationEntry, expectedMove, notificationStage, latestPlan);
+        // A projection-only plan is followed with the trade rules, so its result is the what-if return.
+        outcome = latestPlan.trackedProjection() || !latestPlan.actionable() ? outcome.asProjection() : outcome;
+        return withHorizonFallback(outcome, horizon);
+    }
+
+    private SignalArchiveOutcome elliottStageOutcome(
+            AlertEvent event,
+            long countedFrom,
+            double notificationEntry,
+            TradeSignal expectedMove,
+            ElliottSignalStage notificationStage,
+            ElliottTradePlanService.StagePlanView latestPlan) {
+        String stage = elliottStageLabel(notificationStage);
+        if ((latestPlan.status() == ElliottTradePlanStatus.ACTIVE || latestPlan.trackedProjection())
+                && latestPlan.awaitingFill()) {
+            return SignalArchiveOutcome.pending(stage + " awaiting entry", "The trade enters at the next candle's open");
+        }
         return switch (latestPlan.status()) {
-            case ACTIVE -> pendingOutcome(
+            case ACTIVE, PROJECTION_ONLY -> pendingOutcome(
                     event, countedFrom, notificationEntry, expectedMove,
                     "Pending " + stage + " outcome", "Current return since entry");
-            case NOT_FILLED -> SignalArchiveOutcome.unavailable(stage + " not filled", latestPlan.resolutionReason());
+            case NOT_FILLED -> SignalArchiveOutcome.noTrade(stage + " not filled", latestPlan.resolutionReason());
             case TARGET_REACHED -> terminalOutcome(
                     notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
                     stage + " target reached", "Resolved using the saved plan execution rules");
@@ -834,41 +889,110 @@ public class AlertRuleService {
             case REVISED -> terminalOutcome(
                     notificationEntry, expectedMove, latestPlan.resolutionClosePrice(),
                     stage + " revised", "Measured through the replacement stage endpoint");
-            case PROJECTION_ONLY -> throw new IllegalStateException("Handled above");
         };
     }
 
     private SignalArchiveOutcome legacyElliottArchiveOutcome(AlertEvent event) {
+        boolean projection = Boolean.FALSE.equals(event.getTradeActionable());
+        java.util.function.Supplier<SignalArchiveOutcome> horizon = () -> horizonOutcome(
+                event, AlertPatternFamily.ELLIOTT_WAVE, event.getSignalCandleTimestamp(), event.getTradeSignal(),
+                null, projection || "PROJECTION_ONLY".equals(event.getElliottTradePlanStatus()));
         if (event.getTradeEntryPrice() == null || event.getElliottTradePlanStatus() == null) {
-            return SignalArchiveOutcome.unavailable(
-                    "Outcome unavailable", "This Elliott signal predates the stored stage trade plan");
+            return horizon.get();
         }
         ElliottTradePlanStatus status;
         try {
             status = ElliottTradePlanStatus.valueOf(event.getElliottTradePlanStatus());
         } catch (IllegalArgumentException exception) {
-            return SignalArchiveOutcome.unavailable(
-                    "Outcome unavailable", "The stored Elliott outcome status is not recognized");
+            return horizon.get();
         }
-        if (status == ElliottTradePlanStatus.PROJECTION_ONLY) {
-            return SignalArchiveOutcome.unavailable(
-                    "Projection only", event.getElliottTradeResolutionReason());
-        }
-        if (status == ElliottTradePlanStatus.ACTIVE) {
-            return pendingOutcome(
+        return switch (status) {
+            // No plan could be built for this count, so there is nothing to replay.
+            case PROJECTION_ONLY -> horizon.get();
+            case NOT_FILLED -> SignalArchiveOutcome.noTrade("Not filled", event.getElliottTradeResolutionReason());
+            case ACTIVE -> pendingOutcome(
                     event, event.getSignalCandleTimestamp(), event.getTradeEntryPrice(), event.getTradeSignal(),
                     "Pending Elliott outcome", "Current return since the notification close");
-        }
-        return terminalOutcome(
-                event.getTradeEntryPrice(), event.getTradeSignal(), event.getElliottTradeResolutionClose(),
-                "Elliott " + status.name().toLowerCase(Locale.ROOT).replace('_', ' '),
-                event.getElliottTradeResolutionReason());
+            default -> withHorizonFallback(terminalOutcome(
+                    event.getTradeEntryPrice(), event.getTradeSignal(), event.getElliottTradeResolutionClose(),
+                    "Elliott " + status.name().toLowerCase(Locale.ROOT).replace('_', ' '),
+                    event.getElliottTradeResolutionReason()), horizon);
+        };
     }
 
     /** Closes after this timestamp count toward an open trade; a next-open fill counts its own candle. */
     private static Long closesCountedFrom(AlertEvent event) {
         return event.getTradeEntryTimestamp() != null && "FILLED".equals(event.getTradeFillStatus())
                 ? event.getTradeEntryTimestamp() - 1 : event.getSignalCandleTimestamp();
+    }
+
+    /** The candle after which a horizon measurement starts: the confirming candle when there is one. */
+    private static Long horizonAnchor(AlertEvent event) {
+        return event.getDetectionCandleTimestamp() != null
+                ? event.getDetectionCandleTimestamp() : event.getSignalCandleTimestamp();
+    }
+
+    /** A plan-based outcome that could not produce a number falls back to the horizon measurement. */
+    private static SignalArchiveOutcome withHorizonFallback(
+            SignalArchiveOutcome outcome, java.util.function.Supplier<SignalArchiveOutcome> horizon) {
+        return outcome.available() || outcome.pending() ? outcome : horizon.get();
+    }
+
+    /**
+     * Measures a signal without a usable trade plan: entry at the open of the first candle after
+     * {@code anchor}, valued at the close {@code N} completed candles later, or at the latest completed
+     * close until then. {@code N} is the family's trade horizon for the interval.
+     */
+    private SignalArchiveOutcome horizonOutcome(AlertEvent event,
+                                                AlertPatternFamily family,
+                                                Long anchor,
+                                                TradeSignal direction,
+                                                ElliottSignalStage stage,
+                                                boolean projection) {
+        AlertRule rule = event.getAlertRule();
+        if (rule == null || rule.getStockAsset() == null || anchor == null
+                || (direction != TradeSignal.BUY && direction != TradeSignal.SELL)) {
+            return SignalArchiveOutcome.unavailable("Outcome unavailable", "The signal has no direction or candle to measure from");
+        }
+        TimeInterval interval = rule.getInterval() == null ? TimeInterval.DAILY : rule.getInterval();
+        int horizon = SignalHorizonOutcome.horizonCandles(family, interval);
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        List<Candle> following = AnalysisComputationScope.memo(
+                List.of("archive-horizon", symbol, interval, anchor, horizon),
+                () -> completedCandlesAfter(symbol, interval, anchor, horizon));
+        SignalHorizonOutcome.Measurement measurement = SignalHorizonOutcome.measure(following, horizon);
+        SignalArchiveOutcome outcome;
+        String stageName = stage == null ? null : elliottStageLabel(stage);
+        if (measurement == null) {
+            outcome = following.isEmpty()
+                    ? SignalArchiveOutcome.pending(stageName == null ? "Awaiting entry" : stageName + " awaiting entry",
+                            "The measurement starts at the next candle's open")
+                    : SignalArchiveOutcome.unavailable("Outcome unavailable", "The candles after this signal have no valid prices");
+        } else {
+            String label = measurement.complete()
+                    ? stageName == null ? "Close after " + horizon + " candles" : stageName + " close after " + horizon + " candles"
+                    : stageName == null ? "Open · current return" : "Pending " + stageName + " outcome";
+            outcome = SignalArchiveOutcome.available(
+                    label,
+                    directionalReturnPercent(direction, measurement.entry(), measurement.exit()),
+                    measurement.exit(),
+                    measurement.complete()
+                            ? "No stop and target were stored, so this runs from the next open to the close " + horizon + " candles later"
+                            : "No stop and target were stored, so this is the return since the next open; it closes " + horizon + " candles after entry");
+        }
+        return projection ? outcome.asProjection() : outcome;
+    }
+
+    private List<Candle> completedCandlesAfter(String symbol, TimeInterval interval, long anchor, int limit) {
+        long completeBefore;
+        try {
+            completeBefore = candleCompletionService == null ? Long.MAX_VALUE
+                    : candleCompletionService.firstIncompleteCandleTimestamp(interval);
+        } catch (IllegalArgumentException unsupported) {
+            completeBefore = Long.MAX_VALUE;
+        }
+        return candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
+                symbol, toApiInterval(interval), anchor, completeBefore, PageRequest.of(0, limit));
     }
 
     private SignalArchiveOutcome pendingOutcome(
@@ -880,7 +1004,7 @@ public class AlertRuleService {
             String detail) {
         Double latestClose = latestCompletedCloseAfter(event, entryTimestamp);
         return latestClose == null
-                ? SignalArchiveOutcome.unavailable(label, "Awaiting the first completed outcome candle")
+                ? SignalArchiveOutcome.pending(label, "Awaiting the first completed outcome candle")
                 : SignalArchiveOutcome.available(
                 label,
                 directionalReturnPercent(tradeSignal, entryPrice, latestClose),
@@ -1267,7 +1391,19 @@ public class AlertRuleService {
                     "The close-based risk/reward trade model applies to named candlestick patterns."
             );
         }
-        if (Boolean.FALSE.equals(event.getTradeActionable())) return ObservedPriceOutcomeView.unavailable(event.getTradeQualification());
+        boolean projection = Boolean.FALSE.equals(event.getTradeActionable());
+        if (projection && (!event.hasCandlestickRiskRewardPlan() || event.getTradeEntryPrice() == null
+                || event.getStopLossPrice() == null || event.getProfitTargetPrice() == null)) {
+            return ObservedPriceOutcomeView.unavailable(event.getTradeQualification());
+        }
+        ObservedPriceOutcomeView outcome = observedTradeOutcome(event, rule, chart);
+        // A projection is followed with the trade rules; its result is what the signal would have returned.
+        return projection && outcome.tracked() ? outcome.asProjection() : outcome;
+    }
+
+    private ObservedPriceOutcomeView observedTradeOutcome(AlertEvent event,
+                                                          AlertRule rule,
+                                                          SignalChartView chart) {
         if (!event.hasCandlestickRiskRewardPlan()
                 || event.getTradeEntryPrice() == null
                 || event.getStopLossPrice() == null
@@ -3067,31 +3203,62 @@ public class AlertRuleService {
         }
     }
 
+    private static final String PROJECTION_PREFIX = "Projection · ";
+
+    /**
+     * One signal's result in the archive. {@code pending} marks the short wait for the next candle, the
+     * only time a signal has no value yet.
+     */
     public record SignalArchiveOutcome(
             boolean available,
             String label,
             Double returnPercent,
             Double price,
-            String detail
+            String detail,
+            boolean pending
     ) {
         private static SignalArchiveOutcome available(String label,
                                                       double returnPercent,
                                                       double price,
                                                       String detail) {
-            return new SignalArchiveOutcome(true, label, returnPercent, price, detail);
+            return new SignalArchiveOutcome(true, label, returnPercent, price, detail, false);
         }
 
         private static SignalArchiveOutcome unavailable(String label, String detail) {
-            return new SignalArchiveOutcome(false, label, null, null, detail);
+            return new SignalArchiveOutcome(false, label, null, null, detail, false);
+        }
+
+        /** No value yet because the next candle has not completed. */
+        private static SignalArchiveOutcome pending(String label, String detail) {
+            return new SignalArchiveOutcome(false, label, null, null, detail, true);
+        }
+
+        /** Following the plan opened no position (not filled, or a rejected candidate), so the result is 0%. */
+        private static SignalArchiveOutcome noTrade(String label, String detail) {
+            return new SignalArchiveOutcome(true, label, 0.0, null, detail, false);
+        }
+
+        /**
+         * The same result marked as a projection: the plan did not qualify as a trade, so this is what the
+         * signal would have made or lost had it been traded with the same entry, stop, target and horizon.
+         */
+        SignalArchiveOutcome asProjection() {
+            return projection() ? this
+                    : new SignalArchiveOutcome(available, PROJECTION_PREFIX + label, returnPercent, price, detail, pending);
+        }
+
+        public boolean projection() {
+            return label != null && label.startsWith(PROJECTION_PREFIX);
         }
 
         public String valueLabel() {
             if (!available || returnPercent == null) {
                 return "N/A";
             }
-            if ("Stop loss reached".equals(label) && price != null) {
+            if (label != null && label.endsWith("Stop loss reached") && price != null) {
                 return String.format(Locale.ROOT, "%.2f (%+.2f%%)", price, returnPercent);
             }
+            if (returnPercent == 0.0) return "0.00%";
             return String.format(Locale.ROOT, "%+.2f%%", returnPercent);
         }
 
@@ -3350,6 +3517,13 @@ public class AlertRuleService {
                     false, false, reason, "Unavailable", "pending", reason, null,
                     null, null, null, null, null, null, null, null, "Outcome unavailable"
             );
+        }
+
+        private ObservedPriceOutcomeView asProjection() {
+            return new ObservedPriceOutcomeView(tracked, outcomeAvailable, unavailableReason,
+                    PROJECTION_PREFIX + statusLabel, statusClass, summary, timeStopLabel, patternHigh, patternLow,
+                    evaluationTimestamp, evaluationPeriodLabel, evaluationClose, directionalReturnPercent,
+                    bestDirectionalMovePercent, worstDirectionalMovePercent, impactLabel);
         }
 
     }

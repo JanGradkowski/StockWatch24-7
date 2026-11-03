@@ -25,7 +25,8 @@ public class SignalArchiveQuery {
             (case when r.pattern_family = 'ELLIOTT_WAVE' and e.elliott_trade_plan_status is not null
                 then e.elliott_trade_plan_status in ('ACTIVE', 'PROJECTION_ONLY')
              when r.pattern_family = 'HARMONIC_FORMATION' and e.harmonic_stop_status is not null
-                then e.harmonic_stop_status = 'ACTIVE'
+                then e.harmonic_stop_status = 'ACTIVE' or e.harmonic_stop_status = 'PROJECTION_ONLY'
+                    and e.trade_plan_version in ('HARMONIC_TRADE_V2','HARMONIC_TRADE_V3')
              else coalesce(e.lifecycle_status, 'DETECTED') in ('POTENTIAL', 'DETECTED') end)
             """;
         String where = "r.user_id = ? and e.deleted_at is null and (cast(? as bigint) is null or r.stock_asset_id = ?)"
@@ -120,13 +121,38 @@ public class SignalArchiveQuery {
         return kinds;
     }
 
+    /** A finite, positive price in SQL; NaN compares above every number in PostgreSQL, so it is excluded first. */
+    private static String validPrice(String column) {
+        return "(" + column + " not in ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8) and " + column + " > 0)";
+    }
+
+    /**
+     * The archive rows with the same trade return AlertRuleService renders (see its signalArchiveOutcome):
+     * the stored plan's result (PLAN), 0% when following the plan opened no position (ZERO), the move from
+     * the next open to the close a family-specific number of candles later when there is no usable plan
+     * (HORIZON, as SignalHorizonOutcome), or none while the next candle is still forming (NONE).
+     */
     private String technicalRows(String where, boolean outcomes) {
         String projection = "select 'TECHNICAL'::text kind,e.id,a.ticker_symbol ticker,a.company_name company,r.interval,e.confidence_score confidence,e.lifecycle_status status,e.sent_at received,e.read_at,null::text title,null::text actor,null::date transaction_date,";
         if (!outcomes) return projection + "null::float8 trade_return from alert_events e join alert_rules r on r.id=e.alert_rule_id join stock_assets a on a.id=r.stock_asset_id where " + where;
-        return projection + "(case when prices.exit not in ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8) then (prices.exit - prices.entry) / nullif(prices.entry, 0) * 100 * case prices.direction when 'SELL' then -1 else 1 end end) trade_return " + """
+        String returns = """
+            (case basis.outcome
+                when 'ZERO' then 0::float8
+                when 'HORIZON' then case when %s and %s and basis.direction in ('BUY', 'SELL')
+                    then (horizon.exit - horizon.entry) / horizon.entry * 100 * case basis.direction when 'SELL' then -1 else 1 end end
+                when 'PLAN' then case when prices.exit not in ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)
+                    then (prices.exit - prices.entry) / nullif(prices.entry, 0) * 100 * case prices.direction when 'SELL' then -1 else 1 end end
+             end) trade_return
+            """.formatted(validPrice("horizon.entry"), validPrice("horizon.exit"));
+        return projection + returns + """
             from alert_events e
             join alert_rules r on r.id = e.alert_rule_id
             join stock_assets a on a.id = r.stock_asset_id
+            cross join lateral (
+                select case r.interval when 'WEEKLY' then cast(? as bigint) when 'MONTHLY' then cast(? as bigint)
+                           else cast(? as bigint) end as complete_before,
+                       case r.interval when 'WEEKLY' then '1wk' when 'MONTHLY' then '1mo' else '1d' end as api_interval
+            ) bounds
             left join lateral (
                 select first_plan.* from (
                     select distinct on (p.elliott_stage) p.* from elliott_stage_trade_plans p
@@ -142,41 +168,103 @@ public class SignalArchiveQuery {
             left join lateral (
                 select c.close_price from (
                     select timestamp, close_price from candles
-                    where symbol = a.ticker_symbol and time_interval = case r.interval
-                        when 'WEEKLY' then '1wk' when 'MONTHLY' then '1mo' else '1d' end
+                    where symbol = a.ticker_symbol and time_interval = bounds.api_interval
                     order by timestamp desc limit 100
                 ) c where c.timestamp > coalesce(
-                    case when first_plan.fill_status = 'FILLED' then first_plan.entry_timestamp - 1 else first_plan.entry_timestamp end,
+                    case when last_plan.fill_status = 'FILLED' then first_plan.entry_timestamp - 1 else first_plan.entry_timestamp end,
                     case when e.trade_fill_status = 'FILLED' then e.trade_entry_timestamp - 1 end,
                     e.signal_candle_timestamp)
-                and c.timestamp < case r.interval when 'WEEKLY' then ? when 'MONTHLY' then ? else ? end
+                and c.timestamp < bounds.complete_before
                 and c.close_price not in ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)
                 order by c.timestamp desc limit 1
             ) recent on true
+            cross join lateral (
+                select case
+                       when r.pattern_family = 'ELLIOTT_WAVE' and first_plan.id is not null then
+                           case when last_plan.status = 'NOT_FILLED' then 'ZERO'
+                                when last_plan.status = 'PROJECTION_ONLY'
+                                    and last_plan.plan_version not in ('ELLIOTT_FIB_RR_V3','ELLIOTT_FIB_RR_V4') then 'HORIZON'
+                                when last_plan.status in ('ACTIVE','PROJECTION_ONLY') then 'PLAN'
+                                when coalesce(last_plan.resolution_fill_price, last_plan.resolution_close_price) is null then 'HORIZON'
+                                else 'PLAN' end
+                       when r.pattern_family = 'ELLIOTT_WAVE' then
+                           case when e.trade_entry_price is null or e.elliott_trade_plan_status is null
+                                    or e.elliott_trade_plan_status not in ('ACTIVE','PROJECTION_ONLY','TARGET_REACHED','STOPPED',
+                                        'STRUCTURE_INVALIDATED','TIME_STOPPED','STAGE_COMPLETED','REVISED','NOT_FILLED')
+                                    or e.elliott_trade_plan_status = 'PROJECTION_ONLY' then 'HORIZON'
+                                when e.elliott_trade_plan_status = 'NOT_FILLED' then 'ZERO'
+                                when e.elliott_trade_plan_status = 'ACTIVE' then 'PLAN'
+                                when e.elliott_trade_resolution_close is null then 'HORIZON'
+                                else 'PLAN' end
+                       when r.pattern_family = 'HARMONIC_FORMATION' then
+                           case when coalesce(e.trade_plan_version, '') not in ('HARMONIC_STOP_V1','HARMONIC_TRADE_V2','HARMONIC_TRADE_V3')
+                                    or e.trade_entry_price is null or e.stop_loss_price is null or e.harmonic_stop_status is null
+                                    or e.harmonic_stop_status not in ('ACTIVE','PROJECTION_ONLY','NOT_FILLED','TARGET_REACHED',
+                                        'STOPPED','TIME_STOPPED') then 'HORIZON'
+                                when e.harmonic_stop_status = 'PROJECTION_ONLY'
+                                    and (e.trade_plan_version not in ('HARMONIC_TRADE_V2','HARMONIC_TRADE_V3')
+                                        or e.profit_target_price is null or e.trade_horizon_candles is null) then 'HORIZON'
+                                when e.harmonic_stop_status = 'NOT_FILLED' then 'ZERO'
+                                when e.harmonic_stop_status in ('TARGET_REACHED','TIME_STOPPED')
+                                    and e.harmonic_stop_resolution_price is null then 'HORIZON'
+                                else 'PLAN' end
+                       else
+                           case when coalesce(e.lifecycle_status, 'DETECTED') = 'POTENTIAL' then 'NONE'
+                                when e.lifecycle_status = 'REJECTED' then 'ZERO'
+                                when coalesce(e.trade_plan_version, '') not in ('CANDLE_RR_V1','CANDLE_RR_V2','CANDLE_RR_V3','CANDLE_RR_V4','CANDLE_RR_V5')
+                                    or e.reward_risk_ratio is null or e.trade_entry_price is null
+                                    or e.stop_loss_price is null or e.profit_target_price is null then 'HORIZON'
+                                when e.lifecycle_status = 'EXPIRED' and (e.resolution_close_price is null
+                                    or e.resolution_close_price in ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)) then 'HORIZON'
+                                else 'PLAN' end
+                       end as outcome,
+                       case when r.pattern_family = 'ELLIOTT_WAVE' and first_plan.id is not null then
+                                case when last_plan.fill_status = 'FILLED' then first_plan.entry_timestamp - 1 else first_plan.entry_timestamp end
+                            when r.pattern_family = 'ELLIOTT_WAVE' then e.signal_candle_timestamp
+                            else coalesce(e.detection_candle_timestamp, e.signal_candle_timestamp) end as horizon_anchor,
+                       case coalesce(r.pattern_family, 'CANDLESTICK')
+                            when 'ELLIOTT_WAVE' then case r.interval when 'WEEKLY' then 16 when 'MONTHLY' then 12 else 20 end
+                            when 'HARMONIC_FORMATION' then case r.interval when 'WEEKLY' then 10 when 'MONTHLY' then 8 else 12 end
+                            else case r.interval when 'MONTHLY' then 6 else 8 end end as horizon_candles,
+                       case when first_plan.id is not null then first_plan.expected_move else e.trade_signal end as direction
+            ) basis
+            left join lateral (
+                select (array_agg(h.open_price order by h.timestamp))[1] as entry,
+                       (array_agg(h.close_price order by h.timestamp desc))[1] as exit
+                from (
+                    select timestamp, open_price, close_price from candles
+                    where basis.outcome = 'HORIZON'
+                      and symbol = a.ticker_symbol and time_interval = bounds.api_interval
+                      and timestamp > basis.horizon_anchor and timestamp < bounds.complete_before
+                    order by timestamp limit basis.horizon_candles
+                ) h
+            ) horizon on true
             cross join lateral (
                 select case when first_plan.id is not null then first_plan.entry_price else e.trade_entry_price end as entry,
                        case when first_plan.id is not null then first_plan.expected_move else e.trade_signal end as direction,
                        case
                        when r.pattern_family = 'ELLIOTT_WAVE' and first_plan.id is not null then
-                           case last_plan.status when 'PROJECTION_ONLY' then null when 'NOT_FILLED' then null
+                           case last_plan.status
+                           when 'PROJECTION_ONLY' then case when last_plan.fill_status is distinct from 'AWAITING_FILL' then recent.close_price end
                            when 'ACTIVE' then case when last_plan.fill_status = 'AWAITING_FILL' then null else recent.close_price end
                            else coalesce(last_plan.resolution_fill_price, last_plan.resolution_close_price) end
                        when r.pattern_family = 'ELLIOTT_WAVE' then
-                           case e.elliott_trade_plan_status when 'PROJECTION_ONLY' then null when 'ACTIVE' then recent.close_price
-                           when 'TARGET_REACHED' then e.elliott_trade_resolution_close when 'STOPPED' then e.elliott_trade_resolution_close
-                           when 'STRUCTURE_INVALIDATED' then e.elliott_trade_resolution_close
-                           when 'TIME_STOPPED' then e.elliott_trade_resolution_close when 'STAGE_COMPLETED' then e.elliott_trade_resolution_close when 'REVISED' then e.elliott_trade_resolution_close end
+                           case e.elliott_trade_plan_status when 'ACTIVE' then recent.close_price
+                           else e.elliott_trade_resolution_close end
                        when r.pattern_family = 'HARMONIC_FORMATION' then
-                           case when e.trade_plan_version in ('HARMONIC_STOP_V1','HARMONIC_TRADE_V2','HARMONIC_TRADE_V3') and e.stop_loss_price is not null then
-                               case e.harmonic_stop_status when 'STOPPED' then coalesce(e.trade_resolution_price,e.harmonic_stop_resolution_price,e.stop_loss_price) when 'TARGET_REACHED' then e.harmonic_stop_resolution_price
-                               when 'TIME_STOPPED' then e.harmonic_stop_resolution_price
-                               when 'ACTIVE' then case when e.trade_fill_status = 'AWAITING_FILL' then null else recent.close_price end end end
-                       else case when e.trade_plan_version in ('CANDLE_RR_V1','CANDLE_RR_V2','CANDLE_RR_V3','CANDLE_RR_V4','CANDLE_RR_V5')
-                           and e.trade_actionable is distinct from false and e.reward_risk_ratio is not null and e.stop_loss_price is not null and e.profit_target_price is not null then
+                           case e.harmonic_stop_status
+                           when 'STOPPED' then coalesce(e.harmonic_stop_resolution_price, e.trade_resolution_price, e.stop_loss_price)
+                           when 'TARGET_REACHED' then e.harmonic_stop_resolution_price
+                           when 'TIME_STOPPED' then e.harmonic_stop_resolution_price
+                           when 'ACTIVE' then case when e.trade_fill_status = 'AWAITING_FILL' then null else recent.close_price end
+                           when 'PROJECTION_ONLY' then case when e.trade_fill_status is distinct from 'AWAITING_FILL' then recent.close_price end
+                           end
+                       else
                            case coalesce(e.lifecycle_status, 'DETECTED') when 'CONFIRMED' then e.profit_target_price
                            when 'DETECTED' then case when e.trade_fill_status = 'AWAITING_FILL' then null else recent.close_price end
-                           when 'INVALIDATED' then coalesce(e.trade_resolution_price,e.stop_loss_price)
-                           when 'EXPIRED' then e.resolution_close_price end end end as exit
+                           when 'INVALIDATED' then coalesce(e.trade_resolution_price, e.stop_loss_price)
+                           when 'EXPIRED' then e.resolution_close_price end
+                       end as exit
             ) prices
             where
             """ + where;

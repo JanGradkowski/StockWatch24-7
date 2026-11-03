@@ -22,6 +22,9 @@ class ServerLabelsTest {
                 .isEqualTo("Oczekiwanie na zamknięcie świecy poniżej 98,1200. Układ wygaśnie po 8 świecach, jeśli wcześniej nie zostanie potwierdzony ani zanegowany.");
         assertThat(polish("Potential sell/short")).isEqualTo("Potencjalny sygnał sprzedaży / krótkiej sprzedaży");
         assertThat(polish("Wave IV target reached")).isEqualTo("Fala IV: osiągnięto cel");
+        assertThat(polish("Projection · Wave IV target reached")).isEqualTo("Projekcja · Fala IV: osiągnięto cel");
+        assertThat(polish("Projection · Open · current return")).isEqualTo("Projekcja · Otwarta · bieżąca stopa zwrotu");
+        assertThat(polish("Projection only")).as("the exact entry wins over the prefix").isEqualTo("Tylko projekcja");
         assertThat(polish("09 October 2026")).isEqualTo("09 października 2026");
     }
 

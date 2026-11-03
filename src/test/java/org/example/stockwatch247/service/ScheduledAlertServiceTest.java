@@ -834,6 +834,82 @@ class ScheduledAlertServiceTest {
     }
 
     @Test
+    void aSignalOlderThanTheLoadedCandlesIsCaughtUpFromStoredHistoryWithoutAnEmail() {
+        String symbol = "OLD";
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        CandleRepository candleRepository = mock(CandleRepository.class);
+        AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        CandlestickSignalLifecycleService lifecycleService =
+                new CandlestickSignalLifecycleService(alertEventRepository, notificationService);
+        // Fourteen quiet bars, a bearish bar and the bullish engulfing signal at 1600.
+        List<Candle> stored = new ArrayList<>();
+        for (int index = 1; index <= 14; index++) {
+            stored.add(new Candle(symbol, "1d", index * 100L, 100, 101, 99, 100.0, 1_000L));
+        }
+        stored.add(new Candle(symbol, "1d", 1_500L, 101, 101.5, 99, 99.2, 1_000L));
+        stored.add(new Candle(symbol, "1d", 1_600L, 99, 103, 98.8, 102.5, 1_000L));
+        AlertRule rule = rule(symbol, TimeInterval.DAILY, AlertPatternFamily.CANDLESTICK, TradeSignal.BUY);
+        AlertEvent event = new AlertEvent();
+        event.setAlertRule(rule);
+        event.setPattern(CandlePattern.BULLISH_ENGULFING);
+        event.setTradeSignal(TradeSignal.BUY);
+        event.setSignalCandleTimestamp(1_600L);
+        lifecycleService.initializeTracking(event, new DetectedSignal(CandlePattern.BULLISH_ENGULFING, TradeSignal.BUY,
+                SignalStength.MEDIUM_CONFIDENCE, 80, List.of("test"), 1_600L, 102.5), stored);
+        event.setTradeActionable(false);
+        event.setTradeQualification("Projection only: the primary target does not meet the minimum reward/risk.");
+        // The regular check only loads the two newest candles, so the signal candle is not among them.
+        List<Candle> latest = List.of(new Candle(symbol, "1d", 1_700L, 101.0, 106.0, 100.5, 105.8, 1_000L),
+                new Candle(symbol, "1d", 1_800L, 105.8, 107.0, 104.0, 106.5, 1_000L));
+        List<Candle> history = new ArrayList<>(stored);
+        history.addAll(latest);
+
+        when(marketDataService.syncCandlesForAnalysis(eq(symbol), eq("1d"), anyInt()))
+                .thenReturn(new MarketDataService.CandleSyncResult(
+                        MarketDataService.CandleSource.TWELVE_DATA, 2, null));
+        when(candleRepository.findBySymbolAndTimeIntervalOrderByTimestampDesc(eq(symbol), eq("1d"), any()))
+                .thenReturn(latest.reversed());
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                eq(symbol), eq("1d"), eq(1_600L), any()))
+                .thenReturn(stored.subList(0, stored.size() - 1).reversed());
+        when(candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanEqualOrderByTimestampAsc(symbol, "1d", 100L))
+                .thenReturn(history);
+        when(alertEventRepository.findTrackedLifecycleEvents(symbol, TimeInterval.DAILY, SignalLifecycleStatus.DETECTED))
+                .thenAnswer(invocation -> event.getLifecycleStatus() == SignalLifecycleStatus.DETECTED
+                        ? List.of(event) : List.of());
+
+        ScheduledAlertService service = new ScheduledAlertService(
+                alertRuleRepository,
+                alertEventRepository,
+                candleRepository,
+                marketDataService,
+                new TechnicalIndicatorEnrichmentService(),
+                mock(CandlePatternDetectionService.class),
+                new ElliottWaveDetectionService(),
+                notificationService,
+                lifecycleService,
+                mock(AlertCheckJobStore.class),
+                mock(AlertScheduleRecoveryService.class),
+                true,
+                true,
+                true,
+                300,
+                60,
+                3
+        );
+
+        service.processSymbolInterval(symbol, TimeInterval.DAILY);
+
+        assertThat(event.getTradeFillStatus()).isEqualTo("FILLED");
+        assertThat(event.getTradeEntryPrice()).isEqualTo(101.0);
+        assertThat(event.getLifecycleStatus()).isEqualTo(SignalLifecycleStatus.CONFIRMED);
+        assertThat(event.getTradeActionable()).isFalse();
+        verify(notificationService, never()).sendSignalLifecycleEmail(any());
+    }
+
+    @Test
     void candlestickCheckUsesOnlyTheRequestedStocksCandles() {
         String symbol = "VST";
         MarketDataService marketDataService = mock(MarketDataService.class);
