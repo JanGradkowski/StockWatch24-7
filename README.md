@@ -182,6 +182,7 @@ The complete development template is in [`.env.example`](.env.example). Importan
 | --- | --- |
 | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | Runtime PostgreSQL connection |
 | `DB_MIGRATION_USERNAME`, `DB_MIGRATION_PASSWORD` | Flyway migration role |
+| `DB_MAXIMUM_POOL_SIZE` | Database connections the application may hold at once (default `30`) |
 | `TWELVE_DATA_API_KEY` | Twelve Data access |
 | `ANCHORED_VOLUME_PROFILE_PRICE_BINS` | Price rows used by the estimated anchored profile (default `48`) |
 | `ANCHORED_VOLUME_PROFILE_VALUE_AREA_PERCENT` | Volume percentage enclosed by VAH/VAL (default `70`) |

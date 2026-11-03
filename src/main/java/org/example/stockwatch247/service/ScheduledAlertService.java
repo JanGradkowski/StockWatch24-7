@@ -449,6 +449,11 @@ public class ScheduledAlertService {
         developingElliottCandles = new CandlestickFormationIntegrity(candles).latestContext(developingElliottCandles);
         enrichStage.close();
         if (!elliottCandles.isEmpty()) {
+            try (var stage = CheckTimings.enter("lifecycle: Elliott structures")) {
+                lifecycleService.prepareElliottStructures(symbol, interval, elliottCandles, elliottWaveDetectionService);
+            }
+        }
+        if (!elliottCandles.isEmpty()) {
             var untrackedStage = CheckTimings.enter("lifecycle: untracked Elliott");
             int initialized = lifecycleService.initializeUntrackedElliott(
                     symbol,

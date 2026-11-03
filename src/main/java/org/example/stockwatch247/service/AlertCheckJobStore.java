@@ -218,7 +218,25 @@ public class AlertCheckJobStore {
         return jobs.stream().findFirst();
     }
 
+    private org.springframework.transaction.support.TransactionTemplate ownTransaction;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureTransactions(org.springframework.transaction.PlatformTransactionManager manager) {
+        ownTransaction = new org.springframework.transaction.support.TransactionTemplate(manager);
+        ownTransaction.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    /**
+     * Extends the lease in a transaction of its own and commits at once: a check that renews from inside a business
+     * transaction (publishing a signal) does not hold the job row's lock until that commits, so the heartbeat
+     * thread's renewal never waits on it.
+     */
     public boolean renew(AlertCheckJob job, Duration lease) {
+        if (ownTransaction == null) return extend(job, lease);
+        return Boolean.TRUE.equals(ownTransaction.execute(status -> extend(job, lease)));
+    }
+
+    private boolean extend(AlertCheckJob job, Duration lease) {
         return jdbcTemplate.update("""
             update alert_check_jobs set lease_until = current_timestamp + (? * interval '1 second')
             where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp

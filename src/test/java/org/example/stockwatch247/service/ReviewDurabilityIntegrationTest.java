@@ -73,6 +73,32 @@ class ReviewDurabilityIntegrationTest {
         } finally {jdbc.update("delete from email_outbox where deduplication_key=?",key);}
     }
 
+    @Test void leaseRenewedInsideAPublishingTransactionDoesNotLockTheJobUntilItCommits() throws Exception {
+        String symbol = "LSE" + UUID.randomUUID().toString().substring(0, 4).toUpperCase(java.util.Locale.ROOT);
+        Instant scheduledFor = Instant.parse("2026-01-06T00:00:00Z");
+        long id = jdbc.queryForObject("""
+                insert into alert_check_jobs (symbol, interval, scheduled_for, status, attempts, lease_until)
+                values (?, 'DAILY', ?, 'PROCESSING', 1, current_timestamp + interval '60 seconds') returning id
+                """, Long.class, symbol, java.sql.Timestamp.from(scheduledFor));
+        var job = new AlertCheckJobStore.AlertCheckJob(id, symbol, TimeInterval.DAILY, scheduledFor, 1);
+        try (var heartbeat = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            new TransactionTemplate(manager).executeWithoutResult(status -> {
+                assertThat(jobs.renew(job, Duration.ofSeconds(600))).isTrue();
+                // Another connection (the heartbeat's) can lock and read the renewed row while this transaction is open.
+                var other = heartbeat.submit(() -> jdbc.queryForObject("""
+                        select lease_until > current_timestamp + interval '300 seconds' from alert_check_jobs where id = ? for update nowait
+                        """, Boolean.class, id));
+                try {
+                    assertThat(other.get(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                } catch (Exception failure) {
+                    throw new AssertionError("the job row stayed locked by the outer transaction", failure);
+                }
+            });
+        } finally {
+            jdbc.update("delete from alert_check_jobs where id = ?", id);
+        }
+    }
+
     @Test void checkpointSurvivesOuterRollbackAndOlderProgressCannotOverwriteIt() {
         String key=AnalysisWork.key(UUID.randomUUID());
         try {

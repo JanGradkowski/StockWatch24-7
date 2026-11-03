@@ -194,6 +194,7 @@ public class CustomAlertFactsLoader {
         private final List<Candle> series;
         private final Map<String, double[]> values = new HashMap<>();
         private final Map<String, List<ActivityHit>> activity = new HashMap<>();
+        private final Map<Long, java.util.Optional<OutlookFact>> outlookByOwner = new HashMap<>();
         private final Map<Object, List<PatternHit>> patterns = new HashMap<>();
         /** How many recent candles candlestick detection covers: a scheduled check needs its windows, a preview its replay. */
         private int patternCandles = CustomAlertDefinition.MAX_WINDOW_CANDLES * 3;
@@ -234,6 +235,25 @@ public class CustomAlertFactsLoader {
          */
         public void evaluatesLatestOnly(boolean latestOnly) {
             this.latestOnly = latestOnly;
+        }
+
+        /**
+         * Works out everything {@code definition} reads for {@code owner}: indicator and price series, pattern scans,
+         * the outlook and filings. Evaluating the rule afterwards only reads these results.
+         */
+        void prepareFor(CustomAlertDefinition definition, User owner) {
+            for (CustomAlertDefinition.Condition condition : definition.conditions()) {
+                switch (condition) {
+                    case CustomAlertDefinition.ValueCondition value -> {
+                        series(value.subject());
+                        if (value.compare() != null && !"VALUE".equals(value.compare().kind())) series(value.compare());
+                    }
+                    case CustomAlertDefinition.PatternCondition pattern -> patterns(pattern.family(), owner);
+                    case CustomAlertDefinition.OutlookCondition ignored -> outlook(owner);
+                    case CustomAlertDefinition.ActivityCondition activity -> activity(activity.source());
+                    default -> { }
+                }
+            }
         }
 
         /** Works out each pattern family's snapshot with factory settings, which the shared store keeps for later readers. */
@@ -394,9 +414,7 @@ public class CustomAlertFactsLoader {
                 @Override public OutlookFact outlook() {
                     if (!outlookLoaded) {
                         outlookLoaded = true;
-                        try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: outlook")) {
-                            outlook = data.outlook(owner);
-                        }
+                        outlook = data.outlook(owner);
                     }
                     return outlook;
                 }
@@ -803,9 +821,14 @@ public class CustomAlertFactsLoader {
             return hits;
         }
 
+        /** The owner's outlook of the latest candle, read once per owner and check. */
         private OutlookFact outlook(User owner) {
             if (outlooks == null || owner == null || series.isEmpty()) return null;
-            try {
+            return outlookByOwner.computeIfAbsent(owner.getId(), id -> java.util.Optional.ofNullable(loadOutlook(owner))).orElse(null);
+        }
+
+        private OutlookFact loadOutlook(User owner) {
+            try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: outlook")) {
                 var view = outlooks.getTrackingOutlook(owner, asset.getTickerSymbol(), apiInterval(interval), false);
                 if (!view.available() || view.candleTimestamp() == null) return null;
                 return new OutlookFact(view.candleTimestamp(), view.headlineScore().classification(), view.headlineScore().normalizedScore());
