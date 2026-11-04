@@ -55,6 +55,8 @@ public class ScheduledAlertService {
 
     /** A check should finish within this time, from picking up its job until it is done. */
     static final long CHECK_TIME_LIMIT_MS = 5_000;
+    /** The part of that time a check waits for candle downloads, all of them together. */
+    @Value("${alerts.schedule.download-wait-ms:1500}") private long downloadWaitMillis = 1_500;
 
     /** What one finished check took, stage by stage (see {@link CheckTimings}). */
     record CheckReport(String symbol, TimeInterval interval, Instant scheduledFor, long elapsedMs, long cpuMs,
@@ -307,6 +309,7 @@ public class ScheduledAlertService {
                 job.symbol(), job.interval(), job.scheduledFor(), job.attempts());
         // Progress stays in memory (no durable checkpoints): a check that stops part-way starts again from the beginning.
         try (var priority = MarketDataProviderRequestBudget.background();
+             var downloads = MarketDataService.waitForDownloadsAtMost(Duration.ofMillis(Math.max(0, downloadWaitMillis)));
              var claim = leaseGuard == null ? null : leaseGuard.protect(() -> jobStore.renew(job, jobLease), jobLease)) {
             processSymbolInterval(job.symbol(), job.interval(), job.scheduledFor());
             try (var stage = CheckTimings.enter("complete job")) {
@@ -411,9 +414,8 @@ public class ScheduledAlertService {
         }
         MarketDataService.CandleSyncResult syncResult = marketDataService
                 .syncCandlesForAnalysis(symbol, apiInterval, requiredHistory);
-        if (syncResult.source() == MarketDataService.CandleSource.CACHE_REFRESH_IN_PROGRESS) {
-            throw new MarketDataUnavailableException(symbol, apiInterval, "Candle refresh is already running");
-        }
+        boolean downloadUnfinished = syncResult.source() == MarketDataService.CandleSource.CACHE_REFRESH_IN_PROGRESS
+                || syncResult.source() == MarketDataService.CandleSource.DOWNLOAD_CONTINUES;
         if (!syncResult.successful()) {
             throw new MarketDataUnavailableException(symbol, apiInterval, "Candle refresh failed: " + syncResult.failureMessage());
         }
@@ -430,6 +432,15 @@ public class ScheduledAlertService {
                 .stream()
                 .sorted(Comparator.comparing(Candle::getTimestamp))
                 .toList();
+        // A download still running (this check's, past its wait, or another worker's) is not waited for when the
+        // stored candles already reach the latest one completed at the scheduled time. Otherwise the check is
+        // postponed, so it never runs on candles that miss the one it was scheduled for.
+        if (downloadUnfinished && !latestCompletedCandleStored(candles, interval, scheduledFor)) {
+            throw new MarketDataUnavailableException(symbol, apiInterval,
+                    syncResult.source() == MarketDataService.CandleSource.CACHE_REFRESH_IN_PROGRESS
+                            ? "Candle refresh is already running"
+                            : "The candle download was still running when the check stopped waiting for it");
+        }
 
         loadingStage.close();
         if (candles.size() < 2) {
@@ -668,6 +679,26 @@ public class ScheduledAlertService {
     private RuntimeException stageFailure(String fallback, RuntimeException failure) {
         var progress = currentCheck.get();
         return new IllegalStateException((progress == null ? fallback : progress.stage) + ": " + failure.getMessage(), failure);
+    }
+
+    private CandleCompletionService candleCompletion;
+
+    @Autowired(required = false)
+    void configureCandleCompletion(CandleCompletionService candleCompletion) {
+        this.candleCompletion = candleCompletion;
+    }
+
+    /**
+     * Whether the newest stored candle is the latest one completed at {@code scheduledFor} (now when null). A
+     * market holiday reads as missing; that costs at most one postponement, because the retried check finds the
+     * download finished.
+     */
+    boolean latestCompletedCandleStored(List<Candle> candles, TimeInterval interval, Instant scheduledFor) {
+        if (candleCompletion == null || candles.isEmpty()) return false;
+        Instant at = scheduledFor == null ? Instant.now() : scheduledFor;
+        long lastCompletedMoment = candleCompletion.firstIncompleteCandleTimestamp(interval, at) - 1;
+        return MarketDataService.expectedPeriodsBetween(toApiInterval(interval),
+                candles.getLast().getTimestamp(), lastCompletedMoment) == 0;
     }
 
     private void evaluateTrackedOutlook(String symbol, TimeInterval interval) {

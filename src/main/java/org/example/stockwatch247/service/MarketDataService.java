@@ -154,8 +154,101 @@ public class MarketDataService {
                                                    int requiredCandles) {
         CheckTimings.count("candle syncs");
         try (var stage = CheckTimings.enter("candle download")) {
-            return syncAnalysisCandles(rawSymbol, rawInterval, requiredCandles);
+            DownloadWait wait = DOWNLOAD_WAIT.get();
+            if (wait == null) return syncAnalysisCandles(rawSymbol, rawInterval, requiredCandles);
+            var download = download(rawSymbol, rawInterval, requiredCandles);
+            long started = System.nanoTime();
+            try {
+                return download.get(Math.max(0, wait.remainingNanos), TimeUnit.NANOSECONDS);
+            } catch (java.util.concurrent.TimeoutException slow) {
+                log.info("Candle download for {} {} still running after the check's wait; it continues in the background",
+                        rawSymbol, rawInterval);
+                return new CandleSyncResult(CandleSource.DOWNLOAD_CONTINUES, 0, null);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return new CandleSyncResult(CandleSource.DOWNLOAD_CONTINUES, 0, null);
+            } catch (java.util.concurrent.ExecutionException failed) {
+                if (failed.getCause() instanceof RuntimeException runtime) throw runtime;
+                if (failed.getCause() instanceof Error error) throw error;
+                throw new IllegalStateException("Candle refresh failed.", failed.getCause());
+            } finally {
+                wait.remainingNanos -= System.nanoTime() - started;
+            }
         }
+    }
+
+    /**
+     * Downloads ahead of the check that will read the candles (the scheduled checks' prefetch lane), and waits for
+     * the download to finish. A check asking for the same candles meanwhile waits for this download instead of
+     * starting another.
+     */
+    public CandleSyncResult prefetchForAnalysis(String rawSymbol, String rawInterval, int requiredCandles) {
+        try {
+            return download(rawSymbol, rawInterval, requiredCandles).get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return new CandleSyncResult(CandleSource.DOWNLOAD_CONTINUES, 0, null);
+        } catch (java.util.concurrent.ExecutionException failed) {
+            if (failed.getCause() instanceof RuntimeException runtime) throw runtime;
+            if (failed.getCause() instanceof Error error) throw error;
+            throw new IllegalStateException("Candle refresh failed.", failed.getCause());
+        }
+    }
+
+    /**
+     * Within a scheduled check: every candle download together waits for the providers for at most {@code limit}.
+     * A download still running then continues in the background and stores its candles; the caller is told
+     * {@link CandleSource#DOWNLOAD_CONTINUES} and decides whether the candles already stored will do.
+     */
+    public static DownloadWait waitForDownloadsAtMost(java.time.Duration limit) {
+        DownloadWait wait = new DownloadWait(limit.toNanos(), DOWNLOAD_WAIT.get());
+        DOWNLOAD_WAIT.set(wait);
+        return wait;
+    }
+
+    private static final ThreadLocal<DownloadWait> DOWNLOAD_WAIT = new ThreadLocal<>();
+
+    public static final class DownloadWait implements AutoCloseable {
+        private long remainingNanos;
+        private final DownloadWait previous;
+
+        private DownloadWait(long remainingNanos, DownloadWait previous) {
+            this.remainingNanos = remainingNanos;
+            this.previous = previous;
+        }
+
+        @Override public void close() {
+            if (previous == null) DOWNLOAD_WAIT.remove(); else DOWNLOAD_WAIT.set(previous);
+        }
+    }
+
+    /** Downloads of checks and of the prefetch lane, one per series at a time; finished ones leave {@link #inFlight}. */
+    private final java.util.concurrent.ExecutorService analysisDownloads = java.util.concurrent.Executors.newFixedThreadPool(4,
+            Thread.ofPlatform().daemon(true).name("analysis-download-", 0).factory());
+    private final java.util.concurrent.ConcurrentMap<SyncKey, java.util.concurrent.CompletableFuture<CandleSyncResult>> inFlight =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private java.util.concurrent.Future<CandleSyncResult> download(String rawSymbol, String rawInterval, int requiredCandles) {
+        SyncKey key = new SyncKey(SecurityInputValidator.requireMarketSymbol(rawSymbol), SecurityInputValidator.requireInterval(rawInterval));
+        var mine = new java.util.concurrent.CompletableFuture<CandleSyncResult>();
+        var running = inFlight.putIfAbsent(key, mine);
+        if (running != null) return running;
+        boolean background = MarketDataProviderRequestBudget.isBackground();
+        try {
+            analysisDownloads.execute(() -> {
+                try (var priority = background ? MarketDataProviderRequestBudget.background() : null) {
+                    mine.complete(syncAnalysisCandles(rawSymbol, rawInterval, requiredCandles));
+                } catch (Throwable failure) {
+                    mine.completeExceptionally(failure);
+                } finally {
+                    inFlight.remove(key, mine);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException stopping) {
+            inFlight.remove(key, mine);
+            mine.completeExceptionally(stopping);
+        }
+        return mine;
     }
 
     private CandleSyncResult syncAnalysisCandles(String rawSymbol, String rawInterval, int requiredCandles) {
@@ -414,6 +507,7 @@ public class MarketDataService {
     @jakarta.annotation.PreDestroy
     void stopInteractiveRefreshes() {
         interactiveRefreshes.shutdownNow();
+        analysisDownloads.shutdownNow();
     }
 
     private List<Candle> queryDescending(String symbol, String interval, Long before, int limit) {
@@ -661,6 +755,8 @@ public class MarketDataService {
         YAHOO_FINANCE,
         CACHE,
         CACHE_REFRESH_IN_PROGRESS,
+        /** A check stopped waiting for the provider; the download finishes in the background (see {@link MarketDataService#waitForDownloadsAtMost}). */
+        DOWNLOAD_CONTINUES,
         NONE
     }
 

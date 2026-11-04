@@ -73,6 +73,24 @@ class ReviewDurabilityIntegrationTest {
         } finally {jdbc.update("delete from email_outbox where deduplication_key=?",key);}
     }
 
+    @Test void upcomingChecksAreThePendingRunnableOnesInTheWorkersOrder() {
+        String prefix = "UP" + UUID.randomUUID().toString().substring(0, 3).toUpperCase(java.util.Locale.ROOT);
+        String insert = """
+                insert into alert_check_jobs (symbol, interval, scheduled_for, status, available_at)
+                values (?, 'DAILY', ?, ?, current_timestamp + (? * interval '1 second'))
+                """;
+        try {
+            jdbc.update(insert, prefix + "B", java.sql.Timestamp.from(Instant.parse("2001-01-03T00:00:00Z")), "PENDING", -5);
+            jdbc.update(insert, prefix + "A", java.sql.Timestamp.from(Instant.parse("2001-01-02T00:00:00Z")), "PENDING", -5);
+            jdbc.update(insert, prefix + "C", java.sql.Timestamp.from(Instant.parse("2001-01-01T00:00:00Z")), "COMPLETED", -5);
+            jdbc.update(insert, prefix + "D", java.sql.Timestamp.from(Instant.parse("2001-01-01T12:00:00Z")), "PENDING", 3_600);
+            assertThat(jobs.upcoming(1_000).stream().map(AlertCheckJobStore.AlertCheckJob::symbol).filter(symbol -> symbol.startsWith(prefix)))
+                    .containsExactly(prefix + "A", prefix + "B");
+        } finally {
+            jdbc.update("delete from alert_check_jobs where symbol like ?", prefix + "%");
+        }
+    }
+
     @Test void leaseRenewedInsideAPublishingTransactionDoesNotLockTheJobUntilItCommits() throws Exception {
         String symbol = "LSE" + UUID.randomUUID().toString().substring(0, 4).toUpperCase(java.util.Locale.ROOT);
         Instant scheduledFor = Instant.parse("2026-01-06T00:00:00Z");

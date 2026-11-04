@@ -44,7 +44,12 @@ public class CandleCompletionService {
      * must not be used for signal detection.
      */
     public long firstIncompleteCandleTimestamp(TimeInterval interval) {
-        LocalDate today = LocalDate.now(clock.withZone(completionZone));
+        return firstIncompleteCandleTimestamp(interval, clock.instant());
+    }
+
+    /** As {@link #firstIncompleteCandleTimestamp(TimeInterval)}, at {@code at} instead of now. */
+    public long firstIncompleteCandleTimestamp(TimeInterval interval, java.time.Instant at) {
+        LocalDate today = LocalDate.ofInstant(at, completionZone);
         LocalDate activePeriodStart = switch (interval) {
             case DAILY -> today;
             case WEEKLY -> firstIncompleteWeeklyPeriodStart(today);

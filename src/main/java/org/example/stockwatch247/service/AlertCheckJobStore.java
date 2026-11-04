@@ -306,6 +306,24 @@ public class AlertCheckJobStore {
                 Math.max(1L, retryDelay.toSeconds()), job.id(), job.attempts());
     }
 
+    /** The next checks waiting to run, in the worker's order (for downloading their candles ahead of them). */
+    public List<AlertCheckJob> upcoming(int limit) {
+        return jdbcTemplate.query(
+                """
+                select id, symbol, interval, scheduled_for, attempts from alert_check_jobs
+                where status = 'PENDING' and available_at <= current_timestamp
+                order by scheduled_for, id
+                limit ?
+                """,
+                (rs, rowNum) -> new AlertCheckJob(
+                        rs.getLong("id"),
+                        rs.getString("symbol"),
+                        TimeInterval.valueOf(rs.getString("interval")),
+                        rs.getObject("scheduled_for", OffsetDateTime.class).toInstant(),
+                        rs.getInt("attempts")),
+                Math.max(0, limit));
+    }
+
     public int pendingCount() {
         Integer count = jdbcTemplate.queryForObject(
                 "select count(*) from alert_check_jobs where status in ('PENDING', 'PROCESSING')",
