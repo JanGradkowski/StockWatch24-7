@@ -1839,7 +1839,8 @@ public class ElliottWaveDetectionService {
         return findStrictSubdivisions(parentCandles, parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, null);
     }
 
-    private List<ElliottSubdivision> findStrictSubdivisions(List<EnrichedCandle> parentCandles,
+    /** Package-private for ElliottSubdivisionEquivalenceTest, which checks every search mode. */
+    List<ElliottSubdivision> findStrictSubdivisions(List<EnrichedCandle> parentCandles,
             String parentLabel, double parentStartPrice, double parentEndPrice, boolean bestPerLabel, String bestKind) {
         if (parentCandles == null || parentLabel == null
                 || !Double.isFinite(parentStartPrice) || !Double.isFinite(parentEndPrice)
@@ -1908,17 +1909,19 @@ public class ElliottWaveDetectionService {
                 }
             }
         }
-        Map<String, SubdivisionCandidate> distinct = new LinkedHashMap<>();
-        candidates.stream()
+        List<SubdivisionCandidate> ranked = candidates.stream()
                 .filter(candidate -> candidate.confidence() >= 60)
                 .sorted(Comparator.comparingInt(SubdivisionCandidate::confidence).reversed()
                         .thenComparing(Comparator.comparingInt(
                                 (SubdivisionCandidate candidate) -> candidate.pivots().getLast().index()
                                         - candidate.pivots().getFirst().index()).reversed()))
-                .forEach(candidate -> distinct.putIfAbsent(subdivisionKey(candidate), candidate));
+                .toList();
         var result = new ArrayList<ElliottSubdivision>();
         var retainedLabels = new java.util.HashSet<String>();
-        for (var candidate : distinct.values()) {
+        // The first candidate of each key, in rank order; keys are built only up to the winner.
+        var seenKeys = new java.util.HashSet<String>();
+        for (var candidate : ranked) {
+            if (!seenKeys.add(subdivisionKey(candidate))) continue;
             String candidateLabel = subdivisionLabel(candidate, label);
             if ("MOTIVE".equals(bestKind) && !candidateLabel.startsWith("Motive")
                     || "CORRECTIVE".equals(bestKind) && candidateLabel.startsWith("Motive")) continue;
@@ -3877,15 +3880,15 @@ public class ElliottWaveDetectionService {
     private boolean canReachSelectionEnd(List<Pivot> interior, PivotType[] types, Pivot end,
             PivotContainment containment, byte[][] reachable, int position, int index) {
         if (reachable[position][index] != 0) return reachable[position][index] == 2;
-        Pivot from = interior.get(index);
+        Pivot from = containment.at(index);
         boolean found = false;
         if (position == types.length - 1) {
             found = end.index() - from.index() >= detectionRules.minimumLegSpanCandles()
                     && containment.contains(from, end);
         } else {
-            for (int next : containment.following(from)) {
+            for (int next : containment.followingAt(index)) {
                 if ((++containment.cancellationSteps & 4095) == 0) containment.cancellation.run();
-                Pivot to = interior.get(next);
+                Pivot to = containment.at(next);
                 if (to.type() == types[position + 1]
                         && to.index() - from.index() >= detectionRules.minimumLegSpanCandles()
                         && canReachSelectionEnd(interior, types, end, containment, reachable, position + 1, next)) {
@@ -3920,11 +3923,13 @@ public class ElliottWaveDetectionService {
         }
         int remaining = expectedTypes.length - position - 1;
         Pivot previous = selected.isEmpty() ? start : selected.getLast();
-        for (int index : containment.following(previous)) {
+        // The last selected pivot is the interior one just before fromIndex (see the recursive call below).
+        int[] following = selected.isEmpty() ? containment.following(start) : containment.followingAt(fromIndex - 1);
+        for (int index : following) {
             if (index < fromIndex) continue;
             if (index >= interior.size() - remaining) break;
             if ((++containment.cancellationSteps & 4095) == 0) containment.cancellation.run();
-            Pivot candidate = interior.get(index);
+            Pivot candidate = containment.at(index);
             if (candidate.type() != expectedTypes[position]
                     || candidate.index() - previous.index()
                     < detectionRules.minimumLegSpanCandles()) continue;
@@ -3965,22 +3970,54 @@ public class ElliottWaveDetectionService {
                 || diagonalAllowed && isDiagonalSubdivision(sequence, rising);
     }
 
-    /** Range extrema replace repeatedly walking the same interior pivots during enumeration. */
+    /**
+     * Range extrema replace repeatedly walking the same interior pivots during enumeration. The pivots are kept in
+     * arrays and the follow-on pivots of an interior pivot are remembered by its position: the enumeration asks for
+     * them millions of times, and hashing a pivot or searching through list views for each request cost about a
+     * quarter of a whole Elliott count.
+     */
     private static final class PivotContainment {
         private final Map<Pivot, int[]> following = new java.util.HashMap<>();
+        private final int[][] followingAt;
         private int retainedEdges;
 
         int[] following(Pivot from) {
             int[] saved = following.get(from);
             if (saved != null) return saved;
-            int[] candidates = new int[pivots.size() - lowerBound(from.index() + 1)];
+            int[] result = computeFollowing(from);
+            if (retainedEdges + result.length <= 1000000) {
+                following.put(from, result);
+                retainedEdges += result.length;
+            }
+            return result;
+        }
+
+        /** {@link #following(Pivot)} of the pivot at {@code position}. */
+        int[] followingAt(int position) {
+            int[] saved = followingAt[position];
+            if (saved != null) return saved;
+            int[] result = computeFollowing(pivots[position]);
+            if (retainedEdges + result.length <= 1000000) {
+                followingAt[position] = result;
+                retainedEdges += result.length;
+            }
+            return result;
+        }
+
+        Pivot at(int position) {
+            return pivots[position];
+        }
+
+        private int[] computeFollowing(Pivot from) {
+            int first = lowerBound(from.index() + 1);
+            int[] candidates = new int[pivots.length - first];
             int count = 0;
             double low = Double.POSITIVE_INFINITY;
             double high = Double.NEGATIVE_INFINITY;
             double maximumTolerance = Math.max(maximumAbsolutePrice, Math.abs(from.price())) * 1e-9;
-            for (int index = lowerBound(from.index() + 1); index < pivots.size(); index++) {
+            for (int index = first; index < pivots.length; index++) {
                 if ((++cancellationSteps & 4095) == 0) cancellation.run();
-                Pivot to = pivots.get(index);
+                Pivot to = pivots[index];
                 double tolerance = Math.max(Math.abs(from.price()), Math.abs(to.price())) * 1e-9;
                 boolean contains = low >= Math.min(from.price(), to.price()) - tolerance
                         && high <= Math.max(from.price(), to.price()) + tolerance;
@@ -3989,45 +4026,52 @@ public class ElliottWaveDetectionService {
                 high = Math.max(high, to.price());
                 if (contains) candidates[count++] = index;
             }
-            int[] result = java.util.Arrays.copyOf(candidates, count);
-            if (retainedEdges + count <= 1000000) {
-                following.put(from, result);
-                retainedEdges += count;
-            }
-            return result;
+            return java.util.Arrays.copyOf(candidates, count);
         }
         private final Runnable cancellation = JobLeaseGuard.cancellationCheck();
         private int cancellationSteps;
-        private final List<Pivot> pivots;
+        private final Pivot[] pivots;
+        private final int[] candleIndexes;
         private double[][] lows, highs;
         private final double[] suffixLows, suffixHighs;
         private final double maximumAbsolutePrice;
-        PivotContainment(List<Pivot> pivots) {
-            this.pivots = pivots;
-            int size = pivots.size();
+        PivotContainment(List<Pivot> pivotList) {
+            this.pivots = pivotList.toArray(Pivot[]::new);
+            int size = pivots.length;
+            followingAt = new int[size][];
+            candleIndexes = new int[size];
             double maximum = 0;
-            for (Pivot pivot : pivots) maximum = Math.max(maximum, Math.abs(pivot.price()));
+            for (int i = 0; i < size; i++) {
+                candleIndexes[i] = pivots[i].index();
+                maximum = Math.max(maximum, Math.abs(pivots[i].price()));
+            }
             maximumAbsolutePrice = maximum;
             suffixLows = new double[size + 1]; suffixHighs = new double[size + 1];
             suffixLows[size] = Double.POSITIVE_INFINITY; suffixHighs[size] = Double.NEGATIVE_INFINITY;
             for (int i = size - 1; i >= 0; i--) {
-                suffixLows[i] = Math.min(pivots.get(i).price(), suffixLows[i+1]);
-                suffixHighs[i] = Math.max(pivots.get(i).price(), suffixHighs[i+1]);
+                suffixLows[i] = Math.min(pivots[i].price(), suffixLows[i+1]);
+                suffixHighs[i] = Math.max(pivots[i].price(), suffixHighs[i+1]);
             }
         }
         private void prepareRanges() {
             if (lows != null) return;
-            int size = pivots.size();
+            int size = pivots.length;
             int levels = size == 0 ? 1 : 32 - Integer.numberOfLeadingZeros(size);
             lows = new double[levels][size]; highs = new double[levels][size];
-            for (int i = 0; i < size; i++) lows[0][i] = highs[0][i] = pivots.get(i).price();
+            for (int i = 0; i < size; i++) lows[0][i] = highs[0][i] = pivots[i].price();
             for (int k = 1; k < levels; k++) for (int i = 0; i + (1 << k) <= size; i++) {
                 lows[k][i] = Math.min(lows[k-1][i], lows[k-1][i + (1 << (k-1))]);
                 highs[k][i] = Math.max(highs[k-1][i], highs[k-1][i + (1 << (k-1))]);
             }
         }
+        /** The first position whose pivot is at or after candle {@code index} (as {@link #pivotLowerBound}). */
         private int lowerBound(int index) {
-            return pivotLowerBound(pivots, index);
+            int low = 0, high = candleIndexes.length;
+            while (low < high) {
+                int mid = (low + high) >>> 1;
+                if (candleIndexes[mid] < index) low = mid + 1; else high = mid;
+            }
+            return low;
         }
         /** Once intervening prices straddle the start, no later endpoint can
          * enclose them with that start. Use the largest possible tolerance so
@@ -4046,7 +4090,7 @@ public class ElliottWaveDetectionService {
             int first = lowerBound(from.index() + 1), end = lowerBound(to.index());
             if (first == end) return true;
             double tolerance = Math.max(Math.abs(from.price()), Math.abs(to.price())) * 1.0e-9;
-            if (end == pivots.size()) return suffixLows[first] >= Math.min(from.price(), to.price()) - tolerance
+            if (end == pivots.length) return suffixLows[first] >= Math.min(from.price(), to.price()) - tolerance
                     && suffixHighs[first] <= Math.max(from.price(), to.price()) + tolerance;
             prepareRanges();
             int level = 31 - Integer.numberOfLeadingZeros(end - first);
