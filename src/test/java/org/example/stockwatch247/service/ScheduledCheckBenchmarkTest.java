@@ -42,7 +42,8 @@ import static org.mockito.Mockito.when;
  * Real scheduled checks ({@link ScheduledAlertService#processNextQueuedCheck}) as production runs them: durable
  * checkpoints on, built-in rules of three accounts on every family and interval, 25 custom alerts, and the
  * signals, plans and projections earlier checks left open. Candles, filings and companies are copied from the
- * local database's public schema and pinned before 3 November 2026, so every run sees the same inputs.
+ * local database's public schema, pinned before 3 November 2026 and frozen in their own schema at the first run
+ * (see {@link #inputSchema}), so every run sees the same inputs.
  * Daily, weekly and monthly checks of the last few periods are replayed in schedule order; each check's time
  * is split by stage (see {@link CheckTimings}).
  * <p>
@@ -183,6 +184,8 @@ class ScheduledCheckBenchmarkTest {
         symbols.add(WARM_UP);
         String[] tickers = symbols.toArray(String[]::new);
         long copyStarted = System.nanoTime();
+        source = inputSchema(tickers);
+        line("Inputs copied from schema %s", source);
         copy("stock_assets", "p.ticker_symbol = any(?) and not exists (select 1 from stock_assets x where x.ticker_symbol = p.ticker_symbol)", (Object) tickers);
         long cutoff = CUTOFF.getEpochSecond();
         long weekStart = LocalDate.of(2026, 11, 2).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
@@ -279,8 +282,37 @@ class ScheduledCheckBenchmarkTest {
         String names = String.join(", ", columns.stream().map(column -> '"' + column + '"').toList());
         String values = String.join(", ", columns.stream().map(column -> column.equals("stock_asset_id") ? "t.id" : "p.\"" + column + '"').toList());
         String join = columns.contains("stock_asset_id")
-                ? " join public.stock_assets ps on ps.id = p.stock_asset_id join stock_assets t on t.ticker_symbol = ps.ticker_symbol" : "";
-        return jdbc.update("insert into " + table + " (" + names + ") select " + values + " from public." + table + " p" + join + " where " + where, args);
+                ? " join " + source + ".stock_assets ps on ps.id = p.stock_asset_id join stock_assets t on t.ticker_symbol = ps.ticker_symbol" : "";
+        return jdbc.update("insert into " + table + " (" + names + ") select " + values + " from " + source + "." + table + " p" + join + " where " + where, args);
+    }
+
+    /** The schema the inputs are copied from (see {@link #inputSchema}). */
+    private String source = "public";
+
+    /**
+     * The running application revises stored candles (a provider's later correction, a refresh from another
+     * provider), so runs on different days would read different inputs. The first run therefore freezes the
+     * inputs in a schema of their own, benchmark_snapshot, which later runs copy from; drop that schema to take a
+     * new snapshot. {@code -DbenchmarkSnapshot=false} reads the public schema directly.
+     */
+    private String inputSchema(String[] tickers) {
+        if (!Boolean.parseBoolean(System.getProperty("benchmarkSnapshot", "true"))) return "public";
+        if (Boolean.TRUE.equals(jdbc.queryForObject("select to_regclass('benchmark_snapshot.candles') is not null", Boolean.class))) {
+            return "benchmark_snapshot";
+        }
+        String list = String.join(",", java.util.Arrays.stream(tickers).peek(ticker -> {
+            if (!ticker.matches("[A-Z0-9.]{1,12}")) throw new IllegalArgumentException("Unexpected ticker " + ticker);
+        }).map(ticker -> "'" + ticker + "'").toList());
+        jdbc.execute("create schema benchmark_snapshot");
+        jdbc.execute("create table benchmark_snapshot.stock_assets as select * from public.stock_assets where ticker_symbol in (" + list + ")");
+        jdbc.execute("create table benchmark_snapshot.candles as select * from public.candles where symbol in (" + list + ")"
+                + " and timestamp < " + CUTOFF.getEpochSecond());
+        for (String table : List.of("insider_trades", "congressional_trades")) {
+            jdbc.execute("create table benchmark_snapshot." + table + " as select p.* from public." + table + " p"
+                    + " where p.stock_asset_id in (select id from benchmark_snapshot.stock_assets)");
+        }
+        line("Froze the inputs in schema benchmark_snapshot");
+        return "benchmark_snapshot";
     }
 
     // ------------------------------------------------------------------ timings
