@@ -13,7 +13,8 @@ function setup() {
   dom.window.document.body.append(settings.root);
   return { dom, settings, changes: () => changes,
     click: label => settings.root.querySelector(`[aria-label="${label}"]`).click(),
-    button: name => [...settings.root.querySelectorAll('button')].find(b => b.textContent === name).click() };
+    // Quick actions show a short label ("Select all") and carry the full one as their accessible name.
+    button: name => [...settings.root.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.textContent) === name).click() };
 }
 
 test('all types are allowed by default without enabling any follows', () => {
@@ -108,5 +109,29 @@ test('disabling emails leaves every website follow enabled and has only one deli
   assert.equal(s.settings.read().filter(v => v.watch).length, 1);
   assert.equal(s.settings.monitoringChanged(), false);
   assert.equal(s.settings.changed(), true);
+  s.dom.window.close();
+});
+
+test('the allowed signal types section stays closed until a type is restricted, and restricted rows say why', () => {
+  const s = setup();
+  const advanced = s.settings.root.querySelector('details.wl-advanced');
+  assert.equal(advanced.open, false);
+  assert.equal(advanced.querySelector('.wl-advanced-hint').textContent, '7 of 7 allowed');
+  s.settings.set({ allowedTypes: ['CANDLESTICK', 'OUTLOOK', 'CONGRESS', 'INSIDER', 'CUSTOM'], selections: [] });
+  assert.equal(advanced.open, true);
+  assert.equal(advanced.querySelector('.wl-advanced-hint').textContent, '5 of 7 allowed');
+  const row = s.settings.root.querySelector('[aria-label="Watch Elliott Wave buy daily"]').closest('tr');
+  assert.ok(row.classList.contains('is-disallowed'));
+  assert.ok(!s.settings.root.querySelector('[aria-label="Watch Candlestick buy daily"]').closest('tr').classList.contains('is-disallowed'));
+  s.dom.window.close();
+});
+
+test('grid cells carry no repeated labels and email is a single switch', () => {
+  const s = setup();
+  const cells = s.settings.root.querySelectorAll('.wl-matrix-cell');
+  assert.equal(cells.length, 21);
+  assert.ok([...cells].every(cell => cell.textContent.trim() === ''), 'Each cell is a bare checkbox with an accessible name');
+  const email = s.settings.root.querySelector('[aria-label="Enable email notifications"]');
+  assert.equal(email.getAttribute('role'), 'switch');
   s.dom.window.close();
 });

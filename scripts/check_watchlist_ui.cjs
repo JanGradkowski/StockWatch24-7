@@ -115,16 +115,31 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     const filterBounds = await page.getByLabel('Instrument type', { exact: true }).boundingBox();
     assert.ok(Math.abs(searchBounds.y - filterBounds.y) < 2, 'Search and instrument filter align vertically');
     assert.ok(Math.abs(searchBounds.height - filterBounds.height) < 2, 'Filter controls have matching heights');
-    assert.equal(await page.locator('.wl-table .wl-follow-group').count(), 5);
+    // One chip per followed type: AAPL's candlestick and harmonic, MSFT's congressional and insider trades.
+    assert.equal(await page.locator('.wl-table .wl-follow-group').count(), 4);
+    assert.equal(await page.locator('.wl-table .wl-follow-group').first().getAttribute('aria-label'), 'Candlestick: Buy · Daily, Weekly; Sell · Daily');
+    assert.equal(await page.locator('.wl-bulk-actions').isHidden(), true, 'Selection actions wait for a selection');
     assert.equal(await page.locator('.wl-table .wl-unread-badge.has-unread').count(), 2);
     assert.ok((await page.locator('.wl-table tbody tr').nth(1).boundingBox()).height < 135, 'Two follows use a compact row');
     assert.equal(await page.locator('[data-watchlist-shortcuts] a').count(), 3, 'Watchlists section shows its shortcuts');
     await page.screenshot({ path: path.join(output, 'watchlists-desktop.png'), fullPage: true });
+    const headerMenu = async item => {
+      await page.locator('[data-watchlist-header-actions] .wl-menu-trigger').click();
+      await page.getByRole('menuitem', { name: item, exact: true }).click();
+    };
+    // A row's menu lists its own actions, and Escape returns focus to the menu button.
+    const rowMenu = page.locator('tbody tr').first().locator('.wl-menu-trigger');
+    await rowMenu.click();
+    assert.deepEqual(await page.getByRole('menu').getByRole('menuitem').allTextContents(), ['View signals', 'Open chart', 'Manage follows', 'Remove from this list']);
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Escape');
+    assert.equal(await rowMenu.evaluate(el => el === document.activeElement), true);
 
-    await page.getByRole('button', { name: 'Create watchlist', exact: true }).click();
+    await headerMenu('Create watchlist');
     const dialog = page.locator('dialog.wl-dialog[open]:not(.wl-index-dialog)');
     await dialog.getByLabel('Name', { exact: true }).fill('US index research');
     const indexDialog = page.locator('dialog.wl-index-dialog[open]');
+    await dialog.getByRole('tab', { name: 'Indexes', exact: true }).click();
     await dialog.getByRole('button', { name: 'Europe', exact: true }).click();
     await dialog.getByRole('button', { name: 'Germany', exact: true }).click();
     assert.equal(await dialog.getByRole('checkbox', { name: 'DAX 40', exact: true }).count(), 1);
@@ -172,12 +187,12 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     assert.ok(mutations[1].body.allowedTypes.includes('CUSTOM'), 'Saving a list keeps custom alerts allowed');
     // A finished import offers Done rather than "Close — continue in background".
     await page.getByRole('button', { name: 'Done', exact: true }).click();
-    await page.getByRole('button', { name: 'Recent imports' }).click();
+    await headerMenu('Recent imports');
     await page.getByRole('button', { name: /Import 9:/ }).click();
     await page.getByText('503 of 503 updated', { exact: false }).waitFor();
     await page.getByRole('button', { name: 'Done', exact: true }).click();
 
-    await page.locator('.wl-overview').getByRole('button', { name: 'Add instruments / edit' }).click();
+    await page.getByRole('button', { name: 'Edit watchlist', exact: true }).click();
     await dialog.getByLabel('Enable email notifications', { exact: true }).waitFor();
     await dialog.locator('.wl-signal-settings:not([disabled])').waitFor();
     assert.equal(await dialog.getByLabel('Watch Candlestick buy daily', { exact: true }).isChecked(), true);
@@ -186,10 +201,13 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     await dialog.waitFor({ state: 'detached' });
     assert.equal(mutations.at(-1).body.applyMonitoring, false, 'Email-only edit preserves individual follows');
     assert.equal(mutations.at(-1).body.settingsChanged, true);
-    await page.locator('.wl-overview').getByRole('button', { name: 'Add instruments / edit' }).click();
+    await page.getByRole('button', { name: 'Edit watchlist', exact: true }).click();
     await dialog.getByLabel('Watch Candlestick buy daily', { exact: true }).waitFor();
     await dialog.locator('.wl-signal-settings:not([disabled])').waitFor();
     assert.equal(await dialog.getByLabel('Enable email notifications', { exact: true }).isChecked(), false, 'Email edit reloads');
+    // Allowed signal types sit in a closed section until a type is restricted.
+    assert.equal(await dialog.locator('details.wl-advanced').evaluate(el => el.open), false);
+    await dialog.locator('details.wl-advanced summary').click();
     await dialog.getByLabel('Allow Candlestick', { exact: true }).uncheck();
     assert.equal(await dialog.getByLabel('Watch Candlestick buy daily', { exact: true }).isDisabled(), true);
     await dialog.getByRole('button', { name: 'Review changes', exact: true }).click();
@@ -198,9 +216,10 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     await dialog.waitFor({ state: 'detached' });
     assert.equal(mutations.at(-1).body.applyMonitoring, false, 'Restrictions preserve unrelated individual follows');
     assert.equal(mutations.at(-1).body.allowedTypes.includes('CANDLESTICK'), false);
-    await page.locator('.wl-overview').getByRole('button', { name: 'Add instruments / edit' }).click();
+    await page.getByRole('button', { name: 'Edit watchlist', exact: true }).click();
     await dialog.locator('.wl-signal-settings:not([disabled])').waitFor();
     assert.equal(await dialog.getByLabel('Allow Candlestick', { exact: true }).isChecked(), false, 'Saved restrictions reload');
+    assert.equal(await dialog.locator('details.wl-advanced').evaluate(el => el.open), true, 'A restricted list shows its allowed types');
     await page.setViewportSize({ width: 390, height: 844 });
     await dialog.getByRole('heading', { name: 'Technical signals', exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, 'watchlist-signal-settings-mobile.png'), fullPage: true });
@@ -302,8 +321,9 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     for (const [mode, expectedSymbols, expectedIndexes] of [
       ['Index only', ['^GSPC'], []], ['Both', ['^GSPC'], ['sp500']]
     ]) {
-      await page.locator('[data-create-watchlist]').click();
+      await page.getByRole('button', { name: 'Create watchlist', exact: true }).click();
       await dialog.getByLabel('Name', { exact: true }).fill(`${mode} research`);
+      await dialog.getByRole('tab', { name: 'Indexes', exact: true }).click();
       await dialog.getByRole('button', { name: 'North America', exact: true }).click();
       await dialog.getByRole('button', { name: 'United States', exact: true }).click();
       await dialog.getByRole('checkbox', { name: 'S&P 500', exact: true }).check();
@@ -319,6 +339,7 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
       assert.deepEqual(mutations.at(-1).body.indexIds, expectedIndexes);
       await page.screenshot({ path: path.join(output, 'watchlist-index-browser-mobile.png'), fullPage: true });
       // Removing an index choice must not remove a separately selected ticker with the same symbol.
+      await dialog.getByRole('tab', { name: 'Search', exact: true }).click();
       await dialog.getByLabel('Search individual tickers').fill('GSPC');
       await dialog.locator('.wl-results button').click();
       await dialog.getByRole('button', { name: 'Remove S&P 500', exact: true }).click();
@@ -334,6 +355,7 @@ instruments[1].signals = ['CONGRESS', 'INSIDER'].map(type => ({ type, interval: 
     await page.getByRole('checkbox', { name: 'Select AAPL', exact: true }).check();
     await page.getByRole('checkbox', { name: 'Select MSFT', exact: true }).check();
     const bulk = page.locator('.wl-bulk-actions');
+    assert.equal(await bulk.isVisible(), true);
     assert.equal(await bulk.locator('[role="status"]').textContent(), '2 selected');
     assert.equal(await bulk.getByRole('link', { name: 'View signals', exact: true }).getAttribute('href'), '/signals?watchlistId=1&ticker=AAPL%2CMSFT');
     await page.screenshot({ path: path.join(output, 'bulk-selection-mobile.png'), fullPage: true });
