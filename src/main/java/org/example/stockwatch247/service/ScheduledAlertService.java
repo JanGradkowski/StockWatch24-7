@@ -524,7 +524,7 @@ public class ScheduledAlertService {
         }
 
         if (rules.isEmpty()) {
-            evaluateFollowerStages(symbol, interval, scheduledFor, new java.util.ArrayList<>());
+            evaluateFollowerStages(symbol, interval, scheduledFor, candles, new java.util.ArrayList<>());
             return;
         }
 
@@ -641,14 +641,14 @@ public class ScheduledAlertService {
             }
         }
         rulesStage.close();
-        evaluateFollowerStages(symbol, interval, scheduledFor, familyFailures);
+        evaluateFollowerStages(symbol, interval, scheduledFor, candles, familyFailures);
     }
 
     /**
      * Outlook follows, chart alerts and custom alerts. They run whether or not the symbol has pattern rules,
      * because each is queued for checking on its own; one failing stage does not stop the others.
      */
-    private void evaluateFollowerStages(String symbol, TimeInterval interval, Instant scheduledFor,
+    private void evaluateFollowerStages(String symbol, TimeInterval interval, Instant scheduledFor, List<Candle> candles,
                                         List<RuntimeException> failures) {
         try (var stage = CheckTimings.enter("outlook")) {
             evaluateTrackedOutlook(symbol, interval);
@@ -663,7 +663,7 @@ public class ScheduledAlertService {
             failures.add(stageFailure("chart alerts", failure));
         }
         try (var stage = CheckTimings.enter("custom alerts")) {
-            evaluateCustomAlerts(symbol, interval, scheduledFor);
+            evaluateCustomAlerts(symbol, interval, scheduledFor, candles);
         } catch (RuntimeException failure) {
             AnalysisWork.rethrowInfrastructure(failure);
             failures.add(stageFailure("custom alerts", failure));
@@ -725,10 +725,11 @@ public class ScheduledAlertService {
     }
 
     /** Custom alerts covering this stock, checked on the candles refreshed above. */
-    private void evaluateCustomAlerts(String symbol, TimeInterval interval, Instant scheduledFor) {
+    private void evaluateCustomAlerts(String symbol, TimeInterval interval, Instant scheduledFor, List<Candle> candles) {
         if (customAlertEngine == null) return;
         technicalStage(symbol, interval, "evaluating custom alerts");
-        var result = customAlertEngine.evaluate(symbol, interval, scheduledFor);
+        // With Elliott on, these are exactly the candles the custom alerts' wave counts and harmonic formations read.
+        var result = customAlertEngine.evaluate(symbol, interval, scheduledFor, isElliottEnabled(interval) ? candles : null);
         if (result.triggered() > 0) {
             log.info("Custom alerts evaluated for " + symbol + " " + interval + ": "
                     + result.triggered() + " trigger(s) from " + result.checked() + " alert(s).");

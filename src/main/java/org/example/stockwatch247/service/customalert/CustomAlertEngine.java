@@ -143,6 +143,14 @@ public class CustomAlertEngine {
      * a missed check to the candles that existed at its original time.
      */
     public EvaluationResult evaluate(String symbol, TimeInterval interval, Instant scheduledFor) {
+        return evaluate(symbol, interval, scheduledFor, null);
+    }
+
+    /**
+     * As above, with the candles the check loaded for its built-in rules: wave counts and harmonic formations are
+     * read from these, so the built-in and custom alerts share one scan of each (null: loaded the same way here).
+     */
+    public EvaluationResult evaluate(String symbol, TimeInterval interval, Instant scheduledFor, List<Candle> checkCandles) {
         if (interval != TimeInterval.DAILY && interval != TimeInterval.WEEKLY && interval != TimeInterval.MONTHLY) {
             return new EvaluationResult(0, 0);
         }
@@ -153,7 +161,7 @@ public class CustomAlertEngine {
         int triggered = 0;
         if (!targets.isEmpty()) {
             refreshHigherTimeframes(asset.getTickerSymbol(), targets);
-            data = facts.load(asset, interval, scheduledFor == null ? null : scheduledFor.getEpochSecond());
+            data = facts.load(asset, interval, scheduledFor == null ? null : scheduledFor.getEpochSecond(), checkCandles);
             // Elliott counts validate subdivisions on the next-lower timeframe, kept fresh as the built-in check does.
             if (targets.stream().anyMatch(target -> target.definition().contains("\"family\":\"ELLIOTT_WAVE\""))) data.refreshLowerDegree();
             triggered = evaluateTargets(data, targets, false);

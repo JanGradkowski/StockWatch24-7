@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -152,14 +153,16 @@ class ScheduledAlertServiceTest {
                 .thenReturn(syntheticElliottCandles("ONLY", "1d").reversed());
 
         var customAlerts = mock(org.example.stockwatch247.service.customalert.CustomAlertEngine.class);
-        when(customAlerts.evaluate("ONLY", TimeInterval.DAILY, null))
+        when(customAlerts.evaluate(eq("ONLY"), eq(TimeInterval.DAILY), isNull(), any()))
                 .thenReturn(new org.example.stockwatch247.service.customalert.CustomAlertEngine.EvaluationResult(1, 0));
         service.configureCustomAlerts(customAlerts);
 
         service.processSymbolInterval("ONLY", TimeInterval.DAILY);
 
         verify(chartAlerts).evaluate("ONLY", TimeInterval.DAILY);
-        verify(customAlerts).evaluate("ONLY", TimeInterval.DAILY, null);
+        // The custom alerts read their wave counts and formations from the candles this check loaded.
+        verify(customAlerts).evaluate(eq("ONLY"), eq(TimeInterval.DAILY), isNull(),
+                org.mockito.ArgumentMatchers.<List<Candle>>argThat(loaded -> loaded != null && !loaded.isEmpty()));
     }
 
     @Test

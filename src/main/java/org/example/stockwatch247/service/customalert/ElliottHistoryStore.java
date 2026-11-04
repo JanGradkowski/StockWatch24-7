@@ -49,9 +49,12 @@ public class ElliottHistoryStore {
     public record Signal(String pattern, String stage, boolean bullish, int score, long confirmedAt, long knownAt,
                          long anchorAt, double price) { }
 
-    /** Fingerprint of everything a stored count depends on: the detector's rule version, the rules, the child timeframe. */
+    /**
+     * Fingerprint of everything a stored count depends on: the detector's rule version, the rules, the child timeframe.
+     * v2: counts read the built-in check's candles, with the indicator warm-up, so histories stored before are rebuilt.
+     */
     public static String settingsKey(Object rules, String childApiInterval) {
-        String text = ElliottWaveDetectionService.DETECTION_RULE_VERSION + "|" + rules + "|" + childApiInterval + "|history-v1";
+        String text = ElliottWaveDetectionService.DETECTION_RULE_VERSION + "|" + rules + "|" + childApiInterval + "|history-v2";
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException impossible) {
