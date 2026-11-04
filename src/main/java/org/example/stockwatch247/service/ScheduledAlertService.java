@@ -381,10 +381,83 @@ public class ScheduledAlertService {
     }
 
     void processSymbolInterval(String symbol, TimeInterval interval, Instant scheduledFor) {
-        try (var scope = AnalysisComputationScope.open()) { processSymbolIntervalScoped(symbol, interval, scheduledFor); }
+        List<java.util.concurrent.Future<?>> scansAhead = new java.util.ArrayList<>();
+        try (var scope = AnalysisComputationScope.open()) {
+            processSymbolIntervalScoped(symbol, interval, scheduledFor, scansAhead);
+        } finally {
+            // A scan the check no longer needs (it failed, or did not read it) stops using the pool.
+            scansAhead.forEach(scan -> scan.cancel(true));
+        }
     }
 
-    private void processSymbolIntervalScoped(String symbol, TimeInterval interval, Instant scheduledFor) {
+    private AnalysisPool analysisPool;
+
+    @Autowired(required = false)
+    void configureAnalysisPool(AnalysisPool analysisPool) {
+        this.analysisPool = analysisPool;
+    }
+
+    /**
+     * Starts the check's independent scans on the analysis pool, so they run while this thread works through
+     * lifecycles, plans and the other rules: each Elliott setting's latest count and then its previous-candle
+     * count (one after the other, so the second reuses the first's legs), the count that viability checks of open
+     * developing signals start from, and each harmonic setting's scans. They fill the shared scan caches, which
+     * compute each scan once across threads; the check reads them from there as before, waiting for one still
+     * running, so its results are unchanged.
+     */
+    private void startScansAhead(String symbol, TimeInterval interval, List<AlertRule> rules, List<Candle> candles,
+                                 List<EnrichedCandle> parents, List<EnrichedCandle> children,
+                                 List<java.util.concurrent.Future<?>> running) {
+        if (analysisPool == null) return;
+        Map<Object, AlertRule> elliott = new java.util.LinkedHashMap<>();
+        Map<Object, AlertRule> harmonic = new java.util.LinkedHashMap<>();
+        for (AlertRule rule : rules) {
+            if (rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE) elliott.putIfAbsent(elliottSettings(rule, interval), rule);
+            if (rule.getPatternFamily() == AlertPatternFamily.HARMONIC_FORMATION) harmonic.putIfAbsent(harmonicSettings(rule), rule);
+        }
+        // Inputs larger than this are not kept by the shared count cache, so the check would scan them again itself.
+        boolean shared = parents.size() >= 2 && parents.size() <= 2000;
+        if (shared && children != null && children.size() <= 12000) {
+            for (AlertRule rule : elliott.values()) {
+                ElliottWaveDetectionService detector = elliottDetector(rule);
+                running.add(analysisPool.submit(quietly(() -> {
+                    var context = new ElliottWaveDetectionService.DevelopingScanContext();
+                    detector.findDevelopingImpulses(parents, children.isEmpty() ? null : children, context);
+                    long cutoff = parents.getLast().timestamp();
+                    List<EnrichedCandle> previousChildren = children.stream().filter(c -> c.timestamp() < cutoff).toList();
+                    detector.findDevelopingImpulses(parents.subList(0, parents.size() - 1),
+                            previousChildren.isEmpty() ? null : previousChildren, context);
+                })));
+            }
+        }
+        if (shared && !elliott.isEmpty()) {
+            Map<Object, ElliottWaveDetectionService> viability = new java.util.LinkedHashMap<>();
+            for (AlertEvent event : alertEventRepository.findDevelopingElliottEvents(symbol, interval)) {
+                viability.putIfAbsent(elliottSettings(event.getAlertRule(), interval), elliottDetector(event.getAlertRule()));
+            }
+            for (ElliottWaveDetectionService detector : viability.values()) {
+                running.add(analysisPool.submit(quietly(() -> detector.findDevelopingImpulses(parents))));
+            }
+        }
+        for (AlertRule rule : harmonic.values()) {
+            HarmonicPatternDetectionService detector = harmonicDetector(rule).forAlerts();
+            running.add(analysisPool.submit(quietly(() -> detector.detectNewlyAvailable(candles))));
+        }
+    }
+
+    /** A scan started ahead that fails is computed again, and its failure reported, by the check that reads it. */
+    private static Runnable quietly(Runnable scan) {
+        return () -> {
+            try {
+                scan.run();
+            } catch (RuntimeException ignored) {
+                // See above.
+            }
+        };
+    }
+
+    private void processSymbolIntervalScoped(String symbol, TimeInterval interval, Instant scheduledFor,
+                                             List<java.util.concurrent.Future<?>> scansAhead) {
         String apiInterval = toApiInterval(interval);
         int signalCandleCount = signalCandleCount(interval);
         var loadingStage = CheckTimings.enter("rules and candles");
@@ -459,6 +532,18 @@ public class ScheduledAlertService {
                 : List.of();
         developingElliottCandles = new CandlestickFormationIntegrity(candles).latestContext(developingElliottCandles);
         enrichStage.close();
+        // The child candles of the Elliott counts are loaded now, so the counts can start ahead (null: the Elliott
+        // stage loads them itself, and reports a failure where it always has).
+        List<EnrichedCandle> earlyChildren = null;
+        if (analysisPool != null && !developingElliottCandles.isEmpty()
+                && rules.stream().anyMatch(rule -> rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE)) {
+            try (var stage = CheckTimings.enter("Elliott child candles")) {
+                earlyChildren = loadLowerDegreeElliottCandles(symbol, interval, rules, developingElliottCandles, scheduledFor);
+            } catch (RuntimeException failure) {
+                AnalysisWork.rethrowInfrastructure(failure);
+            }
+        }
+        startScansAhead(symbol, interval, rules, candles, developingElliottCandles, earlyChildren, scansAhead);
         if (!elliottCandles.isEmpty()) {
             try (var stage = CheckTimings.enter("lifecycle: Elliott structures")) {
                 lifecycleService.prepareElliottStructures(symbol, interval, elliottCandles, elliottWaveDetectionService);
@@ -541,8 +626,8 @@ public class ScheduledAlertService {
             if (!developingProcessed && rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE) {
                 try {
                     var childStage = CheckTimings.enter("Elliott child candles");
-                    List<EnrichedCandle> lowerDegreeElliottCandles = loadLowerDegreeElliottCandles(
-                            symbol, interval, rules, developingElliottCandles, scheduledFor);
+                    List<EnrichedCandle> lowerDegreeElliottCandles = earlyChildren != null ? earlyChildren
+                            : loadLowerDegreeElliottCandles(symbol, interval, rules, developingElliottCandles, scheduledFor);
                     childStage.close();
                     technicalStage(symbol, interval, "detecting developing Elliott waves");
                     try (var stage = CheckTimings.enter("developing Elliott events")) {
