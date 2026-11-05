@@ -2469,10 +2469,10 @@ public class ElliottWaveDetectionService {
      * Extends a primary count's starting points (0/I seeds) on several threads: this one and helpers from
      * {@code executor} take the next seed until none is left. Seeds are independent: each owns its development keys
      * and fills its own groups, which are merged in seed order afterwards, exactly as one thread would have added
-     * them, so ranking and tie-breaking are unchanged. The validated legs the seeds share are read from
-     * {@code shared}, which no one writes while the seeds run; each thread keeps the legs it validates itself, and
-     * they are added to {@code shared} at the end. A helper the pool starts after the seeds are gone does nothing,
-     * and this thread never waits for one that has not started, so a busy pool cannot hold it up.
+     * them, so ranking and tie-breaking are unchanged. All threads share the validated legs and the pure memos of one count (sub-wave
+     * searches, pivot scans, leg boundaries), so each is worked out once for all of them, as on one thread; the
+     * rest of a thread's memos are its own. A helper the pool starts after the seeds are gone does nothing, and this
+     * thread never waits for one that has not started, so a busy pool cannot hold it up.
      */
     private void extendSeedsInParallel(java.util.concurrent.Executor executor, List<EnrichedCandle> candles,
             List<List<Pivot>> seeds, List<Pivot> allPivots, Map<Pivot, PivotSupport> support,
@@ -2480,11 +2480,12 @@ public class ElliottWaveDetectionService {
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> shared) {
         var groupsBySeed = new java.util.concurrent.atomic.AtomicReferenceArray<Map<String, DevelopingHypotheses>>(seeds.size());
         var nextSeed = new java.util.concurrent.atomic.AtomicInteger();
-        var validatedLegs = java.util.Collections.synchronizedList(new ArrayList<SeedLegCache>());
+        var legs = new SharedMemo<>(shared);
+        var callerMemos = new CountMemos(subdivisionMemo.get(), pivotScans.get(), boundaryPivots.get());
+        var memos = new CountMemos(new SharedMemo<>(callerMemos.subdivisions()), new SharedMemo<>(callerMemos.pivots()),
+                new SharedMemo<>(callerMemos.boundaries()));
         var session = new SeedSession();
         Runnable takeSeeds = () -> {
-            var legs = new SeedLegCache(shared);
-            validatedLegs.add(legs);
             var expansion = new PivotExpansionIndex(allPivots, support);
             for (int seed; (seed = nextSeed.getAndIncrement()) < seeds.size(); ) {
                 Map<String, DevelopingHypotheses> groups = new LinkedHashMap<>();
@@ -2499,6 +2500,7 @@ public class ElliottWaveDetectionService {
                 withSubdivisionMemo(() -> {
                     boolean prior = rankingOnly.get();
                     rankingOnly.set(true);
+                    memos.install(this);
                     try {
                         grammarInput(candles);
                         takeSeeds.run();
@@ -2519,11 +2521,15 @@ public class ElliottWaveDetectionService {
         } catch (java.util.concurrent.RejectedExecutionException stopping) {
             // The pool is shutting down: the remaining seeds run here.
         }
+        memos.install(this);
         try {
             takeSeeds.run();
         } finally {
             session.closeAndAwait();
+            callerMemos.install(this);
+            callerMemos.add(memos);
         }
+        legs.forEach(shared::putIfAbsent);
         for (int seed = 0; seed < seeds.size(); seed++) {
             Map<String, DevelopingHypotheses> groups = groupsBySeed.get(seed);
             if (groups == null) {
@@ -2533,7 +2539,43 @@ public class ElliottWaveDetectionService {
             }
             combined.putAll(groups);
         }
-        for (SeedLegCache legs : validatedLegs) legs.forEach(shared::putIfAbsent);
+    }
+
+    /** The pure memos of one count, as a parallel count's threads share them. */
+    private record CountMemos(Map<SubdivisionMemoKey, List<ElliottSubdivision>> subdivisions,
+                              Map<PivotScanKey, List<Pivot>> pivots, Map<BoundaryKey, java.util.Optional<Pivot>> boundaries) {
+        void install(ElliottWaveDetectionService detector) {
+            detector.subdivisionMemo.set(subdivisions);
+            detector.pivotScans.set(pivots);
+            detector.boundaryPivots.set(boundaries);
+        }
+
+        /** Keeps what {@code shared} worked out for this thread's later use. */
+        void add(CountMemos shared) {
+            if (subdivisions != null) shared.subdivisions().forEach(subdivisions::putIfAbsent);
+            if (pivots != null) shared.pivots().forEach(pivots::putIfAbsent);
+            if (boundaries != null) shared.boundaries().forEach(boundaries::putIfAbsent);
+        }
+    }
+
+    /**
+     * A memo of pure results several threads fill at once. A value is worked out by the thread that asks first,
+     * without holding a lock meanwhile (rarely two work out the same one, with equal results).
+     */
+    private static final class SharedMemo<K, V> extends java.util.concurrent.ConcurrentHashMap<K, V> {
+        SharedMemo(Map<K, V> initial) {
+            if (initial != null) putAll(initial);
+        }
+
+        @Override
+        public V computeIfAbsent(K key, java.util.function.Function<? super K, ? extends V> calculation) {
+            V known = get(key);
+            if (known != null) return known;
+            V value = calculation.apply(key);
+            if (value == null) return null;
+            V raced = putIfAbsent(key, value);
+            return raced != null ? raced : value;
+        }
     }
 
     /** Helpers taking part in one parallel count; after it closes, a helper that starts late does nothing. */
@@ -2564,28 +2606,6 @@ public class ElliottWaveDetectionService {
                 }
             }
             if (interrupted) Thread.currentThread().interrupt();
-        }
-    }
-
-    /** Validated legs of one thread of a parallel count, in front of the legs it shares read-only with the others. */
-    private static final class SeedLegCache extends java.util.HashMap<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> {
-        private final Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> shared;
-
-        SeedLegCache(Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> shared) {
-            this.shared = shared;
-        }
-
-        @Override
-        public java.util.Optional<ElliottSubdivision> get(Object key) {
-            var known = shared.get(key);
-            return known != null ? known : super.get(key);
-        }
-
-        @Override
-        public java.util.Optional<ElliottSubdivision> computeIfAbsent(SubdivisionSelectionKey key,
-                java.util.function.Function<? super SubdivisionSelectionKey, ? extends java.util.Optional<ElliottSubdivision>> calculation) {
-            var known = shared.get(key);
-            return known != null ? known : super.computeIfAbsent(key, calculation);
         }
     }
 

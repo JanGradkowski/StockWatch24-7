@@ -17,10 +17,11 @@ import java.util.concurrent.Future;
 public class AnalysisPool {
     private final ExecutorService executor;
 
-    public AnalysisPool(@Value("${analysis.pool-threads:0}") int threads) {
+    public AnalysisPool(@Value("${analysis.pool-threads:0}") int threads,
+                        @Value("${analysis.parallel-seeds:true}") boolean parallelSeeds) {
         int size = threads > 0 ? threads : Math.max(2, Runtime.getRuntime().availableProcessors() - 1);
         executor = Executors.newFixedThreadPool(size, Thread.ofPlatform().daemon(true).name("analysis-", 0).factory());
-        ElliottWaveDetectionService.runSeedsOn(executor);
+        if (parallelSeeds) ElliottWaveDetectionService.runSeedsOn(executor);
     }
 
     public Future<?> submit(Runnable work) {
