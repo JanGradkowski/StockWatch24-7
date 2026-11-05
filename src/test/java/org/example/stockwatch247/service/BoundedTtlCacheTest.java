@@ -47,6 +47,20 @@ class BoundedTtlCacheTest {
     }
 
     @Test
+    void expiringEveryCacheEmptiesThemAll() {
+        BoundedTtlCache<String, String> first = new BoundedTtlCache<>(4, 600);
+        BoundedTtlCache<String, String> second = new BoundedTtlCache<>(4, 600);
+        first.getOrCompute("one", () -> "1");
+        second.getOrCompute("two", () -> "2");
+
+        BoundedTtlCache.expireAll();
+
+        assertThat(first.size()).isZero();
+        assertThat(second.size()).isZero();
+        assertThat(first.getOrCompute("one", () -> "computed again")).isEqualTo("computed again");
+    }
+
+    @Test
     void aResultTheCallerDeclinesToKeepIsReturnedButNotCached() {
         BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
         assertThat(cache.getOrCompute("one", () -> "too large", value -> false)).isEqualTo("too large");

@@ -15,9 +15,23 @@ final class BoundedTtlCache<K, V> {
     private record Computation<V>(Thread owner, java.util.concurrent.CompletableFuture<V> result) { }
     private final LinkedHashMap<K, Entry<V>> entries = new LinkedHashMap<>(128, 0.75f, true);
 
+    /** Every cache, so a benchmark that replays days within minutes can let them expire as the days would. */
+    private static final java.util.Set<BoundedTtlCache<?, ?>> ALL =
+            java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>()));
+
     BoundedTtlCache(int maximumSize, long ttlSeconds) {
         this.maximumSize = Math.max(1, maximumSize);
         this.ttlSeconds = Math.max(1L, ttlSeconds);
+        ALL.add(this);
+    }
+
+    /** Empties every cache, as if its time had run out (computations still running are not affected). */
+    static void expireAll() {
+        java.util.List<BoundedTtlCache<?, ?>> caches;
+        synchronized (ALL) {
+            caches = java.util.List.copyOf(ALL);
+        }
+        caches.forEach(cache -> cache.removeIf(key -> true));
     }
 
     synchronized V get(K key, long nowEpochSeconds) {

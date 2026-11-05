@@ -161,8 +161,13 @@ class ScheduledCheckBenchmarkTest {
         return reports.stream().filter(check -> !WARM_UP.equals(check.symbol())).toList();
     }
 
-    /** Works through the queue as the worker does, one check after another. */
+    /**
+     * Works through the queue as the worker does, one check after another. Runs scheduled for different times are
+     * hours or days apart in production, so every in-memory cache has expired by the next one; the replay, minutes
+     * apart, expires them itself whenever the next check belongs to a later run.
+     */
     private void drain() {
+        Instant run = null;
         while (true) {
             int pending = jobs.pendingCount();
             if (pending == 0) return;
@@ -172,6 +177,11 @@ class ScheduledCheckBenchmarkTest {
             if (available == 0) {
                 throw new AssertionError("Checks are waiting without being runnable: " + jdbc.queryForList(
                         "select symbol, interval, scheduled_for, status, last_error from alert_check_jobs where status <> 'COMPLETED'"));
+            }
+            Instant next = jobs.upcoming(1).stream().map(AlertCheckJobStore.AlertCheckJob::scheduledFor).findFirst().orElse(null);
+            if (next != null && !next.equals(run)) {
+                BoundedTtlCache.expireAll();
+                run = next;
             }
             checks.processNextQueuedCheck();
         }
