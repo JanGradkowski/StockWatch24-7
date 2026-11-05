@@ -77,6 +77,28 @@ class BoundedTtlCacheTest {
     }
 
     @Test
+    void entriesAddedFromManyThreadsAtOnceStayWithinTheMaximum() throws Exception {
+        BoundedTtlCache<String, Integer> cache = new BoundedTtlCache<>(16, 600);
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(8)) {
+            var adding = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for (int thread = 0; thread < 8; thread++) {
+                int first = thread * 1000;
+                adding.add(pool.submit(() -> {
+                    for (int value = first; value < first + 1000; value++) {
+                        cache.put("key-" + value, value, 100);
+                        assertThat(cache.get("key-" + (value - first) / 2, 100)).isIn(null, (value - first) / 2);
+                    }
+                }));
+            }
+            for (var thread : adding) thread.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertThat(cache.size()).isEqualTo(16);
+        cache.put("last", -1, 100);
+        assertThat(cache.size()).isEqualTo(16);
+        assertThat(cache.get("last", 100)).isEqualTo(-1);
+    }
+
+    @Test
     void enforcesStrictMaximumAndExpiresEntries() {
         BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
         cache.put("one", "1", 100);

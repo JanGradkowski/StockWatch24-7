@@ -1878,7 +1878,8 @@ public class ElliottWaveDetectionService {
         var result = computeStrictSubdivisions(key.candles(), parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind);
         if (sharedKey != null && System.nanoTime() - started >= 100000) {
             var retained = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
-                    parentLabel, new SubdivisionMemoKey(List.copyOf(key.candles()), key.label(), key.start(),
+                    parentLabel, new SubdivisionMemoKey(key.candles() instanceof ValidatedCandleWindow window
+                            ? window.frozenCopy() : List.copyOf(key.candles()), key.label(), key.start(),
                     key.end(), key.depth(), key.bestPerLabel(), key.bestKind(), key.rankingOnly()));
             sharedSubdivisions.put(retained, List.copyOf(result), now);
         }
@@ -2596,7 +2597,8 @@ public class ElliottWaveDetectionService {
 
         @Override
         public V computeIfAbsent(K key, java.util.function.Function<? super K, ? extends V> calculation) {
-            return once(key, () -> calculation.apply(key));
+            V known = get(key);
+            return known != null ? known : once(key, () -> calculation.apply(key));
         }
 
         V once(K key, java.util.function.Supplier<? extends V> calculation) {
@@ -3546,7 +3548,9 @@ public class ElliottWaveDetectionService {
             Pivot end,
             String label,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
-        return selectedSubdivision("STRICT", label, candles, start, end, cache,
+        var key = selectionKey("STRICT", label, candles, start, end);
+        var known = cache.get(key);
+        return known != null ? known.orElse(null) : selectedSubdivision(key, cache,
                 () -> bestStrictSubdivision(candles, lowerDegreeCandles, start, end, label));
     }
 
@@ -3557,7 +3561,9 @@ public class ElliottWaveDetectionService {
             Pivot end,
             String label,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
-        return selectedSubdivision("MOTIVE", label, candles, start, end, cache,
+        var key = selectionKey("MOTIVE", label, candles, start, end);
+        var known = cache.get(key);
+        return known != null ? known.orElse(null) : selectedSubdivision(key, cache,
                 () -> bestSubdivisionByMode(candles, lowerDegreeCandles, start, end, label, true, false));
     }
 
@@ -3569,9 +3575,10 @@ public class ElliottWaveDetectionService {
             String label,
             boolean triangleAllowed,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
-        return selectedSubdivision("CORRECTIVE", triangleAllowed ? "B" : "II", candles,
-                start, end, cache, () -> bestSubdivisionByMode(candles, lowerDegreeCandles, start, end,
-                        triangleAllowed ? "B" : "II", false, true));
+        var key = selectionKey("CORRECTIVE", triangleAllowed ? "B" : "II", candles, start, end);
+        var known = cache.get(key);
+        return known != null ? known.orElse(null) : selectedSubdivision(key, cache,
+                () -> bestSubdivisionByMode(candles, lowerDegreeCandles, start, end, triangleAllowed ? "B" : "II", false, true));
     }
 
     private ElliottSubdivision bestSubdivisionByMode(
@@ -3599,16 +3606,24 @@ public class ElliottWaveDetectionService {
             Pivot end,
             ElliottSubdivision waveTwo,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
-        return selectedSubdivision("FOUR", waveTwo.structureLabel(), candles, start, end, cache,
+        var key = selectionKey("FOUR", waveTwo.structureLabel(), candles, start, end);
+        var known = cache.get(key);
+        return known != null ? known.orElse(null) : selectedSubdivision(key, cache,
                 () -> bestWaveFourSubdivision(candles, lowerDegreeCandles, start, end, waveTwo));
     }
 
-    private ElliottSubdivision selectedSubdivision(String mode, String label, List<EnrichedCandle> candles,
-            Pivot start, Pivot end,
+    /**
+     * A selection's memo key. Callers look it up before building the calculation: these lookups run for every parent
+     * hypothesis and nearly all of them find a result, so a hit allocates nothing but the key.
+     */
+    private SubdivisionSelectionKey selectionKey(String mode, String label, List<EnrichedCandle> candles, Pivot start, Pivot end) {
+        return new SubdivisionSelectionKey(selectionMode(mode), label,
+                candles.get(start.index()).timestamp(), start.price(), candles.get(end.index()).timestamp(), end.price());
+    }
+
+    private ElliottSubdivision selectedSubdivision(SubdivisionSelectionKey key,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache,
             java.util.function.Supplier<ElliottSubdivision> calculation) {
-        var key = new SubdivisionSelectionKey(selectionMode(mode), label,
-                candles.get(start.index()).timestamp(), start.price(), candles.get(end.index()).timestamp(), end.price());
         return cache.computeIfAbsent(key, ignored -> java.util.Optional.ofNullable(calculation.get())).orElse(null);
     }
 
