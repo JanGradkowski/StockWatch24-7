@@ -2181,7 +2181,8 @@ public class ElliottWaveDetectionService {
         });
     }
 
-    private List<DevelopingImpulse> primaryScan(List<EnrichedCandle> recentCandles,
+    /** The primary count itself, without the shared cache (package-private for ElliottParallelSeedsTest). */
+    List<DevelopingImpulse> primaryScan(List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext) {
         CheckTimings.count("Elliott scans");
         return withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
@@ -2403,6 +2404,7 @@ public class ElliottWaveDetectionService {
         boolean priorRanking = rankingOnly.get();
         rankingOnly.set(primaryOnly || observationSink.get() != null);
         try {
+        List<List<Pivot>> seeds = new ArrayList<>();
         for (DevelopmentPivotSet pivotSet : pivotSets) {
             List<Pivot> pivots = pivotSet.pivots();
             for (int index = 0; index + 1 < pivots.size(); index++) {
@@ -2413,7 +2415,17 @@ public class ElliottWaveDetectionService {
                 if (requiredDevelopmentKey != null && !requiredDevelopmentKey.equals(
                         (origin.type() == PivotType.LOW ? "BULLISH" : "BEARISH") + ':'
                                 + candles.get(origin.index()).timestamp() + ':' + candles.get(waveOne.index()).timestamp())) continue;
-                extendDevelopingImpulse(candles, new ArrayList<>(List.of(origin, waveOne)), allPivots,
+                seeds.add(List.of(origin, waveOne));
+            }
+        }
+        var executor = seedExecutor;
+        if (executor != null && primaryOnly && observationSink.get() == null && observationDelta.get() == null
+                && checkpointScan == null && seeds.size() >= PARALLEL_SEEDS) {
+            extendSeedsInParallel(executor, candles, seeds, allPivots, supportByPivot, hypothesesByDevelopment, childCandles,
+                    subdivisionCache);
+        } else {
+            for (List<Pivot> seed : seeds) {
+                extendDevelopingImpulse(candles, new ArrayList<>(seed), allPivots,
                         supportByPivot, hypothesesByDevelopment, childCandles, subdivisionCache, primaryOnly, checkpointScan, expansion);
             }
         }
@@ -2432,6 +2444,149 @@ public class ElliottWaveDetectionService {
                 .sorted(rankedDevelopingComparator())
                 .map(RankedDevelopingImpulse::candidate)
                 .toList();
+    }
+
+    /** Threads a count's starting points are spread over (see {@link #runSeedsOn}); null: the calling thread only. */
+    private static volatile java.util.concurrent.Executor seedExecutor;
+    /** Fewer starting points than this are not worth handing out. */
+    private static final int PARALLEL_SEEDS = 16;
+
+    /** Lets primary counts spread their starting points over {@code executor} (the analysis pool). */
+    static void runSeedsOn(java.util.concurrent.Executor executor) {
+        seedExecutor = executor;
+    }
+
+    static java.util.concurrent.Executor seedsRunOn() {
+        return seedExecutor;
+    }
+
+    /** Stops spreading starting points over {@code executor}, if it is still the one in use. */
+    static synchronized void stopRunningSeedsOn(java.util.concurrent.Executor executor) {
+        if (seedExecutor == executor) seedExecutor = null;
+    }
+
+    /**
+     * Extends a primary count's starting points (0/I seeds) on several threads: this one and helpers from
+     * {@code executor} take the next seed until none is left. Seeds are independent: each owns its development keys
+     * and fills its own groups, which are merged in seed order afterwards, exactly as one thread would have added
+     * them, so ranking and tie-breaking are unchanged. The validated legs the seeds share are read from
+     * {@code shared}, which no one writes while the seeds run; each thread keeps the legs it validates itself, and
+     * they are added to {@code shared} at the end. A helper the pool starts after the seeds are gone does nothing,
+     * and this thread never waits for one that has not started, so a busy pool cannot hold it up.
+     */
+    private void extendSeedsInParallel(java.util.concurrent.Executor executor, List<EnrichedCandle> candles,
+            List<List<Pivot>> seeds, List<Pivot> allPivots, Map<Pivot, PivotSupport> support,
+            Map<String, DevelopingHypotheses> combined, List<EnrichedCandle> children,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> shared) {
+        var groupsBySeed = new java.util.concurrent.atomic.AtomicReferenceArray<Map<String, DevelopingHypotheses>>(seeds.size());
+        var nextSeed = new java.util.concurrent.atomic.AtomicInteger();
+        var validatedLegs = java.util.Collections.synchronizedList(new ArrayList<SeedLegCache>());
+        var session = new SeedSession();
+        Runnable takeSeeds = () -> {
+            var legs = new SeedLegCache(shared);
+            validatedLegs.add(legs);
+            var expansion = new PivotExpansionIndex(allPivots, support);
+            for (int seed; (seed = nextSeed.getAndIncrement()) < seeds.size(); ) {
+                Map<String, DevelopingHypotheses> groups = new LinkedHashMap<>();
+                extendDevelopingImpulse(candles, new ArrayList<>(seeds.get(seed)), allPivots, support, groups, children,
+                        legs, true, null, expansion);
+                groupsBySeed.set(seed, groups);
+            }
+        };
+        Runnable helper = () -> {
+            if (!session.join()) return;
+            try {
+                withSubdivisionMemo(() -> {
+                    boolean prior = rankingOnly.get();
+                    rankingOnly.set(true);
+                    try {
+                        grammarInput(candles);
+                        takeSeeds.run();
+                    } finally {
+                        rankingOnly.set(prior);
+                    }
+                    return null;
+                });
+            } catch (RuntimeException failure) {
+                // The seed it was on is extended again below, on the calling thread.
+            } finally {
+                session.leave();
+            }
+        };
+        int helpers = Math.min(Runtime.getRuntime().availableProcessors() - 1, seeds.size() / 2);
+        try {
+            for (int started = 0; started < helpers; started++) executor.execute(helper);
+        } catch (java.util.concurrent.RejectedExecutionException stopping) {
+            // The pool is shutting down: the remaining seeds run here.
+        }
+        try {
+            takeSeeds.run();
+        } finally {
+            session.closeAndAwait();
+        }
+        for (int seed = 0; seed < seeds.size(); seed++) {
+            Map<String, DevelopingHypotheses> groups = groupsBySeed.get(seed);
+            if (groups == null) {
+                groups = new LinkedHashMap<>();
+                extendDevelopingImpulse(candles, new ArrayList<>(seeds.get(seed)), allPivots, support, groups, children,
+                        shared, true, null, new PivotExpansionIndex(allPivots, support));
+            }
+            combined.putAll(groups);
+        }
+        for (SeedLegCache legs : validatedLegs) legs.forEach(shared::putIfAbsent);
+    }
+
+    /** Helpers taking part in one parallel count; after it closes, a helper that starts late does nothing. */
+    private static final class SeedSession {
+        private int active;
+        private boolean closed;
+
+        synchronized boolean join() {
+            if (closed) return false;
+            active++;
+            return true;
+        }
+
+        synchronized void leave() {
+            active--;
+            notifyAll();
+        }
+
+        /** Waits, even when interrupted, for the helpers that joined: they read state that is merged next. */
+        synchronized void closeAndAwait() {
+            closed = true;
+            boolean interrupted = false;
+            while (active > 0) {
+                try {
+                    wait();
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Validated legs of one thread of a parallel count, in front of the legs it shares read-only with the others. */
+    private static final class SeedLegCache extends java.util.HashMap<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> {
+        private final Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> shared;
+
+        SeedLegCache(Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> shared) {
+            this.shared = shared;
+        }
+
+        @Override
+        public java.util.Optional<ElliottSubdivision> get(Object key) {
+            var known = shared.get(key);
+            return known != null ? known : super.get(key);
+        }
+
+        @Override
+        public java.util.Optional<ElliottSubdivision> computeIfAbsent(SubdivisionSelectionKey key,
+                java.util.function.Function<? super SubdivisionSelectionKey, ? extends java.util.Optional<ElliottSubdivision>> calculation) {
+            var known = shared.get(key);
+            return known != null ? known : super.computeIfAbsent(key, calculation);
+        }
     }
 
     private final ThreadLocal<String> confluenceCheckpoint = new ThreadLocal<>();

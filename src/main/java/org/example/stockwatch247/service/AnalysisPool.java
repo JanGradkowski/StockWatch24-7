@@ -10,7 +10,8 @@ import java.util.concurrent.Future;
 
 /**
  * The CPU threads a check runs its independent scans on, at the same time as its own thread works through the
- * rest. One pool for all checks; by default one thread fewer than the machine has cores.
+ * rest, and that a large Elliott count spreads its starting points over. One pool for all checks; by default one
+ * thread fewer than the machine has cores.
  */
 @Component
 public class AnalysisPool {
@@ -19,6 +20,7 @@ public class AnalysisPool {
     public AnalysisPool(@Value("${analysis.pool-threads:0}") int threads) {
         int size = threads > 0 ? threads : Math.max(2, Runtime.getRuntime().availableProcessors() - 1);
         executor = Executors.newFixedThreadPool(size, Thread.ofPlatform().daemon(true).name("analysis-", 0).factory());
+        ElliottWaveDetectionService.runSeedsOn(executor);
     }
 
     public Future<?> submit(Runnable work) {
@@ -27,6 +29,7 @@ public class AnalysisPool {
 
     @PreDestroy
     void stop() {
+        ElliottWaveDetectionService.stopRunningSeedsOn(executor);
         executor.shutdownNow();
     }
 }
