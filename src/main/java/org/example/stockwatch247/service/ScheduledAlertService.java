@@ -480,11 +480,10 @@ public class ScheduledAlertService {
         List<Runnable> counts = new java.util.ArrayList<>();
         if (shared && children != null && children.size() <= 12000) {
             boolean chosenOnly = countsChosenDevelopments();
-            for (AlertRule rule : elliott.values()) {
-                ElliottWaveDetectionService detector = elliottDetector(rule);
+            for (var setting : elliott.entrySet()) {
+                ElliottWaveDetectionService detector = elliottDetector(setting.getValue());
+                var context = legContext(setting.getKey());
                 counts.add(() -> {
-                    // One context for both, so the previous candle's count reuses the legs the latest one validated.
-                    var context = new ElliottWaveDetectionService.DevelopingScanContext();
                     var latestCount = detector.findDevelopingImpulses(parents, children.isEmpty() ? null : children, context);
                     var earlier = confirmedEarlier(latestCount, detector.minimumSignalConfidence(), candles.getLast().getTimestamp());
                     if (!earlier.isEmpty()) previousDevelopments(detector, parents, children, earlier, context, chosenOnly);
@@ -1048,9 +1047,11 @@ public class ScheduledAlertService {
         if (observed.confirmationTimestamp() == latest.getTimestamp()) return observed;
         if (observed.confirmationTimestamp() > latest.getTimestamp() || parents.size() < 2) return null;
         var previousStage = CheckTimings.enter("Elliott previous-candle count");
-        // Detectors are created per rule; followers with the same settings share the previous candle's count.
-        var before = previousDevelopments(detector, parents, children, confirmedEarlier, detector.sharedScanContext(),
-                countsChosenDevelopments()).get(observed.developmentKey());
+        // Detectors are created per rule; followers with the same settings share the previous candle's count, and
+        // every wave of the count reads it from here rather than looking it up by its candles again.
+        var before = AnalysisComputationScope.memo(java.util.List.of("previous-developing-elliott", settings, confirmedEarlier),
+                () -> previousDevelopments(detector, parents, children, confirmedEarlier, legContext(settings),
+                        countsChosenDevelopments())).get(observed.developmentKey());
         previousStage.close();
         if (before != null && before.pattern() == observed.pattern()
                 && before.points().equals(observed.points())) return null;
@@ -1101,6 +1102,16 @@ public class ScheduledAlertService {
             if (developments.contains(counted.developmentKey())) chosen.putIfAbsent(counted.developmentKey(), counted);
         }
         return chosen;
+    }
+
+    /**
+     * The leg context one Elliott setting's counts share within a check: the latest count started ahead validates
+     * its legs there, and the previous candle's count reuses them, on whichever thread it is worked out (the check
+     * and the pool may both reach it first).
+     */
+    private ElliottWaveDetectionService.DevelopingScanContext legContext(Object settings) {
+        return AnalysisComputationScope.memo(List.of("elliott-leg-context-ahead", settings),
+                ElliottWaveDetectionService.DevelopingScanContext::new);
     }
 
     /**
