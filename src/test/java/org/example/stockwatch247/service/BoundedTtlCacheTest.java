@@ -47,10 +47,55 @@ class BoundedTtlCacheTest {
     }
 
     @Test
+    void expiringEveryCacheEmptiesThemAll() {
+        BoundedTtlCache<String, String> first = new BoundedTtlCache<>(4, 600);
+        BoundedTtlCache<String, String> second = new BoundedTtlCache<>(4, 600);
+        first.getOrCompute("one", () -> "1");
+        second.getOrCompute("two", () -> "2");
+
+        BoundedTtlCache.expireAll();
+
+        assertThat(first.size()).isZero();
+        assertThat(second.size()).isZero();
+        assertThat(first.getOrCompute("one", () -> "computed again")).isEqualTo("computed again");
+    }
+
+    @Test
+    void aResultTheCallerDeclinesToKeepIsReturnedButNotCached() {
+        BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
+        assertThat(cache.getOrCompute("one", () -> "too large", value -> false)).isEqualTo("too large");
+        assertThat(cache.size()).isZero();
+        assertThat(cache.getOrCompute("one", () -> "kept", value -> true)).isEqualTo("kept");
+        assertThat(cache.getOrCompute("one", () -> "recomputed")).isEqualTo("kept");
+    }
+
+    @Test
     void aComputationThatAsksForItsOwnKeyDoesNotWaitOnItself() {
         BoundedTtlCache<String, String> cache = new BoundedTtlCache<>(2, 10);
         assertThat(cache.getOrCompute("outer", () -> "outer:" + cache.getOrCompute("outer", () -> "inner")))
                 .isEqualTo("outer:inner");
+    }
+
+    @Test
+    void entriesAddedFromManyThreadsAtOnceStayWithinTheMaximum() throws Exception {
+        BoundedTtlCache<String, Integer> cache = new BoundedTtlCache<>(16, 600);
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(8)) {
+            var adding = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for (int thread = 0; thread < 8; thread++) {
+                int first = thread * 1000;
+                adding.add(pool.submit(() -> {
+                    for (int value = first; value < first + 1000; value++) {
+                        cache.put("key-" + value, value, 100);
+                        assertThat(cache.get("key-" + (value - first) / 2, 100)).isIn(null, (value - first) / 2);
+                    }
+                }));
+            }
+            for (var thread : adding) thread.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertThat(cache.size()).isEqualTo(16);
+        cache.put("last", -1, 100);
+        assertThat(cache.size()).isEqualTo(16);
+        assertThat(cache.get("last", 100)).isEqualTo(-1);
     }
 
     @Test

@@ -73,6 +73,50 @@ class ReviewDurabilityIntegrationTest {
         } finally {jdbc.update("delete from email_outbox where deduplication_key=?",key);}
     }
 
+    @Test void upcomingChecksAreThePendingRunnableOnesInTheWorkersOrder() {
+        String prefix = "UP" + UUID.randomUUID().toString().substring(0, 3).toUpperCase(java.util.Locale.ROOT);
+        String insert = """
+                insert into alert_check_jobs (symbol, interval, scheduled_for, status, available_at)
+                values (?, 'DAILY', ?, ?, current_timestamp + (? * interval '1 second'))
+                """;
+        try {
+            jdbc.update(insert, prefix + "B", java.sql.Timestamp.from(Instant.parse("2001-01-03T00:00:00Z")), "PENDING", -5);
+            jdbc.update(insert, prefix + "A", java.sql.Timestamp.from(Instant.parse("2001-01-02T00:00:00Z")), "PENDING", -5);
+            jdbc.update(insert, prefix + "C", java.sql.Timestamp.from(Instant.parse("2001-01-01T00:00:00Z")), "COMPLETED", -5);
+            jdbc.update(insert, prefix + "D", java.sql.Timestamp.from(Instant.parse("2001-01-01T12:00:00Z")), "PENDING", 3_600);
+            assertThat(jobs.upcoming(1_000).stream().map(AlertCheckJobStore.AlertCheckJob::symbol).filter(symbol -> symbol.startsWith(prefix)))
+                    .containsExactly(prefix + "A", prefix + "B");
+        } finally {
+            jdbc.update("delete from alert_check_jobs where symbol like ?", prefix + "%");
+        }
+    }
+
+    @Test void leaseRenewedInsideAPublishingTransactionDoesNotLockTheJobUntilItCommits() throws Exception {
+        String symbol = "LSE" + UUID.randomUUID().toString().substring(0, 4).toUpperCase(java.util.Locale.ROOT);
+        Instant scheduledFor = Instant.parse("2026-01-06T00:00:00Z");
+        long id = jdbc.queryForObject("""
+                insert into alert_check_jobs (symbol, interval, scheduled_for, status, attempts, lease_until)
+                values (?, 'DAILY', ?, 'PROCESSING', 1, current_timestamp + interval '60 seconds') returning id
+                """, Long.class, symbol, java.sql.Timestamp.from(scheduledFor));
+        var job = new AlertCheckJobStore.AlertCheckJob(id, symbol, TimeInterval.DAILY, scheduledFor, 1);
+        try (var heartbeat = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            new TransactionTemplate(manager).executeWithoutResult(status -> {
+                assertThat(jobs.renew(job, Duration.ofSeconds(600))).isTrue();
+                // Another connection (the heartbeat's) can lock and read the renewed row while this transaction is open.
+                var other = heartbeat.submit(() -> jdbc.queryForObject("""
+                        select lease_until > current_timestamp + interval '300 seconds' from alert_check_jobs where id = ? for update nowait
+                        """, Boolean.class, id));
+                try {
+                    assertThat(other.get(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                } catch (Exception failure) {
+                    throw new AssertionError("the job row stayed locked by the outer transaction", failure);
+                }
+            });
+        } finally {
+            jdbc.update("delete from alert_check_jobs where id = ?", id);
+        }
+    }
+
     @Test void checkpointSurvivesOuterRollbackAndOlderProgressCannotOverwriteIt() {
         String key=AnalysisWork.key(UUID.randomUUID());
         try {
@@ -124,6 +168,29 @@ class ReviewDurabilityIntegrationTest {
             assertThat(claimed.getFirst().interval()).isEqualTo(TimeInterval.DAILY);
             assertThat(jobs.claimNext(Duration.ofMinutes(1))).isEmpty();
         } finally { jdbc.update("delete from alert_check_jobs where symbol=?",symbol); }
+    }
+
+    @Test void parallelClaimsRunSeveralStocksButNeverTwoChecksOfOneStock() {
+        String prefix = "LANE" + UUID.randomUUID().toString().substring(0, 4).toUpperCase(java.util.Locale.ROOT);
+        try {
+            jobs.enqueue(prefix + "A", TimeInterval.DAILY, Instant.parse("2001-02-01T00:00:00Z"));
+            jobs.enqueue(prefix + "A", TimeInterval.WEEKLY, Instant.parse("2001-02-02T00:00:00Z"));
+            jobs.enqueue(prefix + "B", TimeInterval.DAILY, Instant.parse("2001-02-03T00:00:00Z"));
+            jobs.enqueue(prefix + "C", TimeInterval.DAILY, Instant.parse("2001-02-04T00:00:00Z"));
+            var first = jobs.claimNext(Duration.ofMinutes(1), 3).orElseThrow();
+            var second = jobs.claimNext(Duration.ofMinutes(1), 3).orElseThrow();
+            var third = jobs.claimNext(Duration.ofMinutes(1), 3).orElseThrow();
+            // A's weekly check waits for A's daily one; three run at once, so nothing else is claimed.
+            assertThat(List.of(first.symbol() + first.interval(), second.symbol() + second.interval(), third.symbol() + third.interval()))
+                    .containsExactly(prefix + "ADAILY", prefix + "BDAILY", prefix + "CDAILY");
+            assertThat(jobs.claimNext(Duration.ofMinutes(1), 3)).isEmpty();
+            jobs.complete(second);
+            assertThat(jobs.claimNext(Duration.ofMinutes(1), 3)).isEmpty();
+            jobs.complete(first);
+            assertThat(jobs.claimNext(Duration.ofMinutes(1), 3).orElseThrow().interval()).isEqualTo(TimeInterval.WEEKLY);
+        } finally {
+            jdbc.update("delete from alert_check_jobs where symbol like ?", prefix + "%");
+        }
     }
 
     @Test void oldestCheckRetainsPriorityUntilCompletedIncludingWhileDeferred() {

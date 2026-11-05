@@ -56,6 +56,35 @@ final class ValidatedCandleWindow extends AbstractList<EnrichedCandle> implement
         return found < 0 || found >= to ? -1 : found - from;
     }
     ValidatedCandleWindow suffixFromStart() { return new ValidatedCandleWindow(this, 0, root.size() - from); }
+
+    /**
+     * These candles alone, for a key kept in a cache shared by every count: it does not hold on to the rest of the
+     * series, and it keeps this window's hash, so the cache never hashes its candles one by one.
+     */
+    List<EnrichedCandle> frozenCopy() {
+        return new Frozen(List.copyOf(this), hashCode());
+    }
+
+    /** An unmodifiable copy whose hash (that of any list of the same candles) is known up front. */
+    private static final class Frozen extends AbstractList<EnrichedCandle> implements RandomAccess {
+        private final List<EnrichedCandle> candles;
+        private final int hash;
+
+        Frozen(List<EnrichedCandle> candles, int hash) {
+            this.candles = candles;
+            this.hash = hash;
+        }
+
+        @Override public EnrichedCandle get(int index) { return candles.get(index); }
+        @Override public int size() { return candles.size(); }
+        @Override public int hashCode() { return hash; }
+        @Override public boolean equals(Object other) {
+            if (this == other) return true;
+            if (other instanceof ValidatedCandleWindow window) return window.equals(this);
+            if (other instanceof Frozen frozen && frozen.hash != hash) return false;
+            return candles.equals(other);
+        }
+    }
     @Override public ValidatedCandleWindow subList(int start, int end) {
         Objects.checkFromToIndex(start, end, size());
         return new ValidatedCandleWindow(this, start, end);
@@ -69,8 +98,16 @@ final class ValidatedCandleWindow extends AbstractList<EnrichedCandle> implement
             if (size() != window.size() || hashCode() != window.hashCode()) return false;
             if (root == window.root && from == window.from) return true;
         }
-        // Hash collisions and independently supplied/corrected inputs still require exact equality.
-        return super.equals(other);
+        // Hash collisions and independently supplied/corrected inputs still require exact equality. A cached key
+        // usually holds the very candles this window does, so each pair is first compared by identity.
+        if (!(other instanceof List<?> list) || list.size() != size()) return false;
+        if (!(list instanceof RandomAccess)) return super.equals(other);
+        for (int index = 0; index < size(); index++) {
+            EnrichedCandle mine = root.get(from + index);
+            Object theirs = list.get(index);
+            if (mine != theirs && (mine == null || !mine.equals(theirs))) return false;
+        }
+        return true;
     }
 
     int lowerBound(long timestamp) {

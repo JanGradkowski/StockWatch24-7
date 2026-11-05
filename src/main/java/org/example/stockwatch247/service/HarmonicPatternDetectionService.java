@@ -135,16 +135,22 @@ public class HarmonicPatternDetectionService {
         if (historicalCandles == null || historicalCandles.isEmpty()) return List.of();
         ScanKey key = historicalCandles.size() <= 10000 ? new ScanKey(rules, patternRules,
                 historicalCandles.stream().map(CandleValue::of).toList(), from, to) : null;
+        var work = AnalysisWork.current();
+        // Computed once across threads: a check and a page asking for the same scan share it.
+        if (work == null && key != null) return completedScans.getOrCompute(key, () -> {
+            CheckTimings.count("harmonic scans");
+            return calculateRange(historicalCandles, from, to);
+        }, result -> result.size() <= 10000);
         long now = java.time.Instant.now().getEpochSecond();
         List<HarmonicFormation> saved = key == null ? null : completedScans.get(key, now);
         if (saved != null) return saved;
-        var work = AnalysisWork.current();
         String durableKey = work == null || key == null ? null : AnalysisWork.key(List.of("HARMONIC_SCAN_V1", key));
         CompletedFormations completed = durableKey == null ? null : work.store.read(durableKey, CompletedFormations.class);
         if (completed != null) {
             completedScans.put(key, completed.formations(), now);
             return completed.formations();
         }
+        CheckTimings.count("harmonic scans");
         List<HarmonicFormation> result = calculateRange(historicalCandles, from, to);
         if (durableKey != null) work.store.write(durableKey, new CompletedFormations(result), 1);
         if (key != null && result.size() <= 10000) completedScans.put(key, result, now);

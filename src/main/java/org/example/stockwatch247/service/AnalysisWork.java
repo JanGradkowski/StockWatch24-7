@@ -38,8 +38,10 @@ final class AnalysisWork implements AutoCloseable {
         return true;
     }
     static String key(Object value) {
-        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                .digest(value.toString().getBytes(StandardCharsets.UTF_8))); }
+        try (var stage = CheckTimings.enter("cache keys")) {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.toString().getBytes(StandardCharsets.UTF_8)));
+        }
         catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
     static void rethrowInfrastructure(RuntimeException failure) {

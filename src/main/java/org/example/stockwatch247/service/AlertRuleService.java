@@ -1143,9 +1143,44 @@ public class AlertRuleService {
         );
     }
 
-    /** Viewing never changes state; the page marks the signal read with a separate POST. */
-    @Transactional
+    private org.springframework.transaction.support.TransactionTemplate detailTransaction;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureTransactions(org.springframework.transaction.PlatformTransactionManager manager) {
+        // Not read-only: the detail was built in an ordinary transaction before, and still is.
+        detailTransaction = new org.springframework.transaction.support.TransactionTemplate(manager);
+    }
+
+    /**
+     * Viewing never changes state; the page marks the signal read with a separate POST. An older Elliott signal's
+     * structure, which needs a scan of its history, is worked out before the transaction that reads the signal, so no database
+     * connection is held while it runs.
+     */
     public SignalDetailView getSignalDetail(User user, Long alertEventId) {
+        if (detailTransaction == null) return signalDetail(user, alertEventId);
+        try (var scope = AnalysisComputationScope.open()) {
+            LegacyElliottInput legacy = detailTransaction.execute(status -> legacyElliottInput(user, alertEventId));
+            // The signal is the user's own (the query requires it), so the user's settings are the rule's.
+            if (legacy != null) legacyElliottStructure(legacy.event(), legacy.rule(), user, legacy.candles(), legacy.signalIndex());
+            return detailTransaction.execute(status -> signalDetail(user, alertEventId));
+        }
+    }
+
+    /** What an Elliott signal without a stored structure needs for its scan; null for every other signal. */
+    private record LegacyElliottInput(AlertEvent event, AlertRule rule, List<Candle> candles, int signalIndex) { }
+
+    private LegacyElliottInput legacyElliottInput(User user, Long alertEventId) {
+        AlertEvent event = alertEventRepository.findOwnedByIdAndUser(alertEventId, user).orElse(null);
+        if (event == null || event.getId() == null || event.getPattern() == null || event.getSignalCandleTimestamp() == null) return null;
+        AlertRule rule = event.getAlertRule();
+        if (normalizeFamily(rule.getPatternFamily()) != AlertPatternFamily.ELLIOTT_WAVE
+                || toStoredDevelopingElliottWaveView(event, rule) != null) return null;
+        List<Candle> candles = chartCandles(rule);
+        int signalIndex = candleIndex(candles, event.getSignalCandleTimestamp());
+        return signalIndex < 0 ? null : new LegacyElliottInput(event, rule, candles, signalIndex);
+    }
+
+    private SignalDetailView signalDetail(User user, Long alertEventId) {
         AlertEvent event = alertEventRepository.findOwnedByIdAndUser(alertEventId, user)
                 .orElseThrow(() -> new IllegalArgumentException("Signal event not found."));
         AlertRule rule = event.getAlertRule();
@@ -1558,12 +1593,8 @@ public class AlertRuleService {
         };
     }
 
-    private SignalChartView toSignalChartView(AlertEvent event, AlertRule rule) {
-        Long signalTimestamp = event.getSignalCandleTimestamp();
-        if (signalTimestamp == null) {
-            return SignalChartView.unavailable("The signal candle timestamp was not recorded.");
-        }
-
+    /** The rule's completed candles with valid prices, oldest first, as the signal chart draws them. */
+    private List<Candle> chartCandles(AlertRule rule) {
         String symbol = rule.getStockAsset().getTickerSymbol();
         String interval = toApiInterval(rule.getInterval());
         long firstIncompleteTimestamp = candleCompletionService.firstIncompleteCandleTimestamp(rule.getInterval());
@@ -1573,14 +1604,24 @@ public class AlertRuleService {
                 .filter(this::validChartCandle)
                 .filter(candle -> candle.getTimestamp() < firstIncompleteTimestamp)
                 .forEach(candle -> orderedCandles.put(candle.getTimestamp(), candle));
-        Candle signalCandle = orderedCandles.get(signalTimestamp);
+        return List.copyOf(orderedCandles.values());
+    }
+
+    private SignalChartView toSignalChartView(AlertEvent event, AlertRule rule) {
+        Long signalTimestamp = event.getSignalCandleTimestamp();
+        if (signalTimestamp == null) {
+            return SignalChartView.unavailable("The signal candle timestamp was not recorded.");
+        }
+
+        List<Candle> candles = chartCandles(rule);
+        Candle signalCandle = candles.stream()
+                .filter(candle -> candle.getTimestamp().equals(signalTimestamp)).findFirst().orElse(null);
         if (!validChartCandle(signalCandle)) {
             return SignalChartView.unavailable(
                     "The original OHLC candle is not present in the local cache, so the chart cannot be reconstructed safely."
             );
         }
 
-        List<Candle> candles = List.copyOf(orderedCandles.values());
         int signalIndex = -1;
         for (int index = 0; index < candles.size(); index++) {
             if (candles.get(index).getTimestamp().equals(signalTimestamp)) {
@@ -1741,25 +1782,8 @@ public class AlertRuleService {
         if (storedDevelopingWave != null) {
             return storedDevelopingWave;
         }
-        List<Candle> detectionHistory = List.copyOf(candles.subList(0, signalIndex + 1));
-        List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
-                detectionHistory,
-                detectionHistory.size(),
-                rule.getInterval()
-        );
-        ElliottWaveDetectionService detector = elliottDetector(rule.getUser(), rule.getInterval());
-        ElliottWaveDetectionService.ElliottWaveStructure structure = detector
-                .findHistoricalWaveStructures(enriched)
-                .stream()
-                .filter(candidate -> matchesRecordedElliottPattern(event.getPattern(), candidate))
-                .filter(candidate -> candidate.confirmationTimestamp() != null
-                        && candidate.confirmationTimestamp() <= event.getSignalCandleTimestamp())
-                .max(Comparator.comparingLong(
-                                (ElliottWaveDetectionService.ElliottWaveStructure candidate) ->
-                                        candidate.confirmationTimestamp())
-                        .thenComparingInt(ElliottWaveDetectionService.ElliottWaveStructure::qualityScore)
-                        .thenComparingLong(candidate -> elliottStructureSpan(candidate.points())))
-                .orElse(null);
+        ElliottWaveDetectionService.ElliottWaveStructure structure =
+                legacyElliottStructure(event, rule, rule.getUser(), candles, signalIndex).orElse(null);
         if (structure == null) {
             return null;
         }
@@ -1782,6 +1806,36 @@ public class AlertRuleService {
                 structure.impulseVariant(),
                 structure.correctionVariant()
         );
+    }
+
+    /**
+     * The recorded Elliott signal's structure, found again in the history up to its candle. Remembered for the
+     * request by signal (see {@link #getSignalDetail}): candles stored a moment later cannot change a past signal.
+     */
+    private java.util.Optional<ElliottWaveDetectionService.ElliottWaveStructure> legacyElliottStructure(
+            AlertEvent event, AlertRule rule, User owner, List<Candle> candles, int signalIndex) {
+        java.util.function.Supplier<java.util.Optional<ElliottWaveDetectionService.ElliottWaveStructure>> scan = () -> {
+            List<Candle> detectionHistory = List.copyOf(candles.subList(0, signalIndex + 1));
+            List<EnrichedCandle> enriched = enrichmentService.enrichForElliott(
+                    detectionHistory,
+                    detectionHistory.size(),
+                    rule.getInterval()
+            );
+            ElliottWaveDetectionService detector = elliottDetector(owner, rule.getInterval());
+            return detector
+                    .findHistoricalWaveStructures(enriched)
+                    .stream()
+                    .filter(candidate -> matchesRecordedElliottPattern(event.getPattern(), candidate))
+                    .filter(candidate -> candidate.confirmationTimestamp() != null
+                            && candidate.confirmationTimestamp() <= event.getSignalCandleTimestamp())
+                    .max(Comparator.comparingLong(
+                                    (ElliottWaveDetectionService.ElliottWaveStructure candidate) ->
+                                            candidate.confirmationTimestamp())
+                            .thenComparingInt(ElliottWaveDetectionService.ElliottWaveStructure::qualityScore)
+                            .thenComparingLong(candidate -> elliottStructureSpan(candidate.points())));
+        };
+        return event.getId() == null ? scan.get()
+                : AnalysisComputationScope.memo(List.of("signal-elliott-structure", event.getId()), scan);
     }
 
     private ElliottWaveChartView toStoredDevelopingElliottWaveView(

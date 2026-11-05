@@ -176,6 +176,15 @@ public class CustomAlertFactsLoader {
      * check's original time; null means now.
      */
     public StockData load(StockAsset asset, TimeInterval interval, Long before) {
+        return load(asset, interval, before, null);
+    }
+
+    /**
+     * As above; {@code checkCandles} are the candles the scheduled check that calls this has loaded for its built-in
+     * rules, and the wave counts and harmonic formations are read from exactly those (null: they are loaded here
+     * the same way).
+     */
+    public StockData load(StockAsset asset, TimeInterval interval, Long before, List<Candle> checkCandles) {
         String symbol = asset.getTickerSymbol();
         long boundary = completion.firstIncompleteCandleTimestamp(interval);
         long limit = before == null ? boundary : Math.min(boundary, before);
@@ -184,7 +193,7 @@ public class CustomAlertFactsLoader {
         loaded.removeIf(candle -> candle.getClosePrice() == null || !Double.isFinite(candle.getClosePrice())
                 || candle.getTimestamp() == null);
         loaded.sort(Comparator.comparing(Candle::getTimestamp));
-        return new StockData(asset, interval, List.copyOf(loaded), limit);
+        return new StockData(asset, interval, List.copyOf(loaded), limit, checkCandles == null ? null : List.copyOf(checkCandles));
     }
 
     /** One stock's shared data; {@link #forOwner} adds an owner's detection settings and outlook profile. */
@@ -194,6 +203,7 @@ public class CustomAlertFactsLoader {
         private final List<Candle> series;
         private final Map<String, double[]> values = new HashMap<>();
         private final Map<String, List<ActivityHit>> activity = new HashMap<>();
+        private final Map<Long, java.util.Optional<OutlookFact>> outlookByOwner = new HashMap<>();
         private final Map<Object, List<PatternHit>> patterns = new HashMap<>();
         /** How many recent candles candlestick detection covers: a scheduled check needs its windows, a preview its replay. */
         private int patternCandles = CustomAlertDefinition.MAX_WINDOW_CANDLES * 3;
@@ -213,13 +223,36 @@ public class CustomAlertFactsLoader {
         /** The child candles were already refreshed in this check. */
         private boolean lowerDegreeRefreshed;
         private String seriesFingerprint;
+        /**
+         * The candles wave counts and harmonic formations are read from: the built-in check's (the latest 1,000 with
+         * the indicator warm-up before them), so built-in and custom alerts see the same counts and formations.
+         */
+        private List<Candle> patternInput;
+        private String patternInputFingerprint;
         private final Map<String, ElliottInputs> elliottInputs = new HashMap<>();
 
-        StockData(StockAsset asset, TimeInterval interval, List<Candle> series, long boundary) {
+        StockData(StockAsset asset, TimeInterval interval, List<Candle> series, long boundary, List<Candle> patternInput) {
             this.asset = asset;
             this.interval = interval;
             this.series = series;
             this.boundary = boundary;
+            this.patternInput = patternInput;
+        }
+
+        /** See {@link #patternInput}: loaded as the scheduled check loads its candles, when no check passed them. */
+        private List<Candle> patternInput() {
+            if (patternInput == null) {
+                if (enrichment == null || series.isEmpty()) {
+                    patternInput = series;
+                } else {
+                    List<Candle> loaded = new ArrayList<>(candles.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(
+                            asset.getTickerSymbol(), apiInterval(interval), boundary, PageRequest.of(0,
+                                    enrichment.requiredElliottInputCandles(ElliottAlertInputs.PARENT_CANDLES, interval))));
+                    loaded.sort(Comparator.comparing(Candle::getTimestamp));
+                    patternInput = List.copyOf(loaded);
+                }
+            }
+            return patternInput;
         }
 
         /** For a scheduled check: refreshes the child candles of Elliott subdivisions first when they are stale. */
@@ -234,6 +267,25 @@ public class CustomAlertFactsLoader {
          */
         public void evaluatesLatestOnly(boolean latestOnly) {
             this.latestOnly = latestOnly;
+        }
+
+        /**
+         * Works out everything {@code definition} reads for {@code owner}: indicator and price series, pattern scans,
+         * the outlook and filings. Evaluating the rule afterwards only reads these results.
+         */
+        void prepareFor(CustomAlertDefinition definition, User owner) {
+            for (CustomAlertDefinition.Condition condition : definition.conditions()) {
+                switch (condition) {
+                    case CustomAlertDefinition.ValueCondition value -> {
+                        series(value.subject());
+                        if (value.compare() != null && !"VALUE".equals(value.compare().kind())) series(value.compare());
+                    }
+                    case CustomAlertDefinition.PatternCondition pattern -> patterns(pattern.family(), owner);
+                    case CustomAlertDefinition.OutlookCondition ignored -> outlook(owner);
+                    case CustomAlertDefinition.ActivityCondition activity -> activity(activity.source());
+                    default -> { }
+                }
+            }
         }
 
         /** Works out each pattern family's snapshot with factory settings, which the shared store keeps for later readers. */
@@ -302,6 +354,12 @@ public class CustomAlertFactsLoader {
             List<Operand> missing = operands.stream().filter(Operand::isIndicator)
                     .filter(operand -> !values.containsKey(operand.seriesKey())).toList();
             if (missing.isEmpty() || indicators == null) return;
+            try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: indicators")) {
+                prepareMissing(missing, lookback);
+            }
+        }
+
+        private void prepareMissing(List<Operand> missing, int lookback) {
             Map<String, IndicatorConfiguration> configurations = new java.util.LinkedHashMap<>();
             Map<String, String> configurationOf = new HashMap<>();
             for (Operand operand : missing) {
@@ -414,7 +472,7 @@ public class CustomAlertFactsLoader {
                     }
                     return known.hits();
                 }
-                try {
+                try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: " + family)) {
                     List<PatternHit> found = shared(family, owner, () -> switch (family) {
                         case "CANDLESTICK" -> candlestickHits(owner);
                         case "ELLIOTT_WAVE" -> elliottHits(owner);
@@ -479,16 +537,24 @@ public class CustomAlertFactsLoader {
 
         /** Fingerprint of the loaded candles' times, prices and volumes: what most scans read. */
         private String seriesFingerprint() {
-            if (seriesFingerprint == null) {
-                StringBuilder text = new StringBuilder(series.size() * 48);
-                for (Candle candle : series) {
-                    text.append(candle.getTimestamp()).append('|').append(candle.getOpenPrice()).append('|').append(candle.getHighPrice())
-                            .append('|').append(candle.getLowPrice()).append('|').append(candle.getClosePrice()).append('|')
-                            .append(candle.getVolume()).append(';');
-                }
-                seriesFingerprint = org.example.stockwatch247.service.HistoricalSignalCacheService.sha256(text.toString());
-            }
+            if (seriesFingerprint == null) seriesFingerprint = fingerprint(series);
             return seriesFingerprint;
+        }
+
+        /** Fingerprint of {@link #patternInput}, which wave counts and harmonic formations read. */
+        private String patternInputFingerprint() {
+            if (patternInputFingerprint == null) patternInputFingerprint = fingerprint(patternInput());
+            return patternInputFingerprint;
+        }
+
+        private static String fingerprint(List<Candle> candles) {
+            StringBuilder text = new StringBuilder(candles.size() * 48);
+            for (Candle candle : candles) {
+                text.append(candle.getTimestamp()).append('|').append(candle.getOpenPrice()).append('|').append(candle.getHighPrice())
+                        .append('|').append(candle.getLowPrice()).append('|').append(candle.getClosePrice()).append('|')
+                        .append(candle.getVolume()).append(';');
+            }
+            return org.example.stockwatch247.service.HistoricalSignalCacheService.sha256(text.toString());
         }
 
         /**
@@ -513,9 +579,10 @@ public class CustomAlertFactsLoader {
                     }
                     String child = ElliottAlertInputs.childApiInterval(interval);
                     stored = org.example.stockwatch247.service.HistoricalSignalCacheService.Family.ELLIOTT_LATEST;
-                    version = ElliottWaveDetectionService.DETECTION_RULE_VERSION + "|" + ElliottWaveDetectionService.SETUP_SCORE_VERSION + "|latest-v1";
+                    // v2: counts read the built-in check's candles, with the indicator warm-up.
+                    version = ElliottWaveDetectionService.DETECTION_RULE_VERSION + "|" + ElliottWaveDetectionService.SETUP_SCORE_VERSION + "|latest-v2";
                     settings = List.of(String.valueOf(elliottRules(owner)), String.valueOf(child));
-                    inputs = org.example.stockwatch247.service.HistoricalSignalCacheService.sha256(seriesFingerprint() + "|"
+                    inputs = org.example.stockwatch247.service.HistoricalSignalCacheService.sha256(patternInputFingerprint() + "|"
                             + (child == null ? "" : store.candleFingerprint(symbol, child, series.getFirst().getTimestamp(), boundary)));
                 }
                 case "CANDLESTICK" -> {
@@ -526,9 +593,10 @@ public class CustomAlertFactsLoader {
                 }
                 default -> {
                     stored = org.example.stockwatch247.service.HistoricalSignalCacheService.Family.HARMONIC_ALERTS;
-                    version = HarmonicPatternDetectionService.RULE_VERSION + "|alerts-v1";
+                    // v2: formations are read from the built-in check's candles.
+                    version = HarmonicPatternDetectionService.RULE_VERSION + "|alerts-v2";
                     settings = List.of(harmonicView(owner).rules(), harmonicView(owner).patternRules());
-                    inputs = seriesFingerprint();
+                    inputs = patternInputFingerprint();
                 }
             }
             var fresh = new java.util.concurrent.atomic.AtomicReference<List<PatternHit>>();
@@ -611,7 +679,7 @@ public class CustomAlertFactsLoader {
                 ownerId = owner == null ? null : owner.getId();
                 detector = rules == null ? elliott : elliott.configured(rules);
                 minimum = detector.minimumSignalConfidence();
-                parents = ElliottAlertInputs.parents(enrichment, series, interval);
+                parents = ElliottAlertInputs.parents(enrichment, patternInput(), interval);
                 // A scheduled check refreshes a stale child cache, as the built-in check does; previews and the
                 // background history read stored candles only.
                 children = parents.isEmpty() ? List.of() : ElliottAlertInputs.lowerDegree(candles,
@@ -786,7 +854,7 @@ public class CustomAlertFactsLoader {
             HarmonicPatternPreferencesService.PreferencesView view = harmonicView(owner);
             HarmonicPatternDetectionService detector = harmonics.configured(view.rules(), view.patternRules());
             List<PatternHit> hits = new ArrayList<>();
-            for (var formation : detector.forAlerts().detectHistorical(series)) {
+            for (var formation : detector.forAlerts().detectHistorical(patternInput())) {
                 long anchor = formation.points().getLast().timestamp();
                 hits.add(new PatternHit("HARMONIC_FORMATION", HarmonicPatternDetectionService.signalPattern(formation.pattern()).name(),
                         formation.pattern().name(), formation.tradeSignal() == TradeSignal.BUY, formation.qualityScore(),
@@ -795,9 +863,14 @@ public class CustomAlertFactsLoader {
             return hits;
         }
 
+        /** The owner's outlook of the latest candle, read once per owner and check. */
         private OutlookFact outlook(User owner) {
             if (outlooks == null || owner == null || series.isEmpty()) return null;
-            try {
+            return outlookByOwner.computeIfAbsent(owner.getId(), id -> java.util.Optional.ofNullable(loadOutlook(owner))).orElse(null);
+        }
+
+        private OutlookFact loadOutlook(User owner) {
+            try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: outlook")) {
                 var view = outlooks.getTrackingOutlook(owner, asset.getTickerSymbol(), apiInterval(interval), false);
                 if (!view.available() || view.candleTimestamp() == null) return null;
                 return new OutlookFact(view.candleTimestamp(), view.headlineScore().classification(), view.headlineScore().normalizedScore());

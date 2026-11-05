@@ -544,8 +544,9 @@ applied to the local database on **2026-09-30 at 20:24:31.403293 Europe/Brussels
 
 Only one technical check is dispatched at a time, in oldest `scheduled_for, id`
 order across symbols and intervals. It retains its lease and computation caches
-until completion. Checkpoints are still written periodically for recovery, but
-the normal 30-second checkpoint no longer causes a yield or starts another job.
+until completion. Scheduled checks no longer write durable checkpoints (see
+[five-second checks](five-second-checks-plan.md), step 1): a check that stops
+part-way starts again from the beginning.
 An earlier deferred or processing check also blocks later checks at the database
 claim layer, including claims from another application instance. Infrastructure
 outages retain that ordering; genuine calculation failures keep the existing

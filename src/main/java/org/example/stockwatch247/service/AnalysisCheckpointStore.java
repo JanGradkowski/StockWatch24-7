@@ -12,13 +12,32 @@ public class AnalysisCheckpointStore {
     private final ObjectMapper mapper;
     public AnalysisCheckpointStore(JdbcTemplate jdbc, ObjectMapper mapper) { this.jdbc = jdbc; this.mapper = mapper; }
     <T> T read(String key, Class<T> type) {
-        var rows = jdbc.query("select payload from analysis_checkpoints where cache_key=?",
-                (rs, row) -> rs.getString(1), key);
-        return rows.isEmpty() ? null : mapper.readValue(rows.getFirst(), type);
+        CheckTimings.count("checkpoint reads");
+        try (var stage = CheckTimings.enter("checkpoint I/O")) {
+            var rows = jdbc.query("select payload from analysis_checkpoints where cache_key=?",
+                    (rs, row) -> rs.getString(1), key);
+            return rows.isEmpty() ? null : mapper.readValue(rows.getFirst(), type);
+        }
     }
-    @org.springframework.transaction.annotation.Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    private org.springframework.transaction.support.TransactionTemplate ownTransaction;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureTransactions(org.springframework.transaction.PlatformTransactionManager manager) {
+        ownTransaction = new org.springframework.transaction.support.TransactionTemplate(manager);
+        ownTransaction.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    /** Commits on its own (a new transaction), so a checkpoint outlives a check that fails afterwards. */
     public void write(String key, Object value, long completedNodes) {
         JobLeaseGuard.checkActive();
+        CheckTimings.count("checkpoint writes");
+        try (var stage = CheckTimings.enter("checkpoint I/O")) {
+            if (ownTransaction == null) upsert(key, value, completedNodes);
+            else ownTransaction.executeWithoutResult(status -> upsert(key, value, completedNodes));
+        }
+    }
+
+    private void upsert(String key, Object value, long completedNodes) {
         jdbc.update("""
             insert into analysis_checkpoints(cache_key,payload,completed_nodes) values(?,?,?)
             on conflict(cache_key) do update set payload=excluded.payload,completed_nodes=excluded.completed_nodes,updated_at=current_timestamp

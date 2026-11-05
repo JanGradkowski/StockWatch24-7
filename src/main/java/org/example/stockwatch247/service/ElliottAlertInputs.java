@@ -22,6 +22,8 @@ public final class ElliottAlertInputs {
     private static final Logger log = LoggerFactory.getLogger(ElliottAlertInputs.class);
     /** Child candles kept per symbol for subdivision checks. */
     public static final int LOWER_DEGREE_CACHE_CANDLES = 1_000;
+    /** Parent candles a count reads; {@link #parents} is given these plus the indicator warm-up before them. */
+    public static final int PARENT_CANDLES = SignalInputPreparation.ELLIOTT_PARENT_CANDLES;
 
     private ElliottAlertInputs() { }
 

@@ -238,6 +238,29 @@ public class CandlestickSignalLifecycleService {
                 ? null : profile.invalidationMovePercent());
     }
 
+    /**
+     * Looks up, outside any transaction, the Elliott structures {@link #initializeUntrackedElliott} and
+     * {@link #evaluatePending} will read. A check remembers them (AnalysisComputationScope), so those transactions
+     * then hold their connection and row locks without running a scan.
+     */
+    public void prepareElliottStructures(String symbol, TimeInterval interval, List<EnrichedCandle> enrichedCandles,
+                                         ElliottWaveDetectionService elliottWaveDetectionService) {
+        if (symbol == null || symbol.isBlank() || interval == null || enrichedCandles == null || enrichedCandles.isEmpty()
+                || elliottWaveDetectionService == null) {
+            return;
+        }
+        for (AlertEvent event : alertEventRepository.findUntrackedLifecycleEvents(
+                symbol, interval, AlertPatternFamily.ELLIOTT_WAVE, SignalLifecycleStatus.DETECTED)) {
+            elliottDetector(event, elliottWaveDetectionService)
+                    .findStructureForSignal(enrichedCandles, event.getPattern(), event.getSignalCandleTimestamp());
+        }
+        for (AlertEvent event : openEvents(symbol, interval)) {
+            if (!event.isElliottSignal() || event.getElliottCycleKey() == null || event.getElliottSignalStage() == null) continue;
+            elliottDetector(event, elliottWaveDetectionService)
+                    .findLatestStructureForCycle(enrichedCandles, event.getElliottCycleKey(), event.getElliottSignalStage());
+        }
+    }
+
     @Transactional
     public int initializeUntrackedElliott(
             String symbol,
@@ -259,12 +282,14 @@ public class CandlestickSignalLifecycleService {
         int initialized = 0;
         for (AlertEvent event : events) {
             ElliottWaveDetectionService detector = elliottDetector(event, elliottWaveDetectionService);
+            var structureStage = CheckTimings.enter("lifecycle: Elliott structures");
             ElliottWaveDetectionService.ElliottWaveStructure structure = detector
                     .findStructureForSignal(
                             enrichedCandles,
                             event.getPattern(),
                             event.getSignalCandleTimestamp())
                     .orElse(null);
+            structureStage.close();
             if (initializeElliottTracking(event, structure)) {
                 alertEventRepository.save(event);
                 initialized++;
@@ -438,12 +463,14 @@ public class CandlestickSignalLifecycleService {
                 || elliottWaveDetectionService == null) {
             return false;
         }
+        var structureStage = CheckTimings.enter("lifecycle: Elliott structures");
         ElliottWaveDetectionService.ElliottWaveStructure revisedStructure =
                 elliottDetector(event, elliottWaveDetectionService).findLatestStructureForCycle(
                                 enrichedCandles,
                                 event.getElliottCycleKey(),
                                 event.getElliottSignalStage())
                         .orElse(null);
+        structureStage.close();
         if (revisedStructure == null) {
             return false;
         }

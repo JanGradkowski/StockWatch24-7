@@ -144,14 +144,22 @@ public class AlertCheckJobStore {
     }
 
     public Optional<AlertCheckJob> claimNext(Duration lease) {
-        return claimNext(lease, null);
+        return claimNext(lease, 1);
+    }
+
+    /**
+     * Claims the next check while fewer than {@code parallel} run (across every worker). Two checks of the same stock,
+     * whatever their intervals, never run at once: they share daily and 60-minute candles and their refreshes.
+     */
+    public Optional<AlertCheckJob> claimNext(Duration lease, int parallel) {
+        return claimNext(lease, null, parallel);
     }
 
     Optional<AlertCheckJob> claimNextForSymbol(Duration lease, String symbol) {
-        return claimNext(lease, symbol);
+        return claimNext(lease, symbol, 1);
     }
 
-    private Optional<AlertCheckJob> claimNext(Duration lease, String symbol) {
+    private Optional<AlertCheckJob> claimNext(Duration lease, String symbol, int parallel) {
         List<AlertCheckJob> jobs = jdbcTemplate.query(
                 """
                 with claim_gate as materialized (
@@ -163,16 +171,24 @@ public class AlertCheckJobStore {
                       and (cast(? as varchar) is null or candidate_job.symbol = ?)
                       and ((candidate_job.status = 'PENDING' and candidate_job.available_at <= current_timestamp)
                            or (candidate_job.status = 'PROCESSING' and candidate_job.lease_until <= current_timestamp))
-                      -- One technical check runs at a time across every worker.
+                      -- At most so many technical checks run at once across every worker, and never two of one stock.
+                      and (select count(*)
+                           from alert_check_jobs running_job
+                           where running_job.status = 'PROCESSING'
+                             and running_job.lease_until > current_timestamp
+                             and running_job.id <> candidate_job.id) < ?
                       and not exists (
                           select 1
                           from alert_check_jobs running_job
                           where running_job.status = 'PROCESSING'
                             and running_job.lease_until > current_timestamp
                             and running_job.id <> candidate_job.id
+                            and running_job.symbol = candidate_job.symbol
                       )
                       -- The oldest check keeps priority, except while its series waits out a data
-                      -- outage. Checks for the same series always run in schedule order.
+                      -- outage. Checks for the same series always run in schedule order. A check of
+                      -- another series holds up no one while it runs on a live lease, nor while it only
+                      -- waits for a check of its own stock to finish.
                       and not exists (
                           select 1
                           from alert_check_jobs earlier_job
@@ -181,7 +197,15 @@ public class AlertCheckJobStore {
                                 < (candidate_job.scheduled_for, candidate_job.id)
                             and ((earlier_job.symbol = candidate_job.symbol
                                   and earlier_job.interval = candidate_job.interval)
-                                 or (not earlier_job.yields_priority
+                                 or ((earlier_job.status = 'PENDING' or earlier_job.lease_until <= current_timestamp)
+                                     and not exists (
+                                         select 1
+                                         from alert_check_jobs busy_job
+                                         where busy_job.symbol = earlier_job.symbol
+                                           and busy_job.status = 'PROCESSING'
+                                           and busy_job.lease_until > current_timestamp
+                                           and busy_job.id <> earlier_job.id)
+                                     and not earlier_job.yields_priority
                                      and not exists (
                                          select 1
                                          from alert_check_jobs outage_job
@@ -214,11 +238,29 @@ public class AlertCheckJobStore {
                         TimeInterval.valueOf(rs.getString("interval")),
                         rs.getObject("scheduled_for", OffsetDateTime.class).toInstant(),
                         rs.getInt("attempts")),
-                symbol, symbol, Math.max(1L, lease.toSeconds()));
+                symbol, symbol, Math.max(1, parallel), Math.max(1L, lease.toSeconds()));
         return jobs.stream().findFirst();
     }
 
+    private org.springframework.transaction.support.TransactionTemplate ownTransaction;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureTransactions(org.springframework.transaction.PlatformTransactionManager manager) {
+        ownTransaction = new org.springframework.transaction.support.TransactionTemplate(manager);
+        ownTransaction.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    /**
+     * Extends the lease in a transaction of its own and commits at once: a check that renews from inside a business
+     * transaction (publishing a signal) does not hold the job row's lock until that commits, so the heartbeat
+     * thread's renewal never waits on it.
+     */
     public boolean renew(AlertCheckJob job, Duration lease) {
+        if (ownTransaction == null) return extend(job, lease);
+        return Boolean.TRUE.equals(ownTransaction.execute(status -> extend(job, lease)));
+    }
+
+    private boolean extend(AlertCheckJob job, Duration lease) {
         return jdbcTemplate.update("""
             update alert_check_jobs set lease_until = current_timestamp + (? * interval '1 second')
             where id = ? and status = 'PROCESSING' and attempts = ? and lease_until > current_timestamp
@@ -286,6 +328,24 @@ public class AlertCheckJobStore {
                 """,
                 Math.max(1, maximumDeferrals), Math.max(1, maximumDeferrals), safeError, safeError,
                 Math.max(1L, retryDelay.toSeconds()), job.id(), job.attempts());
+    }
+
+    /** The next checks waiting to run, in the worker's order (for downloading their candles ahead of them). */
+    public List<AlertCheckJob> upcoming(int limit) {
+        return jdbcTemplate.query(
+                """
+                select id, symbol, interval, scheduled_for, attempts from alert_check_jobs
+                where status = 'PENDING' and available_at <= current_timestamp
+                order by scheduled_for, id
+                limit ?
+                """,
+                (rs, rowNum) -> new AlertCheckJob(
+                        rs.getLong("id"),
+                        rs.getString("symbol"),
+                        TimeInterval.valueOf(rs.getString("interval")),
+                        rs.getObject("scheduled_for", OffsetDateTime.class).toInstant(),
+                        rs.getInt("attempts")),
+                Math.max(0, limit));
     }
 
     public int pendingCount() {

@@ -143,6 +143,14 @@ public class CustomAlertEngine {
      * a missed check to the candles that existed at its original time.
      */
     public EvaluationResult evaluate(String symbol, TimeInterval interval, Instant scheduledFor) {
+        return evaluate(symbol, interval, scheduledFor, null);
+    }
+
+    /**
+     * As above, with the candles the check loaded for its built-in rules: wave counts and harmonic formations are
+     * read from these, so the built-in and custom alerts share one scan of each (null: loaded the same way here).
+     */
+    public EvaluationResult evaluate(String symbol, TimeInterval interval, Instant scheduledFor, List<Candle> checkCandles) {
         if (interval != TimeInterval.DAILY && interval != TimeInterval.WEEKLY && interval != TimeInterval.MONTHLY) {
             return new EvaluationResult(0, 0);
         }
@@ -153,14 +161,16 @@ public class CustomAlertEngine {
         int triggered = 0;
         if (!targets.isEmpty()) {
             refreshHigherTimeframes(asset.getTickerSymbol(), targets);
-            data = facts.load(asset, interval, scheduledFor == null ? null : scheduledFor.getEpochSecond());
+            data = facts.load(asset, interval, scheduledFor == null ? null : scheduledFor.getEpochSecond(), checkCandles);
             // Elliott counts validate subdivisions on the next-lower timeframe, kept fresh as the built-in check does.
             if (targets.stream().anyMatch(target -> target.definition().contains("\"family\":\"ELLIOTT_WAVE\""))) data.refreshLowerDegree();
             triggered = evaluateTargets(data, targets, false);
         }
         updateOutcomes(asset, interval, data);
         // Every scheduled check is of a followed stock: its shared snapshot and Elliott histories follow the new candle.
-        if (sharedStore != null) sharedStore.followed(asset, interval);
+        try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: shared store")) {
+            if (sharedStore != null) sharedStore.followed(asset, interval);
+        }
         return new EvaluationResult(targets.size(), triggered);
     }
 
@@ -221,6 +231,7 @@ public class CustomAlertEngine {
             User owner = owners.computeIfAbsent(target.userId(), id -> users.findById(id).orElse(null));
             if (owner == null) continue;
             try {
+                prepare(data, target, definition, owner);
                 triggered += Optional.ofNullable(transactions.execute(status ->
                         evaluateTarget(data, target, definition, owner))).orElse(0);
             } catch (RuntimeException failure) {
@@ -228,6 +239,31 @@ public class CustomAlertEngine {
             }
         }
         return triggered;
+    }
+
+    /**
+     * Works out what {@link #evaluateTarget} will read for this alert (pattern scans, outlook, filings, indicators),
+     * as judged from the state read with the targets, so its transaction holds the state row's lock without
+     * running a scan. Earlier candles are asked for exactly where the evaluation would ask for them.
+     */
+    private void prepare(CustomAlertFactsLoader.StockData data, Target target, CustomAlertDefinition definition, User owner) {
+        List<Candle> candles = data.candles();
+        if (candles.size() < 2) return;
+        if (!target.needsBaseline()) {
+            int start = firstNewCandle(candles, target.lastEvaluated());
+            if (start < 0) return;
+            if (start < candles.size() - 1) data.needEarlierCandles();
+        }
+        data.prepareFor(definition, owner);
+    }
+
+    /** The first candle after {@code lastEvaluated} to evaluate (at most {@link #MAX_CATCH_UP} back), or -1 when none is new. */
+    private static int firstNewCandle(List<Candle> candles, long lastEvaluated) {
+        int last = candles.size() - 1;
+        int start = last + 1;
+        for (int index = last; index >= 0 && candles.get(index).getTimestamp() > lastEvaluated; index--) start = index;
+        if (start > last) return -1;
+        return Math.max(1, Math.max(start, last - MAX_CATCH_UP + 1));
     }
 
     private int evaluateTarget(CustomAlertFactsLoader.StockData data, Target target, CustomAlertDefinition definition, User owner) {
@@ -267,10 +303,8 @@ public class CustomAlertEngine {
             saveBaseline(current, assetId, candles.get(last).getTimestamp(), result, triggered > 0);
             return triggered;
         }
-        int start = last + 1;
-        for (int index = last; index >= 0 && candles.get(index).getTimestamp() > current.lastEvaluated(); index--) start = index;
-        if (start > last) return 0;
-        start = Math.max(1, Math.max(start, last - MAX_CATCH_UP + 1));
+        int start = firstNewCandle(candles, current.lastEvaluated());
+        if (start < 0) return 0;
         // Earlier candles read waves as their own counts showed them (the state may have moved since the targets were read).
         if (start < last) data.needEarlierCandles();
         boolean previous = Boolean.TRUE.equals(current.lastResult());

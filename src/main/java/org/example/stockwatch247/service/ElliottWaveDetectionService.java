@@ -18,6 +18,7 @@ import java.util.Map;
 public class ElliottWaveDetectionService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ElliottWaveDetectionService.class);
     private static final BoundedTtlCache<Object, List<DevelopingImpulse>> completedPrimaryScans = new BoundedTtlCache<>(16, 600);
+    private static final BoundedTtlCache<Object, Map<String, DevelopingImpulse>> completedDevelopmentScans = new BoundedTtlCache<>(16, 600);
     private static final BoundedTtlCache<String, List<DevelopingObservation>> confluenceObservations = new BoundedTtlCache<>(512, 600);
     private static final BoundedTtlCache<SharedSubdivisionKey, List<ElliottSubdivision>> sharedSubdivisions = new BoundedTtlCache<>(512, 600);
     private record SharedSubdivisionKey(DetectionRules rules, ScoringModel scoring, int lookback,
@@ -171,6 +172,14 @@ public class ElliottWaveDetectionService {
         return new ElliottWaveDetectionService(presentSignalLookbackCandles, scoringModel, rules);
     }
 
+    /**
+     * Everything besides its inputs that a detection depends on. Detectors are created per rule, so results
+     * remembered within a check are keyed by this, not by the instance: followers with the same settings share them.
+     */
+    private List<Object> settingsKey() {
+        return List.of(detectionRules, scoringModel, presentSignalLookbackCandles, reuseCorrectionSuffixes(), rankingOnly.get());
+    }
+
     public int maximumConfirmationLagCandles() { return detectionRules.maximumConfirmationLagCandles(); }
 
     public int minimumSignalConfidence() {
@@ -252,8 +261,11 @@ public class ElliottWaveDetectionService {
 
     /** All confirmed endpoint counts; scoring and display overlap limits are not recognition rules. */
     public List<ElliottWaveStructure> findAllWaveStructures(List<EnrichedCandle> input) {
-        return PatternCandleIntegrity.enrichedSegments(input).stream()
-                .flatMap(segment -> findAllSegmentStructures(segment).stream()).toList();
+        if (input == null) return List.of();
+        // Every rule following a signal looks up its structure in the same candles.
+        return AnalysisComputationScope.memo(List.of("elliott-all-structures", settingsKey(), input),
+                () -> PatternCandleIntegrity.enrichedSegments(input).stream()
+                        .flatMap(segment -> findAllSegmentStructures(segment).stream()).toList());
     }
 
     private List<ElliottWaveStructure> findAllSegmentStructures(List<EnrichedCandle> input) {
@@ -375,6 +387,12 @@ public class ElliottWaveDetectionService {
         if (historicalCandles == null || historicalCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
+        // Each open Elliott signal of the stock looks up its cycle in the same structures.
+        return AnalysisComputationScope.memo(List.of("elliott-historical-structures", settingsKey(), historicalCandles),
+                () -> List.copyOf(computeHistoricalWaveStructures(historicalCandles)));
+    }
+
+    private List<ElliottWaveStructure> computeHistoricalWaveStructures(List<EnrichedCandle> historicalCandles) {
         List<EnrichedCandle> candles = ValidatedCandleWindow.latest(historicalCandles);
         if (candles.size() < detectionRules.minimumCandles()) {
             return List.of();
@@ -1822,7 +1840,8 @@ public class ElliottWaveDetectionService {
         return findStrictSubdivisions(parentCandles, parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, null);
     }
 
-    private List<ElliottSubdivision> findStrictSubdivisions(List<EnrichedCandle> parentCandles,
+    /** Package-private for ElliottSubdivisionEquivalenceTest, which checks every search mode. */
+    List<ElliottSubdivision> findStrictSubdivisions(List<EnrichedCandle> parentCandles,
             String parentLabel, double parentStartPrice, double parentEndPrice, boolean bestPerLabel, String bestKind) {
         if (parentCandles == null || parentLabel == null
                 || !Double.isFinite(parentStartPrice) || !Double.isFinite(parentEndPrice)
@@ -1833,30 +1852,39 @@ public class ElliottWaveDetectionService {
             var key = new SubdivisionMemoKey(ValidatedCandleWindow.latest(parentCandles), grammarLabel(parentLabel),
                     parentStartPrice, parentEndPrice, grammarDepth.get(), bestPerLabel, bestKind, rankingOnly.get());
             var memo = subdivisionMemo.get();
+            // Threads of a parallel count work each search out once between them.
+            if (memo instanceof SharedMemo<SubdivisionMemoKey, List<ElliottSubdivision>> shared) {
+                return shared.once(key, () -> searchSubdivisions(key, parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind));
+            }
             var saved = memo.get(key);
             if (saved != null) return saved;
-            SharedSubdivisionKey sharedKey = null;
-            long now = java.time.Instant.now().getEpochSecond();
-            if (bestPerLabel && key.depth() == 0 && key.candles().size() <= 2048) {
-                sharedKey = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
-                        parentLabel, key);
-                saved = sharedSubdivisions.get(sharedKey, now);
-                if (saved != null) {
-                    memo.put(key, saved);
-                    return saved;
-                }
-            }
-            long started = System.nanoTime();
-            var result = computeStrictSubdivisions(key.candles(), parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind);
+            var result = searchSubdivisions(key, parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind);
             memo.put(key, result);
-            if (sharedKey != null && System.nanoTime() - started >= 100000) {
-                var retained = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
-                        parentLabel, new SubdivisionMemoKey(List.copyOf(key.candles()), key.label(), key.start(),
-                        key.end(), key.depth(), key.bestPerLabel(), key.bestKind(), key.rankingOnly()));
-                sharedSubdivisions.put(retained, List.copyOf(result), now);
-            }
             return result;
         });
+    }
+
+    /** The search behind the per-count memo: from the cache shared by every count, or worked out and kept there. */
+    private List<ElliottSubdivision> searchSubdivisions(SubdivisionMemoKey key, String parentLabel, double parentStartPrice,
+            double parentEndPrice, boolean bestPerLabel, String bestKind) {
+        SharedSubdivisionKey sharedKey = null;
+        long now = java.time.Instant.now().getEpochSecond();
+        if (bestPerLabel && key.depth() == 0 && key.candles().size() <= 2048) {
+            sharedKey = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
+                    parentLabel, key);
+            var saved = sharedSubdivisions.get(sharedKey, now);
+            if (saved != null) return saved;
+        }
+        long started = System.nanoTime();
+        var result = computeStrictSubdivisions(key.candles(), parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind);
+        if (sharedKey != null && System.nanoTime() - started >= 100000) {
+            var retained = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
+                    parentLabel, new SubdivisionMemoKey(key.candles() instanceof ValidatedCandleWindow window
+                            ? window.frozenCopy() : List.copyOf(key.candles()), key.label(), key.start(),
+                    key.end(), key.depth(), key.bestPerLabel(), key.bestKind(), key.rankingOnly()));
+            sharedSubdivisions.put(retained, List.copyOf(result), now);
+        }
+        return result;
     }
 
     private List<ElliottSubdivision> computeStrictSubdivisions(List<EnrichedCandle> parentCandles,
@@ -1891,17 +1919,19 @@ public class ElliottWaveDetectionService {
                 }
             }
         }
-        Map<String, SubdivisionCandidate> distinct = new LinkedHashMap<>();
-        candidates.stream()
+        List<SubdivisionCandidate> ranked = candidates.stream()
                 .filter(candidate -> candidate.confidence() >= 60)
                 .sorted(Comparator.comparingInt(SubdivisionCandidate::confidence).reversed()
                         .thenComparing(Comparator.comparingInt(
                                 (SubdivisionCandidate candidate) -> candidate.pivots().getLast().index()
                                         - candidate.pivots().getFirst().index()).reversed()))
-                .forEach(candidate -> distinct.putIfAbsent(subdivisionKey(candidate), candidate));
+                .toList();
         var result = new ArrayList<ElliottSubdivision>();
         var retainedLabels = new java.util.HashSet<String>();
-        for (var candidate : distinct.values()) {
+        // The first candidate of each key, in rank order; keys are built only up to the winner.
+        var seenKeys = new java.util.HashSet<String>();
+        for (var candidate : ranked) {
+            if (!seenKeys.add(subdivisionKey(candidate))) continue;
             String candidateLabel = subdivisionLabel(candidate, label);
             if ("MOTIVE".equals(bestKind) && !candidateLabel.startsWith("Motive")
                     || "CORRECTIVE".equals(bestKind) && candidateLabel.startsWith("Motive")) continue;
@@ -2150,28 +2180,90 @@ public class ElliottWaveDetectionService {
                 recentCandles == null ? List.of() : new ArrayList<>(recentCandles),
                 lowerDegreeCandles == null ? List.of() : new ArrayList<>(lowerDegreeCandles));
         return AnalysisComputationScope.memo(key, () -> {
-            long now = java.time.Instant.now().getEpochSecond();
             var work = AnalysisWork.current();
-            String durableKey = work == null ? null : AnalysisWork.key(List.of("ELLIOTT_COMPLETED_V1", key));
-            var reused = work == null || work.runsContinuously() ? completedPrimaryScans.get(key, now) : null;
-            if (reused != null) {
-                if (work != null) work.store.write(durableKey, new CompletedScan(reused), 1);
-                return reused;
-            }
-            CompletedScan completed = work == null ? null : work.store.read(durableKey, CompletedScan.class);
-            if (completed != null) return completed.results();
-            var results = withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
+            if (work != null) return checkpointedPrimaryScan(key, work, recentCandles, lowerDegreeCandles, scanContext);
+            java.util.function.Supplier<List<DevelopingImpulse>> scan =
+                    () -> primaryScan(recentCandles, lowerDegreeCandles, scanContext);
+            if (recentCandles != null && recentCandles.size() > 2000
+                    || lowerDegreeCandles != null && lowerDegreeCandles.size() > 12000) return scan.get();
+            // Computed once across threads: a check and a page asking for the same count share one scan.
+            return completedPrimaryScans.getOrCompute(key, scan, results -> results.size() <= 1000);
+        });
+    }
+
+    /**
+     * What the primary count shows for the given developments (each named by its origin and Wave I), exactly as the
+     * full count would, by development key: each starting point owns its developments, so only theirs are extended.
+     * A development the full count has nothing for is absent.
+     */
+    public Map<String, DevelopingImpulse> findDevelopments(List<EnrichedCandle> recentCandles,
+            List<EnrichedCandle> lowerDegreeCandles, java.util.Set<String> developmentKeys) {
+        return findDevelopments(recentCandles, lowerDegreeCandles, developmentKeys, sharedScanContext());
+    }
+
+    /** As above, reusing the legs {@code scanContext} has validated (a neighbouring candle's count, say). */
+    public Map<String, DevelopingImpulse> findDevelopments(List<EnrichedCandle> recentCandles,
+            List<EnrichedCandle> lowerDegreeCandles, java.util.Set<String> developmentKeys, DevelopingScanContext scanContext) {
+        if (developmentKeys.isEmpty()) return Map.of();
+        if (AnalysisWork.current() != null) {
+            // Checkpointed scans file their state under the whole count, so they count everything.
+            return byDevelopment(findDevelopingImpulses(recentCandles, lowerDegreeCandles), developmentKeys);
+        }
+        var wanted = java.util.Set.copyOf(developmentKeys);
+        Object key = List.of("elliott-developments", detectionRules, scoringModel, presentSignalLookbackCandles,
+                reuseCorrectionSuffixes(), recentCandles == null ? List.of() : new ArrayList<>(recentCandles),
+                lowerDegreeCandles == null ? List.of() : new ArrayList<>(lowerDegreeCandles), wanted);
+        return AnalysisComputationScope.memo(key, () -> {
+            java.util.function.Supplier<Map<String, DevelopingImpulse>> scan = () -> {
+                CheckTimings.count("Elliott development scans");
+                return byDevelopment(withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
+                        recentCandles, lowerDegreeCandles, scanContext, true, wanted)), wanted);
+            };
+            if (recentCandles != null && recentCandles.size() > 2000
+                    || lowerDegreeCandles != null && lowerDegreeCandles.size() > 12000) return scan.get();
+            // Computed once across threads, as the primary scans are: a check starts it ahead on the pool.
+            return completedDevelopmentScans.getOrCompute(key, scan);
+        });
+    }
+
+    private static Map<String, DevelopingImpulse> byDevelopment(List<DevelopingImpulse> found, java.util.Set<String> wanted) {
+        Map<String, DevelopingImpulse> byKey = new LinkedHashMap<>();
+        for (DevelopingImpulse candidate : found) {
+            if (wanted.contains(candidate.developmentKey())) byKey.putIfAbsent(candidate.developmentKey(), candidate);
+        }
+        return java.util.Collections.unmodifiableMap(byKey);
+    }
+
+    /** The primary count itself, without the shared cache (package-private for ElliottParallelSeedsTest). */
+    List<DevelopingImpulse> primaryScan(List<EnrichedCandle> recentCandles,
+            List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext) {
+        CheckTimings.count("Elliott scans");
+        return withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
                 recentCandles, lowerDegreeCandles, scanContext, true)).stream()
                 .sorted(Comparator.comparingLong(DevelopingImpulse::confirmationTimestamp)
                         .thenComparingInt(candidate -> candidate.stage().progressionOrder()))
                 .toList();
-            if (work != null) work.store.write(durableKey, new CompletedScan(results), 1);
-            if (results.size() <= 1000 && (recentCandles == null || recentCandles.size() <= 2000)
-                    && (lowerDegreeCandles == null || lowerDegreeCandles.size() <= 12000)) {
-                completedPrimaryScans.put(key, results, now);
-            }
-            return results;
-        });
+    }
+
+    /** A scan inside checkpointed work: its result is read from and written to the checkpoint store. */
+    private List<DevelopingImpulse> checkpointedPrimaryScan(Object key, AnalysisWork work, List<EnrichedCandle> recentCandles,
+            List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext) {
+        long now = java.time.Instant.now().getEpochSecond();
+        String durableKey = AnalysisWork.key(List.of("ELLIOTT_COMPLETED_V1", key));
+        var reused = work.runsContinuously() ? completedPrimaryScans.get(key, now) : null;
+        if (reused != null) {
+            work.store.write(durableKey, new CompletedScan(reused), 1);
+            return reused;
+        }
+        CompletedScan completed = work.store.read(durableKey, CompletedScan.class);
+        if (completed != null) return completed.results();
+        var results = primaryScan(recentCandles, lowerDegreeCandles, scanContext);
+        work.store.write(durableKey, new CompletedScan(results), 1);
+        if (results.size() <= 1000 && (recentCandles == null || recentCandles.size() <= 2000)
+                && (lowerDegreeCandles == null || lowerDegreeCandles.size() <= 12000)) {
+            completedPrimaryScans.put(key, results, now);
+        }
+        return results;
     }
 
     private record CompletedScan(List<DevelopingImpulse> results) { }
@@ -2311,7 +2403,7 @@ public class ElliottWaveDetectionService {
 
     private List<DevelopingImpulse> computeDevelopingImpulseHypotheses(
             List<EnrichedCandle> recentCandles, List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext,
-            boolean primaryOnly, String requiredDevelopmentKey) {
+            boolean primaryOnly, java.util.Set<String> requiredDevelopmentKeys) {
         if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
@@ -2365,6 +2457,7 @@ public class ElliottWaveDetectionService {
         boolean priorRanking = rankingOnly.get();
         rankingOnly.set(primaryOnly || observationSink.get() != null);
         try {
+        List<List<Pivot>> seeds = new ArrayList<>();
         for (DevelopmentPivotSet pivotSet : pivotSets) {
             List<Pivot> pivots = pivotSet.pivots();
             for (int index = 0; index + 1 < pivots.size(); index++) {
@@ -2372,10 +2465,25 @@ public class ElliottWaveDetectionService {
                 Pivot waveOne = pivots.get(index + 1);
                 String pairKey = origin.type() + ":" + origin.index() + ':' + waveOne.index();
                 if (!seededPairs.add(pairKey)) continue;
-                if (requiredDevelopmentKey != null && !requiredDevelopmentKey.equals(
+                if (requiredDevelopmentKeys != null && !requiredDevelopmentKeys.contains(
                         (origin.type() == PivotType.LOW ? "BULLISH" : "BEARISH") + ':'
                                 + candles.get(origin.index()).timestamp() + ':' + candles.get(waveOne.index()).timestamp())) continue;
-                extendDevelopingImpulse(candles, new ArrayList<>(List.of(origin, waveOne)), allPivots,
+                seeds.add(List.of(origin, waveOne));
+            }
+        }
+        var executor = seedExecutor;
+        // A count of a few chosen developments is spread even over a handful of starting points: they are the ones
+        // still alive, each a deep search, so each gets a thread of its own.
+        boolean chosen = requiredDevelopmentKeys != null;
+        int helpers = executor == null ? 0
+                : Math.min(seedHelpers.getAsInt(), chosen ? seeds.size() - 1 : seeds.size() / 2);
+        if (helpers > 0 && primaryOnly && observationSink.get() == null && observationDelta.get() == null
+                && checkpointScan == null && seeds.size() >= (chosen ? 2 : PARALLEL_SEEDS)) {
+            extendSeedsInParallel(executor, helpers, candles, seeds, allPivots, supportByPivot, hypothesesByDevelopment, childCandles,
+                    subdivisionCache);
+        } else {
+            for (List<Pivot> seed : seeds) {
+                extendDevelopingImpulse(candles, new ArrayList<>(seed), allPivots,
                         supportByPivot, hypothesesByDevelopment, childCandles, subdivisionCache, primaryOnly, checkpointScan, expansion);
             }
         }
@@ -2396,6 +2504,215 @@ public class ElliottWaveDetectionService {
                 .toList();
     }
 
+    /** Threads a count's starting points are spread over (see {@link #runSeedsOn}); null: the calling thread only. */
+    private static volatile java.util.concurrent.Executor seedExecutor;
+    /** Fewer starting points than this are not worth handing out. */
+    private static final int PARALLEL_SEEDS = 16;
+
+    /** How many helper threads one count may use now; by default all but one of the machine's. */
+    private static volatile java.util.function.IntSupplier seedHelpers = () -> Runtime.getRuntime().availableProcessors() - 1;
+
+    /** Lets primary counts spread their starting points over {@code executor} (the analysis pool). */
+    static void runSeedsOn(java.util.concurrent.Executor executor) {
+        seedExecutor = executor;
+    }
+
+    /**
+     * Lets primary counts spread over {@code executor}, each with as many helpers as {@code helpers} allows at the
+     * time (the analysis pool shares its threads among the checks running).
+     */
+    static void runSeedsOn(java.util.concurrent.Executor executor, java.util.function.IntSupplier helpers) {
+        seedHelpers = helpers;
+        seedExecutor = executor;
+    }
+
+    static java.util.concurrent.Executor seedsRunOn() {
+        return seedExecutor;
+    }
+
+    /** Stops spreading starting points over {@code executor}, if it is still the one in use. */
+    static synchronized void stopRunningSeedsOn(java.util.concurrent.Executor executor) {
+        if (seedExecutor == executor) seedExecutor = null;
+    }
+
+    /**
+     * Extends a primary count's starting points (0/I seeds) on several threads: this one and helpers from
+     * {@code executor} take the next seed until none is left. Seeds are independent: each owns its development keys
+     * and fills its own groups, which are merged in seed order afterwards, exactly as one thread would have added
+     * them, so ranking and tie-breaking are unchanged. All threads share the validated legs and the pure memos of one count (sub-wave
+     * searches, pivot scans, leg boundaries), so each is worked out once for all of them, as on one thread; the
+     * rest of a thread's memos are its own. A helper the pool starts after the seeds are gone does nothing, and this
+     * thread never waits for one that has not started, so a busy pool cannot hold it up.
+     */
+    private void extendSeedsInParallel(java.util.concurrent.Executor executor, int helpers, List<EnrichedCandle> candles,
+            List<List<Pivot>> seeds, List<Pivot> allPivots, Map<Pivot, PivotSupport> support,
+            Map<String, DevelopingHypotheses> combined, List<EnrichedCandle> children,
+            Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> shared) {
+        var groupsBySeed = new java.util.concurrent.atomic.AtomicReferenceArray<Map<String, DevelopingHypotheses>>(seeds.size());
+        var nextSeed = new java.util.concurrent.atomic.AtomicInteger();
+        var legs = new SharedMemo<>(shared);
+        var callerMemos = new CountMemos(subdivisionMemo.get(), pivotScans.get(), boundaryPivots.get());
+        var memos = new CountMemos(new SharedMemo<>(callerMemos.subdivisions()), new SharedMemo<>(callerMemos.pivots()),
+                new SharedMemo<>(callerMemos.boundaries()));
+        var session = new SeedSession();
+        Runnable takeSeeds = () -> {
+            var expansion = new PivotExpansionIndex(allPivots, support);
+            for (int seed; (seed = nextSeed.getAndIncrement()) < seeds.size(); ) {
+                Map<String, DevelopingHypotheses> groups = new LinkedHashMap<>();
+                extendDevelopingImpulse(candles, new ArrayList<>(seeds.get(seed)), allPivots, support, groups, children,
+                        legs, true, null, expansion);
+                groupsBySeed.set(seed, groups);
+            }
+        };
+        Runnable helper = () -> {
+            if (!session.join()) return;
+            try {
+                withSubdivisionMemo(() -> {
+                    boolean prior = rankingOnly.get();
+                    rankingOnly.set(true);
+                    memos.install(this);
+                    try {
+                        grammarInput(candles);
+                        takeSeeds.run();
+                    } finally {
+                        rankingOnly.set(prior);
+                    }
+                    return null;
+                });
+            } catch (RuntimeException failure) {
+                // The seed it was on is extended again below, on the calling thread.
+            } finally {
+                session.leave();
+            }
+        };
+        try {
+            for (int started = 0; started < helpers; started++) executor.execute(helper);
+        } catch (java.util.concurrent.RejectedExecutionException stopping) {
+            // The pool is shutting down: the remaining seeds run here.
+        }
+        memos.install(this);
+        try {
+            takeSeeds.run();
+        } finally {
+            // If this thread stopped early (the check cancelled the count), the helpers take no further seeds.
+            nextSeed.set(seeds.size());
+            session.closeAndAwait();
+            callerMemos.install(this);
+            callerMemos.add(memos);
+        }
+        legs.forEach(shared::putIfAbsent);
+        for (int seed = 0; seed < seeds.size(); seed++) {
+            Map<String, DevelopingHypotheses> groups = groupsBySeed.get(seed);
+            if (groups == null) {
+                groups = new LinkedHashMap<>();
+                extendDevelopingImpulse(candles, new ArrayList<>(seeds.get(seed)), allPivots, support, groups, children,
+                        shared, true, null, new PivotExpansionIndex(allPivots, support));
+            }
+            combined.putAll(groups);
+        }
+    }
+
+    /** The pure memos of one count, as a parallel count's threads share them. */
+    private record CountMemos(Map<SubdivisionMemoKey, List<ElliottSubdivision>> subdivisions,
+                              Map<PivotScanKey, List<Pivot>> pivots, Map<BoundaryKey, java.util.Optional<Pivot>> boundaries) {
+        void install(ElliottWaveDetectionService detector) {
+            detector.subdivisionMemo.set(subdivisions);
+            detector.pivotScans.set(pivots);
+            detector.boundaryPivots.set(boundaries);
+        }
+
+        /** Keeps what {@code shared} worked out for this thread's later use. */
+        void add(CountMemos shared) {
+            if (subdivisions != null) shared.subdivisions().forEach(subdivisions::putIfAbsent);
+            if (pivots != null) shared.pivots().forEach(pivots::putIfAbsent);
+            if (boundaries != null) shared.boundaries().forEach(boundaries::putIfAbsent);
+        }
+    }
+
+    /**
+     * A memo of pure results several threads fill at once. A value is worked out once: a thread that needs one
+     * another thread is working out waits for it (no lock is held meanwhile). Results only depend on smaller pieces
+     * (a leg on the sub-legs inside it), so no two threads wait for each other; a thread that asks again for a value
+     * it is itself working out works it out directly.
+     */
+    private static final class SharedMemo<K, V> extends java.util.concurrent.ConcurrentHashMap<K, V> {
+        private record Running<V>(Thread owner, java.util.concurrent.CompletableFuture<V> result) { }
+        private final java.util.concurrent.ConcurrentHashMap<K, Running<V>> running = new java.util.concurrent.ConcurrentHashMap<>();
+
+        SharedMemo(Map<K, V> initial) {
+            if (initial != null) putAll(initial);
+        }
+
+        @Override
+        public V computeIfAbsent(K key, java.util.function.Function<? super K, ? extends V> calculation) {
+            V known = get(key);
+            return known != null ? known : once(key, () -> calculation.apply(key));
+        }
+
+        V once(K key, java.util.function.Supplier<? extends V> calculation) {
+            V known = get(key);
+            if (known != null) return known;
+            var mine = new Running<V>(Thread.currentThread(), new java.util.concurrent.CompletableFuture<>());
+            var other = running.putIfAbsent(key, mine);
+            if (other != null) {
+                if (other.owner() != Thread.currentThread()) {
+                    try {
+                        V value = other.result().join();
+                        if (value != null) return value;
+                    } catch (java.util.concurrent.CompletionException | java.util.concurrent.CancellationException failed) {
+                        // Worked out again below, so this thread reports the failure itself.
+                    }
+                }
+                return calculation.get();
+            }
+            try {
+                V value = get(key);
+                if (value == null) {
+                    value = calculation.get();
+                    if (value != null) putIfAbsent(key, value);
+                }
+                mine.result().complete(value);
+                return value;
+            } catch (RuntimeException | Error failure) {
+                mine.result().completeExceptionally(failure);
+                throw failure;
+            } finally {
+                running.remove(key, mine);
+            }
+        }
+    }
+
+    /** Helpers taking part in one parallel count; after it closes, a helper that starts late does nothing. */
+    private static final class SeedSession {
+        private int active;
+        private boolean closed;
+
+        synchronized boolean join() {
+            if (closed) return false;
+            active++;
+            return true;
+        }
+
+        synchronized void leave() {
+            active--;
+            notifyAll();
+        }
+
+        /** Waits, even when interrupted, for the helpers that joined: they read state that is merged next. */
+        synchronized void closeAndAwait() {
+            closed = true;
+            boolean interrupted = false;
+            while (active > 0) {
+                try {
+                    wait();
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
     private final ThreadLocal<String> confluenceCheckpoint = new ThreadLocal<>();
 
     List<DevelopingObservation> newConfluenceObservations(List<EnrichedCandle> current,
@@ -2411,19 +2728,30 @@ public class ElliottWaveDetectionService {
             List<EnrichedCandle> previous, DevelopingScanContext context, String inputKey) {
         String observationKey = AnalysisWork.key(List.of(inputKey, detectionRules, scoringModel,
                 presentSignalLookbackCandles, reuseCorrectionSuffixes()));
-        long now = java.time.Instant.now().getEpochSecond();
         var work = AnalysisWork.current();
+        // Computed once across threads, as the primary scans are.
+        if (work == null) return confluenceObservations.getOrCompute(observationKey,
+                () -> computeConfluenceObservations(current, previous, context, inputKey));
+        long now = java.time.Instant.now().getEpochSecond();
         String durableKey = AnalysisWork.key(List.of("ELLIOTT_CONFLUENCE_RESULT_V1", observationKey));
-        var reused = work == null || work.runsContinuously() ? confluenceObservations.get(observationKey, now) : null;
+        var reused = work.runsContinuously() ? confluenceObservations.get(observationKey, now) : null;
         if (reused != null) {
-            if (work != null) work.store.write(durableKey, new CompletedObservations(reused), 1);
+            work.store.write(durableKey, new CompletedObservations(reused), 1);
             return reused;
         }
-        CompletedObservations completed = work == null ? null : work.store.read(durableKey, CompletedObservations.class);
+        CompletedObservations completed = work.store.read(durableKey, CompletedObservations.class);
         if (completed != null) {
             confluenceObservations.put(observationKey, completed.observations(), now);
             return completed.observations();
         }
+        var observations = computeConfluenceObservations(current, previous, context, inputKey);
+        work.store.write(durableKey, new CompletedObservations(observations), 1);
+        confluenceObservations.put(observationKey, observations, now);
+        return observations;
+    }
+
+    private List<DevelopingObservation> computeConfluenceObservations(List<EnrichedCandle> current,
+            List<EnrichedCandle> previous, DevelopingScanContext context, String inputKey) {
         String saved = confluenceCheckpoint.get();
         boolean append = previous.isEmpty() || current.size() == previous.size() + 1
                 && current.subList(0, previous.size()).equals(previous);
@@ -2433,10 +2761,7 @@ public class ElliottWaveDetectionService {
             Map<String, DevelopingObservation> result = new LinkedHashMap<>();
             forEachNewDevelopingObservation(current, previous, context,
                     candidate -> result.putIfAbsent(candidate.pattern() + ":" + candidate.expectedMove(), candidate));
-            var observations = List.copyOf(result.values());
-            if (work != null) work.store.write(durableKey, new CompletedObservations(observations), 1);
-            confluenceObservations.put(observationKey, observations, now);
-            return observations;
+            return List.copyOf(result.values());
         } finally { if (saved == null) confluenceCheckpoint.remove(); else confluenceCheckpoint.set(saved); }
     }
 
@@ -3271,7 +3596,9 @@ public class ElliottWaveDetectionService {
             Pivot end,
             String label,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
-        return selectedSubdivision("STRICT", label, candles, start, end, cache,
+        var key = selectionKey("STRICT", label, candles, start, end);
+        var known = cache.get(key);
+        return known != null ? known.orElse(null) : selectedSubdivision(key, cache,
                 () -> bestStrictSubdivision(candles, lowerDegreeCandles, start, end, label));
     }
 
@@ -3282,7 +3609,9 @@ public class ElliottWaveDetectionService {
             Pivot end,
             String label,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
-        return selectedSubdivision("MOTIVE", label, candles, start, end, cache,
+        var key = selectionKey("MOTIVE", label, candles, start, end);
+        var known = cache.get(key);
+        return known != null ? known.orElse(null) : selectedSubdivision(key, cache,
                 () -> bestSubdivisionByMode(candles, lowerDegreeCandles, start, end, label, true, false));
     }
 
@@ -3294,9 +3623,10 @@ public class ElliottWaveDetectionService {
             String label,
             boolean triangleAllowed,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
-        return selectedSubdivision("CORRECTIVE", triangleAllowed ? "B" : "II", candles,
-                start, end, cache, () -> bestSubdivisionByMode(candles, lowerDegreeCandles, start, end,
-                        triangleAllowed ? "B" : "II", false, true));
+        var key = selectionKey("CORRECTIVE", triangleAllowed ? "B" : "II", candles, start, end);
+        var known = cache.get(key);
+        return known != null ? known.orElse(null) : selectedSubdivision(key, cache,
+                () -> bestSubdivisionByMode(candles, lowerDegreeCandles, start, end, triangleAllowed ? "B" : "II", false, true));
     }
 
     private ElliottSubdivision bestSubdivisionByMode(
@@ -3324,16 +3654,24 @@ public class ElliottWaveDetectionService {
             Pivot end,
             ElliottSubdivision waveTwo,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache) {
-        return selectedSubdivision("FOUR", waveTwo.structureLabel(), candles, start, end, cache,
+        var key = selectionKey("FOUR", waveTwo.structureLabel(), candles, start, end);
+        var known = cache.get(key);
+        return known != null ? known.orElse(null) : selectedSubdivision(key, cache,
                 () -> bestWaveFourSubdivision(candles, lowerDegreeCandles, start, end, waveTwo));
     }
 
-    private ElliottSubdivision selectedSubdivision(String mode, String label, List<EnrichedCandle> candles,
-            Pivot start, Pivot end,
+    /**
+     * A selection's memo key. Callers look it up before building the calculation: these lookups run for every parent
+     * hypothesis and nearly all of them find a result, so a hit allocates nothing but the key.
+     */
+    private SubdivisionSelectionKey selectionKey(String mode, String label, List<EnrichedCandle> candles, Pivot start, Pivot end) {
+        return new SubdivisionSelectionKey(selectionMode(mode), label,
+                candles.get(start.index()).timestamp(), start.price(), candles.get(end.index()).timestamp(), end.price());
+    }
+
+    private ElliottSubdivision selectedSubdivision(SubdivisionSelectionKey key,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> cache,
             java.util.function.Supplier<ElliottSubdivision> calculation) {
-        var key = new SubdivisionSelectionKey(selectionMode(mode), label,
-                candles.get(start.index()).timestamp(), start.price(), candles.get(end.index()).timestamp(), end.price());
         return cache.computeIfAbsent(key, ignored -> java.util.Optional.ofNullable(calculation.get())).orElse(null);
     }
 
@@ -3439,6 +3777,15 @@ public class ElliottWaveDetectionService {
                 && currentStage != ElliottSignalStage.WAVE_IV_END) {
             return java.util.Optional.empty();
         }
+        // Followers of the same count ask the same question within a check.
+        return AnalysisComputationScope.memo(List.of("elliott-mismatch", settingsKey(), recentCandles, currentStage,
+                List.copyOf(parentPoints)), () -> computeActionaryStructureMismatch(recentCandles, currentStage, parentPoints));
+    }
+
+    private java.util.Optional<DevelopingInvalidation> computeActionaryStructureMismatch(
+            List<EnrichedCandle> recentCandles,
+            ElliottSignalStage currentStage,
+            List<ElliottWavePoint> parentPoints) {
         List<EnrichedCandle> candles = ValidatedCandleWindow.latest(recentCandles);
         ElliottWavePoint startPoint = parentPoints.getLast();
         int startIndex = indexAtTimestamp(candles, startPoint.timestamp());
@@ -3537,6 +3884,16 @@ public class ElliottWaveDetectionService {
             String developmentKey,
             ElliottSignalStage currentStage) {
         if (developmentKey == null || currentStage == null) return false;
+        if (recentCandles == null) return computeViableDevelopingHypothesis(null, developmentKey, currentStage);
+        // Every follower's signal on the same count asks the same question within a check.
+        return AnalysisComputationScope.memo(List.of("elliott-viable", settingsKey(), recentCandles, developmentKey, currentStage),
+                () -> computeViableDevelopingHypothesis(recentCandles, developmentKey, currentStage));
+    }
+
+    private boolean computeViableDevelopingHypothesis(
+            List<EnrichedCandle> recentCandles,
+            String developmentKey,
+            ElliottSignalStage currentStage) {
         // The primary result is itself an admissible hypothesis. Usually it proves
         // viability without materializing every alternative again for each open event.
         for (DevelopingImpulse hypothesis : findDevelopingImpulses(recentCandles)) {
@@ -3544,7 +3901,7 @@ public class ElliottWaveDetectionService {
                     && viableAtStage(recentCandles, hypothesis, currentStage)) return true;
         }
         for (DevelopingImpulse hypothesis : withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
-                recentCandles, null, new DevelopingScanContext(), false, developmentKey))) {
+                recentCandles, null, new DevelopingScanContext(), false, java.util.Set.of(developmentKey)))) {
             if (viableAtStage(recentCandles, hypothesis, currentStage)) return true;
         }
         return false;
@@ -3815,15 +4172,15 @@ public class ElliottWaveDetectionService {
     private boolean canReachSelectionEnd(List<Pivot> interior, PivotType[] types, Pivot end,
             PivotContainment containment, byte[][] reachable, int position, int index) {
         if (reachable[position][index] != 0) return reachable[position][index] == 2;
-        Pivot from = interior.get(index);
+        Pivot from = containment.at(index);
         boolean found = false;
         if (position == types.length - 1) {
             found = end.index() - from.index() >= detectionRules.minimumLegSpanCandles()
                     && containment.contains(from, end);
         } else {
-            for (int next : containment.following(from)) {
+            for (int next : containment.followingAt(index)) {
                 if ((++containment.cancellationSteps & 4095) == 0) containment.cancellation.run();
-                Pivot to = interior.get(next);
+                Pivot to = containment.at(next);
                 if (to.type() == types[position + 1]
                         && to.index() - from.index() >= detectionRules.minimumLegSpanCandles()
                         && canReachSelectionEnd(interior, types, end, containment, reachable, position + 1, next)) {
@@ -3858,11 +4215,13 @@ public class ElliottWaveDetectionService {
         }
         int remaining = expectedTypes.length - position - 1;
         Pivot previous = selected.isEmpty() ? start : selected.getLast();
-        for (int index : containment.following(previous)) {
+        // The last selected pivot is the interior one just before fromIndex (see the recursive call below).
+        int[] following = selected.isEmpty() ? containment.following(start) : containment.followingAt(fromIndex - 1);
+        for (int index : following) {
             if (index < fromIndex) continue;
             if (index >= interior.size() - remaining) break;
             if ((++containment.cancellationSteps & 4095) == 0) containment.cancellation.run();
-            Pivot candidate = interior.get(index);
+            Pivot candidate = containment.at(index);
             if (candidate.type() != expectedTypes[position]
                     || candidate.index() - previous.index()
                     < detectionRules.minimumLegSpanCandles()) continue;
@@ -3903,22 +4262,54 @@ public class ElliottWaveDetectionService {
                 || diagonalAllowed && isDiagonalSubdivision(sequence, rising);
     }
 
-    /** Range extrema replace repeatedly walking the same interior pivots during enumeration. */
+    /**
+     * Range extrema replace repeatedly walking the same interior pivots during enumeration. The pivots are kept in
+     * arrays and the follow-on pivots of an interior pivot are remembered by its position: the enumeration asks for
+     * them millions of times, and hashing a pivot or searching through list views for each request cost about a
+     * quarter of a whole Elliott count.
+     */
     private static final class PivotContainment {
         private final Map<Pivot, int[]> following = new java.util.HashMap<>();
+        private final int[][] followingAt;
         private int retainedEdges;
 
         int[] following(Pivot from) {
             int[] saved = following.get(from);
             if (saved != null) return saved;
-            int[] candidates = new int[pivots.size() - lowerBound(from.index() + 1)];
+            int[] result = computeFollowing(from);
+            if (retainedEdges + result.length <= 1000000) {
+                following.put(from, result);
+                retainedEdges += result.length;
+            }
+            return result;
+        }
+
+        /** {@link #following(Pivot)} of the pivot at {@code position}. */
+        int[] followingAt(int position) {
+            int[] saved = followingAt[position];
+            if (saved != null) return saved;
+            int[] result = computeFollowing(pivots[position]);
+            if (retainedEdges + result.length <= 1000000) {
+                followingAt[position] = result;
+                retainedEdges += result.length;
+            }
+            return result;
+        }
+
+        Pivot at(int position) {
+            return pivots[position];
+        }
+
+        private int[] computeFollowing(Pivot from) {
+            int first = lowerBound(from.index() + 1);
+            int[] candidates = new int[pivots.length - first];
             int count = 0;
             double low = Double.POSITIVE_INFINITY;
             double high = Double.NEGATIVE_INFINITY;
             double maximumTolerance = Math.max(maximumAbsolutePrice, Math.abs(from.price())) * 1e-9;
-            for (int index = lowerBound(from.index() + 1); index < pivots.size(); index++) {
+            for (int index = first; index < pivots.length; index++) {
                 if ((++cancellationSteps & 4095) == 0) cancellation.run();
-                Pivot to = pivots.get(index);
+                Pivot to = pivots[index];
                 double tolerance = Math.max(Math.abs(from.price()), Math.abs(to.price())) * 1e-9;
                 boolean contains = low >= Math.min(from.price(), to.price()) - tolerance
                         && high <= Math.max(from.price(), to.price()) + tolerance;
@@ -3927,45 +4318,52 @@ public class ElliottWaveDetectionService {
                 high = Math.max(high, to.price());
                 if (contains) candidates[count++] = index;
             }
-            int[] result = java.util.Arrays.copyOf(candidates, count);
-            if (retainedEdges + count <= 1000000) {
-                following.put(from, result);
-                retainedEdges += count;
-            }
-            return result;
+            return java.util.Arrays.copyOf(candidates, count);
         }
         private final Runnable cancellation = JobLeaseGuard.cancellationCheck();
         private int cancellationSteps;
-        private final List<Pivot> pivots;
+        private final Pivot[] pivots;
+        private final int[] candleIndexes;
         private double[][] lows, highs;
         private final double[] suffixLows, suffixHighs;
         private final double maximumAbsolutePrice;
-        PivotContainment(List<Pivot> pivots) {
-            this.pivots = pivots;
-            int size = pivots.size();
+        PivotContainment(List<Pivot> pivotList) {
+            this.pivots = pivotList.toArray(Pivot[]::new);
+            int size = pivots.length;
+            followingAt = new int[size][];
+            candleIndexes = new int[size];
             double maximum = 0;
-            for (Pivot pivot : pivots) maximum = Math.max(maximum, Math.abs(pivot.price()));
+            for (int i = 0; i < size; i++) {
+                candleIndexes[i] = pivots[i].index();
+                maximum = Math.max(maximum, Math.abs(pivots[i].price()));
+            }
             maximumAbsolutePrice = maximum;
             suffixLows = new double[size + 1]; suffixHighs = new double[size + 1];
             suffixLows[size] = Double.POSITIVE_INFINITY; suffixHighs[size] = Double.NEGATIVE_INFINITY;
             for (int i = size - 1; i >= 0; i--) {
-                suffixLows[i] = Math.min(pivots.get(i).price(), suffixLows[i+1]);
-                suffixHighs[i] = Math.max(pivots.get(i).price(), suffixHighs[i+1]);
+                suffixLows[i] = Math.min(pivots[i].price(), suffixLows[i+1]);
+                suffixHighs[i] = Math.max(pivots[i].price(), suffixHighs[i+1]);
             }
         }
         private void prepareRanges() {
             if (lows != null) return;
-            int size = pivots.size();
+            int size = pivots.length;
             int levels = size == 0 ? 1 : 32 - Integer.numberOfLeadingZeros(size);
             lows = new double[levels][size]; highs = new double[levels][size];
-            for (int i = 0; i < size; i++) lows[0][i] = highs[0][i] = pivots.get(i).price();
+            for (int i = 0; i < size; i++) lows[0][i] = highs[0][i] = pivots[i].price();
             for (int k = 1; k < levels; k++) for (int i = 0; i + (1 << k) <= size; i++) {
                 lows[k][i] = Math.min(lows[k-1][i], lows[k-1][i + (1 << (k-1))]);
                 highs[k][i] = Math.max(highs[k-1][i], highs[k-1][i + (1 << (k-1))]);
             }
         }
+        /** The first position whose pivot is at or after candle {@code index} (as {@link #pivotLowerBound}). */
         private int lowerBound(int index) {
-            return pivotLowerBound(pivots, index);
+            int low = 0, high = candleIndexes.length;
+            while (low < high) {
+                int mid = (low + high) >>> 1;
+                if (candleIndexes[mid] < index) low = mid + 1; else high = mid;
+            }
+            return low;
         }
         /** Once intervening prices straddle the start, no later endpoint can
          * enclose them with that start. Use the largest possible tolerance so
@@ -3984,7 +4382,7 @@ public class ElliottWaveDetectionService {
             int first = lowerBound(from.index() + 1), end = lowerBound(to.index());
             if (first == end) return true;
             double tolerance = Math.max(Math.abs(from.price()), Math.abs(to.price())) * 1.0e-9;
-            if (end == pivots.size()) return suffixLows[first] >= Math.min(from.price(), to.price()) - tolerance
+            if (end == pivots.length) return suffixLows[first] >= Math.min(from.price(), to.price()) - tolerance
                     && suffixHighs[first] <= Math.max(from.price(), to.price()) + tolerance;
             prepareRanges();
             int level = 31 - Integer.numberOfLeadingZeros(end - first);

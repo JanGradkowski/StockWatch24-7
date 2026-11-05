@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -85,6 +86,59 @@ class ScheduledAlertServiceTest {
     }
 
     @Test
+    void theLatestCandleCompletedAtTheScheduledTimeIsJudgedPerInterval() {
+        var service = service(mock(AlertRuleRepository.class), mock(AlertEventRepository.class), mock(CandleRepository.class),
+                mock(MarketDataService.class), mock(AlertNotificationService.class));
+        service.configureCandleCompletion(new CandleCompletionService("Europe/Brussels"));
+        var zone = java.time.ZoneId.of("Europe/Brussels");
+        Instant tuesdayRun = java.time.LocalDate.of(2026, 11, 3).atStartOfDay(zone).toInstant();
+        Instant saturdayRun = java.time.LocalDate.of(2026, 10, 31).atStartOfDay(zone).toInstant();
+        Instant monthRun = java.time.LocalDate.of(2026, 11, 1).atStartOfDay(zone).toInstant();
+
+        assertThat(service.latestCompletedCandleStored(List.of(dated("1d", "2026-11-02")), TimeInterval.DAILY, tuesdayRun)).isTrue();
+        assertThat(service.latestCompletedCandleStored(List.of(dated("1d", "2026-10-30")), TimeInterval.DAILY, tuesdayRun)).isFalse();
+        assertThat(service.latestCompletedCandleStored(List.of(dated("1wk", "2026-10-26")), TimeInterval.WEEKLY, saturdayRun)).isTrue();
+        assertThat(service.latestCompletedCandleStored(List.of(dated("1wk", "2026-10-19")), TimeInterval.WEEKLY, saturdayRun)).isFalse();
+        assertThat(service.latestCompletedCandleStored(List.of(dated("1mo", "2026-10-01")), TimeInterval.MONTHLY, monthRun)).isTrue();
+        assertThat(service.latestCompletedCandleStored(List.of(dated("1mo", "2026-09-01")), TimeInterval.MONTHLY, monthRun)).isFalse();
+    }
+
+    @Test
+    void aCheckWhoseDownloadIsStillRunningProceedsOnlyWithTheLatestCandleStored() {
+        var rules = mock(AlertRuleRepository.class);
+        var candles = mock(CandleRepository.class);
+        var market = mock(MarketDataService.class);
+        var service = service(rules, mock(AlertEventRepository.class), candles, market, mock(AlertNotificationService.class));
+        service.configureCandleCompletion(new CandleCompletionService("Europe/Brussels"));
+        var chartAlerts = mock(ChartAlertService.class);
+        when(chartAlerts.evaluate("SLOW", TimeInterval.DAILY)).thenReturn(new ChartAlertService.EvaluationResult(0, 0));
+        service.configureChartAlerts(chartAlerts);
+        when(rules.findByStockAsset_TickerSymbolIgnoreCaseAndIntervalAndIsActiveTrue("SLOW", TimeInterval.DAILY)).thenReturn(List.of());
+        when(market.syncCandlesForAnalysis(anyString(), anyString(), anyInt()))
+                .thenReturn(new MarketDataService.CandleSyncResult(MarketDataService.CandleSource.DOWNLOAD_CONTINUES, 0, null));
+        List<Candle> stored = List.of(dated("1d", "2026-10-29"), dated("1d", "2026-10-30"));
+        when(candles.findBySymbolAndTimeIntervalAndTimestampLessThanOrderByTimestampDesc(eq("SLOW"), eq("1d"), any(Long.class), any()))
+                .thenReturn(stored.reversed());
+        var zone = java.time.ZoneId.of("Europe/Brussels");
+
+        // Scheduled after Monday 2 November: Friday's candle is not the latest completed one, so the check is postponed.
+        Instant afterMonday = java.time.LocalDate.of(2026, 11, 3).atStartOfDay(zone).toInstant();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.processSymbolInterval("SLOW", TimeInterval.DAILY, afterMonday))
+                .isInstanceOf(MarketDataUnavailableException.class);
+        verify(chartAlerts, never()).evaluate("SLOW", TimeInterval.DAILY);
+
+        // Scheduled after Friday 30 October: the stored candles are complete, so it runs without waiting for the download.
+        Instant afterFriday = java.time.LocalDate.of(2026, 10, 31).atStartOfDay(zone).toInstant();
+        service.processSymbolInterval("SLOW", TimeInterval.DAILY, afterFriday);
+        verify(chartAlerts).evaluate("SLOW", TimeInterval.DAILY);
+    }
+
+    private Candle dated(String interval, String date) {
+        long timestamp = java.time.LocalDate.parse(date).atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond();
+        return new Candle("SLOW", interval, timestamp, 100.0, 101.0, 99.0, 100.5, 1_000L);
+    }
+
+    @Test
     void chartAndCustomAlertsAreEvaluatedOnASymbolWithoutPatternRules() {
         var rules = mock(AlertRuleRepository.class);
         var candles = mock(CandleRepository.class);
@@ -99,14 +153,16 @@ class ScheduledAlertServiceTest {
                 .thenReturn(syntheticElliottCandles("ONLY", "1d").reversed());
 
         var customAlerts = mock(org.example.stockwatch247.service.customalert.CustomAlertEngine.class);
-        when(customAlerts.evaluate("ONLY", TimeInterval.DAILY, null))
+        when(customAlerts.evaluate(eq("ONLY"), eq(TimeInterval.DAILY), isNull(), any()))
                 .thenReturn(new org.example.stockwatch247.service.customalert.CustomAlertEngine.EvaluationResult(1, 0));
         service.configureCustomAlerts(customAlerts);
 
         service.processSymbolInterval("ONLY", TimeInterval.DAILY);
 
         verify(chartAlerts).evaluate("ONLY", TimeInterval.DAILY);
-        verify(customAlerts).evaluate("ONLY", TimeInterval.DAILY, null);
+        // The custom alerts read their wave counts and formations from the candles this check loaded.
+        verify(customAlerts).evaluate(eq("ONLY"), eq(TimeInterval.DAILY), isNull(),
+                org.mockito.ArgumentMatchers.<List<Candle>>argThat(loaded -> loaded != null && !loaded.isEmpty()));
     }
 
     @Test
@@ -137,6 +193,8 @@ class ScheduledAlertServiceTest {
 
     @Test
     void startsAtNewlyAvailableWaveThreeButDoesNotRedeliverAnOldCount() {
+        // Alone, a check counts every development on the previous candle; beside other checks only the chosen ones.
+        for (boolean sideBySide : List.of(false, true))
         for (boolean alreadyKnown : List.of(false, true)) {
             String symbol = "SAP.DE";
             var rules = mock(AlertRuleRepository.class);
@@ -155,9 +213,14 @@ class ScheduledAlertServiceTest {
                             point("II", 3, 106, "LOW"), point("III", 5, 140, "HIGH")));
             when(detector.minimumSignalConfidence()).thenReturn(75);
             when(detector.findDevelopingImpulses(parents)).thenReturn(List.of(observed));
-            when(detector.findDevelopingImpulses(parents.subList(0, 6)))
+            when(detector.findDevelopments(eq(parents.subList(0, 6)), isNull(), eq(java.util.Set.of(observed.developmentKey())), any()))
+                    .thenReturn(alreadyKnown ? java.util.Map.of(observed.developmentKey(), observed) : java.util.Map.of());
+            when(detector.findDevelopingImpulses(eq(parents.subList(0, 6)), isNull(), any()))
                     .thenReturn(alreadyKnown ? List.of(observed) : List.of());
             var service = service(rules, events, candles, market, notifications, detector);
+            var pool = mock(AnalysisPool.class);
+            when(pool.checksSideBySide()).thenReturn(sideBySide);
+            service.configureAnalysisPool(pool);
 
             service.processDevelopingElliott(symbol, TimeInterval.DAILY, List.of(rule),
                     List.of(latest), parents, latest.getTimestamp());
