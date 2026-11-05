@@ -1851,30 +1851,38 @@ public class ElliottWaveDetectionService {
             var key = new SubdivisionMemoKey(ValidatedCandleWindow.latest(parentCandles), grammarLabel(parentLabel),
                     parentStartPrice, parentEndPrice, grammarDepth.get(), bestPerLabel, bestKind, rankingOnly.get());
             var memo = subdivisionMemo.get();
+            // Threads of a parallel count work each search out once between them.
+            if (memo instanceof SharedMemo<SubdivisionMemoKey, List<ElliottSubdivision>> shared) {
+                return shared.once(key, () -> searchSubdivisions(key, parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind));
+            }
             var saved = memo.get(key);
             if (saved != null) return saved;
-            SharedSubdivisionKey sharedKey = null;
-            long now = java.time.Instant.now().getEpochSecond();
-            if (bestPerLabel && key.depth() == 0 && key.candles().size() <= 2048) {
-                sharedKey = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
-                        parentLabel, key);
-                saved = sharedSubdivisions.get(sharedKey, now);
-                if (saved != null) {
-                    memo.put(key, saved);
-                    return saved;
-                }
-            }
-            long started = System.nanoTime();
-            var result = computeStrictSubdivisions(key.candles(), parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind);
+            var result = searchSubdivisions(key, parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind);
             memo.put(key, result);
-            if (sharedKey != null && System.nanoTime() - started >= 100000) {
-                var retained = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
-                        parentLabel, new SubdivisionMemoKey(List.copyOf(key.candles()), key.label(), key.start(),
-                        key.end(), key.depth(), key.bestPerLabel(), key.bestKind(), key.rankingOnly()));
-                sharedSubdivisions.put(retained, List.copyOf(result), now);
-            }
             return result;
         });
+    }
+
+    /** The search behind the per-count memo: from the cache shared by every count, or worked out and kept there. */
+    private List<ElliottSubdivision> searchSubdivisions(SubdivisionMemoKey key, String parentLabel, double parentStartPrice,
+            double parentEndPrice, boolean bestPerLabel, String bestKind) {
+        SharedSubdivisionKey sharedKey = null;
+        long now = java.time.Instant.now().getEpochSecond();
+        if (bestPerLabel && key.depth() == 0 && key.candles().size() <= 2048) {
+            sharedKey = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
+                    parentLabel, key);
+            var saved = sharedSubdivisions.get(sharedKey, now);
+            if (saved != null) return saved;
+        }
+        long started = System.nanoTime();
+        var result = computeStrictSubdivisions(key.candles(), parentLabel, parentStartPrice, parentEndPrice, bestPerLabel, bestKind);
+        if (sharedKey != null && System.nanoTime() - started >= 100000) {
+            var retained = new SharedSubdivisionKey(detectionRules, scoringModel, presentSignalLookbackCandles,
+                    parentLabel, new SubdivisionMemoKey(List.copyOf(key.candles()), key.label(), key.start(),
+                    key.end(), key.depth(), key.bestPerLabel(), key.bestKind(), key.rankingOnly()));
+            sharedSubdivisions.put(retained, List.copyOf(result), now);
+        }
+        return result;
     }
 
     private List<ElliottSubdivision> computeStrictSubdivisions(List<EnrichedCandle> parentCandles,
@@ -2559,22 +2567,54 @@ public class ElliottWaveDetectionService {
     }
 
     /**
-     * A memo of pure results several threads fill at once. A value is worked out by the thread that asks first,
-     * without holding a lock meanwhile (rarely two work out the same one, with equal results).
+     * A memo of pure results several threads fill at once. A value is worked out once: a thread that needs one
+     * another thread is working out waits for it (no lock is held meanwhile). Results only depend on smaller pieces
+     * (a leg on the sub-legs inside it), so no two threads wait for each other; a thread that asks again for a value
+     * it is itself working out works it out directly.
      */
     private static final class SharedMemo<K, V> extends java.util.concurrent.ConcurrentHashMap<K, V> {
+        private record Running<V>(Thread owner, java.util.concurrent.CompletableFuture<V> result) { }
+        private final java.util.concurrent.ConcurrentHashMap<K, Running<V>> running = new java.util.concurrent.ConcurrentHashMap<>();
+
         SharedMemo(Map<K, V> initial) {
             if (initial != null) putAll(initial);
         }
 
         @Override
         public V computeIfAbsent(K key, java.util.function.Function<? super K, ? extends V> calculation) {
+            return once(key, () -> calculation.apply(key));
+        }
+
+        V once(K key, java.util.function.Supplier<? extends V> calculation) {
             V known = get(key);
             if (known != null) return known;
-            V value = calculation.apply(key);
-            if (value == null) return null;
-            V raced = putIfAbsent(key, value);
-            return raced != null ? raced : value;
+            var mine = new Running<V>(Thread.currentThread(), new java.util.concurrent.CompletableFuture<>());
+            var other = running.putIfAbsent(key, mine);
+            if (other != null) {
+                if (other.owner() != Thread.currentThread()) {
+                    try {
+                        V value = other.result().join();
+                        if (value != null) return value;
+                    } catch (java.util.concurrent.CompletionException | java.util.concurrent.CancellationException failed) {
+                        // Worked out again below, so this thread reports the failure itself.
+                    }
+                }
+                return calculation.get();
+            }
+            try {
+                V value = get(key);
+                if (value == null) {
+                    value = calculation.get();
+                    if (value != null) putIfAbsent(key, value);
+                }
+                mine.result().complete(value);
+                return value;
+            } catch (RuntimeException | Error failure) {
+                mine.result().completeExceptionally(failure);
+                throw failure;
+            } finally {
+                running.remove(key, mine);
+            }
         }
     }
 
