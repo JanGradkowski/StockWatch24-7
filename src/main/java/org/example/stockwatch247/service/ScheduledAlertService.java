@@ -417,17 +417,18 @@ public class ScheduledAlertService {
         }
         // Inputs larger than this are not kept by the shared count cache, so the check would scan them again itself.
         boolean shared = parents.size() >= 2 && parents.size() <= 2000;
+        List<Runnable> counts = new java.util.ArrayList<>();
         if (shared && children != null && children.size() <= 12000) {
             for (AlertRule rule : elliott.values()) {
                 ElliottWaveDetectionService detector = elliottDetector(rule);
-                running.add(analysisPool.submit(quietly(() -> {
+                counts.add(() -> {
                     var context = new ElliottWaveDetectionService.DevelopingScanContext();
                     detector.findDevelopingImpulses(parents, children.isEmpty() ? null : children, context);
                     long cutoff = parents.getLast().timestamp();
                     List<EnrichedCandle> previousChildren = children.stream().filter(c -> c.timestamp() < cutoff).toList();
                     detector.findDevelopingImpulses(parents.subList(0, parents.size() - 1),
                             previousChildren.isEmpty() ? null : previousChildren, context);
-                })));
+                });
             }
         }
         if (shared && !elliott.isEmpty()) {
@@ -435,10 +436,10 @@ public class ScheduledAlertService {
             for (AlertEvent event : alertEventRepository.findDevelopingElliottEvents(symbol, interval)) {
                 viability.putIfAbsent(elliottSettings(event.getAlertRule(), interval), elliottDetector(event.getAlertRule()));
             }
-            for (ElliottWaveDetectionService detector : viability.values()) {
-                running.add(analysisPool.submit(quietly(() -> detector.findDevelopingImpulses(parents))));
-            }
+            for (ElliottWaveDetectionService detector : viability.values()) counts.add(() -> detector.findDevelopingImpulses(parents));
         }
+        // One after the other: each count spreads over the pool itself, and the latest one is needed first.
+        if (!counts.isEmpty()) running.add(analysisPool.submit(quietly(() -> counts.forEach(Runnable::run))));
         for (AlertRule rule : harmonic.values()) {
             HarmonicPatternDetectionService detector = harmonicDetector(rule).forAlerts();
             running.add(analysisPool.submit(quietly(() -> detector.detectNewlyAvailable(candles))));

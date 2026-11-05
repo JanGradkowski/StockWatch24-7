@@ -2533,6 +2533,8 @@ public class ElliottWaveDetectionService {
         try {
             takeSeeds.run();
         } finally {
+            // If this thread stopped early (the check cancelled the count), the helpers take no further seeds.
+            nextSeed.set(seeds.size());
             session.closeAndAwait();
             callerMemos.install(this);
             callerMemos.add(memos);
