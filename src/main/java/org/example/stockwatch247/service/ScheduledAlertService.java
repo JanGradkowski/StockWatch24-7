@@ -459,9 +459,9 @@ public class ScheduledAlertService {
 
     /**
      * Starts the check's independent scans on the analysis pool, so they run while this thread works through
-     * lifecycles, plans and the other rules: each Elliott setting's latest count and then its previous-candle
-     * count (one after the other, so the second reuses the first's legs), the count that viability checks of open
-     * developing signals start from, and each harmonic setting's scans. They fill the shared scan caches, which
+     * lifecycles, plans and the other rules: each Elliott setting's latest count and then the previous candle's
+     * count of the developments it could deliver, the count that viability checks of open developing signals start
+     * from, and each harmonic setting's scans. They fill the shared scan caches, which
      * compute each scan once across threads; the check reads them from there as before, waiting for one still
      * running, so its results are unchanged.
      */
@@ -479,15 +479,15 @@ public class ScheduledAlertService {
         boolean shared = parents.size() >= 2 && parents.size() <= 2000;
         List<Runnable> counts = new java.util.ArrayList<>();
         if (shared && children != null && children.size() <= 12000) {
+            boolean chosenOnly = countsChosenDevelopments();
             for (AlertRule rule : elliott.values()) {
                 ElliottWaveDetectionService detector = elliottDetector(rule);
                 counts.add(() -> {
+                    // One context for both, so the previous candle's count reuses the legs the latest one validated.
                     var context = new ElliottWaveDetectionService.DevelopingScanContext();
-                    detector.findDevelopingImpulses(parents, children.isEmpty() ? null : children, context);
-                    long cutoff = parents.getLast().timestamp();
-                    List<EnrichedCandle> previousChildren = children.stream().filter(c -> c.timestamp() < cutoff).toList();
-                    detector.findDevelopingImpulses(parents.subList(0, parents.size() - 1),
-                            previousChildren.isEmpty() ? null : previousChildren, context);
+                    var latestCount = detector.findDevelopingImpulses(parents, children.isEmpty() ? null : children, context);
+                    var earlier = confirmedEarlier(latestCount, detector.minimumSignalConfidence(), candles.getLast().getTimestamp());
+                    if (!earlier.isEmpty()) previousDevelopments(detector, parents, children, earlier, context, chosenOnly);
                 });
             }
         }
@@ -915,11 +915,13 @@ public class ScheduledAlertService {
                             ? detector.findDevelopingImpulses(elliottCandles)
                             : detector.findDevelopingImpulses(elliottCandles, lowerDegreeElliottCandles));
             latestStage.close();
+            java.util.Set<String> confirmedEarlier = confirmedEarlier(latestCount, minimumConfidence,
+                    candles.getLast().getTimestamp());
             for (ElliottWaveDetectionService.DevelopingImpulse observed : latestCount) {
-                ElliottWaveDetectionService.DevelopingImpulse available = newlyAvailableDeveloping(
-                        observed, detector, settings, elliottCandles, lowerDegreeElliottCandles, candles.getLast());
+                if (observed.confidenceScore() < minimumConfidence) continue;
+                ElliottWaveDetectionService.DevelopingImpulse available = newlyAvailableDeveloping(observed, detector,
+                        settings, confirmedEarlier, elliottCandles, lowerDegreeElliottCandles, candles.getLast());
                 if (available == null) continue;
-                if (available.confidenceScore() < minimumConfidence) continue;
                 // The detector's preview is exact for a daily candidate at its own close; otherwise re-plan.
                 ElliottWaveDetectionService.DevelopingImpulse candidate =
                         interval == TimeInterval.DAILY && available == observed
@@ -1042,22 +1044,16 @@ public class ScheduledAlertService {
 
     private ElliottWaveDetectionService.DevelopingImpulse newlyAvailableDeveloping(
             ElliottWaveDetectionService.DevelopingImpulse observed, ElliottWaveDetectionService detector, Object settings,
-            List<EnrichedCandle> parents, List<EnrichedCandle> children, Candle latest) {
+            java.util.Set<String> confirmedEarlier, List<EnrichedCandle> parents, List<EnrichedCandle> children, Candle latest) {
         if (observed.confirmationTimestamp() == latest.getTimestamp()) return observed;
         if (observed.confirmationTimestamp() > latest.getTimestamp() || parents.size() < 2) return null;
         var previousStage = CheckTimings.enter("Elliott previous-candle count");
         // Detectors are created per rule; followers with the same settings share the previous candle's count.
-        var before = AnalysisComputationScope.memo(java.util.List.of("previous-developing-elliott", settings), () -> {
-            List<EnrichedCandle> previous = parents.subList(0, parents.size() - 1);
-            long cutoff = parents.getLast().timestamp();
-            List<EnrichedCandle> previousChildren = children == null ? List.of() : children.stream()
-                    .filter(c -> c.timestamp() < cutoff).toList();
-            return previousChildren.isEmpty() ? detector.findDevelopingImpulses(previous)
-                    : detector.findDevelopingImpulses(previous, previousChildren);
-        });
+        var before = previousDevelopments(detector, parents, children, confirmedEarlier, detector.sharedScanContext(),
+                countsChosenDevelopments()).get(observed.developmentKey());
         previousStage.close();
-        if (before.stream().anyMatch(c -> c.pattern() == observed.pattern()
-                && c.points().equals(observed.points()))) return null;
+        if (before != null && before.pattern() == observed.pattern()
+                && before.points().equals(observed.points())) return null;
         List<String> evidence = new java.util.ArrayList<>(observed.evidence());
         evidence.add("First available on this completed candle; structural confirmation was "
                 + observed.confirmationTimestamp() + ".");
@@ -1066,6 +1062,54 @@ public class ScheduledAlertService {
                 latest.getClosePrice(), observed.endpointPrice(), observed.stopLossPrice(), observed.targetPrice(),
                 observed.forecastLabel(), observed.correctionType(), observed.confidenceScore(),
                 observed.points(), evidence, observed.completedStructure());
+    }
+
+    /**
+     * The developments of {@code latestCount} that a rule with this minimum confidence could deliver and that were
+     * confirmed before the latest candle: the ones compared with the previous candle's count. A wave below the
+     * minimum is never delivered, and a newly available wave keeps its confidence.
+     */
+    private static java.util.Set<String> confirmedEarlier(List<ElliottWaveDetectionService.DevelopingImpulse> latestCount,
+            int minimumConfidence, long latestTimestamp) {
+        java.util.Set<String> developments = new java.util.LinkedHashSet<>();
+        for (ElliottWaveDetectionService.DevelopingImpulse observed : latestCount) {
+            if (observed.confidenceScore() >= minimumConfidence && observed.confirmationTimestamp() < latestTimestamp) {
+                developments.add(observed.developmentKey());
+            }
+        }
+        return developments;
+    }
+
+    /**
+     * The previous candle's count of these developments. Only the same development (wave 0 and Wave I) can show the
+     * same points as a wave counted now, so beside other checks the count extends only these, which saves the
+     * processor. A check running alone counts them all instead, spread over the whole analysis pool: that finishes
+     * sooner. Both give the same answer.
+     */
+    private static Map<String, ElliottWaveDetectionService.DevelopingImpulse> previousDevelopments(
+            ElliottWaveDetectionService detector, List<EnrichedCandle> parents, List<EnrichedCandle> children,
+            java.util.Set<String> developments, ElliottWaveDetectionService.DevelopingScanContext context, boolean chosenOnly) {
+        List<EnrichedCandle> previous = parents.subList(0, parents.size() - 1);
+        long cutoff = parents.getLast().timestamp();
+        List<EnrichedCandle> previousChildren = children == null ? List.of() : children.stream()
+                .filter(c -> c.timestamp() < cutoff).toList();
+        if (chosenOnly) {
+            return detector.findDevelopments(previous, previousChildren.isEmpty() ? null : previousChildren, developments, context);
+        }
+        Map<String, ElliottWaveDetectionService.DevelopingImpulse> chosen = new java.util.LinkedHashMap<>();
+        for (var counted : detector.findDevelopingImpulses(previous, previousChildren.isEmpty() ? null : previousChildren, context)) {
+            if (developments.contains(counted.developmentKey())) chosen.putIfAbsent(counted.developmentKey(), counted);
+        }
+        return chosen;
+    }
+
+    /**
+     * Whether this check counts only the chosen developments on the previous candle (see previousDevelopments).
+     * Decided once per check, so the counts started ahead are the ones it reads.
+     */
+    private boolean countsChosenDevelopments() {
+        return AnalysisComputationScope.memo(List.of("previous-count-chosen-developments"),
+                () -> analysisPool != null && analysisPool.checksSideBySide());
     }
 
     private boolean hasElliottCycleStageForUser(

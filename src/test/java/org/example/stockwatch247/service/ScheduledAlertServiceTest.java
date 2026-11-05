@@ -193,6 +193,8 @@ class ScheduledAlertServiceTest {
 
     @Test
     void startsAtNewlyAvailableWaveThreeButDoesNotRedeliverAnOldCount() {
+        // Alone, a check counts every development on the previous candle; beside other checks only the chosen ones.
+        for (boolean sideBySide : List.of(false, true))
         for (boolean alreadyKnown : List.of(false, true)) {
             String symbol = "SAP.DE";
             var rules = mock(AlertRuleRepository.class);
@@ -211,9 +213,14 @@ class ScheduledAlertServiceTest {
                             point("II", 3, 106, "LOW"), point("III", 5, 140, "HIGH")));
             when(detector.minimumSignalConfidence()).thenReturn(75);
             when(detector.findDevelopingImpulses(parents)).thenReturn(List.of(observed));
-            when(detector.findDevelopingImpulses(parents.subList(0, 6)))
+            when(detector.findDevelopments(eq(parents.subList(0, 6)), isNull(), eq(java.util.Set.of(observed.developmentKey())), any()))
+                    .thenReturn(alreadyKnown ? java.util.Map.of(observed.developmentKey(), observed) : java.util.Map.of());
+            when(detector.findDevelopingImpulses(eq(parents.subList(0, 6)), isNull(), any()))
                     .thenReturn(alreadyKnown ? List.of(observed) : List.of());
             var service = service(rules, events, candles, market, notifications, detector);
+            var pool = mock(AnalysisPool.class);
+            when(pool.checksSideBySide()).thenReturn(sideBySide);
+            service.configureAnalysisPool(pool);
 
             service.processDevelopingElliott(symbol, TimeInterval.DAILY, List.of(rule),
                     List.of(latest), parents, latest.getTimestamp());

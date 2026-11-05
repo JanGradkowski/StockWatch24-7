@@ -18,6 +18,7 @@ import java.util.Map;
 public class ElliottWaveDetectionService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ElliottWaveDetectionService.class);
     private static final BoundedTtlCache<Object, List<DevelopingImpulse>> completedPrimaryScans = new BoundedTtlCache<>(16, 600);
+    private static final BoundedTtlCache<Object, Map<String, DevelopingImpulse>> completedDevelopmentScans = new BoundedTtlCache<>(16, 600);
     private static final BoundedTtlCache<String, List<DevelopingObservation>> confluenceObservations = new BoundedTtlCache<>(512, 600);
     private static final BoundedTtlCache<SharedSubdivisionKey, List<ElliottSubdivision>> sharedSubdivisions = new BoundedTtlCache<>(512, 600);
     private record SharedSubdivisionKey(DetectionRules rules, ScoringModel scoring, int lookback,
@@ -2190,6 +2191,49 @@ public class ElliottWaveDetectionService {
         });
     }
 
+    /**
+     * What the primary count shows for the given developments (each named by its origin and Wave I), exactly as the
+     * full count would, by development key: each starting point owns its developments, so only theirs are extended.
+     * A development the full count has nothing for is absent.
+     */
+    public Map<String, DevelopingImpulse> findDevelopments(List<EnrichedCandle> recentCandles,
+            List<EnrichedCandle> lowerDegreeCandles, java.util.Set<String> developmentKeys) {
+        return findDevelopments(recentCandles, lowerDegreeCandles, developmentKeys, sharedScanContext());
+    }
+
+    /** As above, reusing the legs {@code scanContext} has validated (a neighbouring candle's count, say). */
+    public Map<String, DevelopingImpulse> findDevelopments(List<EnrichedCandle> recentCandles,
+            List<EnrichedCandle> lowerDegreeCandles, java.util.Set<String> developmentKeys, DevelopingScanContext scanContext) {
+        if (developmentKeys.isEmpty()) return Map.of();
+        if (AnalysisWork.current() != null) {
+            // Checkpointed scans file their state under the whole count, so they count everything.
+            return byDevelopment(findDevelopingImpulses(recentCandles, lowerDegreeCandles), developmentKeys);
+        }
+        var wanted = java.util.Set.copyOf(developmentKeys);
+        Object key = List.of("elliott-developments", detectionRules, scoringModel, presentSignalLookbackCandles,
+                reuseCorrectionSuffixes(), recentCandles == null ? List.of() : new ArrayList<>(recentCandles),
+                lowerDegreeCandles == null ? List.of() : new ArrayList<>(lowerDegreeCandles), wanted);
+        return AnalysisComputationScope.memo(key, () -> {
+            java.util.function.Supplier<Map<String, DevelopingImpulse>> scan = () -> {
+                CheckTimings.count("Elliott development scans");
+                return byDevelopment(withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
+                        recentCandles, lowerDegreeCandles, scanContext, true, wanted)), wanted);
+            };
+            if (recentCandles != null && recentCandles.size() > 2000
+                    || lowerDegreeCandles != null && lowerDegreeCandles.size() > 12000) return scan.get();
+            // Computed once across threads, as the primary scans are: a check starts it ahead on the pool.
+            return completedDevelopmentScans.getOrCompute(key, scan);
+        });
+    }
+
+    private static Map<String, DevelopingImpulse> byDevelopment(List<DevelopingImpulse> found, java.util.Set<String> wanted) {
+        Map<String, DevelopingImpulse> byKey = new LinkedHashMap<>();
+        for (DevelopingImpulse candidate : found) {
+            if (wanted.contains(candidate.developmentKey())) byKey.putIfAbsent(candidate.developmentKey(), candidate);
+        }
+        return java.util.Collections.unmodifiableMap(byKey);
+    }
+
     /** The primary count itself, without the shared cache (package-private for ElliottParallelSeedsTest). */
     List<DevelopingImpulse> primaryScan(List<EnrichedCandle> recentCandles,
             List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext) {
@@ -2359,7 +2403,7 @@ public class ElliottWaveDetectionService {
 
     private List<DevelopingImpulse> computeDevelopingImpulseHypotheses(
             List<EnrichedCandle> recentCandles, List<EnrichedCandle> lowerDegreeCandles, DevelopingScanContext scanContext,
-            boolean primaryOnly, String requiredDevelopmentKey) {
+            boolean primaryOnly, java.util.Set<String> requiredDevelopmentKeys) {
         if (recentCandles == null || recentCandles.size() < detectionRules.minimumCandles()) {
             return List.of();
         }
@@ -2421,16 +2465,20 @@ public class ElliottWaveDetectionService {
                 Pivot waveOne = pivots.get(index + 1);
                 String pairKey = origin.type() + ":" + origin.index() + ':' + waveOne.index();
                 if (!seededPairs.add(pairKey)) continue;
-                if (requiredDevelopmentKey != null && !requiredDevelopmentKey.equals(
+                if (requiredDevelopmentKeys != null && !requiredDevelopmentKeys.contains(
                         (origin.type() == PivotType.LOW ? "BULLISH" : "BEARISH") + ':'
                                 + candles.get(origin.index()).timestamp() + ':' + candles.get(waveOne.index()).timestamp())) continue;
                 seeds.add(List.of(origin, waveOne));
             }
         }
         var executor = seedExecutor;
-        int helpers = executor == null ? 0 : Math.min(seedHelpers.getAsInt(), seeds.size() / 2);
+        // A count of a few chosen developments is spread even over a handful of starting points: they are the ones
+        // still alive, each a deep search, so each gets a thread of its own.
+        boolean chosen = requiredDevelopmentKeys != null;
+        int helpers = executor == null ? 0
+                : Math.min(seedHelpers.getAsInt(), chosen ? seeds.size() - 1 : seeds.size() / 2);
         if (helpers > 0 && primaryOnly && observationSink.get() == null && observationDelta.get() == null
-                && checkpointScan == null && seeds.size() >= PARALLEL_SEEDS) {
+                && checkpointScan == null && seeds.size() >= (chosen ? 2 : PARALLEL_SEEDS)) {
             extendSeedsInParallel(executor, helpers, candles, seeds, allPivots, supportByPivot, hypothesesByDevelopment, childCandles,
                     subdivisionCache);
         } else {
@@ -3853,7 +3901,7 @@ public class ElliottWaveDetectionService {
                     && viableAtStage(recentCandles, hypothesis, currentStage)) return true;
         }
         for (DevelopingImpulse hypothesis : withSubdivisionMemo(() -> computeDevelopingImpulseHypotheses(
-                recentCandles, null, new DevelopingScanContext(), false, developmentKey))) {
+                recentCandles, null, new DevelopingScanContext(), false, java.util.Set.of(developmentKey)))) {
             if (viableAtStage(recentCandles, hypothesis, currentStage)) return true;
         }
         return false;

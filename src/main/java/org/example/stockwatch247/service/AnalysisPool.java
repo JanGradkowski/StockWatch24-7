@@ -44,6 +44,11 @@ public class AnalysisPool {
         return Math.max(0, size / Math.max(1, checks.get()) - 1);
     }
 
+    /** Whether other checks are running beside the caller's. */
+    boolean checksSideBySide() {
+        return checks.get() > 1;
+    }
+
     public Future<?> submit(Runnable work) {
         return executor.submit(work);
     }

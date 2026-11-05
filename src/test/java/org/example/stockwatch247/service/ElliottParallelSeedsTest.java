@@ -52,6 +52,51 @@ class ElliottParallelSeedsTest {
     }
 
     @Test
+    void countingSomeDevelopmentsFindsWhatTheFullCountShowsForThem() {
+        ElliottWaveDetectionService.runSeedsOn(null);
+        int compared = 0;
+        for (int series = 0; series < 12; series++) {
+            List<EnrichedCandle> parents = walk(new Random(31L * series + 5), 220 + series * 40, 86_400);
+            List<EnrichedCandle> children = series % 3 == 0 ? null : walk(new Random(97L * series + 3), parents.size() * 5, 86_400 / 5);
+            var full = new ElliottWaveDetectionService().primaryScan(parents, children,
+                    new ElliottWaveDetectionService.DevelopingScanContext());
+            var fullByKey = new java.util.LinkedHashMap<String, ElliottWaveDetectionService.DevelopingImpulse>();
+            full.forEach(development -> fullByKey.putIfAbsent(development.developmentKey(), development));
+            String absent = "BULLISH:" + parents.getFirst().timestamp() + ':' + parents.getLast().timestamp();
+            var every = new java.util.LinkedHashSet<>(fullByKey.keySet());
+            every.add(absent);
+            assertThat(new ElliottWaveDetectionService().findDevelopments(parents, children, every))
+                    .as("series %d, every development", series).isEqualTo(fullByKey);
+            // Every other development, and each one alone.
+            var some = new java.util.LinkedHashSet<String>();
+            int index = 0;
+            for (String key : fullByKey.keySet()) if (index++ % 2 == 0) some.add(key);
+            var expected = new java.util.LinkedHashMap<>(fullByKey);
+            expected.keySet().retainAll(some);
+            assertThat(new ElliottWaveDetectionService().findDevelopments(parents, children, some))
+                    .as("series %d, every other development", series).isEqualTo(expected);
+            for (var development : fullByKey.values()) {
+                assertThat(new ElliottWaveDetectionService().findDevelopments(parents, children, java.util.Set.of(development.developmentKey())))
+                        .as("series %d %s", series, development.developmentKey())
+                        .isEqualTo(java.util.Map.of(development.developmentKey(), development));
+                compared++;
+            }
+            assertThat(new ElliottWaveDetectionService().findDevelopments(parents, children, java.util.Set.of(absent))).isEmpty();
+            // The same, with the chosen developments spread over threads.
+            if (pool == null) pool = Executors.newFixedThreadPool(6);
+            ExecutorService threads = pool;
+            ElliottWaveDetectionService.runSeedsOn(threads::execute);
+            BoundedTtlCache.expireAll(); // so the counts are worked out again, not read from the shared cache
+            assertThat(new ElliottWaveDetectionService().findDevelopments(parents, children, every))
+                    .as("series %d, every development on threads", series).isEqualTo(fullByKey);
+            assertThat(new ElliottWaveDetectionService().findDevelopments(parents, children, some))
+                    .as("series %d, every other development on threads", series).isEqualTo(expected);
+            ElliottWaveDetectionService.runSeedsOn(null);
+        }
+        assertThat(compared).as("developments compared, so the comparison is not of empty results").isGreaterThan(5);
+    }
+
+    @Test
     void aPoolThatRunsNothingLeavesEverySeedToTheCallingThread() {
         List<EnrichedCandle> parents = walk(new Random(11), 400, 86_400);
         ElliottWaveDetectionService.runSeedsOn(null);
