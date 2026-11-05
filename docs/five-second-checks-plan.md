@@ -1,6 +1,6 @@
 # Plan: every stock check done in 5 seconds (v2)
 
-Date: 2026-11-03. Status: plan only, nothing implemented.
+Date: 2026-11-03. Status: steps 0–8 implemented on branch `perf/five-second-checks` (2026-11-05); every check in `ScheduledCheckBenchmarkTest` now finishes within 5 s. See [Results](#results) at the end.
 
 Three independent proposals were written and a judge compared them against the code: [A, detector algorithms](five-second-checks/proposal-a-detectors.md), [B, caching and incremental work](five-second-checks/proposal-b-caching.md) and [C, the execution pipeline](five-second-checks/proposal-c-pipeline.md). The [judge's verdict](five-second-checks/judge-verdict.md) chose C and borrowed steps from A and B; it also checks each proposal's main claims against the code, with `file:line` references. This plan is that result, updated with the owner's answers to six open questions. Every timing below is an estimate until step 0 has measured it: the project needs JDK 25, and the planning container only had JDK 21.
 
@@ -148,3 +148,28 @@ Total: about 24–32 developer days, or 5–6.5 weeks. The work can stop at any 
 ## Still open (none of this blocks starting)
 - Is the 20-core machine the production server, and how much memory does it have? The shared caches will grow a little.
 - After step 0 ships, one production log line from a 30-second check would be useful. It will show which stage is slow.
+
+## Results
+Measured with `ScheduledCheckBenchmarkTest` on a 20-thread laptop on mains power: 78 checks (6 stocks; 8 daily, 3 weekly and 2 monthly runs; 3 accounts; 25 custom alerts; 39 open developing Elliott signals). Every step left the golden outputs identical; step 5 was allowed to change custom alerts and changed none in this benchmark. Candle downloads are not timed there: the providers are replaced by stored candles.
+
+| Checks | Step 0 | Milestone A (steps 0–3) | Milestone B (4–7) | Milestone C (8) |
+|---|---|---|---|---|
+| Daily: max / median | 24.3 / 10.1 s | 10.0 / 4.0 s | 9.3 / 3.1 s | 3.0 / 1.7 s |
+| Weekly: max / median | 18.3 / 14.2 s | 14.0 / 8.4 s | 12.6 / 7.4 s | 4.1 / 3.3 s |
+| Monthly: max / median | 9.2 / 3.4 s | 4.8 / 2.0 s | 3.9 / 1.7 s | 3.1 / 1.2 s |
+| Over 5 s | 69 of 78 | 28 of 78 | 21 of 78 | 0 of 78 |
+
+Step 0 ran on the original inputs; the later columns on inputs frozen in the `benchmark_snapshot` schema, after the running application had revised some candles. Milestones B and C let the in-memory caches expire between replayed runs, as the hours between real runs do. Milestone C is the slower of two runs in a row.
+
+Where the time went, as measured:
+- **Step 0:** durable checkpoint I/O was 52% of all check time (128,000 reads and 126,000 writes over 78 checks), then the Elliott counts. Step 1 removed the checkpoints.
+- **After step 3** the Elliott count was half the time, worst on weekly checks, which validate sub-waves on about 5,000 daily candles. Custom alerts ran their own Elliott count on different inputs until step 5 (61 s over 78 checks, then 1.2 s).
+- **Step 7** followed the profile instead of the proposal's best-only search: a quarter of the count went into the helper that enumerates sub-wave pivot selections, which now uses arrays and remembers follow-on pivots by position. An old-against-new test on 10,000 random legs (`ElliottSubdivisionEquivalenceTest`) proves the results identical.
+- **Step 8** spreads a count's starting points over the analysis pool. It only paid off once the threads shared the count's memos and worked each value out once between them.
+
+Not done, under the rule to stop once every check is within 5 s: steps 9–12 (separate thread pools, interactive time limits, fewer round trips, parallel lanes) and the anchored-window fallback. Within step 5, the manual check keeps its own Elliott path (its results were not part of the approval), and the previous candle's count does not reuse yesterday's latest count, because with a window that moves every day the inputs never match exactly.
+
+Still open:
+- In production, the download is capped at 1.5 s inside a check (step 4) and usually done ahead by the prefetch lane. Weekly checks peak at about 4 s of computing here, so a check that waits the whole 1.5 s for its download can still go over 5 s.
+- The custom alerts' candlestick scan costs about 0.4 s per daily check since step 1, because a cross-day cache stopped hitting; not traced yet.
+- The production timings to watch are in the "Technical signal check completed" log line, with a warning for any check over 5 s.
