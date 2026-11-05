@@ -69,7 +69,6 @@ import static org.mockito.Mockito.when;
         "twelve-data.api-key=", "twelve-data.base-url=http://127.0.0.1:9", "yahoo-finance.enabled=false",
         "insider-activity.api-ninjas.base-url=http://127.0.0.1:9",
         "congressional-activity.congress-invests.base-url=http://127.0.0.1:9"})
-@EnabledIfSystemProperty(named = "scheduledCheckBenchmark", matches = "true")
 class ScheduledCheckBenchmarkTest {
     /** Stocks checked; MSFT, AAPL and CSCO have the longest histories, NVDA a short daily one. */
     private static final List<String> STOCKS = List.of(System.getProperty("benchmarkStocks",
@@ -101,6 +100,7 @@ class ScheduledCheckBenchmarkTest {
     }
 
     @Test
+    @EnabledIfSystemProperty(named = "scheduledCheckBenchmark", matches = "true")
     void scheduledChecks() throws Exception {
         org.assertj.core.api.Assumptions.assumeThat(jdbc.queryForObject("select to_regclass('public.candles') is not null", Boolean.class))
                 .as("needs a local database with cached candles").isTrue();
@@ -150,6 +150,148 @@ class ScheduledCheckBenchmarkTest {
             checks.onCheckCompleted(null);
             Files.writeString(OUTPUT.resolve(label + ".txt"), report);
         }
+    }
+
+    /**
+     * A whole-market run: every stock with at least 300 stored daily candles (the local database's market, frozen in
+     * market_snapshot at the first run), followed by one account with the six built-in rules, all queued at once and
+     * worked through by {@code -DmarketLanes} worker loops (default 1). Reports how long the run took, checks a
+     * minute and how much of the machine's CPU it used, with golden output as above so lane counts can be compared.
+     * {@code -DmarketRunBenchmark=true}, optionally {@code -DmarketStocks=100} and {@code -DmarketIntervals=DAILY,WEEKLY}.
+     */
+    @Test
+    @EnabledIfSystemProperty(named = "marketRunBenchmark", matches = "true")
+    void marketRun() throws Exception {
+        org.assertj.core.api.Assumptions.assumeThat(jdbc.queryForObject("select to_regclass('public.candles') is not null", Boolean.class))
+                .as("needs a local database with cached candles").isTrue();
+        Files.createDirectories(OUTPUT);
+        String label = System.getProperty("benchmarkLabel", "market");
+        int lanes = Integer.getInteger("marketLanes", 1);
+        List<TimeInterval> intervals = java.util.Arrays.stream(System.getProperty("marketIntervals", "DAILY").split(","))
+                .map(TimeInterval::valueOf).toList();
+        List<ScheduledAlertService.CheckReport> reports = Collections.synchronizedList(new ArrayList<>());
+        checks.onCheckCompleted(reports::add);
+        try {
+            List<String> symbols = setUpMarket(intervals);
+            for (TimeInterval interval : intervals) {
+                Instant run = switch (interval) {
+                    case WEEKLY -> LocalDate.of(2026, 10, 31).atStartOfDay(SCHEDULE_ZONE).toInstant();
+                    case MONTHLY -> LocalDate.of(2026, 11, 1).atStartOfDay(SCHEDULE_ZONE).toInstant();
+                    default -> dailyRun(LocalDate.of(2026, 11, 2));
+                };
+                for (String symbol : symbols) jobs.enqueue(symbol, interval, run);
+            }
+            var system = (com.sun.management.OperatingSystemMXBean) java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            long cpuBefore = system.getProcessCpuTime();
+            long started = System.nanoTime();
+            drainWithLanes(lanes);
+            double seconds = (System.nanoTime() - started) / 1e9;
+            double cpuSeconds = (system.getProcessCpuTime() - cpuBefore) / 1e9;
+            int cores = Runtime.getRuntime().availableProcessors();
+            line("Market run: %d checks of %d stocks with %d lane(s) in %.1f s, %.1f checks a minute; CPU %.0f s, %.0f%% of %d cores",
+                    reports.size(), symbols.size(), lanes, seconds, reports.size() * 60 / seconds, cpuSeconds,
+                    100 * cpuSeconds / (seconds * cores), cores);
+            for (TimeInterval interval : intervals) {
+                List<Long> times = reports.stream().filter(check -> check.interval() == interval)
+                        .map(ScheduledAlertService.CheckReport::elapsedMs).sorted().toList();
+                if (times.isEmpty()) continue;
+                line("%-8s %4d checks: max %6d ms, p95 %6d ms, median %6d ms, over 5 s: %d", interval, times.size(), times.getLast(),
+                        times.get(Math.min(times.size() - 1, (int) Math.floor(0.95 * times.size()))), times.get(times.size() / 2),
+                        times.stream().filter(time -> time > ScheduledAlertService.CHECK_TIME_LIMIT_MS).count());
+            }
+            Map<String, long[]> stages = new TreeMap<>();
+            for (ScheduledAlertService.CheckReport check : reports) {
+                check.stagesMs().forEach((stage, millis) -> stages.computeIfAbsent(stage, ignored -> new long[1])[0] += millis);
+            }
+            line("Largest stages, summed: %s", stages.entrySet().stream()
+                    .sorted(Comparator.comparingLong((Map.Entry<String, long[]> entry) -> entry.getValue()[0]).reversed()).limit(8)
+                    .map(entry -> entry.getKey() + " " + entry.getValue()[0] / 1000 + " s").toList());
+            String golden = golden();
+            Files.writeString(OUTPUT.resolve(label + "-golden.json"), golden);
+            Files.writeString(OUTPUT.resolve(label + "-checks.json"), json.writerWithDefaultPrettyPrinter().writeValueAsString(reports));
+            String expected = System.getProperty("benchmarkGolden");
+            if (expected != null && !expected.isBlank()) compareGolden(Files.readString(Path.of(expected)), golden);
+            assertThat(jdbc.queryForObject("select count(*) from alert_check_jobs where status <> 'COMPLETED'", Long.class))
+                    .as("every check completed").isZero();
+        } finally {
+            checks.onCheckCompleted(null);
+            Files.writeString(OUTPUT.resolve(label + ".txt"), report);
+        }
+    }
+
+    /** {@code lanes} worker loops take checks until none is left, as that many workers would. */
+    private void drainWithLanes(int lanes) throws Exception {
+        var stuckSince = new java.util.concurrent.atomic.AtomicLong(Long.MAX_VALUE);
+        try (var workers = java.util.concurrent.Executors.newFixedThreadPool(lanes)) {
+            List<java.util.concurrent.Future<?>> loops = new ArrayList<>();
+            for (int lane = 0; lane < lanes; lane++) {
+                loops.add(workers.submit(() -> {
+                    while (jobs.pendingCount() > 0) {
+                        long runnable = jdbc.queryForObject(
+                                "select count(*) from alert_check_jobs where status = 'PENDING' and available_at <= current_timestamp", Long.class);
+                        if (runnable == 0) {
+                            long processing = jdbc.queryForObject("select count(*) from alert_check_jobs where status = 'PROCESSING'", Long.class);
+                            if (processing == 0) {
+                                stuckSince.compareAndSet(Long.MAX_VALUE, System.nanoTime());
+                                if (System.nanoTime() - stuckSince.get() > 30_000_000_000L) {
+                                    throw new AssertionError("Checks are waiting without being runnable: " + jdbc.queryForList(
+                                            "select symbol, interval, scheduled_for, status, last_error from alert_check_jobs where status <> 'COMPLETED'"));
+                                }
+                            }
+                            Thread.sleep(20);
+                            continue;
+                        }
+                        stuckSince.set(Long.MAX_VALUE);
+                        checks.processNextQueuedCheck();
+                    }
+                    return null;
+                }));
+            }
+            for (var loop : loops) loop.get();
+        }
+    }
+
+    /** The market's stocks, candles and one account following them all; returns the stocks checked. */
+    private List<String> setUpMarket(List<TimeInterval> intervals) {
+        String eligible = "select c.symbol from %s.candles c join %s.stock_assets a on a.ticker_symbol = c.symbol"
+                + " where c.time_interval = '1d' and c.symbol not like 'ZZ%%' group by c.symbol having count(*) >= 300 order by c.symbol";
+        String[] everyone = jdbc.queryForList(eligible.formatted("public", "public"), String.class).toArray(String[]::new);
+        source = inputSchema("market_snapshot", everyone);
+        List<String> symbols = jdbc.queryForList(eligible.formatted(source, source) + " limit ?", String.class,
+                Integer.getInteger("marketStocks", 100_000));
+        String[] tickers = symbols.toArray(String[]::new);
+        long copyStarted = System.nanoTime();
+        copy("stock_assets", "p.ticker_symbol = any(?) and not exists (select 1 from stock_assets x where x.ticker_symbol = p.ticker_symbol)", (Object) tickers);
+        long weekStart = LocalDate.of(2026, 11, 2).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        long monthStart = LocalDate.of(2026, 11, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+        int candles = copy("candles", """
+                p.symbol = any(?) and (p.time_interval in ('1d', '60min') and p.timestamp < ?
+                    or p.time_interval = '1wk' and p.timestamp < ? or p.time_interval = '1mo' and p.timestamp < ?)
+                """, tickers, CUTOFF.getEpochSecond(), weekStart, monthStart);
+        line("Processors available to this JVM: %d", Runtime.getRuntime().availableProcessors());
+        line("Copied %d candles of %d stocks from %s in %.1f s", candles, symbols.size(), source, (System.nanoTime() - copyStarted) / 1e9);
+        when(twelveData.getTimeSeries(anyString(), anyString(), anyInt())).thenAnswer(call ->
+                storedBars(call.getArgument(0), call.getArgument(1), call.getArgument(2)));
+        long account = jdbc.queryForObject("""
+                insert into users (email, password_hash, first_name, last_name, is_verified)
+                values ('market-benchmark@example.com', 'test-hash', 'Market', 'Benchmark', true) returning id
+                """, Long.class);
+        for (TimeInterval interval : intervals) {
+            for (String[] rule : List.of(
+                    new String[]{"ELLIOTT_WAVE", "BUY", "ELLIOTT_BULLISH_CORRECTION"},
+                    new String[]{"ELLIOTT_WAVE", "SELL", "ELLIOTT_BEARISH_CORRECTION"},
+                    new String[]{"HARMONIC_FORMATION", "BUY", "ANY"},
+                    new String[]{"HARMONIC_FORMATION", "SELL", "ANY"},
+                    new String[]{"CANDLESTICK", "BUY", "BULLISH_ENGULFING"},
+                    new String[]{"CANDLESTICK", "SELL", "BEARISH_ENGULFING"})) {
+                jdbc.update("""
+                        insert into alert_rules (is_active, created_at, stock_asset_id, user_id, interval, target_pattern, trade_signal, pattern_family)
+                        select true, current_timestamp, id, ?, ?, ?, ?, ? from stock_assets where ticker_symbol = any(?)
+                        """, account, interval.name(), rule[2], rule[1], rule[0], tickers);
+            }
+        }
+        jdbc.execute("analyze candles, stock_assets, alert_rules, users");
+        return symbols;
     }
 
     /** A daily run starts at midnight in the schedule's zone after the trading day. */
@@ -306,23 +448,27 @@ class ScheduledCheckBenchmarkTest {
      * new snapshot. {@code -DbenchmarkSnapshot=false} reads the public schema directly.
      */
     private String inputSchema(String[] tickers) {
+        return inputSchema("benchmark_snapshot", tickers);
+    }
+
+    private String inputSchema(String snapshot, String[] tickers) {
         if (!Boolean.parseBoolean(System.getProperty("benchmarkSnapshot", "true"))) return "public";
-        if (Boolean.TRUE.equals(jdbc.queryForObject("select to_regclass('benchmark_snapshot.candles') is not null", Boolean.class))) {
-            return "benchmark_snapshot";
+        if (Boolean.TRUE.equals(jdbc.queryForObject("select to_regclass('" + snapshot + ".candles') is not null", Boolean.class))) {
+            return snapshot;
         }
         String list = String.join(",", java.util.Arrays.stream(tickers).peek(ticker -> {
-            if (!ticker.matches("[A-Z0-9.]{1,12}")) throw new IllegalArgumentException("Unexpected ticker " + ticker);
+            if (!ticker.matches("[A-Z0-9.^-]{1,12}")) throw new IllegalArgumentException("Unexpected ticker " + ticker);
         }).map(ticker -> "'" + ticker + "'").toList());
-        jdbc.execute("create schema benchmark_snapshot");
-        jdbc.execute("create table benchmark_snapshot.stock_assets as select * from public.stock_assets where ticker_symbol in (" + list + ")");
-        jdbc.execute("create table benchmark_snapshot.candles as select * from public.candles where symbol in (" + list + ")"
+        jdbc.execute("create schema " + snapshot);
+        jdbc.execute("create table " + snapshot + ".stock_assets as select * from public.stock_assets where ticker_symbol in (" + list + ")");
+        jdbc.execute("create table " + snapshot + ".candles as select * from public.candles where symbol in (" + list + ")"
                 + " and timestamp < " + CUTOFF.getEpochSecond());
         for (String table : List.of("insider_trades", "congressional_trades")) {
-            jdbc.execute("create table benchmark_snapshot." + table + " as select p.* from public." + table + " p"
-                    + " where p.stock_asset_id in (select id from benchmark_snapshot.stock_assets)");
+            jdbc.execute("create table " + snapshot + "." + table + " as select p.* from public." + table + " p"
+                    + " where p.stock_asset_id in (select id from " + snapshot + ".stock_assets)");
         }
-        line("Froze the inputs in schema benchmark_snapshot");
-        return "benchmark_snapshot";
+        line("Froze the inputs in schema %s", snapshot);
+        return snapshot;
     }
 
     // ------------------------------------------------------------------ timings
