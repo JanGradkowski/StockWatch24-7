@@ -170,6 +170,29 @@ class ReviewDurabilityIntegrationTest {
         } finally { jdbc.update("delete from alert_check_jobs where symbol=?",symbol); }
     }
 
+    @Test void parallelClaimsRunSeveralStocksButNeverTwoChecksOfOneStock() {
+        String prefix = "LANE" + UUID.randomUUID().toString().substring(0, 4).toUpperCase(java.util.Locale.ROOT);
+        try {
+            jobs.enqueue(prefix + "A", TimeInterval.DAILY, Instant.parse("2001-02-01T00:00:00Z"));
+            jobs.enqueue(prefix + "A", TimeInterval.WEEKLY, Instant.parse("2001-02-02T00:00:00Z"));
+            jobs.enqueue(prefix + "B", TimeInterval.DAILY, Instant.parse("2001-02-03T00:00:00Z"));
+            jobs.enqueue(prefix + "C", TimeInterval.DAILY, Instant.parse("2001-02-04T00:00:00Z"));
+            var first = jobs.claimNext(Duration.ofMinutes(1), 3).orElseThrow();
+            var second = jobs.claimNext(Duration.ofMinutes(1), 3).orElseThrow();
+            var third = jobs.claimNext(Duration.ofMinutes(1), 3).orElseThrow();
+            // A's weekly check waits for A's daily one; three run at once, so nothing else is claimed.
+            assertThat(List.of(first.symbol() + first.interval(), second.symbol() + second.interval(), third.symbol() + third.interval()))
+                    .containsExactly(prefix + "ADAILY", prefix + "BDAILY", prefix + "CDAILY");
+            assertThat(jobs.claimNext(Duration.ofMinutes(1), 3)).isEmpty();
+            jobs.complete(second);
+            assertThat(jobs.claimNext(Duration.ofMinutes(1), 3)).isEmpty();
+            jobs.complete(first);
+            assertThat(jobs.claimNext(Duration.ofMinutes(1), 3).orElseThrow().interval()).isEqualTo(TimeInterval.WEEKLY);
+        } finally {
+            jdbc.update("delete from alert_check_jobs where symbol like ?", prefix + "%");
+        }
+    }
+
     @Test void oldestCheckRetainsPriorityUntilCompletedIncludingWhileDeferred() {
         String first="FAIR"+UUID.randomUUID().toString().substring(0,8), second=first+"B";
         try {

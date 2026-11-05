@@ -81,9 +81,6 @@ public class ScheduledAlertService {
         if (check != null) check.stage = stage;
         log.info("Technical signal check: {} {} stage={}", symbol, interval, stage);
     }
-    @org.springframework.beans.factory.annotation.Autowired
-    private org.example.stockwatch247.service.BackgroundJobDispatcher dispatcher;
-
     private org.example.stockwatch247.service.JobLeaseGuard leaseGuard;
     @org.springframework.beans.factory.annotation.Autowired
     void setLeaseGuard(org.example.stockwatch247.service.JobLeaseGuard leaseGuard) { this.leaseGuard = leaseGuard; }
@@ -289,20 +286,81 @@ public class ScheduledAlertService {
         });
     }
 
-    @Scheduled(fixedDelayString = "${alerts.schedule.worker-delay-ms:15000}", initialDelayString = "${alerts.schedule.initial-delay-ms:30000}")
-    public void dispatchPending() { dispatcher.submit("alerts", this::processNextQueuedCheck); }
+    /** How many stocks are checked at the same time, on as many lanes of their own (never two of one stock). */
+    @Value("${alerts.schedule.parallel-checks:1}") private int parallelChecks = 1;
+    /** A lane hands its thread back after this long, so a change of settings or a shutdown is picked up. */
+    private static final long LANE_MAXIMUM_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
+    private final java.util.concurrent.atomic.AtomicInteger activeLanes = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile java.util.concurrent.ExecutorService lanes;
 
-    public void processNextQueuedCheck() {
-        if (!scheduleEnabled) {
-            return;
+    /**
+     * Starts check lanes up to {@code alerts.schedule.parallel-checks}. Each lane takes one check after another
+     * without pausing until none can be claimed; checks have threads of their own, so emails and imports never wait
+     * behind them.
+     */
+    @Scheduled(fixedDelayString = "${alerts.schedule.worker-delay-ms:15000}", initialDelayString = "${alerts.schedule.initial-delay-ms:30000}")
+    public void dispatchPending() {
+        if (!scheduleEnabled || !infrastructure.ready()) return;
+        for (int running = activeLanes.get(); running < Math.max(1, parallelChecks); running = activeLanes.get()) {
+            if (!activeLanes.compareAndSet(running, running + 1)) continue;
+            try {
+                laneExecutor().execute(this::runLane);
+            } catch (java.util.concurrent.RejectedExecutionException stopping) {
+                activeLanes.decrementAndGet();
+                return;
+            }
         }
-        var claimedJob = jobStore.claimNext(jobLease);
+    }
+
+    private void runLane() {
+        try {
+            infrastructure.run("alerts", () -> {
+                long deadline = System.nanoTime() + LANE_MAXIMUM_NANOS;
+                while (System.nanoTime() < deadline && processNextQueuedCheck()) {
+                    // Next check right away.
+                }
+            });
+        } catch (RuntimeException failure) {
+            log.error("Technical signal check lane stopped: {}", failure.getClass().getSimpleName(), failure);
+        } finally {
+            activeLanes.decrementAndGet();
+        }
+    }
+
+    private java.util.concurrent.ExecutorService laneExecutor() {
+        var executor = lanes;
+        if (executor == null) {
+            synchronized (this) {
+                if (lanes == null) {
+                    lanes = java.util.concurrent.Executors.newCachedThreadPool(
+                            Thread.ofPlatform().daemon(true).name("check-lane-", 0).factory());
+                }
+                executor = lanes;
+            }
+        }
+        return executor;
+    }
+
+    @jakarta.annotation.PreDestroy
+    void stopLanes() {
+        var executor = lanes;
+        if (executor != null) executor.shutdownNow();
+    }
+
+    /** Claims and runs the next check; false when none could be claimed. */
+    public boolean processNextQueuedCheck() {
+        if (!scheduleEnabled) {
+            return false;
+        }
+        var claimedJob = parallelChecks > 1 ? jobStore.claimNext(jobLease, parallelChecks) : jobStore.claimNext(jobLease);
         if (claimedJob.isEmpty()) {
-            return;
+            return false;
         }
         AlertCheckJobStore.AlertCheckJob job = claimedJob.get();
         var progress = new CheckProgress(job);
         var timings = CheckTimings.start("other");
+        // The pool's threads are shared among the checks running (see AnalysisPool.seedHelpers).
+        if (analysisPool != null) analysisPool.checkStarted();
         runningChecks.put(job.id(), progress);
         currentCheck.set(progress);
         log.info("Technical signal check started: {} {} scheduledFor={} attempt={}",
@@ -343,6 +401,7 @@ public class ScheduledAlertService {
             log.error("Technical signal check failed: {} {} stage={} elapsedMs={} attempt={}: {}",
                     job.symbol(), job.interval(), progress.stage, progress.elapsedMs(), job.attempts(), e.getMessage(), e);
         } finally {
+            if (analysisPool != null) analysisPool.checkEnded();
             timings.stop();
             runningChecks.remove(job.id());
             currentCheck.remove();
@@ -353,6 +412,7 @@ public class ScheduledAlertService {
                 log.info("Technical signal queue: {} pending or processing checks remain.", remainingJobs);
             }
         }
+        return true;
     }
 
     private void enqueueDueRuns(TimeInterval interval) {

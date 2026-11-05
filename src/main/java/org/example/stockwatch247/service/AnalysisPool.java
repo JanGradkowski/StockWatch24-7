@@ -16,12 +16,32 @@ import java.util.concurrent.Future;
 @Component
 public class AnalysisPool {
     private final ExecutorService executor;
+    private final int size;
+    private final java.util.concurrent.atomic.AtomicInteger checks = new java.util.concurrent.atomic.AtomicInteger();
 
     public AnalysisPool(@Value("${analysis.pool-threads:0}") int threads,
                         @Value("${analysis.parallel-seeds:true}") boolean parallelSeeds) {
-        int size = threads > 0 ? threads : Math.max(2, Runtime.getRuntime().availableProcessors() - 1);
+        size = threads > 0 ? threads : Math.max(2, Runtime.getRuntime().availableProcessors() - 1);
         executor = Executors.newFixedThreadPool(size, Thread.ofPlatform().daemon(true).name("analysis-", 0).factory());
-        if (parallelSeeds) ElliottWaveDetectionService.runSeedsOn(executor);
+        if (parallelSeeds) ElliottWaveDetectionService.runSeedsOn(executor, this::seedHelpers);
+    }
+
+    /** A check started (see {@link #seedHelpers}). */
+    void checkStarted() {
+        checks.incrementAndGet();
+    }
+
+    void checkEnded() {
+        checks.decrementAndGet();
+    }
+
+    /**
+     * Helper threads one Elliott count may take now: the pool's threads shared among the checks running. A check
+     * running alone gets nearly all of them, to finish fast; many at once (a market-wide run) get a few each,
+     * because a count spread wide spends much of its threads' time waiting on each other.
+     */
+    int seedHelpers() {
+        return Math.max(0, size / Math.max(1, checks.get()) - 1);
     }
 
     public Future<?> submit(Runnable work) {

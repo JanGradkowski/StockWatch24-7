@@ -2427,9 +2427,10 @@ public class ElliottWaveDetectionService {
             }
         }
         var executor = seedExecutor;
-        if (executor != null && primaryOnly && observationSink.get() == null && observationDelta.get() == null
+        int helpers = executor == null ? 0 : Math.min(seedHelpers.getAsInt(), seeds.size() / 2);
+        if (helpers > 0 && primaryOnly && observationSink.get() == null && observationDelta.get() == null
                 && checkpointScan == null && seeds.size() >= PARALLEL_SEEDS) {
-            extendSeedsInParallel(executor, candles, seeds, allPivots, supportByPivot, hypothesesByDevelopment, childCandles,
+            extendSeedsInParallel(executor, helpers, candles, seeds, allPivots, supportByPivot, hypothesesByDevelopment, childCandles,
                     subdivisionCache);
         } else {
             for (List<Pivot> seed : seeds) {
@@ -2459,8 +2460,20 @@ public class ElliottWaveDetectionService {
     /** Fewer starting points than this are not worth handing out. */
     private static final int PARALLEL_SEEDS = 16;
 
+    /** How many helper threads one count may use now; by default all but one of the machine's. */
+    private static volatile java.util.function.IntSupplier seedHelpers = () -> Runtime.getRuntime().availableProcessors() - 1;
+
     /** Lets primary counts spread their starting points over {@code executor} (the analysis pool). */
     static void runSeedsOn(java.util.concurrent.Executor executor) {
+        seedExecutor = executor;
+    }
+
+    /**
+     * Lets primary counts spread over {@code executor}, each with as many helpers as {@code helpers} allows at the
+     * time (the analysis pool shares its threads among the checks running).
+     */
+    static void runSeedsOn(java.util.concurrent.Executor executor, java.util.function.IntSupplier helpers) {
+        seedHelpers = helpers;
         seedExecutor = executor;
     }
 
@@ -2482,7 +2495,7 @@ public class ElliottWaveDetectionService {
      * rest of a thread's memos are its own. A helper the pool starts after the seeds are gone does nothing, and this
      * thread never waits for one that has not started, so a busy pool cannot hold it up.
      */
-    private void extendSeedsInParallel(java.util.concurrent.Executor executor, List<EnrichedCandle> candles,
+    private void extendSeedsInParallel(java.util.concurrent.Executor executor, int helpers, List<EnrichedCandle> candles,
             List<List<Pivot>> seeds, List<Pivot> allPivots, Map<Pivot, PivotSupport> support,
             Map<String, DevelopingHypotheses> combined, List<EnrichedCandle> children,
             Map<SubdivisionSelectionKey, java.util.Optional<ElliottSubdivision>> shared) {
@@ -2523,7 +2536,6 @@ public class ElliottWaveDetectionService {
                 session.leave();
             }
         };
-        int helpers = Math.min(Runtime.getRuntime().availableProcessors() - 1, seeds.size() / 2);
         try {
             for (int started = 0; started < helpers; started++) executor.execute(helper);
         } catch (java.util.concurrent.RejectedExecutionException stopping) {
