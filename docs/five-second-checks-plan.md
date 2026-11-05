@@ -1,6 +1,6 @@
 # Plan: every stock check done in 5 seconds (v2)
 
-Date: 2026-11-03. Status: steps 0–8 implemented on branch `perf/five-second-checks` (2026-11-05); every check in `ScheduledCheckBenchmarkTest` now finishes within 5 s. See [Results](#results) at the end.
+Date: 2026-11-03. Status: steps 0–8 implemented on branch `perf/five-second-checks` (2026-11-05); every check in `ScheduledCheckBenchmarkTest` now finishes within 5 s. Then, for scanning the whole market: step 12 (parallel lanes), checks on threads of their own (part of step 9) and further cuts in processor time. See [Results](#results) at the end.
 
 Three independent proposals were written and a judge compared them against the code: [A, detector algorithms](five-second-checks/proposal-a-detectors.md), [B, caching and incremental work](five-second-checks/proposal-b-caching.md) and [C, the execution pipeline](five-second-checks/proposal-c-pipeline.md). The [judge's verdict](five-second-checks/judge-verdict.md) chose C and borrowed steps from A and B; it also checks each proposal's main claims against the code, with `file:line` references. This plan is that result, updated with the owner's answers to six open questions. Every timing below is an estimate until step 0 has measured it: the project needs JDK 25, and the planning container only had JDK 21.
 
@@ -167,9 +167,32 @@ Where the time went, as measured:
 - **Step 7** followed the profile instead of the proposal's best-only search: a quarter of the count went into the helper that enumerates sub-wave pivot selections, which now uses arrays and remembers follow-on pivots by position. An old-against-new test on 10,000 random legs (`ElliottSubdivisionEquivalenceTest`) proves the results identical.
 - **Step 8** spreads a count's starting points over the analysis pool. It only paid off once the threads shared the count's memos and worked each value out once between them.
 
-Not done, under the rule to stop once every check is within 5 s: steps 9–12 (separate thread pools, interactive time limits, fewer round trips, parallel lanes) and the anchored-window fallback. Within step 5, the manual check keeps its own Elliott path (its results were not part of the approval), and the previous candle's count does not reuse yesterday's latest count, because with a window that moves every day the inputs never match exactly.
+Not done at milestone C, under the rule to stop once every check is within 5 s: steps 9–12 and the anchored-window fallback. Step 12 and part of step 9 followed for whole-market scanning ([below](#scanning-the-whole-market)). Within step 5, the manual check keeps its own Elliott path (its results were not part of the approval), and the previous candle's count does not reuse yesterday's latest count, because with a window that moves every day the inputs never match exactly.
 
 Still open:
 - In production, the download is capped at 1.5 s inside a check (step 4) and usually done ahead by the prefetch lane. Weekly checks peak at about 4 s of computing here, so a check that waits the whole 1.5 s for its download can still go over 5 s.
 - The custom alerts' candlestick scan costs about 0.4 s per daily check since step 1, because a cross-day cache stopped hitting; not traced yet.
 - The production timings to watch are in the "Technical signal check completed" log line, with a warning for any check over 5 s.
+
+### Scanning the whole market
+The goal moved from one stock in 5 s to working through a market-wide queue quickly. `ScheduledCheckBenchmarkTest.marketRun` (`-DmarketRunBenchmark=true`) queues one daily check of every stock with at least 300 stored daily candles (271 stocks, frozen in the `market_snapshot` schema), each followed through the six built-in rules, and works through them on `-DmarketLanes` lanes. Goldens were identical in every run below.
+
+| Market run, 271 daily checks | Checks a minute | Processor in use | Checks over 5 s |
+|---|---|---|---|
+| 1 lane (milestone C) | 43.0 | 21% | 2 |
+| 4 lanes (step 12) | 65.8 | 44% | 56 |
+| 4 lanes, lock-free analysis caches | 76.8 | 53% | 28 |
+| 4 lanes, previous candle counts only deliverable developments | 84.2 (80.4 without, same hour) | 58% | 21 |
+| 8 lanes, on a hot laptop | 67.3 (64.5 without the previous change; 58.7 on 4 lanes, same hour) | 71% | 174 |
+
+What changed:
+- **Lanes (step 12).** `alerts.schedule.parallel-checks` (`ALERT_PARALLEL_CHECKS`, default 1) runs that many checks at once, never two of one stock. A check that only waits for its own stock's running check no longer holds up the checks behind it. Checks run on lane threads of their own instead of the shared background dispatcher, so emails, imports and insider polling never wait behind them (part of step 9). An Elliott count spreads over the analysis pool's fair share for the checks running now.
+- **Lock-free analysis caches.** With four lanes, a profile showed the checks queueing on one lock: the shared cache of sub-wave searches hashed keys of up to 2,048 candles while holding it. Lookups now take no lock; a cached key keeps its candle window's hash; sub-wave selections allocate only on a miss. Allocation fell by about a sixth.
+- **The previous candle's count.** It only has to say whether a wave the rule could deliver (at or above its minimum confidence) was already showing, and each starting point owns its developments, so beside other checks it extends only those developments. A check running alone still counts them all, spread over the whole pool, which finishes sooner. Either way it reuses the legs the latest count validated, on whichever thread works it out.
+
+Reading these numbers:
+- More lanes trade time per check for time per queue: they share the processor, so each check takes longer while the queue empties sooner. One lane keeps every check within 5 s; a whole market's queue wants several. Production has 20 cores; the best lane count there needs measuring on that machine.
+- This laptop's speed swings by about 30% with temperature and charging (a switch to battery mid-run, then fast charging, spoiled whole runs), so only runs in the same hour compare. On a hot laptop the heaviest weekly checks reach 5–6 s with one lane, as milestone C's code does under the same conditions; back to back, the current code is the faster of the two (weekly mean 2.8 s against 3.3 s).
+- At four lanes, garbage collection took 15–19% of the processor time. The repository sets no JVM options; heap and collector settings are worth trying on the production server. A quick try of the parallel collector here was drowned out by the laptop's drift.
+- Step 11 (fewer round trips) was skipped: the database stages are about 5% of a check, and with several lanes that time overlaps with computing. Step 10 (interactive time limits) does not affect scheduled checks.
+- What would save most next changes results, so it needs the owner's approval: the anchored windows of the fallback above (proposal B's step 7). With a window that starts on a fixed boundary, today's previous-candle count is exactly yesterday's latest count, and each day's count extends the day before's.
