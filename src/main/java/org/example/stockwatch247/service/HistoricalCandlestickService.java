@@ -42,6 +42,11 @@ public class HistoricalCandlestickService {
     private static final int PRE_WINDOW_CONTEXT_CANDLES = 35;
     private static final int MINIMUM_RESULT_CANDLES = 10;
 
+    /** How many candles a pattern's formation spans, ending on its signal candle; 0 when it is not a tracked pattern. */
+    public static int formationCandles(CandlePattern pattern) {
+        return CandlestickSignalLifecyclePolicy.patternCandleCount(pattern);
+    }
+
     private final CandleRepository candleRepository;
     private final StockAssetRepository stockAssetRepository;
     private final MarketDataService marketDataService;

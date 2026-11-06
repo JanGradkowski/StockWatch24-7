@@ -708,23 +708,6 @@ public class CustomAlertService {
                 view.outcomeReturn(), view.outcomeCandles(), view.outcomeStatus(), view.ruleText(), origins);
     }
 
-    /** Stored closes around a trigger (60 candles before, up to 30 after) for its price sketch: [time, close]. */
-    @Transactional(readOnly = true)
-    public List<double[]> pricesAround(TriggerView trigger) {
-        String interval = CustomAlertFactsLoader.apiInterval(trigger.interval());
-        List<double[]> before = db.query("""
-                select timestamp, close_price from candles where symbol = ? and time_interval = ? and timestamp <= ?
-                  and close_price is not null order by timestamp desc limit 60
-                """, (row, index) -> new double[]{row.getLong(1), row.getDouble(2)}, trigger.symbol(), interval, trigger.candleTimestamp());
-        List<double[]> after = db.query("""
-                select timestamp, close_price from candles where symbol = ? and time_interval = ? and timestamp > ?
-                  and close_price is not null order by timestamp limit 30
-                """, (row, index) -> new double[]{row.getLong(1), row.getDouble(2)}, trigger.symbol(), interval, trigger.candleTimestamp());
-        List<double[]> prices = new ArrayList<>(before.reversed());
-        prices.addAll(after);
-        return prices;
-    }
-
     @Transactional
     public void setRead(User user, long eventId, boolean read) {
         int updated = db.update("""
