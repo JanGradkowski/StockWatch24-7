@@ -117,11 +117,13 @@
 
   function patternSentence(condition) {
     const direction = condition.direction || 'ANY';
-    let text = i18n.t('ca.pattern.detected', i18n.t(`ca.pattern.family.${condition.family}.${direction}`),
-      condition.window?.candles || 1);
+    const confirmed = condition.family === 'CANDLESTICK' && condition.status === 'CONFIRMED';
+    let text = i18n.t(confirmed ? 'ca.pattern.confirmedIn' : 'ca.pattern.detected',
+      i18n.t(`ca.pattern.family.${condition.family}.${direction}`), condition.window?.candles || 1);
     const details = [];
     if (condition.patterns?.length) details.push(condition.patterns.map(name => patternName(condition.family, name)).join(', '));
     if (condition.minScore != null) details.push(i18n.t('ca.pattern.minScore', condition.minScore));
+    // Triggers keep the rule as it was; before the status existed, confirmation was this extra test.
     if (condition.confirmedOnly) details.push(i18n.t('ca.pattern.confirmed'));
     if (condition.stillValid) details.push(i18n.t('ca.pattern.stillValid'));
     if (details.length) text += ` (${details.join('; ')})`;
@@ -231,7 +233,7 @@
     { id: 'oversold-bounce', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'VALUE', subject: indicator('RSI', { period: 14 }, 'value'), operator: 'BELOW', compare: value(30),
         window: { mode: 'ANY', candles: 5 } }),
-      condition('c2', { kind: 'PATTERN', family: 'CANDLESTICK', direction: 'BULLISH', patterns: [], confirmedOnly: false,
+      condition('c2', { kind: 'PATTERN', family: 'CANDLESTICK', status: 'CONFIRMED', direction: 'BULLISH', patterns: [],
         window: { mode: 'ANY', candles: 5 } })) },
     { id: 'golden-cross', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'VALUE', subject: indicator('EMA', { period: 50 }, 'value'), operator: 'CROSSES_ABOVE',

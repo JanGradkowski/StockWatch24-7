@@ -32,6 +32,7 @@ class CustomAlertMessagesTest {
                 "Close price is above 105", "RSI (14) crosses below 30 at least once in the last 3 candles",
                 "Bullish Elliott Wave signal detected in the last 5 candles. Patterns: Wave II end. Score at least 60.",
                 "Candlestick pattern detected in the last 3 candles. Patterns: Bullish Engulfing, Hammer. Confirmed patterns only.",
+                "Bullish candlestick pattern confirmed in the last 5 candles. Score at least 60.",
                 "Insiders bought in the last 30 days. At least 2 people. At least $250,000 in total. Roles: officers, directors.",
                 "Members of Congress sold in the last 45 days. Senate only.", "Automated outlook at least moderate buy",
                 "Not: Volume makes a new 20-candle high", "MACD histogram (12, 26, 9) rises for 2 candles in a row",

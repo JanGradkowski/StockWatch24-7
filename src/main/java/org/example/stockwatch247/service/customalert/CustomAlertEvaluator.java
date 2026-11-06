@@ -207,17 +207,21 @@ public final class CustomAlertEvaluator {
         int first = Math.max(0, index - condition.window().span() + 1);
         long from = candles.get(first).getTimestamp();
         long to = candles.get(index).getTimestamp();
+        boolean confirmed = condition.confirmed();
         PatternHit best = null;
+        long bestAt = 0;
         for (PatternHit hit : facts.patterns(condition)) {
-            if (hit.availableAt() < from || hit.availableAt() > to || hit.knownAt() > to) continue;
+            if (confirmed && !("CONFIRMED".equals(hit.status()) && hit.resolvedAt() != null)) continue;
+            // A confirmed condition counts the candle that reached the target; any other, the one it became known on.
+            long at = confirmed ? hit.resolvedAt() : hit.availableAt();
+            if (at < from || at > to || hit.knownAt() > to) continue;
             if (!"ANY".equals(condition.direction()) && hit.bullish() != "BULLISH".equals(condition.direction())) continue;
             if (!condition.patterns().isEmpty() && !condition.patterns().contains(hit.type())) continue;
             if (condition.minScore() != null && hit.score() < condition.minScore()) continue;
-            if (condition.confirmedOnly() && !("CONFIRMED".equals(hit.status()) && hit.resolvedAt() != null && hit.resolvedAt() <= to)) continue;
             if (condition.stillValid() && !facts.stillValid(hit, index)) continue;
-            if (best == null || hit.availableAt() > best.availableAt()
-                    || hit.availableAt() == best.availableAt() && hit.score() > best.score()) {
+            if (best == null || at > bestAt || at == bestAt && hit.score() > best.score()) {
                 best = hit;
+                bestAt = at;
             }
         }
         Map<String, Object> details = new LinkedHashMap<>();
@@ -227,10 +231,11 @@ public final class CustomAlertEvaluator {
             details.put("bullish", best.bullish());
             details.put("score", best.score());
             details.put("detectedAt", best.availableAt());
+            if (confirmed) details.put("confirmedAt", bestAt);
             details.put("anchorAt", best.anchorAt());
             details.put("price", finite(best.price()));
             if (best.status() != null) details.put("status", best.status());
-            details.put("candlesAgo", candlesBetween(candles, best.availableAt(), index));
+            details.put("candlesAgo", candlesBetween(candles, bestAt, index));
         }
         return new ConditionResult(condition.id(), condition.kind(), best != null, true, details);
     }

@@ -156,13 +156,12 @@ public final class CustomAlertText {
             default -> Character.toUpperCase(family.charAt(0)) + family.substring(1);
         };
         List<String> sentences = new ArrayList<>();
-        sentences.add(lead + " detected in the last " + condition.window().span() + " candles.");
+        sentences.add(lead + (condition.confirmed() ? " confirmed" : " detected") + " in the last " + condition.window().span() + " candles.");
         if (!condition.patterns().isEmpty()) {
             sentences.add("Patterns: " + condition.patterns().stream().map(name -> patternName(condition.family(), name))
                     .collect(Collectors.joining(", ")) + ".");
         }
         if (condition.minScore() != null) sentences.add("Score at least " + condition.minScore() + ".");
-        if (condition.confirmedOnly()) sentences.add("Confirmed patterns only.");
         if (condition.stillValid()) sentences.add("Stop not breached.");
         return String.join(" ", sentences);
     }

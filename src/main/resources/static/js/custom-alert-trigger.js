@@ -30,6 +30,7 @@
       case 'PATTERN':
         if (!facts.pattern) return i18n.t('ca.evidence.noPattern');
         return [text.patternName(condition.family, facts.type), i18n.t('ca.evidence.detected', day(facts.detectedAt)),
+          facts.confirmedAt ? i18n.t('ca.evidence.confirmed', day(facts.confirmedAt)) : null,
           facts.anchorAt && facts.anchorAt !== facts.detectedAt ? i18n.t('ca.evidence.anchor', day(facts.anchorAt)) : null,
           facts.score != null ? i18n.t('ca.evidence.score', facts.score) : null].filter(Boolean).join(' · ');
       case 'OUTLOOK':
