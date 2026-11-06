@@ -45,6 +45,8 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
             "RISING", "FALLING", "CHANGE_ABOVE", "CHANGE_BELOW", "NEW_HIGH", "NEW_LOW");
     static final List<String> FAMILIES = List.of("CANDLESTICK", "ELLIOTT_WAVE", "HARMONIC_FORMATION");
     private static final Set<String> DIRECTIONS = Set.of("BULLISH", "BEARISH", "ANY");
+    /** The lifecycle point a candlestick condition waits for. */
+    static final Set<String> PATTERN_STATUSES = Set.of("CONFIRMED", "DETECTED");
     private static final Set<String> STRENGTHS = Set.of("SLIGHT", "MODERATE", "STRONG");
     private static final Set<String> TRANSACTIONS = Set.of("PURCHASE", "SALE");
     static final Set<String> ROLES = Set.of("OFFICER", "DIRECTOR", "OWNER");
@@ -114,16 +116,19 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
     /**
      * A pattern detected (became known) within the window. {@code patterns} are CandlePattern names for
      * candlesticks, ElliottSignalStage names for Elliott waves and HarmonicPatternType names for harmonic
-     * formations; empty means any.
+     * formations; empty means any. Candlesticks also have a {@code status}: CONFIRMED (its profit target
+     * was reached within the window) or DETECTED (recognised within the window); null for other families.
      */
     public record PatternCondition(String id, boolean negate, String family, String direction, List<String> patterns,
-                                   Integer minScore, boolean confirmedOnly, boolean stillValid, Window window)
+                                   Integer minScore, String status, boolean stillValid, Window window)
             implements Condition {
         public PatternCondition {
             patterns = List.copyOf(patterns);
         }
 
         public String kind() { return "PATTERN"; }
+
+        public boolean confirmed() { return "CONFIRMED".equals(status); }
     }
 
     /** The automated technical outlook is at least {@code strength} in {@code direction} on the latest candle. */
@@ -361,10 +366,15 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
         }
         Integer minScore = null;
         if (node.hasNonNull("minScore")) minScore = integer(node.path("minScore"), 0, 100, "Enter a minimum score from 0 to 100.");
-        boolean confirmedOnly = "CANDLESTICK".equals(family) && node.path("confirmedOnly").asBoolean(false);
+        String status = null;
+        if ("CANDLESTICK".equals(family)) {
+            // Rules saved before the status existed (trigger evidence keeps them) said "confirmedOnly" or nothing.
+            status = upper(node.path("status").asString(node.path("confirmedOnly").asBoolean(false) ? "CONFIRMED" : "DETECTED"));
+            if (!PATTERN_STATUSES.contains(status)) throw new UserInputException("Choose confirmed or detected patterns.");
+        }
         boolean stillValid = "HARMONIC_FORMATION".equals(family) && node.path("stillValid").asBoolean(false);
         Window window = window(node.path("window"), true);
-        return new PatternCondition(id, negate, family, direction, patterns, minScore, confirmedOnly, stillValid, window);
+        return new PatternCondition(id, negate, family, direction, patterns, minScore, status, stillValid, window);
     }
 
     /** The names a pattern condition may list for each family. */
@@ -474,11 +484,12 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
             }
             case PatternCondition pattern -> {
                 node.put("family", pattern.family());
+                // Right after the family: V98__candlestick_confirmed_status.sql writes it in this place.
+                if (pattern.status() != null) node.put("status", pattern.status());
                 node.put("direction", pattern.direction());
                 ArrayNode names = node.putArray("patterns");
                 pattern.patterns().forEach(names::add);
                 if (pattern.minScore() != null) node.put("minScore", pattern.minScore());
-                if (pattern.confirmedOnly()) node.put("confirmedOnly", true);
                 if (pattern.stillValid()) node.put("stillValid", true);
                 node.set("window", json(pattern.window()));
             }

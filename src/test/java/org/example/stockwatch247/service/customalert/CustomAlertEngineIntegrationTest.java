@@ -276,4 +276,48 @@ class CustomAlertEngineIntegrationTest {
         alerts.setActive(owner, filings, false);
         assertThat(activityTargets.needs(readsId, "INSIDER")).as("a paused alert collects nothing").isFalse();
     }
+
+    @Test
+    void savedCandlestickConditionsSwitchToConfirmedAndStartAgain() throws Exception {
+        User owner = user();
+        String symbol = stock("EQUITY");
+        long list = watchlist(owner, "Patterns", symbol);
+        candles(List.of(symbol), 100, 101, 102);
+        long patterns = alerts.create(owner, command("Patterns", CLOSE_ABOVE_105, "BECOMES_TRUE", 0, list, false)).id();
+        long prices = alerts.create(owner, command("Prices", CLOSE_ABOVE_105, "BECOMES_TRUE", 0, list, false)).id();
+        engine.establishBaselines();
+        // Stored as the rule was written before candlestick conditions had a status.
+        jdbc.update("update custom_alerts set definition = ? where id = ?", """
+                {"version":1,"match":"ALL","groups":[{"id":"g1","match":"ANY","conditions":[\
+                {"id":"c1","kind":"PATTERN","negate":false,"family":"CANDLESTICK","direction":"BULLISH","patterns":["HAMMER"],\
+                "minScore":50,"window":{"mode":"ANY","candles":3}},\
+                {"id":"c2","kind":"PATTERN","negate":true,"family":"CANDLESTICK","direction":"ANY","patterns":[],\
+                "confirmedOnly":true,"window":{"mode":"ANY","candles":5}},\
+                {"id":"c3","kind":"PATTERN","negate":false,"family":"HARMONIC_FORMATION","direction":"ANY","patterns":[],\
+                "stillValid":true,"window":{"mode":"ANY","candles":3}}]}]}""", patterns);
+        String revision = "select revision from custom_alerts where id = ?";
+        int before = jdbc.queryForObject(revision, Integer.class, patterns);
+        int pricesBefore = jdbc.queryForObject(revision, Integer.class, prices);
+
+        String migration;
+        try (var in = getClass().getResourceAsStream("/db/migration/V98__candlestick_confirmed_status.sql")) {
+            migration = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        jdbc.execute(migration);
+        jdbc.execute(migration);
+
+        String migrated = jdbc.queryForObject("select definition from custom_alerts where id = ?", String.class, patterns);
+        var definition = CustomAlertDefinition.parse(json.readTree(migrated),
+                new org.example.stockwatch247.service.chartindicator.ChartIndicatorCatalog(), TimeInterval.DAILY);
+        assertThat(definition.conditions()).extracting(condition -> ((CustomAlertDefinition.PatternCondition) condition).status())
+                .containsExactly("CONFIRMED", "CONFIRMED", null);
+        assertThat(jdbc.queryForObject(revision, Integer.class, patterns)).as("changed once, though run twice").isEqualTo(before + 1);
+        assertThat(jdbc.queryForObject(revision, Integer.class, prices)).as("no candlestick condition").isEqualTo(pricesBefore);
+        assertThat(alerts.states(owner, patterns)).extracting(CustomAlertService.StockStateView::state).containsExactly("CHECKING");
+        assertThat(alerts.states(owner, prices)).extracting(CustomAlertService.StockStateView::state).containsExactly("NOT_MATCHING");
+
+        alerts.update(owner, patterns, command("Patterns", migrated, "BECOMES_TRUE", 0, list, false));
+        assertThat(jdbc.queryForObject(revision, Integer.class, patterns))
+                .as("written as the builder writes it, so saving it unchanged is no change").isEqualTo(before + 1);
+    }
 }

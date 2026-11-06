@@ -13,7 +13,7 @@
   const choose = (...args) => window.StockWatchLists.choose(...args);
   const el = text.element;
   // Learning-mode explanations (js.learn.<key>) used on this page.
-  const LEARN_OPTIONS = { capacity: 'customAlerts.capacity', detected: 'customAlerts.detected', direction: 'customAlerts.direction', disclosureDate: 'customAlerts.disclosureDate', filingDate: 'customAlerts.filingDate', history: 'customAlerts.history', minPeople: 'customAlerts.minPeople', minScore: 'customAlerts.minScore', negate: 'customAlerts.negate', operator: 'customAlerts.operator', outcome: 'customAlerts.outcome', outlook: 'customAlerts.outlook', timeframe: 'customAlerts.timeframe', window: 'customAlerts.window' };
+  const LEARN_OPTIONS = { capacity: 'customAlerts.capacity', confirmed: 'customAlerts.confirmed', detected: 'customAlerts.detected', direction: 'customAlerts.direction', disclosureDate: 'customAlerts.disclosureDate', filingDate: 'customAlerts.filingDate', history: 'customAlerts.history', minPeople: 'customAlerts.minPeople', minScore: 'customAlerts.minScore', negate: 'customAlerts.negate', operator: 'customAlerts.operator', outcome: 'customAlerts.outcome', outlook: 'customAlerts.outlook', status: 'customAlerts.status', timeframe: 'customAlerts.timeframe', window: 'customAlerts.window' };
   const PRICE_FIELDS = ['CLOSE', 'OPEN', 'HIGH', 'LOW', 'VOLUME'];
   const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'hlcc4'];
   const COMPARISONS = ['ABOVE', 'BELOW', 'CROSSES_ABOVE', 'CROSSES_BELOW'];
@@ -547,15 +547,37 @@
 
   function patternEditor(condition, refresh, rebuild) {
     const fields = [];
+    const candlestick = condition.family === 'CANDLESTICK';
     fields.push(field(i18n.t('ca.builder.patternFamily'), select(['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION']
       .map(family => [family, i18n.t(`ca.kind.${family}`)]), condition.family, value => {
-      condition.family = value; condition.patterns = []; condition.confirmedOnly = false; condition.stillValid = false;
+      condition.family = value; condition.patterns = []; condition.stillValid = false;
+      delete condition.confirmedOnly;
+      if (value === 'CANDLESTICK') condition.status = 'CONFIRMED'; else delete condition.status;
       rebuild();
     })));
+    // Rules saved before the status existed waited for detection unless "confirmedOnly" was ticked.
+    const status = condition.status || (condition.confirmedOnly ? 'CONFIRMED' : 'DETECTED');
+    const windowLabel = confirmed => i18n.t(confirmed ? 'ca.builder.confirmedWithin' : 'ca.builder.withinCandles');
+    const windowLearn = confirmed => confirmed ? LEARN_OPTIONS.confirmed : LEARN_OPTIONS.detected;
+    const confirmed = candlestick && status === 'CONFIRMED';
+    const windowField = field(windowLabel(confirmed), numberInput(condition.window?.candles ?? 5, { min: 1, max: catalog.maxWindow || 60, step: 1 },
+      value => { condition.window = { mode: 'ANY', candles: value }; refresh(); }), windowLearn(confirmed));
+    if (candlestick) {
+      // The status changes what the window counts from; only its label is redrawn, so the focus stays here.
+      fields.push(field(i18n.t('ca.builder.status'), select(['CONFIRMED', 'DETECTED'].map(value => [value, i18n.t(`ca.patternStatus.${value}`)]),
+        status, value => {
+          condition.status = value; delete condition.confirmedOnly;
+          const caption = windowField.querySelector('.ca-field-label');
+          const help = caption.querySelector('.learn-help');
+          caption.firstChild.textContent = windowLabel(value === 'CONFIRMED');
+          help.dataset.learn = windowLearn(value === 'CONFIRMED');
+          help.dataset.learnTitle = windowLabel(value === 'CONFIRMED');
+          refresh();
+        }), LEARN_OPTIONS.status));
+    }
     fields.push(field(i18n.t('ca.builder.direction'), select(['BULLISH', 'BEARISH', 'ANY'].map(value => [value, i18n.t(`ca.direction.${value}`)]),
       condition.direction || 'ANY', value => { condition.direction = value; refresh(); }), LEARN_OPTIONS.direction));
-    fields.push(field(i18n.t('ca.builder.withinCandles'), numberInput(condition.window?.candles ?? 5, { min: 1, max: catalog.maxWindow || 60, step: 1 },
-      value => { condition.window = { mode: 'ANY', candles: value }; refresh(); }), LEARN_OPTIONS.detected));
+    fields.push(windowField);
     fields.push(field(i18n.t('ca.builder.minScore'), numberInput(condition.minScore, { min: 0, max: 100, step: 1, placeholder: i18n.t('ca.builder.anyScore') },
       value => { if (value == null) delete condition.minScore; else condition.minScore = value; refresh(); }), LEARN_OPTIONS.minScore));
 
@@ -577,9 +599,7 @@
     }, text.patternTerm(condition.family, name))));
     chooser.append(summary, list);
     fields.push(field(i18n.t('ca.builder.patterns'), chooser));
-    if (condition.family === 'CANDLESTICK') {
-      fields.push(check(i18n.t('ca.builder.confirmedOnly'), condition.confirmedOnly, value => { condition.confirmedOnly = value; refresh(); }, 'statusConfirmed'));
-    }
+    if (candlestick) fields.push(el('p', 'wl-muted ca-field-note', i18n.t('ca.builder.statusNote')));
     if (condition.family === 'HARMONIC_FORMATION') {
       fields.push(check(i18n.t('ca.builder.stillValid'), condition.stillValid, value => { condition.stillValid = value; refresh(); }));
     }
@@ -636,7 +656,7 @@
       compare: { kind: 'VALUE', value: preview?.latestClose ? Math.round(preview.latestClose) : 100 }, window: { mode: 'LATEST' } }) },
     { key: 'priceChange', make: () => ({ kind: 'VALUE', subject: { kind: 'PRICE', field: 'CLOSE' }, operator: 'CHANGE_ABOVE', candles: 5,
       percent: 5, window: { mode: 'LATEST' } }) },
-    { key: 'candlestick', make: () => ({ kind: 'PATTERN', family: 'CANDLESTICK', direction: 'BULLISH', patterns: [], window: { mode: 'ANY', candles: 3 } }) },
+    { key: 'candlestick', make: () => ({ kind: 'PATTERN', family: 'CANDLESTICK', status: 'CONFIRMED', direction: 'BULLISH', patterns: [], window: { mode: 'ANY', candles: 3 } }) },
     { key: 'elliott', make: () => ({ kind: 'PATTERN', family: 'ELLIOTT_WAVE', direction: 'BULLISH', patterns: ['WAVE_II_END'], window: { mode: 'ANY', candles: 5 } }) },
     { key: 'harmonic', make: () => ({ kind: 'PATTERN', family: 'HARMONIC_FORMATION', direction: 'BULLISH', patterns: [], window: { mode: 'ANY', candles: 3 } }) },
     { key: 'outlook', make: () => ({ kind: 'OUTLOOK', direction: 'BUY', strength: 'MODERATE' }) },

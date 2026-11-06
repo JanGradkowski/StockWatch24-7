@@ -176,15 +176,53 @@ class CustomAlertEvaluatorTest {
         assertThat(CustomAlertEvaluator.evaluate(definition, facts, 7).matched()).as("confirmation left the window").isFalse();
     }
 
+    private static String candlestick(String status, int candles) {
+        return single("{\"id\":\"c1\",\"kind\":\"PATTERN\",\"family\":\"CANDLESTICK\"" + (status == null ? "" : ",\"status\":\"" + status + "\"")
+                + ",\"direction\":\"BULLISH\",\"window\":{\"mode\":\"ANY\",\"candles\":" + candles + "}}");
+    }
+
     @Test
-    void confirmedCandlesticksCountOnlyOnceTheirConfirmingCloseHasHappened() {
-        Stub facts = new Stub(10, 10, 10, 10, 10, 10);
+    void aConfirmedCandlestickCountsFromTheCandleThatReachedItsTarget() {
+        Stub facts = new Stub(10, 10, 10, 10, 10, 10, 10, 10);
+        // Recognised on candle 1, target reached on candle 4.
         facts.patterns.add(new PatternHit("CANDLESTICK", "BULLISH_ENGULFING", "BULLISH_ENGULFING", true, 80,
-                facts.at(1), facts.at(1), "CONFIRMED", facts.at(3), 10, null));
-        var definition = rule(single("{\"id\":\"c1\",\"kind\":\"PATTERN\",\"family\":\"CANDLESTICK\",\"direction\":\"BULLISH\","
-                + "\"confirmedOnly\":true,\"window\":{\"mode\":\"ANY\",\"candles\":5}}"));
-        assertThat(CustomAlertEvaluator.evaluate(definition, facts, 2).matched()).isFalse();
-        assertThat(CustomAlertEvaluator.evaluate(definition, facts, 3).matched()).isTrue();
+                facts.at(1), facts.at(1), "CONFIRMED", facts.at(4), 10, null));
+        var confirmed = rule(candlestick("CONFIRMED", 2));
+
+        assertThat(CustomAlertEvaluator.evaluate(confirmed, facts, 3).matched()).as("target not reached yet").isFalse();
+        var result = CustomAlertEvaluator.evaluate(confirmed, facts, 5);
+        assertThat(result.matched()).as("recognised four candles back, confirmed one back").isTrue();
+        assertThat(result.conditions().getFirst().facts()).containsEntry("detectedAt", facts.at(1))
+                .containsEntry("confirmedAt", facts.at(4)).containsEntry("candlesAgo", 1);
+        assertThat(CustomAlertEvaluator.evaluate(confirmed, facts, 6).matched()).as("confirmation left the window").isFalse();
+        assertThat(CustomAlertEvaluator.evaluate(rule(candlestick("DETECTED", 2)), facts, 5).matched())
+                .as("recognised outside the window").isFalse();
+    }
+
+    @Test
+    void aDetectedCandlestickCountsFromItsRecognitionWhateverHappensNext() {
+        Stub facts = new Stub(10, 10, 10, 10);
+        facts.patterns.add(new PatternHit("CANDLESTICK", "BULLISH_ENGULFING", "BULLISH_ENGULFING", true, 80,
+                facts.at(1), facts.at(1), "INVALIDATED", facts.at(2), 10, null));
+        assertThat(CustomAlertEvaluator.evaluate(rule(candlestick("DETECTED", 2)), facts, 2).matched()).isTrue();
+        assertThat(CustomAlertEvaluator.evaluate(rule(candlestick("CONFIRMED", 2)), facts, 2).matched()).isFalse();
+    }
+
+    @Test
+    void candlestickRulesSavedWithoutAStatusKeepTheirMeaning() {
+        PatternCondition plain = (PatternCondition) rule(candlestick(null, 3)).conditions().getFirst();
+        PatternCondition ticked = (PatternCondition) rule(candlestick(null, 3).replace("\"direction\"", "\"confirmedOnly\":true,\"direction\""))
+                .conditions().getFirst();
+        assertThat(plain.status()).isEqualTo("DETECTED");
+        assertThat(ticked.status()).isEqualTo("CONFIRMED");
+        assertThat(((PatternCondition) rule(candlestick("detected", 3)).conditions().getFirst()).status()).isEqualTo("DETECTED");
+        assertThatThrownBy(() -> rule(candlestick("MAYBE", 3))).isInstanceOf(UserInputException.class);
+
+        String written = rule(candlestick(null, 3).replace("\"direction\"", "\"confirmedOnly\":true,\"direction\"")).toJson().toString();
+        assertThat(written).contains("\"family\":\"CANDLESTICK\",\"status\":\"CONFIRMED\",\"direction\"").doesNotContain("confirmedOnly");
+        String elliott = rule(single("{\"id\":\"c1\",\"kind\":\"PATTERN\",\"family\":\"ELLIOTT_WAVE\",\"status\":\"CONFIRMED\","
+                + "\"direction\":\"ANY\"}")).toJson().toString();
+        assertThat(elliott).as("only candlesticks have a status").doesNotContain("status");
     }
 
     @Test

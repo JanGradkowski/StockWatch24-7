@@ -70,6 +70,17 @@ test('the summary reads as one sentence: our own phrases are lowercased, indicat
   assert.match(summary, /and it is not true that insiders sold/);
   const oversold = text.summary(text.fromTemplate('oversold-bounce'), definitions);
   assert.match(oversold, /Triggers when RSI \(14\)/);
-  assert.match(oversold, /and a bullish candlestick pattern/);
+  assert.match(oversold, /and a bullish candlestick pattern confirmed in the last 5 candles/);
+  dom.window.close();
+});
+
+test('a candlestick condition names its status; rules from before the status read as they worked then', () => {
+  const { dom, text } = load();
+  const pattern = extra => text.describe({ id: 'c1', kind: 'PATTERN', family: 'CANDLESTICK', direction: 'BULLISH', patterns: [],
+    window: { mode: 'ANY', candles: 3 }, ...extra });
+  assert.equal(pattern({ status: 'CONFIRMED' }), 'A bullish candlestick pattern confirmed in the last 3 candles');
+  assert.equal(pattern({ status: 'DETECTED' }), 'A bullish candlestick pattern detected in the last 3 candles');
+  assert.equal(pattern({}), 'A bullish candlestick pattern detected in the last 3 candles');
+  assert.equal(pattern({ confirmedOnly: true }), 'A bullish candlestick pattern detected in the last 3 candles (confirmed only)');
   dom.window.close();
 });

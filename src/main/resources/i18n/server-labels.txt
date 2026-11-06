@@ -5725,6 +5725,15 @@ pl: Wzrostowa formacja świecowa wykryta w ostatnich {0} świecach.
 en: Bearish candlestick pattern detected in the last {0} candles.
 pl: Spadkowa formacja świecowa wykryta w ostatnich {0} świecach.
 
+en: Candlestick pattern confirmed in the last {0} candles.
+pl: Formacja świecowa potwierdzona w ostatnich {0} świecach.
+
+en: Bullish candlestick pattern confirmed in the last {0} candles.
+pl: Wzrostowa formacja świecowa potwierdzona w ostatnich {0} świecach.
+
+en: Bearish candlestick pattern confirmed in the last {0} candles.
+pl: Spadkowa formacja świecowa potwierdzona w ostatnich {0} świecach.
+
 en: Elliott Wave signal detected in the last {0} candles.
 pl: Sygnał fal Elliotta wykryty w ostatnich {0} świecach.
 
@@ -5749,6 +5758,7 @@ pl: Formacje: {0}.
 en: Score at least {0}.
 pl: Ocena co najmniej {0}.
 
+# Rule texts saved before candlestick conditions had a status (V98) still say this.
 en: Confirmed patterns only.
 pl: Tylko potwierdzone formacje.
 

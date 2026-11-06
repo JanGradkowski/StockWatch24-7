@@ -341,7 +341,7 @@ N is 1–60 candles or 1–365 days (730 for insider, matching the insider histo
 | Indicator | Any *alertable* catalog indicator and one of its outputs (RSI value, MACD histogram, Bollinger upper…) | the indicator's own inputs, validated by `ChartIndicatorCatalog.resolve` | is above / below, crosses above / below / either way, is between / outside, rises / falls for N candles, changes by ≥ x% over N candles |
 | | compared with | a number, the close, another output of the same indicator, or **another indicator** (EMA 50 vs EMA 200) | |
 | Price & volume | Close / high / low, % change over N candles, new N-candle high or low, gap up/down ≥ x%, distance from 52-week high/low, volume vs its N-candle average | thresholds | same as indicator |
-| Candlestick pattern | Any bullish / any bearish / chosen patterns | minimum setup score; *Detected* or *Confirmed only* | detected in window |
+| Candlestick pattern | Any bullish / any bearish / chosen patterns | minimum setup score; status *Confirmed* (default) or *Detected* | confirmed / detected in window |
 | Elliott wave | Stage: Wave II, III, IV, V end, truncated V, correction end, impulse complete; direction | minimum score; "projection not invalidated" | detected in window |
 | Harmonic pattern | Chosen types (Gartley, Bat, Butterfly, Crab, Shark, Cypher, Alt Bat, Deep Crab, 5-0, AB=CD, Alt AB=CD); direction | minimum score; "stop not breached" | detected in window |
 | Automated outlook | Classification at least Slight / Moderate / Strong buy (or sell), or changed to it | interval | is / changed to, in window |
@@ -364,8 +364,12 @@ Rules that matter for correctness:
   for this. Otherwise previews would look better than real alerts.
 - **Higher timeframes** use the latest **completed** higher-timeframe candle, which
   `ChartIndicatorEngine` already does for the indicator `timeframe` input.
-- **Confirmed only** for candlestick patterns applies the existing lifecycle policy to the
-  candles after the pattern, so a pattern counts only after its confirming close.
+- **Confirmed** (the default status of candlestick conditions) applies the existing
+  lifecycle policy to the candles after the pattern: the window counts from the candle on
+  which the pattern reached its profit target, and the trigger shows both dates. *Detected*
+  counts from the candle it was recognised on, as the other families do. Rules saved
+  before the status existed were switched to *Confirmed* by
+  `V98__candlestick_confirmed_status.sql`.
 - **User preferences apply.** Pattern conditions use the alert owner's detection and
   scoring preferences, exactly like their follows.
 - **Not applicable vs false.** A condition that cannot apply (insider data on an ETF) makes
@@ -405,7 +409,8 @@ As built, the interval lives on the alert row, not in the JSON. Condition kinds 
 (a price or indicator `subject` compared with a number, a price or another indicator through
 the operators ABOVE, BELOW, CROSSES_ABOVE/BELOW, BETWEEN, OUTSIDE, RISING, FALLING,
 CHANGE_ABOVE/BELOW, NEW_HIGH, NEW_LOW), `PATTERN` (family CANDLESTICK, ELLIOTT_WAVE or
-HARMONIC_FORMATION, with `confirmedOnly` and `stillValid`), `OUTLOOK`, `INSIDER` and
+HARMONIC_FORMATION; candlesticks have a `status`, CONFIRMED or DETECTED, and harmonics
+`stillValid`), `OUTLOOK`, `INSIDER` and
 `CONGRESS`. Windows are `LATEST`, `ANY` and `EVERY` candles; filings use `days`. The server
 validates and normalizes every definition (`CustomAlertDefinition.parse`), filling indicator
 inputs with their defaults, so stored rules always carry every setting.

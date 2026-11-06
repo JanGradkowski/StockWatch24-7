@@ -1949,6 +1949,9 @@ pl: Wybierz najwyżej 2000 spółek z jednej listy obserwowanych.
 en: Choose bullish, bearish or either.
 pl: Wybierz kierunek wzrostowy, spadkowy lub dowolny.
 
+en: Choose confirmed or detected patterns.
+pl: Wybierz formacje potwierdzone lub wykryte.
+
 en: Choose daily, weekly or monthly candles.
 pl: Wybierz świece dzienne, tygodniowe lub miesięczne.
 
