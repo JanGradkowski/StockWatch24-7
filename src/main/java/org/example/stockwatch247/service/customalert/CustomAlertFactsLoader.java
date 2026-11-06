@@ -298,6 +298,14 @@ public class CustomAlertFactsLoader {
             return patterns(family, owner);
         }
 
+        /**
+         * Harmonic formations of these candles, computed without the shared store: a trigger's chart reads them as of
+         * an older candle, which must not replace the latest candles' stored scan.
+         */
+        List<PatternHit> harmonicFormations(User owner) {
+            return harmonicHits(owner);
+        }
+
         /** Earlier candles will be evaluated after all: Elliott waves are read again with the candle that first showed them. */
         public void needEarlierCandles() {
             if (!latestOnly) return;
@@ -707,6 +715,13 @@ public class CustomAlertFactsLoader {
                 if (context != null) return detector.findDevelopingImpulses(parentPrefix, childPrefix.isEmpty() ? null : childPrefix, context);
                 return childPrefix.isEmpty() ? detector.findDevelopingImpulses(parentPrefix)
                         : detector.findDevelopingImpulses(parentPrefix, childPrefix);
+            }
+
+            /** The count as it stood on the candle at {@code timestamp}; empty when that candle is not loaded. */
+            public List<ElliottWaveDetectionService.DevelopingImpulse> countAt(long timestamp) {
+                int index = countAtOrBeforeSeries(timestamp) - 1;
+                if (index < 0 || series.get(index).getTimestamp() != timestamp) return List.of();
+                return countAsOf(index, null);
             }
 
             /**

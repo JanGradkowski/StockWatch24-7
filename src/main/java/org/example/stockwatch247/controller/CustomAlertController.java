@@ -5,6 +5,7 @@ import org.example.stockwatch247.repository.UserRepository;
 import org.example.stockwatch247.security.CurrentAccount;
 import org.example.stockwatch247.service.customalert.CustomAlertPreview;
 import org.example.stockwatch247.service.customalert.CustomAlertService;
+import org.example.stockwatch247.service.customalert.CustomAlertTriggerChart;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,13 +30,15 @@ import java.util.Map;
 public class CustomAlertController {
     private final CustomAlertService alerts;
     private final CustomAlertPreview preview;
+    private final CustomAlertTriggerChart triggerChart;
     private final UserRepository users;
     private final tools.jackson.databind.ObjectMapper json;
 
-    public CustomAlertController(CustomAlertService alerts, CustomAlertPreview preview, UserRepository users,
-                                 tools.jackson.databind.ObjectMapper json) {
+    public CustomAlertController(CustomAlertService alerts, CustomAlertPreview preview, CustomAlertTriggerChart triggerChart,
+                                 UserRepository users, tools.jackson.databind.ObjectMapper json) {
         this.alerts = alerts;
         this.preview = preview;
+        this.triggerChart = triggerChart;
         this.users = users;
         this.json = json;
     }
@@ -75,7 +78,6 @@ public class CustomAlertController {
         CustomAlertService.TriggerView trigger = alerts.trigger(user(principal), id);
         model.addAttribute("trigger", trigger);
         model.addAttribute("triggerEvidence", json.writeValueAsString(trigger.evidence()));
-        model.addAttribute("triggerPrices", json.writeValueAsString(alerts.pricesAround(trigger)));
         if (returnTo.length() <= 1024 && returnTo.matches("^/(signals|custom-alerts)(\\?[^\\r\\n#]*)?$")) {
             model.addAttribute("returnUrl", returnTo);
         }
@@ -202,6 +204,13 @@ public class CustomAlertController {
     public CustomAlertService.AlertView watchlist(@PathVariable long id, @PathVariable long watchlistId, @RequestParam boolean applied,
                                                   Principal principal) {
         return alerts.setWatchlist(user(principal), id, watchlistId, applied);
+    }
+
+    /** The candles, indicator lines, patterns and filings the trigger page draws. */
+    @GetMapping("/api/custom-alerts/triggers/{id}/chart")
+    @ResponseBody
+    public CustomAlertTriggerChart.ChartView triggerChart(@PathVariable long id, Principal principal) {
+        return triggerChart.chart(user(principal), id);
     }
 
     @PostMapping("/api/custom-alerts/triggers/{id}/read")
