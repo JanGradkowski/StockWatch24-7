@@ -623,6 +623,7 @@
 .stock-custom-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0 0 28px; color: var(--muted-text); font-size: var(--fs-sm); }
 .stock-custom-state { padding: 2px 8px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 700; background: var(--surface-raised); color: var(--text-soft); }
 .stock-custom-state.matching { color: var(--accent-color); background: color-mix(in srgb, var(--accent-color) 12%, var(--surface)); }
+.stock-custom-state.halfway { color: var(--text-color); background: color-mix(in srgb, var(--primary-color) 12%, var(--surface)); }
 .stock-custom-state.waiting, .stock-custom-state.skipped { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--surface)); }
 .stock-custom-paused { font-weight: 650; }
 .stock-custom-rule { margin: 6px 0 0 28px; color: var(--text-soft); font-size: var(--fs-sm); line-height: 1.45; }

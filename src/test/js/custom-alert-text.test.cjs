@@ -74,6 +74,37 @@ test('the summary reads as one sentence: our own phrases are lowercased, indicat
   dom.window.close();
 });
 
+test('a sequence reads as steps joined with "then", with its span, and its chips are joined by THEN', () => {
+  const { dom, text } = load();
+  const around = text.summary(text.fromTemplate('oversold-recovery'), definitions);
+  assert.match(around, /Triggers when \(RSI \(14\) is below 30 for at least 5 candles in a row, then within 3 candles RSI \(14\) is above 30, all within 20 candles, completed in the last 3 candles\) and a bullish candlestick pattern confirmed in the last 3 candles\./);
+  assert.doesNotMatch(around, /\)\)/, 'no parentheses inside parentheses');
+  const after = text.summary(text.fromTemplate('oversold-recovery-then-candle'), definitions);
+  assert.match(after, /then within 5 candles a bullish candlestick pattern confirmed, all within 25 candles\./);
+
+  const chips = text.chips(text.fromTemplate('oversold-recovery-then-candle').definition, definitions, 6);
+  assert.deepEqual([...chips.querySelectorAll('.ca-chip')].map(chip => chip.textContent), [
+    'RSI (14) is below 30 · 5 in a row', 'RSI (14) is above 30 · within 3', 'A bullish candlestick pattern confirmed · within 5']);
+  assert.deepEqual([...chips.querySelectorAll('.ca-joiner')].map(joiner => joiner.className), ['ca-joiner is-then', 'ca-joiner is-then']);
+
+  const step = { id: 'c1', kind: 'VALUE', negate: true, subject: { kind: 'PRICE', field: 'CLOSE' }, operator: 'ABOVE',
+    compare: { kind: 'VALUE', value: 100 }, window: { mode: 'EVERY', candles: 4 }, step: { candles: 3 } };
+  assert.equal(text.describeStep(step, definitions), 'Not true: Close price is above 100 on each of at least 3 candles in a row',
+    'its own window is not read, and the reversal holds candle by candle');
+  assert.equal(text.defaultSpan({ conditions: [step, { ...step, step: { candles: 1, within: 40 } }] }), 44);
+  const summary = text.summary({ interval: 'DAILY', definition: { version: 1, match: 'ALL', groups: [{ id: 'g1', match: 'THEN', span: 20,
+    conditions: [step, { ...step, id: 'c2', negate: false, step: { candles: 1, within: 2 } }] }] } }, definitions);
+  assert.match(summary, /Triggers when it is not true that close price is above 100 on each of at least 3 candles in a row, then within 2 candles close price is above 100, all within 20 candles\./);
+
+  // A cross happens on one candle and a rise counts its own candles: neither takes "in a row".
+  const cross = { ...step, negate: false, operator: 'CROSSES_ABOVE', step: { candles: 3 } };
+  assert.equal(text.stepCandles(cross), 1);
+  assert.equal(text.describeStep(cross, definitions), 'Close price crosses above 100');
+  assert.equal(text.stepCandles({ ...cross, operator: 'RISING', candles: 2 }), 1);
+  assert.equal(text.progressText({ done: 1, steps: 3, candlesLeft: 1 }), 'Step 1 of 3 done · step 2 due within 1 candle');
+  dom.window.close();
+});
+
 test('a candlestick condition names its status; rules from before the status read as they worked then', () => {
   const { dom, text } = load();
   const pattern = extra => text.describe({ id: 'c1', kind: 'PATTERN', family: 'CANDLESTICK', direction: 'BULLISH', patterns: [],

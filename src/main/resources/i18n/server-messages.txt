@@ -1985,6 +1985,24 @@ pl: Wybierz, kiedy alert ma się uruchamiać.
 en: Choose whether all or any of the groups must be true.
 pl: Wybierz, czy muszą być spełnione wszystkie, czy dowolne grupy.
 
+en: Choose whether all, any or these in order must be true.
+pl: Wybierz, czy mają być spełnione wszystkie warunki, dowolny z nich, czy kolejno jeden po drugim.
+
+en: A sequence needs 2 to 4 steps.
+pl: Sekwencja musi mieć od 2 do 4 kroków.
+
+en: Outlook, insider and Congress conditions can't be steps of a sequence.
+pl: Automatyczna ocena techniczna ani transakcje insiderów i członków Kongresu USA nie mogą być krokami sekwencji.
+
+en: A pattern step can't be reversed.
+pl: Kroku z formacją nie można odwrócić.
+
+en: Choose 1 to 60 candles in a row.
+pl: Wybierz od 1 do 60 kolejnych świec.
+
+en: The whole sequence needs at least {0} candles.
+pl: Cała sekwencja wymaga co najmniej tylu świec: {0}.
+
 en: Compare the value with something else.
 pl: Porównaj wartość z czymś innym.
 

@@ -93,6 +93,7 @@
 .ca-states-table a { font-weight: 700; color: var(--text-color); text-decoration: none; }
 .ca-state-pill { display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: 700; background: var(--surface-raised); color: var(--text-soft); }
 .ca-state-pill.matching { background: color-mix(in srgb, var(--accent-color) 16%, var(--surface)); color: var(--text-color); }
+.ca-state-pill.halfway { background: color-mix(in srgb, var(--primary-color) 14%, var(--surface)); color: var(--text-color); }
 .ca-state-pill.skipped, .ca-state-pill.waiting { color: var(--warning); }
 .ca-state-pill.stopped { color: var(--muted-text); text-decoration: line-through; }
 .ca-menu { position: relative; }
@@ -152,6 +153,28 @@ details.ca-templates-section > summary { cursor: pointer; font-weight: 700; padd
     font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; color: var(--muted-text); }
 .ca-group-joiner { margin: var(--space-2) auto; }
 .ca-add-here { justify-self: start; padding: 6px 12px; font-size: var(--fs-sm); }
+/* A sequence ("in order" group): numbered steps joined by editable "then, within" connectors, its timing underneath. */
+.ca-step-badge { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; flex: none;
+    background: color-mix(in srgb, var(--primary-color) 18%, var(--surface)); color: var(--text-color); font-size: var(--fs-xs); font-weight: 800; }
+.ca-step-connector { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-left: 14px; padding: 6px 0 6px 16px;
+    border-left: 2px solid color-mix(in srgb, var(--primary-color) 45%, var(--glass-border)); font-size: var(--fs-sm); font-weight: 650; color: var(--text-soft); }
+.ca-builder .ca-step-connector input { width: 76px; min-height: 34px; padding: 4px 8px; }
+.ca-step-arrow { color: var(--primary-color); font-weight: 800; }
+.ca-sequence-footer { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.ca-sequence-footer .ca-unit input { width: 84px; }
+.ca-sequence-completed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ca-builder .ca-sequence-completed input { width: 76px; }
+.ca-sequence-readout { flex-basis: 100%; margin: 0; font-size: var(--fs-sm); color: var(--muted-text); }
+.ca-sequence-readout:empty { display: none; }
+.ca-sequence-readout.is-met { color: var(--text-color); font-weight: 650; }
+.ca-sequence-note { margin: 0; font-size: var(--fs-sm); }
+.ca-sequence-warning { color: var(--warning); font-weight: 650; }
+.ca-then { border-color: color-mix(in srgb, var(--primary-color) 40%, var(--glass-border)); color: var(--text-color); }
+.ca-then:disabled { opacity: .45; cursor: default; }
+.ca-joiner.is-then { color: var(--primary-color); }
+.ca-joiner.is-then::before { content: '→ ' / ''; }
+.ca-readout.is-waiting strong { background: color-mix(in srgb, var(--warning) 18%, var(--surface)); color: var(--text-color); }
 .ca-condition { border: 1px solid color-mix(in srgb, var(--ca-tone) 30%, var(--glass-border)); border-left: 4px solid var(--ca-tone); border-radius: 0;
     background: var(--surface); }
 .ca-condition.is-negated { border-left-style: dashed; }
@@ -277,7 +300,7 @@ details.ca-templates-section > summary { cursor: pointer; font-weight: 700; padd
 .ca-picker-option span { font-size: var(--fs-sm); color: var(--text-soft); line-height: var(--lh-normal); }
 .ca-picker-rsi, .ca-picker-maCross, .ca-picker-volume, .ca-picker-anyIndicator, .ca-picker-breakout, .ca-picker-priceLevel, .ca-picker-priceChange { --ca-tone: var(--accent-color); }
 .ca-picker-candlestick, .ca-picker-elliott, .ca-picker-harmonic { --ca-tone: var(--violet); }
-.ca-picker-outlook { --ca-tone: var(--primary-color); }
+.ca-picker-outlook, .ca-picker-sequence { --ca-tone: var(--primary-color); }
 .ca-picker-insider, .ca-picker-congress { --ca-tone: var(--warning); }
 .ca-indicator-dialog { width: min(720px, calc(100vw - 32px)); }
 .ca-indicator-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, 220px); gap: var(--space-2); margin: var(--space-3) 0; }
@@ -408,7 +431,11 @@ details.ca-templates-section > summary { cursor: pointer; font-weight: 700; padd
     .ca-footer .btn-accent, .ca-footer .btn-secondary { flex: 1 1 0; text-align: center; }
     .ca-condition-tools { margin-left: 0; }
     .ca-indicator-toolbar { grid-template-columns: minmax(0, 1fr); }
+    /* The completion switch takes the full width, so each choice stays on one line. */
+    .ca-sequence-footer > .ca-field, .ca-sequence-completed, .ca-sequence-completed .ca-segmented { width: 100%; }
+    .ca-sequence-completed .ca-segmented button { flex: 1 1 0; }
 }
+@media (pointer: coarse) { .ca-builder .ca-step-connector input, .ca-builder .ca-sequence-completed input { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) {
     .ca-switch-track::after, .ca-guide > summary::before, .ca-card, .ca-template { transition: none; }
 }

@@ -630,6 +630,7 @@
       const facts = [i18n.t(`interval.${alert.interval}`),
         alert.scope === 'SELECTED' ? i18n.plural('watchlists.custom.chosen', alert.stocks, alert.stocks) : i18n.plural('watchlists.custom.all', alert.stocks, alert.stocks),
         i18n.plural('watchlists.custom.matching', alert.matching, alert.matching)];
+      if (alert.halfway) facts.push(i18n.plural('watchlists.custom.halfway', alert.halfway, alert.halfway));
       if (!alert.active) facts.push(i18n.t('watchlists.custom.paused'));
       const text = n('div', null, 'wl-custom-text');
       text.append(name, n('small', facts.join(' · ')));

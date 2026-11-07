@@ -93,18 +93,22 @@ public class CustomAlertService {
     public record TargetView(long watchlistId, String watchlistName, String scope, long stocks, List<String> symbols) { }
 
     /**
-     * One alert with where it stands: {@code matching} stocks match on their latest checked candle,
-     * {@code checking} wait for their first check, {@code skipped} cannot use one of the conditions.
+     * One alert with where it stands: {@code matching} stocks match on their latest checked candle, {@code halfway}
+     * are part-way through a sequence, {@code checking} wait for their first check, {@code skipped} cannot use one of
+     * the conditions.
      */
     public record AlertView(long id, String name, String description, String interval, JsonNode definition,
                             String triggerMode, int quietCandles, int outcomeCandles, boolean emailEnabled, boolean active,
                             boolean pinned, Long sourceChartAlertId, List<TargetView> targets, long stocks, long matching,
-                            long checking, long skipped, long unread, long triggers, Instant lastTriggeredAt,
+                            long halfway, long checking, long skipped, long unread, long triggers, Instant lastTriggeredAt,
                             Instant createdAt, boolean activityOnly) { }
 
-    /** A covered stock and the alert's state for it. */
+    /**
+     * A covered stock and the alert's state for it. HALFWAY: not matching, but part-way through a sequence;
+     * {@code progress} then says how far ({@code done}, {@code steps}, {@code candlesLeft}).
+     */
     public record StockStateView(String symbol, String companyName, String instrumentType, String state, String detail,
-                                 Long lastEvaluated, Long lastTriggered, boolean excluded) { }
+                                 Long lastEvaluated, Long lastTriggered, boolean excluded, JsonNode progress) { }
 
     public record TriggerSummary(long id, long alertId, String alertName, String symbol, String companyName, TimeInterval interval,
                                  long candleTimestamp, int matchedConditions, int totalConditions, String kind,
@@ -125,11 +129,19 @@ public class CustomAlertService {
 
     /** A watchlist's view of one alert applied to it. */
     public record WatchlistAlertView(long id, String name, String interval, boolean active, String scope, long stocks,
-                                     long matching, long unread, JsonNode definition) { }
+                                     long matching, long halfway, long unread, JsonNode definition) { }
 
     /** A stock page's view of one alert: whether it covers the stock, and through which lists. */
     public record StockAlertView(long id, String name, String interval, boolean active, boolean applied, String state,
-                                 String detail, List<Long> watchlistIds, JsonNode definition) { }
+                                 String detail, List<Long> watchlistIds, JsonNode definition, JsonNode progress) { }
+
+    /**
+     * Part-way through a sequence: the alert is running (a paused alert's "candles left" would go stale), its state was
+     * evaluated for its current rule, does not match, and has progress.
+     */
+    private static final String HALFWAY = """
+            a.active and s.revision = a.revision and s.last_evaluated_timestamp is not null and not s.last_result
+            and s.progress is not null""";
 
     private static final String ALERT_COLUMNS = """
             a.id, a.name, a.description, a.interval, a.definition, a.trigger_mode, a.quiet_candles, a.outcome_candles,
@@ -138,6 +150,10 @@ public class CustomAlertService {
             (select count(*) from custom_alert_states s join custom_alert_effective_targets t
                 on t.alert_id = s.alert_id and t.stock_asset_id = s.stock_asset_id
              where s.alert_id = a.id and s.revision = a.revision and s.last_evaluated_timestamp is not null and s.last_result) matching,
+            (select count(*) from custom_alert_states s join custom_alert_effective_targets t
+                on t.alert_id = s.alert_id and t.stock_asset_id = s.stock_asset_id
+             where s.alert_id = a.id and""" + " " + HALFWAY + """
+            ) halfway,
             (select count(*) from custom_alert_effective_targets t left join custom_alert_states s
                 on s.alert_id = t.alert_id and s.stock_asset_id = t.stock_asset_id
              where t.alert_id = a.id and (s.alert_id is null or s.revision <> a.revision or s.last_evaluated_timestamp is null)
@@ -179,7 +195,7 @@ public class CustomAlertService {
                 row.getString("trigger_mode"), row.getInt("quiet_candles"), row.getInt("outcome_candles"),
                 row.getBoolean("email_enabled"), row.getBoolean("active"), row.getBoolean("pinned"),
                 (Long) row.getObject("source_chart_alert_id"), targets.getOrDefault(id, List.of()), row.getLong("stocks"),
-                row.getLong("matching"), row.getLong("checking"), row.getLong("skipped"), row.getLong("unread"),
+                row.getLong("matching"), row.getLong("halfway"), row.getLong("checking"), row.getLong("skipped"), row.getLong("unread"),
                 row.getLong("triggers"), instant(row.getTimestamp("last_triggered_at")), instant(row.getTimestamp("created_at")),
                 activityOnly);
     }
@@ -216,13 +232,13 @@ public class CustomAlertService {
         return db.query("""
                 select s.ticker_symbol, s.company_name, s.instrument_type, st.revision, a.revision alert_revision,
                        st.last_evaluated_timestamp, st.last_result, st.status, st.status_detail, st.last_triggered_timestamp,
-                       false excluded
+                       st.progress, a.active alert_active, false excluded
                 from custom_alert_effective_targets t join custom_alerts a on a.id = t.alert_id
                 join stock_assets s on s.id = t.stock_asset_id
                 left join custom_alert_states st on st.alert_id = t.alert_id and st.stock_asset_id = t.stock_asset_id
                 where t.alert_id = ?
                 union all
-                select s.ticker_symbol, s.company_name, s.instrument_type, null, null, null, null, null, null, null, true
+                select s.ticker_symbol, s.company_name, s.instrument_type, null, null, null, null, null, null, null, null, null, true
                 from custom_alert_exclusions x join stock_assets s on s.id = x.stock_asset_id where x.alert_id = ?
                 """, (row, index) -> {
             boolean excluded = row.getBoolean("excluded");
@@ -231,21 +247,35 @@ public class CustomAlertService {
             Integer revision = (Integer) row.getObject("revision");
             Long evaluated = (Long) row.getObject("last_evaluated_timestamp");
             String status = row.getString("status");
+            JsonNode progress = Boolean.TRUE.equals(row.getObject("alert_active")) ? progress(row.getString("progress")) : null;
             if (excluded) state = "STOPPED";
             else if ("SKIPPED".equals(status)) state = "SKIPPED";
             else if ("INSUFFICIENT_HISTORY".equals(status)) state = "WAITING";
             else if (revision == null || !revision.equals(row.getObject("alert_revision")) || evaluated == null) state = "CHECKING";
-            else state = Boolean.TRUE.equals(row.getObject("last_result")) ? "MATCHING" : "NOT_MATCHING";
+            else state = Boolean.TRUE.equals(row.getObject("last_result")) ? "MATCHING" : progress != null ? "HALFWAY" : "NOT_MATCHING";
             return new StockStateView(row.getString("ticker_symbol"), row.getString("company_name"),
-                    row.getString("instrument_type"), state, detail, evaluated, (Long) row.getObject("last_triggered_timestamp"), excluded);
+                    row.getString("instrument_type"), state, detail, evaluated, (Long) row.getObject("last_triggered_timestamp"), excluded,
+                    "HALFWAY".equals(state) ? progress : null);
         }, id, id).stream().sorted(java.util.Comparator.comparingInt((StockStateView view) -> switch (view.state()) {
             case "MATCHING" -> 0;
-            case "NOT_MATCHING" -> 1;
-            case "CHECKING" -> 2;
-            case "WAITING" -> 3;
-            case "SKIPPED" -> 4;
-            default -> 5;
+            case "HALFWAY" -> 1;
+            case "NOT_MATCHING" -> 2;
+            case "CHECKING" -> 3;
+            case "WAITING" -> 4;
+            case "SKIPPED" -> 5;
+            default -> 6;
         }).thenComparing(StockStateView::symbol)).toList();
+    }
+
+    /** A state's sequence progress as stored by the engine; null when there is none or it does not read. */
+    private JsonNode progress(String stored) {
+        if (stored == null || stored.isBlank()) return null;
+        try {
+            JsonNode node = json.readTree(stored);
+            return node.isObject() && node.path("done").asInt() > 0 ? node : null;
+        } catch (RuntimeException unreadable) {
+            return null;
+        }
     }
 
     // ------------------------------------------------------------------ saving
@@ -500,7 +530,7 @@ public class CustomAlertService {
         Long assetId = assets.findByTickerSymbolIgnoreCase(symbol).map(StockAsset::getId).orElse(null);
         return db.query("""
                 select a.id, a.name, a.interval, a.active, a.definition, a.revision, t.watchlist_ids,
-                       st.revision state_revision, st.last_evaluated_timestamp, st.last_result, st.status, st.status_detail
+                       st.revision state_revision, st.last_evaluated_timestamp, st.last_result, st.status, st.status_detail, st.progress
                 from custom_alerts a
                 left join custom_alert_effective_targets t on t.alert_id = a.id and t.stock_asset_id = ?
                 left join custom_alert_states st on st.alert_id = a.id and st.stock_asset_id = ?
@@ -510,13 +540,15 @@ public class CustomAlertService {
             List<Long> ids = lists == null ? List.of() : java.util.Arrays.stream((Long[]) lists.getArray()).toList();
             boolean applied = !ids.isEmpty();
             Integer revision = (Integer) row.getObject("state_revision");
+            JsonNode progress = row.getBoolean("active") ? progress(row.getString("progress")) : null;
             String state = !applied ? "NOT_APPLIED"
                     : "SKIPPED".equals(row.getString("status")) ? "SKIPPED"
                     : "INSUFFICIENT_HISTORY".equals(row.getString("status")) ? "WAITING"
                     : revision == null || revision != row.getInt("revision") || row.getObject("last_evaluated_timestamp") == null ? "CHECKING"
-                    : Boolean.TRUE.equals(row.getObject("last_result")) ? "MATCHING" : "NOT_MATCHING";
+                    : Boolean.TRUE.equals(row.getObject("last_result")) ? "MATCHING" : progress != null ? "HALFWAY" : "NOT_MATCHING";
             return new StockAlertView(row.getLong("id"), row.getString("name"), row.getString("interval"), row.getBoolean("active"),
-                    applied, state, row.getString("status_detail"), ids, json.readTree(row.getString("definition")));
+                    applied, state, row.getString("status_detail"), ids, json.readTree(row.getString("definition")),
+                    "HALFWAY".equals(state) ? progress : null);
         }, assetId, assetId, user.getId());
     }
 
@@ -609,6 +641,11 @@ public class CustomAlertService {
                             on m.stock_asset_id = s.stock_asset_id and m.watchlist_id = t.watchlist_id
                         join custom_alert_effective_targets e on e.alert_id = s.alert_id and e.stock_asset_id = s.stock_asset_id
                         where s.alert_id = a.id and s.revision = a.revision and s.last_evaluated_timestamp is not null and s.last_result) matching,
+                       (select count(*) from custom_alert_states s join watchlist_members m
+                            on m.stock_asset_id = s.stock_asset_id and m.watchlist_id = t.watchlist_id
+                        join custom_alert_effective_targets e on e.alert_id = s.alert_id and e.stock_asset_id = s.stock_asset_id
+                        where s.alert_id = a.id and""" + " " + HALFWAY + """
+                       ) halfway,
                        (select count(*) from custom_alert_events ev join watchlist_notification_origins o
                             on o.kind = 'CUSTOM' and o.notification_id = ev.id and o.watchlist_id = t.watchlist_id
                         where ev.alert_id = a.id and ev.deleted_at is null and ev.read_at is null) unread
@@ -616,7 +653,7 @@ public class CustomAlertService {
                 where t.watchlist_id = ? and a.user_id = ? order by a.active desc, a.name, a.id
                 """, (row, index) -> new WatchlistAlertView(row.getLong("id"), row.getString("name"), row.getString("interval"),
                 row.getBoolean("active"), row.getString("scope"), row.getLong("stocks"), row.getLong("matching"),
-                row.getLong("unread"), json.readTree(row.getString("definition"))), watchlistId, user.getId());
+                row.getLong("halfway"), row.getLong("unread"), json.readTree(row.getString("definition"))), watchlistId, user.getId());
     }
 
     /** Applies the alert to a whole list, or removes it from the list. */
@@ -752,7 +789,7 @@ public class CustomAlertService {
                                   List<String> outputs, IndicatorDefinition.Zones zones) { }
 
     public record Catalog(List<IndicatorOption> indicators, Map<String, List<String>> patterns, int maxConditions, int maxGroups,
-                          int maxIndicators, int maxWindow, int maximumActive) { }
+                          int maxIndicators, int maxWindow, int maximumActive, int maxSteps, int maxSpan) { }
 
     /** What the builder offers: alertable indicators with their lines, and the pattern names of each family. */
     public Catalog catalog() {
@@ -771,7 +808,8 @@ public class CustomAlertService {
             });
         }
         return new Catalog(indicators, patterns, CustomAlertDefinition.MAX_CONDITIONS, CustomAlertDefinition.MAX_GROUPS,
-                CustomAlertDefinition.MAX_INDICATORS, CustomAlertDefinition.MAX_WINDOW_CANDLES, maximumActive);
+                CustomAlertDefinition.MAX_INDICATORS, CustomAlertDefinition.MAX_WINDOW_CANDLES, maximumActive,
+                CustomAlertDefinition.MAX_STEPS, CustomAlertDefinition.MAX_SPAN_CANDLES);
     }
 
     // ------------------------------------------------------------------ helpers

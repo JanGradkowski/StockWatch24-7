@@ -157,6 +157,82 @@ class CustomAlertEngineIntegrationTest {
         assertThat(listPage.signals()).hasSize(2);
     }
 
+    /** Closes below 100 for 3 candles in a row, then within 3 candles a close above 105; all within 10 candles. */
+    private static final String DIP_THEN_BREAKOUT = """
+            {"version":1,"match":"ALL","groups":[{"id":"g1","match":"THEN","span":10,"conditions":[
+              {"id":"c1","kind":"VALUE","subject":{"kind":"PRICE","field":"CLOSE"},"operator":"BELOW",
+               "compare":{"kind":"VALUE","value":100},"step":{"candles":3}},
+              {"id":"c2","kind":"VALUE","subject":{"kind":"PRICE","field":"CLOSE"},"operator":"ABOVE",
+               "compare":{"kind":"VALUE","value":105},"step":{"candles":1,"within":3}}]}]}
+            """;
+
+    @Test
+    void aSequenceHalfDoneWhenSavedTriggersWhenItsLastStepFollowsAndACatchUpCountsEachCompletion() {
+        User owner = user();
+        String symbol = stock("EQUITY");
+        String late = stock("EQUITY");
+        long list = watchlist(owner, "Dips", symbol, late);
+        candles(List.of(symbol, late), 102, 99, 98, 97);
+        var alert = alerts.create(owner, command("Dip then breakout", DIP_THEN_BREAKOUT, "BECOMES_TRUE", 0, list, false));
+        engine.establishBaselines();
+        assertThat(triggers(alert.id())).isZero();
+
+        candles(List.of(symbol, late), 106);
+        assertThat(engine.evaluate(symbol, TimeInterval.DAILY, null).triggered()).as("the dip before the save still counts").isEqualTo(1);
+        long event = jdbc.queryForObject("select min(id) from custom_alert_events where alert_id = ?", Long.class, alert.id());
+        var trigger = alerts.trigger(owner, event);
+        assertThat(trigger.ruleText()).contains("In this order, all within 10 candles:")
+                .contains("Step 1: Close price is below 100 for at least 3 candles in a row")
+                .contains("Step 2, within 3 candles: Close price is above 105");
+        assertThat(trigger.evidence().path("groups").get(0).path("facts").path("completedAt").asLong()).isEqualTo(trigger.candleTimestamp());
+        assertThat(trigger.evidence().path("conditions").get(0).path("facts").path("candles").asInt()).isEqualTo(3);
+        assertThat(trigger.evidence().path("definition").path("groups").get(0).path("match").asString()).isEqualTo("THEN");
+
+        // The other stock waits for its check: a breakout, then a whole new dip and breakout, in one catch-up.
+        candles(List.of(symbol, late), 99, 98, 97, 101, 107);
+        assertThat(engine.evaluate(late, TimeInterval.DAILY, null).triggered()).isEqualTo(2);
+        assertThat(engine.evaluate(symbol, TimeInterval.DAILY, null).triggered()).as("only the second breakout is new").isEqualTo(1);
+
+        // A third dip: both stocks are halfway, with the breakout due within 3 candles; then the time runs out.
+        candles(List.of(symbol, late), 98, 97, 96);
+        engine.evaluate(symbol, TimeInterval.DAILY, null);
+        engine.evaluate(late, TimeInterval.DAILY, null);
+        assertThat(alerts.get(owner, alert.id()).halfway()).isEqualTo(2);
+        assertThat(alerts.states(owner, alert.id())).allSatisfy(state -> {
+            assertThat(state.state()).isEqualTo("HALFWAY");
+            assertThat(state.progress().path("done").asInt()).isEqualTo(1);
+            assertThat(state.progress().path("steps").asInt()).isEqualTo(2);
+            assertThat(state.progress().path("candlesLeft").asInt()).isEqualTo(3);
+        });
+        assertThat(alerts.forWatchlist(owner, list)).singleElement().satisfies(view -> assertThat(view.halfway()).isEqualTo(2));
+        assertThat(alerts.forStock(owner, symbol)).singleElement().satisfies(view -> assertThat(view.state()).isEqualTo("HALFWAY"));
+        // A paused alert is not checked, so its "candles left" would go stale: it shows no halfway stocks until resumed.
+        alerts.setActive(owner, alert.id(), false);
+        assertThat(alerts.get(owner, alert.id()).halfway()).isZero();
+        assertThat(alerts.states(owner, alert.id())).extracting(CustomAlertService.StockStateView::state).doesNotContain("HALFWAY");
+        assertThat(alerts.forWatchlist(owner, list)).singleElement().satisfies(view -> assertThat(view.halfway()).isZero());
+        alerts.setActive(owner, alert.id(), true);
+        engine.establishBaselines();
+
+        candles(List.of(symbol, late), 101, 102, 103);
+        engine.evaluate(symbol, TimeInterval.DAILY, null);
+        engine.evaluate(late, TimeInterval.DAILY, null);
+        assertThat(alerts.states(owner, alert.id())).extracting(CustomAlertService.StockStateView::state)
+                .containsExactly("NOT_MATCHING", "NOT_MATCHING");
+
+        // The builder's replay of the same candles finds the same triggers as the checks did.
+        var replay = preview.preview(owner, new CustomAlertPreview.PreviewCommand("DAILY", json.readTree(DIP_THEN_BREAKOUT), late,
+                "BECOMES_TRUE", 0, 3, List.of(), null));
+        List<Long> checked = jdbc.queryForList("""
+                select e.candle_timestamp from custom_alert_events e join stock_assets s on s.id = e.stock_asset_id
+                where e.alert_id = ? and s.ticker_symbol = ? order by 1
+                """, Long.class, alert.id(), late);
+        assertThat(replay.history()).extracting(CustomAlertPreview.HistoryPoint::timestamp).containsExactlyElementsOf(checked);
+        assertThat(checked).hasSize(2);
+    }
+
+    @Autowired private CustomAlertPreview preview;
+
     @Test
     void onceModeQuietPeriodsAndMatchesWhenApplied() {
         User owner = user();

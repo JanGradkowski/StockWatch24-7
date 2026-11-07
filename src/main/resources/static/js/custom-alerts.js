@@ -10,7 +10,7 @@
   const api = (...args) => window.StockWatchLists.api(...args);
   const el = text.element;
   // Learning-mode explanations (js.learn.<key>) used on this page.
-  const LEARN_OPTIONS = { active: 'customAlerts.active', checking: 'customAlerts.checking', convert: 'customAlerts.convert', matching: 'customAlerts.matching', triggers: 'customAlerts.triggers', MATCHING: 'customAlerts.state.MATCHING', NOT_MATCHING: 'customAlerts.state.NOT_MATCHING', CHECKING: 'customAlerts.state.CHECKING', WAITING: 'customAlerts.state.WAITING', SKIPPED: 'customAlerts.state.SKIPPED', STOPPED: 'customAlerts.state.STOPPED' };
+  const LEARN_OPTIONS = { active: 'customAlerts.active', checking: 'customAlerts.checking', convert: 'customAlerts.convert', matching: 'customAlerts.matching', triggers: 'customAlerts.triggers', MATCHING: 'customAlerts.state.MATCHING', HALFWAY: 'customAlerts.state.HALFWAY', NOT_MATCHING: 'customAlerts.state.NOT_MATCHING', CHECKING: 'customAlerts.state.CHECKING', WAITING: 'customAlerts.state.WAITING', SKIPPED: 'customAlerts.state.SKIPPED', STOPPED: 'customAlerts.state.STOPPED' };
   const page = document.querySelector('.custom-alerts-page');
   const search = document.querySelector('[data-ca-search]');
   const guide = document.querySelector('[data-ca-guide]');
@@ -169,6 +169,7 @@
     statesBox.hidden = true;
     matching.addEventListener('click', () => toggleStates(alert, matching, statesBox));
     stats.append(matching);
+    if (alert.halfway) stats.append(stat(alert.halfway, i18n.t('ca.card.halfway'), LEARN_OPTIONS.HALFWAY));
     if (alert.checking) stats.append(stat(alert.checking, i18n.t('ca.card.checking'), LEARN_OPTIONS.checking));
     stats.append(stat(alert.triggers, i18n.plural('ca.card.triggers', alert.triggers), LEARN_OPTIONS.triggers));
     stats.append(stat(alert.lastTriggeredAt ? date(alert.lastTriggeredAt) : '—', i18n.t('ca.card.lastTriggered')));
@@ -315,7 +316,8 @@
         pill.dataset.learn = LEARN_OPTIONS[state.state];
         pill.dataset.learnTitle = i18n.t(`ca.state.${state.state}`);
         cell.append(pill);
-        if (state.detail && state.state !== 'MATCHING') cell.append(el('small', null, state.detail));
+        if (state.progress) cell.append(el('small', null, text.progressText(state.progress)));
+        else if (state.detail && state.state !== 'MATCHING') cell.append(el('small', null, state.detail));
         const act = el('td');
         const toggle = button(i18n.t(state.excluded ? 'ca.states.resume' : 'ca.states.stop'), async () => {
           toggle.disabled = true;

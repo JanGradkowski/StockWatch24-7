@@ -25,7 +25,8 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * A custom alert's rule: groups of conditions joined with all/any, the groups joined the same way.
+ * A custom alert's rule: groups of conditions joined with all/any, the groups joined the same way. A group can
+ * also join its conditions with "then": they become the steps of a {@link Sequence}, which must happen in order.
  *
  * <p>Stored as versioned JSON. {@link #parse} validates every field against the indicator catalog and the
  * pattern lists, so a stored rule can always be evaluated; {@link #toJson} writes the normalized form.</p>
@@ -36,8 +37,13 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
     public static final int MAX_CONDITIONS = 12;
     public static final int MAX_INDICATORS = 8;
     public static final int MAX_WINDOW_CANDLES = 60;
+    public static final int MAX_STEPS = 4;
+    public static final int MAX_SPAN_CANDLES = 120;
+    static final int DEFAULT_STEP_WITHIN = 5;
+    static final int DEFAULT_SPAN_CANDLES = 30;
     private static final Pattern ID = Pattern.compile("[A-Za-z0-9_-]{1,40}");
     private static final Set<String> MATCHES = Set.of("ALL", "ANY");
+    private static final Set<String> GROUP_MATCHES = Set.of("ALL", "ANY", "THEN");
     private static final Set<String> PRICE_FIELDS = Set.of("CLOSE", "OPEN", "HIGH", "LOW", "VOLUME");
     /** Operators that compare the subject with another value at the same candle. */
     static final Set<String> COMPARISONS = Set.of("ABOVE", "BELOW", "CROSSES_ABOVE", "CROSSES_BELOW");
@@ -56,11 +62,33 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
         groups = List.copyOf(groups);
     }
 
-    public record Group(String id, String match, List<Condition> conditions) {
+    /** {@code sequence} is set when the group joins its conditions with THEN, and null otherwise. */
+    public record Group(String id, String match, List<Condition> conditions, Sequence sequence) {
         public Group {
             conditions = List.copyOf(conditions);
         }
+
+        public Group(String id, String match, List<Condition> conditions) {
+            this(id, match, conditions, null);
+        }
     }
+
+    /**
+     * How the conditions of a THEN group are timed: one {@link Step} per condition, in order. Every step must happen
+     * within {@code span} candles, from the first candle of step 1 to the candle the last step counts on. The group
+     * holds when that last candle is the evaluated one (window LATEST) or one of the last {@code window.candles}.
+     */
+    public record Sequence(int span, Window window, List<Step> steps) {
+        public Sequence {
+            steps = List.copyOf(steps);
+        }
+    }
+
+    /**
+     * A step counts once its condition has held on {@code candles} candles in a row. Every step after the first must
+     * start within {@code within} candles after the previous step was last true (0 for the first step).
+     */
+    public record Step(int candles, int within) { }
 
     /** One test; {@code negate} turns "is" into "is not" and "had" into "had no". */
     public sealed interface Condition permits ValueCondition, PatternCondition, OutlookCondition, ActivityCondition {
@@ -200,6 +228,27 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
             };
             lookback = Math.max(lookback, span);
         }
+        for (Group group : groups) {
+            if (group.sequence() == null) continue;
+            int inner = 1;
+            for (Condition condition : group.conditions()) {
+                if (condition instanceof ValueCondition value) inner = Math.max(inner, 1 + Math.max(1, value.candles() == null ? 1 : value.candles()));
+            }
+            lookback = Math.max(lookback, group.sequence().span() + group.sequence().window().span() + inner);
+        }
+        return lookback;
+    }
+
+    /** Completed candles pattern conditions look back over: candlestick detection must cover at least these. */
+    public int patternLookbackCandles() {
+        int lookback = 1;
+        for (Group group : groups) {
+            for (Condition condition : group.conditions()) {
+                if (!(condition instanceof PatternCondition pattern)) continue;
+                lookback = Math.max(lookback, group.sequence() == null ? pattern.window().span()
+                        : group.sequence().span() + group.sequence().window().span());
+            }
+        }
         return lookback;
     }
 
@@ -228,19 +277,28 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
         int total = 0;
         for (JsonNode groupNode : groupNodes) {
             String groupMatch = upper(groupNode.path("match").asString("ALL"));
-            if (!MATCHES.contains(groupMatch)) throw new UserInputException("Choose whether all or any of the groups must be true.");
+            if (!GROUP_MATCHES.contains(groupMatch)) throw new UserInputException("Choose whether all, any or these in order must be true.");
+            boolean ordered = "THEN".equals(groupMatch);
             JsonNode conditionNodes = groupNode.path("conditions");
             if (!conditionNodes.isArray() || conditionNodes.isEmpty()) throw new UserInputException("Every group needs at least one condition.");
+            if (ordered && (conditionNodes.size() < 2 || conditionNodes.size() > MAX_STEPS)) {
+                throw new UserInputException("A sequence needs 2 to 4 steps.");
+            }
             List<Condition> conditions = new ArrayList<>();
+            List<Step> steps = new ArrayList<>();
             for (JsonNode conditionNode : conditionNodes) {
                 if (++total > MAX_CONDITIONS) throw new UserInputException("An alert can have at most 12 conditions.");
                 Condition condition = condition(conditionNode, catalog, chartInterval);
                 if (!ids.add(condition.id())) throw new UserInputException("The alert definition is incomplete.");
+                if (ordered) {
+                    condition = asStep(condition);
+                    steps.add(step(conditionNode.path("step"), condition, steps.isEmpty()));
+                }
                 conditions.add(condition);
             }
             String groupId = id(groupNode.path("id").asString("g" + (groups.size() + 1)));
             if (!ids.add(groupId)) throw new UserInputException("The alert definition is incomplete.");
-            groups.add(new Group(groupId, groupMatch, conditions));
+            groups.add(new Group(groupId, groupMatch, conditions, ordered ? sequence(groupNode, steps) : null));
         }
         CustomAlertDefinition definition = new CustomAlertDefinition(match, groups);
         long indicators = definition.operands().stream().filter(Operand::isIndicator).count();
@@ -413,6 +471,53 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
         return new ActivityCondition(id, negate, source, transaction, days, minTotal, minCount, roles, chambers);
     }
 
+    /** A condition as a step of a sequence: it is read on one candle at a time, so its own window does not apply. */
+    private static Condition asStep(Condition condition) {
+        return switch (condition) {
+            case ValueCondition value -> new ValueCondition(value.id(), value.negate(), value.subject(), value.operator(), value.compare(),
+                    value.lower(), value.upper(), value.candles(), value.percent(), Window.latest());
+            case PatternCondition pattern -> {
+                // "No pattern on this candle" is true on almost every candle.
+                if (pattern.negate()) throw new UserInputException("A pattern step can't be reversed.");
+                yield new PatternCondition(pattern.id(), false, pattern.family(), pattern.direction(), pattern.patterns(),
+                        pattern.minScore(), pattern.status(), pattern.stillValid(), new Window("ANY", 1, 0));
+            }
+            // The outlook is known for the latest candle only; filings are counted over calendar days.
+            default -> throw new UserInputException("Outlook, insider and Congress conditions can't be steps of a sequence.");
+        };
+    }
+
+    /**
+     * A pattern happens on one candle, so only indicator and price steps can be required for several in a row. A cross
+     * cannot happen on two candles in a row, and a rise or fall already counts its own candles, so those count one.
+     */
+    static boolean holdsOverCandles(Condition condition) {
+        return condition instanceof ValueCondition value && !Set.of("CROSSES_ABOVE", "CROSSES_BELOW", "RISING", "FALLING").contains(value.operator());
+    }
+
+    private static Step step(JsonNode node, Condition condition, boolean first) {
+        int candles = holdsOverCandles(condition) && node.hasNonNull("candles")
+                ? integer(node.path("candles"), 1, MAX_WINDOW_CANDLES, "Choose 1 to 60 candles in a row.") : 1;
+        int within = first ? 0 : node.hasNonNull("within")
+                ? integer(node.path("within"), 1, MAX_WINDOW_CANDLES, "Choose 1 to 60 candles.") : DEFAULT_STEP_WITHIN;
+        return new Step(candles, within);
+    }
+
+    /** Without a span, every step gets its full allowance (and at least {@link #DEFAULT_SPAN_CANDLES}). */
+    private static Sequence sequence(JsonNode node, List<Step> steps) {
+        int needed = steps.stream().mapToInt(Step::candles).sum();
+        int span = node.hasNonNull("span") ? integer(node.path("span"), 2, MAX_SPAN_CANDLES, "Choose 2 to 120 candles.")
+                : Math.min(MAX_SPAN_CANDLES, Math.max(DEFAULT_SPAN_CANDLES, needed + steps.stream().mapToInt(Step::within).sum()));
+        if (span < needed) throw new UserInputException("The whole sequence needs at least " + needed + " candles.");
+        JsonNode windowNode = node.path("window");
+        Window window = switch (windowNode.isObject() ? upper(windowNode.path("mode").asString("LATEST")) : "LATEST") {
+            case "LATEST" -> Window.latest();
+            case "ANY" -> new Window("ANY", integer(windowNode.path("candles"), 1, MAX_WINDOW_CANDLES, "Choose 1 to 60 candles."), 0);
+            default -> throw new UserInputException("The alert definition is incomplete.");
+        };
+        return new Sequence(span, window, steps);
+    }
+
     private static Window window(JsonNode node, boolean pattern) {
         if (!node.isObject()) return pattern ? new Window("ANY", 5, 0) : Window.latest();
         String mode = upper(node.path("mode").asString("LATEST"));
@@ -460,8 +565,22 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
             ObjectNode groupNode = groupArray.addObject();
             groupNode.put("id", group.id());
             groupNode.put("match", group.match());
+            Sequence sequence = group.sequence();
+            if (sequence != null) {
+                groupNode.put("span", sequence.span());
+                groupNode.set("window", json(sequence.window()));
+            }
             ArrayNode conditionArray = groupNode.putArray("conditions");
-            for (Condition condition : group.conditions()) conditionArray.add(json(condition));
+            for (int index = 0; index < group.conditions().size(); index++) {
+                ObjectNode node = json(group.conditions().get(index));
+                if (sequence != null) {
+                    Step step = sequence.steps().get(index);
+                    ObjectNode stepNode = node.putObject("step");
+                    stepNode.put("candles", step.candles());
+                    if (index > 0) stepNode.put("within", step.within());
+                }
+                conditionArray.add(node);
+            }
         }
         return root;
     }

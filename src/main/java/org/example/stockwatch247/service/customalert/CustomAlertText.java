@@ -10,6 +10,8 @@ import org.example.stockwatch247.service.customalert.CustomAlertDefinition.Group
 import org.example.stockwatch247.service.customalert.CustomAlertDefinition.Operand;
 import org.example.stockwatch247.service.customalert.CustomAlertDefinition.OutlookCondition;
 import org.example.stockwatch247.service.customalert.CustomAlertDefinition.PatternCondition;
+import org.example.stockwatch247.service.customalert.CustomAlertDefinition.Sequence;
+import org.example.stockwatch247.service.customalert.CustomAlertDefinition.Step;
 import org.example.stockwatch247.service.customalert.CustomAlertDefinition.ValueCondition;
 
 import java.util.ArrayList;
@@ -41,12 +43,37 @@ public final class CustomAlertText {
         boolean grouped = definition.groups().size() > 1;
         if (grouped) lines.add("ALL".equals(definition.match()) ? "Every group must be true:" : "At least one group must be true:");
         for (Group group : definition.groups()) {
+            Sequence sequence = group.sequence();
+            if (sequence != null) {
+                lines.add(sequence.window().span() > 1
+                        ? "In this order, all within " + sequence.span() + " candles, completed in the last " + sequence.window().span() + " candles:"
+                        : "In this order, all within " + sequence.span() + " candles:");
+                for (int index = 0; index < group.conditions().size(); index++) {
+                    lines.add("- " + step(group.conditions().get(index), sequence.steps().get(index), index, catalog));
+                }
+                continue;
+            }
             if (group.conditions().size() > 1) {
                 lines.add(("ALL".equals(group.match()) ? "All of these:" : "Any of these:"));
             }
             for (Condition condition : group.conditions()) lines.add("- " + describe(condition, catalog));
         }
         return String.join("\n", lines);
+    }
+
+    /** "Step 1: RSI (14) is below 30 for at least 5 candles in a row", "Step 2, within 3 candles: RSI (14) is above 30". */
+    static String step(Condition condition, Step step, int index, ChartIndicatorCatalog catalog) {
+        String text = switch (condition) {
+            case PatternCondition pattern -> patternStep(pattern);
+            default -> describe(condition, catalog);
+        };
+        // "Not: … on each of" says the reversal holds candle by candle, not that the run as a whole did not happen.
+        if (step.candles() > 1) {
+            text = text + (condition.negate() ? " on each of at least " : " for at least ") + step.candles() + " candles in a row";
+        }
+        if (index == 0) return "Step 1: " + text;
+        return step.within() == 1 ? "Step " + (index + 1) + ", on the next candle: " + text
+                : "Step " + (index + 1) + ", within " + step.within() + " candles: " + text;
     }
 
     public static String describe(Condition condition) {
@@ -145,18 +172,31 @@ public final class CustomAlertText {
      * Short sentences, so each is translated on its own.
      */
     private static String pattern(PatternCondition condition) {
+        return patternSentences(condition, patternLead(condition) + (condition.confirmed() ? " confirmed" : " detected")
+                + " in the last " + condition.window().span() + " candles.");
+    }
+
+    /** A pattern as a step of a sequence, which counts on one candle: "Bullish candlestick pattern confirmed." */
+    private static String patternStep(PatternCondition condition) {
+        return patternSentences(condition, patternLead(condition) + (condition.confirmed() ? " confirmed." : " detected."));
+    }
+
+    private static String patternLead(PatternCondition condition) {
         String family = switch (condition.family()) {
             case "ELLIOTT_WAVE" -> "Elliott Wave signal";
             case "HARMONIC_FORMATION" -> "harmonic pattern";
             default -> "candlestick pattern";
         };
-        String lead = switch (condition.direction()) {
+        return switch (condition.direction()) {
             case "BULLISH" -> "Bullish " + family;
             case "BEARISH" -> "Bearish " + family;
             default -> Character.toUpperCase(family.charAt(0)) + family.substring(1);
         };
+    }
+
+    private static String patternSentences(PatternCondition condition, String first) {
         List<String> sentences = new ArrayList<>();
-        sentences.add(lead + (condition.confirmed() ? " confirmed" : " detected") + " in the last " + condition.window().span() + " candles.");
+        sentences.add(first);
         if (!condition.patterns().isEmpty()) {
             sentences.add("Patterns: " + condition.patterns().stream().map(name -> patternName(condition.family(), name))
                     .collect(Collectors.joining(", ")) + ".");

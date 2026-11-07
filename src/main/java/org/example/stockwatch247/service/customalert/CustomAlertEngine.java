@@ -222,6 +222,8 @@ public class CustomAlertEngine {
         } catch (RuntimeException unavailable) {
             log.warn("Custom alert indicators unavailable for {} {}", data.asset().getTickerSymbol(), data.interval(), unavailable);
         }
+        // A sequence with a pattern step can look back further than any pattern window (a no-op for every other rule).
+        data.coverPatterns(definitions.values().stream().mapToInt(CustomAlertDefinition::patternLookbackCandles).max().orElse(1) + MAX_CATCH_UP);
         Map<Long, User> owners = new HashMap<>();
         int triggered = 0;
         for (Target target : targets) {
@@ -300,7 +302,7 @@ public class CustomAlertEngine {
             if (result.matched() && current.notifyOnBaseline() && current.stateRevision() == current.revision()) {
                 triggered = record(data, current, definition, result, last, "MATCHED_ON_APPLY") ? 1 : 0;
             }
-            saveBaseline(current, assetId, candles.get(last).getTimestamp(), result, triggered > 0);
+            saveBaseline(current, assetId, candles.get(last).getTimestamp(), result, triggered > 0, progress(definition, result));
             return triggered;
         }
         int start = firstNewCandle(candles, current.lastEvaluated());
@@ -337,12 +339,31 @@ public class CustomAlertEngine {
         String status = result != null && !result.applicable() ? "SKIPPED" : "OK";
         db.update("""
                 update custom_alert_states set last_evaluated_timestamp = ?, last_result = ?, status = ?, status_detail = ?,
-                       last_triggered_timestamp = ?, triggered_once = ?, updated_at = current_timestamp
+                       last_triggered_timestamp = ?, triggered_once = ?, progress = ?, updated_at = current_timestamp
                 where alert_id = ? and stock_asset_id = ?
                 """, candles.get(last).getTimestamp(), previous, status,
                 "SKIPPED".equals(status) ? "A condition does not apply to this instrument." : null,
-                lastTriggered, once, current.alertId(), assetId);
+                lastTriggered, once, progress(definition, result), current.alertId(), assetId);
         return triggered;
+    }
+
+    /**
+     * How far the furthest sequence got on the latest candle when the rule does not match, as JSON ({@code done},
+     * {@code steps}, {@code candlesLeft} when the next step's allowance is still running); null when none is under way.
+     */
+    private String progress(CustomAlertDefinition definition, Result result) {
+        if (result == null || result.matched() || !result.applicable()) return null;
+        ObjectNode furthest = null;
+        for (int index = 0; index < result.groups().size(); index++) {
+            Map<String, Object> facts = result.groups().get(index).facts();
+            if (!(facts.get("done") instanceof Integer done) || done < 1) continue;
+            if (furthest != null && furthest.path("done").asInt() >= done) continue;
+            furthest = json.createObjectNode();
+            furthest.put("done", done);
+            furthest.put("steps", definition.groups().get(index).conditions().size());
+            if (facts.get("candlesLeft") instanceof Integer left) furthest.put("candlesLeft", left);
+        }
+        return furthest == null ? null : furthest.toString();
     }
 
     private static int candlesSince(List<Candle> candles, long timestamp, int index) {
@@ -351,16 +372,16 @@ public class CustomAlertEngine {
         return count;
     }
 
-    private void saveBaseline(Target target, long assetId, long candle, Result result, boolean triggered) {
+    private void saveBaseline(Target target, long assetId, long candle, Result result, boolean triggered, String progress) {
         String status = result.applicable() ? "OK" : "SKIPPED";
         db.update("""
                 update custom_alert_states set revision = ?, last_evaluated_timestamp = ?, last_result = ?, status = ?,
                        status_detail = ?, last_triggered_timestamp = case when ? then ? else null end, triggered_once = ?,
-                       notify_on_baseline = false, updated_at = current_timestamp
+                       notify_on_baseline = false, progress = ?, updated_at = current_timestamp
                 where alert_id = ? and stock_asset_id = ?
                 """, target.revision(), candle, result.matched(), status,
                 result.applicable() ? null : "A condition does not apply to this instrument.",
-                triggered, candle, triggered && "ONCE".equals(target.triggerMode()), target.alertId(), assetId);
+                triggered, candle, triggered && "ONCE".equals(target.triggerMode()), progress, target.alertId(), assetId);
     }
 
     private void saveState(Target target, long assetId, Long candle, boolean result, String status, String detail, boolean keepNotify) {
@@ -371,7 +392,7 @@ public class CustomAlertEngine {
                 on conflict (alert_id, stock_asset_id) do update set revision = excluded.revision,
                     last_evaluated_timestamp = excluded.last_evaluated_timestamp,
                     last_result = excluded.last_result, status = excluded.status, status_detail = excluded.status_detail,
-                    notify_on_baseline = excluded.notify_on_baseline, updated_at = current_timestamp
+                    notify_on_baseline = excluded.notify_on_baseline, progress = null, updated_at = current_timestamp
                 """, target.alertId(), assetId, target.revision(), candle, result, status, detail, keepNotify);
     }
 
@@ -391,6 +412,16 @@ public class CustomAlertEngine {
             node.put("passed", condition.passed());
             node.put("applicable", condition.applicable());
             node.set("facts", json.valueToTree(condition.facts()));
+        }
+        // Sequences also say when they completed.
+        ArrayNode groups = null;
+        for (var group : result.groups()) {
+            if (group.facts().isEmpty()) continue;
+            if (groups == null) groups = evidence.putArray("groups");
+            ObjectNode node = groups.addObject();
+            node.put("id", group.id());
+            node.put("passed", group.passed());
+            node.set("facts", json.valueToTree(group.facts()));
         }
         List<Long> inserted = db.queryForList("""
                 insert into custom_alert_events (alert_id, stock_asset_id, candle_timestamp, kind, close_price, revision, rule_text,

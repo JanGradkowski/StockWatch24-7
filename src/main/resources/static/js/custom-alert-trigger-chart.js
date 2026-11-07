@@ -24,6 +24,14 @@
     return (definition?.groups || []).flatMap(group => group.conditions || []);
   }
 
+  /** For each condition that is a step of a sequence ("in order" group), its step number. */
+  function stepsOf(definition) {
+    const steps = new Map();
+    (definition?.groups || []).filter(group => group.match === 'THEN')
+      .forEach(group => (group.conditions || []).forEach((condition, index) => steps.set(condition.id, index + 1)));
+    return steps;
+  }
+
   /** A [time, value] list on the chart's candles: NaN where the line has no value. */
   function align(points, indexOf, length) {
     const values = new Array(length).fill(NaN);
@@ -163,7 +171,7 @@
   }
 
   window.StockWatchTriggerChart = Object.freeze({
-    PALETTE, colorAt, conditionsOf, align, holds, passing, windowOf, atOrBefore, panePlan
+    PALETTE, colorAt, conditionsOf, stepsOf, align, holds, passing, windowOf, atOrBefore, panePlan
   });
 
   const page = document.querySelector('.ca-trigger-page');
@@ -179,6 +187,9 @@
   const evidence = JSON.parse(page.dataset.evidence || '{}');
   const results = new Map((evidence.conditions || []).map(item => [item.id, item]));
   const conditions = conditionsOf(evidence.definition);
+  const steps = stepsOf(evidence.definition);
+  const describeLayer = (condition, definitions) => steps.has(condition.id)
+    ? `${i18n.t('ca.chart.step', steps.get(condition.id))} · ${text.describeStep(condition, definitions)}` : text.describe(condition, definitions);
   const signed = value => `${value >= 0 ? '+' : ''}${text.number(value)}%`;
   const narrow = () => window.matchMedia('(max-width: 640px)').matches;
   /** A value short enough to sit beside a candle near the chart's edge: volumes as 42.3M. */
@@ -486,8 +497,18 @@
         addMarker(target.series, { time: times[matched], position: 'aboveBar', color: layer.color, shape: 'circle',
           size: target.candles ? 0.8 : 1, text: caption }, layer);
       }
+      if (stepBand(layer)) return;
       const [first, last] = windowOf(condition, trigger);
       if (last > first) band(layer, first, last, i18n.plural('ca.chart.window', last - first + 1, last - first + 1));
+    }
+
+    /** A step of a sequence is bracketed over the candles it held on, labelled with its number; false for other conditions. */
+    function stepBand(layer) {
+      const number = steps.get(layer.condition.id);
+      if (!number) return false;
+      const facts = layer.result?.facts || {};
+      if (facts.from && facts.to) band(layer, index(facts.from), index(facts.to), i18n.t('ca.chart.step', number));
+      return true;
     }
 
     function drawPattern(layer) {
@@ -496,10 +517,10 @@
       const view = views[condition.id] || {};
       const [first, last] = windowOf(condition, trigger);
       if (!facts.pattern) {
-        band(layer, first, last, i18n.t('ca.chart.noneFound'));
+        if (!steps.has(condition.id)) band(layer, first, last, i18n.t('ca.chart.noneFound'));
         return;
       }
-      if (last > first) band(layer, first, last, i18n.plural('ca.chart.window', last - first + 1, last - first + 1));
+      if (!stepBand(layer) && last > first) band(layer, first, last, i18n.plural('ca.chart.window', last - first + 1, last - first + 1));
       const name = text.patternName(condition.family, facts.type);
       const bullish = facts.bullish !== false;
       const anchor = index(facts.anchorAt);
@@ -730,10 +751,10 @@
       chip.type = 'button';
       chip.setAttribute('aria-pressed', 'true');
       chip.append(el('i', 'ca-swatch'), el('span', 'ca-chart-state', met ? '✓' : '–'),
-        el('span', null, text.describe(layer.condition, definitions)));
+        el('span', null, describeLayer(layer.condition, definitions)));
       if (layer.note) chip.append(el('small', null, layer.note));
       chip.title = i18n.t('ca.chart.toggle');
-      chip.setAttribute('aria-label', `${i18n.t(met ? 'ca.readout.met' : 'ca.readout.unmet')}: ${text.describe(layer.condition, definitions)}`);
+      chip.setAttribute('aria-label', `${i18n.t(met ? 'ca.readout.met' : 'ca.readout.unmet')}: ${describeLayer(layer.condition, definitions)}`);
       chip.addEventListener('click', () => {
         const visible = chip.getAttribute('aria-pressed') !== 'true';
         chip.setAttribute('aria-pressed', String(visible));

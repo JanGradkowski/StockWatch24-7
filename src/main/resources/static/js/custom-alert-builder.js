@@ -13,7 +13,7 @@
   const choose = (...args) => window.StockWatchLists.choose(...args);
   const el = text.element;
   // Learning-mode explanations (js.learn.<key>) used on this page.
-  const LEARN_OPTIONS = { capacity: 'customAlerts.capacity', confirmed: 'customAlerts.confirmed', detected: 'customAlerts.detected', direction: 'customAlerts.direction', disclosureDate: 'customAlerts.disclosureDate', filingDate: 'customAlerts.filingDate', history: 'customAlerts.history', minPeople: 'customAlerts.minPeople', minScore: 'customAlerts.minScore', negate: 'customAlerts.negate', operator: 'customAlerts.operator', outcome: 'customAlerts.outcome', outlook: 'customAlerts.outlook', status: 'customAlerts.status', timeframe: 'customAlerts.timeframe', window: 'customAlerts.window' };
+  const LEARN_OPTIONS = { capacity: 'customAlerts.capacity', confirmed: 'customAlerts.confirmed', detected: 'customAlerts.detected', direction: 'customAlerts.direction', disclosureDate: 'customAlerts.disclosureDate', filingDate: 'customAlerts.filingDate', history: 'customAlerts.history', minPeople: 'customAlerts.minPeople', minScore: 'customAlerts.minScore', negate: 'customAlerts.negate', operator: 'customAlerts.operator', outcome: 'customAlerts.outcome', outlook: 'customAlerts.outlook', status: 'customAlerts.status', timeframe: 'customAlerts.timeframe', window: 'customAlerts.window', inOrder: 'customAlerts.inOrder', inARow: 'customAlerts.inARow', within: 'customAlerts.within', span: 'customAlerts.span', completed: 'customAlerts.completed' };
   const PRICE_FIELDS = ['CLOSE', 'OPEN', 'HIGH', 'LOW', 'VOLUME'];
   const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'hlcc4'];
   const COMPARISONS = ['ABOVE', 'BELOW', 'CROSSES_ABOVE', 'CROSSES_BELOW'];
@@ -49,6 +49,17 @@
   let counter = 0;
   const newId = prefix => `${prefix}${Date.now().toString(36)}${(counter++).toString(36)}`;
   const conditions = () => state.definition.groups.flatMap(group => group.conditions);
+  const groupOf = condition => state.definition.groups.find(group => group.conditions.includes(condition));
+  // Steps of a sequence ("in order" group) are read candle by candle: the outlook (latest candle only) and filings
+  // (calendar days) cannot be, and "no pattern on this candle" is true almost always.
+  const canBeStep = condition => (condition.kind === 'VALUE' || condition.kind === 'PATTERN') && !(condition.kind === 'PATTERN' && condition.negate);
+  // Per sequence: a note to show in it, its span input, and whether the user set the span (otherwise it follows the steps).
+  const groupNotes = new WeakMap();
+  const spanInputs = new WeakMap();
+  const spanWarnings = new WeakMap();
+  const spanTouched = new WeakSet();
+  // A sequence switched to all/any keeps its settings here, so switching back to "in order" restores them.
+  const sequenceSettings = new WeakMap();
 
   // ------------------------------------------------------------------ small controls
 
@@ -159,7 +170,9 @@
     }
     groups.forEach((group, groupIndex) => {
       if (groupIndex > 0) parts.push(el('div', 'ca-group-joiner', i18n.t(state.definition.match === 'ANY' ? 'ca.badge.or' : 'ca.badge.and')));
-      parts.push(groupBox(group, groupIndex));
+      const box = groupBox(group, groupIndex);
+      box.dataset.groupId = group.id;
+      parts.push(box);
     });
     if (!conditions().length) {
       const empty = el('div', 'ca-rule-empty');
@@ -168,21 +181,25 @@
     }
     nodes.groups.replaceChildren(...parts);
     form.querySelector('[data-ca-add-group]').disabled = groups.length >= catalog.maxGroups || !conditions().length;
-    form.querySelector('[data-ca-add-condition]').disabled = conditions().length >= catalog.maxConditions;
+    // A plain condition goes into the last plain group, or a new one after a sequence.
+    form.querySelector('[data-ca-add-condition]').disabled = conditions().length >= catalog.maxConditions
+      || (groups.at(-1).match === 'THEN' && groups.length >= catalog.maxGroups && !groups.some(group => group.match !== 'THEN'));
   }
 
   function groupBox(group, groupIndex) {
     const groups = state.definition.groups;
-    const box = el('section', `ca-group${groups.length > 1 ? ' is-grouped' : ''}`);
+    const ordered = group.match === 'THEN';
+    const box = el('section', `ca-group${groups.length > 1 ? ' is-grouped' : ''}${ordered ? ' is-sequence' : ''}`);
     box.setAttribute('aria-label', i18n.t('ca.builder.groupAria', groupIndex + 1));
-    if (groups.length > 1 || group.conditions.length > 1) {
+    if (groups.length > 1 || group.conditions.length > 1 || ordered) {
       const header = el('div', 'ca-group-header');
       if (groups.length > 1) header.append(el('strong', null, i18n.t('ca.builder.groupTitle', groupIndex + 1)));
-      if (group.conditions.length > 1) {
-        header.append(segmented(group.match, [['ALL', i18n.t('ca.builder.allConditions')], ['ANY', i18n.t('ca.builder.anyCondition')]], value => {
-          group.match = value; renderGroups(); changed();
-        }, i18n.t('ca.builder.groupMatchAria', groupIndex + 1)));
-        header.append(el('span', 'wl-muted', i18n.t(group.match === 'ANY' ? 'ca.builder.anyHint' : 'ca.builder.allHint')));
+      if (group.conditions.length > 1 || ordered) {
+        header.append(segmented(group.match, [['ALL', i18n.t('ca.builder.allConditions')], ['ANY', i18n.t('ca.builder.anyCondition')],
+          ['THEN', i18n.t('ca.builder.inOrder')]], value => setMatch(group, value), i18n.t('ca.builder.groupMatchAria', groupIndex + 1)));
+        const hint = el('span', 'wl-muted', i18n.t(ordered ? 'ca.builder.inOrderHint' : group.match === 'ANY' ? 'ca.builder.anyHint' : 'ca.builder.allHint'));
+        if (ordered) hint.append(' ', learnHelp(LEARN_OPTIONS.inOrder, i18n.t('ca.builder.inOrder')));
+        header.append(hint);
       }
       if (groups.length > 1) {
         header.append(iconButton(i18n.t('ca.builder.removeGroup', groupIndex + 1), '×', () => {
@@ -193,11 +210,19 @@
       }
       box.append(header);
     }
+    const note = groupNotes.get(group);
+    if (note) {
+      const message = el('p', 'wl-muted ca-sequence-note', note);
+      message.setAttribute('role', 'status');
+      box.append(message);
+    }
     group.conditions.forEach((condition, index) => {
-      if (index > 0) box.append(el('div', 'ca-condition-joiner', i18n.t(group.match === 'ANY' ? 'ca.badge.or' : 'ca.badge.and')));
+      if (index > 0) box.append(ordered ? connector(group, condition, index) : el('div', 'ca-condition-joiner', i18n.t(group.match === 'ANY' ? 'ca.badge.or' : 'ca.badge.and')));
       box.append(conditionCard(condition, group, index));
     });
-    if (groups.length > 1) {
+    if (ordered) {
+      box.append(...sequenceFooter(group));
+    } else if (groups.length > 1) {
       const add = el('button', 'btn-secondary ca-add-here', i18n.t('ca.builder.addToGroup'));
       add.type = 'button';
       add.disabled = conditions().length >= catalog.maxConditions;
@@ -207,47 +232,311 @@
     return box;
   }
 
+  function learnHelp(key, title) {
+    const help = el('span', 'learn-help', '?');
+    help.dataset.learn = key;
+    help.dataset.learnTitle = title;
+    return help;
+  }
+
+  /** A switch redraws the rule: keyboard focus goes back to the choice now pressed, instead of dropping to the page. */
+  function refocus(group, area) {
+    nodes.groups.querySelector(`[data-group-id="${CSS.escape(group.id)}"] ${area} .ca-segmented button[aria-pressed="true"]`)?.focus();
+  }
+
+  /**
+   * A number field cleared while typing keeps the last value it had (its handler ignores the empty field); when the
+   * user leaves it empty, it shows that value again rather than looking blank.
+   */
+  function restoreWhenBlank(input, current) {
+    input.addEventListener('change', () => { if (input.value === '') input.value = String(current()); });
+    return input;
+  }
+
+  // ------------------------------------------------------------------ sequences
+
+  /**
+   * A condition becomes a step. "On each of the last N candles" becomes N candles in a row; any other window is kept
+   * aside (the server ignores it in a step) so the condition gets it back if it leaves. True when a window stops counting.
+   */
+  function enterSequence(condition, first) {
+    const every = condition.kind === 'VALUE' && condition.window?.mode === 'EVERY' ? condition.window.candles : 1;
+    const candles = text.stepCandles({ ...condition, step: { candles: condition.step?.candles || every } });
+    // A rise or fall counts its own candles, so its "on each of the last N" does not carry over either.
+    const dropped = condition.kind === 'VALUE' ? condition.window?.mode === 'ANY' && condition.window.candles > 1 || every > candles
+      : (condition.window?.candles || 1) > 1;
+    condition.step = first ? { candles } : { candles, within: condition.step?.within || 5 };
+    return dropped;
+  }
+
+  /** A note that refused something goes once the user does something else; the note about removed windows stays. */
+  function clearRefusal(group) {
+    if (groupNotes.get(group) !== i18n.t('ca.builder.windowsDropped')) groupNotes.delete(group);
+  }
+
+  /** A step leaves its sequence: candles in a row become "on each of the last N candles"; a pattern gets a window again. */
+  function leaveSequence(condition) {
+    const candles = condition.step?.candles || 1;
+    delete condition.step;
+    if (condition.kind === 'VALUE' && candles > 1 && !['CROSSES_ABOVE', 'CROSSES_BELOW', 'NEW_HIGH', 'NEW_LOW'].includes(condition.operator)) {
+      condition.window = { mode: 'EVERY', candles };
+    } else if (condition.kind === 'PATTERN' && (condition.window?.candles || 1) <= 1) {
+      condition.window = { mode: 'ANY', candles: 3 };
+    }
+  }
+
+  /** The first step has no allowance, every later one has; patterns, crosses, rises and falls count one candle. */
+  function normalizeSteps(group) {
+    if (group.match !== 'THEN') return;
+    group.conditions.forEach((condition, index) => {
+      const candles = text.stepCandles(condition);
+      condition.step = index ? { candles, within: condition.step?.within || 5 } : { candles };
+    });
+    syncSpan(group);
+  }
+
+  /**
+   * Unless the user set it, the span follows the steps; it never drops below what the steps need, nor goes past the
+   * longest span allowed. Steps that need more than that are told so under the sequence.
+   */
+  function syncSpan(group) {
+    if (group.match !== 'THEN') return;
+    const longest = catalog.maxSpan || 120;
+    const needed = group.conditions.reduce((sum, condition) => sum + text.stepCandles(condition), 0);
+    group.span = Math.min(longest, spanTouched.has(group) ? Math.max(group.span || 0, needed) : text.defaultSpan(group));
+    const input = spanInputs.get(group);
+    if (input && document.activeElement !== input) input.value = String(group.span);
+    const warning = spanWarnings.get(group);
+    if (warning) warning.textContent = needed > longest ? i18n.t('ca.builder.spanTooLong', needed, longest) : '';
+  }
+
+  /** Sequences loaded from a saved alert or a template keep a span that differs from the default as the user's own. */
+  function adoptSequences() {
+    state.definition.groups.forEach(group => {
+      if (group.match === 'THEN' && group.span != null && group.span !== text.defaultSpan(group)) spanTouched.add(group);
+    });
+  }
+
+  function setMatch(group, match) {
+    if (match === group.match) return;
+    groupNotes.delete(group);
+    if (match === 'THEN') {
+      if (!group.conditions.every(canBeStep)) {
+        groupNotes.set(group, i18n.t('ca.builder.inOrderBlocked'));
+        renderGroups();
+        refocus(group, '.ca-group-header');
+        return;
+      }
+      // Back to "in order" after trying all/any: the sequence's own settings come back as they were.
+      const kept = sequenceSettings.get(group);
+      let dropped = false;
+      group.conditions.forEach((condition, index) => {
+        if (kept?.steps.has(condition)) condition.step = { ...kept.steps.get(condition) };
+        dropped = enterSequence(condition, index === 0) || dropped;
+      });
+      group.window = kept ? { ...kept.window } : { mode: 'LATEST' };
+      if (kept) {
+        group.span = kept.span;
+        if (kept.touched) spanTouched.add(group);
+      }
+      if (dropped) groupNotes.set(group, i18n.t('ca.builder.windowsDropped'));
+    } else if (group.match === 'THEN') {
+      sequenceSettings.set(group, { span: group.span, window: { ...group.window }, touched: spanTouched.has(group),
+        steps: new Map(group.conditions.map(condition => [condition, { ...condition.step }])) });
+      group.conditions.forEach(leaveSequence);
+      delete group.span;
+      delete group.window;
+      spanTouched.delete(group);
+    }
+    group.match = match;
+    if (match === 'THEN') normalizeSteps(group);
+    renderGroups(); changed();
+    refocus(group, '.ca-group-header');
+  }
+
+  /** Between two steps: "↓ then, within [5] candles", editable in place. */
+  function connector(group, condition, index) {
+    const row = el('div', 'ca-step-connector');
+    const within = () => condition.step?.within ?? 5;
+    const unit = el('span', null, i18n.plural('ca.builder.withinUnit', within()));
+    const input = restoreWhenBlank(numberInput(within(), { min: 1, max: catalog.maxWindow || 60, step: 1 }, value => {
+      if (value == null) return;
+      condition.step = { ...condition.step, within: value };
+      unit.textContent = i18n.plural('ca.builder.withinUnit', within());
+      syncSpan(group); changed();
+    }), within);
+    input.setAttribute('aria-label', i18n.t('ca.builder.thenAria', index + 1, index));
+    const arrow = el('span', 'ca-step-arrow', '↓');
+    arrow.setAttribute('aria-hidden', 'true');
+    row.append(arrow, el('span', null, i18n.t('ca.builder.thenWithin')), input, unit, learnHelp(LEARN_OPTIONS.within, i18n.t('ca.builder.thenWithin')));
+    return row;
+  }
+
+  /** Under the steps: the span, when the sequence must have completed, the live reading, and the next step. */
+  function sequenceFooter(group) {
+    const parts = [];
+    const footer = el('div', 'ca-sequence-footer');
+    const span = restoreWhenBlank(numberInput(group.span ?? text.defaultSpan(group), { min: 2, max: catalog.maxSpan || 120, step: 1 }, value => {
+      if (value == null) return;
+      spanTouched.add(group);
+      group.span = value;
+      changed();
+    }), () => group.span);
+    span.setAttribute('aria-label', i18n.t('ca.builder.spanAria'));
+    spanInputs.set(group, span);
+    const spanUnit = el('span', 'ca-unit');
+    spanUnit.append(span, el('span', null, i18n.t('ca.builder.thenUnit')));
+    footer.append(field(i18n.t('ca.builder.span'), spanUnit, LEARN_OPTIONS.span));
+    const recent = group.window?.mode === 'ANY';
+    const completed = el('div', 'ca-sequence-completed');
+    completed.append(segmented(recent ? 'ANY' : 'LATEST', [['LATEST', i18n.t('ca.builder.completedLatest')], ['ANY', i18n.t('ca.builder.completedRecent')]], value => {
+      group.window = value === 'ANY' ? { mode: 'ANY', candles: group.window?.candles > 1 ? group.window.candles : 3 } : { mode: 'LATEST' };
+      renderGroups(); changed();
+      refocus(group, '.ca-sequence-completed');
+    }, i18n.t('ca.builder.completedAria')));
+    if (recent) {
+      const candles = restoreWhenBlank(numberInput(group.window.candles, { min: 1, max: catalog.maxWindow || 60, step: 1 }, value => {
+        if (value == null) return;
+        group.window = { mode: 'ANY', candles: value }; changed();
+      }), () => group.window.candles);
+      candles.setAttribute('aria-label', i18n.t('ca.builder.completedCandles'));
+      completed.append(candles);
+    }
+    footer.append(field(i18n.t('ca.builder.completed'), completed, LEARN_OPTIONS.completed));
+    const readout = el('p', 'ca-sequence-readout');
+    readout.dataset.groupReadout = group.id;
+    readout.setAttribute('aria-live', 'polite');
+    const warning = el('p', 'ca-sequence-note ca-sequence-warning ca-span-warning');
+    warning.setAttribute('role', 'status');
+    spanWarnings.set(group, warning);
+    footer.append(readout, warning);
+    parts.push(footer);
+    syncSpan(group);
+    if (group.conditions.length < 2) parts.push(el('p', 'ca-sequence-note ca-sequence-warning', i18n.t('ca.builder.needSteps')));
+    if (state.definition.groups.length < 2) parts.push(el('p', 'wl-muted ca-sequence-note', i18n.t('ca.builder.sequenceHint')));
+    if (group.conditions.length < (catalog.maxSteps || 4)) {
+      const add = el('button', 'btn-secondary ca-add-here', i18n.t('ca.builder.addStep'));
+      add.type = 'button';
+      add.disabled = conditions().length >= catalog.maxConditions;
+      add.addEventListener('click', () => addCondition(group));
+      parts.push(add);
+    }
+    applyGroupReadout(readout, group);
+    return parts;
+  }
+
+  /**
+   * Whether "Then…" keeps the rule's meaning: a lone condition becomes a sequence in place; one of several moves into a
+   * new group, which only means the same when its group and the groups are both joined with "all".
+   */
+  function canStartSequence(group) {
+    return group.conditions.length === 1 || group.match === 'ALL' && (state.definition.groups.length === 1 || state.definition.match === 'ALL');
+  }
+
+  /** "Then…": the condition becomes step 1 of a sequence (its group, or a new group after it), and step 2 is chosen next. */
+  function startSequence(condition, group) {
+    const groups = state.definition.groups;
+    if (!canStartSequence(group)) {
+      groupNotes.set(group, i18n.t('ca.builder.thenBlocked'));
+      renderGroups();
+      return;
+    }
+    groupNotes.delete(group);
+    let sequence = group;
+    if (group.conditions.length > 1) {
+      // Until now the only group, so its join with the new group was never shown: it is "all", as the rule meant.
+      if (groups.length === 1) state.definition.match = 'ALL';
+      group.conditions.splice(group.conditions.indexOf(condition), 1);
+      sequence = { id: newId('g'), match: 'THEN', conditions: [condition] };
+      groups.splice(groups.indexOf(group) + 1, 0, sequence);
+    } else {
+      group.match = 'THEN';
+    }
+    if (enterSequence(condition, true)) groupNotes.set(sequence, i18n.t('ca.builder.windowsDropped'));
+    sequence.window = { mode: 'LATEST' };
+    syncSpan(sequence);
+    renderGroups(); changed();
+    addCondition(sequence);
+  }
+
+  /** Groups a cancelled picker left empty go away; a lone empty sequence turns back into a plain group. */
+  function tidyGroups() {
+    const groups = state.definition.groups;
+    for (let index = groups.length - 1; index >= 0 && groups.length > 1; index--) if (!groups[index].conditions.length) groups.splice(index, 1);
+    const only = groups[0];
+    if (groups.length === 1 && !only.conditions.length && only.match === 'THEN') {
+      only.match = 'ALL';
+      delete only.span;
+      delete only.window;
+    }
+  }
+
   const kindLabel = condition => i18n.t(`ca.kind.${condition.kind === 'VALUE' && condition.subject?.kind === 'PRICE' ? 'PRICE'
     : condition.kind === 'VALUE' ? 'INDICATOR' : condition.kind === 'PATTERN' ? condition.family : condition.kind}`);
   const tone = condition => condition.kind === 'VALUE' ? 'value' : condition.kind === 'PATTERN' ? 'pattern'
     : condition.kind === 'OUTLOOK' ? 'outlook' : 'activity';
 
   function conditionCard(condition, group, index) {
+    const ordered = group.match === 'THEN';
+    const describeCard = () => ordered ? text.describeStep(condition, catalog.byType) : text.describe(condition, catalog.byType);
     const card = el('article', `ca-condition ca-tone-${tone(condition)}${condition.negate ? ' is-negated' : ''}`);
     card.dataset.conditionId = condition.id;
     const header = el('div', 'ca-condition-header');
     const label = el('span', 'ca-kind', kindLabel(condition));
-    const sentence = el('p', 'ca-condition-sentence', text.describe(condition, catalog.byType));
+    const sentence = el('p', 'ca-condition-sentence', describeCard());
     const readout = el('span', 'ca-readout');
     readout.dataset.readout = condition.id;
     const tools = el('div', 'ca-condition-tools');
-    const negate = el('button', 'ca-negate', i18n.t(condition.negate ? 'ca.builder.negated' : 'ca.builder.negate'));
-    negate.type = 'button';
-    negate.setAttribute('aria-pressed', String(Boolean(condition.negate)));
-    negate.classList.add('learn-control');
-    negate.dataset.learn = LEARN_OPTIONS.negate;
-    negate.dataset.learnTitle = i18n.t('ca.builder.negate');
-    negate.addEventListener('click', () => { condition.negate = !condition.negate; renderGroups(); changed(); });
+    const groups = state.definition.groups;
+    // A pattern step cannot be reversed: "no pattern on this candle" holds almost always.
+    if (!(ordered && condition.kind === 'PATTERN')) {
+      const negate = el('button', 'ca-negate', i18n.t(condition.negate ? 'ca.builder.negated' : 'ca.builder.negate'));
+      negate.type = 'button';
+      negate.setAttribute('aria-pressed', String(Boolean(condition.negate)));
+      negate.classList.add('learn-control');
+      negate.dataset.learn = LEARN_OPTIONS.negate;
+      negate.dataset.learnTitle = i18n.t('ca.builder.negate');
+      negate.addEventListener('click', () => { condition.negate = !condition.negate; renderGroups(); changed(); });
+      tools.append(negate);
+    }
+    if (!ordered && canBeStep(condition)) {
+      const then = el('button', 'ca-negate ca-then', i18n.t('ca.builder.then'));
+      then.type = 'button';
+      then.title = i18n.t('ca.builder.thenTitle');
+      then.disabled = conditions().length >= catalog.maxConditions || (group.conditions.length > 1 && groups.length >= catalog.maxGroups);
+      then.addEventListener('click', () => startSequence(condition, group));
+      tools.append(then);
+    }
     const all = conditions();
     const position = all.indexOf(condition);
-    tools.append(negate,
-      iconButton(i18n.t('ca.builder.moveUp'), '↑', () => move(condition, -1), position === 0),
-      iconButton(i18n.t('ca.builder.moveDown'), '↓', () => move(condition, 1), position === all.length - 1),
+    tools.append(
+      iconButton(i18n.t('ca.builder.moveUp'), '↑', () => move(condition, -1), position === 0 && !canLeaveAtEdge(group)),
+      iconButton(i18n.t('ca.builder.moveDown'), '↓', () => move(condition, 1), position === all.length - 1 && !canLeaveAtEdge(group)),
       iconButton(i18n.t('ca.builder.duplicate'), '⧉', () => {
         const copy = JSON.parse(JSON.stringify(condition)); copy.id = newId('c');
-        group.conditions.splice(index + 1, 0, copy); renderGroups(); changed();
-      }, all.length >= catalog.maxConditions),
+        group.conditions.splice(index + 1, 0, copy);
+        normalizeSteps(group);
+        renderGroups(); changed();
+      }, all.length >= catalog.maxConditions || (ordered && group.conditions.length >= (catalog.maxSteps || 4))),
       iconButton(i18n.t('ca.builder.remove'), '×', () => {
         group.conditions.splice(index, 1);
-        if (!group.conditions.length && state.definition.groups.length > 1) {
-          state.definition.groups.splice(state.definition.groups.indexOf(group), 1);
-        }
+        if (!group.conditions.length && groups.length > 1) groups.splice(groups.indexOf(group), 1);
+        else normalizeSteps(group);
         renderGroups(); changed();
       }));
+    if (ordered) {
+      // The number is shown; "Step 2" is what a screen reader says.
+      const badge = el('span', 'ca-step-badge');
+      const number = el('span', null, String(index + 1));
+      number.setAttribute('aria-hidden', 'true');
+      badge.append(number, el('span', 'visually-hidden', i18n.t('ca.builder.stepNumber', index + 1)));
+      badge.title = i18n.t('ca.builder.stepNumber', index + 1);
+      header.append(badge);
+    }
     header.append(label, sentence, readout, tools);
     const body = el('div', 'ca-condition-body');
     const refresh = () => {
-      sentence.textContent = text.describe(condition, catalog.byType);
+      sentence.textContent = describeCard();
       label.textContent = kindLabel(condition);
       changed();
     };
@@ -258,25 +547,63 @@
     return card;
   }
 
-  /** Moves a condition one place up or down, across groups when it reaches a group's edge. */
+  /** A step can leave a sequence past the rule's first or last condition, into a plain group of its own. */
+  function canLeaveAtEdge(group) {
+    return group.match === 'THEN' && group.conditions.length > 1 && state.definition.groups.length < catalog.maxGroups;
+  }
+
+  /**
+   * Moves a condition one place up or down. At a group's edge it crosses into the neighbouring group and stays at that
+   * edge: moving up it becomes the last of the group above, moving down the first of the group below. So ↑ on a
+   * condition under a sequence makes it the sequence's last step, and ↓ on that last step takes it out again (into a
+   * new group when the sequence is the last one). Entering a sequence makes it a step; leaving gives it a window again.
+   */
   function move(condition, step) {
     const all = conditions();
-    const target = all.indexOf(condition) + step;
-    if (target < 0 || target >= all.length) return;
     const groups = state.definition.groups;
-    const from = groups.find(group => group.conditions.includes(condition));
-    const neighbour = all[target];
-    const to = groups.find(group => group.conditions.includes(neighbour));
+    const from = groupOf(condition);
+    const target = all.indexOf(condition) + step;
+    let to;
+    if (target < 0 || target >= all.length) {
+      if (!canLeaveAtEdge(from)) return;
+      to = { id: newId('g'), match: 'ALL', conditions: [] };
+      groups.splice(step < 0 ? 0 : groups.length, 0, to);
+    } else {
+      to = groupOf(all[target]);
+    }
+    if (to !== from && to.match === 'THEN' && !canBeStep(condition)) {
+      groupNotes.set(to, i18n.t('ca.builder.inOrderBlocked'));
+      renderGroups();
+      return;
+    }
+    if (to !== from && to.match === 'THEN' && to.conditions.length >= (catalog.maxSteps || 4)) {
+      groupNotes.set(to, i18n.t('ca.builder.sequenceFull', catalog.maxSteps || 4));
+      renderGroups();
+      return;
+    }
+    clearRefusal(from);
+    clearRefusal(to);
     from.conditions.splice(from.conditions.indexOf(condition), 1);
-    to.conditions.splice(to.conditions.indexOf(neighbour) + (step > 0 ? 1 : 0), 0, condition);
+    if (to === from) to.conditions.splice(to.conditions.indexOf(all[target]) + (step > 0 ? 1 : 0), 0, condition);
+    else to.conditions.splice(step < 0 ? to.conditions.length : 0, 0, condition);
+    if (to !== from) {
+      if (from.match === 'THEN') leaveSequence(condition);
+      if (to.match === 'THEN' && enterSequence(condition, to.conditions.indexOf(condition) === 0)) {
+        groupNotes.set(to, i18n.t('ca.builder.windowsDropped'));
+      }
+    }
     if (!from.conditions.length && groups.length > 1) groups.splice(groups.indexOf(from), 1);
+    else normalizeSteps(from);
+    normalizeSteps(to);
     renderGroups(); changed();
+    // The keyboard stays on the arrow that was pressed, on the condition's new card.
+    nodes.groups.querySelector(`[data-condition-id="${CSS.escape(condition.id)}"] [aria-label="${i18n.t(step < 0 ? 'ca.builder.moveUp' : 'ca.builder.moveDown')}"]`)?.focus();
   }
 
   function editor(condition, refresh, rebuild) {
     switch (condition.kind) {
       case 'VALUE': return valueEditor(condition, refresh, rebuild);
-      case 'PATTERN': return patternEditor(condition, refresh, rebuild);
+      case 'PATTERN': return patternEditor(condition, refresh, rebuild, groupOf(condition)?.match === 'THEN');
       case 'OUTLOOK': return outlookEditor(condition, refresh);
       default: return activityEditor(condition, refresh);
     }
@@ -358,8 +685,24 @@
       fields.push(field(i18n.t(['RISING', 'FALLING'].includes(op) ? 'ca.builder.inARow' : 'ca.builder.lookback'),
         numberInput(condition.candles, limits, value => { condition.candles = value; refresh(); })));
     }
-    fields.push(...windowFields(condition, refresh, rebuild));
+    const group = groupOf(condition);
+    if (group?.match === 'THEN') {
+      // A cross happens on one candle, and a rise or fall counts its own candles: neither takes "in a row".
+      if (text.stepCandles({ ...condition, step: { candles: 2 } }) > 1) fields.push(stepField(condition, group, refresh));
+      syncSpan(group);
+    } else {
+      fields.push(...windowFields(condition, refresh, rebuild));
+    }
     return fields;
+  }
+
+  /** In a sequence the step's own timing replaces the window: how many candles in a row it must hold. */
+  function stepField(condition, group, refresh) {
+    return field(i18n.t('ca.builder.stepInARow'), restoreWhenBlank(numberInput(condition.step?.candles || 1, { min: 1, max: catalog.maxWindow || 60, step: 1 }, value => {
+      if (value == null) return;
+      condition.step = { ...condition.step, candles: value };
+      syncSpan(group); refresh();
+    }), () => condition.step?.candles || 1), LEARN_OPTIONS.inARow);
   }
 
   /** Levels an indicator is usually read against (RSI 30 and 70, Stochastic 20 and 80) as one-click values. */
@@ -545,7 +888,7 @@
 
   // ------------------------------------------------------------------ pattern conditions
 
-  function patternEditor(condition, refresh, rebuild) {
+  function patternEditor(condition, refresh, rebuild, step) {
     const fields = [];
     const candlestick = condition.family === 'CANDLESTICK';
     fields.push(field(i18n.t('ca.builder.patternFamily'), select(['CANDLESTICK', 'ELLIOTT_WAVE', 'HARMONIC_FORMATION']
@@ -560,24 +903,29 @@
     const windowLabel = confirmed => i18n.t(confirmed ? 'ca.builder.confirmedWithin' : 'ca.builder.withinCandles');
     const windowLearn = confirmed => confirmed ? LEARN_OPTIONS.confirmed : LEARN_OPTIONS.detected;
     const confirmed = candlestick && status === 'CONFIRMED';
-    const windowField = field(windowLabel(confirmed), numberInput(condition.window?.candles ?? 5, { min: 1, max: catalog.maxWindow || 60, step: 1 },
+    // A step counts on the one candle its pattern counts on, so it has no window of its own.
+    const stepNote = el('p', 'wl-muted ca-field-note', i18n.t(`ca.builder.patternStep.${confirmed ? 'CONFIRMED' : 'DETECTED'}`));
+    const windowField = step ? null : field(windowLabel(confirmed), numberInput(condition.window?.candles ?? 5, { min: 1, max: catalog.maxWindow || 60, step: 1 },
       value => { condition.window = { mode: 'ANY', candles: value }; refresh(); }), windowLearn(confirmed));
     if (candlestick) {
       // The status changes what the window counts from; only its label is redrawn, so the focus stays here.
       fields.push(field(i18n.t('ca.builder.status'), select(['CONFIRMED', 'DETECTED'].map(value => [value, i18n.t(`ca.patternStatus.${value}`)]),
         status, value => {
           condition.status = value; delete condition.confirmedOnly;
-          const caption = windowField.querySelector('.ca-field-label');
-          const help = caption.querySelector('.learn-help');
-          caption.firstChild.textContent = windowLabel(value === 'CONFIRMED');
-          help.dataset.learn = windowLearn(value === 'CONFIRMED');
-          help.dataset.learnTitle = windowLabel(value === 'CONFIRMED');
+          stepNote.textContent = i18n.t(`ca.builder.patternStep.${value}`);
+          if (windowField) {
+            const caption = windowField.querySelector('.ca-field-label');
+            const help = caption.querySelector('.learn-help');
+            caption.firstChild.textContent = windowLabel(value === 'CONFIRMED');
+            help.dataset.learn = windowLearn(value === 'CONFIRMED');
+            help.dataset.learnTitle = windowLabel(value === 'CONFIRMED');
+          }
           refresh();
         }), LEARN_OPTIONS.status));
     }
     fields.push(field(i18n.t('ca.builder.direction'), select(['BULLISH', 'BEARISH', 'ANY'].map(value => [value, i18n.t(`ca.direction.${value}`)]),
       condition.direction || 'ANY', value => { condition.direction = value; refresh(); }), LEARN_OPTIONS.direction));
-    fields.push(windowField);
+    if (windowField) fields.push(windowField);
     fields.push(field(i18n.t('ca.builder.minScore'), numberInput(condition.minScore, { min: 0, max: 100, step: 1, placeholder: i18n.t('ca.builder.anyScore') },
       value => { if (value == null) delete condition.minScore; else condition.minScore = value; refresh(); }), LEARN_OPTIONS.minScore));
 
@@ -599,6 +947,7 @@
     }, text.patternTerm(condition.family, name))));
     chooser.append(summary, list);
     fields.push(field(i18n.t('ca.builder.patterns'), chooser));
+    if (step) fields.push(stepNote);
     if (candlestick) fields.push(el('p', 'wl-muted ca-field-note', i18n.t('ca.builder.statusNote')));
     if (condition.family === 'HARMONIC_FORMATION') {
       fields.push(check(i18n.t('ca.builder.stillValid'), condition.stillValid, value => { condition.stillValid = value; refresh(); }));
@@ -665,30 +1014,65 @@
     { key: 'anyIndicator', make: null }
   ];
 
+  /** Where "+ Add condition" puts a plain condition: the last group, or a new group after a sequence. */
+  function plainGroup() {
+    const groups = state.definition.groups;
+    if (groups.at(-1).match !== 'THEN') return groups.at(-1);
+    if (groups.length < catalog.maxGroups) {
+      groups.push({ id: newId('g'), match: 'ALL', conditions: [] });
+      return groups.at(-1);
+    }
+    return groups.findLast(group => group.match !== 'THEN') || null;
+  }
+
   function addCondition(group) {
-    const target = group || state.definition.groups.at(-1);
+    const target = group || plainGroup();
+    if (!target) return;
+    const ordered = target.match === 'THEN';
+    const groups = state.definition.groups;
     const dialog = el('dialog', 'wl-dialog ca-picker');
-    const heading = el('h2', null, i18n.t('ca.picker.title'));
+    const heading = el('h2', null, i18n.t(ordered ? 'ca.conditionPicker.stepTitle' : 'ca.conditionPicker.title'));
     heading.id = 'ca-picker-title';
     dialog.setAttribute('aria-labelledby', heading.id);
     const grid = el('div', 'ca-picker-grid');
-    choices().forEach(choice => {
+    let picked = false;
+    const offered = choices().filter(choice => !ordered || !['outlook', 'insider', 'congress'].includes(choice.key));
+    // A new sequence: the target itself while it is empty, otherwise a new group after it.
+    if (!ordered && (!target.conditions.length || groups.length < catalog.maxGroups)) offered.push({ key: 'sequence', sequence: true });
+    offered.forEach(choice => {
       const option = el('button', `ca-picker-option ca-picker-${choice.key}`);
       option.type = 'button';
       option.append(el('strong', null, i18n.t(`ca.picker.${choice.key}.title`)), el('span', null, i18n.t(`ca.picker.${choice.key}.text`)));
       option.addEventListener('click', async () => {
+        picked = true;
         dialog.close();
+        if (choice.sequence) {
+          let sequence = target;
+          if (target.conditions.length) {
+            sequence = { id: newId('g'), match: 'THEN', conditions: [] };
+            groups.splice(groups.indexOf(target) + 1, 0, sequence);
+          }
+          sequence.match = 'THEN';
+          sequence.window = { mode: 'LATEST' };
+          renderGroups();
+          addCondition(sequence);
+          return;
+        }
         let condition;
         if (choice.make) condition = choice.make();
         else {
           const operand = await chooseIndicator(null);
-          if (!operand) return;
+          if (!operand) { tidyGroups(); renderGroups(); return; }
           condition = { kind: 'VALUE', subject: operand, operator: 'ABOVE', window: { mode: 'LATEST' } };
           suggestCompare(condition);
         }
-        target.conditions.push({ id: newId('c'), negate: false, ...condition });
+        const added = { id: newId('c'), negate: false, ...condition };
+        clearRefusal(target);
+        if (ordered) enterSequence(added, !target.conditions.length);
+        target.conditions.push(added);
+        normalizeSteps(target);
         renderGroups(); changed();
-        const card = nodes.groups.querySelector(`[data-condition-id="${CSS.escape(target.conditions.at(-1).id)}"]`);
+        const card = nodes.groups.querySelector(`[data-condition-id="${CSS.escape(added.id)}"]`);
         card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         card?.querySelector('select, input, button')?.focus();
       });
@@ -699,8 +1083,11 @@
     cancel.addEventListener('click', () => dialog.close());
     const actions = el('div', 'wl-actions');
     actions.append(cancel);
-    dialog.append(heading, el('p', 'wl-muted', i18n.t('ca.picker.intro')), grid, actions);
-    dialog.addEventListener('close', () => dialog.remove());
+    dialog.append(heading, el('p', 'wl-muted', i18n.t('ca.conditionPicker.intro')), grid, actions);
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      if (!picked) { tidyGroups(); renderGroups(); }
+    });
     document.body.append(dialog);
     dialog.showModal();
     grid.querySelector('button')?.focus();
@@ -993,9 +1380,48 @@
     nodes.coverage.replaceChildren(box);
   }
 
+  const shortDay = seconds => i18n.date(seconds * 1000, { day: 'numeric', month: 'short' });
+
+  /** A step's reading: when it happened, how far it has got, or how long the next step has left. */
+  function applyStepReadout(node, found) {
+    const facts = found.facts || {};
+    let status;
+    let detail = '';
+    let tone;
+    if (found.passed) {
+      status = i18n.t('ca.readout.met');
+      detail = facts.candles > 1 ? i18n.t('ca.readout.stepRange', shortDay(facts.from), shortDay(facts.to)) : i18n.t('ca.readout.stepOn', shortDay(facts.at));
+      tone = 'is-met';
+    } else if (facts.waiting) {
+      status = i18n.t('ca.readout.waiting');
+      detail = [facts.soFar != null ? i18n.t('ca.readout.soFar', facts.soFar, facts.needed) : null,
+        facts.candlesLeft ? i18n.plural('ca.readout.candlesLeft', facts.candlesLeft, facts.candlesLeft) : null].filter(Boolean).join(' · ');
+      tone = 'is-waiting';
+    } else {
+      status = i18n.t('ca.readout.unmet');
+      if (facts.needed != null) detail = facts.soFar ? i18n.t('ca.readout.soFar', facts.soFar, facts.needed) : i18n.t('ca.readout.notYet');
+      tone = 'is-unmet';
+    }
+    node.className = `ca-readout ${tone}`;
+    node.replaceChildren(el('strong', null, status), detail ? el('span', null, detail) : '');
+    node.setAttribute('aria-label', `${preview.symbol}: ${status}${detail ? `, ${detail}` : ''}`);
+  }
+
+  /** Under a sequence: when it completed (also when that was before its window). */
+  function applyGroupReadout(node, group) {
+    const found = preview?.available ? preview.groups?.find(item => item.id === group.id) : null;
+    const facts = found?.facts || {};
+    let detail = '';
+    if (found?.passed && facts.completedAt) detail = i18n.t('ca.evidence.completedOn', i18n.date(facts.completedAt * 1000, { day: 'numeric', month: 'short', year: 'numeric' }));
+    else if (facts.outsideWindow) detail = i18n.plural('ca.readout.completedAgo', facts.candlesAgo, facts.candlesAgo);
+    node.textContent = detail ? `${preview.symbol}: ${detail}` : '';
+    node.classList.toggle('is-met', Boolean(found?.passed));
+  }
+
   function applyReadout(node, condition) {
     const found = preview?.conditions?.find(item => item.id === condition.id);
     if (!found || !preview.available) { node.replaceChildren(); node.className = 'ca-readout'; return; }
+    if (groupOf(condition)?.match === 'THEN') { applyStepReadout(node, found); return; }
     node.className = `ca-readout ${!found.applicable ? 'is-skipped' : found.passed ? 'is-met' : 'is-unmet'}`;
     const facts = found.facts || {};
     let detail = '';
@@ -1014,6 +1440,10 @@
     nodes.groups.querySelectorAll('[data-readout]').forEach(node => {
       const condition = conditions().find(item => item.id === node.dataset.readout);
       if (condition) applyReadout(node, condition);
+    });
+    nodes.groups.querySelectorAll('[data-group-readout]').forEach(node => {
+      const group = state.definition.groups.find(item => item.id === node.dataset.groupReadout);
+      if (group) applyGroupReadout(node, group);
     });
   }
 
@@ -1043,6 +1473,7 @@
     state.interval = template.interval;
     state.triggerMode = template.triggerMode;
     state.definition = template.definition;
+    adoptSequences();
     syncBasics();
     renderStart(); renderGroups(); changed();
   }
@@ -1111,6 +1542,10 @@
     event.preventDefault();
     const draft = snapshot();
     if (!conditions().length) { nodes.status.textContent = i18n.t('ca.save.needCondition'); return; }
+    if (state.definition.groups.some(group => group.match === 'THEN' && group.conditions.length < 2)) {
+      nodes.status.textContent = i18n.t('ca.save.needSteps');
+      return;
+    }
     if (!draft.name) {
       nodes.name.value = text.describe(conditions()[0], catalog.byType).slice(0, 80);
       draft.name = nodes.name.value;
@@ -1153,6 +1588,7 @@
         nodes.description.value = alert.description || '';
         Object.assign(state, { interval: alert.interval, triggerMode: alert.triggerMode, quietCandles: alert.quietCandles,
           outcomeCandles: alert.outcomeCandles, emailEnabled: alert.emailEnabled, definition: alert.definition });
+        adoptSequences();
         alert.targets.forEach(target => state.targets.set(target.watchlistId, { watchlistId: target.watchlistId, scope: target.scope,
           symbols: [...target.symbols] }));
         const first = alert.targets.find(target => target.symbols.length);

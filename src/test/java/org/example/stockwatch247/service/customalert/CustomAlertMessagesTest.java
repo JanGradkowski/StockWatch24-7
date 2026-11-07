@@ -39,9 +39,17 @@ class CustomAlertMessagesTest {
                 "Completed candle: 14 Oct 2026", "Close: 182.4", "Conditions met: 3 of 3", "And 14 more",
                 "Earlier triggers (2): 13 Oct 2026, 12 Oct 2026",
                 "Informational only, not financial advice.",
-                "Custom alert: Oversold bounce for AAPL", "Custom alert: Oversold bounce for 6 stocks")) {
+                "Custom alert: Oversold bounce for AAPL", "Custom alert: Oversold bounce for 6 stocks",
+                "In this order, all within 20 candles:", "In this order, all within 25 candles, completed in the last 3 candles:",
+                "- Step 1: RSI (14) is below 30 for at least 5 candles in a row", "- Step 2, within 3 candles: RSI (14) is above 30",
+                "- Step 3, on the next candle: Bearish harmonic pattern detected. Score at least 60.",
+                "The whole sequence needs at least 6 candles.")) {
             String polish = ServerMessages.translateLines(line, AppLanguage.PL.locale());
             assertThat(polish).as(line).isNotEqualTo(line);
         }
+        assertThat(ServerMessages.translateLines("- Step 1: RSI (14) is below 30 for at least 5 candles in a row", AppLanguage.PL.locale()))
+                .isEqualTo("- Krok 1: RSI (14) poniżej 30 na każdej z co najmniej 5 kolejnych świec");
+        assertThat(ServerMessages.translateLines("- Step 2, within 3 candles: Bullish candlestick pattern confirmed.", AppLanguage.PL.locale()))
+                .isEqualTo("- Krok 2, w ciągu 3 świec: Wzrostowa formacja świecowa potwierdzona.");
     }
 }
