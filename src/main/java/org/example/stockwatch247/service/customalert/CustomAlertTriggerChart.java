@@ -130,6 +130,8 @@ public class CustomAlertTriggerChart {
                 case "INSIDER", "CONGRESS" -> filings(result.path("kind").asString(""), found, asset.getId());
                 default -> null;
             };
+            // A step of a sequence: its whole stretch is drawn, from its first candle.
+            if (found.path("from").isNumber()) earliest = Math.min(earliest, found.path("from").asLong());
             if (view == null) continue;
             conditions.put(id, view);
             if (view.points() != null) for (PointView point : view.points()) earliest = Math.min(earliest, point.time());

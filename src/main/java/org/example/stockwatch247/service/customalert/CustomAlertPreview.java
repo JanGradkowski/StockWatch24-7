@@ -75,12 +75,13 @@ public class CustomAlertPreview {
     public record Coverage(long stocks, long newToMonitoring, long tracked, int maximum, long nonStocks) { }
 
     /**
-     * {@code conditions} are the latest candle's results; {@code history} the replayed triggers with the price
-     * change after the outcome window where it is known.
+     * {@code conditions} and {@code groups} are the latest candle's results; {@code history} the replayed triggers with
+     * the price change after the outcome window where it is known.
      */
     public record PreviewView(String symbol, String companyName, boolean available, String unavailableReason, Long latestCandle,
                               Double latestClose, boolean matched, boolean applicable, int matchedConditions, int totalConditions,
-                              List<ConditionResult> conditions, List<HistoryPoint> history, long firstReplayed, long replayedCandles,
+                              List<ConditionResult> conditions, List<CustomAlertEvaluator.GroupResult> groups, List<HistoryPoint> history,
+                              long firstReplayed, long replayedCandles,
                               Double medianReturn, Double positiveShare, Coverage coverage, String shortenedBy,
                               String elliottHistory) { }
 
@@ -162,12 +163,12 @@ public class CustomAlertPreview {
                 : Math.round(outcomes.stream().filter(value -> value > 0).count() * 1000.0 / outcomes.size()) / 10.0;
         return new PreviewView(symbol, asset.getCompanyName(), true, null, candles.get(last).getTimestamp(),
                 candles.get(last).getClosePrice(), latest.matched(), latest.applicable(), latest.matchedConditions(),
-                latest.totalConditions(), latest.conditions(), history, candles.get(first).getTimestamp(), last - first + 1L,
+                latest.totalConditions(), latest.conditions(), latest.groups(), history, candles.get(first).getTimestamp(), last - first + 1L,
                 median, positive, coverage, shortened ? "ELLIOTT_WAVE" : null, data.elliottHistoryStatus());
     }
 
     private static PreviewView empty(String symbol, String company, String reason, Coverage coverage) {
-        return new PreviewView(symbol, company, false, reason, null, null, false, true, 0, 0, List.of(), List.of(), 0, 0,
+        return new PreviewView(symbol, company, false, reason, null, null, false, true, 0, 0, List.of(), List.of(), List.of(), 0, 0,
                 null, null, coverage, null, null);
     }
 

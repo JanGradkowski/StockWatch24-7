@@ -11,7 +11,7 @@
   const status = box.querySelector('[data-stock-custom-status]');
   const save = box.querySelector('[data-stock-custom-save]');
   // Learning-mode explanations (js.learn.<key>) used here.
-  const LEARN_OPTIONS = { MATCHING: 'customAlerts.state.MATCHING', NOT_MATCHING: 'customAlerts.state.NOT_MATCHING',
+  const LEARN_OPTIONS = { MATCHING: 'customAlerts.state.MATCHING', HALFWAY: 'customAlerts.state.HALFWAY', NOT_MATCHING: 'customAlerts.state.NOT_MATCHING',
     CHECKING: 'customAlerts.state.CHECKING', WAITING: 'customAlerts.state.WAITING', SKIPPED: 'customAlerts.state.SKIPPED' };
   const api = (...args) => window.StockWatchLists.api(...args);
   const el = (tag, className, content) => {
@@ -56,6 +56,7 @@
       if (LEARN_OPTIONS[alert.state]) { state.dataset.learn = LEARN_OPTIONS[alert.state]; state.dataset.learnTitle = i18n.t(`ca.state.${alert.state}`); }
       if (alert.detail) state.title = alert.detail;
       facts.append(state);
+      if (alert.progress) facts.append(el('span', null, text.progressText(alert.progress)));
     }
     if (!alert.active) facts.append(el('span', 'stock-custom-paused', i18n.t('stockCustom.paused')));
     const triggers = el('a', 'text-link', i18n.t('stockCustom.triggers'));
@@ -65,10 +66,13 @@
     facts.append(triggers, edit);
     item.append(facts);
     // The rule in words, so the choice does not depend on remembering what each name meant.
-    const conditions = (alert.definition?.groups || []).flatMap(group => group.conditions || []);
+    // A sequence reads as its steps joined by arrows (a pattern step has no window of its own).
+    const conditions = (alert.definition?.groups || []).flatMap(group => group.match === 'THEN'
+      ? [(group.conditions || []).map(condition => text.describeStep(condition)).join(' → ')]
+      : (group.conditions || []).map(condition => text.describe(condition)));
     if (conditions.length) {
       const rule = el('p', 'stock-custom-rule');
-      rule.textContent = conditions.slice(0, 3).map(condition => text.describe(condition)).join(' · ')
+      rule.textContent = conditions.slice(0, 3).join(' · ')
         + (conditions.length > 3 ? ` · ${i18n.t('ca.moreConditions', conditions.length - 3)}` : '');
       item.append(rule);
     }

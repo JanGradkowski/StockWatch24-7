@@ -5677,6 +5677,64 @@ pl: {0} co najmniej raz w ostatnich {1} świecach
 en: {0} on each of the last {1} candles
 pl: {0} na każdej z ostatnich {1} świec
 
+# Sequences: a group whose conditions must happen in order (CustomAlertText.step).
+en: In this order, all within {0} candles:
+pl: W tej kolejności, całość w ciągu {0} świec:
+
+en: In this order, all within {0} candles, completed in the last {1} candles:
+pl: W tej kolejności, całość w ciągu {0} świec, zakończona w ostatnich {1} świecach:
+
+en: Step {0}: {1}
+pl: Krok {0}: {1}
+
+en: Step {0}, within {1} candles: {2}
+pl: Krok {0}, w ciągu {1} świec: {2}
+
+en: Step {0}, on the next candle: {1}
+pl: Krok {0}, na następnej świecy: {1}
+
+en: {0} for at least {1} candles in a row
+pl: {0} na każdej z co najmniej {1} kolejnych świec
+
+en: {0} on each of at least {1} candles in a row
+pl: {0} na każdej z co najmniej {1} kolejnych świec
+
+en: Candlestick pattern detected.
+pl: Formacja świecowa wykryta.
+
+en: Bullish candlestick pattern detected.
+pl: Wzrostowa formacja świecowa wykryta.
+
+en: Bearish candlestick pattern detected.
+pl: Spadkowa formacja świecowa wykryta.
+
+en: Candlestick pattern confirmed.
+pl: Formacja świecowa potwierdzona.
+
+en: Bullish candlestick pattern confirmed.
+pl: Wzrostowa formacja świecowa potwierdzona.
+
+en: Bearish candlestick pattern confirmed.
+pl: Spadkowa formacja świecowa potwierdzona.
+
+en: Elliott Wave signal detected.
+pl: Sygnał fal Elliotta wykryty.
+
+en: Bullish Elliott Wave signal detected.
+pl: Sygnał wzrostowego układu fal Elliotta wykryty.
+
+en: Bearish Elliott Wave signal detected.
+pl: Sygnał spadkowego układu fal Elliotta wykryty.
+
+en: Harmonic pattern detected.
+pl: Formacja harmoniczna wykryta.
+
+en: Bullish harmonic pattern detected.
+pl: Wzrostowa formacja harmoniczna wykryta.
+
+en: Bearish harmonic pattern detected.
+pl: Spadkowa formacja harmoniczna wykryta.
+
 en: {0} is above {1}
 pl: {0} powyżej {1}
 
