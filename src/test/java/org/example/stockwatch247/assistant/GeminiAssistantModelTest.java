@@ -29,8 +29,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 /** The Gemini request as the API expects it, its answer read back without thoughts, and the fallback model. */
 class GeminiAssistantModelTest {
     private static final ObjectMapper JSON = JsonMapper.builder().build();
-    private static final String MAIN = "https://gemini.test/v1beta/models/gemini-3.8-flash:generateContent";
-    private static final String FALLBACK = "https://gemini.test/v1beta/models/gemini-3.6-flash:generateContent";
+    private static final String MAIN = "https://gemini.test/v1beta/models/gemini-3.6-flash:generateContent";
+    private static final String FALLBACK = "https://gemini.test/v1beta/models/gemini-3.8-flash:generateContent";
     private static final String ANSWER = """
             {"candidates": [{"content": {"parts": [{"text": "thinking about it", "thought": true},
               {"text": "{\\"reply\\": \\"Hello\\"}"}]}, "finishReason": "STOP"}],
@@ -54,7 +54,7 @@ class GeminiAssistantModelTest {
     }
 
     private GeminiAssistantModel model(String fallback) {
-        return new GeminiAssistantModel(http, JSON, "https://gemini.test/v1beta/", " secret-key ", "gemini-3.8-flash", fallback,
+        return new GeminiAssistantModel(http, JSON, "https://gemini.test/v1beta/", " secret-key ", "gemini-3.6-flash", fallback,
                 "low", 4096, Duration.ZERO, clock);
     }
 
@@ -84,7 +84,7 @@ class GeminiAssistantModelTest {
 
         assertThat(reply.text()).isEqualTo("{\"reply\": \"Hello\"}");
         assertThat(reply.usage()).isEqualTo(new AssistantModel.Usage(12000, 9000, 80, 40));
-        assertThat(reply.model()).isEqualTo("gemini-3.8-flash");
+        assertThat(reply.model()).isEqualTo("gemini-3.6-flash");
         server.verify();
     }
 
@@ -92,7 +92,7 @@ class GeminiAssistantModelTest {
     void anOverloadedModelHandsTheQuestionToTheFallback() {
         server.expect(once(), requestTo(MAIN)).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE).body("{\"error\": {\"code\": 503}}"));
         server.expect(once(), requestTo(FALLBACK)).andRespond(withSuccess(ANSWER, MediaType.APPLICATION_JSON));
-        assertThat(model("gemini-3.6-flash").generate(question()).model()).isEqualTo("gemini-3.6-flash");
+        assertThat(model("gemini-3.8-flash").generate(question()).model()).isEqualTo("gemini-3.8-flash");
         server.verify();
     }
 
@@ -106,25 +106,25 @@ class GeminiAssistantModelTest {
 
     @Test
     void aModelOutOfDailyQuotaRestsUntilMidnightPacificTime() {
-        GeminiAssistantModel model = model("gemini-3.6-flash");
+        GeminiAssistantModel model = model("gemini-3.8-flash");
         server.expect(once(), requestTo(MAIN)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).body(DAILY_QUOTA));
         server.expect(once(), requestTo(FALLBACK)).andRespond(withSuccess(ANSWER, MediaType.APPLICATION_JSON));
         server.expect(once(), requestTo(FALLBACK)).andRespond(withSuccess(ANSWER, MediaType.APPLICATION_JSON));
-        assertThat(model.generate(question()).model()).isEqualTo("gemini-3.6-flash");
+        assertThat(model.generate(question()).model()).isEqualTo("gemini-3.8-flash");
         clock.now = NOW.plus(Duration.ofHours(11));
-        assertThat(model.generate(question()).model()).as("the main model is not asked again before the reset").isEqualTo("gemini-3.6-flash");
+        assertThat(model.generate(question()).model()).as("the main model is not asked again before the reset").isEqualTo("gemini-3.8-flash");
         server.verify();
 
         server.reset();
         clock.now = NOW.plus(Duration.ofHours(12)).plusSeconds(1);
         server.expect(once(), requestTo(MAIN)).andRespond(withSuccess(ANSWER, MediaType.APPLICATION_JSON));
-        assertThat(model.generate(question()).model()).isEqualTo("gemini-3.8-flash");
+        assertThat(model.generate(question()).model()).isEqualTo("gemini-3.6-flash");
         server.verify();
     }
 
     @Test
     void whenEveryModelHasUsedItsDayTheAnswerIsTomorrow() {
-        GeminiAssistantModel model = model("gemini-3.6-flash");
+        GeminiAssistantModel model = model("gemini-3.8-flash");
         server.expect(once(), requestTo(MAIN)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).body(DAILY_QUOTA));
         server.expect(once(), requestTo(FALLBACK)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS).body(DAILY_QUOTA));
         assertThatThrownBy(() -> model.generate(question())).isInstanceOfSatisfying(AssistantModel.UnavailableException.class,
@@ -146,7 +146,7 @@ class GeminiAssistantModelTest {
     @Test
     void aRefusedRequestIsNotSentToTheFallback() {
         server.expect(once(), requestTo(MAIN)).andRespond(withStatus(HttpStatus.BAD_REQUEST).body("{\"error\": {\"code\": 400}}"));
-        assertThatThrownBy(() -> model("gemini-3.6-flash").generate(question()))
+        assertThatThrownBy(() -> model("gemini-3.8-flash").generate(question()))
                 .isInstanceOfSatisfying(AssistantModel.UnavailableException.class, failure -> assertThat(failure.busy()).isFalse());
         server.verify();
     }
@@ -163,7 +163,7 @@ class GeminiAssistantModelTest {
     @Test
     void withoutAKeyOrModelItIsNotConfigured() {
         assertThat(model("").configured()).isTrue();
-        assertThat(new GeminiAssistantModel(http, JSON, "https://gemini.test", "", "gemini-3.8-flash", "", "LOW", 4096, Duration.ZERO, clock)
+        assertThat(new GeminiAssistantModel(http, JSON, "https://gemini.test", "", "gemini-3.6-flash", "", "LOW", 4096, Duration.ZERO, clock)
                 .configured()).isFalse();
         assertThat(new GeminiAssistantModel(http, JSON, "https://gemini.test", "key", "", "", "LOW", 4096, Duration.ZERO, clock)
                 .configured()).isFalse();

@@ -41,11 +41,11 @@ class AssistantLiveEvalTest {
     void theAssistantAnswersTheEvaluationQuestions() throws Exception {
         Properties env = environment();
         String key = env.getProperty("GEMINI_API_KEY", "").trim();
-        String modelName = System.getProperty("assistant.eval.model", env.getProperty("GEMINI_MODEL", "gemini-3.8-flash")).trim();
+        String modelName = System.getProperty("assistant.eval.model", env.getProperty("GEMINI_MODEL", "gemini-3.6-flash")).trim();
         assertThat(key).as("GEMINI_API_KEY in the environment or .env").isNotBlank();
         ChartIndicatorCatalog catalog = new ChartIndicatorCatalog();
         AssistantKnowledge knowledge = new AssistantKnowledge(catalog);
-        String fallback = System.getProperty("assistant.eval.fallback", env.getProperty("GEMINI_FALLBACK_MODEL", "gemini-3.6-flash")).trim();
+        String fallback = System.getProperty("assistant.eval.fallback", env.getProperty("GEMINI_FALLBACK_MODEL", "gemini-3.8-flash")).trim();
         GeminiAssistantModel model = new GeminiAssistantModel(JSON, "https://generativelanguage.googleapis.com/v1beta", key, modelName,
                 fallback, env.getProperty("GEMINI_THINKING_LEVEL", "LOW"), 4096, 60);
         RequestRateLimiter unlimited = new RequestRateLimiter(null) {
