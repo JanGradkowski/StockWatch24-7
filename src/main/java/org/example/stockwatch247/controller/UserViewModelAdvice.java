@@ -16,6 +16,16 @@ public class UserViewModelAdvice {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void configureUnreadCounts(org.example.stockwatch247.service.UnreadCountService counts) { this.unreadCounts = counts; }
 
+    private org.example.stockwatch247.assistant.AssistantService assistant;
+    private org.example.stockwatch247.assistant.AssistantKnowledge assistantKnowledge;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureAssistant(org.example.stockwatch247.assistant.AssistantService assistant,
+                            org.example.stockwatch247.assistant.AssistantKnowledge knowledge) {
+        this.assistant = assistant;
+        this.assistantKnowledge = knowledge;
+    }
+
     @ModelAttribute
     public void accountPreferences(Principal principal, Model model, jakarta.servlet.http.HttpServletRequest request) {
         if (request.getRequestURI().substring(request.getContextPath().length()).startsWith("/api/")) return;
@@ -27,6 +37,14 @@ public class UserViewModelAdvice {
             model.addAttribute("navigationUnread", unreadCounts == null ? null : unreadCounts.counts(user));
         }
         String path = request.getRequestURI().substring(request.getContextPath().length());
+        // The assistant panel: on every signed-in page, with questions suited to the page it is opened on.
+        boolean assistantShown = user != null && assistant != null && assistant.enabled();
+        model.addAttribute("assistantEnabled", assistantShown);
+        if (assistantShown) {
+            model.addAttribute("assistantAccount", user.getId());
+            model.addAttribute("assistantSuggestions", assistantKnowledge.suggestions(
+                    org.example.stockwatch247.i18n.AppLanguage.of(org.springframework.context.i18n.LocaleContextHolder.getLocale()), path));
+        }
         // One custom alert's triggers live in All signals but belong to the Custom alerts section.
         model.addAttribute("navigationSection", path.equals("/signals") && request.getParameter("customAlertId") != null
                 ? "custom" : navigationSection(path));

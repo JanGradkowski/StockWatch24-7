@@ -149,6 +149,18 @@
     } catch (error) { status.textContent = error.message; }
   });
 
+  // What the assistant is told about this page: the trigger as shown, so "why did it fire?" is answered from it.
+  const assistantHooks = window.StockWatchAssistantHooks || (window.StockWatchAssistantHooks = {});
+  assistantHooks.context = () => ({
+    alert: document.querySelector('.ca-trigger-header h1')?.textContent.replace(/\s+/g, ' ').trim(),
+    candle: document.querySelector('.ca-trigger-meta')?.textContent.replace(/\s+/g, ' ').trim(),
+    tags: document.querySelector('.ca-trigger-tags')?.textContent.replace(/\s+/g, ' ').trim(),
+    interval: evidence.interval || null,
+    rule: evidence.definition || null,
+    checklist: [...document.querySelectorAll('[data-ca-evidence] .ca-evidence-item')].map(item => item.getAttribute('aria-label')),
+    afterwards: document.querySelector('[data-ca-next]')?.textContent.replace(/\s+/g, ' ').trim() || null
+  });
+
   renderEvidence();
   renderNext();
 })();

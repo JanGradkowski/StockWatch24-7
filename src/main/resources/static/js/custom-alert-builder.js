@@ -1478,6 +1478,62 @@
     renderStart(); renderGroups(); changed();
   }
 
+  // ------------------------------------------------------------------ the assistant
+
+  /**
+   * A rule the assistant proposed (already checked by the server's validator), filled in like a template. The stocks
+   * to watch stay as they are: the user always chooses them and saves. Replacing conditions asks first.
+   */
+  function applyDraft(draft, { ask = true } = {}) {
+    if (!draft?.definition?.groups) return false;
+    if (ask && conditions().length && !window.confirm(i18n.t('assistant.draft.replace'))) return false;
+    if (!nodes.name.value.trim() && draft.name) nodes.name.value = draft.name;
+    if (!nodes.description.value.trim() && draft.description) nodes.description.value = draft.description;
+    state.interval = draft.interval || 'DAILY';
+    state.triggerMode = draft.triggerMode || 'BECOMES_TRUE';
+    state.quietCandles = draft.quietCandles ?? 0;
+    state.outcomeCandles = draft.outcomeCandles ?? 10;
+    state.definition = JSON.parse(JSON.stringify(draft.definition));
+    adoptSequences();
+    syncBasics();
+    renderStart(); renderGroups(); changed();
+    document.dispatchEvent(new CustomEvent('stockwatch:assistant-draft-applied'));
+    return true;
+  }
+
+  /** "Open in builder" from the assistant on another page leaves the rule in this tab's session storage. */
+  function draftFromAssistant() {
+    if (new URLSearchParams(window.location.search).get('from') !== 'assistant') return null;
+    try {
+      const draft = JSON.parse(sessionStorage.getItem('stockwatch.assistant.draft') || 'null');
+      sessionStorage.removeItem('stockwatch.assistant.draft');
+      return draft;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** What the assistant is told about this page: the rule as edited now and how it reads on the test stock. */
+  function assistantContext() {
+    const draft = snapshot();
+    const reading = preview?.available ? {
+      symbol: preview.symbol, matchesNow: preview.matched, applicable: preview.applicable,
+      conditionsMet: `${preview.matchedConditions} of ${preview.totalConditions}`,
+      conditions: (preview.conditions || []).map(item => ({ id: item.id, met: item.passed, applicable: item.applicable, facts: item.facts })),
+      triggersInReplay: preview.history?.length ?? 0, replayedCandles: preview.replayedCandles
+    } : preview && !preview.available ? { unavailable: preview.unavailableReason } : null;
+    return {
+      rule: { name: draft.name, interval: draft.interval, triggerMode: draft.triggerMode, quietCandles: draft.quietCandles,
+        outcomeCandles: draft.outcomeCandles, definition: draft.definition },
+      saved: Boolean(state.id), watchlistsChosen: draft.targets.length, singleStockToAdd: state.pendingSymbol,
+      testStock: nodes.testSymbol.value.trim() || null, preview: reading, status: nodes.status.textContent || null
+    };
+  }
+
+  const assistantHooks = window.StockWatchAssistantHooks || (window.StockWatchAssistantHooks = {});
+  assistantHooks.context = assistantContext;
+  assistantHooks.applyDraft = draft => applyDraft(draft);
+
   /** A chart alert on an indicator or a horizontal line becomes the first condition. */
   async function fromChartAlert(id) {
     const alert = await api(`/api/chart-alerts/${id}`);
@@ -1581,8 +1637,11 @@
       return;
     }
     const startSymbol = page.dataset.startSymbol || null;
+    const assistantDraft = state.id ? null : draftFromAssistant();
     try {
-      if (state.id) {
+      if (assistantDraft) {
+        applyDraft(assistantDraft, { ask: false });
+      } else if (state.id) {
         const alert = await api(`/api/custom-alerts/${state.id}`);
         nodes.name.value = alert.name;
         nodes.description.value = alert.description || '';
@@ -1627,7 +1686,7 @@
     renderTargets();
     nodes.save.disabled = false;
     nodes.summary.textContent = text.summary(snapshot(), catalog.byType);
-    dirty = Boolean(page.dataset.startTemplate || page.dataset.startChartAlert);
+    dirty = Boolean(page.dataset.startTemplate || page.dataset.startChartAlert || assistantDraft);
     runPreview();
   }
 
