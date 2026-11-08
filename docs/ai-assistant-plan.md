@@ -328,13 +328,16 @@ one stylesheet.
 
 Where the build differs from the plan above:
 
-- **Model.** `gemini-3.8-flash`, the newest Flash model on 2026-11-07, through `models/{model}:generateContent`
-  with the key in the `x-goog-api-key` header. Gemini 3.6 Flash and newer ignore temperature, so none is sent;
-  thinking is set with `thinkingConfig.thinkingLevel` (`LOW` by default, `GEMINI_THINKING_LEVEL`).
-- **Fallback model.** On the free tier Google allows `gemini-3.8-flash` only **20 requests a day per project**
-  (reset at midnight Pacific time), and the new model often answered 503 "high demand" or timed out. So
-  `GEMINI_FALLBACK_MODEL` (default `gemini-3.6-flash`, with its own 20-a-day quota) is asked when the main model is
-  overloaded, unreachable or out of quota. A model out of quota rests for a minute or until the daily reset; when
+- **Model.** `gemini-3.6-flash`, through `models/{model}:generateContent` with the key in the `x-goog-api-key`
+  header. The build started on `gemini-3.8-flash`, the newest Flash model on 2026-11-07, but in the first evaluation
+  `gemini-3.6-flash` answered every hard question correctly (sequences, groups, patterns, refusals) in 2–6 s, while
+  `gemini-3.8-flash` answered only six simple ones, in up to 31 s, and often answered 503 "high demand" or timed out.
+  The answers are grounded in the prompt and every rule is validated, so the older model is enough. Gemini 3.6 Flash
+  and newer ignore temperature, so none is sent; thinking is set with `thinkingConfig.thinkingLevel` (`LOW` by
+  default, `GEMINI_THINKING_LEVEL`).
+- **Fallback model.** On the free tier Google allows each model only **20 requests a day per project** (reset at
+  midnight Pacific time). So `GEMINI_FALLBACK_MODEL` (default `gemini-3.8-flash`, with its own 20-a-day quota) is
+  asked when the main model is overloaded, unreachable or out of quota. A model out of quota rests for a minute or until the daily reset; when
   every model has used its day, the panel says the assistant is resting until tomorrow. Without a fallback, "high
   demand" is retried once after two seconds.
 - **Switched on by default.** `ASSISTANT_ENABLED` defaults to true, and the panel appears only once `GEMINI_API_KEY`
