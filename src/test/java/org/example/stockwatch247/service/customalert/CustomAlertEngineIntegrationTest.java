@@ -84,8 +84,21 @@ class CustomAlertEngineIntegrationTest {
         }
     }
 
+    private LocalDate nextWeek = LocalDate.of(2025, 12, 1);
+
+    /** Appends weekly candles (dated on Mondays) closing at the given prices. */
+    private void weeklyCandles(String symbol, double... closes) {
+        for (double close : closes) {
+            jdbc.update("""
+                    insert into candles (symbol, time_interval, timestamp, open_price, high_price, low_price, close_price, volume, updated_at)
+                    values (?, '1wk', ?, ?, ?, ?, ?, 5000000, current_timestamp)
+                    """, symbol, nextWeek.atStartOfDay(ZoneOffset.UTC).toEpochSecond(), close, close + 1, close - 1, close);
+            nextWeek = nextWeek.plusWeeks(1);
+        }
+    }
+
     private SaveCommand command(String name, String rule, String mode, int quiet, long list, boolean notifyExisting) {
-        return new SaveCommand(name, "", "DAILY", json.readTree(rule), mode, quiet, 3, true,
+        return new SaveCommand(name, "", List.of("DAILY"), json.readTree(rule), mode, quiet, 3, true,
                 List.of(new TargetCommand(list, "ALL_MEMBERS", List.of())), notifyExisting, true, null);
     }
 
@@ -135,6 +148,7 @@ class CustomAlertEngineIntegrationTest {
         assertThat(trigger.ruleText()).contains("Close price is above 105");
         assertThat(trigger.evidence().path("conditions").get(0).path("passed").asBoolean()).isTrue();
         assertThat(trigger.origins()).isEqualTo("Breakouts");
+        assertThat(trigger.interval()).isEqualTo(TimeInterval.DAILY);
         assertThat(trigger.readAt()).isNull();
         alerts.setRead(owner, event, true);
         assertThat(jdbc.queryForObject("select read_at is not null from custom_alert_events where id = ?", Boolean.class, event)).isTrue();
@@ -155,6 +169,69 @@ class CustomAlertEngineIntegrationTest {
         assertThat(page.signals()).hasSize(2).allSatisfy(entry -> assertThat(entry.trigger().custom()).isTrue());
         var listPage = archive.getSignalArchive(owner, "date", "desc", 0, new SignalArchiveFilter("all", "", list, Set.of("custom"), null));
         assertThat(listPage.signals()).hasSize(2);
+    }
+
+    @Test
+    void anAlertOnTwoIntervalsKeepsAStatePerIntervalAndEachTriggerNamesItsInterval() {
+        User owner = user();
+        String symbol = stock("EQUITY");
+        long list = watchlist(owner, "Both", symbol);
+        candles(List.of(symbol), 100, 101, 102);
+        weeklyCandles(symbol, 100, 101, 102);
+        var alert = alerts.create(owner, new SaveCommand("Above 105, daily and weekly", "", List.of("WEEKLY", "DAILY"),
+                json.readTree(CLOSE_ABOVE_105), "BECOMES_TRUE", 0, 3, true, List.of(new TargetCommand(list, "ALL_MEMBERS", List.of())),
+                false, true, null));
+        assertThat(alert.intervals()).as("shortest first").containsExactly("DAILY", "WEEKLY");
+        assertThat(alert.checking()).as("one stock, waiting on both intervals").isEqualTo(1);
+        assertThat(jdbc.queryForList("select interval from custom_alert_states where alert_id = ? order by interval", String.class, alert.id()))
+                .containsExactly("DAILY", "WEEKLY");
+
+        engine.establishBaselines();
+        assertThat(alerts.get(owner, alert.id()).checking()).isZero();
+
+        weeklyCandles(symbol, 110);
+        assertThat(engine.evaluate(symbol, TimeInterval.WEEKLY, null).triggered()).isEqualTo(1);
+        assertThat(engine.evaluate(symbol, TimeInterval.DAILY, null).triggered()).as("the daily closes stay below").isZero();
+        var state = alerts.states(owner, alert.id()).getFirst();
+        assertThat(state.state()).isEqualTo("MATCHING");
+        assertThat(state.stateIntervals()).containsExactly("WEEKLY");
+        assertThat(alerts.get(owner, alert.id()).matching()).isEqualTo(1);
+        var onStockPage = alerts.forStock(owner, symbol).getFirst();
+        assertThat(onStockPage.state()).isEqualTo("MATCHING");
+        assertThat(onStockPage.stateIntervals()).containsExactly("WEEKLY");
+
+        candles(List.of(symbol), 106);
+        assertThat(engine.evaluate(symbol, TimeInterval.DAILY, null).triggered()).isEqualTo(1);
+        assertThat(jdbc.queryForList("select interval from custom_alert_events where alert_id = ? order by id", String.class, alert.id()))
+                .containsExactly("WEEKLY", "DAILY");
+        long weekly = jdbc.queryForObject("select id from custom_alert_events where alert_id = ? and interval = 'WEEKLY'", Long.class, alert.id());
+        assertThat(alerts.trigger(owner, weekly).interval()).isEqualTo(TimeInterval.WEEKLY);
+        assertThat(alerts.states(owner, alert.id()).getFirst().stateIntervals()).as("matching on both now").containsExactly("DAILY", "WEEKLY");
+
+        // Dropping an interval is not a new rule: the daily state goes on as it was, the weekly one is removed.
+        Long dailyEvaluated = jdbc.queryForObject("""
+                select last_evaluated_timestamp from custom_alert_states where alert_id = ? and interval = 'DAILY'
+                """, Long.class, alert.id());
+        alerts.update(owner, alert.id(), new SaveCommand("Above 105, daily", "", List.of("DAILY"), json.readTree(CLOSE_ABOVE_105),
+                "BECOMES_TRUE", 0, 3, true, null, false, null, null));
+        assertThat(jdbc.queryForList("select interval from custom_alert_states where alert_id = ?", String.class, alert.id()))
+                .containsExactly("DAILY");
+        assertThat(jdbc.queryForObject("select last_evaluated_timestamp from custom_alert_states where alert_id = ? and interval = 'DAILY'",
+                Long.class, alert.id())).isEqualTo(dailyEvaluated);
+        assertThat(jdbc.queryForObject("select revision from custom_alerts where id = ?", Integer.class, alert.id())).isEqualTo(1);
+        assertThat(triggers(alert.id())).as("history stays").isEqualTo(2);
+
+        // A condition's timeframe must suit every interval: a weekly RSI cannot be read on monthly candles.
+        String weeklyRsi = """
+                {"version":1,"match":"ALL","groups":[{"id":"g1","match":"ALL","conditions":[
+                  {"id":"c1","kind":"VALUE","subject":{"kind":"INDICATOR","type":"RSI","parameters":{"period":14,"timeframe":"1wk"},
+                   "output":"value"},"operator":"BELOW","compare":{"kind":"VALUE","value":30}}]}]}
+                """;
+        assertThatThrownBy(() -> alerts.create(owner, new SaveCommand("Weekly RSI", "", List.of("DAILY", "MONTHLY"),
+                json.readTree(weeklyRsi), null, null, null, null, List.of(), false, false, null)))
+                .isInstanceOf(UserInputException.class);
+        assertThat(alerts.create(owner, new SaveCommand("Weekly RSI", "", List.of("DAILY", "WEEKLY"), json.readTree(weeklyRsi),
+                null, null, null, null, List.of(), false, false, null)).intervals()).containsExactly("DAILY", "WEEKLY");
     }
 
     /** Closes below 100 for 3 candles in a row, then within 3 candles a close above 105; all within 10 candles. */
@@ -222,7 +299,7 @@ class CustomAlertEngineIntegrationTest {
 
         // The builder's replay of the same candles finds the same triggers as the checks did.
         var replay = preview.preview(owner, new CustomAlertPreview.PreviewCommand("DAILY", json.readTree(DIP_THEN_BREAKOUT), late,
-                "BECOMES_TRUE", 0, 3, List.of(), null));
+                "BECOMES_TRUE", 0, 3, List.of(), null, null));
         List<Long> checked = jdbc.queryForList("""
                 select e.candle_timestamp from custom_alert_events e join stock_assets s on s.id = e.stock_asset_id
                 where e.alert_id = ? and s.ticker_symbol = ? order by 1
@@ -284,11 +361,11 @@ class CustomAlertEngineIntegrationTest {
         User stranger = user();
         String[] symbols = {stock("EQUITY"), stock("EQUITY"), stock("EQUITY"), stock("EQUITY"), stock("EQUITY")};
         long chosen = watchlist(owner, "Chosen", symbols[0], symbols[1]);
-        var selected = alerts.create(owner, new SaveCommand("Chosen", "", "DAILY", json.readTree(CLOSE_ABOVE_105), null, null, null,
+        var selected = alerts.create(owner, new SaveCommand("Chosen", "", List.of("DAILY"), json.readTree(CLOSE_ABOVE_105), null, null, null,
                 null, List.of(new TargetCommand(chosen, "SELECTED", List.of(symbols[1]))), false, true, null));
         assertThat(selected.stocks()).isEqualTo(1);
         assertThat(selected.targets()).singleElement().satisfies(target -> assertThat(target.symbols()).containsExactly(symbols[1]));
-        assertThatThrownBy(() -> alerts.create(owner, new SaveCommand("Missing", "", "DAILY", json.readTree(CLOSE_ABOVE_105), null, null,
+        assertThatThrownBy(() -> alerts.create(owner, new SaveCommand("Missing", "", List.of("DAILY"), json.readTree(CLOSE_ABOVE_105), null, null,
                 null, null, List.of(new TargetCommand(chosen, "SELECTED", List.of(symbols[3]))), false, true, null)))
                 .isInstanceOf(UserInputException.class).hasMessage(symbols[3] + " is not in the watchlist Chosen.");
         assertThatThrownBy(() -> alerts.get(stranger, selected.id())).hasMessage("The custom alert was not found.");

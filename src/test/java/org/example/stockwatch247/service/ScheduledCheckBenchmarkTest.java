@@ -396,7 +396,7 @@ class ScheduledCheckBenchmarkTest {
         jdbc.update("insert into watchlist_members (watchlist_id, stock_asset_id) select ?, id from stock_assets where ticker_symbol = any(?)",
                 list, STOCKS.toArray(String[]::new));
         for (String[] definition : CustomAlertTestDefinitions.twentyFiveAlerts()) {
-            customAlerts.create(owner, new SaveCommand(definition[0], "", "DAILY", json.readTree(definition[2]), definition[1], 0, 3, true,
+            customAlerts.create(owner, new SaveCommand(definition[0], "", List.of("DAILY"), json.readTree(definition[2]), definition[1], 0, 3, true,
                     List.of(new TargetCommand(list, "ALL_MEMBERS", List.of())), false, true, null));
         }
         line("Accounts: %d, built-in rules: %s, custom alerts: %s", accounts.size(),

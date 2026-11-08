@@ -4336,6 +4336,12 @@ pl: Szczegółowe przesłanki oceny były niedostępne.
 en: Interval: {0}
 pl: Interwał: {0}
 
+en: Intervals: {0}, {1}
+pl: Interwały: {0}, {1}
+
+en: Intervals: {0}, {1}, {2}
+pl: Interwały: {0}, {1}, {2}
+
 en: Research horizon: {0}
 pl: Horyzont analizy: {0}
 

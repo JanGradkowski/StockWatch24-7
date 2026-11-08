@@ -67,8 +67,13 @@ public class CustomAlertPreview {
         this.guard = guard;
     }
 
+    /**
+     * {@code interval}: the one the test replays; {@code intervals}: all the alert will be checked on, so the rule is
+     * validated for each (null: only {@code interval}).
+     */
     public record PreviewCommand(String interval, JsonNode definition, String symbol, String triggerMode, Integer quietCandles,
-                                 Integer outcomeCandles, List<CustomAlertService.TargetCommand> targets, Long alertId) { }
+                                 Integer outcomeCandles, List<CustomAlertService.TargetCommand> targets, Long alertId,
+                                 List<String> intervals) { }
 
     public record HistoryPoint(long timestamp, double close, Double outcomeReturn) { }
 
@@ -89,6 +94,9 @@ public class CustomAlertPreview {
         if (command == null) throw new UserInputException("Add at least one condition.");
         TimeInterval interval = CustomAlertService.interval(command.interval());
         CustomAlertDefinition definition = CustomAlertDefinition.parse(command.definition(), catalog, interval);
+        if (command.intervals() != null) {
+            for (TimeInterval other : CustomAlertService.intervals(command.intervals())) CustomAlertDefinition.parse(command.definition(), catalog, other);
+        }
         Coverage coverage = coverage(user, command.targets(), definition);
         if (command.symbol() == null || command.symbol().isBlank()) {
             return empty(null, null, "Choose a stock to test the rule on.", coverage);

@@ -53,7 +53,7 @@ public class AssistantService {
     public record ChatCommand(String page, List<Message> messages, JsonNode context) { }
 
     /** A validated custom alert the builder can load as it is. */
-    public record Draft(String name, String description, String interval, String triggerMode, int quietCandles,
+    public record Draft(String name, String description, List<String> intervals, String triggerMode, int quietCandles,
                         int outcomeCandles, JsonNode definition) { }
 
     public record Link(String path, String label) { }
@@ -307,22 +307,29 @@ public class AssistantService {
         if (text.length() > MAX_DRAFT) throw new UserInputException("The alert is too long.");
         JsonNode node = json.readTree(text);
         if (!node.isObject()) throw new UserInputException("The alert definition is incomplete.");
-        String intervalName = node.path("interval").asString("DAILY").strip().toUpperCase(Locale.ROOT);
-        TimeInterval interval = switch (intervalName) {
+        // "intervals" as the reference describes it; a single "interval" is read too.
+        List<String> intervalNames = new ArrayList<>();
+        if (node.path("intervals").isArray()) node.path("intervals").forEach(item -> intervalNames.add(item.asString("")));
+        else intervalNames.add(node.path("interval").asString("DAILY"));
+        if (intervalNames.isEmpty() || intervalNames.size() > 3) throw new UserInputException("Choose daily, weekly or monthly candles.");
+        List<TimeInterval> intervals = intervalNames.stream().map(name -> switch (name.strip().toUpperCase(Locale.ROOT)) {
             case "DAILY" -> TimeInterval.DAILY;
             case "WEEKLY" -> TimeInterval.WEEKLY;
             case "MONTHLY" -> TimeInterval.MONTHLY;
             default -> throw new UserInputException("Choose daily, weekly or monthly candles.");
-        };
+        }).distinct().sorted().toList();
         String triggerMode = node.path("triggerMode").asString("BECOMES_TRUE").strip().toUpperCase(Locale.ROOT);
         if (!TRIGGER_MODES.contains(triggerMode)) throw new UserInputException("Choose when the alert fires.");
         int quiet = whole(node.path("quietCandles"), 0, 0, 60, "Choose a quiet period from 0 to 60 candles.");
         int outcome = whole(node.path("outcomeCandles"), 10, 1, 60, "Choose 1 to 60 candles to follow the price.");
         JsonNode definition = node.path("definition");
         if (!definition.isObject()) throw new UserInputException("Add at least one condition.");
-        ObjectNode normalized = CustomAlertDefinition.parse(withIds((ObjectNode) definition.deepCopy()), catalog, interval).toJson();
+        ObjectNode identified = withIds((ObjectNode) definition.deepCopy());
+        // Valid on every interval: a condition's timeframe must not be shorter than any of them.
+        ObjectNode normalized = null;
+        for (TimeInterval interval : intervals) normalized = CustomAlertDefinition.parse(identified, catalog, interval).toJson();
         return new Draft(cut(node.path("name").asString("").strip(), 80), cut(node.path("description").asString("").strip(), 500),
-                interval.name(), triggerMode, quiet, outcome, normalized);
+                intervals.stream().map(Enum::name).toList(), triggerMode, quiet, outcome, normalized);
     }
 
     /** Conditions and groups need unique ids, which say nothing to the model; missing or repeated ones are made up. */

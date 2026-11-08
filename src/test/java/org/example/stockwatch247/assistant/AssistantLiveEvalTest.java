@@ -125,8 +125,8 @@ class AssistantLiveEvalTest {
         }
         if (answer.draft() == null) return problems;
         JsonNode definition = answer.draft().definition();
-        if (eval.has("interval") && !eval.path("interval").asString().equals(answer.draft().interval())) {
-            problems.add("interval " + answer.draft().interval());
+        if (eval.has("interval") && !List.of(eval.path("interval").asString()).equals(answer.draft().intervals())) {
+            problems.add("intervals " + answer.draft().intervals());
         }
         // "Either A or B" is the same rule as two groups joined with ANY or as one group whose conditions are joined with ANY.
         if (eval.has("match") && "ANY".equals(eval.path("match").asString()) && !"ANY".equals(definition.path("match").asString())) {

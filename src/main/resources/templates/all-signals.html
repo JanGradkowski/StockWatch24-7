@@ -49,7 +49,7 @@
 
   <section th:if="${customAlert != null}" th:with="alert=${customAlert.alert()},performance=${customAlert.performance()}"
            class="glass-panel ca-archive-header" aria-labelledby="ca-archive-rule"
-           th:attr="data-ca-archive=${alert.id()},data-definition=${alert.definition().toString()},data-interval=${alert.interval()},data-trigger-mode=${alert.triggerMode()},data-active=${alert.active()}">
+           th:attr="data-ca-archive=${alert.id()},data-definition=${alert.definition().toString()},data-intervals=${#strings.listJoin(alert.intervals(), ',')},data-trigger-mode=${alert.triggerMode()},data-active=${alert.active()}">
     <div class="ca-archive-main">
       <h2 id="ca-archive-rule" class="panel-title">
         <span th:text="#{customAlerts.archive.rule}">The rule</span>

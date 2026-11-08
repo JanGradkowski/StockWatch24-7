@@ -627,7 +627,7 @@
     function item(alert) {
       const row = n('div', null, `wl-custom-item${alert.active ? '' : ' is-paused'}`);
       const name = link(alert.name, `/signals?${new URLSearchParams({ customAlertId: alert.id })}`);
-      const facts = [i18n.t(`interval.${alert.interval}`),
+      const facts = [alert.intervals.map(interval => i18n.t(`interval.${interval}`)).join(', '),
         alert.scope === 'SELECTED' ? i18n.plural('watchlists.custom.chosen', alert.stocks, alert.stocks) : i18n.plural('watchlists.custom.all', alert.stocks, alert.stocks),
         i18n.plural('watchlists.custom.matching', alert.matching, alert.matching)];
       if (alert.halfway) facts.push(i18n.plural('watchlists.custom.halfway', alert.halfway, alert.halfway));

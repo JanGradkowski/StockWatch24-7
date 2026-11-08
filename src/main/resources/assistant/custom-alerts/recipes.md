@@ -12,7 +12,7 @@ trigger mode stays **{{msg:customAlerts.mode.BECOMES_TRUE}}**, and the stocks ar
 2. With **{{msg:customAlerts.mode.BECOMES_TRUE}}** it fires on the first candle below 30, not on every one.
 
 ```json
-{"name": "RSI below 30", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "RSI below 30", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "INDICATOR", "type": "RSI", "parameters": {"period": 14}, "output": "value"},
    "operator": "BELOW", "compare": {"kind": "VALUE", "value": 30}}]}]}}
@@ -33,7 +33,7 @@ say whether the candle must come after the recovery or around the same time, ask
    The example **{{msg:js.ca.template.oversold-recovery-then-candle.name}}** is this rule.
 
 ```json
-{"name": "Oversold recovery, then a candle", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "Oversold recovery, then a candle", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "THEN", "span": 25, "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "INDICATOR", "type": "RSI", "parameters": {"period": 14}, "output": "value"},
    "operator": "BELOW", "compare": {"kind": "VALUE", "value": 30}, "step": {"candles": 5}},
@@ -55,7 +55,7 @@ joined with **{{msg:js.ca.builder.all}}** — the example **{{msg:js.ca.template
 2. A cross happens on one candle; **{{msg:js.ca.window.label.ANY}}** 3 also accepts a cross 1–2 candles ago.
 
 ```json
-{"name": "SMA 50 crosses above SMA 200", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 20,
+{"name": "SMA 50 crosses above SMA 200", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 20,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "INDICATOR", "type": "SMA", "parameters": {"period": 50}, "output": "value"},
    "operator": "CROSSES_ABOVE", "compare": {"kind": "INDICATOR", "type": "SMA", "parameters": {"period": 200}, "output": "value"},
@@ -72,7 +72,7 @@ joined with **{{msg:js.ca.builder.all}}** — the example **{{msg:js.ca.template
    relative condition instead.
 
 ```json
-{"name": "AAPL closes above 200", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "AAPL closes above 200", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "PRICE", "field": "CLOSE"}, "operator": "CROSSES_ABOVE",
    "compare": {"kind": "VALUE", "value": 200}}]}]}}
@@ -86,7 +86,7 @@ joined with **{{msg:js.ca.builder.all}}** — the example **{{msg:js.ca.template
    **{{msg:js.ca.opLabel.ABOVE}}** 2 = twice the usual volume).
 
 ```json
-{"name": "One-year high on volume", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 5, "outcomeCandles": 10,
+{"name": "One-year high on volume", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 5, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "PRICE", "field": "CLOSE"}, "operator": "NEW_HIGH", "candles": 250,
    "window": {"mode": "LATEST"}},
@@ -101,7 +101,7 @@ joined with **{{msg:js.ca.builder.all}}** — the example **{{msg:js.ca.template
 **{{msg:js.ca.builder.overCandles}}** 5 (five trading days on a daily alert).
 
 ```json
-{"name": "Down 10% in a week", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 5, "outcomeCandles": 10,
+{"name": "Down 10% in a week", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 5, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "PRICE", "field": "CLOSE"}, "operator": "CHANGE_BELOW", "percent": 10,
    "candles": 5}]}]}}
@@ -114,7 +114,7 @@ joined with **{{msg:js.ca.builder.all}}** — the example **{{msg:js.ca.template
 **{{msg:js.ca.builder.anotherIndicator}}** → Bollinger Bands, **{{msg:js.ca.indicatorDialog.line}}** lower.
 
 ```json
-{"name": "Close below lower Bollinger Band", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "Close below lower Bollinger Band", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "PRICE", "field": "CLOSE"}, "operator": "BELOW",
    "compare": {"kind": "INDICATOR", "type": "BOLLINGER", "parameters": {"period": 20, "deviation": 2}, "output": "lower"},
@@ -128,7 +128,7 @@ joined with **{{msg:js.ca.builder.all}}** — the example **{{msg:js.ca.template
 2. Second condition: MACD line **{{msg:js.ca.opLabel.BELOW}}** 0.
 
 ```json
-{"name": "MACD bullish cross below zero", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "MACD bullish cross below zero", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "INDICATOR", "type": "MACD", "parameters": {}, "output": "macd"},
    "operator": "CROSSES_ABOVE", "compare": {"kind": "INDICATOR", "type": "MACD", "parameters": {}, "output": "signal"}},
@@ -145,7 +145,7 @@ joined with **{{msg:js.ca.builder.all}}** — the example **{{msg:js.ca.template
    **{{msg:js.ca.builder.anotherIndicator}}** → SMA, length 200.
 
 ```json
-{"name": "Bullish engulfing in an uptrend", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "Bullish engulfing in an uptrend", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "PATTERN", "family": "CANDLESTICK", "status": "DETECTED", "direction": "BULLISH",
    "patterns": ["BULLISH_ENGULFING"], "window": {"mode": "ANY", "candles": 3}},
@@ -160,7 +160,7 @@ wave III and is recognised a few candles late). Optionally MACD histogram
 **{{msg:js.ca.opLabel.RISING}}** 2 — the example **{{msg:js.ca.template.elliott-wave-three.name}}**.
 
 ```json
-{"name": "Elliott Wave 3 setup", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "Elliott Wave 3 setup", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "PATTERN", "family": "ELLIOTT_WAVE", "direction": "BULLISH", "patterns": ["WAVE_II_END"],
    "window": {"mode": "ANY", "candles": 5}},
@@ -176,7 +176,7 @@ wave III and is recognised a few candles late). Optionally MACD histogram
    **{{msg:js.ca.builder.negate}}** (no sales). Only stocks have filings.
 
 ```json
-{"name": "Insider cluster buy", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 20,
+{"name": "Insider cluster buy", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 20,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "INSIDER", "transaction": "PURCHASE", "days": 30, "minCount": 2, "minTotal": 250000, "roles": []},
   {"id": "c2", "kind": "INSIDER", "negate": true, "transaction": "SALE", "days": 30, "minCount": 1, "roles": []}]}]}}
@@ -189,7 +189,7 @@ wave III and is recognised a few candles late). Optionally MACD histogram
 days after the trade.
 
 ```json
-{"name": "Senators buying", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 20,
+{"name": "Senators buying", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 20,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "CONGRESS", "transaction": "PURCHASE", "days": 45, "minCount": 1, "chambers": ["SENATE"]}]}]}}
 ```
@@ -200,7 +200,7 @@ days after the trade.
 **{{msg:js.ca.strength.STRONG}}**.
 
 ```json
-{"name": "Outlook strong buy", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "Outlook strong buy", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "OUTLOOK", "direction": "BUY", "strength": "STRONG"}]}]}}
 ```
@@ -212,7 +212,7 @@ days after the trade.
 then "{{msg:js.ca.builder.triggerWhen}} **{{msg:js.ca.builder.any}}** {{msg:js.ca.builder.ofTheseGroups}}".
 
 ```json
-{"name": "Oversold candle or insider buying", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "Oversold candle or insider buying", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ANY", "groups": [
   {"id": "g1", "match": "ALL", "conditions": [
    {"id": "c1", "kind": "VALUE", "subject": {"kind": "INDICATOR", "type": "RSI", "parameters": {"period": 14}, "output": "value"},
@@ -231,7 +231,7 @@ the average uses timeframe **{{msg:js.ca.timeframe.option.1wk}}** in the indicat
 candles.
 
 ```json
-{"name": "Pullback in a weekly uptrend", "interval": "DAILY", "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
+{"name": "Pullback in a weekly uptrend", "intervals": ["DAILY"], "triggerMode": "BECOMES_TRUE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL", "groups": [{"id": "g1", "match": "ALL", "conditions": [
   {"id": "c1", "kind": "VALUE", "subject": {"kind": "PRICE", "field": "CLOSE"}, "operator": "ABOVE",
    "compare": {"kind": "INDICATOR", "type": "SMA", "parameters": {"period": 30, "timeframe": "1wk"}, "output": "value"},
