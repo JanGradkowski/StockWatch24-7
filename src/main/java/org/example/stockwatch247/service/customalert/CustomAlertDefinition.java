@@ -42,19 +42,19 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
     static final int DEFAULT_STEP_WITHIN = 5;
     static final int DEFAULT_SPAN_CANDLES = 30;
     private static final Pattern ID = Pattern.compile("[A-Za-z0-9_-]{1,40}");
-    private static final Set<String> MATCHES = Set.of("ALL", "ANY");
-    private static final Set<String> GROUP_MATCHES = Set.of("ALL", "ANY", "THEN");
-    private static final Set<String> PRICE_FIELDS = Set.of("CLOSE", "OPEN", "HIGH", "LOW", "VOLUME");
+    static final Set<String> MATCHES = Set.of("ALL", "ANY");
+    static final Set<String> GROUP_MATCHES = Set.of("ALL", "ANY", "THEN");
+    static final Set<String> PRICE_FIELDS = Set.of("CLOSE", "OPEN", "HIGH", "LOW", "VOLUME");
     /** Operators that compare the subject with another value at the same candle. */
     static final Set<String> COMPARISONS = Set.of("ABOVE", "BELOW", "CROSSES_ABOVE", "CROSSES_BELOW");
     static final Set<String> OPERATORS = Set.of("ABOVE", "BELOW", "CROSSES_ABOVE", "CROSSES_BELOW", "BETWEEN", "OUTSIDE",
             "RISING", "FALLING", "CHANGE_ABOVE", "CHANGE_BELOW", "NEW_HIGH", "NEW_LOW");
     static final List<String> FAMILIES = List.of("CANDLESTICK", "ELLIOTT_WAVE", "HARMONIC_FORMATION");
-    private static final Set<String> DIRECTIONS = Set.of("BULLISH", "BEARISH", "ANY");
+    static final Set<String> DIRECTIONS = Set.of("BULLISH", "BEARISH", "ANY");
     /** The lifecycle point a candlestick condition waits for. */
     static final Set<String> PATTERN_STATUSES = Set.of("CONFIRMED", "DETECTED");
-    private static final Set<String> STRENGTHS = Set.of("SLIGHT", "MODERATE", "STRONG");
-    private static final Set<String> TRANSACTIONS = Set.of("PURCHASE", "SALE");
+    static final Set<String> STRENGTHS = Set.of("SLIGHT", "MODERATE", "STRONG");
+    static final Set<String> TRANSACTIONS = Set.of("PURCHASE", "SALE");
     static final Set<String> ROLES = Set.of("OFFICER", "DIRECTOR", "OWNER");
     static final Set<String> CHAMBERS = Set.of("HOUSE", "SENATE");
 

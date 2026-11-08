@@ -101,6 +101,9 @@ public class AccountDataExportService {
         data.put("securityEvents", rows("""
                 select event_type, description, created_at from security_events where user_id = ? order by created_at, id
                 """, userId));
+        data.put("assistantFeedback", rows("""
+                select page, question, reply, created_at from assistant_feedback where user_id = ? order by created_at, id
+                """, userId));
         return data;
     }
 

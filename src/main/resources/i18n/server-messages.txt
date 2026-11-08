@@ -2111,3 +2111,55 @@ pl: Przy sprzedaży demo cel musi być poniżej bieżącej ceny {0}.
 
 en: The signal for this trade plan was not found.
 pl: Nie znaleziono sygnału, z którego pochodzi ten plan.
+
+# --- Assistant ----------------------------------------------------------------------------------------
+# Startup checks of the knowledge files, malformed panel requests (answered with the generic "Invalid
+# request."), and validator notes sent back to the model when its alert draft is rejected.
+
+en: A placeholder in assistant file {0} has no key
+internal
+
+en: Ask a question.
+internal
+
+en: Assistant page {0} has no front matter
+internal
+
+en: Assistant page {0} has no routes
+internal
+
+en: Assistant page {0} must have id {1}
+internal
+
+en: Assistant page {0} needs {1}
+internal
+
+en: Bad front matter line in {0}: {1}
+internal
+
+en: Choose when the alert fires.
+internal
+
+en: Nothing to send.
+internal
+
+en: The alert is too long.
+internal
+
+en: The question is too long.
+internal
+
+en: Two assistant pages are called {0}
+internal
+
+en: Unknown catalog list in assistant file {0}: {1}
+internal
+
+en: Unknown message key in assistant file {0}: {1}
+internal
+
+en: Unresolved placeholder in assistant file {0}
+internal
+
+en: Missing assistant knowledge file {0}
+internal

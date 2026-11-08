@@ -135,6 +135,8 @@
         }
         describe(field || trigger);
         place();
+        // An explanation opened on purpose can become a question for the assistant panel (assistant.js).
+        if (pin && info.title) window.dispatchEvent(new CustomEvent('stockwatch:learn-pinned', {detail: {title: info.title}}));
     }
 
     function hide() {

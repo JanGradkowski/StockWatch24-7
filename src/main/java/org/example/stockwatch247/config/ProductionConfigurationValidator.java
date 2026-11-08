@@ -128,6 +128,7 @@ public class ProductionConfigurationValidator implements InitializingBean, Envir
                         && mfaEncryptionKey.length() >= 32,
                 "MFA_ENCRYPTION_KEY must be a unique production secret of at least 32 characters.");
 
+        validateAssistant();
         require(!verificationRequired || emailEnabled,
                 "Email delivery must be enabled when production email verification is required.");
         if (emailEnabled) {
@@ -154,6 +155,16 @@ public class ProductionConfigurationValidator implements InitializingBean, Envir
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException("PUBLIC_BASE_URL must be an absolute HTTPS URL.", exception);
         }
+    }
+
+    /** With a Gemini key the assistant is live: it needs a model, and people's questions must stay out of the logs. */
+    private void validateAssistant() {
+        if (environment == null || !environment.getProperty("assistant.enabled", Boolean.class, true)
+                || isBlank(environment.getProperty("assistant.gemini.api-key"))) return;
+        require(!isBlank(environment.getProperty("assistant.gemini.model")),
+                "GEMINI_MODEL is required when the assistant has a key.");
+        require(!environment.getProperty("assistant.log-messages", Boolean.class, false),
+                "Production must not log assistant questions (ASSISTANT_LOG_MESSAGES=false).");
     }
 
     private void validateTrustedProxyPattern() {

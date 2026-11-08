@@ -48,6 +48,9 @@
   <th:block th:if="${showAppNavigation == true}">
     <th:block th:replace="~{fragments/app-sidebar :: sidebar}"></th:block>
   </th:block>
+  <th:block th:if="${showAppNavigation == true and assistantEnabled == true}">
+    <th:block th:replace="~{fragments/assistant :: assistant}"></th:block>
+  </th:block>
 
   <script th:if="${showAppNavigation == true}" th:src="@{/js/app-navigation.js}"></script>
 
