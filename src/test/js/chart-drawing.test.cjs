@@ -138,6 +138,25 @@ test('drawings from the original Fibonacci and position tool are converted', () 
     });
 });
 
+test('a Fibonacci retracement puts 1 at the swing start and 0 at its end, as Auto Fib does', async () => {
+    const {window, manager} = setup();
+    await manager.ready;
+    const tool = window.StockWatchDrawing.tool('fibRetracement');
+    const env = manager.environment('price', 800, 500);
+    const levels = style => {
+        const drawing = {id: 'f', type: 'fibRetracement', points: [{time: seconds(weekdays(60)[5]), price: 100}, {time: seconds(weekdays(60)[15]), price: 130}], style};
+        return new Map(tool.rows(manager.context(drawing, env)).map(row => [row.level.value, Number(row.price.toFixed(2))]));
+    };
+    const drawn = levels({});
+    assert.equal(drawn.get(1), 100);
+    assert.equal(drawn.get(0), 130);
+    assert.equal(drawn.get(0.618), 111.46, 'a 61.8% pullback from the high');
+    assert.ok(drawn.get(1.618) < 100, 'extensions past 1 run beyond the swing start');
+    const reversed = levels({reverse: true});
+    assert.equal(reversed.get(0), 100);
+    assert.equal(reversed.get(1), 130);
+});
+
 test('a trend line is placed with two clicks, snapped to bars, and can be undone and redone', async () => {
     const {manager, pointer, times} = setup();
     await manager.ready;
