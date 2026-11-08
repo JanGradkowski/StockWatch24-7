@@ -50,9 +50,10 @@
     label.append(input, name);
     item.append(label);
     const facts = el('div', 'stock-custom-facts');
-    facts.append(el('span', null, i18n.t(`interval.${alert.interval}`)));
+    facts.append(el('span', null, text.intervalsLabel(alert.intervals)));
     if (alert.applied) {
-      const state = el('span', `stock-custom-state learn-term ${alert.state.toLowerCase()}`, i18n.t(`ca.state.${alert.state}`));
+      const state = el('span', `stock-custom-state learn-term ${alert.state.toLowerCase()}`,
+        text.stateLabel(alert.state, alert.stateIntervals, alert.intervals));
       if (LEARN_OPTIONS[alert.state]) { state.dataset.learn = LEARN_OPTIONS[alert.state]; state.dataset.learnTitle = i18n.t(`ca.state.${alert.state}`); }
       if (alert.detail) state.title = alert.detail;
       facts.append(state);

@@ -139,7 +139,13 @@ details.ca-templates-section > summary { cursor: pointer; font-weight: 700; padd
 .ca-start-template { padding: 7px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-pill); background: var(--surface); color: var(--text-color);
     font: inherit; font-size: var(--fs-sm); cursor: pointer; }
 .ca-start-template:hover, .ca-start-template:focus-visible { border-color: var(--primary-color); }
-.ca-clock label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; font-weight: 600; margin-bottom: var(--space-4); }
+.ca-clock { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: var(--space-4); }
+.ca-clock > .learn-label { font-weight: 600; margin-right: 2px; }
+.ca-interval-option { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--glass-border);
+    border-radius: var(--radius-pill); background: var(--surface); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+.ca-interval-option:has(input:checked) { border-color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 8%, var(--surface)); }
+.ca-interval-option:has(input:focus-visible) { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.ca-interval-option input { margin: 0; accent-color: var(--primary-color); }
 .ca-match-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: var(--space-3); font-weight: 600; }
 .ca-segmented { display: inline-flex; padding: 3px; gap: 3px; border: 1px solid var(--glass-border); border-radius: 9px; background: var(--surface-soft); }
 .ca-segmented button { padding: 5px 11px; border: 0; border-radius: 6px; background: transparent; color: var(--text-soft); font: inherit; font-size: var(--fs-sm); font-weight: 650; cursor: pointer; }
@@ -260,6 +266,7 @@ details.ca-templates-section > summary { cursor: pointer; font-weight: 700; padd
 .ca-test-row { display: flex; gap: 8px; }
 .ca-test-row input { flex: 1; text-transform: uppercase; }
 .ca-test-row .btn-secondary { padding: 8px 14px; }
+.ca-test-interval { margin-top: 8px; }
 [data-ca-result][aria-busy="true"] { opacity: .6; }
 .ca-verdict { display: flex; flex-direction: column; gap: 3px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); border: 1px solid var(--glass-border); }
 .ca-verdict strong { font-size: var(--fs-base); }
@@ -434,8 +441,10 @@ details.ca-templates-section > summary { cursor: pointer; font-weight: 700; padd
     /* The completion switch takes the full width, so each choice stays on one line. */
     .ca-sequence-footer > .ca-field, .ca-sequence-completed, .ca-sequence-completed .ca-segmented { width: 100%; }
     .ca-sequence-completed .ca-segmented button { flex: 1 1 0; }
+    /* The intervals stay together on a row of their own under their label. */
+    .ca-clock > .learn-label { flex-basis: 100%; }
 }
-@media (pointer: coarse) { .ca-builder .ca-step-connector input, .ca-builder .ca-sequence-completed input { min-height: 44px; } }
+@media (pointer: coarse) { .ca-builder .ca-step-connector input, .ca-builder .ca-sequence-completed input, .ca-interval-option, .ca-test-interval button { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) {
     .ca-switch-track::after, .ca-guide > summary::before, .ca-card, .ca-template { transition: none; }
 }

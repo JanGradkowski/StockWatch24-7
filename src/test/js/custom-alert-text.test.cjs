@@ -115,3 +115,16 @@ test('a candlestick condition names its status; rules from before the status rea
   assert.equal(pattern({ confirmedOnly: true }), 'A bullish candlestick pattern detected in the last 3 candles (confirmed only)');
   dom.window.close();
 });
+
+test('an alert on several intervals names them all, and a state names only the intervals it holds on', () => {
+  const { dom, text } = load();
+  assert.equal(text.intervalsLabel(['DAILY']), 'Daily');
+  assert.equal(text.intervalsLabel(['DAILY', 'WEEKLY']), 'Daily and weekly');
+  assert.equal(text.intervalsLabel(['DAILY', 'WEEKLY', 'MONTHLY']), 'Daily, weekly and monthly');
+  const alert = { ...text.fromTemplate('oversold-bounce'), intervals: ['DAILY', 'WEEKLY'] };
+  assert.match(text.summary(alert, definitions), /^Checked after every daily and weekly candle\./);
+  assert.equal(text.stateLabel('MATCHING', ['WEEKLY'], ['DAILY', 'WEEKLY']), 'Matches now · Weekly');
+  assert.equal(text.stateLabel('MATCHING', ['DAILY', 'WEEKLY'], ['DAILY', 'WEEKLY']), 'Matches now', 'true on every interval');
+  assert.equal(text.stateLabel('MATCHING', ['DAILY'], ['DAILY']), 'Matches now');
+  dom.window.close();
+});

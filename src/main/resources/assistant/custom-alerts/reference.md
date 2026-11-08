@@ -1,7 +1,7 @@
 # Custom alert reference
 
 A **custom alert** is the user's own rule built from conditions. It is saved once and watches stocks
-through the user's watchlists. After every completed candle of the alert's interval, StockWatch checks
+through the user's watchlists. After every completed candle of each of the alert's intervals, StockWatch checks
 each watched stock; when the rule is true, it records a **trigger**, shows it on the dashboard
 (`/home`), in the alert's own list and in the watchlist, and can send an email. Each trigger has a page
 explaining which conditions were met. Alerts are created at `/custom-alerts/new` (button
@@ -16,8 +16,10 @@ characters; if left empty it is named after the first condition when saved) and
 "{{msg:js.ca.builder.startWith}}" with one button per example (see "Examples in the builder").
 
 **2 · {{msg:customAlerts.builder.step.rule}}**
-- **{{msg:customAlerts.builder.checkEvery}}**: **{{msg:customAlerts.builder.interval.DAILY}}**,
-  **{{msg:customAlerts.builder.interval.WEEKLY}}** or **{{msg:customAlerts.builder.interval.MONTHLY}}**.
+- **{{msg:customAlerts.builder.checkEvery}}**: tick **{{msg:customAlerts.builder.interval.DAILY}}**,
+  **{{msg:customAlerts.builder.interval.WEEKLY}}**, **{{msg:customAlerts.builder.interval.MONTHLY}}** or several of
+  them. With several, the same rule runs on each interval's own candles (windows and quiet periods count that
+  interval's candles), each trigger names its interval, and the preview has a toggle to test each one.
   {{learn:customAlerts.interval}}
 - **{{msg:customAlerts.builder.addCondition}}** opens the window **{{msg:js.ca.conditionPicker.title}}**
   with these choices (each creates a condition you can then change):
@@ -189,10 +191,13 @@ condition reads the stock being checked.
 parentheses):
 
 ```
-{"name": "...", "description": "...", "interval": "DAILY" | "WEEKLY" | "MONTHLY",
+{"name": "...", "description": "...", "intervals": ["DAILY" | "WEEKLY" | "MONTHLY", ...],
  "triggerMode": "BECOMES_TRUE" | "ONCE" | "EVERY_CANDLE", "quietCandles": 0, "outcomeCandles": 10,
  "definition": {"version": 1, "match": "ALL" | "ANY", "groups": [GROUP, ...]}}
 ```
+
+- `intervals`: one to three; usually `["DAILY"]`. Several only when the user asks for the same rule on more than
+  one candle length. An indicator `timeframe` must not be shorter than any of them.
 
 - GROUP: `{"id": "g1", "match": "ALL" | "ANY" | "THEN", "conditions": [CONDITION, ...]}`. `match` of the
   definition joins groups (only matters with 2+ groups). A `THEN` group (sequence) also has

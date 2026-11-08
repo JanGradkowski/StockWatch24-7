@@ -60,7 +60,7 @@ class AssistantServiceTest {
         AssistantService.Answer answer = service.chat(user, AppLanguage.EN, question("/custom-alerts/new", "Alert me when RSI is below 30"));
         assertThat(answer.reply()).isEqualTo("Add the RSI condition.");
         assertThat(answer.draft()).isNotNull();
-        assertThat(answer.draft().interval()).isEqualTo("DAILY");
+        assertThat(answer.draft().intervals()).containsExactly("DAILY");
         assertThat(answer.draft().triggerMode()).isEqualTo("BECOMES_TRUE");
         assertThat(answer.draft().outcomeCandles()).isEqualTo(10);
         JsonNode condition = answer.draft().definition().path("groups").path(0).path("conditions").path(0);
@@ -200,6 +200,15 @@ class AssistantServiceTest {
             count++;
         }
         assertThat(count).isGreaterThanOrEqualTo(12);
+    }
+
+    @Test
+    void aDraftCanWatchSeveralIntervalsThatAllSuitItsTimeframes() {
+        String weeklyRsi = RSI_RULE.replace("\"parameters\": {\"period\": 14}", "\"parameters\": {\"period\": 14, \"timeframe\": \"1wk\"}");
+        assertThat(service.draft(weeklyRsi.replace("\"interval\": \"DAILY\"", "\"intervals\": [\"WEEKLY\", \"DAILY\"]")).intervals())
+                .as("shortest first").containsExactly("DAILY", "WEEKLY");
+        assertThatThrownBy(() -> service.draft(weeklyRsi.replace("\"interval\": \"DAILY\"", "\"intervals\": [\"DAILY\", \"MONTHLY\"]")))
+                .as("a weekly timeframe cannot be read on monthly candles").isInstanceOf(UserInputException.class);
     }
 
     // ------------------------------------------------------------------ helpers

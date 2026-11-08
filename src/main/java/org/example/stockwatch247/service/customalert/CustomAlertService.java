@@ -86,18 +86,19 @@ public class CustomAlertService {
 
     public record TargetCommand(Long watchlistId, String scope, List<String> symbols) { }
 
-    public record SaveCommand(String name, String description, String interval, JsonNode definition, String triggerMode,
+    /** {@code intervals}: the closes the alert is checked after (one to three of DAILY, WEEKLY, MONTHLY). */
+    public record SaveCommand(String name, String description, List<String> intervals, JsonNode definition, String triggerMode,
                               Integer quietCandles, Integer outcomeCandles, Boolean emailEnabled, List<TargetCommand> targets,
                               Boolean notifyExisting, Boolean active, Long sourceChartAlertId) { }
 
     public record TargetView(long watchlistId, String watchlistName, String scope, long stocks, List<String> symbols) { }
 
     /**
-     * One alert with where it stands: {@code matching} stocks match on their latest checked candle, {@code halfway}
-     * are part-way through a sequence, {@code checking} wait for their first check, {@code skipped} cannot use one of
-     * the conditions.
+     * One alert with where it stands: {@code matching} stocks match on their latest checked candle (of any of the
+     * alert's intervals), {@code halfway} are part-way through a sequence, {@code checking} wait for their first check,
+     * {@code skipped} cannot use one of the conditions on any interval. Each stock counts once, in the first that applies.
      */
-    public record AlertView(long id, String name, String description, String interval, JsonNode definition,
+    public record AlertView(long id, String name, String description, List<String> intervals, JsonNode definition,
                             String triggerMode, int quietCandles, int outcomeCandles, boolean emailEnabled, boolean active,
                             boolean pinned, Long sourceChartAlertId, List<TargetView> targets, long stocks, long matching,
                             long halfway, long checking, long skipped, long unread, long triggers, Instant lastTriggeredAt,
@@ -105,10 +106,13 @@ public class CustomAlertService {
 
     /**
      * A covered stock and the alert's state for it. HALFWAY: not matching, but part-way through a sequence;
-     * {@code progress} then says how far ({@code done}, {@code steps}, {@code candlesLeft}).
+     * {@code progress} then says how far ({@code done}, {@code steps}, {@code candlesLeft}). On an alert with several
+     * intervals the stock shows its most telling state of any interval, and {@code stateIntervals} names the
+     * intervals in that state.
      */
     public record StockStateView(String symbol, String companyName, String instrumentType, String state, String detail,
-                                 Long lastEvaluated, Long lastTriggered, boolean excluded, JsonNode progress) { }
+                                 Long lastEvaluated, Long lastTriggered, boolean excluded, JsonNode progress,
+                                 List<String> stateIntervals) { }
 
     public record TriggerSummary(long id, long alertId, String alertName, String symbol, String companyName, TimeInterval interval,
                                  long candleTimestamp, int matchedConditions, int totalConditions, String kind,
@@ -128,12 +132,16 @@ public class CustomAlertService {
     public record ArchiveHeader(AlertView alert, Performance performance, String watchlistName) { }
 
     /** A watchlist's view of one alert applied to it. */
-    public record WatchlistAlertView(long id, String name, String interval, boolean active, String scope, long stocks,
+    public record WatchlistAlertView(long id, String name, List<String> intervals, boolean active, String scope, long stocks,
                                      long matching, long halfway, long unread, JsonNode definition) { }
 
-    /** A stock page's view of one alert: whether it covers the stock, and through which lists. */
-    public record StockAlertView(long id, String name, String interval, boolean active, boolean applied, String state,
-                                 String detail, List<Long> watchlistIds, JsonNode definition, JsonNode progress) { }
+    /**
+     * A stock page's view of one alert: whether it covers the stock, and through which lists. {@code stateIntervals}
+     * names the alert's intervals in the shown state.
+     */
+    public record StockAlertView(long id, String name, List<String> intervals, boolean active, boolean applied, String state,
+                                 String detail, List<Long> watchlistIds, JsonNode definition, JsonNode progress,
+                                 List<String> stateIntervals) { }
 
     /**
      * Part-way through a sequence: the alert is running (a paused alert's "candles left" would go stale), its state was
@@ -143,32 +151,49 @@ public class CustomAlertService {
             a.active and s.revision = a.revision and s.last_evaluated_timestamp is not null and not s.last_result
             and s.progress is not null""";
 
+    /**
+     * One row per stock alert {@code a} covers (narrowed by {@code condition}), with its states on all the alert's
+     * intervals folded: whether it matches on any, is part-way through a sequence on any, waits for a first check on
+     * any, or cannot be checked on every one.
+     */
+    private static String stockStates(String condition) {
+        return """
+                select et.stock_asset_id,
+                       coalesce(bool_or(s.revision = a.revision and s.last_evaluated_timestamp is not null and s.last_result), false) matching,
+                       coalesce(bool_or(%s), false) halfway,
+                       coalesce(bool_or((s.alert_id is null or s.revision <> a.revision or s.last_evaluated_timestamp is null)
+                                        and coalesce(s.status, 'OK') in ('OK', 'FAILED')), false) checking,
+                       bool_and(coalesce(s.status in ('SKIPPED', 'INSUFFICIENT_HISTORY'), false)) skipped
+                from custom_alert_effective_targets et cross join unnest(a.intervals) i(interval)
+                left join custom_alert_states s on s.alert_id = et.alert_id and s.stock_asset_id = et.stock_asset_id
+                    and s.interval = i.interval
+                where et.alert_id = a.id %s
+                group by et.stock_asset_id""".formatted(HALFWAY, condition);
+    }
+
     private static final String ALERT_COLUMNS = """
-            a.id, a.name, a.description, a.interval, a.definition, a.trigger_mode, a.quiet_candles, a.outcome_candles,
+            a.id, a.name, a.description, a.intervals, a.definition, a.trigger_mode, a.quiet_candles, a.outcome_candles,
             a.email_enabled, a.active, a.pinned, a.source_chart_alert_id, a.last_triggered_at, a.created_at,
-            (select count(*) from custom_alert_effective_targets t where t.alert_id = a.id) stocks,
-            (select count(*) from custom_alert_states s join custom_alert_effective_targets t
-                on t.alert_id = s.alert_id and t.stock_asset_id = s.stock_asset_id
-             where s.alert_id = a.id and s.revision = a.revision and s.last_evaluated_timestamp is not null and s.last_result) matching,
-            (select count(*) from custom_alert_states s join custom_alert_effective_targets t
-                on t.alert_id = s.alert_id and t.stock_asset_id = s.stock_asset_id
-             where s.alert_id = a.id and""" + " " + HALFWAY + """
-            ) halfway,
-            (select count(*) from custom_alert_effective_targets t left join custom_alert_states s
-                on s.alert_id = t.alert_id and s.stock_asset_id = t.stock_asset_id
-             where t.alert_id = a.id and (s.alert_id is null or s.revision <> a.revision or s.last_evaluated_timestamp is null)
-               and coalesce(s.status, 'OK') in ('OK', 'FAILED')) checking,
-            (select count(*) from custom_alert_states s join custom_alert_effective_targets t
-                on t.alert_id = s.alert_id and t.stock_asset_id = s.stock_asset_id
-             where s.alert_id = a.id and s.status in ('SKIPPED', 'INSUFFICIENT_HISTORY')) skipped,
+            c.stocks, c.matching, c.halfway, c.checking, c.skipped,
             (select count(*) from custom_alert_events e where e.alert_id = a.id and e.deleted_at is null and e.read_at is null) unread,
             (select count(*) from custom_alert_events e where e.alert_id = a.id and e.deleted_at is null) triggers
             """;
 
+    /** The alerts with their stock counts; each stock counts once, in the first state that applies. */
+    private static final String ALERTS = """
+            custom_alerts a left join lateral (
+                select count(*) stocks, count(*) filter (where p.matching) matching,
+                       count(*) filter (where p.halfway and not p.matching) halfway,
+                       count(*) filter (where p.checking and not p.matching and not p.halfway) checking,
+                       count(*) filter (where p.skipped) skipped
+                from (""" + stockStates("") + """
+                ) p
+            ) c on true""";
+
     @Transactional(readOnly = true)
     public List<AlertView> list(User user) {
         Map<Long, List<TargetView>> targets = targets(user.getId(), null);
-        return db.query("select " + ALERT_COLUMNS + " from custom_alerts a where a.user_id = ? "
+        return db.query("select " + ALERT_COLUMNS + " from " + ALERTS + " where a.user_id = ? "
                         + "order by a.pinned desc, a.active desc, coalesce(a.last_triggered_at, a.created_at) desc, a.id desc",
                 (row, index) -> alertView(row, targets), user.getId());
     }
@@ -176,7 +201,7 @@ public class CustomAlertService {
     @Transactional(readOnly = true)
     public AlertView get(User user, long id) {
         Map<Long, List<TargetView>> targets = targets(user.getId(), id);
-        List<AlertView> found = db.query("select " + ALERT_COLUMNS + " from custom_alerts a where a.id = ? and a.user_id = ?",
+        List<AlertView> found = db.query("select " + ALERT_COLUMNS + " from " + ALERTS + " where a.id = ? and a.user_id = ?",
                 (row, index) -> alertView(row, targets), id, user.getId());
         if (found.isEmpty()) throw new UserInputException("The custom alert was not found.");
         return found.getFirst();
@@ -185,13 +210,14 @@ public class CustomAlertService {
     private AlertView alertView(ResultSet row, Map<Long, List<TargetView>> targets) throws SQLException {
         long id = row.getLong("id");
         JsonNode definition = json.readTree(row.getString("definition"));
+        List<String> intervals = intervals(row);
         boolean activityOnly = false;
         try {
-            activityOnly = CustomAlertDefinition.parse(definition, catalog, TimeInterval.valueOf(row.getString("interval"))).activityOnly();
+            activityOnly = CustomAlertDefinition.parse(definition, catalog, TimeInterval.valueOf(intervals.getFirst())).activityOnly();
         } catch (RuntimeException unreadable) {
             // Shown as stored; the engine reports an unreadable rule on the alert's stocks.
         }
-        return new AlertView(id, row.getString("name"), row.getString("description"), row.getString("interval"), definition,
+        return new AlertView(id, row.getString("name"), row.getString("description"), intervals, definition,
                 row.getString("trigger_mode"), row.getInt("quiet_candles"), row.getInt("outcome_candles"),
                 row.getBoolean("email_enabled"), row.getBoolean("active"), row.getBoolean("pinned"),
                 (Long) row.getObject("source_chart_alert_id"), targets.getOrDefault(id, List.of()), row.getLong("stocks"),
@@ -229,34 +255,36 @@ public class CustomAlertService {
     @Transactional(readOnly = true)
     public List<StockStateView> states(User user, long id) {
         requireOwned(user, id);
-        return db.query("""
-                select s.ticker_symbol, s.company_name, s.instrument_type, st.revision, a.revision alert_revision,
+        Map<String, List<IntervalState>> byStock = new LinkedHashMap<>();
+        Map<String, String[]> stocks = new HashMap<>();
+        db.query("""
+                select s.ticker_symbol, s.company_name, s.instrument_type, i.interval, st.revision, a.revision alert_revision,
                        st.last_evaluated_timestamp, st.last_result, st.status, st.status_detail, st.last_triggered_timestamp,
                        st.progress, a.active alert_active, false excluded
                 from custom_alert_effective_targets t join custom_alerts a on a.id = t.alert_id
+                cross join unnest(a.intervals) i(interval)
                 join stock_assets s on s.id = t.stock_asset_id
                 left join custom_alert_states st on st.alert_id = t.alert_id and st.stock_asset_id = t.stock_asset_id
+                    and st.interval = i.interval
                 where t.alert_id = ?
                 union all
-                select s.ticker_symbol, s.company_name, s.instrument_type, null, null, null, null, null, null, null, null, null, true
+                select s.ticker_symbol, s.company_name, s.instrument_type, null, null, null, null, null, null, null, null, null, null, true
                 from custom_alert_exclusions x join stock_assets s on s.id = x.stock_asset_id where x.alert_id = ?
-                """, (row, index) -> {
-            boolean excluded = row.getBoolean("excluded");
-            String state;
-            String detail = row.getString("status_detail");
-            Integer revision = (Integer) row.getObject("revision");
-            Long evaluated = (Long) row.getObject("last_evaluated_timestamp");
-            String status = row.getString("status");
-            JsonNode progress = Boolean.TRUE.equals(row.getObject("alert_active")) ? progress(row.getString("progress")) : null;
-            if (excluded) state = "STOPPED";
-            else if ("SKIPPED".equals(status)) state = "SKIPPED";
-            else if ("INSUFFICIENT_HISTORY".equals(status)) state = "WAITING";
-            else if (revision == null || !revision.equals(row.getObject("alert_revision")) || evaluated == null) state = "CHECKING";
-            else state = Boolean.TRUE.equals(row.getObject("last_result")) ? "MATCHING" : progress != null ? "HALFWAY" : "NOT_MATCHING";
-            return new StockStateView(row.getString("ticker_symbol"), row.getString("company_name"),
-                    row.getString("instrument_type"), state, detail, evaluated, (Long) row.getObject("last_triggered_timestamp"), excluded,
-                    "HALFWAY".equals(state) ? progress : null);
-        }, id, id).stream().sorted(java.util.Comparator.comparingInt((StockStateView view) -> switch (view.state()) {
+                """, row -> {
+            String symbol = row.getString("ticker_symbol");
+            stocks.put(symbol, new String[]{row.getString("company_name"), row.getString("instrument_type")});
+            byStock.computeIfAbsent(symbol, key -> new ArrayList<>()).add(intervalState(row));
+        }, id, id);
+        return byStock.entrySet().stream().map(entry -> {
+            IntervalState shown = fold(entry.getValue());
+            String[] stock = stocks.get(entry.getKey());
+            Long lastEvaluated = entry.getValue().stream().map(IntervalState::lastEvaluated).filter(java.util.Objects::nonNull)
+                    .max(Long::compare).orElse(null);
+            Long lastTriggered = entry.getValue().stream().map(IntervalState::lastTriggered).filter(java.util.Objects::nonNull)
+                    .max(Long::compare).orElse(null);
+            return new StockStateView(entry.getKey(), stock[0], stock[1], shown.state(), shown.detail(), lastEvaluated, lastTriggered,
+                    "STOPPED".equals(shown.state()), shown.progress(), stateIntervals(entry.getValue(), shown.state()));
+        }).sorted(java.util.Comparator.comparingInt((StockStateView view) -> switch (view.state()) {
             case "MATCHING" -> 0;
             case "HALFWAY" -> 1;
             case "NOT_MATCHING" -> 2;
@@ -265,6 +293,41 @@ public class CustomAlertService {
             case "SKIPPED" -> 5;
             default -> 6;
         }).thenComparing(StockStateView::symbol)).toList();
+    }
+
+    /** A stock's state on one of the alert's intervals (no interval: the stock is stopped for the alert). */
+    private record IntervalState(String interval, String state, String detail, Long lastEvaluated, Long lastTriggered,
+                                 JsonNode progress) { }
+
+    /**
+     * Which state of a stock's intervals it shows: matching on any comes first, then part-way through a sequence,
+     * still being checked, not matching, and only then the intervals that cannot be checked.
+     */
+    private static final List<String> FOLD_ORDER = List.of("STOPPED", "MATCHING", "HALFWAY", "CHECKING", "NOT_MATCHING", "WAITING",
+            "SKIPPED", "NOT_APPLIED");
+
+    private IntervalState intervalState(ResultSet row) throws SQLException {
+        Integer revision = (Integer) row.getObject("revision");
+        Long evaluated = (Long) row.getObject("last_evaluated_timestamp");
+        String status = row.getString("status");
+        JsonNode progress = Boolean.TRUE.equals(row.getObject("alert_active")) ? progress(row.getString("progress")) : null;
+        String state;
+        if (row.getBoolean("excluded")) state = "STOPPED";
+        else if ("SKIPPED".equals(status)) state = "SKIPPED";
+        else if ("INSUFFICIENT_HISTORY".equals(status)) state = "WAITING";
+        else if (revision == null || !revision.equals(row.getObject("alert_revision")) || evaluated == null) state = "CHECKING";
+        else state = Boolean.TRUE.equals(row.getObject("last_result")) ? "MATCHING" : progress != null ? "HALFWAY" : "NOT_MATCHING";
+        return new IntervalState(row.getString("interval"), state, row.getString("status_detail"), evaluated,
+                (Long) row.getObject("last_triggered_timestamp"), "HALFWAY".equals(state) ? progress : null);
+    }
+
+    private static IntervalState fold(List<IntervalState> states) {
+        return states.stream().min(java.util.Comparator.comparingInt(state -> FOLD_ORDER.indexOf(state.state()))).orElseThrow();
+    }
+
+    private static List<String> stateIntervals(List<IntervalState> states, String state) {
+        return states.stream().filter(candidate -> candidate.state().equals(state) && candidate.interval() != null)
+                .map(IntervalState::interval).sorted(java.util.Comparator.comparing(TimeInterval::valueOf)).toList();
     }
 
     /** A state's sequence progress as stored by the engine; null when there is none or it does not read. */
@@ -284,8 +347,8 @@ public class CustomAlertService {
     public AlertView create(User user, SaveCommand command) {
         if (command == null) throw new UserInputException("Add at least one condition.");
         watchlists.lock(user);
-        TimeInterval interval = interval(command.interval());
-        CustomAlertDefinition definition = CustomAlertDefinition.parse(command.definition(), catalog, interval);
+        List<TimeInterval> intervals = intervals(command.intervals());
+        CustomAlertDefinition definition = parse(command.definition(), intervals);
         boolean active = command.active() == null || command.active();
         if (active) requireRoomForActive(user, null);
         Long sourceChartAlert = command.sourceChartAlertId();
@@ -294,10 +357,10 @@ public class CustomAlertService {
             sourceChartAlert = null;
         }
         Long id = db.queryForObject("""
-                insert into custom_alerts (user_id, name, description, interval, definition, trigger_mode, quiet_candles,
+                insert into custom_alerts (user_id, name, description, intervals, definition, trigger_mode, quiet_candles,
                                            outcome_candles, email_enabled, active, source_chart_alert_id)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) returning id
-                """, Long.class, user.getId(), name(command.name()), description(command.description()), interval.name(),
+                values (?, ?, ?, cast(? as varchar(16)[]), ?, ?, ?, ?, ?, ?, ?) returning id
+                """, Long.class, user.getId(), name(command.name()), description(command.description()), arrayText(intervals),
                 json.writeValueAsString(definition.toJson()), triggerMode(command.triggerMode()), quiet(command.quietCandles()),
                 outcome(command.outcomeCandles()), command.emailEnabled() == null || command.emailEnabled(), active, sourceChartAlert);
         applyTargets(user, id, command.targets() == null ? List.of() : command.targets(), Boolean.TRUE.equals(command.notifyExisting()));
@@ -314,18 +377,19 @@ public class CustomAlertService {
         if (command == null) throw new UserInputException("Add at least one condition.");
         watchlists.lock(user);
         Map<String, Object> existing = owned(user, id);
-        TimeInterval interval = interval(command.interval());
-        CustomAlertDefinition definition = CustomAlertDefinition.parse(command.definition(), catalog, interval);
+        List<TimeInterval> intervals = intervals(command.intervals());
+        CustomAlertDefinition definition = parse(command.definition(), intervals);
         String stored = json.writeValueAsString(definition.toJson());
         String mode = triggerMode(command.triggerMode());
-        boolean ruleChanged = !stored.equals(existing.get("definition")) || !interval.name().equals(existing.get("interval"))
-                || !mode.equals(existing.get("trigger_mode"));
+        boolean ruleChanged = !stored.equals(existing.get("definition")) || !mode.equals(existing.get("trigger_mode"));
+        // Another interval is not another rule: the intervals kept go on from where they are, an added one gets its baseline.
+        boolean intervalsChanged = !joined(intervals).equals(existing.get("intervals"));
         boolean notify = Boolean.TRUE.equals(command.notifyExisting());
         db.update("""
-                update custom_alerts set name = ?, description = ?, interval = ?, definition = ?, trigger_mode = ?,
+                update custom_alerts set name = ?, description = ?, intervals = cast(? as varchar(16)[]), definition = ?, trigger_mode = ?,
                        quiet_candles = ?, outcome_candles = ?, email_enabled = ?, revision = revision + ?,
                        updated_at = current_timestamp where id = ?
-                """, name(command.name()), description(command.description()), interval.name(), stored, mode,
+                """, name(command.name()), description(command.description()), arrayText(intervals), stored, mode,
                 quiet(command.quietCandles()), outcome(command.outcomeCandles()),
                 command.emailEnabled() == null || command.emailEnabled(), ruleChanged ? 1 : 0, id);
         if (ruleChanged) {
@@ -338,6 +402,7 @@ public class CustomAlertService {
                     """, notify, id);
         }
         if (command.targets() != null) applyTargets(user, id, command.targets(), notify);
+        else if (intervalsChanged) syncStates(id, notify);
         if (command.active() != null && command.active() != Boolean.TRUE.equals(existing.get("active"))) setActive(user, id, command.active());
         return get(user, id);
     }
@@ -407,17 +472,21 @@ public class CustomAlertService {
         syncStates(id, notifyExisting);
     }
 
-    /** States follow the covered stocks: new ones wait for a baseline, uncovered ones are dropped. */
+    /**
+     * States follow the covered stocks and the alert's intervals: new ones wait for a baseline, those of uncovered
+     * stocks or dropped intervals are removed.
+     */
     private void syncStates(long id, boolean notifyExisting) {
         db.update("""
-                delete from custom_alert_states s where s.alert_id = ? and not exists (
-                    select 1 from custom_alert_effective_targets t where t.alert_id = s.alert_id and t.stock_asset_id = s.stock_asset_id)
+                delete from custom_alert_states s using custom_alerts a where a.id = s.alert_id and s.alert_id = ?
+                and (not (s.interval = any(a.intervals)) or not exists (
+                    select 1 from custom_alert_effective_targets t where t.alert_id = s.alert_id and t.stock_asset_id = s.stock_asset_id))
                 """, id);
         db.update("""
-                insert into custom_alert_states (alert_id, stock_asset_id, revision, notify_on_baseline)
-                select t.alert_id, t.stock_asset_id, a.revision, ? from custom_alert_effective_targets t
-                join custom_alerts a on a.id = t.alert_id where t.alert_id = ?
-                on conflict (alert_id, stock_asset_id) do nothing
+                insert into custom_alert_states (alert_id, stock_asset_id, interval, revision, notify_on_baseline)
+                select t.alert_id, t.stock_asset_id, i.interval, a.revision, ? from custom_alert_effective_targets t
+                join custom_alerts a on a.id = t.alert_id cross join unnest(a.intervals) i(interval) where t.alert_id = ?
+                on conflict (alert_id, stock_asset_id, interval) do nothing
                 """, notifyExisting, id);
         if (events != null) events.publishEvent(new CustomAlertsChanged(id));
     }
@@ -463,22 +532,23 @@ public class CustomAlertService {
         db.update("delete from custom_alerts where id = ? and user_id = ?", id, user.getId());
     }
 
-    /** A copy with the same rule and lists, optionally on another interval, starting paused if no room is left. */
+    /** A copy with the same rule and lists, optionally on another single interval, starting paused if no room is left. */
     @Transactional
     public AlertView duplicate(User user, long id, String rawInterval) {
         watchlists.lock(user);
         Map<String, Object> existing = owned(user, id);
-        TimeInterval interval = rawInterval == null || rawInterval.isBlank()
-                ? TimeInterval.valueOf((String) existing.get("interval")) : interval(rawInterval);
-        CustomAlertDefinition definition = CustomAlertDefinition.parse(json.readTree((String) existing.get("definition")), catalog, interval);
+        List<TimeInterval> intervals = rawInterval == null || rawInterval.isBlank()
+                ? intervals(List.of(((String) existing.get("intervals")).split(","))) : List.of(interval(rawInterval));
+        CustomAlertDefinition definition = parse(json.readTree((String) existing.get("definition")), intervals);
         boolean room = activeCount(user, null) < maximumActive;
-        String copyName = copyName((String) existing.get("name"), interval, !interval.name().equals(existing.get("interval")));
+        boolean intervalsChanged = !joined(intervals).equals(existing.get("intervals"));
+        String copyName = copyName((String) existing.get("name"), intervals.getFirst(), intervalsChanged);
         Long copy = db.queryForObject("""
-                insert into custom_alerts (user_id, name, description, interval, definition, trigger_mode, quiet_candles,
+                insert into custom_alerts (user_id, name, description, intervals, definition, trigger_mode, quiet_candles,
                                            outcome_candles, email_enabled, active)
-                select user_id, ?, description, ?, ?, trigger_mode, quiet_candles, outcome_candles, email_enabled, ?
+                select user_id, ?, description, cast(? as varchar(16)[]), ?, trigger_mode, quiet_candles, outcome_candles, email_enabled, ?
                 from custom_alerts where id = ? returning id
-                """, Long.class, copyName, interval.name(), json.writeValueAsString(definition.toJson()), room, id);
+                """, Long.class, copyName, arrayText(intervals), json.writeValueAsString(definition.toJson()), room, id);
         db.update("insert into custom_alert_targets (alert_id, watchlist_id, scope) select ?, watchlist_id, scope from custom_alert_targets where alert_id = ?",
                 copy, id);
         db.update("""
@@ -528,28 +598,35 @@ public class CustomAlertService {
     public List<StockAlertView> forStock(User user, String rawSymbol) {
         String symbol = SecurityInputValidator.requireMarketSymbol(rawSymbol);
         Long assetId = assets.findByTickerSymbolIgnoreCase(symbol).map(StockAsset::getId).orElse(null);
-        return db.query("""
-                select a.id, a.name, a.interval, a.active, a.definition, a.revision, t.watchlist_ids,
-                       st.revision state_revision, st.last_evaluated_timestamp, st.last_result, st.status, st.status_detail, st.progress
-                from custom_alerts a
+        Map<Long, StockAlertView> alerts = new LinkedHashMap<>();
+        Map<Long, List<IntervalState>> states = new HashMap<>();
+        db.query("""
+                select a.id, a.name, a.intervals, a.active, a.definition, a.revision alert_revision, t.watchlist_ids, i.interval,
+                       st.revision, st.last_evaluated_timestamp, st.last_result, st.status, st.status_detail,
+                       st.last_triggered_timestamp, st.progress, a.active alert_active, false excluded
+                from custom_alerts a cross join unnest(a.intervals) i(interval)
                 left join custom_alert_effective_targets t on t.alert_id = a.id and t.stock_asset_id = ?
-                left join custom_alert_states st on st.alert_id = a.id and st.stock_asset_id = ?
+                left join custom_alert_states st on st.alert_id = a.id and st.stock_asset_id = ? and st.interval = i.interval
                 where a.user_id = ? order by a.name, a.id
-                """, (row, index) -> {
-            java.sql.Array lists = row.getArray("watchlist_ids");
-            List<Long> ids = lists == null ? List.of() : java.util.Arrays.stream((Long[]) lists.getArray()).toList();
-            boolean applied = !ids.isEmpty();
-            Integer revision = (Integer) row.getObject("state_revision");
-            JsonNode progress = row.getBoolean("active") ? progress(row.getString("progress")) : null;
-            String state = !applied ? "NOT_APPLIED"
-                    : "SKIPPED".equals(row.getString("status")) ? "SKIPPED"
-                    : "INSUFFICIENT_HISTORY".equals(row.getString("status")) ? "WAITING"
-                    : revision == null || revision != row.getInt("revision") || row.getObject("last_evaluated_timestamp") == null ? "CHECKING"
-                    : Boolean.TRUE.equals(row.getObject("last_result")) ? "MATCHING" : progress != null ? "HALFWAY" : "NOT_MATCHING";
-            return new StockAlertView(row.getLong("id"), row.getString("name"), row.getString("interval"), row.getBoolean("active"),
-                    applied, state, row.getString("status_detail"), ids, json.readTree(row.getString("definition")),
-                    "HALFWAY".equals(state) ? progress : null);
+                """, row -> {
+            long id = row.getLong("id");
+            if (!alerts.containsKey(id)) {
+                java.sql.Array lists = row.getArray("watchlist_ids");
+                List<Long> ids = lists == null ? List.of() : java.util.Arrays.stream((Long[]) lists.getArray()).toList();
+                alerts.put(id, new StockAlertView(id, row.getString("name"), intervals(row), row.getBoolean("active"), !ids.isEmpty(),
+                        null, null, ids, json.readTree(row.getString("definition")), null, null));
+            }
+            states.computeIfAbsent(id, key -> new ArrayList<>()).add(intervalState(row));
         }, assetId, assetId, user.getId());
+        return alerts.values().stream().map(alert -> {
+            if (!alert.applied()) {
+                return new StockAlertView(alert.id(), alert.name(), alert.intervals(), alert.active(), false, "NOT_APPLIED", null,
+                        alert.watchlistIds(), alert.definition(), null, List.of());
+            }
+            IntervalState shown = fold(states.get(alert.id()));
+            return new StockAlertView(alert.id(), alert.name(), alert.intervals(), alert.active(), true, shown.state(), shown.detail(),
+                    alert.watchlistIds(), alert.definition(), shown.progress(), stateIntervals(states.get(alert.id()), shown.state()));
+        }).toList();
     }
 
     /**
@@ -633,25 +710,21 @@ public class CustomAlertService {
     public List<WatchlistAlertView> forWatchlist(User user, long watchlistId) {
         watchlists.requireOwned(user, watchlistId);
         return db.query("""
-                select a.id, a.name, a.interval, a.active, a.definition, t.scope,
-                       (select count(*) from custom_alert_effective_targets e join watchlist_members m
-                            on m.stock_asset_id = e.stock_asset_id and m.watchlist_id = t.watchlist_id
-                        where e.alert_id = a.id) stocks,
-                       (select count(*) from custom_alert_states s join watchlist_members m
-                            on m.stock_asset_id = s.stock_asset_id and m.watchlist_id = t.watchlist_id
-                        join custom_alert_effective_targets e on e.alert_id = s.alert_id and e.stock_asset_id = s.stock_asset_id
-                        where s.alert_id = a.id and s.revision = a.revision and s.last_evaluated_timestamp is not null and s.last_result) matching,
-                       (select count(*) from custom_alert_states s join watchlist_members m
-                            on m.stock_asset_id = s.stock_asset_id and m.watchlist_id = t.watchlist_id
-                        join custom_alert_effective_targets e on e.alert_id = s.alert_id and e.stock_asset_id = s.stock_asset_id
-                        where s.alert_id = a.id and""" + " " + HALFWAY + """
-                       ) halfway,
+                select a.id, a.name, a.intervals, a.active, a.definition, t.scope, c.stocks, c.matching, c.halfway,
                        (select count(*) from custom_alert_events ev join watchlist_notification_origins o
                             on o.kind = 'CUSTOM' and o.notification_id = ev.id and o.watchlist_id = t.watchlist_id
                         where ev.alert_id = a.id and ev.deleted_at is null and ev.read_at is null) unread
                 from custom_alert_targets t join custom_alerts a on a.id = t.alert_id
+                left join lateral (
+                    select count(*) stocks, count(*) filter (where p.matching) matching,
+                           count(*) filter (where p.halfway and not p.matching) halfway
+                    from (""" + stockStates("""
+                        and exists (select 1 from watchlist_members m where m.watchlist_id = t.watchlist_id
+                                    and m.stock_asset_id = et.stock_asset_id)""") + """
+                    ) p
+                ) c on true
                 where t.watchlist_id = ? and a.user_id = ? order by a.active desc, a.name, a.id
-                """, (row, index) -> new WatchlistAlertView(row.getLong("id"), row.getString("name"), row.getString("interval"),
+                """, (row, index) -> new WatchlistAlertView(row.getLong("id"), row.getString("name"), intervals(row),
                 row.getBoolean("active"), row.getString("scope"), row.getLong("stocks"), row.getLong("matching"),
                 row.getLong("halfway"), row.getLong("unread"), json.readTree(row.getString("definition"))), watchlistId, user.getId());
     }
@@ -680,7 +753,7 @@ public class CustomAlertService {
         List<Object> arguments = new ArrayList<>(List.of(watchlistId, user.getId()));
         arguments.addAll(symbols);
         db.query("""
-                select s.ticker_symbol, a.id, a.name, a.interval, a.active from custom_alert_effective_targets e
+                select s.ticker_symbol, a.id, a.name, a.intervals, a.active from custom_alert_effective_targets e
                 join custom_alerts a on a.id = e.alert_id join stock_assets s on s.id = e.stock_asset_id
                 join custom_alert_targets t on t.alert_id = a.id and t.watchlist_id = ?
                 where a.user_id = ? and (t.scope = 'ALL_MEMBERS' or exists (select 1 from custom_alert_target_members tm
@@ -690,7 +763,7 @@ public class CustomAlertService {
             Map<String, Object> alert = new LinkedHashMap<>();
             alert.put("id", row.getLong("id"));
             alert.put("name", row.getString("name"));
-            alert.put("interval", row.getString("interval"));
+            alert.put("intervals", intervals(row));
             alert.put("active", row.getBoolean("active"));
             result.computeIfAbsent(row.getString("ticker_symbol"), key -> new ArrayList<>()).add(alert);
         }, arguments.toArray());
@@ -700,7 +773,7 @@ public class CustomAlertService {
     // ------------------------------------------------------------------ triggers
 
     private static final String TRIGGER_QUERY = """
-            select e.id, e.alert_id, a.name, a.active, a.interval, e.revision, a.revision alert_revision, s.ticker_symbol,
+            select e.id, e.alert_id, a.name, a.active, e.interval, e.revision, a.revision alert_revision, s.ticker_symbol,
                    s.company_name, e.candle_timestamp, e.close_price, e.kind, e.created_at, e.read_at, e.matched_conditions,
                    e.total_conditions, e.evidence, e.forward_returns, e.outcome_return, e.outcome_candles, e.outcome_status, e.rule_text
             from custom_alert_events e join custom_alerts a on a.id = e.alert_id join stock_assets s on s.id = e.stock_asset_id
@@ -820,7 +893,8 @@ public class CustomAlertService {
 
     private Map<String, Object> owned(User user, long id) {
         List<Map<String, Object>> rows = db.queryForList(
-                "select id, definition, interval, trigger_mode, active, name from custom_alerts where id = ? and user_id = ?", id, user.getId());
+                "select id, definition, array_to_string(intervals, ',') intervals, trigger_mode, active, name from custom_alerts "
+                        + "where id = ? and user_id = ?", id, user.getId());
         if (rows.isEmpty()) throw new UserInputException("The custom alert was not found.");
         return rows.getFirst();
     }
@@ -849,6 +923,36 @@ public class CustomAlertService {
             case "MONTHLY", "1MO" -> TimeInterval.MONTHLY;
             default -> throw new UserInputException("Choose daily, weekly or monthly candles.");
         };
+    }
+
+    /** The alert's intervals, shortest first and each once. */
+    static List<TimeInterval> intervals(List<String> raw) {
+        if (raw == null || raw.isEmpty()) throw new UserInputException("Choose daily, weekly or monthly candles.");
+        if (raw.size() > 3) throw new UserInputException("Choose daily, weekly or monthly candles.");
+        return raw.stream().map(CustomAlertService::interval).distinct().sorted().toList();
+    }
+
+    /**
+     * Reads the rule for every interval the alert is checked on: a condition's timeframe must not be shorter than any
+     * of them (a weekly timeframe cannot be read on monthly candles). The rule reads the same on each.
+     */
+    CustomAlertDefinition parse(JsonNode definition, List<TimeInterval> intervals) {
+        CustomAlertDefinition parsed = null;
+        for (TimeInterval interval : intervals) parsed = CustomAlertDefinition.parse(definition, catalog, interval);
+        return parsed;
+    }
+
+    private static List<String> intervals(ResultSet row) throws SQLException {
+        return List.of((String[]) row.getArray("intervals").getArray());
+    }
+
+    private static String joined(List<TimeInterval> intervals) {
+        return String.join(",", intervals.stream().map(Enum::name).toList());
+    }
+
+    /** As a Postgres array literal, for {@code cast(? as varchar(16)[])}. */
+    private static String arrayText(List<TimeInterval> intervals) {
+        return "{" + joined(intervals) + "}";
     }
 
     private static String name(String raw) {

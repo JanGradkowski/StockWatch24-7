@@ -148,7 +148,8 @@
     if (alert.unread) title.append(el('span', 'ca-unread', i18n.plural('ca.card.unread', alert.unread, alert.unread)));
     const tags = el('div', 'ca-card-tags');
     tags.append(el('span', `ca-status ${alert.active ? 'active' : 'paused'}`, i18n.t(alert.active ? 'ca.status.active' : 'ca.status.paused')));
-    tags.append(el('span', 'dashboard-chip ca-interval', alert.activityOnly ? i18n.t('ca.card.onFilings', text.intervalLabel(alert.interval)) : text.intervalLabel(alert.interval)));
+    const intervals = text.intervalsLabel(alert.intervals);
+    tags.append(el('span', 'dashboard-chip ca-interval', alert.activityOnly ? i18n.t('ca.card.onFilings', intervals) : intervals));
     tags.append(el('span', `ca-mode`, i18n.t(`ca.mode.short.${alert.triggerMode}`)));
     if (!alert.emailEnabled) tags.append(el('span', 'ca-mode', i18n.t('ca.card.noEmail')));
     main.append(title, tags);
@@ -224,7 +225,7 @@
       panel.append(b);
     };
     action(i18n.t('ca.menu.duplicate'), () => post(`/api/custom-alerts/${alert.id}/duplicate`, created => alerts.unshift(created)));
-    ['DAILY', 'WEEKLY', 'MONTHLY'].filter(interval => interval !== alert.interval).forEach(interval =>
+    ['DAILY', 'WEEKLY', 'MONTHLY'].filter(interval => alert.intervals.length > 1 || interval !== alert.intervals[0]).forEach(interval =>
       action(i18n.t('ca.menu.duplicateAs', text.intervalLabel(interval).toLowerCase()),
         () => post(`/api/custom-alerts/${alert.id}/duplicate?interval=${interval}`, created => alerts.unshift(created))));
     action(i18n.t(alert.emailEnabled ? 'ca.menu.emailOff' : 'ca.menu.emailOn'),
@@ -312,7 +313,8 @@
         const stock = el('td');
         stock.append(link(state.symbol, `/stock/${encodeURIComponent(state.symbol)}`), el('small', null, state.companyName || ''));
         const cell = el('td');
-        const pill = el('span', `ca-state-pill learn-term ${state.state.toLowerCase()}`, i18n.t(`ca.state.${state.state}`));
+        const pill = el('span', `ca-state-pill learn-term ${state.state.toLowerCase()}`,
+          text.stateLabel(state.state, state.stateIntervals, alert.intervals));
         pill.dataset.learn = LEARN_OPTIONS[state.state];
         pill.dataset.learnTitle = i18n.t(`ca.state.${state.state}`);
         cell.append(pill);

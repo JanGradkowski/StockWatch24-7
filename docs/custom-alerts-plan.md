@@ -405,7 +405,10 @@ Stored as versioned JSON, validated on save and on every evaluation:
 }
 ```
 
-As built, the interval lives on the alert row, not in the JSON. Condition kinds are `VALUE`
+As built, the intervals live on the alert row (`intervals`, one to three of DAILY, WEEKLY, MONTHLY;
+V101), not in the JSON. An alert on several intervals runs the same rule on each interval's own
+candles: states are kept per stock and interval, every trigger records its interval, and the pages
+show a stock's most telling state across them. Condition kinds are `VALUE`
 (a price or indicator `subject` compared with a number, a price or another indicator through
 the operators ABOVE, BELOW, CROSSES_ABOVE/BELOW, BETWEEN, OUTSIDE, RISING, FALLING,
 CHANGE_ABOVE/BELOW, NEW_HIGH, NEW_LOW), `PATTERN` (family CANDLESTICK, ELLIOTT_WAVE or

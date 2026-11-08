@@ -333,7 +333,7 @@ class SharedAnalysisStoreIntegrationTest {
         List<StockAsset> stocks = java.util.stream.IntStream.range(0, 25).mapToObj(index -> synthetic(40)).toList();
         long list = jdbc.queryForObject("insert into watchlists (user_id, name) values (?, 'Batch') returning id", Long.class, owner.getId());
         stocks.forEach(stock -> jdbc.update("insert into watchlist_members (watchlist_id, stock_asset_id) values (?, ?)", list, stock.getId()));
-        var alert = alerts.create(owner, new SaveCommand("Above 105", "", "DAILY", json.readTree("""
+        var alert = alerts.create(owner, new SaveCommand("Above 105", "", List.of("DAILY"), json.readTree("""
                 {"version":1,"match":"ALL","groups":[{"id":"g1","match":"ALL","conditions":[
                   {"id":"c1","kind":"VALUE","subject":{"kind":"PRICE","field":"CLOSE"},"operator":"ABOVE",
                    "compare":{"kind":"VALUE","value":105}}]}]}

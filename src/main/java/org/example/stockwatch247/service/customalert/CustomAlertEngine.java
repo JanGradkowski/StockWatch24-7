@@ -39,8 +39,9 @@ import java.util.Optional;
  * Runs custom alerts.
  *
  * <p>The scheduled check of a symbol and interval calls {@link #evaluate} after refreshing its candles. For
- * every active alert covering the stock, each completed candle since the last check is evaluated oldest
- * first and the alert's trigger mode decides whether it fires. A stock newly covered by an alert, or an
+ * every active alert covering the stock on that interval, each completed candle since the last check is evaluated
+ * oldest first and the alert's trigger mode decides whether it fires. An alert checked on several intervals keeps
+ * a state per stock and interval, and runs on each interval's candles alone. A stock newly covered by an alert, or an
  * alert whose rule changed, first gets a baseline: the latest candle is evaluated without triggering (unless
  * the user asked to hear about stocks that already match), so only later candles can trigger. Baselines are
  * also set in the background from stored candles, so "matching now" shows within moments of saving.</p>
@@ -106,8 +107,8 @@ public class CustomAlertEngine {
 
     public record EvaluationResult(int checked, int triggered) { }
 
-    /** One alert covering one stock, with where its state stands. */
-    record Target(long alertId, long userId, String name, String definition, int revision, String triggerMode,
+    /** One alert covering one stock on one of its intervals, with where its state stands. */
+    record Target(long alertId, TimeInterval interval, long userId, String name, String definition, int revision, String triggerMode,
                   int quietCandles, int outcomeCandles, boolean emailEnabled, Integer stateRevision, Long lastEvaluated,
                   Boolean lastResult, Long lastTriggered, boolean triggeredOnce, boolean notifyOnBaseline) {
         boolean needsBaseline() {
@@ -122,18 +123,18 @@ public class CustomAlertEngine {
                    coalesce(s.notify_on_baseline, false) notify_on_baseline
             from custom_alert_effective_targets t
             join custom_alerts a on a.id = t.alert_id
-            left join custom_alert_states s on s.alert_id = t.alert_id and s.stock_asset_id = t.stock_asset_id
-            where t.stock_asset_id = ? and a.interval = ? and a.active
+            left join custom_alert_states s on s.alert_id = t.alert_id and s.stock_asset_id = t.stock_asset_id and s.interval = ?
+            where t.stock_asset_id = ? and ? = any(a.intervals) and a.active
             """;
 
     private List<Target> targets(long assetId, TimeInterval interval, Long alertId) {
         return db.query(TARGETS + (alertId == null ? "" : " and a.id = " + alertId) + " order by a.id", (row, index) -> new Target(
-                row.getLong("id"), row.getLong("user_id"), row.getString("name"), row.getString("definition"),
+                row.getLong("id"), interval, row.getLong("user_id"), row.getString("name"), row.getString("definition"),
                 row.getInt("revision"), row.getString("trigger_mode"), row.getInt("quiet_candles"), row.getInt("outcome_candles"),
                 row.getBoolean("email_enabled"), (Integer) row.getObject("state_revision"),
                 (Long) row.getObject("last_evaluated_timestamp"), (Boolean) row.getObject("last_result"),
                 (Long) row.getObject("last_triggered_timestamp"), row.getBoolean("triggered_once"),
-                row.getBoolean("notify_on_baseline")), assetId, interval.name());
+                row.getBoolean("notify_on_baseline")), interval.name(), assetId, interval.name());
     }
 
     // ------------------------------------------------------------------ scheduled checks
@@ -274,18 +275,19 @@ public class CustomAlertEngine {
         // (saving the alert created it; it is created here only when it is missing).
         if (target.stateRevision() == null) {
             db.update("""
-                    insert into custom_alert_states (alert_id, stock_asset_id, revision) values (?, ?, ?)
-                    on conflict (alert_id, stock_asset_id) do nothing
-                    """, target.alertId(), assetId, target.revision());
+                    insert into custom_alert_states (alert_id, stock_asset_id, interval, revision) values (?, ?, ?, ?)
+                    on conflict (alert_id, stock_asset_id, interval) do nothing
+                    """, target.alertId(), assetId, target.interval().name(), target.revision());
         }
         Target current = db.query("""
                 select s.revision, s.last_evaluated_timestamp, s.last_result, s.last_triggered_timestamp, s.triggered_once,
-                       s.notify_on_baseline from custom_alert_states s where s.alert_id = ? and s.stock_asset_id = ? for update
-                """, (row, index) -> new Target(target.alertId(), target.userId(), target.name(), target.definition(),
+                       s.notify_on_baseline from custom_alert_states s
+                where s.alert_id = ? and s.stock_asset_id = ? and s.interval = ? for update
+                """, (row, index) -> new Target(target.alertId(), target.interval(), target.userId(), target.name(), target.definition(),
                 target.revision(), target.triggerMode(), target.quietCandles(), target.outcomeCandles(), target.emailEnabled(),
                 row.getInt("revision"), (Long) row.getObject("last_evaluated_timestamp"), (Boolean) row.getObject("last_result"),
                 (Long) row.getObject("last_triggered_timestamp"), row.getBoolean("triggered_once"),
-                row.getBoolean("notify_on_baseline")), target.alertId(), assetId).stream().findFirst().orElse(null);
+                row.getBoolean("notify_on_baseline")), target.alertId(), assetId, target.interval().name()).stream().findFirst().orElse(null);
         // The stock stopped being covered since the targets were read.
         if (current == null) return 0;
         List<Candle> candles = data.candles();
@@ -340,10 +342,10 @@ public class CustomAlertEngine {
         db.update("""
                 update custom_alert_states set last_evaluated_timestamp = ?, last_result = ?, status = ?, status_detail = ?,
                        last_triggered_timestamp = ?, triggered_once = ?, progress = ?, updated_at = current_timestamp
-                where alert_id = ? and stock_asset_id = ?
+                where alert_id = ? and stock_asset_id = ? and interval = ?
                 """, candles.get(last).getTimestamp(), previous, status,
                 "SKIPPED".equals(status) ? "A condition does not apply to this instrument." : null,
-                lastTriggered, once, progress(definition, result), current.alertId(), assetId);
+                lastTriggered, once, progress(definition, result), current.alertId(), assetId, current.interval().name());
         return triggered;
     }
 
@@ -378,25 +380,26 @@ public class CustomAlertEngine {
                 update custom_alert_states set revision = ?, last_evaluated_timestamp = ?, last_result = ?, status = ?,
                        status_detail = ?, last_triggered_timestamp = case when ? then ? else null end, triggered_once = ?,
                        notify_on_baseline = false, progress = ?, updated_at = current_timestamp
-                where alert_id = ? and stock_asset_id = ?
+                where alert_id = ? and stock_asset_id = ? and interval = ?
                 """, target.revision(), candle, result.matched(), status,
                 result.applicable() ? null : "A condition does not apply to this instrument.",
-                triggered, candle, triggered && "ONCE".equals(target.triggerMode()), progress, target.alertId(), assetId);
+                triggered, candle, triggered && "ONCE".equals(target.triggerMode()), progress, target.alertId(), assetId,
+                target.interval().name());
     }
 
     private void saveState(Target target, long assetId, Long candle, boolean result, String status, String detail, boolean keepNotify) {
         db.update("""
-                insert into custom_alert_states (alert_id, stock_asset_id, revision, last_evaluated_timestamp, last_result,
+                insert into custom_alert_states (alert_id, stock_asset_id, interval, revision, last_evaluated_timestamp, last_result,
                                                  status, status_detail, notify_on_baseline)
-                values (?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict (alert_id, stock_asset_id) do update set revision = excluded.revision,
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict (alert_id, stock_asset_id, interval) do update set revision = excluded.revision,
                     last_evaluated_timestamp = excluded.last_evaluated_timestamp,
                     last_result = excluded.last_result, status = excluded.status, status_detail = excluded.status_detail,
                     notify_on_baseline = excluded.notify_on_baseline, progress = null, updated_at = current_timestamp
-                """, target.alertId(), assetId, target.revision(), candle, result, status, detail, keepNotify);
+                """, target.alertId(), assetId, target.interval().name(), target.revision(), candle, result, status, detail, keepNotify);
     }
 
-    /** Stores a trigger once per alert, stock and candle; true when it is new. */
+    /** Stores a trigger once per alert, stock, interval and candle; true when it is new. */
     private boolean record(CustomAlertFactsLoader.StockData data, Target target, CustomAlertDefinition definition, Result result,
                            int index, String kind) {
         Candle candle = data.candles().get(index);
@@ -424,17 +427,19 @@ public class CustomAlertEngine {
             node.set("facts", json.valueToTree(group.facts()));
         }
         List<Long> inserted = db.queryForList("""
-                insert into custom_alert_events (alert_id, stock_asset_id, candle_timestamp, kind, close_price, revision, rule_text,
-                                                 evidence, matched_conditions, total_conditions, outcome_candles, email_status)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict (alert_id, stock_asset_id, candle_timestamp) do nothing returning id
-                """, Long.class, target.alertId(), data.asset().getId(), candle.getTimestamp(), kind, candle.getClosePrice(),
+                insert into custom_alert_events (alert_id, stock_asset_id, interval, candle_timestamp, kind, close_price, revision,
+                                                 rule_text, evidence, matched_conditions, total_conditions, outcome_candles, email_status)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict (alert_id, stock_asset_id, interval, candle_timestamp) do nothing returning id
+                """, Long.class, target.alertId(), data.asset().getId(), target.interval().name(), candle.getTimestamp(), kind,
+                candle.getClosePrice(),
                 target.revision(), CustomAlertText.rule(definition, catalog), json.writeValueAsString(evidence),
                 result.matchedConditions(), result.totalConditions(), target.outcomeCandles(),
                 target.emailEnabled() ? "PENDING" : "NONE");
         if (inserted.isEmpty()) return false;
         db.update("update custom_alerts set last_triggered_at = current_timestamp where id = ?", target.alertId());
-        log.info("Custom alert {} triggered for {} on candle {}", target.alertId(), data.asset().getTickerSymbol(), candle.getTimestamp());
+        log.info("Custom alert {} triggered for {} on {} candle {}", target.alertId(), data.asset().getTickerSymbol(), target.interval(),
+                candle.getTimestamp());
         return true;
     }
 
@@ -444,8 +449,7 @@ public class CustomAlertEngine {
     private void updateOutcomes(StockAsset asset, TimeInterval interval, CustomAlertFactsLoader.StockData loaded) {
         List<Object[]> pending = db.query("""
                 select e.id, e.candle_timestamp, e.close_price, e.outcome_candles from custom_alert_events e
-                join custom_alerts a on a.id = e.alert_id
-                where e.stock_asset_id = ? and a.interval = ? and e.outcome_status = 'PENDING' and e.deleted_at is null
+                where e.stock_asset_id = ? and e.interval = ? and e.outcome_status = 'PENDING' and e.deleted_at is null
                 order by e.id limit 500
                 """, (row, index) -> new Object[]{row.getLong(1), row.getLong(2), row.getDouble(3), row.getInt(4)},
                 asset.getId(), interval.name());
@@ -502,13 +506,15 @@ public class CustomAlertEngine {
         int handled = 0;
         while (System.nanoTime() < deadline) {
             List<Object[]> pending = db.query("""
-                    select t.stock_asset_id, a.interval from custom_alert_effective_targets t
+                    select t.stock_asset_id, i.interval from custom_alert_effective_targets t
                     join custom_alerts a on a.id = t.alert_id
+                    cross join unnest(a.intervals) i(interval)
                     left join custom_alert_states s on s.alert_id = t.alert_id and s.stock_asset_id = t.stock_asset_id
+                        and s.interval = i.interval
                     where a.active and (s.alert_id is null or s.revision <> a.revision
                         or (s.last_evaluated_timestamp is null and s.updated_at < current_timestamp - interval '6 hours')
                         or (s.last_evaluated_timestamp is null and s.status = 'OK'))
-                    group by t.stock_asset_id, a.interval order by max(a.updated_at) desc, min(t.alert_id), t.stock_asset_id limit ?
+                    group by t.stock_asset_id, i.interval order by max(a.updated_at) desc, min(t.alert_id), t.stock_asset_id limit ?
                     """, (row, index) -> new Object[]{row.getLong(1), row.getString(2)}, 20 + seen.size()).stream()
                     .filter(item -> !seen.contains(item[0] + ":" + item[1])).toList();
             if (pending.isEmpty()) break;
@@ -620,13 +626,14 @@ public class CustomAlertEngine {
     }
 
     private boolean sendDigest(long alertId) {
-        Map<String, Object> alert = db.queryForMap("select user_id, name, interval, email_enabled from custom_alerts where id = ?", alertId);
+        Map<String, Object> alert = db.queryForMap("select user_id, name, email_enabled from custom_alerts where id = ?", alertId);
         List<Map<String, Object>> events = db.queryForList("""
-                select e.id, e.candle_timestamp, e.close_price, e.matched_conditions, e.total_conditions, e.evidence, e.rule_text,
-                       s.ticker_symbol, s.company_name
+                select e.id, e.interval, e.candle_timestamp, e.close_price, e.matched_conditions, e.total_conditions, e.evidence,
+                       e.rule_text, s.ticker_symbol, s.company_name
                 from custom_alert_events e join stock_assets s on s.id = e.stock_asset_id
                 where e.alert_id = ? and e.email_status = 'PENDING' and e.deleted_at is null
-                order by s.ticker_symbol, e.candle_timestamp desc for update of e skip locked
+                order by s.ticker_symbol, array_position(array['DAILY', 'WEEKLY', 'MONTHLY']::varchar[], e.interval),
+                         e.candle_timestamp desc for update of e skip locked
                 """, alertId);
         if (events.isEmpty()) return false;
         Long[] ids = events.stream().map(row -> ((Number) row.get("id")).longValue()).toArray(Long[]::new);
@@ -636,13 +643,12 @@ public class CustomAlertEngine {
         boolean sent = false;
         if (allowed) {
             String name = (String) alert.get("name");
-            TimeInterval interval = TimeInterval.valueOf((String) alert.get("interval"));
             // A check that caught up on missed candles can bring several triggers for one stock.
             long stocks = events.stream().map(row -> row.get("ticker_symbol")).distinct().count();
             String subject = stocks == 1
                     ? "Custom alert: " + name + " for " + events.getFirst().get("ticker_symbol")
                     : "Custom alert: " + name + " for " + stocks + " stocks";
-            sent = notifications.sendCustomAlertEmail(owner, subject, digestBody(name, interval, events),
+            sent = notifications.sendCustomAlertEmail(owner, subject, digestBody(name, events),
                     events.size() == 1 ? "/custom-alerts/triggers/" + ids[0] : "/signals?customAlertId=" + alertId,
                     "custom-alert:" + alertId + ":" + ids[ids.length - 1]);
         }
@@ -660,16 +666,23 @@ public class CustomAlertEngine {
         return queued;
     }
 
-    static String digestBody(String name, TimeInterval interval, List<Map<String, Object>> events) {
+    static String digestBody(String name, List<Map<String, Object>> events) {
+        // An alert checked on several intervals can bring triggers of each: the interval then shows per stock.
+        List<TimeInterval> intervals = events.stream().map(event -> TimeInterval.valueOf((String) event.get("interval")))
+                .distinct().sorted().toList();
+        boolean mixed = intervals.size() > 1;
         StringBuilder body = new StringBuilder()
                 .append("Custom alert: ").append(name).append('\n')
-                .append("Interval: ").append(interval.analysisLabel()).append('\n');
+                .append(mixed ? "Intervals: " : "Interval: ")
+                .append(String.join(", ", intervals.stream().map(TimeInterval::analysisLabel).toList())).append('\n');
         String rule = (String) events.getFirst().get("rule_text");
         body.append('\n').append("Rule:").append('\n').append(rule).append('\n').append('\n');
-        // Events arrive by stock, newest candle first: each stock shows its latest trigger in full and the
+        // Events arrive by stock and interval, newest candle first: each shows its latest trigger in full and the
         // dates of earlier ones (a check that caught up on missed candles).
         Map<Object, List<Map<String, Object>>> byStock = new LinkedHashMap<>();
-        for (Map<String, Object> event : events) byStock.computeIfAbsent(event.get("ticker_symbol"), symbol -> new ArrayList<>()).add(event);
+        for (Map<String, Object> event : events) {
+            byStock.computeIfAbsent(event.get("ticker_symbol") + ":" + event.get("interval"), key -> new ArrayList<>()).add(event);
+        }
         int shown = 0;
         for (List<Map<String, Object>> triggers : byStock.values()) {
             if (shown++ == 25) {
@@ -681,6 +694,7 @@ public class CustomAlertEngine {
             String company = (String) latest.get("company_name");
             body.append(symbol);
             if (company != null && !company.isBlank() && !company.equalsIgnoreCase(symbol)) body.append(" · ").append(company);
+            if (mixed) body.append(" · ").append(TimeInterval.valueOf((String) latest.get("interval")).analysisLabel());
             body.append('\n')
                     .append("Completed candle: ").append(emailDate(latest)).append('\n')
                     .append("Close: ").append(CustomAlertText.number(((Number) latest.get("close_price")).doubleValue())).append('\n')

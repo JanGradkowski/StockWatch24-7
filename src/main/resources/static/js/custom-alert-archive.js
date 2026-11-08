@@ -5,7 +5,8 @@
   if (!box) return;
   const text = window.StockWatchCustomAlerts;
   const alert = {
-    definition: JSON.parse(box.dataset.definition || '{}'), interval: box.dataset.interval, triggerMode: box.dataset.triggerMode
+    definition: JSON.parse(box.dataset.definition || '{}'), intervals: (box.dataset.intervals || 'DAILY').split(','),
+    triggerMode: box.dataset.triggerMode
   };
   text.catalog().catch(() => ({ byType: new Map() })).then(catalog => {
     box.querySelector('[data-ca-archive-summary]').textContent = text.summary(alert, catalog.byType);

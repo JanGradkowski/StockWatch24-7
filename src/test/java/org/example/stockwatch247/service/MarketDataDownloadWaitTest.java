@@ -86,7 +86,9 @@ class MarketDataDownloadWaitTest {
             assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
             MarketDataService.CandleSyncResult check;
             try (var wait = MarketDataService.waitForDownloadsAtMost(Duration.ofSeconds(5))) {
-                release.countDown();
+                // The download goes on until the check is waiting on it: released first, it could finish (and leave
+                // the in-flight downloads) before the check asked, which would then start a second one.
+                java.util.concurrent.CompletableFuture.delayedExecutor(300, TimeUnit.MILLISECONDS).execute(release::countDown);
                 check = context.service().syncCandlesForAnalysis("AAPL", "1d", 300);
             }
             assertThat(prefetch.get(5, TimeUnit.SECONDS).source()).isEqualTo(MarketDataService.CandleSource.TWELVE_DATA);

@@ -72,7 +72,7 @@ class ElliottHistoryIntegrationTest {
         String symbol = "ZEH" + UUID.randomUUID().toString().replace("-", "").substring(0, 4).toUpperCase();
         List<Long> times = stock(symbol, 90);
         var command = new CustomAlertPreview.PreviewCommand("DAILY", json.readTree(ELLIOTT_IN_LAST_5), symbol, "EVERY_CANDLE",
-                0, 1, List.of(), null);
+                0, 1, List.of(), null, null);
 
         var first = preview.preview(owner, command);
         assertThat(first.available()).isTrue();
@@ -138,7 +138,7 @@ class ElliottHistoryIntegrationTest {
         String symbol = "ZEC" + UUID.randomUUID().toString().replace("-", "").substring(0, 4).toUpperCase();
         List<Long> times = stock(symbol, 90);
         preview.preview(owner, new CustomAlertPreview.PreviewCommand("DAILY", json.readTree(ELLIOTT_IN_LAST_5), symbol, "EVERY_CANDLE",
-                0, 1, List.of(), null));
+                0, 1, List.of(), null, null));
         build();
         Map<String, Object> built = jdbc.queryForMap("""
                 select c.stock_asset_id, c.settings_key, c.status, c.covered_to, c.prefix_fingerprint, c.tail_fingerprints

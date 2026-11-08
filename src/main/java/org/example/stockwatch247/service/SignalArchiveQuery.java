@@ -343,7 +343,7 @@ public class SignalArchiveQuery {
             case "completed" -> where += " and e.outcome_status<>'PENDING'";
             default -> { }
         }
-        return new Branch("select 'CUSTOM'::text kind,e.id,a.ticker_symbol ticker,a.company_name company,c.interval,null::integer confidence,"
+        return new Branch("select 'CUSTOM'::text kind,e.id,a.ticker_symbol ticker,a.company_name company,e.interval,null::integer confidence,"
                 + "e.kind status,e.created_at::timestamp received,e.read_at::timestamp,c.name title,"
                 + "(e.matched_conditions||'/'||e.total_conditions) actor,"
                 + "(to_timestamp(e.candle_timestamp) at time zone 'UTC')::date transaction_date,e.outcome_return trade_return"

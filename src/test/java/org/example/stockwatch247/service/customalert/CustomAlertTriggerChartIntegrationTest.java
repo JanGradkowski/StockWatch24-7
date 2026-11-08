@@ -90,7 +90,7 @@ class CustomAlertTriggerChartIntegrationTest {
                     transaction_type, transaction_code, transaction_date, filing_date, shares, transaction_price)
                 values (?, 'TEST', ?, ?, 'Jane Doe', 'Director', 'PURCHASE', 'P', ?, ?, 1000, 100) returning id
                 """, Long.class, asset, UUID.randomUUID().toString(), symbol, nextDay.minusDays(5), nextDay.minusDays(5));
-        var alert = alerts.create(owner, new SaveCommand("RSI breakout", "", "DAILY", json.readTree(RULE), "BECOMES_TRUE", 0, 3, true,
+        var alert = alerts.create(owner, new SaveCommand("RSI breakout", "", List.of("DAILY"), json.readTree(RULE), "BECOMES_TRUE", 0, 3, true,
                 List.of(new TargetCommand(list, "ALL_MEMBERS", List.of())), false, true, null));
         engine.establishBaselines();
 

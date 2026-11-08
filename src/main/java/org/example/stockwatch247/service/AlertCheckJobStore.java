@@ -110,18 +110,18 @@ public class AlertCheckJobStore {
 
                     union
 
-                    select asset.ticker_symbol as symbol, custom_alert.interval
+                    select asset.ticker_symbol as symbol, custom_interval.interval
                     from custom_alert_effective_targets target
                     join custom_alerts custom_alert on custom_alert.id = target.alert_id
+                    cross join unnest(custom_alert.intervals) custom_interval(interval)
                     join stock_assets asset on asset.id = target.stock_asset_id
                     where custom_alert.active = true
 
                     union
 
                     -- Triggers keep measuring the price after them, even once their alert is paused.
-                    select asset.ticker_symbol as symbol, custom_alert.interval
+                    select asset.ticker_symbol as symbol, custom_event.interval
                     from custom_alert_events custom_event
-                    join custom_alerts custom_alert on custom_alert.id = custom_event.alert_id
                     join stock_assets asset on asset.id = custom_event.stock_asset_id
                     where custom_event.outcome_status = 'PENDING' and custom_event.deleted_at is null
                 ) candidate on candidate.interval = inserted_run.interval

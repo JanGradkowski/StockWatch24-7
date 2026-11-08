@@ -16,12 +16,12 @@ const CATALOG = {
 
 const PAGE = `<body><main class="ca-builder-page" data-start-template="TEMPLATE"><form data-ca-builder>
   <input data-ca-name><input data-ca-description>
-  <select data-ca-interval><option value="DAILY">daily</option><option value="WEEKLY">weekly</option></select>
+  <div data-ca-intervals><input type="checkbox" value="DAILY" checked><input type="checkbox" value="WEEKLY"><input type="checkbox" value="MONTHLY"></div>
   <div data-ca-groups></div><button type="button" data-ca-add-condition>+ Add condition</button><button type="button" data-ca-add-group>+ Add group</button>
   <input type="radio" name="triggerMode" value="BECOMES_TRUE" checked><input type="radio" name="triggerMode" value="ONCE">
   <input type="number" data-ca-quiet value="0"><input type="number" data-ca-outcome value="10">
   <div data-ca-targets></div><input type="checkbox" data-ca-notify-existing><input type="checkbox" checked data-ca-email>
-  <div data-ca-start></div><p data-ca-summary></p><input data-ca-test-symbol><button type="button" data-ca-test>Test</button>
+  <div data-ca-start></div><p data-ca-summary></p><input data-ca-test-symbol><button type="button" data-ca-test>Test</button><div data-ca-test-interval hidden></div>
   <div data-ca-result></div><div data-ca-coverage></div><p data-ca-status></p><button type="submit" data-ca-save>Save</button>
 </form></main></body>`;
 
@@ -185,5 +185,37 @@ test('a step number is read out as "Step n", and a full sequence takes no fifth 
   page.button(page.cards(page.groups()[1])[0], 'Move up').click();
   assert.equal(page.groups()[0].querySelector('.ca-sequence-note').textContent, 'A sequence has at most 4 steps.');
   assert.equal(page.cards(page.groups()[1]).length, 1, 'the candle stays where it was');
+  page.dom.window.close();
+});
+
+test('several intervals can be ticked, one always stays, and the preview tests the one chosen', async () => {
+  const page = await builder('oversold-bounce');
+  const bodies = [];
+  const fetch = page.window.fetch;
+  page.window.fetch = async (url, options) => {
+    if (url.includes('/preview')) bodies.push(JSON.parse(options.body));
+    return fetch(url, options);
+  };
+  const box = value => page.doc.querySelector(`[data-ca-intervals] input[value="${value}"]`);
+  const toggle = page.doc.querySelector('[data-ca-test-interval]');
+  assert.equal(toggle.hidden, true, 'one interval: nothing to choose');
+
+  box('WEEKLY').checked = true;
+  box('WEEKLY').dispatchEvent(new page.window.Event('change'));
+  assert.equal(toggle.hidden, false);
+  assert.deepEqual([...toggle.querySelectorAll('button')].map(item => [item.textContent, item.getAttribute('aria-pressed')]),
+    [['Daily', 'true'], ['Weekly', 'false']]);
+  assert.match(page.summary(), /^Checked after every daily and weekly candle\./);
+
+  [...toggle.querySelectorAll('button')][1].click();
+  await settle();
+  assert.deepEqual({ interval: bodies.at(-1).interval, intervals: bodies.at(-1).intervals }, { interval: 'WEEKLY', intervals: ['DAILY', 'WEEKLY'] });
+
+  box('DAILY').checked = false;
+  box('DAILY').dispatchEvent(new page.window.Event('change'));
+  box('WEEKLY').checked = false;
+  box('WEEKLY').dispatchEvent(new page.window.Event('change'));
+  assert.equal(box('WEEKLY').checked, true, 'the last ticked interval cannot be cleared');
+  assert.equal(toggle.hidden, true);
   page.dom.window.close();
 });

@@ -22,7 +22,8 @@
 
   const nodes = {
     name: form.querySelector('[data-ca-name]'), description: form.querySelector('[data-ca-description]'),
-    interval: form.querySelector('[data-ca-interval]'), groups: form.querySelector('[data-ca-groups]'),
+    intervals: form.querySelector('[data-ca-intervals]'), testInterval: form.querySelector('[data-ca-test-interval]'),
+    groups: form.querySelector('[data-ca-groups]'),
     quiet: form.querySelector('[data-ca-quiet]'), outcome: form.querySelector('[data-ca-outcome]'),
     email: form.querySelector('[data-ca-email]'), notifyExisting: form.querySelector('[data-ca-notify-existing]'),
     targets: form.querySelector('[data-ca-targets]'), start: form.querySelector('[data-ca-start]'),
@@ -33,7 +34,8 @@
 
   const state = {
     id: page.dataset.alertId ? Number(page.dataset.alertId) : null,
-    interval: 'DAILY', triggerMode: 'BECOMES_TRUE', quietCandles: 0, outcomeCandles: 10, emailEnabled: true,
+    // The closes the alert is checked after, shortest first; the preview tests one of them at a time.
+    intervals: ['DAILY'], testInterval: 'DAILY', triggerMode: 'BECOMES_TRUE', quietCandles: 0, outcomeCandles: 10, emailEnabled: true,
     definition: { version: 1, match: 'ALL', groups: [{ id: 'g1', match: 'ALL', conditions: [] }] },
     targets: new Map(), notifyExisting: false, sourceChartAlertId: null, pendingSymbol: null, pendingChoice: null
   };
@@ -838,7 +840,9 @@
               control = select(SOURCES.map(option => [option, text.choiceLabel('source', option)]), current, value => { values[input.key] = value; });
               break;
             case 'TIMEFRAME': {
-              const allowed = state.interval === 'MONTHLY' ? ['chart'] : state.interval === 'WEEKLY' ? ['chart', '1mo'] : ['chart', '1wk', '1mo'];
+              // Not shorter than any of the alert's intervals: the longest one decides.
+              const longest = state.intervals.at(-1);
+              const allowed = longest === 'MONTHLY' ? ['chart'] : longest === 'WEEKLY' ? ['chart', '1mo'] : ['chart', '1wk', '1mo'];
               control = select(allowed.map(option => [option, i18n.t(`ca.timeframe.option.${option}`)]), allowed.includes(current) ? current : 'chart',
                 value => { values[input.key] = value; });
               break;
@@ -1224,7 +1228,7 @@
 
   function snapshot() {
     return {
-      name: nodes.name.value.trim(), description: nodes.description.value.trim(), interval: state.interval,
+      name: nodes.name.value.trim(), description: nodes.description.value.trim(), intervals: [...state.intervals],
       definition: state.definition, triggerMode: state.triggerMode, quietCandles: state.quietCandles,
       outcomeCandles: state.outcomeCandles, emailEnabled: state.emailEnabled,
       targets: [...state.targets.values()].filter(target => target.scope === 'ALL_MEMBERS' || target.symbols.length),
@@ -1258,7 +1262,8 @@
     }, 1200);
     try {
       const result = await api('/api/custom-alerts/preview', { method: 'POST', body: JSON.stringify({
-        interval: draft.interval, definition: draft.definition, symbol: nodes.testSymbol.value.trim(), triggerMode: draft.triggerMode,
+        interval: state.testInterval, intervals: draft.intervals, definition: draft.definition, symbol: nodes.testSymbol.value.trim(),
+        triggerMode: draft.triggerMode,
         quietCandles: draft.quietCandles, outcomeCandles: draft.outcomeCandles, targets: draft.targets, alertId: state.id }) });
       if (sequence !== previewSequence) return;
       preview = result;
@@ -1470,7 +1475,7 @@
     if (!template) return;
     if (!nodes.name.value.trim()) nodes.name.value = template.name;
     if (!nodes.description.value.trim()) nodes.description.value = template.description;
-    state.interval = template.interval;
+    setIntervals(template.intervals);
     state.triggerMode = template.triggerMode;
     state.definition = template.definition;
     adoptSequences();
@@ -1489,7 +1494,7 @@
     if (ask && conditions().length && !window.confirm(i18n.t('assistant.draft.replace'))) return false;
     if (!nodes.name.value.trim() && draft.name) nodes.name.value = draft.name;
     if (!nodes.description.value.trim() && draft.description) nodes.description.value = draft.description;
-    state.interval = draft.interval || 'DAILY';
+    setIntervals(draft.intervals || (draft.interval ? [draft.interval] : null));
     state.triggerMode = draft.triggerMode || 'BECOMES_TRUE';
     state.quietCandles = draft.quietCandles ?? 0;
     state.outcomeCandles = draft.outcomeCandles ?? 10;
@@ -1523,7 +1528,7 @@
       triggersInReplay: preview.history?.length ?? 0, replayedCandles: preview.replayedCandles
     } : preview && !preview.available ? { unavailable: preview.unavailableReason } : null;
     return {
-      rule: { name: draft.name, interval: draft.interval, triggerMode: draft.triggerMode, quietCandles: draft.quietCandles,
+      rule: { name: draft.name, intervals: draft.intervals, triggerMode: draft.triggerMode, quietCandles: draft.quietCandles,
         outcomeCandles: draft.outcomeCandles, definition: draft.definition },
       saved: Boolean(state.id), watchlistsChosen: draft.targets.length, singleStockToAdd: state.pendingSymbol,
       testStock: nodes.testSymbol.value.trim() || null, preview: reading, status: nodes.status.textContent || null
@@ -1538,7 +1543,7 @@
   async function fromChartAlert(id) {
     const alert = await api(`/api/chart-alerts/${id}`);
     state.sourceChartAlertId = alert.id;
-    state.interval = ({ '1d': 'DAILY', '1wk': 'WEEKLY', '1mo': 'MONTHLY' })[alert.interval] || 'DAILY';
+    setIntervals([({ '1d': 'DAILY', '1wk': 'WEEKLY', '1mo': 'MONTHLY' })[alert.interval] || 'DAILY']);
     nodes.name.value = alert.label;
     const operator = ({ CROSSES_UP: 'CROSSES_ABOVE', CROSSES_DOWN: 'CROSSES_BELOW', CROSSES: 'CROSSES_ABOVE', ABOVE: 'ABOVE', BELOW: 'BELOW',
       INSIDE: 'BETWEEN', ENTERS: 'BETWEEN', OUTSIDE: 'OUTSIDE', EXITS: 'OUTSIDE' })[alert.condition] || 'ABOVE';
@@ -1562,8 +1567,35 @@
 
   // ------------------------------------------------------------------ setup and saving
 
+  const INTERVALS = ['DAILY', 'WEEKLY', 'MONTHLY'];
+
+  /** The alert's intervals in order (daily when none is given); the tested one stays if it is still among them. */
+  function setIntervals(intervals) {
+    const chosen = INTERVALS.filter(interval => (intervals?.length ? intervals : ['DAILY']).includes(interval));
+    state.intervals = chosen.length ? chosen : ['DAILY'];
+    if (!state.intervals.includes(state.testInterval)) state.testInterval = state.intervals[0];
+  }
+
+  /** With several intervals, the preview offers to test each of them. */
+  function renderTestInterval() {
+    nodes.testInterval.hidden = state.intervals.length < 2;
+    nodes.testInterval.replaceChildren(...state.intervals.map(interval => {
+      const button = el('button', null, text.intervalLabel(interval));
+      button.type = 'button';
+      button.setAttribute('aria-pressed', String(interval === state.testInterval));
+      button.addEventListener('click', () => {
+        if (state.testInterval === interval) return;
+        state.testInterval = interval;
+        renderTestInterval();
+        runPreview();
+      });
+      return button;
+    }));
+  }
+
   function syncBasics() {
-    nodes.interval.value = state.interval;
+    nodes.intervals.querySelectorAll('input[type="checkbox"]').forEach(input => { input.checked = state.intervals.includes(input.value); });
+    renderTestInterval();
     form.querySelectorAll('input[name="triggerMode"]').forEach(input => { input.checked = input.value === state.triggerMode; });
     nodes.quiet.value = String(state.quietCandles);
     nodes.outcome.value = String(state.outcomeCandles);
@@ -1574,7 +1606,16 @@
   function bindBasics() {
     nodes.name.addEventListener('input', changed);
     nodes.description.addEventListener('input', () => { dirty = true; });
-    nodes.interval.addEventListener('change', () => { state.interval = nodes.interval.value; changed(); });
+    nodes.intervals.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener('change', () => {
+      const ticked = [...nodes.intervals.querySelectorAll('input[type="checkbox"]:checked')].map(box => box.value);
+      // At least one stays ticked: an alert is always checked after some close.
+      if (!ticked.length) { input.checked = true; return; }
+      setIntervals(ticked);
+      renderTestInterval();
+      // A timeframe offered by a condition depends on the longest interval.
+      renderGroups();
+      changed();
+    }));
     form.querySelectorAll('input[name="triggerMode"]').forEach(input => input.addEventListener('change', () => {
       if (input.checked) { state.triggerMode = input.value; changed(); }
     }));
@@ -1645,7 +1686,8 @@
         const alert = await api(`/api/custom-alerts/${state.id}`);
         nodes.name.value = alert.name;
         nodes.description.value = alert.description || '';
-        Object.assign(state, { interval: alert.interval, triggerMode: alert.triggerMode, quietCandles: alert.quietCandles,
+        setIntervals(alert.intervals);
+        Object.assign(state, { triggerMode: alert.triggerMode, quietCandles: alert.quietCandles,
           outcomeCandles: alert.outcomeCandles, emailEnabled: alert.emailEnabled, definition: alert.definition });
         adoptSequences();
         alert.targets.forEach(target => state.targets.set(target.watchlistId, { watchlistId: target.watchlistId, scope: target.scope,

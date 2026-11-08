@@ -9,7 +9,8 @@
     const i18n = window.StockWatchI18n;
     const finite = K.finite;
 
-    // The original retracement levels: 0 at the first point, 1 at the second, with extensions both ways.
+    // The original retracement levels: 1 at the first point (the swing's start), 0 at the second (its end), as Auto Fib draws
+    // them, so a level reads as the share of the move given back. Extensions run both ways.
     const RETRACEMENT = K.fibLevels([-0.618, -0.272, 0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2, 2.618]);
     RETRACEMENT.forEach((level, index) => {
         level.color = ['#9c27b0', '#ab47bc', '#787b86', '#f23645', '#ff9800', '#f6c344', '#089981', '#2962ff', '#7b61ff', '#536dfe',
@@ -59,8 +60,8 @@
         properties: fibProperties,
         rows(c) {
             const [from, to] = c.drawing.points;
-            const start = c.style.reverse ? to.price : from.price;
-            const end = c.style.reverse ? from.price : to.price;
+            const start = c.style.reverse ? from.price : to.price;
+            const end = c.style.reverse ? to.price : from.price;
             return visibleLevels(c).map(level => {
                 const price = K.interpolatePrice(c, start, end, Number(level.value));
                 return {level, price, y: c.env.y(price)};

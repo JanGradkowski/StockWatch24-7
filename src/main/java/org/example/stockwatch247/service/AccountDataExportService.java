@@ -80,7 +80,8 @@ public class AccountDataExportService {
                 where a.user_id = ? order by e.id
                 """, userId));
         data.put("customAlerts", rows("""
-                select id, name, description, interval, definition, revision, trigger_mode, quiet_candles, outcome_candles,
+                select id, name, description, array_to_string(intervals, ', ') intervals, definition, revision, trigger_mode,
+                       quiet_candles, outcome_candles,
                        email_enabled, active, pinned, last_triggered_at, created_at, updated_at
                 from custom_alerts where user_id = ? order by created_at, id
                 """, userId));
@@ -90,7 +91,7 @@ public class AccountDataExportService {
                 where a.user_id = ? order by t.alert_id, t.id
                 """, userId));
         data.put("customAlertTriggers", rows("""
-                select e.alert_id, a.name alert, s.ticker_symbol, e.candle_timestamp, e.kind, e.close_price, e.rule_text,
+                select e.alert_id, a.name alert, s.ticker_symbol, e.interval, e.candle_timestamp, e.kind, e.close_price, e.rule_text,
                        e.evidence, e.forward_returns, e.outcome_return, e.created_at, e.read_at
                 from custom_alert_events e join custom_alerts a on a.id = e.alert_id join stock_assets s on s.id = e.stock_asset_id
                 where a.user_id = ? and e.deleted_at is null order by e.id

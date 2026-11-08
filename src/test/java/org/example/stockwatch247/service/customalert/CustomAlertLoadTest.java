@@ -193,7 +193,7 @@ class CustomAlertLoadTest {
         List<Long> ids = new ArrayList<>();
         timed("Create 25 alerts", () -> {
             for (String[] definition : definitions()) {
-                ids.add(alerts.create(owner, new SaveCommand(definition[0], "", "DAILY", json.readTree(definition[2]), definition[1], 0, 3, true,
+                ids.add(alerts.create(owner, new SaveCommand(definition[0], "", List.of("DAILY"), json.readTree(definition[2]), definition[1], 0, 3, true,
                         List.of(new TargetCommand(list, "ALL_MEMBERS", List.of())), false, true, null)).id());
             }
             return null;
@@ -228,17 +228,17 @@ class CustomAlertLoadTest {
         jdbc.update("update custom_alerts set active = false where id = ?", ids.get(24));
         String elliottAndRsi = all(pattern("ELLIOTT_WAVE", "ANY", "\"window\":{\"mode\":\"ANY\",\"candles\":5}"),
                 value(ind("RSI", "{\"period\":14}", "value"), "BELOW", num(60)));
-        long single = alerts.create(owner, new SaveCommand("New: Elliott and RSI", "", "DAILY", json.readTree(elliottAndRsi), "BECOMES_TRUE",
+        long single = alerts.create(owner, new SaveCommand("New: Elliott and RSI", "", List.of("DAILY"), json.readTree(elliottAndRsi), "BECOMES_TRUE",
                 0, 3, true, List.of(new TargetCommand(list, "ALL_MEMBERS", List.of())), false, true, null)).id();
         baselines("One new alert, snapshots stored", symbols.size());
         jdbc.update("delete from custom_alerts where id = ?", single);
         jdbc.update("delete from historical_signal_cache");
-        single = alerts.create(owner, new SaveCommand("New: Elliott and RSI", "", "DAILY", json.readTree(elliottAndRsi), "BECOMES_TRUE",
+        single = alerts.create(owner, new SaveCommand("New: Elliott and RSI", "", List.of("DAILY"), json.readTree(elliottAndRsi), "BECOMES_TRUE",
                 0, 3, true, List.of(new TargetCommand(list, "ALL_MEMBERS", List.of())), false, true, null)).id();
         baselines("One new alert, empty store", symbols.size());
         jdbc.update("delete from custom_alerts where id = ?", single);
         String rsiOnly = all(value(ind("RSI", "{\"period\":14}", "value"), "BELOW", num(30)));
-        single = alerts.create(owner, new SaveCommand("New: RSI only", "", "DAILY", json.readTree(rsiOnly), "BECOMES_TRUE",
+        single = alerts.create(owner, new SaveCommand("New: RSI only", "", List.of("DAILY"), json.readTree(rsiOnly), "BECOMES_TRUE",
                 0, 3, true, List.of(new TargetCommand(list, "ALL_MEMBERS", List.of())), false, true, null)).id();
         baselines("One new indicator-only alert", symbols.size());
         jdbc.update("delete from custom_alerts where id = ?", single);

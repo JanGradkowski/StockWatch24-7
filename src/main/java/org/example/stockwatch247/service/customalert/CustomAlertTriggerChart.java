@@ -148,11 +148,12 @@ public class CustomAlertTriggerChart {
         if (definition != null && !shown.isEmpty()) {
             series = series(definition, trigger.symbol(), interval, shown, conditions);
         }
+        // Triggers of the alert's other intervals came from other candles than the ones shown.
         List<OtherTrigger> others = shown.isEmpty() ? List.of() : db.query("""
-                select id, candle_timestamp from custom_alert_events where alert_id = ? and stock_asset_id = ? and id <> ?
-                  and deleted_at is null and candle_timestamp between ? and ? order by candle_timestamp, id
-                """, (row, index) -> new OtherTrigger(row.getLong(1), row.getLong(2)), trigger.alertId(), asset.getId(), trigger.id(),
-                shown.getFirst()[0].longValue(), shown.getLast()[0].longValue());
+                select id, candle_timestamp from custom_alert_events where alert_id = ? and stock_asset_id = ? and interval = ?
+                  and id <> ? and deleted_at is null and candle_timestamp between ? and ? order by candle_timestamp, id
+                """, (row, index) -> new OtherTrigger(row.getLong(1), row.getLong(2)), trigger.alertId(), asset.getId(),
+                trigger.interval().name(), trigger.id(), shown.getFirst()[0].longValue(), shown.getLast()[0].longValue());
         return new ChartView(trigger.interval().name(), at, shown, series, conditions, others);
     }
 

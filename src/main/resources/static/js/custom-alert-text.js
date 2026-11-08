@@ -43,6 +43,12 @@
     : has(`ind.output.${key}`) ? i18n.t(`ind.output.${key}`) : key;
   const choiceLabel = (set, value) => has(`ind.choice.${set}.${value}`) ? i18n.t(`ind.choice.${set}.${value}`) : value;
   const intervalLabel = interval => i18n.t(`interval.${interval}`);
+  /** An alert's intervals in one phrase: "Daily", "Daily and weekly", "Daily, weekly and monthly". */
+  const intervalsLabel = intervals => {
+    const labels = (intervals?.length ? intervals : ['DAILY']).map((interval, index) =>
+      index ? intervalLabel(interval).toLowerCase() : intervalLabel(interval));
+    return labels.length < 2 ? labels.join('') : `${labels.slice(0, -1).join(', ')} ${i18n.t('ca.summary.and')} ${labels.at(-1)}`;
+  };
 
   /** "RSI (14)", "MACD › Histogram (12, 26, 9)", "SMA (30, weekly)". */
   function operandLabel(operand, definitions) {
@@ -231,10 +237,19 @@
     });
     const rule = join(parts, definition.match);
     const activityOnly = groups.every(group => (group.conditions || []).every(c => c.kind === 'INSIDER' || c.kind === 'CONGRESS'));
-    const clock = activityOnly ? i18n.t('ca.summary.clockActivity', intervalLabel(alert.interval || 'DAILY').toLowerCase())
-      : i18n.t('ca.summary.clock', intervalLabel(alert.interval || 'DAILY').toLowerCase());
+    const clock = i18n.t(activityOnly ? 'ca.summary.clockActivity' : 'ca.summary.clock', intervalsLabel(alert.intervals).toLowerCase());
     const mode = i18n.t(`ca.summary.mode.${alert.triggerMode || 'BECOMES_TRUE'}`);
     return `${clock} ${i18n.t('ca.summary.rule', rule)} ${mode}`;
+  }
+
+  /**
+   * A stock's state for an alert: "Matches now", or "Matches now · Weekly" when the alert watches several intervals and
+   * the state holds on only some of them.
+   */
+  function stateLabel(state, stateIntervals, alertIntervals) {
+    const label = i18n.t(`ca.state.${state}`);
+    return alertIntervals?.length > 1 && stateIntervals?.length && stateIntervals.length < alertIntervals.length
+      ? `${label} · ${intervalsLabel(stateIntervals)}` : label;
   }
 
   /** A stock part-way through a sequence: "Step 1 of 2 done · step 2 due within 3 candles". */
@@ -308,47 +323,47 @@
 
   /** Starter rules. Educational examples, never recommendations. */
   const templates = [
-    { id: 'oversold-bounce', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
+    { id: 'oversold-bounce', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'VALUE', subject: indicator('RSI', { period: 14 }, 'value'), operator: 'BELOW', compare: value(30),
         window: { mode: 'ANY', candles: 5 } }),
       condition('c2', { kind: 'PATTERN', family: 'CANDLESTICK', status: 'CONFIRMED', direction: 'BULLISH', patterns: [],
         window: { mode: 'ANY', candles: 5 } })) },
-    { id: 'golden-cross', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
+    { id: 'golden-cross', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'VALUE', subject: indicator('EMA', { period: 50 }, 'value'), operator: 'CROSSES_ABOVE',
         compare: indicator('EMA', { period: 200 }, 'value'), window: { mode: 'ANY', candles: 3 } }),
       condition('c2', { kind: 'VALUE', subject: indicator('RELATIVE_VOLUME', { period: 20 }, 'value'), operator: 'ABOVE', compare: value(1.5),
         window: { mode: 'LATEST' } })) },
-    { id: 'insider-cluster', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
+    { id: 'insider-cluster', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'INSIDER', transaction: 'PURCHASE', days: 30, minCount: 2, minTotal: 250000, roles: [] }),
       condition('c2', { kind: 'INSIDER', negate: true, transaction: 'SALE', days: 30, minCount: 1, roles: [] })) },
-    { id: 'congress-trend', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
+    { id: 'congress-trend', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'CONGRESS', transaction: 'PURCHASE', days: 45, minCount: 1, chambers: [] }),
       condition('c2', { kind: 'VALUE', subject: price('CLOSE'), operator: 'ABOVE', compare: indicator('SMA', { period: 200 }, 'value'),
         window: { mode: 'LATEST' } })) },
-    { id: 'elliott-wave-three', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
+    { id: 'elliott-wave-three', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'PATTERN', family: 'ELLIOTT_WAVE', direction: 'BULLISH', patterns: ['WAVE_II_END'],
         window: { mode: 'ANY', candles: 5 } }),
       condition('c2', { kind: 'VALUE', subject: indicator('MACD', {}, 'histogram'), operator: 'RISING', candles: 2,
         window: { mode: 'LATEST' } })) },
-    { id: 'breakout-volume', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
+    { id: 'breakout-volume', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'VALUE', subject: price('CLOSE'), operator: 'NEW_HIGH', candles: 20, window: { mode: 'LATEST' } }),
       condition('c2', { kind: 'VALUE', subject: indicator('RELATIVE_VOLUME', { period: 20 }, 'value'), operator: 'ABOVE', compare: value(2),
         window: { mode: 'LATEST' } })) },
-    { id: 'harmonic-reversal', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
+    { id: 'harmonic-reversal', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'PATTERN', family: 'HARMONIC_FORMATION', direction: 'BULLISH', patterns: [], stillValid: true,
         window: { mode: 'ANY', candles: 3 } }),
       condition('c2', { kind: 'VALUE', subject: indicator('STOCHASTIC', {}, 'k'), operator: 'BELOW', compare: value(20),
         window: { mode: 'ANY', candles: 3 } })) },
-    { id: 'uptrend-pullback', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: rule(
+    { id: 'uptrend-pullback', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: rule(
       condition('c1', { kind: 'VALUE', subject: price('CLOSE'), operator: 'ABOVE',
         compare: indicator('SMA', { period: 30, timeframe: '1wk' }, 'value'), window: { mode: 'LATEST' } }),
       condition('c2', { kind: 'VALUE', subject: indicator('RSI', { period: 14 }, 'value'), operator: 'CROSSES_ABOVE', compare: value(40),
         window: { mode: 'ANY', candles: 2 } })) },
     // The same idea with the candle around the recovery (its own group) or after it (the last step).
-    { id: 'oversold-recovery', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: { version: 1, match: 'ALL', groups: [
+    { id: 'oversold-recovery', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: { version: 1, match: 'ALL', groups: [
       { id: 'g1', match: 'THEN', span: 20, window: { mode: 'ANY', candles: 3 }, conditions: [step(oversold('c1'), 5), step(recovered('c2'), 1, 3)] },
       { id: 'g2', match: 'ALL', conditions: [bullishCandle('c3', 3)] }] } },
-    { id: 'oversold-recovery-then-candle', interval: 'DAILY', triggerMode: 'BECOMES_TRUE', definition: { version: 1, match: 'ALL', groups: [
+    { id: 'oversold-recovery-then-candle', intervals: ['DAILY'], triggerMode: 'BECOMES_TRUE', definition: { version: 1, match: 'ALL', groups: [
       { id: 'g1', match: 'THEN', span: 25, window: { mode: 'LATEST' }, conditions: [step(oversold('c1'), 5), step(recovered('c2'), 1, 3),
         step(bullishCandle('c3', 1), 1, 5)] }] } }
   ];
@@ -357,13 +372,13 @@
     const template = templates.find(item => item.id === id);
     if (!template) return null;
     return {
-      name: i18n.t(`ca.template.${id}.name`), description: i18n.t(`ca.template.${id}.text`), interval: template.interval,
+      name: i18n.t(`ca.template.${id}.name`), description: i18n.t(`ca.template.${id}.text`), intervals: [...template.intervals],
       triggerMode: template.triggerMode, definition: JSON.parse(JSON.stringify(template.definition))
     };
   }
 
   window.StockWatchCustomAlerts = Object.freeze({
-    catalog, describe, describeStep, stepCandles, defaultSpan, progressText, summary, chips, operandLabel, patternName, patternTerm, indicatorName, indicatorShort,
-    inputLabel, outputLabel, choiceLabel, intervalLabel, number, money, templates, fromTemplate, element
+    catalog, describe, describeStep, stepCandles, defaultSpan, progressText, stateLabel, summary, chips, operandLabel, patternName, patternTerm, indicatorName, indicatorShort,
+    inputLabel, outputLabel, choiceLabel, intervalLabel, intervalsLabel, number, money, templates, fromTemplate, element
   });
 })();

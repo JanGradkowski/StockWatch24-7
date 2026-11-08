@@ -40,13 +40,11 @@
 
       <section class="ca-section" aria-labelledby="ca-step-rule">
         <h2 id="ca-step-rule"><span class="ca-step-number" aria-hidden="true">2</span><span th:text="#{customAlerts.builder.step.rule}">Describe what to look for</span></h2>
-        <div class="ca-clock">
-          <label><span class="learn-label"><th:block th:text="#{customAlerts.builder.checkEvery}">Check after every</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.interval', #{customAlerts.builder.checkEvery})}"></span></span>
-            <select data-ca-interval>
-              <option value="DAILY" th:text="#{customAlerts.builder.interval.DAILY}">daily close</option>
-              <option value="WEEKLY" th:text="#{customAlerts.builder.interval.WEEKLY}">weekly close</option>
-              <option value="MONTHLY" th:text="#{customAlerts.builder.interval.MONTHLY}">monthly close</option>
-            </select></label>
+        <div class="ca-clock" role="group" aria-labelledby="ca-clock-label" data-ca-intervals>
+          <span class="learn-label" id="ca-clock-label"><th:block th:text="#{customAlerts.builder.checkEvery}">Check after every</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.interval', #{customAlerts.builder.checkEvery})}"></span></span>
+          <label class="ca-interval-option"><input type="checkbox" value="DAILY" checked><span th:text="#{customAlerts.builder.interval.DAILY}">daily close</span></label>
+          <label class="ca-interval-option"><input type="checkbox" value="WEEKLY"><span th:text="#{customAlerts.builder.interval.WEEKLY}">weekly close</span></label>
+          <label class="ca-interval-option"><input type="checkbox" value="MONTHLY"><span th:text="#{customAlerts.builder.interval.MONTHLY}">monthly close</span></label>
         </div>
         <div data-ca-groups></div>
         <div class="ca-add-row">
@@ -98,6 +96,7 @@
           <label id="ca-test-label" for="ca-test-symbol"><span class="learn-label"><th:block th:text="#{customAlerts.preview.testOn}">Test on</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.testOn', #{customAlerts.preview.testOn})}"></span></span></label>
           <div class="ca-test-row"><input id="ca-test-symbol" type="text" maxlength="20" autocomplete="off" data-ca-test-symbol placeholder="AAPL">
             <button type="button" class="btn-secondary" data-ca-test th:text="#{customAlerts.preview.test}">Test</button></div>
+          <div class="ca-segmented ca-test-interval" role="group" th:attr="aria-label=#{customAlerts.preview.testInterval}" data-ca-test-interval hidden></div>
         </div>
         <div data-ca-result aria-live="polite"></div>
         <div data-ca-coverage></div>
