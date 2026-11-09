@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en" th:lang="${#locale.language}" xmlns:th="http://www.thymeleaf.org" th:attr="data-account-theme=${accountTheme},data-learning-mode=${learningMode == true ? 'on' : null}">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title th:text="#{customAlerts.alert.pageTitle(${alert.name()})}">Oversold bounce — StockWatch 24/7</title>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}"><link rel="stylesheet" th:href="@{/css/design.css}">
+  <link rel="stylesheet" th:href="@{/css/custom-alerts.css}">
+  <link rel="stylesheet" th:href="@{/css/refresh.css}">
+  <link rel="stylesheet" th:href="@{/css/app.css}">
+  <script th:src="@{/js/design-ui.js}" defer></script>
+  <script th:src="@{/js/custom-alert-text.js}" defer></script>
+  <script th:src="@{/js/custom-alert-states.js}" defer></script>
+  <script th:src="@{/js/custom-alert-page.js}" defer></script>
+</head>
+<body class="ui-refresh">
+<div th:replace="~{fragments/navbar :: navbar}"></div>
+<main class="page-container ca-page ca-alert-page" th:with="follow=${alert.outcomeCandles()}"
+      th:attr="data-alert=${alertJson},data-alert-id=${alert.id()},data-ticker=${ticker}">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
+    <a th:href="@{/custom-alerts}" th:text="#{customAlerts.heading}">Custom alerts</a><span aria-hidden="true">/</span>
+    <span aria-current="page" th:text="${alert.name()}">Oversold bounce</span>
+  </nav>
+
+  <header class="ca-alert-header">
+    <div class="ca-alert-title">
+      <h1><span th:text="${alert.name()}">Oversold bounce</span> <span class="ca-badge" data-ca-alert-paused th:hidden="${alert.active()}" th:text="#{customAlerts.status.paused}">Paused</span></h1>
+      <p class="ca-alert-meta" data-ca-alert-meta></p>
+      <p th:if="${!#strings.isEmpty(alert.description())}" class="ca-alert-description" th:text="${alert.description()}">Note</p>
+    </div>
+    <div class="ca-alert-actions">
+      <span class="ca-switch-field" data-ca-alert-switch></span>
+      <a class="btn-secondary" th:href="@{/custom-alerts/{id}/edit(id=${alert.id()})}" th:text="#{customAlerts.archive.edit}">Edit alert</a>
+      <span data-ca-alert-menu></span>
+      <span class="ca-ask-slot" data-ca-ask-slot></span>
+    </div>
+  </header>
+  <p class="ca-page-status" role="status" data-ca-alert-status></p>
+
+  <section class="ca-alert-rule" aria-labelledby="ca-alert-rule-title">
+    <h2 id="ca-alert-rule-title" class="visually-hidden" th:text="#{customAlerts.archive.rule}">The rule</h2>
+    <p class="ca-alert-summary" data-ca-alert-summary></p>
+    <p class="ca-row-warning" th:if="${#lists.isEmpty(alert.targets())}" th:text="#{customAlerts.archive.notApplied}">Not applied to any watchlist yet.</p>
+  </section>
+
+  <section class="ca-kpis" th:aria-label="#{customAlerts.alert.kpiAria}" aria-label="How this alert is doing">
+    <div class="ca-kpi">
+      <span class="ca-kpi-label" th:text="#{customAlerts.alert.kpi.triggers}">Triggers</span>
+      <strong class="ca-kpi-value" data-ca-kpi-triggers th:text="${performance.triggers()}">24</strong>
+      <span class="ca-kpi-note" data-ca-kpi-unread th:text="${alert.unread() > 0 ? #messages.msg('customAlerts.alert.kpi.unread', alert.unread()) : #messages.msg('customAlerts.alert.kpi.allRead')}">23 unread</span>
+      <div class="ca-kpi-history" data-ca-history></div>
+    </div>
+    <div class="ca-kpi">
+      <span class="ca-kpi-label"><span class="learn-term" data-learn="customAlerts.matching" th:attr="data-learn-title=#{customAlerts.alert.kpi.matching}" th:text="#{customAlerts.alert.kpi.matching}">Matching now</span></span>
+      <strong class="ca-kpi-value" th:classappend="${alert.matching() > 0} ? ' is-positive'" th:text="${alert.matching()}">23</strong>
+      <button type="button" class="ca-kpi-note ca-link-button" data-ca-stocks-toggle aria-controls="ca-alert-stocks" aria-expanded="false"><span
+              th:text="#{customAlerts.alert.kpi.matchingOf(${alert.stocks()})}">of 25 stocks</span><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+    </div>
+    <div class="ca-kpi">
+      <span class="ca-kpi-label"><span class="learn-term" data-learn="customAlerts.outcome" th:attr="data-learn-title=#{customAlerts.alert.kpi.after(${follow})}" th:text="#{customAlerts.alert.kpi.after(${follow})}">After 10 candles</span></span>
+      <th:block th:if="${performance.medianReturn() != null}">
+        <strong class="ca-kpi-value is-lead" th:classappend="${performance.medianReturn() >= 0} ? ' is-up' : ' is-down'"
+                th:text="#{customAlerts.alert.kpi.medianValue(${(performance.medianReturn() >= 0 ? '+' : '−') + #numbers.formatDecimal(T(java.lang.Math).abs(performance.medianReturn()), 1, 'DEFAULT', 2, 'DEFAULT') + '%'})}">−0.90% median</strong>
+        <span class="ca-kpi-note" th:text="#{customAlerts.alert.kpi.measured(${performance.completed()})}">12 measured</span>
+        <div class="ca-kpi-spread" data-ca-spread></div>
+      </th:block>
+      <th:block th:if="${performance.medianReturn() == null}">
+        <strong class="ca-kpi-value is-pending" th:text="${firstResult != null} ? #{customAlerts.alert.kpi.measuring} : '—'">Measuring</strong>
+        <span class="ca-kpi-note" th:text="${firstResult != null} ? #{customAlerts.alert.kpi.firstResult(${#temporals.format(firstResult, #messages.msg('customAlerts.datePattern'))})} : #{customAlerts.alert.kpi.noneYet}">First result about Nov 20, 2026</span>
+      </th:block>
+    </div>
+  </section>
+
+  <section id="ca-alert-stocks" class="ca-alert-stocks" aria-labelledby="ca-alert-stocks-title" hidden>
+    <h2 id="ca-alert-stocks-title" th:text="#{customAlerts.alert.stocksTitle(${alert.stocks()})}">The stocks this alert watches (25)</h2>
+    <div data-ca-alert-states></div>
+  </section>
+
+  <section class="ca-triggers" aria-labelledby="ca-triggers-title" th:attr="data-total=${#lists.size(triggers)}">
+    <div class="ca-triggers-head">
+      <h2 id="ca-triggers-title" th:text="#{customAlerts.alert.triggers}">Triggers</h2>
+      <div class="ca-triggers-tools" th:unless="${#lists.isEmpty(triggers)}">
+        <div class="ca-segmented ca-filter" role="tablist" th:aria-label="#{customAlerts.alert.filterAria}" aria-label="Show triggers">
+          <button type="button" role="tab" aria-selected="true" data-ca-trigger-filter="all"><span th:text="#{customAlerts.alert.filter.all}">All</span> <span class="ca-count-badge" data-ca-count-all th:text="${#lists.size(triggers)}">24</span></button>
+          <button type="button" role="tab" aria-selected="false" tabindex="-1" data-ca-trigger-filter="unread"><span th:text="#{customAlerts.alert.filter.unread}">Unread</span> <span class="ca-count-badge" data-ca-count-unread th:text="${alert.unread()}">23</span></button>
+          <th:block th:if="${performance.completed() > 0}">
+            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-ca-trigger-filter="higher" th:title="#{customAlerts.alert.filter.higherTitle(${follow})}"><span th:text="#{customAlerts.alert.filter.higher}">Higher</span> <span class="ca-count-badge" data-ca-count-higher th:text="${performance.positive()}">7</span></button>
+            <button type="button" role="tab" aria-selected="false" tabindex="-1" data-ca-trigger-filter="lower" th:title="#{customAlerts.alert.filter.lowerTitle(${follow})}"><span th:text="#{customAlerts.alert.filter.lower}">Lower</span> <span class="ca-count-badge" data-ca-count-lower th:text="${performance.completed() - performance.positive()}">5</span></button>
+          </th:block>
+        </div>
+        <label class="ca-search"><span class="visually-hidden" th:text="#{customAlerts.alert.searchTicker}">Filter by ticker</span>
+          <svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg>
+          <input type="search" data-ca-trigger-search th:placeholder="#{customAlerts.alert.tickerPlaceholder}" placeholder="Ticker" autocomplete="off" th:value="${ticker}">
+          <kbd class="ca-kbd" aria-hidden="true">/</kbd></label>
+        <div class="ca-triggers-actions">
+          <button type="button" class="btn-secondary ca-btn-sm" data-ca-trigger-read-all th:hidden="${alert.unread() == 0}" th:text="#{signals.markAllRead}">Mark all as read</button>
+          <button type="button" class="btn-secondary ca-btn-sm" data-ca-trigger-select aria-pressed="false" th:text="#{customAlerts.alert.select}">Select</button>
+        </div>
+        <details class="row-menu ca-menu ca-triggers-menu">
+          <summary th:aria-label="#{customAlerts.alert.moreAria}" th:title="#{customAlerts.alert.moreAria}">
+            <svg viewBox="0 0 24 24" class="ca-icon ca-icon-more" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></summary>
+          <div class="row-menu-panel ca-menu-panel" role="menu">
+            <button type="button" role="menuitem" class="ca-menu-item" data-ca-trigger-read-all th:hidden="${alert.unread() == 0}"><span th:text="#{signals.markAllRead}">Mark all as read</span></button>
+            <button type="button" role="menuitem" class="ca-menu-item" data-ca-trigger-select><span th:text="#{customAlerts.alert.select}">Select</span></button>
+          </div>
+        </details>
+      </div>
+    </div>
+    <div class="ca-bulk-bar" data-ca-bulk hidden>
+      <label class="ca-check-all"><input type="checkbox" data-ca-select-all> <span th:text="#{customAlerts.alert.selectAll}">Select all shown</span></label>
+      <span class="ca-bulk-count" data-ca-bulk-count role="status"></span>
+      <button type="button" class="ca-btn-danger ca-btn-sm" data-ca-bulk-delete disabled th:text="#{customAlerts.alert.bulkDelete}">Delete</button>
+      <button type="button" class="btn-secondary ca-btn-sm" data-ca-bulk-done th:text="#{customAlerts.alert.bulkDone}">Done</button>
+    </div>
+
+    <div class="ca-triggers-empty" th:if="${#lists.isEmpty(triggers)}">
+      <strong th:text="#{customAlerts.alert.empty.title}">No triggers yet</strong>
+      <p th:text="#{customAlerts.alert.empty.text}">When a stock this alert watches matches the rule, the trigger shows up here.</p>
+    </div>
+
+    <div class="ca-table-wrap" th:unless="${#lists.isEmpty(triggers)}">
+      <table class="ca-triggers-table" data-ca-triggers>
+        <caption class="visually-hidden" th:text="#{customAlerts.alert.tableCaption(${alert.name()})}">Triggers of Oversold bounce</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="ca-col-select"><span class="visually-hidden" th:text="#{customAlerts.alert.select}">Select</span></th>
+            <th scope="col" class="ca-col-ticker" aria-sort="none"><button type="button" class="ca-sort" data-ca-sort="symbol"><span th:text="#{customAlerts.alert.col.ticker}">Ticker</span><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></th>
+            <th scope="col" class="ca-col-company" th:text="#{customAlerts.alert.col.company}">Company</th>
+            <th scope="col" class="ca-col-fired" aria-sort="descending"><button type="button" class="ca-sort" data-ca-sort="fired"><span th:text="#{customAlerts.alert.col.fired}">Fired</span><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></th>
+            <th scope="col" class="ca-col-after" aria-sort="none" th:each="mark, at : ${checkpoints}"><button type="button" class="ca-sort" data-ca-sort="after" th:attr="data-ca-after=${at.index}"><span th:text="${#messages.msg(T(org.example.stockwatch247.i18n.Plurals).key(#locale, 'customAlerts.alert.col.after', mark), mark)}">+5 candles</span><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></th>
+            <th scope="col" class="ca-col-open"><span class="visually-hidden" th:text="#{customAlerts.alert.open}">Open</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="t : ${triggers}" class="ca-trigger-row" th:classappend="${t.read()} ? '' : ' is-unread'"
+              th:attr="data-id=${t.id()},data-symbol=${t.symbol()},data-fired=${t.createdAt().toEpochMilli()},data-change=${t.outcomeReturn()},data-unread=${!t.read()},data-kind=${t.kind()},data-complete=${t.outcomeStatus() == 'COMPLETE'},data-next-mark=${t.nextMark(checkpoints)},data-due=${nextResults[t.id()] == null ? null : #temporals.format(nextResults[t.id()], #messages.msg('customAlerts.shortDatePattern'))},data-day=${t.createdAt().toString().substring(0, 10)}">
+            <td class="ca-col-select"><input type="checkbox" data-ca-row-select th:aria-label="#{customAlerts.alert.selectRow(${t.symbol()})}"></td>
+            <td class="ca-col-ticker">
+              <i class="ca-dot" th:if="${!t.read()}" aria-hidden="true"></i>
+              <a class="ca-trigger-link" th:href="@{/custom-alerts/triggers/{id}(id=${t.id()},returnTo=${'/custom-alerts/' + alert.id()})}" th:text="${t.symbol()}">FCX</a>
+              <span class="visually-hidden" th:if="${!t.read()}" th:text="#{customAlerts.alert.unread}">Unread</span>
+              <span class="ca-tag ca-tag-save" th:if="${t.kind() == 'MATCHED_ON_APPLY'}" th:text="#{customAlerts.alert.how.MATCHED_ON_APPLY}">At save</span>
+              <span class="ca-tag" th:if="${#lists.size(alert.intervals()) > 1}" th:text="${#messages.msg('common.interval.' + t.interval().name())}">Daily</span>
+            </td>
+            <td class="ca-col-company" th:text="${t.companyName()}">Freeport-McMoRan Inc.</td>
+            <td class="ca-col-fired"><time data-ca-time th:attr="datetime=${t.createdAt()}" th:text="${t.createdAt()}">2026-11-07</time></td>
+            <td class="ca-col-change">
+              <th:block th:if="${t.outcomeReturn() != null}">
+                <strong class="ca-change" th:classappend="${t.outcomeReturn() >= 0} ? ' is-up' : ' is-down'"
+                        th:text="${(t.outcomeReturn() >= 0 ? '+' : '−') + #numbers.formatDecimal(T(java.lang.Math).abs(t.outcomeReturn()), 1, 'DEFAULT', 2, 'DEFAULT') + '%'}">+1.20%</strong>
+                <small class="ca-change-note" th:text="${t.outcomeStatus() == 'COMPLETE' ? #messages.msg('customAlerts.alert.changeAfter', t.outcomeCandles())
+                    : (t.soFarNew(checkpoints) ? #messages.msg('customAlerts.alert.changeSoFar') : #messages.msg('customAlerts.alert.changeAfter', t.lastMark(checkpoints)))}">so far</small>
+              </th:block>
+              <th:block th:if="${t.outcomeReturn() == null}">
+                <span class="ca-change is-pending" th:text="#{customAlerts.alert.pending}">Pending</span>
+                <small class="ca-change-note" th:if="${nextResults[t.id()] != null}"
+                       th:text="#{customAlerts.alert.pendingDate(${#temporals.format(nextResults[t.id()], #messages.msg('customAlerts.shortDatePattern'))})}">after the Nov 10 close</small>
+              </th:block>
+            </td>
+            <td class="ca-col-after" th:each="mark : ${checkpoints}" th:with="value=${t.after(mark)},next=${t.nextMark(checkpoints) == mark}" th:attr="data-value=${value}">
+              <span th:if="${value != null}" class="ca-change" th:classappend="${value >= 0} ? ' is-up' : ' is-down'"
+                    th:text="${(value >= 0 ? '+' : '−') + #numbers.formatDecimal(T(java.lang.Math).abs(value), 1, 'DEFAULT', 2, 'DEFAULT') + '%'}">+0.80%</span>
+              <th:block th:if="${value == null and next and t.soFarNew(checkpoints)}">
+                <span class="ca-change is-so-far" th:classappend="${t.outcomeReturn() >= 0} ? ' is-up' : ' is-down'" th:title="#{customAlerts.alert.soFarTitle}"
+                      th:text="${(t.outcomeReturn() >= 0 ? '+' : '−') + #numbers.formatDecimal(T(java.lang.Math).abs(t.outcomeReturn()), 1, 'DEFAULT', 2, 'DEFAULT') + '%'}">+0.40%</span>
+                <small class="ca-cell-note" th:text="#{customAlerts.alert.changeSoFar}">so far</small>
+              </th:block>
+              <th:block th:if="${value == null and next and !t.soFarNew(checkpoints)}">
+                <span class="ca-change is-waiting" th:text="#{customAlerts.alert.pending}"
+                      th:title="${nextResults[t.id()] == null ? #messages.msg('customAlerts.alert.pendingTitle')
+                        : #messages.msg('customAlerts.alert.pendingDueTitle', #temporals.format(nextResults[t.id()], #messages.msg('customAlerts.shortDatePattern')))}">Pending</span>
+                <small class="ca-cell-note" th:if="${nextResults[t.id()] != null}"
+                       th:text="#{customAlerts.alert.pendingDate(${#temporals.format(nextResults[t.id()], #messages.msg('customAlerts.shortDatePattern'))})}">after the Nov 10 close</small>
+              </th:block>
+              <span th:if="${value == null and !next}" class="ca-change is-pending" aria-hidden="true">—</span>
+            </td>
+            <td class="ca-col-open"><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="ca-triggers-none" data-ca-triggers-none hidden th:text="#{customAlerts.alert.noneMatch}">No triggers match this filter.</p>
+      <p class="ca-muted ca-triggers-capped" th:if="${triggersCapped}" th:text="#{customAlerts.alert.capped(${#lists.size(triggers)})}">Showing the latest 500 triggers.</p>
+    </div>
+  </section>
+  <p class="ca-disclaimer" th:text="#{customAlerts.archive.disclaimer}">Price changes are measured close to close after each trigger. Informational only, not financial advice.</p>
+</main>
+</body>
+</html>

@@ -459,12 +459,16 @@ public class AuthController {
         if (currentUser == null) {
             return "redirect:/login";
         }
+        // One custom alert's triggers have a page of their own; older links (emails, bookmarks) go there.
+        if (customAlertId != null && customAlertId > 0 && customAlerts != null) {
+            customAlerts.requireOwned(currentUser, customAlertId);
+            var location = org.springframework.web.util.UriComponentsBuilder.fromPath("/custom-alerts/{id}");
+            if (!ticker.isBlank()) location.queryParam("ticker", ticker.trim());
+            return "redirect:" + location.buildAndExpand(customAlertId).encode().toUriString();
+        }
         if (watchlistId != null) {
             watchlists.requireOwned(currentUser, watchlistId);
             model.addAttribute("watchlistName", watchlists.name(currentUser, watchlistId));
-        }
-        if (customAlertId != null && customAlerts != null) {
-            model.addAttribute("customAlert", customAlerts.archiveHeader(currentUser, customAlertId, watchlistId));
         }
         var filter = new SignalArchiveFilter(state, ticker, watchlistId,
                 type == null ? java.util.Set.of() : java.util.Set.copyOf(type), customAlertId);

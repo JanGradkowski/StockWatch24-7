@@ -649,7 +649,7 @@ public class CustomAlertEngine {
                     ? "Custom alert: " + name + " for " + events.getFirst().get("ticker_symbol")
                     : "Custom alert: " + name + " for " + stocks + " stocks";
             sent = notifications.sendCustomAlertEmail(owner, subject, digestBody(name, events),
-                    events.size() == 1 ? "/custom-alerts/triggers/" + ids[0] : "/signals?customAlertId=" + alertId,
+                    events.size() == 1 ? "/custom-alerts/triggers/" + ids[0] : "/custom-alerts/" + alertId,
                     "custom-alert:" + alertId + ":" + ids[ids.length - 1]);
         }
         boolean queued = sent;

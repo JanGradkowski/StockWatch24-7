@@ -140,8 +140,9 @@
     return group;
   }
 
-  function iconButton(label, symbol, onClick, disabled) {
-    const button = el('button', 'ca-icon-button', symbol);
+  function iconButton(label, iconName, onClick, disabled) {
+    const button = el('button', 'ca-icon-button');
+    button.append(text.icon(iconName));
     button.type = 'button';
     button.title = label;
     button.setAttribute('aria-label', label);
@@ -153,7 +154,235 @@
   function changed() {
     dirty = true;
     nodes.summary.textContent = text.summary(snapshot(), catalog.byType);
+    renderSteps();
+    scheduleDraft();
     schedulePreview();
+  }
+
+  // ------------------------------------------------------------------ steps and the save bar
+
+  const STEPS = ['name', 'rule', 'when', 'where'];
+  const stepLinks = [...document.querySelectorAll('[data-ca-step-link]')];
+
+  /** Each step: done, needing attention, or not started yet. */
+  function stepStates() {
+    const draft = snapshot();
+    const halfSequence = state.definition.groups.some(group => group.match === 'THEN' && group.conditions.length < 2);
+    const watching = draft.targets.length > 0 || Boolean(state.pendingSymbol && state.pendingChoice);
+    return {
+      name: nodes.name.value.trim() ? 'done' : 'todo',
+      rule: !conditions().length ? 'todo' : halfSequence ? 'problem' : 'done',
+      when: 'done',
+      where: watching ? 'done' : conditions().length ? 'problem' : 'todo'
+    };
+  }
+
+  /** What the rule watches, in a line: "2 conditions · Growth (25 stocks) · Daily". */
+  function footerSummary() {
+    const count = conditions().length;
+    const parts = [i18n.plural('ca.footer.conditions', count, count)];
+    snapshot().targets.forEach(target => {
+      const list = lists.find(item => item.id === target.watchlistId);
+      if (!list) return;
+      parts.push(target.scope === 'ALL_MEMBERS' ? i18n.plural('ca.target.allStocks', list.instruments, list.name, list.instruments)
+        : i18n.plural('ca.footer.chosen', target.symbols.length, list.name, target.symbols.length));
+    });
+    if (state.pendingSymbol && state.pendingChoice) parts.push(state.pendingSymbol);
+    parts.push(text.intervalsLabel(state.intervals));
+    return parts.join(' · ');
+  }
+
+  function renderSteps() {
+    const states = stepStates();
+    STEPS.forEach((key, index) => {
+      const node = document.querySelector(`[data-ca-step-state="${key}"]`);
+      if (!node) return;
+      node.className = `ca-step-state is-${states[key]}`;
+      node.replaceChildren(states[key] === 'done' ? text.icon('check') : String(index + 1),
+        el('span', 'visually-hidden', i18n.t(`ca.builder.stepState.${states[key]}`)));
+    });
+    const whereProblem = document.querySelector('[data-ca-where-problem]');
+    if (whereProblem) whereProblem.hidden = states.where !== 'problem';
+    const summary = document.querySelector('[data-ca-footer-summary]');
+    if (!summary) return;
+    // The first thing still missing, with the step that fixes it; otherwise what the alert will watch.
+    const problem = !conditions().length ? 'ca.footer.needCondition' : states.rule === 'problem' ? 'ca.footer.needSteps'
+      : states.where === 'problem' ? 'ca.footer.needStocks' : null;
+    summary.classList.toggle('is-problem', Boolean(problem && conditions().length));
+    if (problem) {
+      const go = el('button', 'ca-footer-problem', i18n.t(problem));
+      go.type = 'button';
+      go.addEventListener('click', () => problem === 'ca.footer.needStocks' ? goToStep('where', '[data-ca-targets] input:not(:disabled)')
+        : problem === 'ca.footer.needSteps' ? goToStep('rule', '.ca-sequence-adders button') : goToStep('rule', '[data-ca-add-condition]'));
+      summary.replaceChildren(go);
+    } else summary.textContent = footerSummary();
+    nodes.save.setAttribute('aria-disabled', String(Boolean(problem)));
+    if (problem) nodes.save.setAttribute('aria-describedby', 'ca-footer-summary'); else nodes.save.removeAttribute('aria-describedby');
+    renderStepSummaries();
+  }
+
+  /** Opens a step (unfolding it), scrolls to it and puts the keyboard on {@code selector} inside it. */
+  function goToStep(key, selector) {
+    const section = document.querySelector(`[data-ca-step="${key}"]`);
+    if (!section) return;
+    setFolded(section, false);
+    section.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    section.querySelector(selector)?.focus({ preventScroll: true });
+  }
+
+  // ------------------------------------------------------------------ steps that fold to one line
+
+  /** A folded step's line: what it is set to, in words. */
+  function stepSummary(key) {
+    if (key === 'name') {
+      const name = nodes.name.value.trim();
+      return name ? [name, nodes.description.value.trim()].filter(Boolean).join(' · ') : i18n.t('ca.builder.summary.unnamed');
+    }
+    if (key === 'when') {
+      return [text.intervalsLabel(state.intervals), i18n.t(`ca.mode.short.${state.triggerMode}`),
+        state.quietCandles ? i18n.plural('ca.builder.summary.quiet', state.quietCandles, state.quietCandles) : i18n.t('ca.builder.summary.noQuiet')].join(' · ');
+    }
+    const parts = [];
+    snapshot().targets.forEach(target => {
+      const list = lists.find(item => item.id === target.watchlistId);
+      if (list) parts.push(target.scope === 'ALL_MEMBERS' ? i18n.plural('ca.target.allStocks', list.instruments, list.name, list.instruments)
+        : i18n.plural('ca.footer.chosen', target.symbols.length, list.name, target.symbols.length));
+    });
+    if (state.pendingSymbol && state.pendingChoice) parts.push(state.pendingSymbol);
+    parts.push(i18n.t(state.emailEnabled ? 'ca.card.emailOn' : 'ca.card.noEmail'));
+    parts.push(i18n.plural('ca.builder.summary.measure', state.outcomeCandles, state.outcomeCandles));
+    return parts.join(' · ');
+  }
+
+  function setFolded(section, folded) {
+    const key = section.dataset.caStep;
+    const summary = section.querySelector('[data-ca-step-summary]');
+    const body = section.querySelector('[data-ca-step-body]');
+    if (!summary || !body) return;
+    section.classList.toggle('is-folded', folded);
+    summary.hidden = !folded;
+    body.hidden = folded;
+    if (folded) summary.querySelector('[data-ca-step-summary-text]').textContent = stepSummary(key);
+  }
+
+  function renderStepSummaries() {
+    document.querySelectorAll('[data-ca-collapsible].is-folded').forEach(section => {
+      section.querySelector('[data-ca-step-summary-text]').textContent = stepSummary(section.dataset.caStep);
+    });
+  }
+
+  /**
+   * Steps with nothing to decide start folded: the schedule always (its defaults suit most alerts), and on an
+   * existing alert the name and the stocks too. A step that needs attention never folds.
+   */
+  function foldFinishedSteps() {
+    const states = stepStates();
+    document.querySelectorAll('[data-ca-collapsible]').forEach(section => {
+      const key = section.dataset.caStep;
+      const fold = states[key] === 'done' && (key === 'when' || Boolean(state.id));
+      setFolded(section, fold);
+      section.querySelector('[data-ca-step-edit]')?.addEventListener('click', () => {
+        setFolded(section, false);
+        section.querySelector('[data-ca-step-body] input, [data-ca-step-body] textarea, [data-ca-step-body] select')?.focus();
+      });
+    });
+  }
+  // A step chosen in the step list opens.
+  stepLinks.forEach(link => link.addEventListener('click', () => {
+    const section = document.querySelector(`[data-ca-step="${link.dataset.caStepLink}"]`);
+    if (section?.classList.contains('is-folded')) setFolded(section, false);
+  }));
+
+  // The step being read is marked in the step list.
+  if ('IntersectionObserver' in window) {
+    const seen = new Map();
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => seen.set(entry.target.dataset.caStep, entry.intersectionRatio));
+      const current = STEPS.find(key => (seen.get(key) || 0) > 0.25) || STEPS.find(key => (seen.get(key) || 0) > 0);
+      stepLinks.forEach(link => {
+        if (link.dataset.caStepLink === current) link.setAttribute('aria-current', 'step');
+        else link.removeAttribute('aria-current');
+      });
+    }, { threshold: [0, 0.25, 0.5], rootMargin: '-80px 0px -40% 0px' });
+    document.querySelectorAll('[data-ca-step]').forEach(section => observer.observe(section));
+  }
+
+  // ------------------------------------------------------------------ the preview on phones
+
+  const previewPanel = document.querySelector('[data-ca-preview]');
+  function setSheet(open) {
+    previewPanel?.classList.toggle('is-open', open);
+    document.body.classList.toggle('ca-sheet-open', open);
+    if (open) previewPanel.querySelector('[data-ca-close-preview]')?.focus();
+  }
+  document.querySelectorAll('[data-ca-open-preview]').forEach(button => button.addEventListener('click', () => setSheet(true)));
+  document.querySelector('[data-ca-close-preview]')?.addEventListener('click', () => {
+    setSheet(false);
+    form.querySelector('.ca-footer-preview')?.focus();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && previewPanel?.classList.contains('is-open') && !text.modalOpen()) setSheet(false);
+  });
+  // Ctrl+Enter (⌘+Enter) tests the rule from any field: caught before the field's own Enter handling.
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || text.modalOpen()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    runPreview();
+  }, true);
+  if (/Mac|iPhone|iPad/.test(navigator.platform || '')) document.querySelectorAll('[data-ca-mod-key]').forEach(key => { key.textContent = '⌘'; });
+  text.shortcuts([[['Ctrl', 'Enter'], i18n.t('ca.shortcuts.test')]], false);
+
+  /** On phones the latest reading also sits in step 2, next to the conditions it is about. */
+  function renderMobileReading(result) {
+    const strip = document.querySelector('[data-ca-mobile-reading]');
+    if (!strip) return;
+    if (!result?.available) { strip.hidden = true; return; }
+    strip.hidden = false;
+    strip.querySelector('[data-ca-mobile-reading-text]').textContent = !result.applicable ? i18n.t('ca.preview.notApplicable', result.symbol)
+      : `${i18n.t(result.matched ? 'ca.preview.matches' : 'ca.preview.noMatch', result.symbol)} · ${i18n.t('ca.preview.conditionsMet', result.matchedConditions, result.totalConditions)}`;
+    strip.classList.toggle('is-match', Boolean(result.applicable && result.matched));
+  }
+
+  // ------------------------------------------------------------------ an unsaved new alert survives a closed tab
+
+  const DRAFT_KEY = 'stockwatch.customAlertDraft';
+  let draftTimer = null;
+  let draftReady = false;
+  function scheduleDraft() {
+    if (state.id || !draftReady) return;
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => {
+      try {
+        if (!conditions().length) { localStorage.removeItem(DRAFT_KEY); return; }
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), alert: snapshot(), testSymbol: nodes.testSymbol.value.trim() }));
+      } catch (ignored) { /* private windows may refuse storage */ }
+    }, 800);
+  }
+  function forgetDraft() {
+    clearTimeout(draftTimer);
+    try { localStorage.removeItem(DRAFT_KEY); } catch (ignored) { /* nothing stored */ }
+  }
+  /** A new, empty builder offers the draft left by a tab that closed without saving (up to a week old). */
+  function offerDraft() {
+    let draft = null;
+    try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (ignored) { draft = null; }
+    const banner = document.querySelector('[data-ca-draft]');
+    if (!banner || !draft?.alert?.definition?.groups?.some(group => group.conditions?.length) || Date.now() - draft.savedAt > 7 * 86400000) return;
+    banner.querySelector('[data-ca-draft-text]').textContent = i18n.t('ca.builder.draftFound', draft.alert.name || i18n.t('ca.builder.draftUnnamed'),
+      text.relativeDay(draft.savedAt).toLowerCase());
+    banner.hidden = false;
+    banner.querySelector('[data-ca-draft-restore]').addEventListener('click', () => {
+      applyDraft(draft.alert, { ask: false });
+      state.emailEnabled = draft.alert.emailEnabled ?? true;
+      state.notifyExisting = Boolean(draft.alert.notifyExisting);
+      (draft.alert.targets || []).forEach(target => { if (lists.some(list => list.id === target.watchlistId)) state.targets.set(target.watchlistId, { ...target }); });
+      if (draft.testSymbol) nodes.testSymbol.value = draft.testSymbol;
+      syncBasics(); renderTargets(); changed();
+      banner.hidden = true;
+      nodes.name.focus();
+    }, { once: true });
+    banner.querySelector('[data-ca-draft-discard]').addEventListener('click', () => { forgetDraft(); banner.hidden = true; }, { once: true });
   }
 
   // ------------------------------------------------------------------ rule
@@ -176,13 +405,12 @@
       box.dataset.groupId = group.id;
       parts.push(box);
     });
-    if (!conditions().length) {
-      const empty = el('div', 'ca-rule-empty');
-      empty.append(el('strong', null, i18n.t('ca.builder.emptyTitle')), el('p', 'wl-muted', i18n.t('ca.builder.emptyText')));
-      parts.push(empty);
-    }
+    if (!conditions().length) parts.push(emptyRule());
     nodes.groups.replaceChildren(...parts);
     form.querySelector('[data-ca-add-group]').disabled = groups.length >= catalog.maxGroups || !conditions().length;
+    // A rule that is only a sequence grows from inside it ("Add the next step", "Combine with other conditions").
+    const addRow = form.querySelector('[data-ca-add-row]');
+    if (addRow) addRow.hidden = groups.every(group => group.match === 'THEN') && conditions().length > 0;
     // A plain condition goes into the last plain group, or a new one after a sequence.
     form.querySelector('[data-ca-add-condition]').disabled = conditions().length >= catalog.maxConditions
       || (groups.at(-1).match === 'THEN' && groups.length >= catalog.maxGroups && !groups.some(group => group.match !== 'THEN'));
@@ -204,7 +432,7 @@
         header.append(hint);
       }
       if (groups.length > 1) {
-        header.append(iconButton(i18n.t('ca.builder.removeGroup', groupIndex + 1), '×', () => {
+        header.append(iconButton(i18n.t('ca.builder.removeGroup', groupIndex + 1), 'close', () => {
           groups.splice(groupIndex, 1);
           if (!groups.length) groups.push({ id: newId('g'), match: 'ALL', conditions: [] });
           renderGroups(); changed();
@@ -225,7 +453,8 @@
     if (ordered) {
       box.append(...sequenceFooter(group));
     } else if (groups.length > 1) {
-      const add = el('button', 'btn-secondary ca-add-here', i18n.t('ca.builder.addToGroup'));
+      const add = el('button', 'btn-secondary ca-add-here');
+      add.append(text.icon('plus'), el('span', null, i18n.t('ca.builder.addToGroup')));
       add.type = 'button';
       add.disabled = conditions().length >= catalog.maxConditions;
       add.addEventListener('click', () => addCondition(group));
@@ -402,7 +631,7 @@
         group.window = { mode: 'ANY', candles: value }; changed();
       }), () => group.window.candles);
       candles.setAttribute('aria-label', i18n.t('ca.builder.completedCandles'));
-      completed.append(candles);
+      completed.append(candles, el('span', 'ca-phrase-unit', i18n.t('ca.builder.candlesUnit')));
     }
     footer.append(field(i18n.t('ca.builder.completed'), completed, LEARN_OPTIONS.completed));
     const readout = el('p', 'ca-sequence-readout');
@@ -415,14 +644,25 @@
     parts.push(footer);
     syncSpan(group);
     if (group.conditions.length < 2) parts.push(el('p', 'ca-sequence-note ca-sequence-warning', i18n.t('ca.builder.needSteps')));
-    if (state.definition.groups.length < 2) parts.push(el('p', 'wl-muted ca-sequence-note', i18n.t('ca.builder.sequenceHint')));
+    const adders = el('div', 'ca-add-row ca-sequence-adders');
     if (group.conditions.length < (catalog.maxSteps || 4)) {
-      const add = el('button', 'btn-secondary ca-add-here', i18n.t('ca.builder.addStep'));
+      const add = el('button', 'btn-secondary ca-add-here');
+      add.append(text.icon('plus'), el('span', null, i18n.t('ca.builder.addStep')));
       add.type = 'button';
       add.disabled = conditions().length >= catalog.maxConditions;
       add.addEventListener('click', () => addCondition(group));
-      parts.push(add);
+      adders.append(add);
     }
+    // While the sequence is the whole rule, it is also where the rule grows into more conditions.
+    if (state.definition.groups.every(other => other.match === 'THEN') && state.definition.groups.length < catalog.maxGroups) {
+      const combine = el('button', 'ca-text-button', i18n.t('ca.builder.combine'));
+      combine.type = 'button';
+      combine.title = i18n.t('ca.builder.sequenceHint');
+      combine.disabled = conditions().length >= catalog.maxConditions;
+      combine.addEventListener('click', () => addCondition(null));
+      adders.append(combine);
+    }
+    if (adders.childElementCount) parts.push(adders);
     applyGroupReadout(readout, group);
     return parts;
   }
@@ -478,54 +718,78 @@
   const tone = condition => condition.kind === 'VALUE' ? 'value' : condition.kind === 'PATTERN' ? 'pattern'
     : condition.kind === 'OUTLOOK' ? 'outlook' : 'activity';
 
+  /** The condition in words for its card's heading; a reversed one is led by a NOT badge. */
+  function writeSentence(node, condition, ordered) {
+    const words = ordered ? text.describeStep({ ...condition, negate: false }, catalog.byType) : text.describe({ ...condition, negate: false }, catalog.byType);
+    node.replaceChildren();
+    if (condition.negate) node.append(el('span', 'ca-chip-not', i18n.t('ca.badge.not')), ' ');
+    node.append(words);
+  }
+
+  /** The kind of condition with its icon: "Indicator", "Candlestick pattern", "Insider trades". */
+  function writeKind(node, condition) {
+    node.replaceChildren(text.icon(text.conditionIcon(condition)), el('span', null, kindLabel(condition)));
+  }
+
+  /** Removing a condition can be undone for a few seconds from the save bar. */
+  let undoTimer = null;
+  function offerUndo(restore) {
+    clearTimeout(undoTimer);
+    const undo = el('button', 'ca-text-button ca-undo');
+    undo.type = 'button';
+    undo.append(text.icon('undo'), el('span', null, i18n.t('ca.builder.undo')));
+    undo.addEventListener('click', () => { clearTimeout(undoTimer); nodes.status.replaceChildren(); restore(); });
+    nodes.status.replaceChildren(el('span', null, i18n.t('ca.builder.removed')), ' ', undo);
+    undoTimer = setTimeout(() => { if (nodes.status.contains(undo)) nodes.status.replaceChildren(); }, 8000);
+  }
+
   function conditionCard(condition, group, index) {
     const ordered = group.match === 'THEN';
-    const describeCard = () => ordered ? text.describeStep(condition, catalog.byType) : text.describe(condition, catalog.byType);
     const card = el('article', `ca-condition ca-tone-${tone(condition)}${condition.negate ? ' is-negated' : ''}`);
     card.dataset.conditionId = condition.id;
     const header = el('div', 'ca-condition-header');
-    const label = el('span', 'ca-kind', kindLabel(condition));
-    const sentence = el('p', 'ca-condition-sentence', describeCard());
+    const label = el('span', 'ca-kind');
+    writeKind(label, condition);
+    const sentence = el('p', 'ca-condition-sentence');
+    writeSentence(sentence, condition, ordered);
     const readout = el('span', 'ca-readout');
     readout.dataset.readout = condition.id;
     const tools = el('div', 'ca-condition-tools');
     const groups = state.definition.groups;
-    // A pattern step cannot be reversed: "no pattern on this candle" holds almost always.
-    if (!(ordered && condition.kind === 'PATTERN')) {
-      const negate = el('button', 'ca-negate', i18n.t(condition.negate ? 'ca.builder.negated' : 'ca.builder.negate'));
-      negate.type = 'button';
-      negate.setAttribute('aria-pressed', String(Boolean(condition.negate)));
-      negate.classList.add('learn-control');
-      negate.dataset.learn = LEARN_OPTIONS.negate;
-      negate.dataset.learnTitle = i18n.t('ca.builder.negate');
-      negate.addEventListener('click', () => { condition.negate = !condition.negate; renderGroups(); changed(); });
-      tools.append(negate);
-    }
-    if (!ordered && canBeStep(condition)) {
-      const then = el('button', 'ca-negate ca-then', i18n.t('ca.builder.then'));
-      then.type = 'button';
-      then.title = i18n.t('ca.builder.thenTitle');
-      then.disabled = conditions().length >= catalog.maxConditions || (group.conditions.length > 1 && groups.length >= catalog.maxGroups);
-      then.addEventListener('click', () => startSequence(condition, group));
-      tools.append(then);
-    }
     const all = conditions();
     const position = all.indexOf(condition);
-    tools.append(
-      iconButton(i18n.t('ca.builder.moveUp'), '↑', () => move(condition, -1), position === 0 && !canLeaveAtEdge(group)),
-      iconButton(i18n.t('ca.builder.moveDown'), '↓', () => move(condition, 1), position === all.length - 1 && !canLeaveAtEdge(group)),
-      iconButton(i18n.t('ca.builder.duplicate'), '⧉', () => {
-        const copy = JSON.parse(JSON.stringify(condition)); copy.id = newId('c');
-        group.conditions.splice(index + 1, 0, copy);
-        normalizeSteps(group);
-        renderGroups(); changed();
-      }, all.length >= catalog.maxConditions || (ordered && group.conditions.length >= (catalog.maxSteps || 4))),
-      iconButton(i18n.t('ca.builder.remove'), '×', () => {
-        group.conditions.splice(index, 1);
-        if (!group.conditions.length && groups.length > 1) groups.splice(groups.indexOf(group), 1);
-        else normalizeSteps(group);
-        renderGroups(); changed();
-      }));
+    // A pattern step cannot be reversed: "no pattern on this candle" holds almost always.
+    const reversible = !(ordered && condition.kind === 'PATTERN');
+    const sequenceable = !ordered && canBeStep(condition);
+    const remove = () => {
+      const snapshotGroups = JSON.parse(JSON.stringify(state.definition));
+      group.conditions.splice(index, 1);
+      if (!group.conditions.length && groups.length > 1) groups.splice(groups.indexOf(group), 1);
+      else normalizeSteps(group);
+      renderGroups(); changed();
+      offerUndo(() => { state.definition = snapshotGroups; adoptSequences(); renderGroups(); changed(); });
+      form.querySelector('[data-ca-add-condition]')?.focus();
+    };
+    tools.append(text.menu(i18n.t('ca.builder.conditionMenu', kindLabel(condition)), [
+      reversible ? { label: i18n.t(condition.negate ? 'ca.builder.unreverse' : 'ca.builder.negate'), icon: 'reverse',
+        run: () => { condition.negate = !condition.negate; renderGroups(); changed(); } } : null,
+      sequenceable ? { label: i18n.t('ca.builder.then'), icon: 'sequence',
+        disabled: conditions().length >= catalog.maxConditions || (group.conditions.length > 1 && groups.length >= catalog.maxGroups),
+        run: () => startSequence(condition, group) } : null,
+      { label: i18n.t('ca.builder.duplicate'), icon: 'copy',
+        disabled: all.length >= catalog.maxConditions || (ordered && group.conditions.length >= (catalog.maxSteps || 4)),
+        run: () => {
+          const copy = JSON.parse(JSON.stringify(condition)); copy.id = newId('c');
+          group.conditions.splice(index + 1, 0, copy);
+          normalizeSteps(group);
+          renderGroups(); changed();
+        } },
+      'divider',
+      { label: i18n.t('ca.builder.moveUp'), icon: 'up', disabled: position === 0 && !canLeaveAtEdge(group), run: () => move(condition, -1) },
+      { label: i18n.t('ca.builder.moveDown'), icon: 'down', disabled: position === all.length - 1 && !canLeaveAtEdge(group), run: () => move(condition, 1) }
+    ], 'ca-condition-menu'));
+    const removeButton = iconButton(i18n.t('ca.builder.remove'), 'close', remove);
+    tools.append(removeButton);
     if (ordered) {
       // The number is shown; "Step 2" is what a screen reader says.
       const badge = el('span', 'ca-step-badge');
@@ -535,11 +799,13 @@
       badge.title = i18n.t('ca.builder.stepNumber', index + 1);
       header.append(badge);
     }
-    header.append(label, sentence, readout, tools);
+    const heading = el('div', 'ca-condition-heading');
+    heading.append(label, sentence);
+    header.append(heading, readout, tools);
     const body = el('div', 'ca-condition-body');
     const refresh = () => {
-      sentence.textContent = describeCard();
-      label.textContent = kindLabel(condition);
+      writeSentence(sentence, condition, ordered);
+      writeKind(label, condition);
       changed();
     };
     const rebuild = () => { body.replaceChildren(...editor(condition, refresh, rebuild)); refresh(); };
@@ -598,8 +864,8 @@
     else normalizeSteps(from);
     normalizeSteps(to);
     renderGroups(); changed();
-    // The keyboard stays on the arrow that was pressed, on the condition's new card.
-    nodes.groups.querySelector(`[data-condition-id="${CSS.escape(condition.id)}"] [aria-label="${i18n.t(step < 0 ? 'ca.builder.moveUp' : 'ca.builder.moveDown')}"]`)?.focus();
+    // The keyboard stays on the moved condition's menu, on its new card.
+    nodes.groups.querySelector(`[data-condition-id="${CSS.escape(condition.id)}"] .ca-condition-menu > summary`)?.focus();
   }
 
   function editor(condition, refresh, rebuild) {
@@ -665,13 +931,20 @@
         const input = numberInput(compare.value, { placeholder: '30' }, value => { condition.compare = { kind: 'VALUE', value: value ?? 0 }; refresh(); });
         input.setAttribute('aria-label', i18n.t('ca.builder.value'));
         wrapper.append(input);
-        hints(condition.subject).forEach(hint => {
-          const chip = el('button', 'ca-hint', text.number(hint));
-          chip.type = 'button';
-          chip.title = i18n.t('ca.builder.useValue', text.number(hint));
-          chip.addEventListener('click', () => { input.value = String(hint); condition.compare = { kind: 'VALUE', value: hint }; refresh(); });
-          wrapper.append(chip);
-        });
+        // The levels the indicator is usually read against, one click away: "Common: 30 · 70".
+        const levels = hints(condition.subject);
+        if (levels.length) {
+          const common = el('div', 'ca-hints');
+          common.append(el('span', 'ca-hints-label', i18n.t('ca.builder.common')));
+          levels.forEach(hint => {
+            const chip = el('button', 'ca-hint', text.number(hint));
+            chip.type = 'button';
+            chip.setAttribute('aria-label', i18n.t('ca.builder.useValue', text.number(hint)));
+            chip.addEventListener('click', () => { input.value = String(hint); condition.compare = { kind: 'VALUE', value: hint }; refresh(); });
+            common.append(chip);
+          });
+          wrapper.append(common);
+        }
         fields.push(field(i18n.t('ca.builder.value'), wrapper));
       } else if (compare.kind === 'INDICATOR') {
         fields.push(field(i18n.t('ca.builder.otherIndicator'), indicatorButton(compare, operand => { condition.compare = operand; rebuild(); })));
@@ -700,11 +973,17 @@
 
   /** In a sequence the step's own timing replaces the window: how many candles in a row it must hold. */
   function stepField(condition, group, refresh) {
-    return field(i18n.t('ca.builder.stepInARow'), restoreWhenBlank(numberInput(condition.step?.candles || 1, { min: 1, max: catalog.maxWindow || 60, step: 1 }, value => {
+    const input = restoreWhenBlank(numberInput(condition.step?.candles || 1, { min: 1, max: catalog.maxWindow || 60, step: 1 }, value => {
       if (value == null) return;
       condition.step = { ...condition.step, candles: value };
       syncSpan(group); refresh();
-    }), () => condition.step?.candles || 1), LEARN_OPTIONS.inARow);
+    }), () => condition.step?.candles || 1);
+    input.setAttribute('aria-label', i18n.t('ca.builder.stepInARowAria'));
+    const phrase = el('div', 'ca-phrase');
+    phrase.append(input, el('span', 'ca-phrase-unit', i18n.t('ca.builder.inARowUnit')));
+    const wrapper = field(i18n.t('ca.builder.stepInARow'), phrase, LEARN_OPTIONS.inARow);
+    wrapper.classList.add('ca-field-wide');
+    return wrapper;
   }
 
   /** Levels an indicator is usually read against (RSI 30 and 70, Stochastic 20 and 80) as one-click values. */
@@ -729,25 +1008,36 @@
     }
   }
 
+  /**
+   * When the test must hold, as one phrase: "[On the latest candle]", or "[At least once in the last] [5] candles".
+   * The number sits inside the phrase it belongs to, so no label has to say "…".
+   */
   function windowFields(condition, refresh, rebuild) {
     const span = condition.window || { mode: 'LATEST' };
     const crossing = ['CROSSES_ABOVE', 'CROSSES_BELOW', 'NEW_HIGH', 'NEW_LOW'].includes(condition.operator);
     const options = [['LATEST', i18n.t('ca.window.label.LATEST')], ['ANY', i18n.t('ca.window.label.ANY')]];
     if (!crossing) options.push(['EVERY', i18n.t('ca.window.label.EVERY')]);
-    const fields = [field(i18n.t('ca.builder.when'), select(options, span.mode, value => {
+    const phrase = el('div', 'ca-phrase');
+    const mode = select(options, span.mode, value => {
       condition.window = value === 'LATEST' ? { mode: 'LATEST' } : { mode: value, candles: span.candles && span.candles > 1 ? span.candles : 3 };
       rebuild();
-    }), LEARN_OPTIONS.window)];
+    }, i18n.t('ca.builder.when'));
+    phrase.append(mode);
     if (span.mode !== 'LATEST') {
-      fields.push(field(i18n.t('ca.builder.candles'), numberInput(span.candles, { min: 1, max: catalog.maxWindow || 60, step: 1 }, value => {
+      const candles = numberInput(span.candles, { min: 1, max: catalog.maxWindow || 60, step: 1 }, value => {
         condition.window = { mode: span.mode, candles: value }; refresh();
-      })));
+      });
+      candles.setAttribute('aria-label', i18n.t('ca.builder.candles'));
+      phrase.append(candles, el('span', 'ca-phrase-unit', i18n.t('ca.builder.candlesUnit')));
     }
-    return fields;
+    const wrapper = field(i18n.t('ca.builder.when'), phrase, LEARN_OPTIONS.window);
+    wrapper.classList.add('ca-field-wide');
+    return [wrapper];
   }
 
   function indicatorButton(operand, onChange) {
-    const button = el('button', 'ca-indicator-button', `${text.operandLabel(operand, catalog.byType)} ✎`);
+    const button = el('button', 'ca-indicator-button');
+    button.append(el('span', null, text.operandLabel(operand, catalog.byType)), text.icon('edit'));
     button.type = 'button';
     button.setAttribute('aria-label', i18n.t('ca.builder.changeIndicator', text.operandLabel(operand, catalog.byType)));
     button.addEventListener('click', () => chooseIndicator(operand).then(chosen => { if (chosen) onChange(chosen); }));
@@ -757,13 +1047,15 @@
   /** Indicator chooser: search the catalog, then set its numbers and the line to watch. */
   function chooseIndicator(current) {
     return new Promise(resolve => {
-      const dialog = el('dialog', 'wl-dialog ca-indicator-dialog');
+      const dialog = el('dialog', 'ca-dialog ca-indicator-dialog');
+      const head = el('div', 'ca-dialog-head');
       const heading = el('h2', null, i18n.t('ca.indicatorDialog.title'));
       heading.id = 'ca-indicator-title';
       dialog.setAttribute('aria-labelledby', heading.id);
-      const content = el('div');
+      head.append(heading, iconButton(i18n.t('common.close'), 'close', () => dialog.close()));
+      const content = el('div', 'ca-dialog-body');
       let result = null;
-      dialog.append(heading, content);
+      dialog.append(head, content);
       dialog.addEventListener('close', () => { dialog.remove(); resolve(result); });
       document.body.append(dialog);
       dialog.showModal();
@@ -909,8 +1201,17 @@
     const confirmed = candlestick && status === 'CONFIRMED';
     // A step counts on the one candle its pattern counts on, so it has no window of its own.
     const stepNote = el('p', 'wl-muted ca-field-note', i18n.t(`ca.builder.patternStep.${confirmed ? 'CONFIRMED' : 'DETECTED'}`));
-    const windowField = step ? null : field(windowLabel(confirmed), numberInput(condition.window?.candles ?? 5, { min: 1, max: catalog.maxWindow || 60, step: 1 },
-      value => { condition.window = { mode: 'ANY', candles: value }; refresh(); }), windowLearn(confirmed));
+    // "Detected | within the last [5] candles": the number inside its phrase.
+    let windowField = null;
+    if (!step) {
+      const phrase = el('div', 'ca-phrase');
+      const candles = numberInput(condition.window?.candles ?? 5, { min: 1, max: catalog.maxWindow || 60, step: 1 },
+        value => { condition.window = { mode: 'ANY', candles: value }; refresh(); });
+      candles.setAttribute('aria-label', i18n.t('ca.builder.candles'));
+      phrase.append(el('span', 'ca-phrase-unit', i18n.t('ca.builder.withinLast')), candles, el('span', 'ca-phrase-unit', i18n.t('ca.builder.candlesUnit')));
+      windowField = field(windowLabel(confirmed), phrase, windowLearn(confirmed));
+      windowField.classList.add('ca-field-wide');
+    }
     if (candlestick) {
       // The status changes what the window counts from; only its label is redrawn, so the focus stays here.
       fields.push(field(i18n.t('ca.builder.status'), select(['CONFIRMED', 'DETECTED'].map(value => [value, i18n.t(`ca.patternStatus.${value}`)]),
@@ -950,7 +1251,9 @@
       updateSummary(); refresh();
     }, text.patternTerm(condition.family, name))));
     chooser.append(summary, list);
-    fields.push(field(i18n.t('ca.builder.patterns'), chooser));
+    const patternsField = field(i18n.t('ca.builder.patterns'), chooser);
+    patternsField.classList.add('ca-field-wide');
+    fields.push(patternsField);
     if (step) fields.push(stepNote);
     if (candlestick) fields.push(el('p', 'wl-muted ca-field-note', i18n.t('ca.builder.statusNote')));
     if (condition.family === 'HARMONIC_FORMATION') {
@@ -1034,20 +1337,90 @@
     if (!target) return;
     const ordered = target.match === 'THEN';
     const groups = state.definition.groups;
-    const dialog = el('dialog', 'wl-dialog ca-picker');
+    const dialog = el('dialog', 'ca-dialog ca-picker');
+    const head = el('div', 'ca-dialog-head');
     const heading = el('h2', null, i18n.t(ordered ? 'ca.conditionPicker.stepTitle' : 'ca.conditionPicker.title'));
     heading.id = 'ca-picker-title';
     dialog.setAttribute('aria-labelledby', heading.id);
-    const grid = el('div', 'ca-picker-grid');
+    const closeButton = iconButton(i18n.t('common.close'), 'close', () => dialog.close());
+    head.append(heading, closeButton);
+    const searchBox = el('label', 'ca-search ca-picker-search');
+    const search = el('input');
+    search.type = 'search';
+    search.placeholder = i18n.t('ca.conditionPicker.search');
+    search.setAttribute('aria-label', i18n.t('ca.conditionPicker.search'));
+    search.autocomplete = 'off';
+    searchBox.append(text.icon('search'), search);
+    const sectionsBox = el('div', 'ca-picker-sections');
     let picked = false;
     const offered = choices().filter(choice => !ordered || !['outlook', 'insider', 'congress'].includes(choice.key));
     // A new sequence: the target itself while it is empty, otherwise a new group after it.
     if (!ordered && (!target.conditions.length || groups.length < catalog.maxGroups)) offered.push({ key: 'sequence', sequence: true });
-    offered.forEach(choice => {
+    const optionFor = choice => {
       const option = el('button', `ca-picker-option ca-picker-${choice.key}`);
       option.type = 'button';
-      option.append(el('strong', null, i18n.t(`ca.picker.${choice.key}.title`)), el('span', null, i18n.t(`ca.picker.${choice.key}.text`)));
-      option.addEventListener('click', async () => {
+      const icon = el('span', 'ca-picker-icon');
+      icon.append(text.icon(PICKER_ICONS[choice.key] || 'indicator'));
+      const words = el('span', 'ca-picker-words');
+      words.append(el('strong', null, i18n.t(`ca.picker.${choice.key}.title`)), el('span', null, i18n.t(`ca.picker.${choice.key}.text`)));
+      option.append(icon, words);
+      option.addEventListener('click', () => pick(choice));
+      return option;
+    };
+    /** An indicator found by name: a condition on it starts straight away, with the usual comparison. */
+    const indicatorOption = item => {
+      const option = el('button', 'ca-picker-option ca-picker-indicator');
+      option.type = 'button';
+      const icon = el('span', 'ca-picker-icon');
+      icon.append(text.icon('indicator'));
+      const words = el('span', 'ca-picker-words');
+      words.append(el('strong', null, text.indicatorName(item.type)), el('span', null, `${item.shortName} · ${i18n.t(`ind.category.${item.category}`)}`));
+      option.append(icon, words);
+      option.addEventListener('click', () => pick({ key: 'indicator', make: () => {
+        const made = { kind: 'VALUE', subject: { kind: 'INDICATOR', type: item.type, parameters: {}, output: item.outputs[0] }, operator: 'ABOVE', window: { mode: 'LATEST' } };
+        suggestCompare(made);
+        return made;
+      } }));
+      return option;
+    };
+    const drawSections = () => {
+      const query = search.value.trim().toLowerCase();
+      const found = choice => !query || [i18n.t(`ca.picker.${choice.key}.title`), i18n.t(`ca.picker.${choice.key}.text`)]
+        .some(value => value.toLowerCase().includes(query));
+      const parts = PICKER_SECTIONS.map(section => {
+        const items = offered.filter(choice => section.keys.includes(choice.key) && found(choice));
+        if (!items.length) return null;
+        const box = el('section', 'ca-picker-section');
+        const title = el('h3', null, i18n.t(`ca.conditionPicker.section.${section.id}`));
+        title.id = `ca-picker-section-${section.id}`;
+        box.setAttribute('aria-labelledby', title.id);
+        const grid = el('div', 'ca-picker-grid');
+        items.forEach(choice => grid.append(optionFor(choice)));
+        box.append(title, grid);
+        return box;
+      }).filter(Boolean);
+      if (query) {
+        const indicators = catalog.indicators.filter(item => [text.indicatorName(item.type), item.shortName, item.type]
+          .some(value => String(value).toLowerCase().includes(query))).slice(0, 8);
+        if (indicators.length) {
+          const box = el('section', 'ca-picker-section');
+          const title = el('h3', null, i18n.t('ca.conditionPicker.section.indicators'));
+          title.id = 'ca-picker-section-indicators';
+          box.setAttribute('aria-labelledby', title.id);
+          const grid = el('div', 'ca-picker-grid');
+          indicators.forEach(item => grid.append(indicatorOption(item)));
+          box.append(title, grid);
+          parts.push(box);
+        }
+      }
+      sectionsBox.replaceChildren(...(parts.length ? parts : [el('p', 'ca-muted ca-picker-none', i18n.t('ca.conditionPicker.none', search.value.trim()))]));
+    };
+    search.addEventListener('input', drawSections);
+    search.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); sectionsBox.querySelector('button')?.click(); }
+    });
+    async function pick(choice) {
+      {
         picked = true;
         dialog.close();
         if (choice.sequence) {
@@ -1078,24 +1451,32 @@
         renderGroups(); changed();
         const card = nodes.groups.querySelector(`[data-condition-id="${CSS.escape(added.id)}"]`);
         card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        card?.querySelector('select, input, button')?.focus();
-      });
-      grid.append(option);
-    });
-    const cancel = el('button', 'btn-secondary', i18n.t('common.cancel'));
-    cancel.type = 'button';
-    cancel.addEventListener('click', () => dialog.close());
-    const actions = el('div', 'wl-actions');
-    actions.append(cancel);
-    dialog.append(heading, el('p', 'wl-muted', i18n.t('ca.conditionPicker.intro')), grid, actions);
+        card?.querySelector('.ca-condition-body select, .ca-condition-body input, .ca-condition-body button')?.focus();
+      }
+    }
+    const body = el('div', 'ca-dialog-body');
+    body.append(el('p', 'ca-muted', i18n.t('ca.conditionPicker.intro')), searchBox, sectionsBox);
+    dialog.append(head, body);
     dialog.addEventListener('close', () => {
       dialog.remove();
       if (!picked) { tidyGroups(); renderGroups(); }
     });
+    drawSections();
     document.body.append(dialog);
     dialog.showModal();
-    grid.querySelector('button')?.focus();
+    search.focus();
   }
+
+  /** The picker's choices by family, and the icon of each. */
+  const PICKER_SECTIONS = [
+    { id: 'price', keys: ['rsi', 'maCross', 'volume', 'breakout', 'priceLevel', 'priceChange', 'anyIndicator'] },
+    { id: 'patterns', keys: ['candlestick', 'elliott', 'harmonic'] },
+    { id: 'filings', keys: ['insider', 'congress', 'outlook'] },
+    { id: 'advanced', keys: ['sequence'] }
+  ];
+  const PICKER_ICONS = { rsi: 'indicator', maCross: 'indicator', volume: 'indicator', breakout: 'price', priceLevel: 'price', priceChange: 'price',
+    anyIndicator: 'search', candlestick: 'pattern', elliott: 'pattern', harmonic: 'pattern', insider: 'insider', congress: 'congress',
+    outlook: 'outlook', sequence: 'sequence' };
 
   // ------------------------------------------------------------------ where to watch
 
@@ -1298,12 +1679,12 @@
       verdict.append(el('strong', null, !result.applicable ? i18n.t('ca.preview.notApplicable', result.symbol)
           : i18n.t(result.matched ? 'ca.preview.matches' : 'ca.preview.noMatch', result.symbol)),
         el('span', null, i18n.t('ca.preview.conditionsMet', result.matchedConditions, result.totalConditions)),
-        el('small', 'wl-muted', i18n.t('ca.preview.asOf', i18n.date(result.latestCandle * 1000, { day: 'numeric', month: 'short', year: 'numeric' }),
-          text.number(result.latestClose))));
+        el('small', null, i18n.t('ca.preview.asOf', text.date(result.latestCandle * 1000), text.number(result.latestClose))));
       parts.push(verdict, historyStrip(result));
     }
     nodes.result.replaceChildren(...parts);
     renderCoverage(result.coverage);
+    renderMobileReading(result);
   }
 
   function historyStrip(result) {
@@ -1314,6 +1695,32 @@
     label.dataset.learnTitle = i18n.t('ca.preview.historyTitle');
     heading.append(label);
     box.append(heading);
+    // No triggers: the sentence says so; an empty axis would only look broken.
+    if (result.history.length) box.append(...historyChart(result));
+    if (result.medianReturn != null) {
+      const statsLine = el('p', 'ca-history-stats', i18n.t('ca.preview.after', state.outcomeCandles,
+        text.signed(result.medianReturn), text.number(result.positiveShare)));
+      statsLine.classList.add('learn-term');
+      statsLine.dataset.learn = LEARN_OPTIONS.outcome;
+      statsLine.dataset.learnTitle = i18n.t('ca.preview.afterTitle');
+      box.append(statsLine);
+    } else if (!result.history.length && result.elliottHistory !== 'PREPARING') {
+      // While the Elliott history is prepared the replay is short: "loosen a condition" would mislead.
+      box.append(el('p', 'ca-muted', i18n.t('ca.preview.noHistory')));
+    }
+    // Elliott counts are replayed as they stood on each candle. A background job prepares that history once per
+    // stock; until it is ready the replay covers the latest candles only.
+    if (result.elliottHistory === 'PREPARING') {
+      box.append(el('p', 'ca-muted ca-preview-preparing', i18n.t('ca.preview.elliottPreparing', result.symbol, result.replayedCandles)));
+    } else if (result.shortenedBy === 'ELLIOTT_WAVE') {
+      box.append(el('p', 'ca-muted', i18n.t('ca.preview.elliottShort', result.replayedCandles)));
+    }
+    box.append(el('p', 'ca-disclaimer', i18n.t('ca.preview.disclaimer')));
+    return box;
+  }
+
+  /** The replay's triggers on a time line, green where the price was higher {@code outcomeCandles} later, red where lower. */
+  function historyChart(result) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 300 34');
     svg.setAttribute('class', 'ca-history-strip');
@@ -1334,38 +1741,22 @@
       tick.append(title);
       svg.append(tick);
     });
-    box.append(svg);
     const range = el('div', 'ca-history-range');
     range.append(el('span', null, i18n.date(result.firstReplayed * 1000, { month: 'short', year: 'numeric' })),
       el('span', null, i18n.date(result.latestCandle * 1000, { month: 'short', year: 'numeric' })));
-    box.append(range);
-    if (result.medianReturn != null) {
-      const statsLine = el('p', 'ca-history-stats', i18n.t('ca.preview.after', state.outcomeCandles,
-        `${result.medianReturn >= 0 ? '+' : ''}${text.number(result.medianReturn)}%`, text.number(result.positiveShare)));
-      statsLine.classList.add('learn-term');
-      statsLine.dataset.learn = LEARN_OPTIONS.outcome;
-      statsLine.dataset.learnTitle = i18n.t('ca.preview.afterTitle');
-      box.append(statsLine);
-    } else if (!result.history.length && result.elliottHistory !== 'PREPARING') {
-      // While the Elliott history is prepared the replay is short: "loosen a condition" would mislead.
-      box.append(el('p', 'wl-muted', i18n.t('ca.preview.noHistory')));
-    }
-    // Elliott counts are replayed as they stood on each candle. A background job prepares that history once per
-    // stock; until it is ready the replay covers the latest candles only.
-    if (result.elliottHistory === 'PREPARING') {
-      box.append(el('p', 'wl-status ca-preview-preparing', i18n.t('ca.preview.elliottPreparing', result.symbol, result.replayedCandles)));
-    } else if (result.shortenedBy === 'ELLIOTT_WAVE') {
-      box.append(el('p', 'wl-muted', i18n.t('ca.preview.elliottShort', result.replayedCandles)));
-    }
-    box.append(el('p', 'ca-disclaimer', i18n.t('ca.preview.disclaimer')));
-    return box;
+    const legend = el('p', 'ca-history-legend');
+    legend.append(el('span', 'ca-history-key up', i18n.t('ca.preview.keyHigher', state.outcomeCandles)),
+      el('span', 'ca-history-key down', i18n.t('ca.preview.keyLower')));
+    if (result.history.some(point => point.outcomeReturn == null)) legend.append(el('span', 'ca-history-key pending', i18n.t('ca.preview.keyPending')));
+    return [svg, range, legend];
   }
 
   function renderCoverage(coverage) {
     if (!coverage) { nodes.coverage.replaceChildren(); return; }
     const box = el('div', 'ca-coverage');
     if (!coverage.stocks) {
-      box.append(el('p', 'ca-coverage-warning', i18n.t(state.pendingSymbol && state.pendingChoice ? 'ca.coverage.pendingOnly' : 'ca.coverage.none')));
+      if (!(state.pendingSymbol && state.pendingChoice)) { nodes.coverage.replaceChildren(); return; }
+      box.append(el('p', 'ca-coverage-note', i18n.t('ca.coverage.pendingOnly')));
     } else {
       box.append(el('p', null, i18n.plural('ca.coverage.stocks', coverage.stocks, coverage.stocks)));
       if (coverage.maximum) {
@@ -1454,20 +1845,62 @@
 
   // ------------------------------------------------------------------ starting points
 
-  function renderStart() {
-    if (state.id || conditions().length) { nodes.start.replaceChildren(); return; }
-    const box = el('div', 'ca-start-box');
-    box.append(el('p', null, i18n.t('ca.builder.startWith')));
-    const row = el('div', 'ca-start-templates');
+  /** With no conditions yet: what to do, and three examples to start from (all of them a click further). */
+  function emptyRule() {
+    const empty = el('div', 'ca-rule-empty');
+    empty.append(el('strong', null, i18n.t('ca.builder.emptyTitle')), el('p', 'ca-muted', i18n.t('ca.builder.emptyText')));
+    if (!state.id) {
+      const examples = el('div', 'ca-start-templates');
+      examples.setAttribute('role', 'group');
+      examples.setAttribute('aria-label', i18n.t('ca.builder.startWith'));
+      examples.append(el('span', 'ca-hints-label', i18n.t('ca.builder.startWith')));
+      text.templates.slice(0, 3).forEach(template => {
+        const button = el('button', 'ca-start-template', i18n.t(`ca.template.${template.id}.name`));
+        button.type = 'button';
+        button.title = i18n.t(`ca.template.${template.id}.text`);
+        button.addEventListener('click', () => useTemplate(template.id));
+        examples.append(button);
+      });
+      const all = el('button', 'ca-text-button', i18n.t('ca.builder.allExamples', text.templates.length));
+      all.type = 'button';
+      all.addEventListener('click', openExamples);
+      examples.append(all);
+      empty.append(examples);
+    }
+    return empty;
+  }
+
+  /** Every example as a card; choosing one fills in the rule. */
+  function openExamples() {
+    const dialog = el('dialog', 'ca-dialog ca-examples-dialog');
+    const head = el('div', 'ca-dialog-head');
+    const heading = el('h2', null, i18n.t('ca.templates.title'));
+    heading.id = 'ca-examples-title';
+    dialog.setAttribute('aria-labelledby', heading.id);
+    head.append(heading, iconButton(i18n.t('common.close'), 'close', () => dialog.close()));
+    const grid = el('div', 'ca-templates');
     text.templates.forEach(template => {
-      const button = el('button', 'ca-start-template', i18n.t(`ca.template.${template.id}.name`));
-      button.type = 'button';
-      button.title = i18n.t(`ca.template.${template.id}.text`);
-      button.addEventListener('click', () => { useTemplate(template.id); });
-      row.append(button);
+      const card = el('button', 'ca-template');
+      card.type = 'button';
+      card.append(el('strong', 'ca-template-name', i18n.t(`ca.template.${template.id}.name`)),
+        el('span', 'ca-template-text', i18n.t(`ca.template.${template.id}.text`)), text.chips(template.definition, catalog.byType, 3));
+      const use = el('span', 'ca-template-use', i18n.t('ca.templates.use'));
+      use.append(text.icon('arrow'));
+      card.append(use);
+      card.addEventListener('click', () => { dialog.close(); useTemplate(template.id); });
+      grid.append(card);
     });
-    box.append(row, el('p', 'wl-muted', i18n.t('ca.builder.orScratch')));
-    nodes.start.replaceChildren(box);
+    const body = el('div', 'ca-dialog-body');
+    body.append(el('p', 'ca-muted', i18n.t('ca.templates.note')), grid);
+    dialog.append(head, body);
+    dialog.addEventListener('close', () => dialog.remove());
+    document.body.append(dialog);
+    dialog.showModal();
+    grid.querySelector('button')?.focus();
+  }
+
+  function renderStart() {
+    nodes.start?.replaceChildren();
   }
 
   function useTemplate(id) {
@@ -1593,7 +2026,15 @@
     }));
   }
 
+  /** The note grows with its text, up to three lines. */
+  function growNote() {
+    if (!nodes.description.scrollHeight) return;
+    nodes.description.style.height = 'auto';
+    nodes.description.style.height = `${Math.min(nodes.description.scrollHeight + 2, 92)}px`;
+  }
+
   function syncBasics() {
+    growNote();
     nodes.intervals.querySelectorAll('input[type="checkbox"]').forEach(input => { input.checked = state.intervals.includes(input.value); });
     renderTestInterval();
     form.querySelectorAll('input[name="triggerMode"]').forEach(input => { input.checked = input.value === state.triggerMode; });
@@ -1605,6 +2046,8 @@
 
   function bindBasics() {
     nodes.name.addEventListener('input', changed);
+    nodes.description.addEventListener('input', scheduleDraft);
+    nodes.description.addEventListener('input', growNote);
     nodes.description.addEventListener('input', () => { dirty = true; });
     nodes.intervals.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener('change', () => {
       const ticked = [...nodes.intervals.querySelectorAll('input[type="checkbox"]:checked')].map(box => box.value);
@@ -1621,8 +2064,9 @@
     }));
     nodes.quiet.addEventListener('input', () => { state.quietCandles = Number(nodes.quiet.value) || 0; changed(); });
     nodes.outcome.addEventListener('input', () => { state.outcomeCandles = Number(nodes.outcome.value) || 10; changed(); });
-    nodes.email.addEventListener('change', () => { state.emailEnabled = nodes.email.checked; dirty = true; });
-    nodes.notifyExisting.addEventListener('change', () => { state.notifyExisting = nodes.notifyExisting.checked; dirty = true; });
+    nodes.email.addEventListener('change', () => { state.emailEnabled = nodes.email.checked; dirty = true; renderStepSummaries(); scheduleDraft(); });
+    nodes.notifyExisting.addEventListener('change', () => { state.notifyExisting = nodes.notifyExisting.checked; dirty = true; scheduleDraft(); });
+    nodes.description.addEventListener('input', renderStepSummaries);
     form.querySelector('[data-ca-add-condition]').addEventListener('click', () => addCondition(null));
     form.querySelector('[data-ca-add-group]').addEventListener('click', () => {
       state.definition.groups.push({ id: newId('g'), match: 'ALL', conditions: [] });
@@ -1638,9 +2082,19 @@
   async function save(event) {
     event.preventDefault();
     const draft = snapshot();
-    if (!conditions().length) { nodes.status.textContent = i18n.t('ca.save.needCondition'); return; }
+    if (!conditions().length) {
+      nodes.status.textContent = i18n.t('ca.save.needCondition');
+      goToStep('rule', '[data-ca-add-condition]');
+      return;
+    }
     if (state.definition.groups.some(group => group.match === 'THEN' && group.conditions.length < 2)) {
       nodes.status.textContent = i18n.t('ca.save.needSteps');
+      goToStep('rule', '.ca-sequence-adders button');
+      return;
+    }
+    if (!draft.targets.length && !(state.pendingSymbol && state.pendingChoice)) {
+      nodes.status.textContent = i18n.t('ca.save.needStocks');
+      goToStep('where', '[data-ca-targets] input:not(:disabled)');
       return;
     }
     if (!draft.name) {
@@ -1659,6 +2113,7 @@
           apply: [saved.id], remove: [], watchlistIds: state.pendingChoice.watchlistIds, newWatchlistName: state.pendingChoice.newWatchlistName }) });
       }
       dirty = false;
+      forgetDraft();
       window.location.assign(`/custom-alerts?saved=${saved.id}`);
     } catch (error) {
       nodes.status.textContent = error.message;
@@ -1728,7 +2183,13 @@
     renderTargets();
     nodes.save.disabled = false;
     nodes.summary.textContent = text.summary(snapshot(), catalog.byType);
+    renderSteps();
+    foldFinishedSteps();
     dirty = Boolean(page.dataset.startTemplate || page.dataset.startChartAlert || assistantDraft);
+    draftReady = true;
+    const blank = !state.id && !page.dataset.startTemplate && !page.dataset.startChartAlert && !page.dataset.startSymbol
+      && !page.dataset.startWatchlist && !assistantDraft;
+    if (blank) offerDraft();
     runPreview();
   }
 

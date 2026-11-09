@@ -7,8 +7,8 @@ suggestions: [assistant.suggest.signals.1, assistant.suggest.signals.2]
 ---
 ## What this page is for
 
-{{msg:signals.subtitle.all}} The same page shows one watchlist's signals (`?watchlistId=`), one ticker's
-(`?ticker=`), or one custom alert's triggers (`?customAlertId=`).
+{{msg:signals.subtitle.all}} The same page shows one watchlist's signals (`?watchlistId=`) or one ticker's
+(`?ticker=`). One custom alert's triggers have their own page, `/custom-alerts/{id}`.
 
 ## What's on it
 
@@ -24,14 +24,6 @@ suggestions: [assistant.suggest.signals.1, assistant.suggest.signals.2]
 - **{{msg:signals.markAllRead}}**, **{{msg:signals.selectPage}}**, **{{msg:signals.deleteSelected}}**.
 - **{{msg:signals.howItWorks}}**: {{msg:signals.how.unread}} **{{msg:signals.column.setupScore}}**
   {{msg:signals.how.scoreText}} **{{msg:signals.column.tradeOutcome}}** {{msg:signals.how.outcomeText}}
-
-## One custom alert's triggers (`?customAlertId=`)
-
-The header shows **{{msg:customAlerts.archive.rule}}**, **{{msg:customAlerts.archive.appliedTo}}**,
-**{{msg:customAlerts.archive.matchingNow}}** ({{learn:customAlerts.matching}}), triggers in total, how often
-the stock "{{msg:customAlerts.archive.higherAfter}}" and the **{{msg:customAlerts.archive.median}}**, plus
-**{{msg:customAlerts.archive.edit}}** and **{{msg:customAlerts.archive.pause}}** / **{{msg:customAlerts.archive.resume}}**.
-{{msg:customAlerts.archive.disclaimer}}
 
 ## Things people get wrong
 

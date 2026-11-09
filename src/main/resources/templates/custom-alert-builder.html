@@ -14,49 +14,87 @@
 </head>
 <body class="ui-refresh">
 <div th:replace="~{fragments/navbar :: navbar}"></div>
-<main class="dashboard-container ca-builder-page"
+<main class="dashboard-container ca-page ca-builder-page"
       th:attr="data-alert-id=${alertId},data-start-template=${startTemplate},data-start-symbol=${startSymbol},data-start-watchlist=${startWatchlist},data-start-chart-alert=${startChartAlert}">
   <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
     <a th:href="@{/custom-alerts}" th:text="#{customAlerts.heading}">Custom alerts</a><span aria-hidden="true">/</span>
-    <span th:text="${alertId != null ? #messages.msg('customAlerts.builder.edit') : #messages.msg('customAlerts.builder.new')}">New alert</span>
+    <span aria-current="page" th:text="${alertId != null ? #messages.msg('customAlerts.builder.edit') : #messages.msg('customAlerts.builder.new')}">New alert</span>
   </nav>
   <header class="ca-builder-header">
-    <h1 th:text="${alertId != null ? #messages.msg('customAlerts.builder.edit') : #messages.msg('customAlerts.builder.new')}">New custom alert</h1>
-    <p class="welcome-subtitle" th:text="#{customAlerts.builder.subtitle}">Describe the moment you want to hear about. The preview on the right shows how your rule reads on a real stock while you build it.</p>
+    <div>
+      <h1 th:text="${alertId != null ? #messages.msg('customAlerts.builder.edit') : #messages.msg('customAlerts.builder.new')}">New custom alert</h1>
+      <p class="ca-page-lead" th:text="#{customAlerts.builder.subtitle}">Describe the moment you want to hear about. The preview shows how your rule reads on a real stock while you build it.</p>
+    </div>
+    <span class="ca-ask-slot" data-ca-ask-slot></span>
   </header>
+  <div class="ca-draft" data-ca-draft role="status" hidden>
+    <p data-ca-draft-text></p>
+    <button type="button" class="btn-secondary ca-btn-sm" data-ca-draft-restore th:text="#{customAlerts.builder.draftRestore}">Restore it</button>
+    <button type="button" class="ca-text-button" data-ca-draft-discard th:text="#{customAlerts.builder.draftDiscard}">Discard</button>
+  </div>
 
   <form class="ca-builder" data-ca-builder novalidate>
+    <nav class="ca-steps" th:aria-label="#{customAlerts.builder.stepsAria}" aria-label="Steps">
+      <ol>
+        <li><a href="#ca-step-name" data-ca-step-link="name"><span class="ca-step-state" data-ca-step-state="name">1</span><span th:text="#{customAlerts.builder.step.name}">Name</span></a></li>
+        <li><a href="#ca-step-rule" data-ca-step-link="rule"><span class="ca-step-state" data-ca-step-state="rule">2</span><span th:text="#{customAlerts.builder.step.rule}">Conditions</span></a></li>
+        <li><a href="#ca-step-when" data-ca-step-link="when"><span class="ca-step-state" data-ca-step-state="when">3</span><span th:text="#{customAlerts.builder.step.when}">Schedule</span></a></li>
+        <li><a href="#ca-step-where" data-ca-step-link="where"><span class="ca-step-state" data-ca-step-state="where">4</span><span th:text="#{customAlerts.builder.step.where}">Stocks and alerts</span></a></li>
+      </ol>
+    </nav>
+
     <div class="ca-builder-form">
-      <section class="ca-section" aria-labelledby="ca-step-name">
-        <h2 id="ca-step-name"><span class="ca-step-number" aria-hidden="true">1</span><span th:text="#{customAlerts.builder.step.name}">Name your alert</span></h2>
+      <section id="ca-step-name" class="ca-section" data-ca-step="name" data-ca-collapsible aria-labelledby="ca-step-name-title">
+        <h2 id="ca-step-name-title"><span class="ca-step-number" aria-hidden="true">1</span><span th:text="#{customAlerts.builder.step.name}">Name</span></h2>
+        <div class="ca-step-summary" data-ca-step-summary="name" hidden>
+          <p data-ca-step-summary-text></p>
+          <button type="button" class="btn-secondary ca-btn-sm" data-ca-step-edit th:text="#{customAlerts.builder.editStep}">Edit</button>
+        </div>
+        <div class="ca-step-body" data-ca-step-body="name">
         <div class="ca-name-grid">
-          <label class="wl-field"><span th:text="#{customAlerts.builder.name}">Name</span>
-            <input type="text" maxlength="80" required data-ca-name th:placeholder="#{customAlerts.builder.namePlaceholder}" placeholder="Oversold bounce"></label>
-          <label class="wl-field"><span th:text="#{customAlerts.builder.description}">Note for yourself (optional)</span>
-            <input type="text" maxlength="500" data-ca-description th:placeholder="#{customAlerts.builder.descriptionPlaceholder}" placeholder="Why this setup interests you"></label>
+          <label class="ca-field"><span class="ca-field-label" th:text="#{customAlerts.builder.name}">Name</span>
+            <input type="text" maxlength="80" required data-ca-name th:placeholder="#{customAlerts.builder.namePlaceholder}" placeholder="e.g. RSI dip on my core list"></label>
+          <label class="ca-field"><span class="ca-field-label" th:text="#{customAlerts.builder.description}">Note for yourself (optional)</span>
+            <textarea rows="1" maxlength="500" data-ca-description th:placeholder="#{customAlerts.builder.descriptionPlaceholder}" placeholder="Why this setup interests you"></textarea></label>
+        </div>
+        <p class="ca-field-hint" th:text="#{customAlerts.builder.nameHint}">Leave the name empty and the first condition names it.</p>
+        </div>
+      </section>
+
+      <section id="ca-step-rule" class="ca-section" data-ca-step="rule" aria-labelledby="ca-step-rule-title">
+        <h2 id="ca-step-rule-title"><span class="ca-step-number" aria-hidden="true">2</span><span th:text="#{customAlerts.builder.step.rule}">What to look for</span></h2>
+        <div class="ca-mobile-reading" data-ca-mobile-reading hidden>
+          <p data-ca-mobile-reading-text></p>
+          <button type="button" class="btn-secondary ca-btn-sm" data-ca-open-preview th:text="#{customAlerts.preview.open}">Preview</button>
         </div>
         <div class="ca-start" data-ca-start></div>
-      </section>
-
-      <section class="ca-section" aria-labelledby="ca-step-rule">
-        <h2 id="ca-step-rule"><span class="ca-step-number" aria-hidden="true">2</span><span th:text="#{customAlerts.builder.step.rule}">Describe what to look for</span></h2>
-        <div class="ca-clock" role="group" aria-labelledby="ca-clock-label" data-ca-intervals>
-          <span class="learn-label" id="ca-clock-label"><th:block th:text="#{customAlerts.builder.checkEvery}">Check after every</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.interval', #{customAlerts.builder.checkEvery})}"></span></span>
-          <label class="ca-interval-option"><input type="checkbox" value="DAILY" checked><span th:text="#{customAlerts.builder.interval.DAILY}">daily close</span></label>
-          <label class="ca-interval-option"><input type="checkbox" value="WEEKLY"><span th:text="#{customAlerts.builder.interval.WEEKLY}">weekly close</span></label>
-          <label class="ca-interval-option"><input type="checkbox" value="MONTHLY"><span th:text="#{customAlerts.builder.interval.MONTHLY}">monthly close</span></label>
-        </div>
         <div data-ca-groups></div>
-        <div class="ca-add-row">
-          <button type="button" class="btn-accent" data-ca-add-condition th:text="#{customAlerts.builder.addCondition}">+ Add condition</button>
-          <button type="button" class="btn-secondary learn-control" data-ca-add-group data-learn="customAlerts.groups" th:attr="data-learn-title=#{customAlerts.builder.addGroup}" th:text="#{customAlerts.builder.addGroup}">+ Add group</button>
+        <div class="ca-add-row" data-ca-add-row>
+          <button type="button" class="btn-secondary ca-add-condition" data-ca-add-condition>
+            <svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span th:text="#{customAlerts.builder.addCondition}">Add condition</span></button>
+          <button type="button" class="btn-secondary ca-btn-ghost learn-control" data-ca-add-group data-learn="customAlerts.groups" th:attr="data-learn-title=#{customAlerts.builder.addGroup}">
+            <svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M4 7h7M4 12h7M4 17h7M17 9v6M14 12h6"/></svg><span th:text="#{customAlerts.builder.addGroup}">Add a group</span></button>
         </div>
       </section>
 
-      <section class="ca-section" aria-labelledby="ca-step-when">
-        <h2 id="ca-step-when"><span class="ca-step-number" aria-hidden="true">3</span><span th:text="#{customAlerts.builder.step.when}">Decide when it fires</span></h2>
+      <section id="ca-step-when" class="ca-section" data-ca-step="when" data-ca-collapsible aria-labelledby="ca-step-when-title">
+        <h2 id="ca-step-when-title"><span class="ca-step-number" aria-hidden="true">3</span><span th:text="#{customAlerts.builder.step.when}">When it checks and fires</span></h2>
+        <div class="ca-step-summary" data-ca-step-summary="when" hidden>
+          <p data-ca-step-summary-text></p>
+          <button type="button" class="btn-secondary ca-btn-sm" data-ca-step-edit th:text="#{customAlerts.builder.editStep}">Edit</button>
+        </div>
+        <div class="ca-step-body" data-ca-step-body="when">
+        <div class="ca-clock" role="group" aria-labelledby="ca-clock-label" data-ca-intervals>
+          <span class="ca-field-label learn-label" id="ca-clock-label"><th:block th:text="#{customAlerts.builder.checkEvery}">Check after every</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.interval', #{customAlerts.builder.checkEvery})}"></span></span>
+          <div class="ca-clock-options">
+            <label class="ca-interval-option"><input type="checkbox" value="DAILY" checked><span th:text="#{customAlerts.builder.interval.DAILY}">daily close</span></label>
+            <label class="ca-interval-option"><input type="checkbox" value="WEEKLY"><span th:text="#{customAlerts.builder.interval.WEEKLY}">weekly close</span></label>
+            <label class="ca-interval-option"><input type="checkbox" value="MONTHLY"><span th:text="#{customAlerts.builder.interval.MONTHLY}">monthly close</span></label>
+          </div>
+          <p class="ca-field-hint" th:text="#{customAlerts.builder.intervalsHint}">Tick several and each timeframe is checked on its own close.</p>
+        </div>
         <fieldset class="ca-modes" data-ca-modes>
-          <legend class="visually-hidden" th:text="#{customAlerts.builder.step.when}">Decide when it fires</legend>
+          <legend class="ca-field-label" th:text="#{customAlerts.builder.firesLabel}">It fires</legend>
           <label class="ca-mode-card"><input type="radio" name="triggerMode" value="BECOMES_TRUE" checked>
             <span><strong th:text="#{customAlerts.mode.BECOMES_TRUE}">When the rule becomes true</strong><small th:text="#{customAlerts.mode.BECOMES_TRUE.help}">Fires on the candle where the rule turns true, then waits until it has been false again. Recommended.</small></span></label>
           <label class="ca-mode-card"><input type="radio" name="triggerMode" value="ONCE">
@@ -64,38 +102,56 @@
           <label class="ca-mode-card"><input type="radio" name="triggerMode" value="EVERY_CANDLE">
             <span><strong th:text="#{customAlerts.mode.EVERY_CANDLE}">On every candle while true</strong><small th:text="#{customAlerts.mode.EVERY_CANDLE.help}">Fires on each completed candle where the rule holds. Can be noisy.</small></span></label>
         </fieldset>
-        <div class="ca-inline-fields">
-          <label><span class="learn-label"><th:block th:text="#{customAlerts.builder.quiet}">Quiet period</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.quiet', #{customAlerts.builder.quiet})}"></span></span>
-            <span class="ca-unit"><input type="number" min="0" max="60" step="1" value="0" data-ca-quiet><span th:text="#{customAlerts.builder.candlesUnit}">candles</span></span></label>
-          <label><span class="learn-label"><th:block th:text="#{customAlerts.builder.outcome}">Follow the price for</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.outcome', #{customAlerts.builder.outcome})}"></span></span>
-            <span class="ca-unit"><input type="number" min="1" max="60" step="1" value="10" data-ca-outcome><span th:text="#{customAlerts.builder.candlesUnit}">candles</span></span></label>
+        <label class="ca-sentence">
+          <span class="learn-label"><th:block th:text="#{customAlerts.builder.quietBefore}">After a trigger, stay quiet for</th:block></span>
+          <input type="number" min="0" max="60" step="1" value="0" data-ca-quiet th:aria-label="#{customAlerts.builder.quiet}">
+          <span><th:block th:text="#{customAlerts.builder.candlesUnit}">candles</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.quiet', #{customAlerts.builder.quiet})}"></span></span>
+        </label>
         </div>
       </section>
 
-      <section class="ca-section" aria-labelledby="ca-step-where">
-        <h2 id="ca-step-where"><span class="ca-step-number" aria-hidden="true">4</span><span th:text="#{customAlerts.builder.step.where}">Choose which stocks to watch</span></h2>
-        <p class="wl-muted" th:text="#{customAlerts.builder.whereHelp}">Pick watchlists. “All stocks” follows the list as it changes; “Chosen stocks” watches only the ones you tick.</p>
-        <div data-ca-targets><p class="wl-status" th:text="#{watchlists.loading}">Loading watchlists…</p></div>
-        <label class="wl-check ca-notify-existing"><input type="checkbox" data-ca-notify-existing>
-          <span><span th:text="#{customAlerts.builder.notifyExisting}">Also tell me about stocks that already match when I save</span> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.notifyExisting', #{customAlerts.builder.notifyExistingShort})}"></span></span></label>
-      </section>
-
-      <section class="ca-section" aria-labelledby="ca-step-notify">
-        <h2 id="ca-step-notify"><span class="ca-step-number" aria-hidden="true">5</span><span th:text="#{customAlerts.builder.step.notify}">How you hear about it</span></h2>
-        <label class="wl-check"><input type="checkbox" checked data-ca-email>
-          <span th:text="#{customAlerts.builder.email}">Email me when it triggers (several stocks in one check arrive as one email)</span></label>
-        <p class="wl-muted"><span th:text="#{customAlerts.builder.emailNote}">Triggers always appear on your dashboard, in this alert's list and in your watchlists. Email also follows your</span> <a th:href="@{/settings/analysis-alerts}" class="text-link" th:text="#{customAlerts.builder.emailSettings}">email settings</a>.</p>
+      <section id="ca-step-where" class="ca-section" data-ca-step="where" data-ca-collapsible aria-labelledby="ca-step-where-title">
+        <h2 id="ca-step-where-title"><span class="ca-step-number" aria-hidden="true">4</span><span th:text="#{customAlerts.builder.step.where}">Stocks and notifications</span></h2>
+        <div class="ca-step-summary" data-ca-step-summary="where" hidden>
+          <p data-ca-step-summary-text></p>
+          <button type="button" class="btn-secondary ca-btn-sm" data-ca-step-edit th:text="#{customAlerts.builder.editStep}">Edit</button>
+        </div>
+        <div class="ca-step-body" data-ca-step-body="where">
+        <p class="ca-section-lead" th:text="#{customAlerts.builder.whereHelp}">Pick watchlists. “All stocks” follows the list as it changes; “Chosen stocks” watches only the ones you tick.</p>
+        <div data-ca-targets><p class="ca-loading" th:text="#{watchlists.loading}">Loading watchlists…</p></div>
+        <p class="ca-step-problem" data-ca-where-problem hidden th:text="#{customAlerts.builder.whereProblem}">Choose a watchlist or add a stock, so the alert has something to check.</p>
+        <div class="ca-subsection">
+          <h3 th:text="#{customAlerts.builder.afterTitle}">Notifications</h3>
+          <label class="ca-check-row"><input type="checkbox" checked data-ca-email>
+            <span><span th:text="#{customAlerts.builder.email}">Email me</span>
+              <small><th:block th:text="#{customAlerts.builder.emailNote}">Several stocks in one check arrive as one email. Triggers always appear on your dashboard and in your watchlists. Email also follows your</th:block> <a th:href="@{/settings/analysis-alerts}" class="text-link" th:text="#{customAlerts.builder.emailSettings}">email settings</a>.</small></span></label>
+          <label class="ca-check-row ca-notify-existing"><input type="checkbox" data-ca-notify-existing>
+            <span><span><th:block th:text="#{customAlerts.builder.notifyExisting}">Also tell me about stocks that already match when I save</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.notifyExisting', #{customAlerts.builder.notifyExistingShort})}"></span></span>
+              <small th:text="#{customAlerts.builder.notifyExistingNote}">Otherwise only stocks that start matching after you save are reported.</small></span></label>
+          <label class="ca-sentence">
+            <span class="learn-label" th:text="#{customAlerts.builder.outcomeBefore}">Measure the price move for</span>
+            <input type="number" min="1" max="60" step="1" value="10" data-ca-outcome th:aria-label="#{customAlerts.builder.outcome}">
+            <span><th:block th:text="#{customAlerts.builder.outcomeAfter}">candles</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.outcome', #{customAlerts.builder.outcome})}"></span></span>
+          </label>
+          <p class="ca-field-hint" th:text="#{customAlerts.builder.outcomeHint}">Close to close after each trigger; the alert's page reports the median.</p>
+        </div>
+        </div>
       </section>
     </div>
 
     <aside class="ca-preview" aria-labelledby="ca-preview-heading" data-ca-preview>
       <div class="ca-preview-inner">
-        <h2 id="ca-preview-heading"><span th:text="#{customAlerts.preview.title}">Preview</span> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.preview', #{customAlerts.preview.title})}"></span></h2>
+        <div class="ca-preview-head">
+          <h2 id="ca-preview-heading"><span th:text="#{customAlerts.preview.title}">Preview</span> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.preview', #{customAlerts.preview.title})}"></span></h2>
+          <button type="button" class="ca-icon-button ca-preview-close" data-ca-close-preview th:aria-label="#{js.common.close}" th:title="#{js.common.close}">
+            <svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
         <p class="ca-summary" data-ca-summary aria-live="polite"></p>
         <div class="ca-test-form" role="group" aria-labelledby="ca-test-label">
           <label id="ca-test-label" for="ca-test-symbol"><span class="learn-label"><th:block th:text="#{customAlerts.preview.testOn}">Test on</th:block> <span th:replace="~{fragments/learn-help :: learnHelp('customAlerts.testOn', #{customAlerts.preview.testOn})}"></span></span></label>
           <div class="ca-test-row"><input id="ca-test-symbol" type="text" maxlength="20" autocomplete="off" data-ca-test-symbol placeholder="AAPL">
-            <button type="button" class="btn-secondary" data-ca-test th:text="#{customAlerts.preview.test}">Test</button></div>
+            <button type="button" class="btn-secondary" data-ca-test th:title="#{customAlerts.preview.testShortcut}"><span th:text="#{customAlerts.preview.test}">Test</span></button></div>
+          <p class="ca-test-hint"><kbd class="ca-kbd" data-ca-mod-key th:text="#{customAlerts.preview.keyCtrl}">Ctrl</kbd><kbd class="ca-kbd" th:text="#{customAlerts.preview.keyEnter}">Enter</kbd> <span th:text="#{customAlerts.preview.shortcutHint}">tests the rule from any field</span></p>
           <div class="ca-segmented ca-test-interval" role="group" th:attr="aria-label=#{customAlerts.preview.testInterval}" data-ca-test-interval hidden></div>
         </div>
         <div data-ca-result aria-live="polite"></div>
@@ -104,8 +160,12 @@
     </aside>
 
     <div class="ca-footer">
-      <p class="wl-status" role="status" data-ca-status></p>
-      <a th:href="@{/custom-alerts}" class="btn-secondary" th:text="#{common.cancel}">Cancel</a>
+      <div class="ca-footer-info">
+        <p class="ca-footer-summary" id="ca-footer-summary" data-ca-footer-summary></p>
+        <p class="ca-footer-status" role="status" data-ca-status></p>
+      </div>
+      <a th:href="${alertId != null ? '/custom-alerts/' + alertId : '/custom-alerts'}" class="btn-secondary ca-btn-ghost" th:text="#{common.cancel}">Cancel</a>
+      <button type="button" class="btn-secondary ca-footer-preview" data-ca-open-preview aria-controls="ca-preview-heading" th:text="#{customAlerts.preview.title}">Preview</button>
       <button type="submit" class="btn-accent" data-ca-save th:text="#{customAlerts.builder.save}">Save alert</button>
     </div>
   </form>

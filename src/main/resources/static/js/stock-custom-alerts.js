@@ -61,7 +61,7 @@
     }
     if (!alert.active) facts.append(el('span', 'stock-custom-paused', i18n.t('stockCustom.paused')));
     const triggers = el('a', 'text-link', i18n.t('stockCustom.triggers'));
-    triggers.href = `/signals?${new URLSearchParams({ customAlertId: alert.id, ticker: symbol })}`;
+    triggers.href = `/custom-alerts/${alert.id}?${new URLSearchParams({ ticker: symbol })}`;
     const edit = el('a', 'text-link', i18n.t('stockCustom.edit'));
     edit.href = `/custom-alerts/${alert.id}/edit`;
     facts.append(triggers, edit);

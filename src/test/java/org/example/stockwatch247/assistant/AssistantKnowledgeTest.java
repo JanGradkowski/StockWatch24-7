@@ -56,8 +56,8 @@ class AssistantKnowledgeTest {
             }
         }
         // Labels come from the language's own bundle.
-        assertThat(knowledge.resolved(AppLanguage.EN, "custom-alerts/reference.md")).contains("+ Add condition");
-        assertThat(knowledge.resolved(AppLanguage.PL, "custom-alerts/reference.md")).doesNotContain("+ Add condition");
+        assertThat(knowledge.resolved(AppLanguage.EN, "custom-alerts/reference.md")).contains("**Add condition**");
+        assertThat(knowledge.resolved(AppLanguage.PL, "custom-alerts/reference.md")).doesNotContain("Add condition").contains("**Dodaj warunek**");
     }
 
     @Test

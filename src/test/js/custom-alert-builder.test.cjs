@@ -63,7 +63,8 @@ test('↑ under a sequence makes the condition its last step, and ↓ on that st
   assert.deepEqual(page.sentences(), [['RSI (14) is below 30 for at least 5 candles in a row', 'RSI (14) is above 30',
     'A bullish candlestick pattern confirmed']], 'one group: the candle is step 3, after both RSI steps');
   assert.match(page.summary(), /then within 3 candles RSI \(14\) is above 30, then within 5 candles a bullish candlestick pattern confirmed/);
-  assert.equal(page.doc.activeElement.getAttribute('aria-label'), 'Move up', 'the keyboard stays on the arrow');
+  assert.equal(page.doc.activeElement.getAttribute('aria-label'), 'Actions for this condition (Candlestick pattern)',
+    'the keyboard stays on the moved condition, on its menu');
 
   const steps = page.cards(page.groups()[0]);
   assert.equal(page.button(steps[2], 'Move down').disabled, false, 'the last step can leave the sequence');
@@ -77,12 +78,12 @@ test('"Then…" refuses to change what an "any" group means, and keeps the meani
   const page = await builder('oversold-bounce');
   page.button(page.groups()[0].querySelector('.ca-group-header'), 'Any of these').click();
   const before = page.summary();
-  page.button(page.cards(page.groups()[0])[0], 'Then…').click();
+  page.button(page.cards(page.groups()[0])[0], 'Start a sequence').click();
   assert.equal(page.summary(), before, 'the rule is unchanged');
   assert.match(page.groups()[0].querySelector('.ca-sequence-note').textContent, /Only in an “All of these” group/);
 
   page.button(page.groups()[0].querySelector('.ca-group-header'), 'All of these').click();
-  page.button(page.cards(page.groups()[0])[0], 'Then…').click();
+  page.button(page.cards(page.groups()[0])[0], 'Start a sequence').click();
   assert.equal(page.groups()[1].querySelector('.ca-sequence-note').textContent,
     'Steps are timed by the sequence, so their own time windows were removed.', 'RSI had "at least once in the last 5 candles"');
   const picker = page.doc.querySelector('dialog.ca-picker[open]');
@@ -106,7 +107,7 @@ test('a sequence switched to "all" and back keeps its timing', async () => {
   const sequence = page.groups()[0];
   assert.equal(sequence.querySelector('.ca-step-connector input').value, '3');
   assert.equal(page.field(sequence, 'All steps within').querySelector('input').value, '20');
-  assert.equal(page.button(sequence.querySelector('.ca-sequence-completed'), 'in the last few candles').getAttribute('aria-pressed'), 'true');
+  assert.equal(page.button(sequence.querySelector('.ca-sequence-completed'), 'Last few candles').getAttribute('aria-pressed'), 'true');
   assert.equal(sequence.querySelector('.ca-sequence-completed input').value, '3');
   page.dom.window.close();
 });

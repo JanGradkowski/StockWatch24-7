@@ -838,10 +838,131 @@ public class CustomAlertService {
                 """, user.getId(), alertId, alertId);
     }
 
+    /**
+     * One row of an alert's own page: a trigger with how the price has moved since ({@code outcomeReturn} is the change
+     * so far while {@code outcomeStatus} is PENDING, the change over the follow-up window once COMPLETE).
+     */
+    public record TriggerRow(long id, String symbol, String companyName, TimeInterval interval, long candleTimestamp, double closePrice,
+                             String kind, Instant createdAt, boolean read, Double outcomeReturn, String outcomeStatus, int outcomeCandles,
+                             int matchedConditions, int totalConditions, Map<String, Double> forwardReturns) {
+        /** The change {@code candles} candles after the trigger, once that candle has closed. */
+        public Double after(int candles) { return forwardReturns.get(String.valueOf(candles)); }
+
+        /** While the trigger is measured: the first of {@code marks} still to come, where the table says how far it has got. */
+        public Integer nextMark(List<Integer> marks) {
+            if (!"PENDING".equals(outcomeStatus)) return null;
+            return marks.stream().filter(mark -> after(mark) == null).findFirst().orElse(null);
+        }
+
+        /** The last of {@code marks} measured, or null. */
+        public Integer lastMark(List<Integer> marks) {
+            return marks.stream().filter(mark -> after(mark) != null).reduce((first, second) -> second).orElse(null);
+        }
+
+        /** Whether the change so far adds to the checkpoints measured: right after one, it is the same number. */
+        public boolean soFarNew(List<Integer> marks) {
+            if (outcomeReturn == null) return false;
+            Double last = marks.stream().map(this::after).filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null);
+            return last == null || Math.abs(last - outcomeReturn) >= 0.005;
+        }
+    }
+
+    /** The alert's triggers, newest first, at most {@code limit}. */
+    @Transactional(readOnly = true)
+    public List<TriggerRow> triggers(User user, long alertId, int limit) {
+        owned(user, alertId);
+        return db.query(TRIGGER_QUERY + " where e.alert_id = ? and a.user_id = ? and e.deleted_at is null "
+                        + "order by e.created_at desc, e.id desc limit ?",
+                (row, index) -> new TriggerRow(row.getLong("id"), row.getString("ticker_symbol"), row.getString("company_name"),
+                        TimeInterval.valueOf(row.getString("interval")), row.getLong("candle_timestamp"), row.getDouble("close_price"),
+                        row.getString("kind"), instant(row.getTimestamp("created_at")), row.getTimestamp("read_at") != null,
+                        row.getObject("outcome_return") == null ? null : row.getDouble("outcome_return"), row.getString("outcome_status"),
+                        row.getInt("outcome_candles"), row.getInt("matched_conditions"), row.getInt("total_conditions"),
+                        forwardReturns(row.getString("forward_returns"))),
+                alertId, user.getId(), Math.max(1, Math.min(1000, limit)));
+    }
+
+    private Map<String, Double> forwardReturns(String stored) {
+        if (stored == null) return Map.of();
+        Map<String, Double> returns = new HashMap<>();
+        json.readTree(stored).properties().forEach(entry -> {
+            if (entry.getValue().isNumber()) returns.put(entry.getKey(), entry.getValue().asDouble());
+        });
+        return returns;
+    }
+
+    /** Removes some of an alert's triggers from its page and every list (kept as deleted, like other archived signals). */
+    @Transactional
+    public int deleteTriggers(User user, long alertId, List<Long> ids) {
+        owned(user, alertId);
+        if (ids == null || ids.isEmpty() || ids.size() > 1000 || ids.stream().anyMatch(id -> id == null || id <= 0)) {
+            throw new UserInputException("Choose the triggers to delete.");
+        }
+        Long[] values = ids.stream().distinct().toArray(Long[]::new);
+        return db.update(connection -> {
+            var statement = connection.prepareStatement(
+                    "update custom_alert_events set deleted_at = current_timestamp where alert_id = ? and deleted_at is null and id = any(?)");
+            statement.setLong(1, alertId);
+            statement.setArray(2, connection.createArrayOf("bigint", values));
+            return statement;
+        });
+    }
+
+    /** A trigger next to another in its alert's list (newest first): its id, stock and when it fired. */
+    public record TriggerLink(long id, String symbol, Instant createdAt) { }
+
+    /** Where a trigger sits in its alert's list (newest first): the triggers either side, its place and the total. */
+    public record TriggerPlace(TriggerLink newer, TriggerLink older, long position, long total) { }
+
+    /** The triggers just newer and just older than {@code eventId} in its alert's list (either may be null), and its place. */
+    @Transactional(readOnly = true)
+    public TriggerPlace place(User user, long eventId) {
+        TriggerLink[] found = new TriggerLink[2];
+        db.query("""
+                with current as (
+                    select e.alert_id, e.created_at, e.id from custom_alert_events e join custom_alerts a on a.id = e.alert_id
+                    where e.id = ? and a.user_id = ? and e.deleted_at is null)
+                (select 0 side, e.id, s.ticker_symbol, e.created_at from custom_alert_events e join current c on c.alert_id = e.alert_id
+                     join stock_assets s on s.id = e.stock_asset_id
+                 where e.deleted_at is null and (e.created_at, e.id) > (c.created_at, c.id) order by e.created_at, e.id limit 1)
+                union all
+                (select 1 side, e.id, s.ticker_symbol, e.created_at from custom_alert_events e join current c on c.alert_id = e.alert_id
+                     join stock_assets s on s.id = e.stock_asset_id
+                 where e.deleted_at is null and (e.created_at, e.id) < (c.created_at, c.id) order by e.created_at desc, e.id desc limit 1)
+                """, row -> {
+            found[row.getInt("side")] = new TriggerLink(row.getLong("id"), row.getString("ticker_symbol"), instant(row.getTimestamp("created_at")));
+        }, eventId, user.getId());
+        long[] counts = db.query("""
+                select count(*) filter (where (e.created_at, e.id) > (c.created_at, c.id)) newer, count(*) total
+                from custom_alert_events e join custom_alert_events c on c.alert_id = e.alert_id join custom_alerts a on a.id = c.alert_id
+                where c.id = ? and a.user_id = ? and e.deleted_at is null
+                """, result -> result.next() ? new long[]{result.getLong("newer"), result.getLong("total")} : new long[]{0, 0}, eventId, user.getId());
+        return new TriggerPlace(found[0], found[1], counts[0] + 1, counts[1]);
+    }
+
+    /** How many custom alerts the user has. */
+    @Transactional(readOnly = true)
+    public long count(User user) {
+        Long count = db.queryForObject("select count(*) from custom_alerts where user_id = ?", Long.class, user.getId());
+        return count == null ? 0 : count;
+    }
+
     @Transactional(readOnly = true)
     public ArchiveHeader archiveHeader(User user, long alertId, Long watchlistId) {
         AlertView alert = get(user, alertId);
-        Performance performance = db.query("""
+        String list = watchlistId == null ? null : watchlists.name(user, watchlistId);
+        return new ArchiveHeader(alert, performanceOf(alertId), list);
+    }
+
+    /** How the alert's triggers did over the follow-up window: how many, how many measured, the median and the mean. */
+    @Transactional(readOnly = true)
+    public Performance performance(User user, long alertId) {
+        owned(user, alertId);
+        return performanceOf(alertId);
+    }
+
+    private Performance performanceOf(long alertId) {
+        return db.query("""
                 select count(*) triggers, count(*) filter (where outcome_status = 'COMPLETE') completed,
                        count(*) filter (where outcome_status = 'COMPLETE' and outcome_return > 0) positive,
                        percentile_cont(0.5) within group (order by outcome_return) filter (where outcome_status = 'COMPLETE') median,
@@ -852,8 +973,6 @@ public class CustomAlertService {
             return new Performance(result.getLong("triggers"), result.getLong("completed"), result.getLong("positive"),
                     round(result.getObject("median")), round(result.getObject("average")));
         }, alertId);
-        String list = watchlistId == null ? null : watchlists.name(user, watchlistId);
-        return new ArchiveHeader(alert, performance, list);
     }
 
     // ------------------------------------------------------------------ catalog

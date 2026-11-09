@@ -1,7 +1,7 @@
 (() => {
   'use strict';
-  // The Custom alerts page: every alert as a card (click it to see its triggers), its switches and menu,
-  // the stocks it watches with their state, the chart alerts tab and the starter templates.
+  // The Custom alerts page: every alert as a row (its name opens the alert's own page), its counts, switch and menu,
+  // the stocks it watches with their state, the starter examples and the alerts set on charts.
   const root = document.querySelector('[data-ca-list]');
   if (!root) return;
   const i18n = window.StockWatchI18n;
@@ -10,32 +10,53 @@
   const api = (...args) => window.StockWatchLists.api(...args);
   const el = text.element;
   // Learning-mode explanations (js.learn.<key>) used on this page.
-  const LEARN_OPTIONS = { active: 'customAlerts.active', checking: 'customAlerts.checking', convert: 'customAlerts.convert', matching: 'customAlerts.matching', triggers: 'customAlerts.triggers', MATCHING: 'customAlerts.state.MATCHING', HALFWAY: 'customAlerts.state.HALFWAY', NOT_MATCHING: 'customAlerts.state.NOT_MATCHING', CHECKING: 'customAlerts.state.CHECKING', WAITING: 'customAlerts.state.WAITING', SKIPPED: 'customAlerts.state.SKIPPED', STOPPED: 'customAlerts.state.STOPPED' };
+  const LEARN_OPTIONS = { active: 'customAlerts.active', checking: 'customAlerts.checking', convert: 'customAlerts.convert', matching: 'customAlerts.matching',
+    triggers: 'customAlerts.triggers', HALFWAY: 'customAlerts.state.HALFWAY' };
   const page = document.querySelector('.custom-alerts-page');
   const search = document.querySelector('[data-ca-search]');
+  const toolbar = document.querySelector('[data-ca-toolbar]');
   const guide = document.querySelector('[data-ca-guide]');
+  const guideToggle = document.querySelector('[data-ca-guide-toggle]');
+  const readAll = document.querySelector('[data-ca-read-all]');
+  const tabs = [...document.querySelectorAll('[data-ca-tab]')];
   let alerts = [];
-  let chartAlerts = null;
   let definitions = new Map();
   let filter = 'all';
+  let loaded = false;
 
-  // Learning mode opens the guide; afterwards the reader decides.
-  if (guide && document.documentElement.dataset.learningMode === 'on') guide.open = true;
-
-  const date = value => value ? i18n.date(value, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const compact = () => window.matchMedia('(max-width: 768px)').matches;
+  const alertUrl = alert => `/custom-alerts/${alert.id}`;
   const link = (label, href, className = 'text-link') => { const a = el('a', className, label); a.href = href; return a; };
   const button = (label, onClick, className = 'btn-secondary') => {
     const b = el('button', className, label); b.type = 'button'; b.addEventListener('click', onClick); return b;
   };
+
+  // ------------------------------------------------------------------ the guide
+
+  function setGuide(open) {
+    guide.hidden = !open;
+    guideToggle.setAttribute('aria-expanded', String(open));
+  }
+  guideToggle?.addEventListener('click', () => {
+    setGuide(guide.hidden);
+    if (!guide.hidden) guide.querySelector('[data-ca-guide-close]')?.focus();
+  });
+  document.querySelector('[data-ca-guide-close]')?.addEventListener('click', () => { setGuide(false); guideToggle.focus(); });
+  // Learning mode opens the guide; afterwards the reader decides.
+  if (guide && document.documentElement.dataset.learningMode === 'on') setGuide(true);
+
+  // ------------------------------------------------------------------ loading and the list
 
   async function load() {
     try {
       const [list, catalog] = await Promise.all([api('/api/custom-alerts'), text.catalog().catch(() => null)]);
       alerts = list;
       definitions = catalog ? catalog.byType : new Map();
+      loaded = true;
       render();
+      loadChartAlerts();
     } catch (error) {
-      root.replaceChildren(el('p', 'wl-status', error.message), button(i18n.t('common.retry'), load));
+      root.replaceChildren(el('p', 'ca-muted', error.message), button(i18n.t('common.retry'), load));
     }
   }
 
@@ -47,19 +68,31 @@
   }
 
   function render() {
-    document.querySelectorAll('[data-ca-tab]').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.caTab === filter)));
-    if (filter === 'chart') { renderChartAlerts(); return; }
+    const has = alerts.length > 0;
+    toolbar.hidden = !has;
+    // With no alerts the empty state carries the way in (and the assistant's button), so the header stays empty.
+    document.querySelector('[data-ca-page-actions]').hidden = !has;
+    readAll.hidden = !alerts.some(alert => alert.unread);
+    const active = alerts.filter(alert => alert.active).length;
+    const counts = { all: alerts.length, active, paused: alerts.length - active };
+    tabs.forEach(tab => {
+      const selected = tab.dataset.caTab === filter;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      tab.querySelector('[data-ca-count]').textContent = String(counts[tab.dataset.caTab]);
+    });
+    document.querySelector('[data-ca-slots]').textContent = i18n.t('ca.list.slots', active, page.dataset.maximumActive);
+    if (!has) { root.replaceChildren(emptyState()); return; }
     const query = (search?.value || '').trim().toLowerCase();
-    if (!alerts.length) { root.replaceChildren(emptyState()); return; }
     const visible = alerts.filter(alert => (filter === 'all' || (filter === 'active') === alert.active) && matches(alert, query));
-    const list = el('div', 'ca-cards');
-    visible.forEach(alert => list.append(card(alert)));
-    const nodes = [];
-    const activeCount = alerts.filter(alert => alert.active).length;
-    nodes.push(el('p', 'ca-count', i18n.plural('ca.list.count', alerts.length, alerts.length, activeCount, page.dataset.maximumActive)));
-    nodes.push(visible.length ? list : el('p', 'wl-muted', i18n.t('ca.list.noMatches')));
-    nodes.push(templateGallery(true));
-    root.replaceChildren(...nodes);
+    if (!visible.length) {
+      root.replaceChildren(el('p', 'ca-empty-filter', i18n.t(query ? 'ca.list.noSearchMatches' : `ca.list.none.${filter}`, query)));
+      return;
+    }
+    const list = el('div', 'ca-rows');
+    list.setAttribute('role', 'list');
+    visible.forEach(alert => list.append(row(alert)));
+    root.replaceChildren(list);
     refreshWhileChecking();
   }
 
@@ -70,7 +103,7 @@
     clearTimeout(refreshTimer);
     if (!alerts.some(alert => alert.active && alert.checking > 0)) return;
     refreshTimer = setTimeout(async () => {
-      const busy = document.hidden || document.querySelector('details.ca-menu[open], dialog[open], .ca-card-states:not([hidden])')
+      const busy = document.hidden || document.querySelector('details.ca-menu[open], .ca-row-states:not([hidden])') || text.modalOpen()
         || root.contains(document.activeElement) || document.activeElement?.matches?.('input, textarea, select');
       if (busy) { refreshWhileChecking(); return; }
       try {
@@ -82,6 +115,17 @@
     }, 4000);
   }
 
+  /** "Daily · Growth (25 stocks) · Once per stock": the timeframes, the stocks and any firing that is not the usual. */
+  function meta(alert) {
+    const parts = [alert.activityOnly ? i18n.t('ca.card.onFilings', text.intervalsLabel(alert.intervals)) : text.intervalsLabel(alert.intervals)];
+    alert.targets.forEach(target => parts.push(target.scope === 'ALL_MEMBERS'
+      ? i18n.plural('ca.target.allStocks', target.stocks, target.watchlistName, target.stocks)
+      : i18n.t('ca.target.selected', target.watchlistName, target.symbols.slice(0, 3).join(', ')
+        + (target.symbols.length > 3 ? ` +${target.symbols.length - 3}` : ''))));
+    if (alert.triggerMode !== 'BECOMES_TRUE') parts.push(i18n.t(`ca.mode.short.${alert.triggerMode}`));
+    return parts.join(' · ');
+  }
+
   /** How far the checks of a newly covered alert are, with a native progress bar (no inline styles under the CSP). */
   function progress(alert) {
     const box = el('div', 'ca-progress');
@@ -90,151 +134,130 @@
     bar.max = Math.max(1, alert.stocks);
     bar.value = done;
     bar.setAttribute('aria-label', i18n.t('ca.card.progressAria', alert.name));
-    box.append(el('span', null, i18n.plural('ca.card.progress', alert.stocks, done, alert.stocks)), bar);
+    box.append(bar, el('span', null, i18n.plural('ca.card.progress', alert.stocks, done, alert.stocks)));
     return box;
-  }
-
-  function emptyState() {
-    const box = el('div', 'ca-empty');
-    box.append(el('h3', null, i18n.t('ca.empty.title')), el('p', 'wl-muted', i18n.t('ca.empty.text')));
-    const actions = el('div', 'wl-actions');
-    actions.append(link(i18n.t('ca.empty.scratch'), '/custom-alerts/new', 'btn-accent'));
-    box.append(actions, templateGallery(false));
-    return box;
-  }
-
-  /** Starter rules; under the list they fold away, on an empty page they are the main way in. */
-  function templateGallery(folded) {
-    const grid = el('div', 'ca-templates');
-    text.templates.forEach(template => {
-      const item = el('a', 'ca-template');
-      item.href = `/custom-alerts/new?template=${encodeURIComponent(template.id)}`;
-      item.append(el('strong', null, i18n.t(`ca.template.${template.id}.name`)),
-        el('span', null, i18n.t(`ca.template.${template.id}.text`)));
-      item.append(text.chips(template.definition, definitions, 3));
-      grid.append(item);
-    });
-    const heading = el(folded ? 'summary' : 'h3', 'ca-templates-heading', i18n.t('ca.templates.title'));
-    const note = el('p', 'wl-muted', i18n.t('ca.templates.note'));
-    if (!folded) { const box = el('section', 'ca-templates-section'); box.append(heading, note, grid); return box; }
-    const details = el('details', 'ca-templates-section');
-    details.append(heading, note, grid);
-    return details;
-  }
-
-  function targetsText(alert) {
-    if (!alert.targets.length) return null;
-    return alert.targets.map(target => target.scope === 'ALL_MEMBERS'
-      ? i18n.t('ca.target.all', target.watchlistName, target.stocks)
-      : i18n.t('ca.target.selected', target.watchlistName, target.symbols.slice(0, 3).join(', ')
-        + (target.symbols.length > 3 ? ` +${target.symbols.length - 3}` : ''))).join(' · ');
-  }
-
-  function card(alert) {
-    const article = el('article', `ca-card${alert.active ? '' : ' is-paused'}`);
-    const archive = `/signals?customAlertId=${alert.id}`;
-    // The whole card opens the alert's triggers; its own controls keep their clicks.
-    article.addEventListener('click', event => {
-      if (event.target.closest('a, button, summary, details, input, label, .ca-card-states')) return;
-      window.location.assign(archive);
-    });
-
-    const main = el('div', 'ca-card-main');
-    const title = el('div', 'ca-card-title');
-    const name = link(alert.name, archive, 'ca-card-name');
-    name.setAttribute('aria-label', i18n.t('ca.card.openAria', alert.name));
-    title.append(name);
-    if (alert.pinned) title.append(el('span', 'ca-pin', i18n.t('ca.card.pinned')));
-    if (alert.unread) title.append(el('span', 'ca-unread', i18n.plural('ca.card.unread', alert.unread, alert.unread)));
-    const tags = el('div', 'ca-card-tags');
-    tags.append(el('span', `ca-status ${alert.active ? 'active' : 'paused'}`, i18n.t(alert.active ? 'ca.status.active' : 'ca.status.paused')));
-    const intervals = text.intervalsLabel(alert.intervals);
-    tags.append(el('span', 'dashboard-chip ca-interval', alert.activityOnly ? i18n.t('ca.card.onFilings', intervals) : intervals));
-    tags.append(el('span', `ca-mode`, i18n.t(`ca.mode.short.${alert.triggerMode}`)));
-    if (!alert.emailEnabled) tags.append(el('span', 'ca-mode', i18n.t('ca.card.noEmail')));
-    main.append(title, tags);
-    if (alert.description) main.append(el('p', 'ca-card-description', alert.description));
-    main.append(text.chips(alert.definition, definitions, 4));
-    const targets = targetsText(alert);
-    const where = el('p', `ca-card-targets${targets ? '' : ' is-warning'}`, targets
-      ? i18n.t('ca.card.appliedTo', targets) : i18n.t('ca.card.notApplied'));
-    main.append(where);
-    if (alert.active && alert.checking > 0 && alert.stocks > 0) main.append(progress(alert));
-
-    const stats = el('div', 'ca-card-stats');
-    const matching = el('button', 'ca-stat ca-stat-button');
-    matching.type = 'button';
-    matching.setAttribute('aria-expanded', 'false');
-    matching.append(el('strong', null, String(alert.matching)), explained(i18n.t('ca.card.matchingNow'), LEARN_OPTIONS.matching));
-    const statesBox = el('div', 'ca-card-states');
-    statesBox.hidden = true;
-    matching.addEventListener('click', () => toggleStates(alert, matching, statesBox));
-    stats.append(matching);
-    if (alert.halfway) stats.append(stat(alert.halfway, i18n.t('ca.card.halfway'), LEARN_OPTIONS.HALFWAY));
-    if (alert.checking) stats.append(stat(alert.checking, i18n.t('ca.card.checking'), LEARN_OPTIONS.checking));
-    stats.append(stat(alert.triggers, i18n.plural('ca.card.triggers', alert.triggers), LEARN_OPTIONS.triggers));
-    stats.append(stat(alert.lastTriggeredAt ? date(alert.lastTriggeredAt) : '—', i18n.t('ca.card.lastTriggered')));
-
-    const actions = el('div', 'ca-card-actions');
-    actions.append(link(i18n.t('ca.card.edit'), `/custom-alerts/${alert.id}/edit`, 'btn-secondary'));
-    actions.append(switchButton(alert));
-    actions.append(menu(alert));
-    article.append(main, stats, actions, statesBox);
-    return article;
   }
 
   /** A label that learning mode explains (js.learn.<key>). */
-  function explained(label, key) {
-    const span = el('span', key ? 'learn-term' : null, label);
+  function explained(label, key, className = '') {
+    const span = el('span', `${className}${key ? ' learn-term' : ''}`.trim() || null, label);
     if (key) { span.dataset.learn = key; span.dataset.learnTitle = label; }
     return span;
   }
 
-  const stat = (value, label, key) => {
-    const box = el('div', 'ca-stat'); box.append(el('strong', null, String(value)), explained(label, key)); return box;
-  };
+  function row(alert) {
+    const item = el('article', `ca-row${alert.active ? '' : ' is-paused'}`);
+    item.setAttribute('role', 'listitem');
+    item.setAttribute('aria-labelledby', `ca-row-name-${alert.id}`);
+
+    const main = el('div', 'ca-row-main');
+    const title = el('div', 'ca-row-title');
+    const name = link(alert.name, alertUrl(alert), 'ca-row-name');
+    name.id = `ca-row-name-${alert.id}`;
+    title.append(name);
+    if (alert.pinned) {
+      const pin = el('span', 'ca-pin');
+      pin.title = i18n.t('ca.card.pinned');
+      pin.append(text.icon('pin'), el('span', 'visually-hidden', i18n.t('ca.card.pinned')));
+      title.append(pin);
+    }
+    if (!alert.active) title.append(el('span', 'ca-badge', i18n.t('ca.status.paused')));
+    if (alert.unread) {
+      const unread = el('span', 'ca-unread');
+      unread.append(el('i', 'ca-dot'), i18n.plural('ca.card.unread', alert.unread, alert.unread));
+      title.append(unread);
+    }
+    const info = el('p', 'ca-row-meta');
+    info.append(el('span', null, meta(alert)));
+    if (alert.emailEnabled) {
+      const mail = el('span', 'ca-row-mail');
+      mail.title = i18n.t('ca.card.emailOn');
+      mail.append(text.icon('mail'), el('span', 'visually-hidden', i18n.t('ca.card.emailOn')));
+      info.append(mail);
+    }
+    main.append(title, info);
+    if (alert.description) main.append(el('p', 'ca-row-description', alert.description));
+    main.append(text.chips(alert.definition, definitions, 2));
+    if (!alert.targets.length) main.append(el('p', 'ca-row-warning', i18n.t('ca.card.notApplied')));
+    if (alert.active && alert.checking > 0 && alert.stocks > 0) main.append(progress(alert));
+
+    const stats = el('div', 'ca-row-stats');
+    const states = el('div', 'ca-row-states');
+    states.hidden = true;
+    const matching = el('button', `ca-stat ca-stat-button${alert.matching ? ' is-positive' : ''}`);
+    matching.type = 'button';
+    matching.setAttribute('aria-expanded', 'false');
+    matching.setAttribute('aria-controls', `ca-row-states-${alert.id}`);
+    states.id = `ca-row-states-${alert.id}`;
+    const matchingLabel = el('span', 'ca-stat-label');
+    matchingLabel.append(explained(i18n.t('ca.card.matching'), LEARN_OPTIONS.matching), text.icon('chevron', 'ca-icon ca-stat-chevron'));
+    matching.append(el('strong', 'ca-stat-value', String(alert.matching)), matchingLabel);
+    if (alert.halfway) matching.append(explained(i18n.t('ca.card.halfwayCount', alert.halfway), LEARN_OPTIONS.HALFWAY, 'ca-stat-extra'));
+    matching.addEventListener('click', () => toggleStates(alert, matching, states));
+    const triggers = link('', alertUrl(alert), 'ca-stat ca-stat-link');
+    triggers.append(el('strong', 'ca-stat-value', String(alert.triggers)),
+      explained(i18n.plural('ca.card.triggers', alert.triggers), LEARN_OPTIONS.triggers, 'ca-stat-label'));
+    triggers.setAttribute('aria-label', i18n.plural('ca.card.triggersAria', alert.triggers, alert.triggers, alert.name));
+    const last = el('div', 'ca-stat ca-stat-last');
+    const when = el('strong', 'ca-stat-value', alert.lastTriggeredAt ? text.relativeDay(alert.lastTriggeredAt) : '—');
+    if (alert.lastTriggeredAt) when.title = text.dateTime(alert.lastTriggeredAt);
+    last.append(when, el('span', 'ca-stat-label', i18n.t('ca.card.lastTrigger')));
+    stats.append(matching, triggers, last);
+
+    const actions = el('div', 'ca-row-actions');
+    const edit = link(i18n.t('ca.card.edit'), `/custom-alerts/${alert.id}/edit`, 'btn-secondary ca-btn-sm');
+    edit.setAttribute('aria-label', i18n.t('ca.card.editAria', alert.name));
+    edit.title = i18n.t('ca.card.editShortcut');
+    actions.append(edit, switchButton(alert), menu(alert));
+    item.append(main, stats, actions, states);
+    return item;
+  }
+
+  /** Turns an alert on or off at once, then saves it; the message offers to undo, and a failure puts it back. */
+  async function setActive(alert, active, offerUndo = true) {
+    const before = alerts.find(item => item.id === alert.id);
+    if (!before || before.active === active) return;
+    alerts = alerts.map(item => item.id === alert.id ? { ...item, active } : item);
+    render();
+    document.querySelector(`#ca-row-name-${alert.id}`)?.closest('.ca-row')?.querySelector('.ca-switch')?.focus();
+    try {
+      replace(await api(`/api/custom-alerts/${alert.id}/active?value=${active}`, { method: 'POST' }));
+      if (!offerUndo) { notify(''); return; }
+      const undo = el('button', 'ca-text-button ca-undo');
+      undo.type = 'button';
+      undo.append(text.icon('undo'), el('span', null, i18n.t('ca.builder.undo')));
+      undo.addEventListener('click', () => setActive(alert, !active, false));
+      const status = document.querySelector('[data-ca-read-status]');
+      status.replaceChildren(i18n.t(active ? 'ca.list.resumed' : 'ca.list.paused', alert.name), ' ', undo);
+    } catch (error) {
+      alerts = alerts.map(item => item.id === alert.id ? before : item);
+      render();
+      notify(error.message);
+    }
+  }
 
   function switchButton(alert) {
-    const control = el('button', 'ca-switch');
-    control.type = 'button';
-    control.setAttribute('role', 'switch');
-    control.setAttribute('aria-checked', String(alert.active));
-    control.append(el('span', 'ca-switch-track'), el('span', 'ca-switch-label', i18n.t(alert.active ? 'ca.switch.on' : 'ca.switch.off')));
-    control.setAttribute('aria-label', i18n.t('ca.switch.aria', alert.name));
+    const control = text.toggleSwitch(alert.active, i18n.t('ca.switch.aria', alert.name), () => setActive(alert, !alert.active));
     control.classList.add('learn-control');
     control.dataset.learn = LEARN_OPTIONS.active;
     control.dataset.learnTitle = i18n.t('ca.switch.title');
-    control.addEventListener('click', async () => {
-      control.disabled = true;
-      try { replace(await api(`/api/custom-alerts/${alert.id}/active?value=${!alert.active}`, { method: 'POST' })); }
-      catch (error) { notify(error.message); control.disabled = false; }
-    });
+    control.title = `${control.title} (X)`;
     return control;
   }
 
   function menu(alert) {
-    const details = el('details', 'row-menu ca-menu');
-    const summary = el('summary');
-    summary.setAttribute('aria-label', i18n.t('ca.menu.aria', alert.name));
-    summary.title = i18n.t('ca.menu.title');
-    summary.append(el('span', null, '···'));
-    const panel = el('div', 'row-menu-panel');
-    const action = (label, handler, className = '') => {
-      const b = el('button', className, label); b.type = 'button';
-      b.addEventListener('click', async () => { details.open = false; await handler(); });
-      panel.append(b);
-    };
-    action(i18n.t('ca.menu.duplicate'), () => post(`/api/custom-alerts/${alert.id}/duplicate`, created => alerts.unshift(created)));
-    ['DAILY', 'WEEKLY', 'MONTHLY'].filter(interval => alert.intervals.length > 1 || interval !== alert.intervals[0]).forEach(interval =>
-      action(i18n.t('ca.menu.duplicateAs', text.intervalLabel(interval).toLowerCase()),
-        () => post(`/api/custom-alerts/${alert.id}/duplicate?interval=${interval}`, created => alerts.unshift(created))));
-    action(i18n.t(alert.emailEnabled ? 'ca.menu.emailOff' : 'ca.menu.emailOn'),
-      () => post(`/api/custom-alerts/${alert.id}/email?value=${!alert.emailEnabled}`, replace));
-    action(i18n.t(alert.pinned ? 'ca.menu.unpin' : 'ca.menu.pin'),
-      () => post(`/api/custom-alerts/${alert.id}/pinned?value=${!alert.pinned}`, replace));
-    action(i18n.t('ca.menu.delete'), () => confirmDelete(alert), 'danger-text');
-    details.append(summary, panel);
-    return details;
+    const others = ['DAILY', 'WEEKLY', 'MONTHLY'].filter(interval => alert.intervals.length > 1 || interval !== alert.intervals[0]);
+    return text.menu(i18n.t('ca.menu.aria', alert.name), [
+      { label: i18n.t('ca.menu.duplicate'), icon: 'copy', run: () => post(`/api/custom-alerts/${alert.id}/duplicate`, created => alerts.unshift(created)) },
+      { label: i18n.t('ca.menu.duplicateAsLabel'), choices: others.map(interval => ({ label: text.intervalLabel(interval),
+        run: () => post(`/api/custom-alerts/${alert.id}/duplicate?interval=${interval}`, created => alerts.unshift(created)) })) },
+      { label: i18n.t(alert.pinned ? 'ca.menu.unpin' : 'ca.menu.pin'), icon: 'pin',
+        run: () => post(`/api/custom-alerts/${alert.id}/pinned?value=${!alert.pinned}`, replace) },
+      { label: i18n.t(alert.emailEnabled ? 'ca.menu.emailOff' : 'ca.menu.emailOn'), icon: 'mail',
+        run: () => post(`/api/custom-alerts/${alert.id}/email?value=${!alert.emailEnabled}`, replace) },
+      'divider',
+      { label: i18n.t('ca.menu.deleteEllipsis'), icon: 'trash', danger: true, run: () => confirmDelete(alert) }
+    ]);
   }
 
   async function post(url, after) {
@@ -252,35 +275,45 @@
     if (status) status.textContent = message;
   }
 
+  /** Deleting asks first, names what goes with the alert, and offers pausing instead. */
   function confirmDelete(alert) {
-    const dialog = el('dialog', 'wl-dialog ca-confirm');
-    const heading = el('h2', null, i18n.t('ca.delete.title', alert.name));
+    const dialog = el('dialog', 'ca-dialog ca-confirm');
+    const heading = el('h2', null, i18n.t('ca.delete.title'));
     heading.id = 'ca-delete-title';
     dialog.setAttribute('aria-labelledby', heading.id);
-    const detail = el('p', 'wl-muted', alert.triggers
-      ? i18n.plural('ca.delete.withTriggers', alert.triggers, alert.triggers) : i18n.t('ca.delete.text'));
-    const hint = el('p', 'wl-muted', i18n.t('ca.delete.pauseHint'));
-    const status = el('p', 'wl-status');
-    const actions = el('div', 'wl-actions');
-    const cancel = button(i18n.t('common.cancel'), () => dialog.close());
+    const detail = el('p', 'ca-dialog-text');
+    const strong = el('strong', null, alert.name);
+    const rest = alert.triggers ? i18n.plural('ca.delete.withTriggers', alert.triggers, alert.triggers) : i18n.t('ca.delete.text');
+    detail.append(strong, ' ', rest);
+    const hint = el('p', 'ca-muted', i18n.t('ca.delete.pauseHint'));
+    const status = el('p', 'ca-dialog-status');
+    status.setAttribute('role', 'status');
+    const actions = el('div', 'ca-dialog-actions');
+    const cancel = button(i18n.t('common.cancel'), () => dialog.close(), 'btn-secondary ca-btn-ghost');
     const pause = button(i18n.t('ca.delete.pauseInstead'), async () => {
       dialog.close();
-      if (alert.active) await post(`/api/custom-alerts/${alert.id}/active?value=false`, replace);
+      await post(`/api/custom-alerts/${alert.id}/active?value=false`, replace);
     });
-    const remove = button(i18n.t('ca.menu.delete'), async () => {
+    const remove = button(i18n.t('ca.delete.confirm'), async () => {
       remove.disabled = true;
       try {
         await fetchDelete(`/api/custom-alerts/${alert.id}`);
         alerts = alerts.filter(item => item.id !== alert.id);
         dialog.close();
         render();
+        notify(i18n.t('ca.delete.done', alert.name));
       } catch (error) { status.textContent = error.message; remove.disabled = false; }
-    }, 'danger-outline-button');
-    actions.append(cancel, alert.active ? pause : el('span'), remove);
-    dialog.append(heading, detail, hint, status, actions);
+    }, 'ca-btn-danger');
+    actions.append(cancel);
+    if (alert.active) actions.append(pause);
+    actions.append(remove);
+    dialog.append(heading, detail);
+    if (alert.active) dialog.append(hint);
+    dialog.append(status, actions);
     dialog.addEventListener('close', () => dialog.remove());
     document.body.append(dialog);
     dialog.showModal();
+    cancel.focus();
   }
 
   async function fetchDelete(url) {
@@ -293,131 +326,228 @@
     }
   }
 
-  /** The stocks an alert watches, matching ones first, each with "stop for this stock". */
+  /** The stocks an alert watches, opened under its row from the "matching" count. */
   async function toggleStates(alert, trigger, box) {
     const open = trigger.getAttribute('aria-expanded') !== 'true';
     trigger.setAttribute('aria-expanded', String(open));
+    trigger.closest('.ca-row').classList.toggle('is-expanded', open);
     box.hidden = !open;
     if (!open) return;
-    box.replaceChildren(el('p', 'wl-status', i18n.t('ca.states.loading')));
-    try {
-      const states = await api(`/api/custom-alerts/${alert.id}/states`);
-      if (!states.length) { box.replaceChildren(el('p', 'wl-muted', i18n.t('ca.states.none'))); return; }
-      const table = el('table', 'ca-states-table');
-      const head = el('tr');
-      ['stock', 'state', 'action'].forEach(key => { const th = el('th', null, i18n.t(`ca.states.column.${key}`)); th.scope = 'col'; head.append(th); });
-      const thead = el('thead'); thead.append(head);
-      const body = el('tbody');
-      states.forEach(state => {
-        const row = el('tr', `ca-state-${state.state.toLowerCase()}`);
-        const stock = el('td');
-        stock.append(link(state.symbol, `/stock/${encodeURIComponent(state.symbol)}`), el('small', null, state.companyName || ''));
-        const cell = el('td');
-        const pill = el('span', `ca-state-pill learn-term ${state.state.toLowerCase()}`,
-          text.stateLabel(state.state, state.stateIntervals, alert.intervals));
-        pill.dataset.learn = LEARN_OPTIONS[state.state];
-        pill.dataset.learnTitle = i18n.t(`ca.state.${state.state}`);
-        cell.append(pill);
-        if (state.progress) cell.append(el('small', null, text.progressText(state.progress)));
-        else if (state.detail && state.state !== 'MATCHING') cell.append(el('small', null, state.detail));
-        const act = el('td');
-        const toggle = button(i18n.t(state.excluded ? 'ca.states.resume' : 'ca.states.stop'), async () => {
-          toggle.disabled = true;
-          try {
-            replaceQuiet(await api(`/api/custom-alerts/${alert.id}/stocks/${encodeURIComponent(state.symbol)}?stopped=${!state.excluded}`, { method: 'POST' }));
-            trigger.setAttribute('aria-expanded', 'false');
-            await toggleStates(alerts.find(item => item.id === alert.id), trigger, box);
-          } catch (error) { toggle.disabled = false; notify(error.message); }
-        }, 'wl-row-action');
-        act.append(toggle);
-        row.append(stock, cell, act);
-        body.append(row);
-      });
-      table.append(thead, body);
-      const wrap = el('div', 'wl-table-wrap'); wrap.append(table);
-      box.replaceChildren(wrap);
-    } catch (error) {
-      box.replaceChildren(el('p', 'wl-status', error.message));
-    }
+    const heading = el('p', 'ca-row-states-title', i18n.plural('ca.states.title', alert.stocks, alert.stocks));
+    const list = el('div');
+    box.replaceChildren(heading, list);
+    await window.StockWatchCustomAlertStates.render(list, alert, {
+      onChange: updated => { alerts = alerts.map(item => item.id === updated.id ? updated : item); },
+      onError: notify
+    });
   }
 
-  function replaceQuiet(updated) {
-    alerts = alerts.map(alert => alert.id === updated.id ? updated : alert);
+  // ------------------------------------------------------------------ examples
+
+  /** Starter rules as cards, after a "Blank rule" card; each opens the builder filled in with it. */
+  function exampleCards(limit = Infinity, withBlank = true) {
+    const grid = el('div', 'ca-templates');
+    if (withBlank) {
+      const blank = link('', '/custom-alerts/new', 'ca-template ca-template-blank');
+      const plus = el('span', 'ca-template-plus');
+      plus.append(text.icon('plus'));
+      blank.append(plus, el('strong', 'ca-template-name', i18n.t('ca.templates.blank')), el('span', 'ca-template-text', i18n.t('ca.templates.blankText')));
+      grid.append(blank);
+    }
+    text.templates.slice(0, limit).forEach(template => {
+      const item = el('a', 'ca-template');
+      item.href = `/custom-alerts/new?template=${encodeURIComponent(template.id)}`;
+      item.append(el('strong', 'ca-template-name', i18n.t(`ca.template.${template.id}.name`)),
+        el('span', 'ca-template-text', i18n.t(`ca.template.${template.id}.text`)),
+        text.chips(template.definition, definitions, 3));
+      const use = el('span', 'ca-template-use', i18n.t('ca.templates.use'));
+      use.append(text.icon('arrow'));
+      item.append(use);
+      grid.append(item);
+    });
+    return grid;
   }
+
+  function emptyState() {
+    const box = el('section', 'ca-empty');
+    box.setAttribute('aria-labelledby', 'ca-empty-title');
+    const intro = el('div', 'ca-empty-intro');
+    const heading = el('h2', null, i18n.t('ca.empty.title'));
+    heading.id = 'ca-empty-title';
+    const blankRule = link(i18n.t('ca.templates.blank'), '/custom-alerts/new', 'btn-accent');
+    const actions = el('div', 'ca-empty-actions');
+    actions.append(blankRule);
+    const ask = text.askButton();
+    if (ask) { ask.classList.add('is-labelled'); ask.querySelector('.ca-ask-label').textContent = i18n.t('assistant.open'); actions.append(ask); }
+    intro.append(heading, el('p', null, i18n.t('ca.empty.text')), actions);
+    const examples = el('div', 'ca-empty-examples');
+    const shown = compact() ? 3 : Infinity;
+    const grid = exampleCards(shown, false);
+    examples.append(el('h3', null, i18n.t('ca.templates.title')), el('p', 'ca-muted', i18n.t('ca.templates.note')), grid);
+    if (shown < text.templates.length) {
+      const more = button(i18n.t('ca.templates.showAll', text.templates.length), () => { grid.replaceWith(exampleCards(Infinity, false)); more.remove(); },
+        'btn-secondary ca-show-all');
+      examples.append(more);
+    }
+    box.append(intro, examples);
+    return box;
+  }
+
+  /** "New alert ▾": the examples in a dialog, for people who already have alerts. */
+  function openExamples() {
+    const dialog = el('dialog', 'ca-dialog ca-examples-dialog');
+    const head = el('div', 'ca-dialog-head');
+    const heading = el('h2', null, i18n.t('ca.templates.title'));
+    heading.id = 'ca-examples-title';
+    dialog.setAttribute('aria-labelledby', heading.id);
+    const close = el('button', 'ca-icon-button');
+    close.type = 'button';
+    close.setAttribute('aria-label', i18n.t('common.close'));
+    close.title = i18n.t('common.close');
+    close.append(text.icon('close'));
+    close.addEventListener('click', () => dialog.close());
+    head.append(heading, close);
+    const body = el('div', 'ca-dialog-body');
+    body.append(el('p', 'ca-muted', i18n.t('ca.templates.note')), exampleCards());
+    dialog.append(head, body);
+    dialog.addEventListener('close', () => dialog.remove());
+    document.body.append(dialog);
+    dialog.showModal();
+    close.focus();
+  }
+  document.querySelector('[data-ca-examples]')?.addEventListener('click', openExamples);
 
   // ------------------------------------------------------------------ chart alerts
 
-  async function renderChartAlerts() {
-    if (chartAlerts == null) {
-      root.replaceChildren(el('p', 'wl-status', i18n.t('ca.loading')));
-      try { chartAlerts = (await api('/api/chart-alerts/all')).alerts; }
-      catch (error) { root.replaceChildren(el('p', 'wl-status', error.message), button(i18n.t('common.retry'), renderChartAlerts)); return; }
-    }
-    const query = (search?.value || '').trim().toLowerCase();
-    const intro = el('p', 'wl-muted ca-chart-intro', i18n.t('ca.chart.intro'));
-    if (!chartAlerts.length) { root.replaceChildren(intro, el('p', 'wl-muted', i18n.t('ca.chart.none'))); return; }
-    const list = el('div', 'ca-chart-list');
-    chartAlerts.filter(alert => !query || `${alert.label} ${alert.symbol}`.toLowerCase().includes(query)).forEach(alert => {
-      const row = el('article', `ca-chart-row${alert.active ? '' : ' is-paused'}`);
+  const chartSection = document.querySelector('[data-ca-chart-alerts]');
+  let chartAlerts = [];
+
+  async function loadChartAlerts() {
+    try { chartAlerts = (await api('/api/chart-alerts/all')).alerts || []; }
+    catch (error) { chartAlerts = []; }
+    renderChartAlerts();
+  }
+
+  function renderChartAlerts() {
+    if (!chartSection) return;
+    chartSection.hidden = false;
+    chartSection.querySelector('[data-ca-chart-count]').textContent = String(chartAlerts.length);
+    const box = chartSection.querySelector('[data-ca-chart-list]');
+    if (!chartAlerts.length) { box.replaceChildren(el('p', 'ca-muted', i18n.t('ca.chart.none'))); return; }
+    const list = el('div', 'ca-rows ca-chart-rows');
+    list.setAttribute('role', 'list');
+    chartAlerts.forEach(alert => {
+      const item = el('article', `ca-chart-row${alert.active ? '' : ' is-paused'}`);
+      item.setAttribute('role', 'listitem');
       const main = el('div', 'ca-chart-main');
-      main.append(el('strong', null, alert.label));
-      const meta = el('span', 'wl-muted', [alert.symbol, i18n.t(`interval.${({ '1d': 'DAILY', '1wk': 'WEEKLY', '1mo': 'MONTHLY' })[alert.interval] || 'DAILY'}`),
+      const title = el('div', 'ca-row-title');
+      title.append(el('strong', 'ca-chart-name', alert.label));
+      if (!alert.active) title.append(el('span', 'ca-badge', i18n.t('ca.status.paused')));
+      main.append(title, el('p', 'ca-row-meta', [alert.symbol,
+        i18n.t(`interval.${({ '1d': 'DAILY', '1wk': 'WEEKLY', '1mo': 'MONTHLY' })[alert.interval] || 'DAILY'}`),
         i18n.t(alert.sourceKind === 'DRAWING' ? 'ca.chart.drawing' : 'ca.chart.indicator'),
         i18n.has(`chartAlert.condition.${alert.condition}`) ? i18n.t(`chartAlert.condition.${alert.condition}`) : alert.condition,
-        i18n.plural('ca.chart.triggers', alert.triggerCount, alert.triggerCount)].join(' · '));
-      main.append(meta);
-      const actions = el('div', 'ca-card-actions');
-      actions.append(link(i18n.t('ca.chart.open'), `/stock/${encodeURIComponent(alert.symbol)}`, 'btn-secondary'));
+        i18n.plural('ca.chart.triggers', alert.triggerCount, alert.triggerCount)].join(' · ')));
+      const actions = el('div', 'ca-row-actions');
+      actions.append(link(i18n.t('ca.chart.open'), `/stock/${encodeURIComponent(alert.symbol)}`, 'btn-secondary ca-btn-sm'));
       if (convertible(alert)) {
-        const add = link(i18n.t('ca.chart.convert'), `/custom-alerts/new?chartAlert=${alert.id}`, 'btn-secondary learn-control');
+        const add = link(i18n.t('ca.chart.convert'), `/custom-alerts/new?chartAlert=${alert.id}`, 'btn-secondary ca-btn-sm learn-control');
         add.dataset.learn = LEARN_OPTIONS.convert;
         add.dataset.learnTitle = i18n.t('ca.chart.convert');
         actions.append(add);
       }
-      const toggle = button(i18n.t(alert.active ? 'ca.chart.pause' : 'ca.chart.resume'), async () => {
-        toggle.disabled = true;
-        try {
-          const updated = await api(`/api/chart-alerts/${alert.id}`, { method: 'PATCH', body: JSON.stringify({ active: !alert.active }) });
-          chartAlerts = chartAlerts.map(item => item.id === updated.id ? updated : item);
-          renderChartAlerts();
-        } catch (error) { toggle.disabled = false; notify(error.message); }
-      });
-      const remove = button(i18n.t('ca.menu.delete'), async () => {
-        remove.disabled = true;
-        try {
-          await fetchDelete(`/api/chart-alerts/${alert.id}`);
-          chartAlerts = chartAlerts.filter(item => item.id !== alert.id);
-          renderChartAlerts();
-        } catch (error) { remove.disabled = false; notify(error.message); }
-      }, 'danger-outline-button');
-      actions.append(toggle, remove);
-      row.append(main, actions);
-      list.append(row);
+      actions.append(text.menu(i18n.t('ca.menu.aria', alert.label), [
+        { label: i18n.t(alert.active ? 'ca.chart.pause' : 'ca.chart.resume'), run: async () => {
+          try {
+            const updated = await api(`/api/chart-alerts/${alert.id}`, { method: 'PATCH', body: JSON.stringify({ active: !alert.active }) });
+            chartAlerts = chartAlerts.map(other => other.id === updated.id ? updated : other);
+            renderChartAlerts();
+          } catch (error) { notify(error.message); }
+        } },
+        'divider',
+        { label: i18n.t('ca.menu.delete'), icon: 'trash', danger: true, run: async () => {
+          try {
+            await fetchDelete(`/api/chart-alerts/${alert.id}`);
+            chartAlerts = chartAlerts.filter(other => other.id !== alert.id);
+            renderChartAlerts();
+          } catch (error) { notify(error.message); }
+        } }
+      ]));
+      item.append(main, actions);
+      list.append(item);
     });
-    root.replaceChildren(intro, list);
+    box.replaceChildren(list);
   }
 
   /** Indicator alerts and horizontal lines become ordinary conditions; sloped drawings stay on their chart. */
   const convertible = alert => alert.sourceKind === 'INDICATOR' || alert.definition?.geometry === 'HORIZONTAL';
+
+  // ------------------------------------------------------------------ controls
 
   const saved = new URLSearchParams(window.location.search).get('saved');
   if (saved) {
     notify(i18n.t('ca.list.saved'));
     window.history.replaceState(null, '', window.location.pathname);
   }
-  document.querySelectorAll('[data-ca-tab]').forEach(tab => tab.addEventListener('click', () => { filter = tab.dataset.caTab; render(); }));
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => { filter = tab.dataset.caTab; render(); });
+    // Arrow keys move between the filters, as in any tab list.
+    tab.addEventListener('keydown', event => {
+      const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      if (!step) return;
+      event.preventDefault();
+      const next = tabs[(index + step + tabs.length) % tabs.length];
+      filter = next.dataset.caTab;
+      render();
+      next.focus();
+    });
+  });
   let timer;
   search?.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(render, 150); });
-  document.querySelector('[data-ca-read-all]')?.addEventListener('click', async event => {
-    const control = event.currentTarget;
-    control.disabled = true;
+  text.escapeClears(search);
+  text.shortcuts([
+    [['/'], i18n.t('ca.shortcuts.search')], [['n'], i18n.t('ca.shortcuts.new')], [['j', 'k'], i18n.t('ca.shortcuts.move')],
+    [['Enter'], i18n.t('ca.shortcuts.open')], [['e'], i18n.t('ca.shortcuts.edit')], [['x'], i18n.t('ca.shortcuts.toggle')],
+  ]);
+  // "/" jumps to the search and "n" starts a new alert, unless the user is typing.
+  document.addEventListener('keydown', event => {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], dialog')) return;
+    if (event.key === '/' && loaded && alerts.length) { event.preventDefault(); search.focus(); }
+    else if (event.key === 'n') window.location.assign('/custom-alerts/new');
+    else if (event.key === 'j' || event.key === 'k') {
+      const names = [...root.querySelectorAll('.ca-row-name')];
+      if (!names.length) return;
+      const at = names.indexOf(document.activeElement);
+      const next = names[Math.max(0, Math.min(names.length - 1, at < 0 ? 0 : at + (event.key === 'j' ? 1 : -1)))];
+      event.preventDefault();
+      next.focus();
+      next.closest('.ca-row').scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'x') {
+      const row = document.activeElement?.closest?.('.ca-row');
+      if (row) { event.preventDefault(); row.querySelector('.ca-switch')?.click(); }
+    } else if (event.key === 'e') {
+      const row = document.activeElement?.closest?.('.ca-row');
+      const edit = row?.querySelector('.ca-row-actions a');
+      if (edit) window.location.assign(edit.href);
+    }
+  });
+  readAll?.addEventListener('click', async () => {
+    readAll.disabled = true;
     try {
       const result = await api('/api/custom-alerts/read-all', { method: 'POST' });
       notify(i18n.plural('ca.readAll.done', result.updated, result.updated));
       alerts = alerts.map(alert => ({ ...alert, unread: 0 }));
       render();
     } catch (error) { notify(error.message); }
-    control.disabled = false;
+    readAll.disabled = false;
+  });
+  // Rows switch between their wide and narrow layouts; the number of chips shown follows.
+  let wasCompact = compact();
+  window.addEventListener('resize', () => {
+    if (compact() === wasCompact || !loaded) return;
+    wasCompact = compact();
+    render();
   });
   // Deferred scripts run in document order, so the navigation's request helper may not exist yet.
   if (window.StockWatchLists) load();

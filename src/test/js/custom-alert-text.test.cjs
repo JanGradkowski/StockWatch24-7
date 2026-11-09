@@ -28,7 +28,7 @@ test('indicator names show their length but not chart-only zone levels or the ma
   assert.equal(text.operandLabel(rsi({ period: 14, upper: 70, lower: 30 }), definitions), 'RSI (14)', 'saved rules carry every default');
   assert.doesNotMatch(text.operandLabel({ ...rsi({}), output: 'ma' }, definitions), /^RSI \(14\)$/);
   assert.equal(text.operandLabel({ kind: 'INDICATOR', type: 'MACD', parameters: {}, output: 'macd' }, definitions), 'MACD (12)');
-  assert.match(text.operandLabel({ kind: 'INDICATOR', type: 'MACD', parameters: {}, output: 'signal' }, definitions), /^MACD › .+ \(12\)$/);
+  assert.match(text.operandLabel({ kind: 'INDICATOR', type: 'MACD', parameters: {}, output: 'signal' }, definitions), /^MACD [a-z].* \(12\)$/, 'another line is named in words after the indicator');
   assert.equal(text.operandLabel({ kind: 'INDICATOR', type: 'EMA', parameters: { period: 200 }, output: 'value' }, definitions), 'EMA (200)');
   assert.match(text.operandLabel(rsi({ period: 14, upper: 70, lower: 30, maLength: 14 })), /^\S.* \(14\)$/, 'without the catalog only the length');
   dom.window.close();

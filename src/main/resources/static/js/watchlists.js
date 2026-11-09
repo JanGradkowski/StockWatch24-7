@@ -591,7 +591,7 @@
           type.dataset.learn = LEARN_OPTIONS.customChip; type.dataset.learnTitle = i18n.t('followType.CUSTOM');
           group.append(type);
           found.forEach(alert => {
-            const chip = link(alert.name, `/signals?${new URLSearchParams({ customAlertId: alert.id, ticker: cell.dataset.followingSymbol })}`, `wl-custom-chip${alert.active ? '' : ' is-paused'}`);
+            const chip = link(alert.name, `/custom-alerts/${alert.id}?${new URLSearchParams({ ticker: cell.dataset.followingSymbol })}`, `wl-custom-chip${alert.active ? '' : ' is-paused'}`);
             if (!alert.active) chip.title = i18n.t('watchlists.custom.paused');
             group.append(chip);
           });
@@ -626,7 +626,7 @@
     }
     function item(alert) {
       const row = n('div', null, `wl-custom-item${alert.active ? '' : ' is-paused'}`);
-      const name = link(alert.name, `/signals?${new URLSearchParams({ customAlertId: alert.id })}`);
+      const name = link(alert.name, `/custom-alerts/${alert.id}`);
       const facts = [alert.intervals.map(interval => i18n.t(`interval.${interval}`)).join(', '),
         alert.scope === 'SELECTED' ? i18n.plural('watchlists.custom.chosen', alert.stocks, alert.stocks) : i18n.plural('watchlists.custom.all', alert.stocks, alert.stocks),
         i18n.plural('watchlists.custom.matching', alert.matching, alert.matching)];
