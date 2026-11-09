@@ -2020,6 +2020,8 @@ pl: W alercie ustaw przesunięcie wskaźnika na 0.
 
 en: The custom alert trigger was not found.
 pl: Nie znaleziono uruchomienia alertu własnego.
+en: Choose the triggers to delete.
+pl: Wybierz uruchomienia do usunięcia.
 
 en: The custom alert was not found.
 pl: Nie znaleziono alertu własnego.

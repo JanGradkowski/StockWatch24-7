@@ -415,12 +415,12 @@ a.wl-unread-badge.has-unread:hover { filter: brightness(1.08); }
     border: 1px solid var(--glass-border); border-radius: 16px; color: var(--text-color);
     background: var(--surface-solid, var(--bg-color, #101826)); box-shadow: 0 24px 90px #0007;
 }
-.wl-dialog::backdrop { background: #030914aa; backdrop-filter: blur(3px); }
+.wl-dialog::backdrop { background: #030914b8; }
 .wl-dialog:is(.wl-modal, .wl-picker) {
     box-sizing: border-box; max-height: min(90dvh, 920px); padding: 24px; border-radius: var(--radius-md);
     background: var(--surface); box-shadow: var(--shadow-lg);
 }
-.wl-dialog:is(.wl-modal, .wl-picker)::backdrop { background: rgb(3 9 20 / 62%); backdrop-filter: blur(2px); }
+.wl-dialog:is(.wl-modal, .wl-picker)::backdrop { background: rgb(3 9 20 / 72%); }
 :root[data-theme="light"] .wl-dialog:is(.wl-modal, .wl-picker)::backdrop { background: rgb(16 24 40 / 38%); }
 .wl-dialog h2 { margin: 0 0 12px; }
 .wl-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: -6px -10px 8px 0; }

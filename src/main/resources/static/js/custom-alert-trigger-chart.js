@@ -13,6 +13,13 @@
   const FORWARD = [1, 5, 10, 20];
   /** Indicator panes besides price and volume: more would leave each too short to read on a laptop. */
   const MAX_PANELS = 3;
+  /** Oscillators with a fixed range keep it on their pane (RSI from 0 to 100), so a marker cannot stretch it to 120. */
+  const BOUNDED = { RSI: [0, 100], STOCHASTIC: [0, 100], STOCHASTIC_RSI: [0, 100], MFI: [0, 100], ULTIMATE_OSCILLATOR: [0, 100],
+    CONNORS_RSI: [0, 100], SCHAFF_TREND_CYCLE: [0, 100], AROON: [0, 100], ADX_DMI: [0, 100], CHOPPINESS: [0, 100],
+    RELATIVE_VOLATILITY_INDEX: [0, 100], WILLIAMS_R: [-100, 0], CMO: [-100, 100], RCI: [-100, 100], SMI: [-100, 100], AROON_OSCILLATOR: [-100, 100] };
+  /** Candles shown before the trigger at most, and empty bars after the last candle so labels there stay inside the chart. */
+  const LOOK_BACK = { wide: 120, narrow: 45 };
+  const RIGHT_PADDING = { wide: 12, narrow: 8 };
   // Dark-theme colours; StockWatchCharts swaps them for their light partners.
   const UP = '#64e8bd';
   const DOWN = '#ff647c';
@@ -217,14 +224,14 @@
       if (!response.ok) throw new Error(String(response.status));
       const data = await response.json();
       if (!Array.isArray(data.candles) || data.candles.length < 2) {
-        host.closest('.chart-tools-frame').hidden = true;
+        host.hidden = true;
         status.textContent = i18n.t('ca.price.none');
         return;
       }
       status.textContent = '';
       draw(data, catalog.byType);
     } catch (error) {
-      host.closest('.chart-tools-frame').hidden = true;
+      host.hidden = true;
       status.textContent = i18n.t('ca.chart.failed');
     }
   }
@@ -247,8 +254,8 @@
 
     // Taller with each pane, so the price pane keeps its height.
     const small = narrow();
-    const priceHeight = small ? 300 : 380;
-    const paneHeight = pane => pane === 'volume' ? (small ? 80 : 96) : (small ? 112 : 136);
+    const priceHeight = small ? 280 : 360;
+    const paneHeight = pane => pane === 'volume' ? (small ? 72 : 88) : (small ? 120 : 150);
     host.style.height = `${priceHeight + plan.panes.slice(1).reduce((sum, pane) => sum + paneHeight(pane), 0)}px`;
 
     const chart = charts.createChart(host, {
@@ -256,14 +263,39 @@
       layout: { background: { type: 'solid', color: 'transparent' } },
       crosshair: { mode: 0 },
       // Candles are narrow on a phone: more space after the last one keeps a centred marker label inside the chart.
-      timeScale: { rightOffset: small ? 12 : 6, timeVisible: false },
+      timeScale: { rightOffset: small ? RIGHT_PADDING.narrow : RIGHT_PADDING.wide, timeVisible: false },
       handleScroll: true,
       handleScale: true
     });
+    const closeAtTrigger = bars[trigger].close;
+    const decimals = Math.abs(closeAtTrigger) < 1 ? 4 : 2;
     const candles = chart.addCandlestickSeries({
-      upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false
+      upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false, lastValueVisible: false, priceLineVisible: false,
+      // Tick labels right beside the trigger close's tag stay blank, so the axis never shows two numbers on top of each other.
+      priceFormat: { type: 'custom', minMove: 10 ** -decimals, formatter: value => {
+        const label = text.number(Number(value.toFixed(decimals)));
+        if (Math.abs(value - closeAtTrigger) < 10 ** -decimals / 2) return label;
+        const at = candles.priceToCoordinate(value);
+        const tag = candles.priceToCoordinate(closeAtTrigger);
+        return at !== null && tag !== null && Math.abs(at - tag) < 14 ? '' : label;
+      } }
     });
     candles.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+    // The price axis names the trigger candle's close, the price the header quotes, not the latest close.
+    const triggerClose = candles.createPriceLine({
+      price: closeAtTrigger, color: accent(), lineWidth: 1, lineStyle: LWC.LineStyle.Dotted, axisLabelVisible: true, title: ''
+    });
+    // Candle data is sometimes revised after a check (a late print, an adjustment): the header keeps the close the
+    // alert read, and says so when the chart's candle now differs from it.
+    const recorded = Number(page.dataset.close);
+    const revised = Number.isFinite(recorded) && Math.abs(recorded - closeAtTrigger) > Math.max(0.005, Math.abs(recorded) * 0.0005);
+    const closeItem = document.querySelector('[data-ca-close-item]');
+    if (revised && closeItem) {
+      const explanation = i18n.t('ca.trigger.closeRevised', text.number(recorded));
+      closeItem.replaceChildren(el('span', null, i18n.t('ca.trigger.closeAtCheck', text.number(recorded), text.number(closeAtTrigger))),
+        text.icon('info'), el('span', 'visually-hidden', explanation));
+      closeItem.title = explanation;
+    }
 
     let volumeSeries = null;
     if (plan.volume) {
@@ -280,8 +312,11 @@
       visible: true, series: [], lines: [], overlays: [], fills: [], uses: new Set(), note: null
     }));
     const markers = new Map();
+    // The last candle with a labelled marker: the opening view leaves room for its label.
+    let lastLabelled = -1;
     const addMarker = (target, marker, layer = null) => {
       if (!target) return;
+      if (marker.text && indexOf.has(Number(marker.time))) lastLabelled = Math.max(lastLabelled, indexOf.get(Number(marker.time)));
       if (!markers.has(target)) markers.set(target, []);
       markers.get(target).push({ marker, layer });
     };
@@ -297,10 +332,20 @@
         const view = series.get(id);
         const pane = plan.paneOf.get(id);
         if (lines.has(id) || !view || view.error || pane === undefined || pane < 0) return;
+        const operand = operandOf(layer.condition, role);
+        const bounds = pane > 0 ? BOUNDED[operand?.type] : null;
+        // Below the price, only the rule's levels label the axis: a last-value label there would sit on top of them.
         const options = {
-          color: layer.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+          color: layer.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: pane === 0, crosshairMarkerVisible: false,
           lineStyle: role === 'subject' ? LWC.LineStyle.Solid : LWC.LineStyle.Dashed
         };
+        // A bounded pane's axis names only its ends and the rule's levels (RSI 30 and 70), so no tick label sits under them.
+        const shown = new Set(bounds || []);
+        if (bounds) {
+          options.autoscaleInfoProvider = () => ({ priceRange: { minValue: bounds[0], maxValue: bounds[1] } });
+          options.priceFormat = { type: 'custom', minMove: 1,
+            formatter: value => Math.abs(value - Math.round(value)) < 0.01 && shown.has(Math.round(value)) ? String(Math.round(value)) : '' };
+        }
         const line = view.style === 'HISTOGRAM'
           ? chart.addHistogramSeries({ color: layer.color, priceLineVisible: false, lastValueVisible: false }, pane)
           : chart.addLineSeries(options, pane);
@@ -310,7 +355,8 @@
         if (pane > 0) (view.references || []).forEach(price => line.createPriceLine({
           price, color: MUTED, lineWidth: 1, lineStyle: LWC.LineStyle.Dotted, axisLabelVisible: false
         }));
-        lines.set(id, { line, pane, values: align(view.points, indexOf, bars.length) });
+        if (bounds) line.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 } });
+        lines.set(id, { line, pane, bounded: Boolean(bounds), shown, values: align(view.points, indexOf, bars.length) });
       });
     });
 
@@ -326,7 +372,8 @@
       if (operand?.kind === 'PRICE') return operand.field === 'VOLUME' ? { series: volumeSeries, pane: 1, candles: false }
         : { series: candles, pane: 0, candles: true };
       const line = lines.get(id);
-      return line ? { series: line.line, pane: line.pane, candles: line.pane === 0, histogram: series.get(id)?.style === 'HISTOGRAM' } : null;
+      return line ? { series: line.line, pane: line.pane, candles: line.pane === 0, bounded: line.bounded, shown: line.shown,
+        histogram: series.get(id)?.style === 'HISTOGRAM' } : null;
     };
 
     const overlay = document.createElement('div');
@@ -382,12 +429,18 @@
     // The axis label already gives the level; a title beside it would repeat it. An indicator's pane always shows
     // the rule's levels (RSI 30 and 70); a price pane does not, so a distant level cannot flatten the candles.
     const levels = new Map();
+    const drawnLevels = new Map();
     function threshold(layer, target, price) {
       if (!target?.series || !Number.isFinite(price)) return;
+      const key = price;
+      if (!drawnLevels.has(target.series)) drawnLevels.set(target.series, new Set());
+      if (drawnLevels.get(target.series).has(key)) return;
+      drawnLevels.get(target.series).add(key);
       layer.lines.push(target.series.createPriceLine({
         price, color: layer.color, lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: true, title: ''
       }));
-      if (target.pane === 0 || target.series === volumeSeries) return;
+      if (target.bounded) target.shown.add(Math.round(price));
+      if (target.pane === 0 || target.series === volumeSeries || target.bounded) return;
       if (!levels.has(target.series)) {
         const wanted = [];
         levels.set(target.series, wanted);
@@ -492,7 +545,11 @@
       let caption = '';
       if (operator.startsWith('CHANGE') && facts.change != null) caption = i18n.plural('ca.chart.change', count, signed(facts.change), count);
       else if (operator.startsWith('NEW_')) caption = i18n.plural(`ca.chart.${operator === 'NEW_HIGH' ? 'newHigh' : 'newLow'}`, count, count);
-      else if (facts.value != null && (!target.candles || matched !== trigger)) caption = short(Number(facts.value));
+      else if (facts.value != null && target.candles && matched !== trigger) caption = short(Number(facts.value));
+      const lower = ['BELOW', 'CROSSES_BELOW', 'FALLING', 'CHANGE_BELOW', 'NEW_LOW'].includes(operator);
+      if (steps.has(condition.id) && facts.candles > 1 && (lower ? facts.low : facts.high) != null) {
+        layer.value = i18n.t(lower ? 'ca.evidence.lowest' : 'ca.evidence.highest', short(Number(lower ? facts.low : facts.high)));
+      } else if (facts.value != null && !target.candles) layer.value = short(Number(facts.value));
       if (caption || !target.candles) {
         addMarker(target.series, { time: times[matched], position: 'aboveBar', color: layer.color, shape: 'circle',
           size: target.candles ? 0.8 : 1, text: caption }, layer);
@@ -541,6 +598,7 @@
             lineStyle: condition.family === 'HARMONIC_FORMATION' ? LWC.LineStyle.Dashed : LWC.LineStyle.Solid
           }, 0);
           path.setData(points.map(point => ({ time: Number(point.time), value: Number(point.price) })));
+          points.filter(point => point.label && indexOf.has(Number(point.time))).forEach(point => { lastLabelled = Math.max(lastLabelled, indexOf.get(Number(point.time))); });
           path.setMarkers(points.filter(point => point.label).map(point => ({
             time: Number(point.time), position: point.pivot === 'HIGH' ? 'aboveBar' : 'belowBar', color: layer.color,
             shape: 'circle', size: 0.6, text: point.label
@@ -549,7 +607,7 @@
         }
         if (detected >= 0) {
           addMarker(candles, { time: times[detected], position: bullish ? 'belowBar' : 'aboveBar', color: layer.color,
-            shape: bullish ? 'arrowUp' : 'arrowDown', text: name }, layer);
+            shape: bullish ? 'arrowUp' : 'arrowDown', text: points.length >= 2 ? '' : name }, layer);
         } else if (anchor >= 0) {
           addMarker(candles, { time: times[anchor], position: bullish ? 'belowBar' : 'aboveBar', color: layer.color,
             shape: 'circle', text: name }, layer);
@@ -615,14 +673,19 @@
     const triggerMarker = { time: times[trigger], position: 'belowBar', color: accent(), shape: 'arrowUp' };
     charts.preserveColors([triggerMarker.color]);
     addMarker(candles, triggerMarker);
-    const returns = JSON.parse(document.querySelector('[data-ca-next]')?.dataset.returns || '{}');
-    let forward = 0;
-    FORWARD.forEach(count => {
-      const value = returns[String(count)];
+    const follow = Number(page.dataset.outcomeCandles) || 10;
+    const outcome = document.querySelector('[data-ca-next]');
+    const settled = outcome?.dataset.outcomeStatus === 'COMPLETE' && outcome.dataset.outcome !== undefined && outcome.dataset.outcome !== '';
+    const returns = JSON.parse(outcome?.dataset.returns || '{}');
+    // The closes "What happened next" lists: 1, 5, 10 and 20 candles on, those inside the follow-up window, and its end.
+    const marks = FORWARD.filter(count => count < follow).map(count => [count, returns[String(count)]]);
+    if (settled) marks.push([follow, Number(outcome.dataset.outcome)]);
+    const forward = [];
+    marks.forEach(([count, value]) => {
       if (trigger + count >= bars.length || value === undefined || value === null) return;
-      forward++;
-      addMarker(candles, { time: times[trigger + count], position: 'belowBar', color: value >= 0 ? UP : DOWN, shape: 'circle',
-        size: 0.5, text: i18n.t('ca.chart.forward', count, signed(Number(value))) });
+      forward.push(count);
+      // Dots only: "What happened next" lists the values, and labels on neighbouring candles would pile up.
+      addMarker(candles, { time: times[trigger + count], position: 'belowBar', color: value >= 0 ? UP : DOWN, shape: 'circle', size: 0.5 });
     });
     const others = new Map((data.triggers || []).map(other => [`trigger-${other.id}`, other]));
     others.forEach((other, id) => {
@@ -641,9 +704,20 @@
       if (other) window.location.assign(`/custom-alerts/triggers/${other.id}${window.location.search}`);
     });
     if (trigger < bars.length - 1) {
-      const after = el('div', 'ca-chart-after');
+      const after = el('div', `ca-chart-after${settled ? (Number(outcome.dataset.outcome) >= 0 ? ' is-up' : ' is-down') : ''}`);
+      let label = null;
+      if (settled) {
+        label = el('span', 'ca-chart-after-result', i18n.t(small ? 'ca.chart.windowResultShort' : 'ca.chart.windowResult', text.signed(Number(outcome.dataset.outcome)), follow));
+        after.append(label);
+      }
       overlay.append(after);
-      placed.push({ node: after, from: trigger + 1, to: bars.length - 1, kind: 'after' });
+      placed.push({ node: after, label, from: trigger + 1, to: Math.min(bars.length - 1, trigger + follow), kind: 'after' });
+    }
+    if (revised) {
+      const seen = el('div', 'ca-chart-seen');
+      seen.append(el('span', null, i18n.t('ca.chart.alertSaw', text.number(recorded))));
+      overlay.append(seen);
+      placed.push({ node: seen, from: Math.max(0, trigger - 2), to: trigger, kind: 'seen', price: recorded });
     }
     const line = el('div', 'ca-chart-trigger-line');
     const tag = el('div', 'ca-chart-trigger-tag', i18n.t('ca.chart.triggered'));
@@ -658,7 +732,7 @@
     chart.panes().forEach((pane, at) => pane.setStretchFactor(at === 0 ? priceHeight : paneHeight(plan.panes[at])));
     // Room above the candles for the window brackets and below them for the strips, so marker labels stay clear.
     candles.priceScale().applyOptions({ scaleMargins: {
-      top: Math.min(0.4, 0.12 + (Math.min(bandRows, 4) * 24 + 8) / priceHeight),
+      top: Math.min(0.42, 0.12 + (Math.min(bandRows, 4) * 24 + 34) / priceHeight),
       bottom: Math.min(0.25, 0.08 + (stripRows * 7 + 6) / priceHeight)
     } });
 
@@ -693,11 +767,17 @@
         if (item.kind === 'tag') {
           const size = item.node.offsetWidth;
           item.node.style.left = `${Math.max(0, Math.min(width - size, left - size / 2))}px`;
-          item.node.style.top = `${height + 4}px`;
+          item.node.style.top = '4px';
           return;
         }
         item.node.style.left = `${start}px`;
         item.node.style.width = `${end - start}px`;
+        if (item.kind === 'seen') {
+          const top = candles.priceToCoordinate(item.price);
+          if (top === null) { item.node.hidden = true; return; }
+          item.node.style.top = `${top}px`;
+          return;
+        }
         if (item.kind === 'box') {
           const top = candles.priceToCoordinate(item.high);
           const bottom = candles.priceToCoordinate(item.low);
@@ -705,7 +785,7 @@
           item.node.style.top = `${top - 5}px`;
           item.node.style.height = `${Math.max(10, bottom - top + 10)}px`;
         } else if (item.kind === 'band') {
-          item.node.style.top = `${6 + item.row * 24}px`;
+          item.node.style.top = `${30 + item.row * 24}px`;
           // A label wider than its bracket runs to the left when it would leave the chart.
           item.tag.classList.toggle('to-left', start + item.tag.offsetWidth + 8 > width);
         } else if (item.kind === 'strip') {
@@ -713,6 +793,11 @@
         } else {
           item.node.style.top = '0px';
           item.node.style.height = `${height}px`;
+          if (item.label) {
+            // In the price pane, under the brackets; against the window's right side when it would leave the chart.
+            item.label.style.top = `${30 + bandRows * 24}px`;
+            item.label.classList.toggle('to-right', start + item.label.offsetWidth + 12 > width);
+          }
         }
       });
     }
@@ -722,13 +807,17 @@
     // A price pane rescaled by dragging its axis moves the pattern frames too.
     chart.subscribeCrosshairMove(schedule);
 
-    // Open on the trigger with what led to it: the earliest window, pattern or wave drawn, and some candles after.
-    // On a phone longer windows run off the left edge instead of squeezing the candles.
-    const wanted = Math.min(trigger - (small ? 35 : 60), firstPoint - 4,
+    // Open on the trigger with what led to it: the earliest window, pattern or wave drawn (at most LOOK_BACK candles
+    // back; a long wave count runs off the left edge rather than squeezing the candles), some candles after, and empty
+    // bars after the last candle so the trigger's arrow and labels stay clear of the price axis.
+    const wanted = Math.min(trigger - (small ? 30 : 60), firstPoint - 4,
       ...placed.filter(item => item.kind === 'band' || item.kind === 'box').map(item => item.from - 4));
-    const earliest = small ? Math.max(wanted, trigger - 40) : wanted;
+    const earliest = Math.max(wanted, trigger - (small ? LOOK_BACK.narrow : LOOK_BACK.wide));
+    // On the right: the follow-up window and every labelled marker with room for its label (about a dozen candles on a
+    // phone), so neither a label nor the last month's name is cut by the price axis.
+    const last = Math.max(trigger + (small ? 10 : 25), small ? trigger + follow + 2 : 0, lastLabelled >= 0 ? lastLabelled + (small ? 12 : 6) : 0);
     chart.timeScale().setVisibleLogicalRange({
-      from: Math.max(-0.5, earliest), to: Math.min(bars.length - 1, trigger + (small ? 12 : 25)) + (small ? 9 : 3)
+      from: Math.max(-0.5, earliest), to: Math.min(bars.length - 1, last) + (small ? RIGHT_PADDING.narrow : RIGHT_PADDING.wide)
     });
 
     // ---------------------------------------------------------------- legend
@@ -750,8 +839,10 @@
       const chip = el('button', `ca-chart-chip ca-color-${layer.position % PALETTE.length}${met ? ' is-met' : ''}`);
       chip.type = 'button';
       chip.setAttribute('aria-pressed', 'true');
+      chip.dataset.position = String(layer.position);
       chip.append(el('i', 'ca-swatch'), el('span', 'ca-chart-state', met ? '✓' : '–'),
         el('span', null, describeLayer(layer.condition, definitions)));
+      if (layer.value) chip.append(el('strong', 'ca-chart-value', layer.value));
       if (layer.note) chip.append(el('small', null, layer.note));
       chip.title = i18n.t('ca.chart.toggle');
       chip.setAttribute('aria-label', `${i18n.t(met ? 'ca.readout.met' : 'ca.readout.unmet')}: ${describeLayer(layer.condition, definitions)}`);
@@ -768,10 +859,64 @@
       return chip;
     });
     const keys = [el('span', 'ca-chart-key trigger', i18n.t('ca.chart.triggered'))];
-    if (trigger < bars.length - 1) keys.push(el('span', 'ca-chart-key after', i18n.t('ca.chart.after')));
-    if (forward) keys.push(el('span', 'ca-chart-key forward', i18n.t('ca.chart.forwardKey')));
+    if (trigger < bars.length - 1) keys.push(el('span', 'ca-chart-key after', i18n.plural('ca.chart.window.follow', follow, follow)));
+    if (forward.length) {
+      const counts = new Intl.ListFormat(i18n.tag || 'en', { type: 'conjunction' }).format(forward.map(String));
+      keys.push(el('span', 'ca-chart-key forward', i18n.plural('ca.chart.forwardKey', forward.at(-1), counts)));
+    }
     if ([...others.values()].some(other => indexOf.has(Number(other.candle)))) keys.push(el('span', 'ca-chart-key other', i18n.t('ca.chart.others')));
     legend.replaceChildren(...chips, ...keys);
+
+    // Pointing at a condition, on the chart or in "Why it triggered", lights up both, and its brackets and frames.
+    const link = position => {
+      chips.forEach(chip => chip.classList.toggle('is-linked', chip.dataset.position === position));
+      document.querySelectorAll('.ca-evidence-item[data-position]').forEach(item => item.classList.toggle('is-linked', item.dataset.position === position));
+      layers.forEach(layer => layer.overlays.forEach(item => item.node.classList.toggle('is-linked', String(layer.position) === position)));
+    };
+    const pointAt = selector => event => link(event.target.closest?.(selector)?.dataset.position ?? null);
+    legend.addEventListener('mouseover', pointAt('.ca-chart-chip'));
+    legend.addEventListener('focusin', pointAt('.ca-chart-chip'));
+    legend.addEventListener('mouseleave', () => link(null));
+    legend.addEventListener('focusout', () => link(null));
+    const evidence = document.querySelector('[data-ca-evidence]');
+    evidence?.addEventListener('mouseover', pointAt('.ca-evidence-item'));
+    evidence?.addEventListener('mouseleave', () => link(null));
+    evidence?.addEventListener('focusin', pointAt('.ca-evidence-item'));
+    evidence?.addEventListener('focusout', () => link(null));
+    // Touch screens have no hover: a tap on a card shows its marks for a moment, with the chart brought into view.
+    let unlink = 0;
+    evidence?.addEventListener('click', event => {
+      const item = event.target.closest?.('.ca-evidence-item');
+      if (!item || !window.matchMedia('(hover: none)').matches) return;
+      link(item.dataset.position);
+      const box = host.getBoundingClientRect();
+      if (box.top < 0 || box.bottom > window.innerHeight) host.scrollIntoView({ block: 'center' });
+      clearTimeout(unlink);
+      unlink = setTimeout(() => link(null), 2000);
+    });
+
+    // Stepping to this alert's previous or next trigger keeps the conditions shown and the zoom around the trigger.
+    const VIEW_KEY = 'stockwatch.customAlertTriggerView';
+    document.querySelectorAll('.ca-trigger-pager a.ca-pager-step').forEach(link => link.addEventListener('click', () => {
+      const range = chart.timeScale().getVisibleLogicalRange();
+      try {
+        sessionStorage.setItem(VIEW_KEY, JSON.stringify({ alert: page.dataset.alertId, shown: chips.map(chip => chip.getAttribute('aria-pressed') === 'true'),
+          before: range ? trigger - range.from : null, after: range ? range.to - trigger : null }));
+      } catch { /* storage off: the next trigger opens on its own view */ }
+    }));
+    let carried = null;
+    try {
+      carried = JSON.parse(sessionStorage.getItem(VIEW_KEY) || 'null');
+      sessionStorage.removeItem(VIEW_KEY);
+    } catch { /* storage off */ }
+    if (carried && carried.alert === page.dataset.alertId) {
+      if (Array.isArray(carried.shown) && carried.shown.length === chips.length) {
+        chips.forEach((chip, at) => { if ((chip.getAttribute('aria-pressed') === 'true') !== carried.shown[at]) chip.click(); });
+      }
+      if (Number.isFinite(carried.before) && Number.isFinite(carried.after)) {
+        chart.timeScale().setVisibleLogicalRange({ from: Math.max(-0.5, trigger - carried.before), to: trigger + carried.after });
+      }
+    }
 
     window.addEventListener('stockwatch:themechange', () => {
       layers.forEach(layer => layer.fills.forEach(paint => paint()));
@@ -779,13 +924,16 @@
       window.requestAnimationFrame(() => {
         triggerMarker.color = accent();
         charts.preserveColors([triggerMarker.color]);
+        triggerClose.applyOptions({ color: accent() });
         applyMarkers();
       });
       schedule();
     });
 
-    window.StockWatchChartTools?.attach({ chart, series: candles, container: host, symbol: page.dataset.symbol, interval: data.interval });
     layout();
+    // "What happened next" says how far its follow-up window has got, and when the next candle closes.
+    document.dispatchEvent(new CustomEvent('stockwatch:trigger-chart', { detail: {
+      candlesSince: Math.max(0, bars.length - 1 - trigger), lastCandle: times[bars.length - 1], interval: data.interval, revised } }));
   }
 
   load();

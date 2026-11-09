@@ -24,8 +24,9 @@ their stock page. Every page id below can be used in `needPage`.
 - `technical-outlook` — `/stock/{symbol}/technical-outlook` and `/technical-outlook/changes/{id}`: one
   stock's full outlook report, and the report of one outlook change.
 - `signals` — `/signals`, **{{msg:sidebar.signals}}**: the archive of technical signals (candlestick,
-  Elliott Wave, harmonic, outlook changes, chart alert and custom alert triggers) with filters. With
-  `?customAlertId=` it shows one custom alert's triggers.
+  Elliott Wave, harmonic, outlook changes, chart alert and custom alert triggers) with filters.
+- `custom-alert` — `/custom-alerts/{id}`: one custom alert: its rule, how its triggers did, the stocks it
+  watches, and all its triggers.
 - `signal-detail` — `/alerts/signals/{id}` and historical pattern pages under `/stock/{symbol}/…`: one
   signal's report: chart, score, trade plan, outcome.
 - `ticker-alerts` — `/ticker-alerts`, `/activity-signals`: insider and congressional trades in stocks the

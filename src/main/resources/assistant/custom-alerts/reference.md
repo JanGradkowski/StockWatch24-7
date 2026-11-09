@@ -10,19 +10,20 @@ monthly only: there are no intraday alerts.
 
 ## The builder, top to bottom
 
+On wide screens a step list on the left (**{{msg:customAlerts.builder.step.name}}**,
+**{{msg:customAlerts.builder.step.rule}}**, **{{msg:customAlerts.builder.step.when}}**,
+**{{msg:customAlerts.builder.step.where}}**) marks each step done, needing attention or not started, and jumps to it.
+
 **1 · {{msg:customAlerts.builder.step.name}}** — **{{msg:customAlerts.builder.name}}** (up to 80
 characters; if left empty it is named after the first condition when saved) and
-**{{msg:customAlerts.builder.description}}**. While the rule is empty, a row of examples appears here:
-"{{msg:js.ca.builder.startWith}}" with one button per example (see "Examples in the builder").
+**{{msg:customAlerts.builder.description}}**.
 
 **2 · {{msg:customAlerts.builder.step.rule}}**
-- **{{msg:customAlerts.builder.checkEvery}}**: tick **{{msg:customAlerts.builder.interval.DAILY}}**,
-  **{{msg:customAlerts.builder.interval.WEEKLY}}**, **{{msg:customAlerts.builder.interval.MONTHLY}}** or several of
-  them. With several, the same rule runs on each interval's own candles (windows and quiet periods count that
-  interval's candles), each trigger names its interval, and the preview has a toggle to test each one.
-  {{learn:customAlerts.interval}}
-- **{{msg:customAlerts.builder.addCondition}}** opens the window **{{msg:js.ca.conditionPicker.title}}**
-  with these choices (each creates a condition you can then change):
+- While the rule is empty it says "{{msg:js.ca.builder.emptyTitle}}" and offers three examples
+  ("{{msg:js.ca.builder.startWith}}") plus a link to all of them (see "Examples in the builder").
+- **{{msg:customAlerts.builder.addCondition}}** opens the window **{{msg:js.ca.conditionPicker.title}}**: a search
+  field (**{{msg:js.ca.conditionPicker.search}}**; typing an indicator's name lists matching indicators too) and
+  these choices in sections (each creates a condition you can then change):
   - **{{msg:js.ca.picker.rsi.title}}** — RSI (14) is below 30.
   - **{{msg:js.ca.picker.maCross.title}}** — EMA (50) crosses above EMA (200).
   - **{{msg:js.ca.picker.volume.title}}** — Relative volume is above 2.
@@ -38,42 +39,55 @@ characters; if left empty it is named after the first condition when saved) and
   - **{{msg:js.ca.picker.anyIndicator.title}}** — opens **{{msg:js.ca.indicatorDialog.title}}** to pick any
     indicator from the list below.
   - **{{msg:js.ca.picker.sequence.title}}** — starts an ordered sequence (see "Sequences").
-- **{{msg:customAlerts.builder.addGroup}}** adds another group (see "Groups").
+- **{{msg:customAlerts.builder.addGroup}}** adds another group (see "Groups"). When the whole rule is one
+  sequence, it grows from inside the sequence instead: **{{msg:js.ca.builder.addStep}}** and
+  **{{msg:js.ca.builder.combine}}**.
 
-**3 · {{msg:customAlerts.builder.step.when}}** — one of:
-- **{{msg:customAlerts.mode.BECOMES_TRUE}}** (default, recommended): {{msg:customAlerts.mode.BECOMES_TRUE.help}}
-- **{{msg:customAlerts.mode.ONCE}}**: {{msg:customAlerts.mode.ONCE.help}}
-- **{{msg:customAlerts.mode.EVERY_CANDLE}}**: {{msg:customAlerts.mode.EVERY_CANDLE.help}}
-
-Then **{{msg:customAlerts.builder.quiet}}** (0–60 {{msg:customAlerts.builder.candlesUnit}}, default 0):
-{{learn:customAlerts.quiet}} And **{{msg:customAlerts.builder.outcome}}** (1–60, default 10):
-{{learn:customAlerts.outcome}}
+**3 · {{msg:customAlerts.builder.step.when}}**
+- **{{msg:customAlerts.builder.checkEvery}}**: tick **{{msg:customAlerts.builder.interval.DAILY}}**,
+  **{{msg:customAlerts.builder.interval.WEEKLY}}**, **{{msg:customAlerts.builder.interval.MONTHLY}}** or several of
+  them. With several, the same rule runs on each interval's own candles (windows and quiet periods count that
+  interval's candles), each trigger names its interval, and the preview has a toggle to test each one.
+  {{learn:customAlerts.interval}}
+- **{{msg:customAlerts.builder.firesLabel}}** — one of:
+  - **{{msg:customAlerts.mode.BECOMES_TRUE}}** (default, recommended): {{msg:customAlerts.mode.BECOMES_TRUE.help}}
+  - **{{msg:customAlerts.mode.ONCE}}**: {{msg:customAlerts.mode.ONCE.help}}
+  - **{{msg:customAlerts.mode.EVERY_CANDLE}}**: {{msg:customAlerts.mode.EVERY_CANDLE.help}}
+- "{{msg:customAlerts.builder.quietBefore}} … {{msg:customAlerts.builder.candlesUnit}}" (0–60, default 0):
+  {{learn:customAlerts.quiet}}
 
 **4 · {{msg:customAlerts.builder.step.where}}** — {{msg:customAlerts.builder.whereHelp}} Tick a watchlist,
 then choose **{{msg:js.ca.targets.allStocks}}** ({{msg:js.ca.targets.allNote}}) or
 **{{msg:js.ca.targets.chosenStocks}}** (tick members). A list whose allowed signal types exclude custom
 alerts cannot be ticked. To watch a single stock that is in no list, type its ticker under the lists and
 press **{{msg:js.ca.targets.singleAdd}}**; StockWatch asks which watchlist it goes in (or a new one) and
-adds it when the alert is saved. **{{msg:customAlerts.builder.notifyExisting}}**: {{learn:customAlerts.notifyExisting}}
-An account can monitor a limited number of instruments in total; the step shows how many the alert adds.
+adds it when the alert is saved. An alert cannot be saved without stocks to watch: Save then jumps here.
+An account can monitor a limited number of instruments in total; the preview shows how many the alert adds.
+Under **{{msg:customAlerts.builder.afterTitle}}**:
+- **{{msg:customAlerts.builder.email}}** (ticked by default). {{msg:customAlerts.builder.emailNote}}
+  {{msg:customAlerts.builder.emailSettings}} (`/settings/analysis-alerts`).
+- **{{msg:customAlerts.builder.notifyExisting}}**: {{learn:customAlerts.notifyExisting}}
+- "{{msg:customAlerts.builder.outcomeBefore}} … {{msg:customAlerts.builder.outcomeAfter}}" (1–60, default 10):
+  {{learn:customAlerts.outcome}}
 
-**5 · {{msg:customAlerts.builder.step.notify}}** — **{{msg:customAlerts.builder.email}}** (ticked by
-default). {{msg:customAlerts.builder.emailNote}} {{msg:customAlerts.builder.emailSettings}} (`/settings/analysis-alerts`).
+**{{msg:customAlerts.preview.title}}** (right side; on phones a **{{msg:customAlerts.preview.title}}** button in the
+Save bar opens it as a sheet, and step 2 shows the latest reading) — {{learn:customAlerts.preview}}
+Type a ticker in **{{msg:customAlerts.preview.testOn}}** and press **{{msg:customAlerts.preview.test}}** (or
+Ctrl+Enter anywhere). It shows whether the stock matches now, "{{msg:js.ca.preview.conditionsMet}}", a strip of
+past triggers (green where the price was higher afterwards, red where lower) and what the price did after them.
+Each condition card also shows **{{msg:js.ca.readout.met}}** / **{{msg:js.ca.readout.unmet}}** for the test stock.
 
-**{{msg:customAlerts.preview.title}}** (right side; below the form on phones) — {{learn:customAlerts.preview}}
-Type a ticker in **{{msg:customAlerts.preview.testOn}}** and press **{{msg:customAlerts.preview.test}}**.
-It shows whether the stock matches now, "{{msg:js.ca.preview.conditionsMet}}", a strip of past triggers
-and what the price did after them. Each condition card also shows **{{msg:js.ca.readout.met}}** /
-**{{msg:js.ca.readout.unmet}}** for the test stock.
-
-**{{msg:customAlerts.builder.save}}** in the footer saves; **{{msg:common.cancel}}** leaves without saving.
+The Save bar at the bottom says what the alert will watch, or what is still missing (with its step).
+**{{msg:customAlerts.builder.save}}** saves; **{{msg:common.cancel}}** leaves without saving. An unsaved new alert is
+kept in the browser: opening the builder again offers to restore it.
 
 ## Conditions
 
-Every condition card has: **{{msg:js.ca.builder.negate}}** ({{learn:customAlerts.negate}} It then shows
-**{{msg:js.ca.builder.negated}}**), **{{msg:js.ca.builder.then}}** (makes it the first step of a
-sequence), ↑ **{{msg:js.ca.builder.moveUp}}**, ↓ **{{msg:js.ca.builder.moveDown}}**, ⧉
-**{{msg:js.ca.builder.duplicate}}** and × **{{msg:js.ca.builder.remove}}**.
+Every condition card shows its kind and the condition in words, its reading on the test stock, a menu and
+× **{{msg:js.ca.builder.remove}}** (removing can be undone for a few seconds from the Save bar). The menu has
+**{{msg:js.ca.builder.negate}}** ({{learn:customAlerts.negate}} A reversed condition shows a NOT badge, and the
+menu then offers **{{msg:js.ca.builder.unreverse}}**), **{{msg:js.ca.builder.then}}** (makes it the first step of a
+sequence), **{{msg:js.ca.builder.duplicate}}**, **{{msg:js.ca.builder.moveUp}}** and **{{msg:js.ca.builder.moveDown}}**.
 
 ### Indicator or price (kind `VALUE`)
 

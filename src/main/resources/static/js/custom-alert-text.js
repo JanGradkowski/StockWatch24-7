@@ -8,16 +8,91 @@
   let catalogRequest = null;
 
   const has = key => i18n.has(key);
-  /** A number as typed: no trailing zeros, two decimals at most (four below 1), local separators. */
+  const formatters = new Map();
+  const formatter = options => {
+    const key = JSON.stringify(options);
+    if (!formatters.has(key)) formatters.set(key, new Intl.NumberFormat(i18n.tag || 'en', options));
+    return formatters.get(key);
+  };
+  /**
+   * A number as typed: no trailing zeros, two decimals at most (four below 1), local separators. Large figures
+   * (volumes, share counts) read as 1.5M or 25,000 instead of a run of digits.
+   */
   const number = value => {
     const n = Number(value);
     if (!Number.isFinite(n)) return '';
+    if (Math.abs(n) >= 1e6) return formatter({ notation: 'compact', maximumFractionDigits: 1 }).format(n);
+    if (Math.abs(n) >= 10000) return formatter({ maximumFractionDigits: 2 }).format(n);
     if (Number.isInteger(n)) return i18n.number(n, 0);
     const digits = Math.abs(n) >= 1 ? 2 : 4;
     return i18n.number(n, digits).replace(/([.,]\d*?)0+$/, '$1').replace(/[.,]$/, '');
   };
   // Dollar amounts get thousands separators in both languages ($250,000 / 250 000 $ is not used: the data is in USD).
-  const money = value => '$' + new Intl.NumberFormat(i18n.tag || 'en', { maximumFractionDigits: 0 }).format(Number(value) || 0);
+  const money = value => '$' + formatter({ maximumFractionDigits: 0 }).format(Number(value) || 0);
+  /** A change in percent with its sign: "+2.1%", "−0.9%". */
+  const signed = value => `${Number(value) >= 0 ? '+' : '−'}${number(Math.abs(Number(value)))}%`;
+
+  /** One date format on every custom alert page: "Nov 7, 2026" (the year left out for this year when {@code short}). */
+  const date = (millis, short = false) => {
+    const value = new Date(millis);
+    const thisYear = value.getFullYear() === new Date().getFullYear();
+    return i18n.date(value, short && thisYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+  /** A date with its time: "Nov 7, 2026 · 15:11". */
+  const dateTime = millis => `${date(millis)} · ${i18n.date(new Date(millis), { hour: '2-digit', minute: '2-digit' })}`;
+  /** A recent day in words ("Today", "Yesterday", "3 days ago"), older ones as a date. */
+  const relativeDay = millis => {
+    const startOf = value => { const day = new Date(value); day.setHours(0, 0, 0, 0); return day.getTime(); };
+    const days = Math.round((startOf(Date.now()) - startOf(millis)) / 86400000);
+    if (days < 0 || days > 6) return date(millis, true);
+    const words = new Intl.RelativeTimeFormat(i18n.tag || 'en', { numeric: 'auto' }).format(-days, 'day');
+    return words.charAt(0).toLocaleUpperCase(i18n.tag || 'en') + words.slice(1);
+  };
+
+  // Line icons (24-unit grid, drawn with the text colour) shared by the custom alert pages.
+  const ICONS = {
+    indicator: 'M3 17l5-5 4 3 9-9M15 6h6v6',
+    price: 'M3 17l5-5 4 3 9-9M15 6h6v6',
+    pattern: 'M7 3v3M7 17v4M5 6h4v11H5zM17 3v5M17 15v6M15 8h4v7h-4z',
+    outlook: 'M4 16a8 8 0 0 1 16 0M12 16l4-5M3 20h18',
+    insider: 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+    congress: 'M3 9h18L12 3zM5 9v9M9.5 9v9M14.5 9v9M19 9v9M3 21h18',
+    more: 'M5 12h.01M12 12h.01M19 12h.01',
+    close: 'M6 6l12 12M18 6L6 18',
+    up: 'M12 19V5M6 11l6-6 6 6',
+    down: 'M12 5v14M6 13l6 6 6-6',
+    copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+    trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+    mail: 'M3 6h18v12H3zM3 7l9 7 9-7',
+    pin: 'M9 3h6l-1 6 4 4H6l4-4zM12 13v8',
+    chevron: 'M6 9l6 6 6-6',
+    search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
+    check: 'M5 12l5 5 9-11',
+    reverse: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8',
+    sequence: 'M5 6h6M5 12h10M5 18h14',
+    arrow: 'M5 12h14M13 6l6 6-6 6',
+    plus: 'M12 5v14M5 12h14',
+    play: 'M7 5l12 7-12 7z',
+    grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
+    edit: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+    undo: 'M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
+    info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01'
+  };
+  /** An inline SVG icon; decorative unless given a label. */
+  function icon(name, className = 'ca-icon') {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', className);
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    const path = document.createElementNS(svg.namespaceURI, 'path');
+    path.setAttribute('d', ICONS[name] || ICONS.indicator);
+    svg.append(path);
+    return svg;
+  }
+  /** The icon naming a condition's kind: an indicator or price line, a pattern, the outlook, insiders or Congress. */
+  const conditionIcon = condition => condition.kind === 'VALUE' ? (condition.subject?.kind === 'PRICE' ? 'price' : 'indicator')
+    : condition.kind === 'PATTERN' ? 'pattern' : condition.kind === 'OUTLOOK' ? 'outlook' : condition.kind === 'CONGRESS' ? 'congress' : 'insider';
 
   function catalog() {
     if (!catalogRequest) {
@@ -50,7 +125,7 @@
     return labels.length < 2 ? labels.join('') : `${labels.slice(0, -1).join(', ')} ${i18n.t('ca.summary.and')} ${labels.at(-1)}`;
   };
 
-  /** "RSI (14)", "MACD › Histogram (12, 26, 9)", "SMA (30, weekly)". */
+  /** "RSI (14)", "MACD histogram (12, 26, 9)", "SMA (30, weekly)". */
   function operandLabel(operand, definitions) {
     if (!operand) return '';
     if (operand.kind === 'VALUE') return number(operand.value);
@@ -81,7 +156,9 @@
     // The main line ("value") needs no name; other lines do (MACD › Signal, RSI › Moving average).
     const main = !operand.output || operand.output === 'value' || operand.output === String(operand.type).toLowerCase()
       || (definition?.outputs?.length === 1);
-    const line = main ? '' : ` › ${outputLabel(operand.type, operand.output)}`;
+    // Another line is named after the indicator in words: "MACD histogram", "RSI moving average".
+    const lineName = main ? '' : outputLabel(operand.type, operand.output);
+    const line = main ? '' : ` ${/^\p{Lu}\p{Ll}/u.test(lineName) ? lineName.charAt(0).toLocaleLowerCase(i18n.tag || 'en') + lineName.slice(1) : lineName}`;
     return `${base}${line}${numbers.length ? ` (${numbers.join(', ')})` : ''}`;
   }
 
@@ -126,28 +203,60 @@
     const confirmed = condition.family === 'CANDLESTICK' && condition.status === 'CONFIRMED';
     const family = i18n.t(`ca.pattern.family.${condition.family}.${direction}`);
     // A step of a sequence counts on one candle, so it has no window of its own.
-    let text = step ? i18n.t(confirmed ? 'ca.pattern.stepConfirmed' : 'ca.pattern.stepDetected', family)
+    const text = step ? i18n.t(confirmed ? 'ca.pattern.stepConfirmed' : 'ca.pattern.stepDetected', family)
       : i18n.t(confirmed ? 'ca.pattern.confirmedIn' : 'ca.pattern.detected', family, condition.window?.candles || 1);
+    return text + patternDetails(condition);
+  }
+
+  /** Which patterns, how good and still valid, in brackets after the pattern ("" when none). */
+  function patternDetails(condition) {
     const details = [];
     if (condition.patterns?.length) details.push(condition.patterns.map(name => patternName(condition.family, name)).join(', '));
     if (condition.minScore != null) details.push(i18n.t('ca.pattern.minScore', condition.minScore));
     // Triggers keep the rule as it was; before the status existed, confirmation was this extra test.
     if (condition.confirmedOnly) details.push(i18n.t('ca.pattern.confirmed'));
     if (condition.stillValid) details.push(i18n.t('ca.pattern.stillValid'));
-    if (details.length) text += ` (${details.join('; ')})`;
-    return text;
+    return details.length ? ` (${details.join('; ')})` : '';
   }
 
   function activitySentence(condition) {
+    return i18n.t(`ca.activity.${condition.kind}.${condition.transaction}`, condition.days) + activityDetails(condition);
+  }
+
+  /** How many people, how much and who, in brackets after the trades ("" when none). */
+  function activityDetails(condition) {
     const insider = condition.kind === 'INSIDER';
-    let text = i18n.t(`ca.activity.${condition.kind}.${condition.transaction}`, condition.days);
     const details = [];
     if (condition.minCount > 1) details.push(i18n.t('ca.activity.minCount', condition.minCount));
     if (condition.minTotal) details.push(i18n.t('ca.activity.minTotal', money(condition.minTotal)));
     const list = insider ? condition.roles : condition.chambers;
     if (list?.length && (insider || list.length < 2)) details.push(list.map(item => i18n.t(`ca.activity.${insider ? 'role' : 'chamber'}.${item}`)).join(', '));
-    if (details.length) text += ` (${details.join('; ')})`;
-    return text;
+    return details.length ? ` (${details.join('; ')})` : '';
+  }
+
+  /**
+   * A condition in two parts for a chip: what is tested ("RSI (14) is above 30"), and over which candles or days
+   * ("within the last 10 candles", null for the latest candle), which the chip shows quieter.
+   */
+  function chipParts(condition, definitions) {
+    const window = condition.window || { mode: 'LATEST' };
+    const candles = window.candles || 1;
+    switch (condition.kind) {
+      case 'VALUE': {
+        const main = valueSentence({ ...condition, window: { mode: 'LATEST' } }, definitions);
+        if (window.mode === 'ANY' && candles > 1) return [main, i18n.plural('ca.when.within', candles, candles)];
+        if (window.mode === 'EVERY' && candles > 1) return [main, i18n.t('ca.when.every', candles)];
+        return [main, null];
+      }
+      case 'PATTERN': {
+        const confirmed = condition.family === 'CANDLESTICK' && condition.status === 'CONFIRMED';
+        const family = i18n.t(`ca.pattern.family.${condition.family}.${condition.direction || 'ANY'}`);
+        return [family + patternDetails(condition), i18n.plural(confirmed ? 'ca.when.confirmed' : 'ca.when.within', candles, candles)];
+      }
+      case 'INSIDER': case 'CONGRESS':
+        return [i18n.t(`ca.activity.short.${condition.kind}.${condition.transaction}`) + activityDetails(condition), i18n.plural('ca.when.days', condition.days, condition.days)];
+      default: return [describe(condition, definitions), null];
+    }
   }
 
   /** One condition as a sentence; "Not true: …" when negated. */
@@ -267,7 +376,209 @@
     return node;
   }
 
-  const toneOf = condition => condition.kind === 'VALUE' ? 'value' : condition.kind === 'PATTERN' ? 'pattern'
+  // ------------------------------------------------------------------ menus
+
+  let menusWired = false;
+  /** Open menus close on a click elsewhere or Escape; one opening near the bottom of the screen opens upwards. */
+  function wireMenus() {
+    if (menusWired) return;
+    menusWired = true;
+    document.addEventListener('click', event => {
+      const inside = event.target instanceof Element ? event.target.closest('details.ca-menu') : null;
+      document.querySelectorAll('details.ca-menu[open]').forEach(open => { if (open !== inside) open.open = false; });
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      const open = document.querySelector('details.ca-menu[open]');
+      if (!open) return;
+      open.open = false;
+      open.querySelector('summary')?.focus();
+    });
+    // A menu that opens stays on screen: upwards near the bottom, rightwards when its button is near the left edge.
+    document.addEventListener('toggle', event => {
+      const details = event.target;
+      if (!(details instanceof Element) || !details.matches('details.ca-menu') || !details.open) return;
+      document.querySelectorAll('details.ca-menu[open]').forEach(other => { if (other !== details) other.open = false; });
+      const panel = details.querySelector('.ca-menu-panel');
+      details.classList.remove('opens-up', 'opens-right');
+      if (!panel) return;
+      if (panel.getBoundingClientRect().bottom > window.innerHeight - 8) details.classList.add('opens-up');
+      if (panel.getBoundingClientRect().left < 8) details.classList.add('opens-right');
+      panel.querySelector('button:not(:disabled), a')?.focus();
+    }, true);
+  }
+  if (typeof document !== 'undefined') wireMenus();
+
+  /**
+   * On the custom alert pages the assistant opens from a button in the page header instead of the floating corner
+   * button, which kept landing on rows, charts and the Save bar.
+   */
+  function askButtons() {
+    if (!document.querySelector('.ca-page') || !document.querySelector('[data-assistant]')) return;
+    document.querySelectorAll('[data-ca-ask-slot]').forEach(slot => slot.replaceChildren(askButton()));
+  }
+
+  /** The button that opens the assistant ("Ask StockWatch"); null when the assistant is off. */
+  function askButton() {
+    if (!document.querySelector('[data-assistant]')) return null;
+    const button = element('button', 'ca-ask');
+    button.type = 'button';
+    button.setAttribute('aria-label', i18n.t('assistant.open'));
+    button.title = i18n.t('assistant.open');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'ca-icon');
+    svg.setAttribute('aria-hidden', 'true');
+    ['M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5z', 'M8.5 8.5h7M8.5 11.5h4.5']
+      .forEach(d => { const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', d); svg.append(path); });
+    const word = element('span', 'ca-ask-label', i18n.t('ca.ask'));
+    word.setAttribute('aria-hidden', 'true');
+    button.append(svg, word);
+    button.addEventListener('click', () => {
+      if (window.StockWatchAssistant) window.StockWatchAssistant.open();
+      else document.querySelector('[data-assistant-toggle]')?.click();
+    });
+    return button;
+  }
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', askButtons, { once: true });
+    else askButtons();
+  }
+
+  /**
+   * A "more actions" menu: an icon button that opens a list of actions. {@code items} are
+   * {label, icon, run, danger, disabled} or the string 'divider'; a group of choices is {label, choices: [{label, run}]}.
+   */
+  function menu(ariaLabel, items, className = '') {
+    wireMenus();
+    const details = element('details', `row-menu ca-menu${className ? ` ${className}` : ''}`);
+    const summary = element('summary');
+    summary.setAttribute('aria-label', ariaLabel);
+    summary.title = ariaLabel;
+    summary.append(icon('more', 'ca-icon ca-icon-more'));
+    const panel = element('div', 'row-menu-panel ca-menu-panel');
+    panel.setAttribute('role', 'menu');
+    const close = () => { details.open = false; };
+    items.filter(Boolean).forEach(item => {
+      if (item === 'divider') { const line = element('div', 'ca-menu-divider'); line.setAttribute('role', 'separator'); panel.append(line); return; }
+      if (item.choices) {
+        const row = element('div', 'ca-menu-choices');
+        row.setAttribute('role', 'group');
+        row.setAttribute('aria-label', item.label);
+        row.append(element('span', 'ca-menu-choices-label', item.label));
+        item.choices.forEach(choice => {
+          const button = element('button', 'ca-menu-choice', choice.label);
+          button.type = 'button';
+          button.setAttribute('role', 'menuitem');
+          button.addEventListener('click', async () => { close(); await choice.run(); });
+          row.append(button);
+        });
+        panel.append(row);
+        return;
+      }
+      const button = element('button', `ca-menu-item${item.danger ? ' danger-text' : ''}`);
+      button.type = 'button';
+      button.setAttribute('role', 'menuitem');
+      if (item.icon) button.append(icon(item.icon, 'ca-icon'));
+      button.append(element('span', null, item.label));
+      button.disabled = Boolean(item.disabled);
+      button.addEventListener('click', async () => { close(); await item.run(); });
+      panel.append(button);
+    });
+    details.append(summary, panel);
+    return details;
+  }
+
+  /** A switch (role="switch") that says its state to screen readers and shows it as a sliding knob. */
+  /**
+   * The page's keyboard shortcuts, as [[keys], what they do]: "?" lists them in a dialog, unless the user is typing. With
+   * {@code hint}, a "Keyboard shortcuts" button at the end of the page opens it too (not on touch screens, by CSS).
+   */
+  function shortcuts(items, hint = true) {
+    const open = () => {
+      if (document.querySelector('dialog.ca-shortcuts')) return;
+      const dialog = element('dialog', 'ca-dialog ca-shortcuts');
+      const head = element('div', 'ca-dialog-head');
+      const heading = element('h2', null, i18n.t('ca.shortcuts.title'));
+      heading.id = 'ca-shortcuts-title';
+      dialog.setAttribute('aria-labelledby', heading.id);
+      const close = element('button', 'ca-icon-button');
+      close.type = 'button';
+      close.setAttribute('aria-label', i18n.t('common.close'));
+      close.title = i18n.t('common.close');
+      close.append(icon('close'));
+      close.addEventListener('click', () => dialog.close());
+      head.append(heading, close);
+      const body = element('div', 'ca-dialog-body');
+      const list = element('dl', 'ca-shortcuts-list');
+      [...items, [['?'], i18n.t('ca.shortcuts.help')]].forEach(([keys, label]) => {
+        const term = element('dt');
+        keys.forEach(key => term.append(element('kbd', 'ca-kbd', key)));
+        list.append(term, element('dd', null, label));
+      });
+      const actions = element('div', 'ca-dialog-actions');
+      const done = element('button', 'btn-secondary', i18n.t('common.close'));
+      done.type = 'button';
+      done.addEventListener('click', () => dialog.close());
+      actions.append(done);
+      body.append(list, actions);
+      dialog.append(head, body);
+      dialog.addEventListener('close', () => dialog.remove());
+      document.body.append(dialog);
+      dialog.showModal();
+      close.focus();
+    };
+    document.addEventListener('keydown', event => {
+      if (event.key !== '?' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], dialog')) return;
+      event.preventDefault();
+      open();
+    });
+    const main = document.querySelector('main.ca-page');
+    if (hint && main) {
+      const row = element('p', 'ca-shortcuts-hint');
+      const button = element('button', 'ca-link-button');
+      button.type = 'button';
+      button.append(element('kbd', 'ca-kbd', '?'), ` ${i18n.t('ca.shortcuts.title')}`);
+      button.addEventListener('click', open);
+      row.append(button);
+      main.append(row);
+    }
+    return open;
+  }
+
+  /** Whether a modal dialog is open: the site's sidebar is a dialog too, but never a modal one. */
+  function modalOpen() {
+    return [...document.querySelectorAll('dialog[open]')].some(dialog => {
+      try { return dialog.matches(':modal'); } catch { return !dialog.classList.contains('app-sidebar'); }
+    });
+  }
+
+  /** Escape in a filter field clears it, or, when it is empty, leaves it. */
+  function escapeClears(input) {
+    input?.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      if (input.value) {
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      } else input.blur();
+    });
+  }
+
+  function toggleSwitch(on, ariaLabel, onChange) {
+    const control = element('button', 'ca-switch');
+    control.type = 'button';
+    control.setAttribute('role', 'switch');
+    control.setAttribute('aria-checked', String(on));
+    control.setAttribute('aria-label', ariaLabel);
+    control.title = i18n.t(on ? 'ca.switch.titleOn' : 'ca.switch.titleOff');
+    control.append(element('span', 'ca-switch-track'));
+    control.addEventListener('click', () => onChange(control));
+    return control;
+  }
+
+  const toneOf = condition =>condition.kind === 'VALUE' ? 'value' : condition.kind === 'PATTERN' ? 'pattern'
     : condition.kind === 'OUTLOOK' ? 'outlook' : 'activity';
 
   /** A sequence step as a chip: "RSI (14) is below 30 · 5 in a row", "RSI (14) is above 30 · within 3". */
@@ -279,32 +590,80 @@
     return parts.join(' · ');
   }
 
-  /** The rule as chips joined by AND / OR / THEN badges; at most {@code limit} chips, then "+N more". */
+  /**
+   * One condition as a neutral chip: an icon for its kind (indicator, pattern, insiders…) and the condition in words,
+   * a reversed one led by a NOT badge. Colour is kept for meaning (met, price up or down), not for kinds.
+   */
+  function chip(condition, label, when = null) {
+    const node = element('span', `ca-chip ca-chip-${toneOf(condition)}${condition.negate ? ' is-negated' : ''}`);
+    node.append(icon(conditionIcon(condition), 'ca-chip-icon'));
+    if (condition.negate) node.append(element('span', 'ca-chip-not', i18n.t('ca.badge.not')));
+    // The timing runs on in the same text, so a narrow chip wraps like a sentence.
+    const words = element('span', 'ca-chip-text', label);
+    // A chip cut short on a narrow row still says it all in its tooltip.
+    words.title = when ? `${label} · ${when}` : label;
+    if (when) words.append(' ', element('span', 'ca-chip-when', when));
+    node.append(words);
+    return node;
+  }
+
+  /**
+   * The rule as chips joined by AND / OR / THEN badges; at most {@code limit} chips, then "+N more". A joiner (and an
+   * opening bracket) travels with the chip after it, so a line never ends on "AND".
+   */
   function chips(definition, definitions, limit = 4) {
     const box = element('div', 'ca-rule-chips');
     const groups = definition?.groups || [];
     let shown = 0;
     let total = 0;
+    let leading = [];
+    const hidden = [];
+    const joiner = (key, then = false) => {
+      const node = element('span', `ca-joiner${then ? ' is-then' : ''}`);
+      if (then) node.append(icon('arrow'));
+      node.append(i18n.t(key));
+      return node;
+    };
+    const place = node => {
+      if (!leading.length) { box.append(node); return; }
+      const pair = element('span', 'ca-chip-pair');
+      pair.append(...leading, node);
+      leading = [];
+      box.append(pair);
+    };
     groups.forEach((group, groupIndex) => {
-      if (groupIndex > 0) box.append(element('span', 'ca-joiner', i18n.t(definition.match === 'ANY' ? 'ca.badge.or' : 'ca.badge.and')));
+      if (shown >= limit) {
+        total += (group.conditions || []).length;
+        (group.conditions || []).forEach(condition => hidden.push(describe(condition, definitions)));
+        return;
+      }
+      if (groupIndex > 0) leading.push(joiner(definition.match === 'ANY' ? 'ca.badge.or' : 'ca.badge.and'));
       const ordered = group.match === 'THEN';
       const several = groups.length > 1 && (group.conditions || []).length > 1;
-      if (several) box.append(element('span', 'ca-paren', '('));
+      const target = several ? element('span', 'ca-chip-group') : box;
+      if (several && ordered) target.append(element('span', 'ca-chip-group-label', i18n.t('ca.builder.inOrder')));
+      const put = node => { if (several) target.append(node); else place(node); };
       (group.conditions || []).forEach((condition, index) => {
         total++;
-        if (shown >= limit) return;
+        if (shown >= limit) { hidden.push(describe(condition, definitions)); return; }
+        const node = ordered ? chip(condition, stepChip({ ...condition, negate: false }, index, definitions))
+          : chip(condition, ...chipParts({ ...condition, negate: false }, definitions));
         if (index > 0) {
-          box.append(element('span', `ca-joiner${ordered ? ' is-then' : ''}`,
-            i18n.t(ordered ? 'ca.badge.then' : group.match === 'ANY' ? 'ca.badge.or' : 'ca.badge.and')));
-        }
-        const label = ordered ? stepChip(condition, index, definitions) : describe(condition, definitions);
-        const chip = element('span', `ca-chip ca-chip-${toneOf(condition)}`, label);
-        box.append(chip);
+          const pair = element('span', 'ca-chip-pair');
+          pair.append(joiner(ordered ? 'ca.badge.then' : group.match === 'ANY' ? 'ca.badge.or' : 'ca.badge.and', ordered), node);
+          put(pair);
+        } else put(node);
         shown++;
       });
-      if (several) box.append(element('span', 'ca-paren', ')'));
+      if (several && target.childElementCount) place(target);
     });
-    if (total > shown) box.append(element('span', 'ca-more', i18n.t('ca.moreConditions', total - shown)));
+    leading = [];
+    if (total > shown) {
+      // The conditions left out, in the tooltip.
+      const more = element('span', 'ca-more', i18n.t('ca.moreConditions', total - shown));
+      more.title = hidden.join('\n');
+      box.append(more);
+    }
     return box;
   }
 
@@ -378,7 +737,8 @@
   }
 
   window.StockWatchCustomAlerts = Object.freeze({
-    catalog, describe, describeStep, stepCandles, defaultSpan, progressText, stateLabel, summary, chips, operandLabel, patternName, patternTerm, indicatorName, indicatorShort,
-    inputLabel, outputLabel, choiceLabel, intervalLabel, intervalsLabel, number, money, templates, fromTemplate, element
+    catalog, describe, describeStep, stepCandles, defaultSpan, progressText, stateLabel, summary, chips, chip, operandLabel, patternName, patternTerm, indicatorName, indicatorShort,
+    inputLabel, outputLabel, choiceLabel, intervalLabel, intervalsLabel, number, money, signed, date, dateTime, relativeDay, icon, conditionIcon,
+    menu, toggleSwitch, askButton, templates, fromTemplate, element, shortcuts, escapeClears, modalOpen
   });
 })();

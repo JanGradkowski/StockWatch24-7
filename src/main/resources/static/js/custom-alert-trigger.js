@@ -71,16 +71,44 @@
     return parts.filter(Boolean).join(' · ');
   }
 
+  /**
+   * A stock that already matched when the alert was saved is reported at once, not at the next close; a sequence that
+   * had completed a little earlier still counts while it is inside its window. Says which happened.
+   */
+  function atSaveNote(definition, groupResults) {
+    if (page.dataset.kind !== 'MATCHED_ON_APPLY') return null;
+    const saved = text.date(Number(page.dataset.created));
+    const candle = Number(page.dataset.candle);
+    const sequence = definition.groups.find(group => group.match === 'THEN' && groupResults.get(group.id)?.facts?.completedAt);
+    const completed = sequence ? groupResults.get(sequence.id).facts.completedAt : null;
+    const note = completed && completed < candle
+      ? i18n.t('ca.evidence.atSaveSequence', day(completed), sequence.span ?? text.defaultSpan(sequence), saved)
+      : i18n.t('ca.evidence.atSave', saved);
+    return el('p', 'ca-evidence-note', note);
+  }
+
+  const capitalize = words => words.charAt(0).toLocaleUpperCase(i18n.tag || 'en') + words.slice(1);
+
+  /** A condition as a heading: its words, a reversed one led by a NOT badge. */
+  function conditionTitle(condition, label) {
+    const title = el('strong', 'ca-evidence-title');
+    if (condition.negate) title.append(el('span', 'ca-chip-not', i18n.t('ca.badge.not')), ' ');
+    title.append(label);
+    return title;
+  }
+
   async function renderEvidence() {
     const box = document.querySelector('[data-ca-evidence]');
     const definition = evidence.definition;
-    if (!definition) { box.replaceChildren(el('p', 'wl-muted', i18n.t('ca.evidence.missing'))); return; }
+    if (!definition) { box.replaceChildren(el('p', 'ca-muted', i18n.t('ca.evidence.missing'))); return; }
     const catalog = await text.catalog().catch(() => ({ byType: new Map() }));
     const results = new Map((evidence.conditions || []).map(item => [item.id, item]));
     const groupResults = new Map((evidence.groups || []).map(item => [item.id, item]));
     const palette = window.StockWatchTriggerChart?.PALETTE.length || 8;
     let position = 0;
     const parts = [];
+    const note = atSaveNote(definition, groupResults);
+    if (note) parts.push(note);
     if (definition.groups.length > 1) {
       parts.push(el('p', 'ca-evidence-lead', i18n.t(definition.match === 'ANY' ? 'ca.evidence.anyGroup' : 'ca.evidence.everyGroup')));
     }
@@ -91,24 +119,31 @@
       const completed = groupResults.get(group.id);
       const groupPassed = ordered ? Boolean(completed?.passed) : group.match === 'ANY' ? passed.includes(true) : !passed.includes(false);
       if (definition.groups.length > 1 || group.conditions.length > 1) {
-        section.append(el('p', 'ca-evidence-group-title', [definition.groups.length > 1 ? i18n.t('ca.builder.groupTitle', groupIndex + 1) : null,
+        section.append(el('p', 'ca-evidence-group-title', capitalize([definition.groups.length > 1 ? i18n.t('ca.builder.groupTitle', groupIndex + 1) : null,
           i18n.t(ordered ? 'ca.evidence.inOrder' : group.match === 'ANY' ? 'ca.evidence.anyOf' : 'ca.evidence.allOf'),
           ordered && groupPassed && completed?.facts?.completedAt ? i18n.t('ca.evidence.completedOn', day(completed.facts.completedAt))
-            : i18n.t(groupPassed ? 'ca.evidence.groupMet' : 'ca.evidence.groupUnmet')].filter(Boolean).join(' · ')));
+            : i18n.t(groupPassed ? 'ca.evidence.groupMet' : 'ca.evidence.groupUnmet')].filter(Boolean).join(' · '))));
       }
       const list = el(ordered ? 'ol' : 'ul', 'ca-evidence-list');
       group.conditions.forEach((condition, index) => {
         const result = results.get(condition.id);
         const ok = result?.passed;
-        const item = el('li', `ca-evidence-item ${ok ? 'is-met' : 'is-unmet'} ca-color-${position++ % palette}`);
-        item.append(el('span', 'ca-evidence-mark', ordered ? String(index + 1) : ok ? '✓' : '–'));
+        const item = el('li', `ca-evidence-item ${ok ? 'is-met' : 'is-unmet'} ca-color-${position % palette}`);
+        item.dataset.position = String(position++);
+        // Focusable, so the card can point at its marks on the chart from the keyboard too.
+        item.tabIndex = 0;
+        const mark = el('span', 'ca-evidence-mark', ordered ? String(index + 1) : '');
+        if (!ordered) mark.append(text.icon(ok ? 'check' : 'close'));
+        item.append(mark);
         const body = el('div');
-        body.append(el('strong', null, ordered
-          ? `${i18n.t('ca.builder.stepNumber', index + 1)} · ${text.describeStep(condition, catalog.byType)}` : text.describe(condition, catalog.byType)));
+        const label = ordered ? `${i18n.t('ca.builder.stepNumber', index + 1)} · ${text.describeStep({ ...condition, negate: false }, catalog.byType)}`
+          : text.describe({ ...condition, negate: false }, catalog.byType);
+        body.append(conditionTitle(condition, label));
         const info = ordered ? stepDetail(condition, result?.facts, index + 1) : detail(condition, result?.facts);
-        if (info) body.append(el('span', 'wl-muted', info));
+        if (info) body.append(el('span', 'ca-evidence-detail', info));
         item.append(body);
-        item.setAttribute('aria-label', `${i18n.t(ok ? 'ca.readout.met' : 'ca.readout.unmet')}: ${body.firstChild.textContent}${info ? `. ${info}` : ''}`);
+        const spoken = ordered ? `${i18n.t('ca.builder.stepNumber', index + 1)} · ${text.describeStep(condition, catalog.byType)}` : text.describe(condition, catalog.byType);
+        item.setAttribute('aria-label', `${i18n.t(ok ? 'ca.readout.met' : 'ca.readout.unmet')}: ${spoken}${info ? `. ${info}` : ''}`);
         list.append(item);
       });
       section.append(list);
@@ -117,22 +152,99 @@
     box.replaceChildren(...parts);
   }
 
+  /**
+   * How the price moved after the trigger, close to close: while the follow-up window runs, how far it has got and the
+   * change so far; then the change at each checkpoint inside the window (1, 5 and 10 candles) and at its end.
+   */
+  let candlesSince = null;
+  let nextClose = null;
+  let closeRevised = false;
   function renderNext() {
     const box = document.querySelector('[data-ca-next]');
     const returns = JSON.parse(box.dataset.returns || '{}');
-    const horizon = Number(page.dataset.outcomeCandles);
-    const rows = [1, 5, 10, 20].map(candles => {
-      const item = el('div', 'ca-next-item');
-      const value = returns[String(candles)];
-      item.append(el('span', null, i18n.plural('ca.next.after', candles, candles)),
-        el('strong', value == null ? 'unavailable' : value >= 0 ? 'positive' : 'negative', value == null ? i18n.t('ca.next.waiting') : signed(value)));
-      return item;
-    });
-    const outcome = box.dataset.outcome;
-    const summary = el('p', 'ca-next-summary', box.dataset.outcomeStatus === 'COMPLETE' && outcome
-      ? i18n.t('ca.next.complete', horizon, signed(Number(outcome)))
-      : i18n.t('ca.next.pending', horizon));
-    box.replaceChildren(...rows, summary);
+    const follow = Number(page.dataset.outcomeCandles) || 10;
+    const outcome = box.dataset.outcome === undefined || box.dataset.outcome === '' ? null : Number(box.dataset.outcome);
+    const complete = box.dataset.outcomeStatus === 'COMPLETE';
+    const parts = [];
+    if (!complete) {
+      const done = candlesSince == null ? null : Math.min(follow, candlesSince);
+      const meter = el('div', 'ca-next-progress');
+      // One segment per candle of the window (a plain bar past 20), filled as candles close.
+      const bar = el('div', `ca-next-track${follow > 20 ? ' is-continuous' : ''}`);
+      bar.setAttribute('role', 'progressbar');
+      bar.setAttribute('aria-valuemin', '0');
+      bar.setAttribute('aria-valuemax', String(follow));
+      bar.setAttribute('aria-valuenow', String(done ?? 0));
+      bar.setAttribute('aria-label', i18n.t('ca.next.progressAria', follow));
+      if (follow > 20) {
+        const fill = el('span', 'ca-next-fill');
+        fill.style.width = `${Math.round(((done ?? 0) / follow) * 100)}%`;
+        bar.append(fill);
+      } else {
+        for (let at = 0; at < follow; at++) bar.append(el('span', at < (done ?? 0) ? 'is-done' : null));
+      }
+      const line = el('p', 'ca-next-line');
+      line.append(el('span', null, done == null ? i18n.plural('ca.next.measuring', follow, follow) : i18n.plural('ca.next.measuringDone', follow, done, follow)));
+      if (outcome != null) {
+        line.append(' · ');
+        line.append(el('strong', `ca-change ${outcome >= 0 ? 'is-up' : 'is-down'}`, text.signed(outcome)), ` ${i18n.t('ca.next.soFar')}`);
+      }
+      meter.append(bar, line);
+      if (nextClose) line.append(' · ', i18n.t(done ? 'ca.next.nextUpdate' : 'ca.next.firstUpdate', text.date(nextClose, true)));
+      parts.push(meter);
+    }
+    const checkpoints = [1, 5, 10, 20].filter(candles => candles < follow);
+    const rows = checkpoints.map(candles => [candles, returns[String(candles)]]);
+    if (complete && outcome != null) rows.push([follow, outcome]);
+    const measured = rows.filter(([, value]) => value != null);
+    if (measured.length) {
+      const table = el('table', 'ca-next-table');
+      const head = el('tr');
+      [i18n.t('ca.next.colCandles'), i18n.t('ca.next.colChange')].forEach(label => { const th = el('th', null, label); th.scope = 'col'; head.append(th); });
+      const thead = el('thead');
+      thead.append(head);
+      const body = el('tbody');
+      measured.forEach(([candles, value]) => {
+        const tr = el('tr', candles === follow ? 'is-window' : null);
+        tr.append(el('td', null, i18n.plural('ca.next.after', candles, candles)));
+        const cell = el('td');
+        cell.append(el('strong', `ca-change ${value >= 0 ? 'is-up' : 'is-down'}`, text.signed(value)));
+        tr.append(cell);
+        body.append(tr);
+      });
+      table.append(thead, body);
+      parts.push(table);
+    }
+    // What this alert's triggers usually did, so this one reads against them.
+    const median = box.dataset.alertMedian === undefined || box.dataset.alertMedian === '' ? null : Number(box.dataset.alertMedian);
+    const measuredTriggers = Number(box.dataset.alertMeasured) || 0;
+    if (median != null && measuredTriggers >= 2) {
+      const context = el('p', 'ca-next-context');
+      context.append(`${i18n.t('ca.next.alertMedian', follow)} `, el('strong', `ca-change ${median >= 0 ? 'is-up' : 'is-down'}`, text.signed(median)),
+        ` (${i18n.plural('ca.next.alertMeasured', measuredTriggers, measuredTriggers)})`);
+      parts.push(context);
+    }
+    // Which close the changes start from matters only when the candle's data changed after the check.
+    if (closeRevised && Number.isFinite(Number(page.dataset.close))) parts.push(el('p', 'ca-next-base', i18n.t('ca.next.base', text.number(Number(page.dataset.close)))));
+    else if (!nextClose && candlesSince == null) parts.push(el('p', 'ca-next-summary', i18n.t('ca.next.pending', follow)));
+    box.replaceChildren(...parts);
+  }
+  // The chart knows how many candles have closed since the trigger.
+  document.addEventListener('stockwatch:trigger-chart', event => {
+    candlesSince = event.detail?.candlesSince ?? null;
+    nextClose = closeAfter(event.detail?.lastCandle, page.dataset.interval);
+    closeRevised = Boolean(event.detail?.revised);
+    renderNext();
+  });
+
+  /** The day the candle after {@code seconds} closes: the next weekday, the end of next week, or the end of next month. */
+  function closeAfter(seconds, interval) {
+    if (!Number.isFinite(Number(seconds)) || !seconds) return null;
+    const day = new Date(Number(seconds) * 1000);
+    if (interval === 'WEEKLY') { day.setUTCDate(day.getUTCDate() + 7 + ((5 - day.getUTCDay() + 7) % 7)); return day.getTime(); }
+    if (interval === 'MONTHLY') { return Date.UTC(day.getUTCFullYear(), day.getUTCMonth() + 2, 0); }
+    do { day.setUTCDate(day.getUTCDate() + 1); } while (day.getUTCDay() === 0 || day.getUTCDay() === 6);
+    return day.getTime();
   }
 
   document.querySelector('[data-ca-unread]')?.addEventListener('click', async () => {
@@ -153,7 +265,7 @@
   const assistantHooks = window.StockWatchAssistantHooks || (window.StockWatchAssistantHooks = {});
   assistantHooks.context = () => ({
     alert: document.querySelector('.ca-trigger-header h1')?.textContent.replace(/\s+/g, ' ').trim(),
-    candle: document.querySelector('.ca-trigger-meta')?.textContent.replace(/\s+/g, ' ').trim(),
+    candle: document.querySelector('.ca-trigger-lead')?.textContent.replace(/\s+/g, ' ').trim(),
     tags: document.querySelector('.ca-trigger-tags')?.textContent.replace(/\s+/g, ' ').trim(),
     interval: evidence.interval || null,
     rule: evidence.definition || null,

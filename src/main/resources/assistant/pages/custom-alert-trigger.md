@@ -12,16 +12,20 @@ price did afterwards. Opening it marks it read.
 
 ## What's on it
 
-- Header: alert name, ticker, interval, "{{msg:customAlerts.trigger.candle}}", close, status
-  **{{msg:home.chartAlertTriggered}}** or **{{msg:signals.matchedWhenApplied}}** (it already matched when the
-  alert was saved with "{{msg:customAlerts.builder.notifyExistingShort}}"), "{{msg:customAlerts.trigger.conditionsMet}}",
-  the watchlists it came from. Buttons **{{msg:customAlerts.trigger.openStock}}**,
-  **{{msg:customAlerts.trigger.allTriggers}}**, **{{msg:customAlerts.trigger.edit}}**, and
-  **{{msg:virtualTrades.moreActions}}** → **{{msg:customAlerts.trigger.markUnread}}**,
-  "{{msg:customAlerts.trigger.stop}}".
+- Header: the ticker and company, then "{{msg:customAlerts.trigger.lead}}" with the alert's name (or
+  "{{msg:customAlerts.trigger.leadAtSave}}" when the stock already matched as the alert was saved with
+  "{{msg:customAlerts.builder.notifyExistingShort}}"), the status **{{msg:customAlerts.alert.how.TRIGGERED}}** or
+  **{{msg:customAlerts.alert.how.MATCHED_ON_APPLY}}**, "{{msg:customAlerts.trigger.conditionsMet}}", the interval
+  and the watchlists it came from. **{{msg:customAlerts.trigger.openStock}}** and a menu with
+  **{{msg:customAlerts.trigger.allTriggers}}**, **{{msg:customAlerts.trigger.edit}}**,
+  **{{msg:customAlerts.trigger.markUnread}}** and "{{msg:customAlerts.trigger.stop}}".
 - **{{msg:customAlerts.trigger.chartTitle}}**: {{learn:customAlerts.chart}} {{msg:customAlerts.trigger.chartHelp}}
-- **{{msg:customAlerts.trigger.why}}**: {{learn:customAlerts.why}}
-- **{{msg:customAlerts.trigger.next}}**: {{learn:customAlerts.outcome}}
+  The shaded stretch after the trigger is the follow-up window. When the candle's price data changed after the
+  check, the row under the header shows both closes and the chart marks the one the alert read.
+- Beside the breadcrumb, links open the alert's newer and older triggers.
+- Beside the chart, **{{msg:customAlerts.trigger.why}}**: {{learn:customAlerts.why}}
+- **{{msg:customAlerts.trigger.next}}**: {{learn:customAlerts.outcome}} While the window runs it shows how many of its
+  candles have closed and the change so far.
 - "{{msg:customAlerts.trigger.ruleChanged}}" appears when the alert was edited later; the checklist keeps
   the old rule.
 

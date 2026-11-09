@@ -306,7 +306,9 @@
     .about-history-grid, .about-limit-grid) article > span { font-size: var(--fs-xs); }
 :root[data-theme] .auth-signal-copy > span { font-size: var(--fs-xs); }
 :root[data-theme] dialog:not(.app-sidebar) { max-width: min(960px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); border: 1px solid var(--glass-border); border-radius: 16px; background: var(--surface); color: var(--text-color); box-shadow: var(--shadow-lg); }
-:root[data-theme] dialog::backdrop { background: rgb(3 8 16 / 65%); backdrop-filter: blur(3px); }
+/* A flat dimming layer: a blurred backdrop repaints the whole page behind every dialog on weak graphics cards. */
+:root[data-theme] dialog::backdrop { background: rgb(3 8 16 / 72%); }
+:root[data-theme="light"] dialog::backdrop { background: rgb(14 20 32 / 45%); }
 :root[data-theme] :is(.congressional-dialog-close, .dialog-close-form button) { width: 40px; height: 40px; min-width: 40px; font-size: var(--fs-xl); }
 :root[data-theme] .historical-scan-options { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
 :root[data-theme] .historical-scan-options label { display: grid; gap: .5rem; font-size: var(--fs-md); }

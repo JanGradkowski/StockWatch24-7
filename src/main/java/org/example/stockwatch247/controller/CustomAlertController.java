@@ -47,9 +47,46 @@ public class CustomAlertController {
 
     @GetMapping("/custom-alerts")
     public String listPage(Model model, Principal principal) {
-        user(principal);
+        User user = user(principal);
         model.addAttribute("maximumActive", alerts.maximumActive());
+        // The guide starts open while the user has fewer than two alerts.
+        model.addAttribute("alertCount", alerts.count(user));
         return "custom-alerts";
+    }
+
+    /** The newest triggers an alert's page lists; older ones stay in the database and in the user's data export. */
+    static final int ALERT_PAGE_TRIGGERS = 500;
+
+    /** One alert: its rule, how its triggers did, the stocks it watches and every trigger, newest first. */
+    @GetMapping("/custom-alerts/{id}")
+    public String alertPage(@PathVariable long id, @RequestParam(defaultValue = "") String ticker, Model model, Principal principal) {
+        User user = user(principal);
+        CustomAlertService.ArchiveHeader header = alerts.archiveHeader(user, id, null);
+        List<CustomAlertService.TriggerRow> triggers = alerts.triggers(user, id, ALERT_PAGE_TRIGGERS);
+        model.addAttribute("alert", header.alert());
+        model.addAttribute("performance", header.performance());
+        model.addAttribute("triggers", triggers);
+        model.addAttribute("triggersCapped", triggers.size() >= ALERT_PAGE_TRIGGERS);
+        model.addAttribute("firstResult", firstResult(triggers, header.alert().outcomeCandles()));
+        // The table's checkpoint columns: 1, 5, 10 and 20 candles, those inside the follow-up window (the last three).
+        List<Integer> checkpoints = java.util.stream.Stream.of(1, 5, 10, 20).filter(candles -> candles <= header.alert().outcomeCandles()).toList();
+        List<Integer> shown = checkpoints.subList(Math.max(0, checkpoints.size() - 3), checkpoints.size());
+        model.addAttribute("checkpoints", shown);
+        // When each trigger still measured gets its next result: the close that ends its next checkpoint (none once
+        // that day has passed, while the data catches up).
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
+        Map<Long, java.time.LocalDate> nextResults = new java.util.HashMap<>();
+        triggers.forEach(trigger -> {
+            Integer mark = trigger.nextMark(shown);
+            if (mark == null) return;
+            java.time.LocalDate day = windowEnd(java.time.Instant.ofEpochSecond(trigger.candleTimestamp()).atZone(java.time.ZoneOffset.UTC).toLocalDate(),
+                    trigger.interval(), mark);
+            if (!day.isBefore(today)) nextResults.put(trigger.id(), day);
+        });
+        model.addAttribute("nextResults", nextResults);
+        model.addAttribute("alertJson", json.writeValueAsString(header.alert()));
+        model.addAttribute("ticker", ticker.length() <= 20 && ticker.matches("[A-Za-z0-9.^=_,\\s-]*") ? ticker.trim().toUpperCase() : "");
+        return "custom-alert";
     }
 
     /** The builder, optionally started from a template, for a stock or a watchlist, or from a chart alert. */
@@ -66,6 +103,32 @@ public class CustomAlertController {
         return "custom-alert-builder";
     }
 
+    /**
+     * Roughly when the oldest trigger still being measured completes its follow-up window: that many candles of its
+     * interval after its own candle (weekdays for daily candles; market holidays can push it a day or two later).
+     */
+    static java.time.LocalDate firstResult(List<CustomAlertService.TriggerRow> triggers, int candles) {
+        return triggers.stream().filter(trigger -> !"COMPLETE".equals(trigger.outcomeStatus()))
+                .map(trigger -> windowEnd(java.time.Instant.ofEpochSecond(trigger.candleTimestamp()).atZone(java.time.ZoneOffset.UTC).toLocalDate(),
+                        trigger.interval(), candles))
+                .min(java.util.Comparator.naturalOrder()).orElse(null);
+    }
+
+    private static java.time.LocalDate windowEnd(java.time.LocalDate candle, org.example.stockwatch247.model.enums.TimeInterval interval, int candles) {
+        return switch (interval) {
+            case WEEKLY -> candle.plusWeeks(candles);
+            case MONTHLY -> candle.plusMonths(candles);
+            default -> {
+                java.time.LocalDate day = candle;
+                for (int left = candles; left > 0; ) {
+                    day = day.plusDays(1);
+                    if (day.getDayOfWeek().getValue() <= 5) left--;
+                }
+                yield day;
+            }
+        };
+    }
+
     @GetMapping("/custom-alerts/{id}/edit")
     public String editPage(@PathVariable long id, Model model, Principal principal) {
         alerts.requireOwned(user(principal), id);
@@ -75,10 +138,13 @@ public class CustomAlertController {
 
     @GetMapping("/custom-alerts/triggers/{id}")
     public String triggerPage(@PathVariable long id, @RequestParam(defaultValue = "") String returnTo, Model model, Principal principal) {
-        CustomAlertService.TriggerView trigger = alerts.trigger(user(principal), id);
+        User user = user(principal);
+        CustomAlertService.TriggerView trigger = alerts.trigger(user, id);
         model.addAttribute("trigger", trigger);
+        model.addAttribute("place", alerts.place(user, id));
+        model.addAttribute("alertPerformance", alerts.performance(user, trigger.alertId()));
         model.addAttribute("triggerEvidence", json.writeValueAsString(trigger.evidence()));
-        if (returnTo.length() <= 1024 && returnTo.matches("^/(signals|custom-alerts)(\\?[^\\r\\n#]*)?$")) {
+        if (returnTo.length() <= 1024 && returnTo.matches("^/(signals|custom-alerts(/\\d+)?)(\\?[^\\r\\n#]*)?$")) {
             model.addAttribute("returnUrl", returnTo);
         }
         return "custom-alert-trigger";
@@ -218,6 +284,14 @@ public class CustomAlertController {
     public ResponseEntity<Void> read(@PathVariable long id, @RequestParam(defaultValue = "true") boolean read, Principal principal) {
         alerts.setRead(user(principal), id, read);
         return ResponseEntity.noContent().build();
+    }
+
+    public record TriggerSelection(List<Long> ids) { }
+
+    @PostMapping(value = "/api/custom-alerts/{id}/triggers/delete", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public Map<String, Integer> deleteTriggers(@PathVariable long id, @RequestBody TriggerSelection selection, Principal principal) {
+        return Map.of("deleted", alerts.deleteTriggers(user(principal), id, selection == null ? null : selection.ids()));
     }
 
     @PostMapping("/api/custom-alerts/read-all")

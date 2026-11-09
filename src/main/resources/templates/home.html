@@ -640,7 +640,7 @@
           <p class="custom-dash-caught-up" th:text="#{home.custom.caughtUp}">No new triggers. Your alerts check again after every completed candle.</p>
           <ul class="custom-dash-alerts">
             <li th:each="alert : ${customAlertSummaries}">
-              <a th:href="@{/signals(customAlertId=${alert.id()})}" class="custom-dash-alert" th:classappend="${alert.active()} ? '' : ' is-paused'">
+              <a th:href="@{/custom-alerts/{id}(id=${alert.id()})}" class="custom-dash-alert" th:classappend="${alert.active()} ? '' : ' is-paused'">
                 <strong th:text="${alert.name()}">Oversold bounce</strong>
                 <span th:text="${alert.active() ? #messages.msg('home.custom.matching', alert.matching(), alert.stocks()) : #messages.msg('home.custom.paused')}">2 of 14 stocks match now</span>
               </a>
