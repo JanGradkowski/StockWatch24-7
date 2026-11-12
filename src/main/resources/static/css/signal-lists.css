@@ -1,0 +1,397 @@
+/*
+ * The signal archive pages (all signals, a watchlist's or a stock's, ticker alerts). They share the custom alert
+ * pages' layout from custom-alerts.css (header, figures, segmented filters, search, table, pager); this file adds
+ * what signals have of their own: filters that are links, the types and source menus, signal and status cells, day
+ * groups, and a compact card for each row on phones.
+ */
+
+/* Header: the lead and its guide link on one line. */
+.sa-page .ca-alert-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; max-width: 90ch; }
+.sa-guide-toggle { font-size: var(--fs-sm); }
+.sa-read-status:empty { display: none; }
+.sa-guide { margin: 0 0 var(--space-5); padding: var(--space-4) var(--space-6); border: 1px solid var(--glass-border); border-radius: var(--radius-md);
+    background: var(--surface); }
+.sa-guide-columns { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--space-4) var(--space-8); }
+.sa-guide ul { display: grid; gap: 8px; margin: 0; padding-left: 18px; color: var(--text-soft); font-size: var(--fs-md); line-height: var(--lh-normal); }
+.sa-guide strong { color: var(--text-color); font-weight: 600; }
+.sa-guide-title { margin: 0 0 var(--space-2); font-size: var(--fs-md); font-weight: 600; }
+.sa-guide .sa-legend { gap: 10px; padding: 0; list-style: none; }
+.sa-legend li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+
+/* Figures: signals per day and the results of finished signals, side by side. */
+.sa-figures { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.sa-figures-single { grid-template-columns: minmax(0, 1fr); }
+.sa-figures .ca-kpi-history { margin-top: 0; }
+.sa-results .ca-kpi-value { font-size: var(--fs-xl); }
+.sa-results-foot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin: 8px 0 0;
+    color: var(--text-soft); font-size: var(--fs-sm); }
+.sa-results-foot .ca-link-button { font-size: var(--fs-sm); }
+
+/* Filters are links, so the server keeps paging. */
+.ca-segmented a { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 12px; border-radius: 6px;
+    color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.ca-segmented a:hover { color: var(--text-color); }
+.ca-segmented a[aria-current="page"] { background: var(--surface-raised); color: var(--text-color); box-shadow: inset 0 0 0 1px var(--glass-border); }
+.ca-segmented a[aria-current="page"] .ca-count-badge { background: var(--surface); }
+.ca-segmented a:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.ca-triggers-tools .sa-ticker { flex: 1 1 12rem; max-width: 16rem; min-width: 12rem; }
+.ca-triggers-tools .sa-ticker input { width: 100%; }
+.sa-page .sa-types > summary { display: inline-flex; align-items: center; gap: 6px; width: auto; height: 36px; padding: 0 12px; border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm); background: var(--surface); color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap;
+    list-style: none; cursor: pointer; }
+.sa-page .sa-types > summary::-webkit-details-marker { display: none; }
+.sa-page .sa-types > summary .ca-icon { width: 14px; height: 14px; }
+.sa-page :is(.sa-types > summary:hover, .sa-types[open] > summary) { background: var(--surface-raised); color: var(--text-color); }
+.sa-page .sa-types > summary.is-filtered { border-color: var(--primary-color); color: var(--text-color); }
+.sa-page .sa-types > summary:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.sa-types-panel { min-width: 18rem; padding: var(--space-3) var(--space-4); }
+.sa-page .row-menu-panel { box-shadow: 0 4px 12px rgba(0, 0, 0, .18); }
+.sa-types fieldset { display: grid; gap: 2px; margin: 0; padding: 0; border: 0; }
+.sa-types legend { margin: 0 0 var(--space-2); padding: 0; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; }
+.sa-type-option { display: flex; align-items: flex-start; gap: 10px; padding: 6px 4px; border-radius: 6px; font-size: var(--fs-md); cursor: pointer; }
+.sa-type-option:hover { background: var(--surface-raised); }
+.sa-type-option input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--primary-color); }
+.sa-type-option small { display: block; color: var(--text-soft); font-size: var(--fs-sm); }
+.sa-types-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: var(--space-3); }
+.sa-page .sa-types-actions .btn-primary { width: auto; }
+.sa-source-option { justify-content: space-between; text-decoration: none; }
+.sa-source-option[aria-checked="true"] { color: var(--text-color); font-weight: 600; }
+.sa-source-option[aria-checked="true"]::after { content: '✓'; margin-left: 8px; color: var(--primary-color); }
+.sa-sort-select { display: none; }
+.sa-sort-select select { height: 36px; max-width: 100%; padding: 0 30px 0 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
+    background: var(--surface); color: var(--text-color); font: inherit; font-size: var(--fs-sm); }
+.sa-filtered { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 var(--space-3); color: var(--text-soft); font-size: var(--fs-sm); }
+.sa-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 6px 0 10px; border: 1px solid var(--glass-border); border-radius: 999px;
+    background: var(--surface); color: var(--text-color); font-size: var(--fs-sm); font-weight: 600; text-decoration: none; }
+.sa-chip .ca-icon { width: 14px; height: 14px; color: var(--text-soft); }
+.sa-chip:hover { background: var(--surface-raised); }
+.sa-chip:hover .ca-icon { color: var(--text-color); }
+.sa-chip:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.sa-flash { margin: 0 0 var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
+    background: var(--surface); font-size: var(--fs-md); }
+.sa-flash.is-success { border-color: color-mix(in srgb, var(--accent-color) 45%, var(--glass-border)); }
+.sa-flash.is-error { border-color: color-mix(in srgb, var(--danger) 55%, var(--glass-border)); color: var(--danger); }
+.sa-page dialog.ca-dialog { box-shadow: 0 6px 18px rgba(0, 0, 0, .22); }
+
+/* The table: the ticker over its company, a signal's name over its kind; numbers right-aligned under their titles. */
+.sa-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); white-space: normal; line-height: 1.25; }
+.sa-table .ca-col-ticker { width: 176px; }
+.sa-table .ca-col-fired { width: 150px; }
+.sa-table .sa-col-status { width: 150px; }
+.sa-table .sa-col-score { width: 84px; text-align: right; white-space: nowrap; }
+.sa-table .sa-col-outcome { width: 248px; text-align: right; }
+.sa-table th:is(.sa-col-score, .sa-col-outcome) { text-align: right; }
+.sa-table th:is(.sa-col-score, .sa-col-outcome) .ca-sort { position: relative; }
+.sa-table th:is(.sa-col-score, .sa-col-outcome) .ca-sort .ca-icon { position: absolute; top: 50%; left: 100%; margin: -6px 0 0 1px; }
+.sa-table a.ca-sort { color: inherit; text-decoration: none; }
+.sa-table .ca-sort .ca-icon { opacity: .3; }
+.sa-table td { height: 58px; }
+.sa-table td.sa-col-signal, .sa-table td.sa-col-outcome, .sa-table td.ca-col-ticker { padding-block: 8px; }
+.sa-company { display: block; margin-top: 1px; overflow: hidden; color: var(--text-soft); font-family: var(--font-sans); font-size: var(--fs-sm);
+    font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.sa-name { display: block; overflow: hidden; color: var(--text-color); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.sa-name-link { display: flex; align-items: center; gap: 6px; font-family: var(--font-sans); }
+.sa-row.is-unread .sa-name { font-weight: 700; }
+.sa-kind { display: block; margin-top: 2px; overflow: hidden; color: var(--text-soft); font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
+.sa-direction.is-buy { color: var(--accent-color); }
+.sa-direction.is-sell { color: var(--danger); }
+.sa-status { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; color: var(--text-color); font-size: var(--fs-sm); font-weight: 600; }
+.sa-status::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted-text); }
+.sa-status.is-open::before { background: var(--warning); }
+.sa-status.is-up::before { background: var(--accent-color); }
+.sa-status.is-down::before { background: var(--danger); }
+.sa-status.is-done { color: var(--text-soft); font-weight: 500; }
+.sa-score-inline { display: none; }
+.sa-score { color: var(--text-color); font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sa-score.is-high { color: var(--accent-color); }
+.sa-score-scale { margin-left: 1px; color: var(--text-soft); font-size: var(--fs-xs); }
+.sa-none { color: var(--text-soft); font-size: var(--fs-sm); }
+.sa-col-outcome .ca-change.is-waiting { color: var(--text-color); font-size: var(--fs-md); font-weight: 600; }
+:is(.sa-col-outcome, .ca-col-fired, .sa-col-trade) .ca-cell-note { display: block; margin-top: 1px; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 400; }
+.sa-stage { display: block; }
+.sa-stage + .sa-stage { margin-top: 4px; }
+/* An unread row has a bar along its edge as well as the dot. */
+.sa-page:not(.is-selecting) .sa-row.is-unread td.ca-col-ticker,
+.sa-page:not(.is-selecting).sa-one-stock .sa-row.is-unread td.sa-col-signal,
+.sa-page.is-selecting .sa-row.is-unread td.ca-col-select { box-shadow: inset 3px 0 0 var(--primary-color); }
+.sa-row:focus-within { background: color-mix(in srgb, var(--primary-color) 7%, var(--surface)); }
+.sa-row .ca-trigger-link:focus-visible { outline-offset: 3px; }
+.sa-group-row th { height: auto; padding: 14px 12px 6px 24px; border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 60%, transparent);
+    background: color-mix(in srgb, var(--surface-raised) 30%, var(--surface)); color: var(--text-soft); font-size: var(--fs-sm); font-weight: 500;
+    text-align: left; white-space: normal; }
+.sa-group-row th strong { margin-right: 8px; color: var(--text-color); font-weight: 600; }
+.sa-table.is-flat .sa-group-row { display: none; }
+.sa-pager { display: flex; align-items: center; justify-content: center; gap: 6px; margin: var(--space-5) 0 0; }
+.sa-pager .ca-pager-place { min-width: 96px; }
+
+/* Ticker alerts: who traded, what, how much, when, and how the price moved since the filing. */
+.sa-activity-table .sa-col-signal { width: 30%; }
+.sa-activity-table .sa-col-trade { width: 104px; }
+.sa-activity-table .sa-col-amount { width: 150px; text-align: right; font-variant-numeric: tabular-nums; }
+.sa-activity-table th.sa-col-amount { text-align: right; }
+.sa-activity-table .ca-col-fired { width: 168px; }
+.sa-activity-table .sa-col-outcome { width: 150px; }
+.sa-activity-table td.ca-col-fired { padding-block: 8px; }
+.sa-trade { font-weight: 600; }
+.sa-trade.is-buy { color: var(--accent-color); }
+.sa-trade.is-sell { color: var(--danger); }
+.sa-filing-link { color: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); white-space: nowrap; }
+.sa-filing-link:hover { color: var(--text-color); }
+
+@media (hover: none) { .ca-search .ca-kbd { display: none; } }
+
+@media (max-width: 1100px) {
+    .sa-guide-columns { grid-template-columns: minmax(0, 1fr); }
+    .sa-table .sa-col-score { display: none; }
+    .sa-table .sa-score-inline { display: inline; margin-left: 8px; color: var(--text-soft); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+    .sa-table .sa-col-status { width: 168px; }
+    .sa-activity-table .sa-col-amount { width: 120px; }
+}
+
+/* Tablets keep the table; phones read each row as a short card. */
+@media (min-width: 769px) and (max-width: 900px) {
+    .sa-table, .sa-table tbody { display: table; }
+    .sa-table thead { display: table-header-group; }
+    .sa-table tbody { display: table-row-group; }
+    .sa-table .ca-trigger-row { display: table-row; padding: 0; }
+    .sa-table td { display: table-cell; height: 58px; padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 60%, transparent); }
+    .sa-table .ca-trigger-row .ca-col-select { display: none; }
+    .is-selecting .sa-table .ca-trigger-row .ca-col-select { display: table-cell; }
+    .sa-table .ca-trigger-row .ca-col-ticker { padding-left: 24px !important; }
+    .sa-table .ca-trigger-row .ca-col-ticker .ca-dot { position: absolute; margin: -3px 0 0; }
+    .sa-table .ca-trigger-row .ca-col-open { display: table-cell !important; }
+    .sa-table .sa-group-row { display: table-row; }
+    .sa-table .sa-group-row th { display: table-cell; }
+    .sa-table.is-flat .sa-group-row { display: none; }
+    .sa-table .ca-col-ticker { width: 120px; }
+    .sa-table .ca-col-fired { width: 128px; }
+    .sa-table .sa-col-status { width: 140px; }
+    .sa-table .sa-col-outcome { width: 176px; }
+    .sa-activity-table .sa-col-amount { display: none; }
+}
+
+@media (max-width: 768px) {
+    /* Each signal reads as three lines: ticker and time, the signal, then its state and result. */
+    .sa-table .ca-trigger-row { grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas: "select ticker fired" "select signal signal" "select status outcome"; row-gap: 4px; padding: 12px 14px; }
+    .sa-one-stock .sa-table .ca-trigger-row { grid-template-areas: "select signal fired" "select signal signal" "select status outcome"; }
+    .sa-table td { height: auto; }
+    .sa-table .ca-trigger-row td.ca-col-ticker { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0; }
+    .sa-table .sa-company { margin: 0; }
+    .sa-table .ca-trigger-row td.sa-col-signal { grid-area: signal; min-width: 0; padding: 0; }
+    .sa-table .ca-trigger-row td.ca-col-fired { grid-area: fired; justify-self: end; font-size: var(--fs-sm); }
+    .sa-table .ca-trigger-row td.sa-col-status { grid-area: status; width: auto; }
+    .sa-table .ca-trigger-row td.sa-col-outcome { grid-area: outcome; justify-self: end; width: auto; max-width: 58vw; padding: 0; text-align: right; }
+    .sa-table .ca-trigger-row :is(td.sa-col-score, td.ca-col-company, td.ca-col-open, td.sa-col-amount) { display: none; }
+    .sa-table .sa-name { white-space: normal; }
+    .sa-table .sa-kind { white-space: normal; }
+    .sa-table .sa-col-outcome .ca-cell-note { display: inline; margin-left: 6px; white-space: normal; }
+    .sa-table .sa-col-outcome .ca-change.is-waiting { font-size: var(--fs-sm); }
+    .sa-page:not(.is-selecting) .sa-row.is-unread td.ca-col-ticker,
+    .sa-page:not(.is-selecting).sa-one-stock .sa-row.is-unread td.sa-col-signal,
+    .sa-page.is-selecting .sa-row.is-unread td.ca-col-select { box-shadow: none; }
+    .sa-table .ca-trigger-row.is-unread { box-shadow: inset 3px 0 0 var(--primary-color); }
+    .sa-group-row, .sa-group-row th { display: block; }
+    .sa-group-row th { padding: 12px 14px 6px; }
+    /* Ticker alerts: ticker and trade with its amount, who traded, then the dates and the return. */
+    .sa-activity-table .ca-trigger-row { grid-template-areas: "select ticker trade" "select signal signal" "select fired outcome"; }
+    .sa-activity-table .ca-trigger-row td.sa-col-trade { grid-area: trade; justify-self: end; padding: 0; text-align: right; white-space: nowrap; }
+    .sa-activity-table .ca-trigger-row td.sa-col-trade::after { content: attr(data-amount); margin-left: 6px; color: var(--text-soft); font-weight: 500; }
+    .sa-activity-table .ca-trigger-row td.ca-col-fired { justify-self: start; }
+    .sa-activity-table .ca-trigger-row td.ca-col-fired .ca-cell-note { display: inline; margin-left: 6px; }
+    /* The toolbar: the tabs share a row (labels may wrap), the ticker field takes the next, the order and Select the last. */
+    .ca-triggers-tools .sa-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); flex: 1 1 100%; }
+    .ca-triggers-tools .sa-tabs a { flex-wrap: wrap; gap: 2px 6px; min-height: 40px; padding: 4px; white-space: normal; text-align: center; line-height: 1.2; }
+    .ca-triggers-tools .sa-ticker { flex: 1 1 100%; max-width: none; min-width: 0; }
+    .sa-sort-select { display: block; flex: 1 1 auto; min-width: 0; }
+    .sa-sort-select select { width: 100%; }
+    .sa-list .ca-triggers-actions { display: flex; margin-left: 0; }
+    .sa-page .sa-types { flex: none; }
+    .sa-figures { grid-template-columns: minmax(0, 1fr); }
+    .sa-legend li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .sa-page .ca-bulk-bar .ca-check-all span { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
+}
+
+/* ------------------------------------------------------------------ round 2 */
+
+/* The figures: the per-day strip as tall as the results beside it; one border along the band's top. */
+.sa-figures .ca-kpi { border-top: 0; }
+.sa-figures .ca-kpi + .ca-kpi { border-left: 1px solid var(--glass-border); }
+.sa-figure-history { justify-content: center; }
+.sa-figure-history .ca-history-bars { height: 72px; }
+.sa-figures-single { grid-template-columns: minmax(0, 640px); }
+.sa-figures-single .ca-history-bars { height: 40px; }
+.sa-figures-single .ca-kpi { border-left: 0; }
+
+/* The legend: the colour rule, then each status word. */
+.sa-guide-words { margin-top: var(--space-4); }
+.sa-status-words { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: var(--fs-sm); line-height: var(--lh-normal); }
+.sa-status-words dt { color: var(--text-color); font-weight: 600; }
+.sa-status-words dd { margin: 0; color: var(--text-soft); }
+
+/* One unread marker (the bar); one strong mark for the row in focus. */
+.sa-row .ca-dot { display: none; }
+.sa-row:focus-within { outline: 2px solid var(--primary-color); outline-offset: -2px; }
+
+/* The score joins the status; the order list is there at every width. */
+.sa-score-inline { display: inline; color: var(--text-color); font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sa-table .sa-score-inline { margin-left: 0; color: var(--text-color); }
+.sa-sort-select { display: block; flex: 0 1 auto; }
+.sa-table .ca-col-fired { width: 172px; }
+.sa-inline-time { display: none; }
+.sa-col-signal .sa-filing-link { display: inline-block; margin-top: 2px; color: var(--text-soft); font-size: var(--fs-sm); }
+.sa-activity-table td.sa-col-trade .sa-amount-note { display: none; }
+:root[data-theme] .ui-refresh dialog.ca-dialog { box-shadow: 0 6px 18px rgba(0, 0, 0, .22); }
+
+@media (max-width: 1100px) {
+    .sa-activity-table .sa-col-amount { display: none; }
+    .sa-activity-table td.sa-col-trade .sa-amount-note { display: block; white-space: nowrap; }
+    .sa-activity-table .sa-col-trade { width: 132px; }
+    .sa-activity-table .sa-col-outcome { width: 132px; }
+}
+@media (min-width: 769px) and (max-width: 1100px) {
+    /* Tablets: the time moves into the signal's second line, so the name has room. */
+    .sa-table:not(.sa-activity-table) .ca-col-fired { display: none !important; }
+    .sa-table:not(.sa-activity-table) .sa-inline-time { display: inline; }
+    .sa-table .sa-col-status { width: 168px; }
+    .sa-table .sa-col-outcome { width: 190px; }
+    .sa-activity-table .sa-col-signal { width: auto; }
+    /* Ticker alerts: dates and returns are short, so the buyer or seller gets the room. */
+    .sa-activity-table .ca-col-ticker { width: 112px; }
+    .sa-activity-table .sa-col-trade { width: 124px; }
+    .sa-activity-table .ca-col-fired { width: 118px; }
+    .sa-activity-table .sa-col-outcome { width: 116px; }
+}
+@media (max-width: 768px) {
+    .sa-table .ca-trigger-row td { width: auto; }
+    .sa-table .ca-trigger-row td.ca-col-ticker .ca-trigger-link { flex: none; }
+    .sa-table .ca-trigger-row td.ca-col-ticker .sa-company { flex: 1 1 auto; min-width: 0; }
+    .sa-table .ca-trigger-row td.ca-col-fired { white-space: nowrap; }
+    .sa-table .ca-trigger-row td.sa-col-outcome { max-width: 46vw; }
+    .sa-table .ca-trigger-row td.sa-col-status { min-width: 0; }
+    .sa-table .sa-status { flex-wrap: wrap; }
+    /* Ticker alerts: ticker and company beside the trade and amount; the person; then the dates and the return. */
+    .sa-activity-table .ca-trigger-row td.sa-col-trade::after { content: none; }
+    .sa-activity-table .ca-trigger-row td.sa-col-trade .sa-amount-note { display: inline; margin-left: 6px; }
+    .sa-activity-table .ca-trigger-row td.ca-col-fired { white-space: normal; min-width: 0; }
+    .sa-activity-table .ca-trigger-row td.sa-col-outcome { max-width: 40vw; }
+    .sa-col-signal .sa-filing-link { display: block; }
+    .ca-triggers-tools .sa-tabs { gap: 4px; }
+    .ca-triggers-tools .sa-tabs a { flex-direction: column; }
+    .sa-figures .ca-kpi + .ca-kpi { border-left: 0; border-top: 1px solid var(--glass-border); }
+    .sa-figure-history .ca-history-bars { height: 40px; }
+    .sa-figures-single { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ------------------------------------------------------------------ round 3 */
+
+/* The status: its dot and word with the setup score beside them, never split by a hanging separator; under it a note
+   or, on tablets, the time. Amber marks only patterns waiting for confirmation, a solid dot what is still measured,
+   a hollow one what has finished. Gains and losses are coloured on the result, not on the status. */
+.sa-status-line { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; max-width: 100%; }
+.sa-status { white-space: nowrap; }
+.sa-table .sa-score-inline { margin-left: 0; white-space: nowrap; }
+.sa-status::before, .sa-status.is-open::before { background: var(--text-soft); }
+.sa-status.is-waiting::before { background: var(--warning); }
+.sa-status.is-done::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted-text); }
+.sa-status-note { display: block; margin-top: 2px; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 400; }
+.sa-status-time { display: none; }
+
+/* One mark for the row in focus: the row's outline, not a second ring on its link. */
+.sa-page .sa-row .ca-trigger-link:focus-visible { outline: none; box-shadow: none; }
+
+/* The guide's list keeps its own spacing beside the taller legend. */
+.sa-guide-columns > ul { align-content: start; align-self: start; }
+
+/* Figures: ticker alerts' one strip runs the full width; too few results read as one plain line. */
+.sa-figures.sa-figures-single { grid-template-columns: minmax(0, 1fr); }
+.sa-figures-single .sa-figure-history .ca-history-bars { height: 48px; }
+.sa-results .ca-kpi-value.is-pending { color: var(--text-color); font-size: var(--fs-md); font-weight: 500; line-height: var(--lh-normal); }
+
+@media (min-width: 769px) {
+    .sa-table:not(.sa-activity-table) .sa-col-status { width: 196px; }
+    .sa-table:not(.sa-activity-table) .ca-col-fired { width: 150px; }
+    /* A stock's own page starts its rows where its day titles start. */
+    .sa-one-stock .sa-table :is(td, th).sa-col-signal { padding-left: 24px; }
+}
+
+/* Ticker alerts: the filing link follows the role on the same line; grouped by company, rows don't repeat its name. */
+.sa-kind-line { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-top: 2px; }
+.sa-kind-line .sa-kind { flex: 0 1 auto; min-width: 0; margin-top: 0; }
+.sa-kind-line .sa-filing-link { flex: none; margin-top: 0; }
+.sa-by-company .sa-company { display: none; }
+.sa-activity-table td.ca-col-fired :is(.sa-traded, .ca-cell-note span) { white-space: nowrap; }
+
+/* The (i) beside a column title, and its note. */
+.sa-th-help { display: inline-flex; align-items: center; gap: 2px; }
+.sa-help-button { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%;
+    background: transparent; color: var(--text-soft); cursor: pointer; }
+.sa-help-button .ca-icon { width: 15px; height: 15px; }
+.sa-help-button:hover { background: var(--surface-raised); color: var(--text-color); }
+.sa-help-button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+.sa-help-note { position: fixed; inset: auto; width: min(22rem, calc(100vw - 16px)); margin: 0; padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-color);
+    font-size: var(--fs-sm); font-weight: 400; line-height: var(--lh-normal); text-align: left; white-space: normal; box-shadow: 0 4px 12px rgba(0, 0, 0, .18); }
+
+/* Tabs whose words can't fit four to a row go two by two (set by the script when a label overflows). */
+.ca-triggers-tools .sa-tabs.is-stacked { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1 1 100%; }
+.ca-triggers-tools .sa-tabs.is-stacked a { flex-direction: row; min-height: 34px; }
+
+@media (min-width: 1101px) and (max-width: 1280px) {
+    .sa-table:not(.sa-activity-table) .ca-col-ticker { width: 150px; }
+    .sa-table:not(.sa-activity-table) .sa-col-outcome { width: 210px; }
+}
+@media (min-width: 769px) and (max-width: 1100px) {
+    /* Tablets: the signal gets the room and may take two lines; the time sits under the status. */
+    .sa-table:not(.sa-activity-table) .ca-col-ticker { width: 120px; }
+    .sa-table:not(.sa-activity-table) .sa-col-status { width: 150px; }
+    .sa-table:not(.sa-activity-table) .sa-col-outcome { width: 160px; }
+    .sa-table:not(.sa-activity-table) .sa-status-time { display: block; margin-top: 2px; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 400; }
+    .sa-table:not(.sa-activity-table) :is(.sa-name:not(.sa-name-link), .sa-name-link > span) { display: -webkit-box; overflow: hidden; white-space: normal;
+        -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .sa-table:not(.sa-activity-table) .sa-kind { white-space: normal; }
+}
+@media (max-width: 768px) {
+    /* Phones: the ticker and company run up to the time, however wide the result below them is. */
+    .sa-table:not(.sa-activity-table) .ca-trigger-row { grid-template-columns: auto minmax(0, 1fr) auto auto;
+        grid-template-areas: "select ticker ticker fired" "select signal signal signal" "select status outcome outcome"; }
+    .sa-one-stock .sa-table:not(.sa-activity-table) .ca-trigger-row { grid-template-areas: "select signal signal fired" "select status outcome outcome"; }
+    .sa-table .sa-col-outcome .ca-cell-note { display: block; margin: 1px 0 0; text-wrap: balance; }
+    /* The toolbar in two rows under the tabs: the ticker with Types or Source, then the order with Select. */
+    .ca-triggers-tools .sa-ticker { flex: 1 1 55%; order: 0; }
+    .ca-triggers-tools .sa-sort-select { flex: 1 1 40%; min-width: 0; }
+    .sa-list .ca-triggers-actions { flex: none; }
+    .sa-kind-line { display: block; }
+    .sa-kind-line .sa-filing-link { display: inline-block; margin-top: 2px; }
+    .sa-activity-table .ca-trigger-row td.ca-col-fired .ca-cell-note { display: inline-block; margin-left: 6px; }
+}
+
+/* ------------------------------------------------------------------ round 4 */
+
+/* Bigger status marks, so a running row (solid dot) and a finished one (ring) differ on any screen. */
+.sa-status::before { width: 10px; height: 10px; }
+.sa-status.is-done::before { box-shadow: inset 0 0 0 2px var(--muted-text); }
+
+/* With too few results to sum up, the band stays low: a short strip beside one line. */
+.sa-figures.is-compact .sa-figure-history .ca-history-bars { height: 40px; }
+
+/* Phones explain the return in a line above the list (the column titles are hidden there). */
+.sa-return-hint { display: none; }
+
+@media (min-width: 1101px) {
+    /* The return's title fits one line. */
+    .sa-activity-table .sa-col-outcome { width: 196px; }
+}
+@media (max-width: 1100px) {
+    /* The filing link takes its own line and the role may wrap, so it is never cut short. */
+    .sa-kind-line { display: block; }
+    .sa-activity-table .sa-kind-line .sa-kind { white-space: normal; }
+    .sa-kind-line .sa-filing-link { display: inline-block; margin-top: 2px; }
+}
+@media (max-width: 768px) {
+    .sa-return-hint { display: flex; align-items: center; gap: 2px; margin: 0 0 var(--space-3); color: var(--text-soft); font-size: var(--fs-sm); }
+    /* With nothing to mark as read and no other button, Ask sits beside the title instead of on a line of its own. */
+    .sa-page .ca-alert-header { position: relative; }
+    .sa-page .ca-alert-header:not(:has([data-notifications-read-all]:not([hidden]), .ca-alert-actions > a)) .ca-alert-actions { position: absolute; top: 0; right: 0; width: auto; }
+    .sa-page .ca-alert-header:not(:has([data-notifications-read-all]:not([hidden]), .ca-alert-actions > a)) h1 { padding-right: 48px; }
+}

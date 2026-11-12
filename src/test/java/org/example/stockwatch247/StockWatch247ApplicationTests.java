@@ -259,7 +259,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(view().name("all-activity-signals"))
                 .andExpect(model().attributeExists("archive"))
                 .andExpect(content().string(containsString("All ticker alerts")))
-                .andExpect(content().string(containsString("Buyer / seller name")))
+                .andExpect(content().string(containsString("Activity history")))
                 .andExpect(content().string(containsString("No activity signals have been received yet")));
     }
 
@@ -460,7 +460,7 @@ class StockWatch247ApplicationTests {
                 .andExpect(content().string(containsString("Archive Test Company")))
                 .andExpect(content().string(containsString("Select this page")))
                 .andExpect(content().string(containsString("name=\"signalKeys\"")))
-                .andExpect(content().string(containsString("name=\"singleSignalKey\"")))
+                .andExpect(content().string(containsString("data-sa-select")))
                 .andExpect(content().string(containsString("(read)")));
 
         User otherAccount = new User();
@@ -1004,9 +1004,9 @@ class StockWatch247ApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(view().name("all-signals"))
                 .andExpect(model().attributeExists("archive", "companyArchive"))
-                .andExpect(content().string(containsString("Company signal archive")))
+                .andExpect(content().string(containsString("How signals work")))
                 .andExpect(content().string(containsString(symbol + " signals")))
-                .andExpect(content().string(containsString("Sort by")))
+                .andExpect(content().string(containsString("aria-sort=\"descending\"")))
                 .andExpect(content().string(containsString("Select this page")))
                 .andExpect(content().string(containsString("Trade outcome")))
                 .andExpect(content().string(containsString("Sold at target")))
@@ -1026,12 +1026,12 @@ class StockWatch247ApplicationTests {
                 .andExpect(view().name("all-signals"))
                 .andExpect(model().attributeExists("archive"))
                 .andExpect(content().string(containsString("Technical signals")))
-                .andExpect(content().string(containsString("Sort by")))
+                .andExpect(content().string(containsString("aria-sort=\"ascending\"")))
                 .andExpect(content().string(containsString("Signal status")))
                 .andExpect(content().string(containsString("Setup score")))
-                .andExpect(content().string(containsString("value=\"confidence\"")))
-                .andExpect(content().string(containsString("value=\"status\"")))
-                .andExpect(content().string(containsString("value=\"trade-return\"")))
+                .andExpect(content().string(containsString("sort=confidence&amp;direction=desc")))
+                .andExpect(content().string(containsString("sort=status&amp;direction=asc")))
+                .andExpect(content().string(containsString("sort=trade-return&amp;direction=desc")))
                 .andExpect(content().string(containsString("Trade outcome")))
                 .andExpect(content().string(containsString("Sold at target")))
                 .andExpect(content().string(containsString("+6.49%")))

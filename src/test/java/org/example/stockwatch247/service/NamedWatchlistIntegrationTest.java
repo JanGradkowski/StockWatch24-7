@@ -323,7 +323,8 @@ class NamedWatchlistIntegrationTest {
         assertThat(archive.totalSignals()).isEqualTo(51);
         assertThat(archive.signals()).hasSize(1);
         String html=result.getResponse().getContentAsString();
-        assertThat(html).contains("page=0&amp;state=unread&amp;ticker="+asset.getTickerSymbol()+"&amp;watchlistId="+watching.id());
+        // The first page leaves out page=0; the watchlist, order, tab and ticker stay.
+        assertThat(html).contains("/signals?watchlistId="+watching.id()+"&amp;sort=ticker&amp;direction=asc&amp;state=unread&amp;ticker="+asset.getTickerSymbol()+"\"");
         assertThat(html).contains("watchlistId="+watching.id()+"&amp;sort=confidence");
         String returnUrl=(String)result.getModelAndView().getModel().get("archiveReturnUrl");
         assertThat(returnUrl).contains("watchlistId="+watching.id(),"ticker="+asset.getTickerSymbol(),"page=1","state=unread");

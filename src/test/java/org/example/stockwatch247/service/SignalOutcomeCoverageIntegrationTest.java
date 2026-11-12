@@ -185,7 +185,7 @@ class SignalOutcomeCoverageIntegrationTest {
                         .sessionAttr(AccountSession.SECURITY_VERSION, user.getSecurityVersion()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(html).contains("Close after 8 candles", "Projection · Close after 20 candles", "0.00%",
-                        "class=\"unavailable\">Pending</strong>")
+                        "class=\"ca-change is-waiting\">Pending</span>")
                 .doesNotContain(">Projection only<", ">N/A<");
     }
 

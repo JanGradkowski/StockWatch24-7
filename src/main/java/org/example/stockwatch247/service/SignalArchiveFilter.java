@@ -42,6 +42,11 @@ public record SignalArchiveFilter(String state, String ticker, Long watchlistId,
         if (customAlertId != null && customAlertId <= 0) customAlertId = null;
     }
 
+    /** The same filter on another state tab. */
+    public SignalArchiveFilter withState(String other) {
+        return new SignalArchiveFilter(other, ticker, watchlistId, types, customAlertId);
+    }
+
     public boolean applied() {
         return watchlistId != null || !"all".equals(state) || !ticker.isEmpty() || !types.isEmpty() || customAlertId != null;
     }

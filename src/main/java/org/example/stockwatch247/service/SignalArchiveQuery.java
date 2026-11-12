@@ -19,9 +19,8 @@ public class SignalArchiveQuery {
                 new SignalArchiveFilter("all", ""));
     }
 
-    public Result page(long userId, Long stockId, String sort, boolean ascending, int requestedPage, int size,
-                       SignalArchiveFilter filter) {
-        String open = """
+    /** A technical signal still running: a pending setup, or a trade plan or projection not yet resolved. */
+    private static final String OPEN = """
             (case when r.pattern_family = 'ELLIOTT_WAVE' and e.elliott_trade_plan_status is not null
                 then e.elliott_trade_plan_status in ('ACTIVE', 'PROJECTION_ONLY')
              when r.pattern_family = 'HARMONIC_FORMATION' and e.harmonic_stop_status is not null
@@ -29,30 +28,13 @@ public class SignalArchiveQuery {
                     and e.trade_plan_version in ('HARMONIC_TRADE_V2','HARMONIC_TRADE_V3')
              else coalesce(e.lifecycle_status, 'DETECTED') in ('POTENTIAL', 'DETECTED') end)
             """;
-        String where = "r.user_id = ? and e.deleted_at is null and (cast(? as bigint) is null or r.stock_asset_id = ?)"
-                + " and " + tickerMatch("a.ticker_symbol", filter)
-                + switch (filter.state()) {
-                    case "unread" -> " and e.read_at is null";
-                    case "active" -> " and " + open;
-                    case "completed" -> " and not " + open;
-                    default -> "";
-                };
-        List<String> families = technicalFamilies(filter);
-        if (families.size() < 3) {
-            where += " and coalesce(r.pattern_family,'CANDLESTICK') in ("
-                    + String.join(",", families.stream().map(family -> "'" + family + "'").toList()) + ")";
-        }
-        if (filter.watchlistId() != null) {
-            // The ID is a Long, and ownership is also enforced here for non-controller callers.
-            where += " and exists(select 1 from watchlists scoped where scoped.id=" + filter.watchlistId()
-                    + " and scoped.user_id=r.user_id) and "
-                    + WatchlistSignalScope.matches("TECHNICAL", "e.id", "r.stock_asset_id",
-                        "coalesce(r.pattern_family,'CANDLESTICK')", "r.interval", "e.trade_signal",
-                        filter.watchlistId().toString());
-        }
+
+    public Result page(long userId, Long stockId, String sort, boolean ascending, int requestedPage, int size,
+                       SignalArchiveFilter filter) {
+        String where = technicalWhere(filter);
         List<String> others = otherKinds(stockId, filter);
-        if (!others.isEmpty() || families.isEmpty()) {
-            return mixedPage(families.isEmpty() ? null : where, others, userId, stockId, sort, ascending, requestedPage, size, filter);
+        if (!others.isEmpty() || where == null) {
+            return mixedPage(where, others, userId, stockId, sort, ascending, requestedPage, size, filter);
         }
         String tables = " from alert_events e join alert_rules r on r.id = e.alert_rule_id"
                 + " join stock_assets a on a.id = r.stock_asset_id ";
@@ -82,6 +64,98 @@ public class SignalArchiveQuery {
                     (rs, row) -> rs.getLong(1), userId, stockId, stockId, filter.ticker(), size, page * size);
         }
         return new Result(ids, page, pages, count);
+    }
+
+    /**
+     * The technical rows' condition, with four placeholders (user, stock twice, ticker); null when the filter shows
+     * no pattern family.
+     */
+    private static String technicalWhere(SignalArchiveFilter filter) {
+        List<String> families = technicalFamilies(filter);
+        if (families.isEmpty()) return null;
+        String where = "r.user_id = ? and e.deleted_at is null and (cast(? as bigint) is null or r.stock_asset_id = ?)"
+                + " and " + tickerMatch("a.ticker_symbol", filter)
+                + switch (filter.state()) {
+                    case "unread" -> " and e.read_at is null";
+                    case "active" -> " and " + OPEN;
+                    case "completed" -> " and not " + OPEN;
+                    default -> "";
+                };
+        if (families.size() < 3) {
+            where += " and coalesce(r.pattern_family,'CANDLESTICK') in ("
+                    + String.join(",", families.stream().map(family -> "'" + family + "'").toList()) + ")";
+        }
+        if (filter.watchlistId() != null) {
+            // The ID is a Long, and ownership is also enforced here for non-controller callers.
+            where += " and exists(select 1 from watchlists scoped where scoped.id=" + filter.watchlistId()
+                    + " and scoped.user_id=r.user_id) and "
+                    + WatchlistSignalScope.matches("TECHNICAL", "e.id", "r.stock_asset_id",
+                        "coalesce(r.pattern_family,'CANDLESTICK')", "r.interval", "e.trade_signal",
+                        filter.watchlistId().toString());
+        }
+        return where;
+    }
+
+    /**
+     * What the archive's figures show for a filter on every state tab at once: how many signals there are, unread
+     * and still running, how many arrived each day, and every finished signal's measured result (newest first).
+     */
+    public Summary summary(long userId, Long stockId, SignalArchiveFilter filter) {
+        List<Branch> all = branches(userId, stockId, filter.withState("all"), false);
+        if (all.isEmpty()) return new Summary(0, 0, 0, List.of(), List.of());
+        long total = count(all);
+        long unread = count(branches(userId, stockId, filter.withState("unread"), false));
+        long active = count(branches(userId, stockId, filter.withState("active"), false));
+        List<Day> days = jdbc.query("select cast(received as date) as signal_day, count(*) as signals from (" + union(all)
+                        + ") archive where received is not null group by 1 order by 1",
+                (r, n) -> new Day(r.getDate("signal_day").toLocalDate(), r.getLong("signals")), parameters(all).toArray());
+        List<Branch> finished = branches(userId, stockId, filter.withState("completed"), true);
+        List<Outcome> outcomes = jdbc.query("select kind, id, ticker, received, trade_return from (" + union(finished)
+                        + ") archive where received is not null and trade_return is not null and trade_return not in ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)"
+                        + " order by received desc, id desc",
+                (r, n) -> new Outcome(r.getString("kind"), r.getLong("id"), r.getString("ticker"),
+                        r.getTimestamp("received").toLocalDateTime(), r.getDouble("trade_return")),
+                parameters(finished).toArray());
+        return new Summary(total, unread, active, days, outcomes);
+    }
+
+    private long count(List<Branch> branches) {
+        if (branches.isEmpty()) return 0;
+        Long count = jdbc.queryForObject("select count(*) from (" + union(branches) + ") archive", Long.class,
+                parameters(branches).toArray());
+        return count == null ? 0 : count;
+    }
+
+    /** Every part of the archive union for a filter; with outcomes, technical rows carry their trade result. */
+    private List<Branch> branches(long userId, Long stockId, SignalArchiveFilter filter, boolean outcomes) {
+        List<Branch> branches = new java.util.ArrayList<>();
+        String technical = technicalWhere(filter);
+        if (technical != null) {
+            List<Object> params = new java.util.ArrayList<>();
+            if (outcomes) params.addAll(boundaries());
+            params.addAll(java.util.Arrays.asList(userId, stockId, stockId, filter.ticker()));
+            branches.add(new Branch(technicalRows(technical, outcomes), params));
+        }
+        otherKinds(stockId, filter).forEach(kind -> branches.add(otherBranch(kind, userId, stockId, filter)));
+        return branches;
+    }
+
+    /** The first candle of each interval still forming, which the trade results must not read. */
+    private List<Object> boundaries() {
+        return List.of(completion.firstIncompleteCandleTimestamp(TimeInterval.WEEKLY),
+                completion.firstIncompleteCandleTimestamp(TimeInterval.MONTHLY),
+                completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY));
+    }
+
+    private Branch otherBranch(String kind, long userId, Long stockId, SignalArchiveFilter filter) {
+        return switch (kind) {
+            case "CONGRESS" -> activityRows("CONGRESS", "congressional_trade", "member_name", userId, stockId, filter);
+            case "INSIDER" -> activityRows("INSIDER", "insider_trade", "insider_name", userId, stockId, filter);
+            case "CHART" -> chartRows(userId, filter);
+            case "OUTLOOK" -> outlookRows(userId, filter);
+            case "CUSTOM" -> customRows(userId, stockId, filter);
+            default -> throw new IllegalStateException("Unknown archive kind " + kind);
+        };
     }
 
     /** One ticker matches by prefix-free substring; a list, or a ticker inside a watchlist, matches exactly. */
@@ -133,7 +207,7 @@ public class SignalArchiveQuery {
      * (HORIZON, as SignalHorizonOutcome), or none while the next candle is still forming (NONE).
      */
     private String technicalRows(String where, boolean outcomes) {
-        String projection = "select 'TECHNICAL'::text kind,e.id,a.ticker_symbol ticker,a.company_name company,r.interval,e.confidence_score confidence,e.lifecycle_status status,e.sent_at received,e.read_at,null::text title,null::text actor,null::date transaction_date,";
+        String projection = "select 'TECHNICAL'::text kind,false is_open,e.id,a.ticker_symbol ticker,a.company_name company,r.interval,e.confidence_score confidence,e.lifecycle_status status,e.sent_at received,e.read_at,null::text title,null::text actor,null::date transaction_date,";
         if (!outcomes) return projection + "null::float8 trade_return from alert_events e join alert_rules r on r.id=e.alert_rule_id join stock_assets a on a.id=r.stock_asset_id where " + where;
         String returns = """
             (case basis.outcome
@@ -280,7 +354,7 @@ public class SignalArchiveQuery {
                 + WatchlistSignalScope.matches(kind,"d.id","s.stock_asset_id","'"+kind+"'","'DAILY'","'ANY'",filter.watchlistId().toString());
         if (filter.state().equals("unread")) where += " and d.read_at is null";
         if (filter.state().equals("active")) where += " and false";
-        return new Branch("select '"+kind+"'::text kind,d.id,a.ticker_symbol ticker,a.company_name company,null::text interval,null::integer confidence,'RECORDED'::text status,"
+        return new Branch("select '"+kind+"'::text kind,false is_open,d.id,a.ticker_symbol ticker,a.company_name company,null::text interval,null::integer confidence,'RECORDED'::text status,"
                 + "d.created_at::timestamp received,d.read_at::timestamp,t.transaction_type title,t."+actor+" actor,t.transaction_date,null::float8 trade_return"
                 + " from "+prefix+"_deliveries d join "+prefix+"_subscriptions s on s.id=d.subscription_id join "+prefix+"s t on t.id=d.trade_id join stock_assets a on a.id=s.stock_asset_id where "+where,
                 java.util.Arrays.asList(userId, stockId, stockId, filter.ticker()));
@@ -291,7 +365,7 @@ public class SignalArchiveQuery {
         String where = "c.user_id=? and e.deleted_at is null and " + tickerMatch("c.symbol", filter);
         if (filter.state().equals("unread")) where += " and e.read_at is null";
         if (filter.state().equals("active")) where += " and false";
-        return new Branch("select 'CHART'::text kind,e.id,c.symbol ticker,s.company_name company,c.interval,null::integer confidence,"
+        return new Branch("select 'CHART'::text kind,false is_open,e.id,c.symbol ticker,s.company_name company,c.interval,null::integer confidence,"
                 + "'TRIGGERED'::text status,e.created_at received,e.read_at,c.label title,c.condition actor,"
                 + "(to_timestamp(e.candle_timestamp) at time zone 'UTC')::date transaction_date,null::float8 trade_return"
                 + " from chart_alert_events e join chart_alerts c on c.id=e.alert_id"
@@ -312,7 +386,7 @@ public class SignalArchiveQuery {
         }
         if (filter.state().equals("unread")) where += " and n.read_at is null";
         if (filter.state().equals("active")) where += " and false";
-        return new Branch("select 'OUTLOOK'::text kind,n.id,a.ticker_symbol ticker,a.company_name company,s.interval,"
+        return new Branch("select 'OUTLOOK'::text kind,false is_open,n.id,a.ticker_symbol ticker,a.company_name company,s.interval,"
                 + "round(n.current_score*100)::integer confidence,'CHANGED'::text status,n.created_at::timestamp received,"
                 + "n.read_at::timestamp,n.previous_classification title,n.current_classification actor,"
                 + "(to_timestamp(n.current_candle_timestamp) at time zone 'UTC')::date transaction_date,null::float8 trade_return"
@@ -343,7 +417,7 @@ public class SignalArchiveQuery {
             case "completed" -> where += " and e.outcome_status<>'PENDING'";
             default -> { }
         }
-        return new Branch("select 'CUSTOM'::text kind,e.id,a.ticker_symbol ticker,a.company_name company,e.interval,null::integer confidence,"
+        return new Branch("select 'CUSTOM'::text kind,(e.outcome_status='PENDING') is_open,e.id,a.ticker_symbol ticker,a.company_name company,e.interval,null::integer confidence,"
                 + "e.kind status,e.created_at::timestamp received,e.read_at::timestamp,c.name title,"
                 + "(e.matched_conditions||'/'||e.total_conditions) actor,"
                 + "(to_timestamp(e.candle_timestamp) at time zone 'UTC')::date transaction_date,e.outcome_return trade_return"
@@ -360,10 +434,7 @@ public class SignalArchiveQuery {
             List<Object> params = java.util.Arrays.asList(userId, stockId, stockId, filter.ticker());
             countBranches.add(new Branch(technicalRows(technicalWhere, false), params));
             if (outcomes) {
-                List<Object> withBoundaries = new java.util.ArrayList<>(List.of(
-                        completion.firstIncompleteCandleTimestamp(TimeInterval.WEEKLY),
-                        completion.firstIncompleteCandleTimestamp(TimeInterval.MONTHLY),
-                        completion.firstIncompleteCandleTimestamp(TimeInterval.DAILY)));
+                List<Object> withBoundaries = new java.util.ArrayList<>(boundaries());
                 withBoundaries.addAll(params);
                 branches.add(new Branch(technicalRows(technicalWhere, true), withBoundaries));
             } else {
@@ -371,14 +442,7 @@ public class SignalArchiveQuery {
             }
         }
         for (String kind : others) {
-            Branch branch = switch (kind) {
-                case "CONGRESS" -> activityRows("CONGRESS", "congressional_trade", "member_name", userId, stockId, filter);
-                case "INSIDER" -> activityRows("INSIDER", "insider_trade", "insider_name", userId, stockId, filter);
-                case "CHART" -> chartRows(userId, filter);
-                case "OUTLOOK" -> outlookRows(userId, filter);
-                case "CUSTOM" -> customRows(userId, stockId, filter);
-                default -> throw new IllegalStateException("Unknown archive kind " + kind);
-            };
+            Branch branch = otherBranch(kind, userId, stockId, filter);
             branches.add(branch);
             countBranches.add(branch);
         }
@@ -418,7 +482,7 @@ public class SignalArchiveQuery {
                     TimeInterval.valueOf(r.getString("interval")), r.getString("status"),
                     r.getDate("transaction_date").toLocalDate(), r.getTimestamp("received").toLocalDateTime(),
                     r.getTimestamp("read_at") != null, r.getObject("trade_return") == null ? null : r.getDouble("trade_return"),
-                    r.getObject("confidence") == null ? null : r.getInt("confidence")));
+                    r.getObject("confidence") == null ? null : r.getInt("confidence"), r.getBoolean("is_open")));
         };
     }
 
@@ -439,10 +503,12 @@ public class SignalArchiveQuery {
      * @param status TRIGGERED, MATCHED_ON_APPLY for a custom alert that already matched when it was applied,
      *               or CHANGED for an outlook change
      * @param score  the new outlook score on the ±100 scale; null for alert triggers
+     * @param open   a custom alert trigger whose outcome window is still running
      */
     public record AlertTrigger(String kind, long id, String symbol, String companyName, String title, String detail,
                                TimeInterval interval, String status, java.time.LocalDate candleDate,
-                               java.time.LocalDateTime received, boolean hasBeenRead, Double outcomeReturn, Integer score) {
+                               java.time.LocalDateTime received, boolean hasBeenRead, Double outcomeReturn, Integer score,
+                               boolean open) {
         public boolean custom() { return kind.equals("CUSTOM"); }
         public boolean outlook() { return kind.equals("OUTLOOK"); }
         public String key() { return kind + ":" + id; }
@@ -453,6 +519,35 @@ public class SignalArchiveQuery {
                     + "?chartAlert=" + id + "#general";
         }
     }
+
+    /**
+     * The archive's figures for a filter: all its signals, the unread ones and those still running (a pending setup,
+     * an open trade plan, a custom alert trigger still being measured), signals per day, and the result of every
+     * finished signal that has one, newest first.
+     */
+    public record Summary(long total, long unread, long active, List<Day> days, List<Outcome> outcomes) {
+        public long completed() { return total - active; }
+
+        /** The median result of the finished signals; null before any is measured. */
+        public Double median() {
+            if (outcomes.isEmpty()) return null;
+            double[] values = outcomes.stream().mapToDouble(Outcome::value).sorted().toArray();
+            int middle = values.length / 2;
+            double value = values.length % 2 == 1 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
+            return Math.round(value * 100) / 100.0;
+        }
+
+        public long higher() { return outcomes.stream().filter(outcome -> outcome.value() > 0).count(); }
+
+        public long flat() { return outcomes.stream().filter(outcome -> outcome.value() == 0).count(); }
+
+        public long lower() { return outcomes.size() - higher() - flat(); }
+    }
+
+    public record Day(java.time.LocalDate day, long count) { }
+
+    /** A finished signal's result: a technical signal's trade outcome, or a custom alert trigger's change. */
+    public record Outcome(String kind, long id, String symbol, java.time.LocalDateTime received, double value) { }
 
     /** A row of a mixed archive page; technical rows are loaded by id, the others carry their own view. */
     public record ArchiveRow(String kind, long id, ActivitySignal activity, AlertTrigger trigger) {}

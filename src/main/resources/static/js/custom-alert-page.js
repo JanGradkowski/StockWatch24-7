@@ -6,6 +6,7 @@
   if (!page) return;
   const i18n = window.StockWatchI18n;
   const text = window.StockWatchCustomAlerts;
+  const figures = window.StockWatchListFigures;
   const el = text.element;
   // The shared request helper (watchlist-picker.js) loads with the navigation, after this script.
   const api = (...args) => window.StockWatchLists.api(...args);
@@ -390,142 +391,21 @@
   }
 
   /**
-   * The Triggers tile: triggers per day over the alert's life (at most 180 days), on a baseline with its first day and
-   * today named. A square-root scale keeps a busy day from flattening the rest; stocks already matching when the alert
-   * was saved are no trigger of their own, so they are a marker on their day, not a bar.
+   * The Triggers tile: triggers per day over the alert's life. Stocks already matching when the alert was saved are a
+   * marker on their day, not a bar.
    */
   function history() {
-    const box = document.querySelector('[data-ca-history]');
-    if (!box) return;
-    const DAY = 86400000;
-    const startOf = value => { const day = new Date(value); day.setHours(0, 0, 0, 0); return day.getTime(); };
-    const today = startOf(Date.now());
-    const firsts = [alert.createdAt ? new Date(alert.createdAt).getTime() : Date.now(), ...rows.map(row => Number(row.dataset.fired))];
-    const days = Math.max(14, Math.min(180, Math.round((today - startOf(Math.min(...firsts))) / DAY) + 1));
-    const fired = new Array(days).fill(0);
-    const atSave = new Array(days).fill(0);
-    rows.forEach(row => {
-      const at = days - 1 - Math.round((today - startOf(Number(row.dataset.fired))) / DAY);
-      if (at < 0 || at >= days) return;
-      if (row.dataset.kind === 'MATCHED_ON_APPLY') atSave[at]++; else fired[at]++;
-    });
-    const width = days * 4;
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', `0 0 ${width} 28`);
-    svg.setAttribute('preserveAspectRatio', 'none');
-    svg.setAttribute('class', 'ca-history-bars');
-    svg.setAttribute('role', 'img');
-    const total = fired.reduce((sum, value) => sum + value, 0);
-    svg.setAttribute('aria-label', i18n.plural('ca.alert.historyAria', total, total, days));
-    const rect = (attributes, className) => {
-      const node = document.createElementNS(svg.namespaceURI, 'rect');
-      Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
-      if (className) node.setAttribute('class', className);
-      return node;
-    };
-    svg.append(rect({ x: 0, y: 27, width, height: 1 }, 'ca-history-base'));
-    const top = Math.sqrt(Math.max(1, ...fired));
-    fired.forEach((value, at) => {
-      if (!value) return;
-      const height = Math.max(4, Math.round((Math.sqrt(value) / top) * 24));
-      const bar = rect({ x: at * 4 + 0.5, y: 27 - height, width: 3, height });
-      const title = document.createElementNS(svg.namespaceURI, 'title');
-      title.textContent = `${text.date(today - (days - 1 - at) * DAY, true)}: ${i18n.plural('ca.alert.historyDay', value, value)}`;
-      bar.append(title);
-      svg.append(bar);
-    });
-    atSave.forEach((value, at) => {
-      if (!value) return;
-      const mark = rect({ x: at * 4, y: 21, width: 4, height: 4 }, 'ca-history-save');
-      const title = document.createElementNS(svg.namespaceURI, 'title');
-      title.textContent = `${text.date(today - (days - 1 - at) * DAY, true)}: ${i18n.plural('ca.alert.historyAtSave', value, value)}`;
-      mark.append(title);
-      svg.append(mark);
-    });
-    const caption = el('p', 'ca-history-caption');
-    caption.append(el('span', null, i18n.t('ca.alert.historyCaption')));
-    const saved = atSave.reduce((sum, value) => sum + value, 0);
-    if (saved) {
-      const key = el('span', 'ca-history-save-key');
-      key.append(el('i'), i18n.plural('ca.alert.historyAtSave', saved, saved));
-      caption.append(key);
-    }
-    const axis = el('div', 'ca-history-axis-labels');
-    axis.append(el('span', null, text.date(today - (days - 1) * DAY, true)), el('span', null, i18n.t('ca.alert.historyToday')));
-    box.replaceChildren(caption, svg, axis);
+    figures.history(document.querySelector('[data-ca-history]'),
+      rows.map(row => ({ time: Number(row.dataset.fired), marked: row.dataset.kind === 'MATCHED_ON_APPLY' })),
+      { since: alert.createdAt ? new Date(alert.createdAt).getTime() : null });
   }
 
-  /**
-   * The outcome tile: every measured trigger's change as a dot on one line around zero, the median marked, and how many
-   * closed higher and lower. With a dozen triggers the spread says as much as the median.
-   */
+  /** The outcome tile: every measured trigger's change as a dot around zero; each dot opens its trigger. */
   function spread() {
-    const box = document.querySelector('[data-ca-spread]');
-    if (!box) return;
-    const measured = rows.filter(row => row.dataset.complete === 'true' && row.dataset.change !== undefined && row.dataset.change !== '')
-      .map(row => ({ row, value: Number(row.dataset.change) })).filter(item => Number.isFinite(item.value)).sort((a, b) => a.value - b.value);
-    const values = measured.map(item => item.value);
-    if (!values.length) { box.remove(); return; }
-    // The line runs from the lowest change to the highest, zero always on it; its ends are named underneath.
-    const percent = new Intl.NumberFormat(i18n.tag || 'en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const signed = value => `${value > 0 ? '+' : value < 0 ? '−' : ''}${percent.format(Math.abs(value))}%`;
-    const low = Math.min(0, values[0]);
-    const high = Math.max(0, values.at(-1));
-    const higher = values.filter(value => value > 0).length;
-    const middle = values.length % 2 ? values[values.length >> 1] : (values[values.length / 2 - 1] + values[values.length / 2]) / 2;
-    const labels = el('div', 'ca-spread-labels');
-    labels.append(el('span', null, signed(low)), el('span', 'ca-spread-count', i18n.t('ca.alert.spreadCount', higher, values.length - higher)),
-      el('span', null, signed(high)));
-    const draw = () => {
-      // Drawn to the tile's width, so the dots stay round.
-      const width = Math.max(120, Math.round(box.clientWidth));
-      const x = value => 6 + ((value - low) / ((high - low) || 1)) * (width - 12);
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', `0 -12 ${width} 46`);
-      svg.setAttribute('class', 'ca-spread');
-      svg.setAttribute('role', 'img');
-      svg.setAttribute('aria-label', i18n.t('ca.alert.spreadAria', higher, values.length - higher, signed(values[0]), signed(values.at(-1))));
-      const line = (x1, y1, x2, y2, className) => {
-        const node = document.createElementNS(svg.namespaceURI, 'line');
-        Object.entries({ x1, y1, x2, y2, class: className }).forEach(([key, value]) => node.setAttribute(key, value));
-        return node;
-      };
-      svg.append(line(6, 17, width - 6, 17, 'ca-spread-axis'), line(x(0), 3, x(0), 31, 'ca-spread-zero'));
-      svg.append(line(x(middle), 5, x(middle), 29, 'ca-spread-median'));
-      // Each dot opens its trigger. Dots that would touch step above and below the line, so every trigger stays visible.
-      const placedDots = [];
-      measured.forEach(({ row, value }) => {
-        const cx = x(value);
-        const cy = 17 + ([0, -8, 8, -15, 15].find(offset => placedDots.every(dot => Math.hypot(dot.cx - cx, dot.cy - 17 - offset) >= 8.5)) ?? 0);
-        placedDots.push({ cx, cy });
-        const link = document.createElementNS(svg.namespaceURI, 'a');
-        link.setAttribute('href', `/custom-alerts/triggers/${row.dataset.id}?returnTo=${encodeURIComponent(window.location.pathname)}`);
-        const label = `${row.dataset.symbol} ${signed(value)} · ${text.date(Number(row.dataset.fired), true)}`;
-        link.setAttribute('aria-label', label);
-        const dot = document.createElementNS(svg.namespaceURI, 'circle');
-        Object.entries({ cx, cy, r: 4, class: value > 0 ? 'is-up' : 'is-down' }).forEach(([key, number]) => dot.setAttribute(key, number));
-        const title = document.createElementNS(svg.namespaceURI, 'title');
-        title.textContent = label;
-        link.append(title, dot);
-        svg.append(link);
-      });
-      const zero = document.createElementNS(svg.namespaceURI, 'text');
-      Object.entries({ x: x(0), y: 2, class: 'ca-spread-zero-label', 'text-anchor': x(0) < 20 ? 'start' : x(0) > width - 20 ? 'end' : 'middle', 'dominant-baseline': 'hanging' })
-        .forEach(([key, value]) => zero.setAttribute(key, value));
-      zero.textContent = '0%';
-      zero.setAttribute('y', '-11');
-      svg.prepend(zero);
-      box.replaceChildren(svg, labels);
-    };
-    draw();
-    if (window.ResizeObserver) {
-      let drawnAt = box.clientWidth;
-      new ResizeObserver(() => {
-        if (Math.abs(box.clientWidth - drawnAt) < 4) return;
-        drawnAt = box.clientWidth;
-        draw();
-      }).observe(box);
-    }
+    figures.spread(document.querySelector('[data-ca-spread]'), rows
+      .filter(row => row.dataset.complete === 'true' && row.dataset.change !== undefined && row.dataset.change !== '')
+      .map(row => ({ value: Number(row.dataset.change), symbol: row.dataset.symbol, time: Number(row.dataset.fired),
+        href: `/custom-alerts/triggers/${row.dataset.id}?returnTo=${encodeURIComponent(window.location.pathname)}` })));
   }
 
   header();

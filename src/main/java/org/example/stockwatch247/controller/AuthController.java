@@ -402,6 +402,7 @@ public class AuthController {
         model.addAttribute("companyArchive", companyArchive);
         model.addAttribute("archive", companyArchive.archive());
         archiveNavigation(model, companyArchive.archive(), filter, "/alerts/" + alertRuleId);
+        archiveFigures(model, alertRuleService.getCompanySignalArchiveSummary(currentUser, alertRuleId, filter));
         return "all-signals";
     }
 
@@ -476,6 +477,7 @@ public class AuthController {
         var archive = alertRuleService.getSignalArchive(currentUser, sort, direction, page, filter);
         model.addAttribute("archive", archive);
         archiveNavigation(model, archive, filter, "/signals");
+        archiveFigures(model, alertRuleService.getSignalArchiveSummary(currentUser, filter));
         model.addAttribute("archiveTypes", customAlertId != null ? List.of()
                 : watchlistId != null ? List.of("candlestick", "elliott", "harmonic", "outlook", "custom", "congress", "insider")
                 : List.of("candlestick", "elliott", "harmonic", "outlook", "chart", "custom"));
@@ -497,21 +499,157 @@ public class AuthController {
                 .queryParam("ticker", filter.ticker());
         if (!filter.types().isEmpty()) location.queryParam("type", filter.typeParameter());
         model.addAttribute("archiveReturnUrl", location.build().encode().toUriString());
+        model.addAttribute("archivePath", path);
+        // The state tabs keep the order, ticker and types; the pager keeps everything.
+        java.util.Map<String, String> tabs = new java.util.LinkedHashMap<>();
+        for (String state : List.of("all", "unread", "active", "completed")) {
+            tabs.put(state, archiveUrl(path, filter.withState(state), archive.sort(), archive.direction(), 0));
+        }
+        model.addAttribute("archiveTabs", tabs);
+        model.addAttribute("archiveSortUrls", sortLinks(java.util.Map.of("ticker", "asc", "interval", "asc", "date", "desc",
+                "status", "asc", "confidence", "desc", "trade-return", "desc"), archive.sort(), archive.direction(),
+                (key, order) -> archiveUrl(path, filter, key, order, 0)));
+        if (archive.hasPrevious()) model.addAttribute("archivePreviousUrl", archiveUrl(path, filter, archive.sort(), archive.direction(), archive.page() - 1));
+        if (archive.hasNext()) model.addAttribute("archiveNextUrl", archiveUrl(path, filter, archive.sort(), archive.direction(), archive.page() + 1));
+        // Phones have no column titles: the order is a list of its own.
+        model.addAttribute("archiveSortOptions", sortOptions(archive.sort(), archive.direction(), List.of(
+                new String[] {"date", "desc", "signals.sortOption.newest"}, new String[] {"date", "asc", "signals.sortOption.oldest"},
+                new String[] {"trade-return", "desc", "signals.sortOption.best"}, new String[] {"trade-return", "asc", "signals.sortOption.worst"},
+                new String[] {"confidence", "desc", "signals.sortOption.score"}, new String[] {"ticker", "asc", "signals.sortOption.ticker"},
+                new String[] {"status", "asc", "signals.sortOption.status"}, new String[] {"interval", "asc", "signals.sortOption.interval"}),
+                (key, order) -> archiveUrl(path, filter, key, order, 0)));
+        model.addAttribute("archiveBestUrl", archiveUrl(path, filter.withState("completed"), "trade-return", "desc", 0));
+        // Each filter shown above the list can be taken off on its own.
+        List<FilterChip> chips = new java.util.ArrayList<>();
+        if (!filter.ticker().isEmpty()) {
+            chips.add(new FilterChip(filter.ticker(), null, archiveUrl(path,
+                    new SignalArchiveFilter(filter.state(), "", filter.watchlistId(), filter.types(), filter.customAlertId()),
+                    archive.sort(), archive.direction(), 0)));
+        }
+        for (String type : SignalArchiveFilter.TYPES) {
+            if (!filter.types().contains(type)) continue;
+            var others = new java.util.HashSet<>(filter.types());
+            others.remove(type);
+            chips.add(new FilterChip(null, "signals.type." + type, archiveUrl(path,
+                    new SignalArchiveFilter(filter.state(), filter.ticker(), filter.watchlistId(), others, filter.customAlertId()),
+                    archive.sort(), archive.direction(), 0)));
+        }
+        model.addAttribute("archiveChips", chips);
+    }
+
+    /** A filter above an archive list: its text (a ticker) or message key (a type), and the address without it. */
+    public record FilterChip(String text, String labelKey, String removeUrl) { }
+
+    /** A choice of order for phones: its message key, address, and whether the list is in that order now. */
+    public record SortOption(String labelKey, String url, boolean selected) { }
+
+    static List<SortOption> sortOptions(String sort, String direction, List<String[]> choices,
+                                        java.util.function.BiFunction<String, String, String> link) {
+        return choices.stream().map(choice -> new SortOption(choice[2], link.apply(choice[0], choice[1]),
+                choice[0].equals(sort) && choice[1].equals(direction))).toList();
+    }
+
+    /**
+     * Each column title's link, by sort key: sorted by that column from the first page, in its natural direction, or
+     * the other way round when the list is already sorted by it.
+     */
+    static java.util.Map<String, String> sortLinks(java.util.Map<String, String> naturalDirections, String sort, String direction,
+                                                  java.util.function.BiFunction<String, String, String> link) {
+        java.util.Map<String, String> links = new java.util.HashMap<>();
+        naturalDirections.forEach((key, natural) -> links.put(key,
+                link.apply(key, key.equals(sort) ? ("asc".equals(direction) ? "desc" : "asc") : natural)));
+        return links;
+    }
+
+    /** An archive address with only the parameters that differ from the defaults. */
+    static String archiveUrl(String path, SignalArchiveFilter filter, String sort, String direction, int page) {
+        var location = org.springframework.web.util.UriComponentsBuilder.fromPath(path);
+        if (filter.watchlistId() != null) location.queryParam("watchlistId", filter.watchlistId());
+        if (!"date".equals(sort) || !"desc".equals(direction)) location.queryParam("sort", sort).queryParam("direction", direction);
+        if (!"all".equals(filter.state())) location.queryParam("state", filter.state());
+        if (!filter.ticker().isEmpty()) location.queryParam("ticker", filter.ticker());
+        if (!filter.types().isEmpty()) location.queryParam("type", filter.typeParameter());
+        if (page > 0) location.queryParam("page", page);
+        return location.build().encode().toUriString();
+    }
+
+    @Autowired(required = false)
+    private tools.jackson.databind.ObjectMapper json;
+
+    /**
+     * The figures above an archive, and for its script the signals per day and the latest 200 measured results
+     * (kind, id, ticker, time received, result).
+     */
+    private void archiveFigures(Model model, org.example.stockwatch247.service.SignalArchiveQuery.Summary summary) {
+        model.addAttribute("summary", summary);
+        if (json == null) return;
+        List<List<Object>> days = summary.days().stream().map(day -> List.<Object>of(day.day().toString(), day.count())).toList();
+        List<List<Object>> outcomes = summary.outcomes().stream().limit(200)
+                .map(outcome -> List.<Object>of(outcome.kind(), outcome.id(), outcome.symbol(),
+                        outcome.received().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(), outcome.value()))
+                .toList();
+        model.addAttribute("archiveFigures", json.writeValueAsString(java.util.Map.of("days", days, "outcomes", outcomes)));
     }
 
     @GetMapping("/activity-signals")
     public String allActivitySignalsPage(@RequestParam(defaultValue = "date") String sort,
                                          @RequestParam(defaultValue = "desc") String direction,
                                          @RequestParam(defaultValue = "0") int page,
+                                         @RequestParam(defaultValue = "all") String state,
+                                         @RequestParam(defaultValue = "") String ticker,
+                                         @RequestParam(defaultValue = "all") String source,
                                          Model model,
                                          Principal principal) {
         User currentUser = org.example.stockwatch247.security.CurrentAccount.find(userRepository, principal.getName()).orElse(null);
         if (currentUser == null) {
             return "redirect:/login";
         }
+        var filter = new ActivityArchiveQuery.Filter(state, ticker, source);
         model.addAttribute("firstName", currentUser.getFirstName());
-        model.addAttribute("archive", getActivityArchive(currentUser, sort, direction, page));
+        ActivitySignalArchivePage archive = getActivityArchive(currentUser, sort, direction, page, filter);
+        model.addAttribute("archive", archive);
+        model.addAttribute("activityFilter", filter);
+        var summary = activityArchiveQuery == null ? ActivityArchiveQuery.Summary.empty() : activityArchiveQuery.summary(currentUser.getId(), filter);
+        model.addAttribute("summary", summary);
+        if (json != null) {
+            List<List<Object>> days = summary.days().stream().map(day -> List.<Object>of(day.day().toString(), day.count())).toList();
+            model.addAttribute("archiveFigures", json.writeValueAsString(java.util.Map.of("days", days, "outcomes", List.of())));
+        }
+        java.util.Map<String, String> tabs = new java.util.LinkedHashMap<>();
+        for (String tab : List.of("all", "unread", "purchase", "sale")) {
+            tabs.put(tab, activityUrl(filter.withState(tab), archive.sort(), archive.direction(), 0));
+        }
+        model.addAttribute("archiveTabs", tabs);
+        model.addAttribute("archiveSortUrls", sortLinks(java.util.Map.of("ticker", "asc", "company", "asc", "actor", "asc",
+                "transaction", "asc", "type", "asc", "date", "desc"), archive.sort(), archive.direction(),
+                (key, order) -> activityUrl(filter, key, order, 0)));
+        model.addAttribute("archiveClearUrl", activityUrl(new ActivityArchiveQuery.Filter(filter.state(), "", filter.source()), archive.sort(), archive.direction(), 0));
+        java.util.Map<String, String> sources = new java.util.LinkedHashMap<>();
+        for (String choice : List.of("all", "insider", "congress")) {
+            sources.put(choice, activityUrl(filter.withSource(choice), archive.sort(), archive.direction(), 0));
+        }
+        model.addAttribute("archiveSources", sources);
+        model.addAttribute("archiveSortOptions", sortOptions(archive.sort(), archive.direction(), List.of(
+                new String[] {"date", "desc", "activitySignals.sortOption.newest"}, new String[] {"date", "asc", "activitySignals.sortOption.oldest"},
+                new String[] {"ticker", "asc", "signals.sortOption.ticker"}, new String[] {"company", "asc", "activitySignals.sortOption.company"},
+                new String[] {"actor", "asc", "activitySignals.sortOption.actor"}, new String[] {"transaction", "asc", "activitySignals.sortOption.purchases"},
+                new String[] {"type", "asc", "activitySignals.sortOption.source"}),
+                (key, order) -> activityUrl(filter, key, order, 0)));
+        model.addAttribute("archivePath", "/activity-signals");
+        if (archive.hasPrevious()) model.addAttribute("archivePreviousUrl", activityUrl(filter, archive.sort(), archive.direction(), archive.page() - 1));
+        if (archive.hasNext()) model.addAttribute("archiveNextUrl", activityUrl(filter, archive.sort(), archive.direction(), archive.page() + 1));
         return "all-activity-signals";
+    }
+
+    /** A ticker alerts address with only the parameters that differ from the defaults. */
+    static String activityUrl(ActivityArchiveQuery.Filter filter, String sort, String direction, int page) {
+        var location = org.springframework.web.util.UriComponentsBuilder.fromPath("/activity-signals");
+        if (!"date".equals(sort) || !"desc".equals(direction)) location.queryParam("sort", sort).queryParam("direction", direction);
+        if (!"all".equals(filter.state())) location.queryParam("state", filter.state());
+        if (!filter.ticker().isEmpty()) location.queryParam("ticker", filter.ticker());
+        if (!"all".equals(filter.source())) location.queryParam("source", filter.source());
+        if (page > 0) location.queryParam("page", page);
+        return location.build().encode().toUriString();
     }
 
     @GetMapping("/stock/{symbol}")
@@ -588,13 +726,14 @@ public class AuthController {
     private ActivitySignalArchivePage getActivityArchive(User user,
                                                          String requestedSort,
                                                          String requestedDirection,
-                                                         int requestedPage) {
+                                                         int requestedPage,
+                                                         ActivityArchiveQuery.Filter filter) {
         String sort = normalizeActivitySort(requestedSort);
         String direction = "asc".equalsIgnoreCase(requestedDirection) ? "asc" : "desc";
         if (activityArchiveQuery != null) {
             // The database orders and pages the notifications; only the shown page is loaded.
             var result = activityArchiveQuery.page(user.getId(), sort, "asc".equals(direction),
-                    requestedPage, ACTIVITY_ARCHIVE_PAGE_SIZE);
+                    requestedPage, ACTIVITY_ARCHIVE_PAGE_SIZE, filter);
             java.util.Map<String, TickerNotificationView> byKey = new java.util.HashMap<>();
             congressionalActivityService.getActivity(user, idsOf(result, ActivityArchiveQuery.CONGRESSIONAL))
                     .forEach(view -> byKey.put(ActivityArchiveQuery.CONGRESSIONAL + ":" + view.id(), tickerNotification(view)));
