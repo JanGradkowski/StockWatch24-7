@@ -395,3 +395,38 @@
     .sa-page .ca-alert-header:not(:has([data-notifications-read-all]:not([hidden]), .ca-alert-actions > a)) .ca-alert-actions { position: absolute; top: 0; right: 0; width: auto; }
     .sa-page .ca-alert-header:not(:has([data-notifications-read-all]:not([hidden]), .ca-alert-actions > a)) h1 { padding-right: 48px; }
 }
+
+/* ------------------------------------------------------------------ design critique */
+
+/* Results still being measured are neutral; "Pending" stays quiet, so finished results stand out. */
+.sa-col-outcome .ca-change.is-running { color: var(--text-color); font-weight: 600; }
+.sa-col-outcome .ca-change.is-waiting { color: var(--text-soft); font-size: var(--fs-sm); font-weight: 500; }
+
+/* The Types menu's Show button keeps its own look inside the menu (menu items are plain rows). */
+:root[data-theme] .sa-page .sa-types-actions .btn-accent { display: inline-flex; align-items: center; width: auto; min-height: 32px; padding: 0 14px;
+    border: 1px solid var(--primary-color); border-radius: 8px; background: var(--primary-color); color: #101506; font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme="light"] .sa-page .sa-types-actions .btn-accent { color: #fff; }
+
+/* The line that opens the figures on phones; it comes first in the band, so the first tile is found by type. */
+.sa-figures-toggle { display: none; }
+.sa-figures > .ca-kpi:first-of-type { border-left: 0; }
+
+@media (max-width: 768px) {
+    .sa-figures.is-collapsible .sa-figures-toggle { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 12px;
+        width: 100%; min-height: 48px; padding: 0 var(--space-4); border: 0; background: transparent; color: var(--text-color);
+        font: inherit; font-size: var(--fs-md); font-weight: 600; text-align: left; cursor: pointer; }
+    .sa-figures-toggle-hint { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--text-soft); font-size: var(--fs-sm); font-weight: 500; }
+    .sa-figures-toggle .ca-icon { width: 14px; height: 14px; }
+    .sa-figures.is-open .sa-figures-toggle .ca-icon { transform: rotate(180deg); }
+    .sa-figures-toggle:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
+    .sa-figures.is-collapsible:not(.is-open) > .ca-kpi { display: none; }
+    .sa-figures.is-collapsible.is-open .sa-figures-toggle { border-bottom: 1px solid var(--glass-border); }
+
+    /* Ticker alerts: the trade date reads first, "filed" second, as on wider screens. */
+    .sa-activity-table .ca-trigger-row td.ca-col-fired { color: var(--text-color); }
+    .sa-activity-table .ca-trigger-row td.ca-col-fired .ca-cell-note { color: var(--text-soft); }
+
+    /* Text links standing on their own get a finger-sized hit area without moving anything. */
+    .sa-page :is(.sa-guide-toggle, .sa-results-foot .ca-link-button, .sa-kind-line .sa-filing-link) { display: inline-block; padding-block: 10px; margin-block: -10px; }
+    .sa-return-hint .sa-help-button { width: 36px; height: 36px; margin: -6px -6px -6px 0; }
+}
