@@ -908,6 +908,7 @@ body:has(.ca-page) .sw-assistant .sw-assistant-fab { display: none; }
 .ca-spread-median { stroke: var(--text-color); stroke-width: 2; }
 .ca-spread circle.is-up { fill: var(--accent-color); }
 .ca-spread circle.is-down { fill: var(--danger); }
+.ca-spread circle.is-flat { fill: var(--surface); stroke: var(--text-soft); stroke-width: 1.5; }
 .ca-spread-labels { display: flex; justify-content: space-between; gap: 8px; color: var(--text-soft); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .ca-spread-count { color: var(--text-color); font-weight: 600; }
 .ca-change.is-so-far { font-style: italic; font-weight: 500; opacity: .85; }

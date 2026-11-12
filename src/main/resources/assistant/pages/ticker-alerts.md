@@ -17,8 +17,13 @@ history; each alert opens a detail page.
   **{{msg:home.markAsRead}}**, **{{msg:home.openStock}}**, **{{msg:activityDetail.officialFiling}}**, and the
   stocks followed. **{{msg:activitySignals.directionalReturn}}** measures how the price moved in the trade's
   direction since the filing.
-- **{{msg:activitySignals.heading}}**: **{{msg:activitySignals.historyHeading}}** sorted by
-  **{{msg:activitySignals.sort.date}}**, ticker, company, buy/sale, type or name; delete selected.
+- **{{msg:activitySignals.heading}}**: alerts per day; tabs **{{msg:signals.state.all}}**,
+  **{{msg:signals.state.unread}}**, **{{msg:activitySignals.tab.purchases}}** and **{{msg:activitySignals.tab.sales}}**;
+  **{{msg:activitySignals.sourceButton}}** (**{{msg:activitySignals.source.insider}}** or
+  **{{msg:activitySignals.source.congress}}**); a ticker field; and a table sortable by ticker, name, trade or
+  **{{msg:activitySignals.column.traded}}** (on phones, from a list). **{{msg:activitySignals.column.return}}** is
+  the price move since the filing in the trade's direction; the (i) beside its title and **{{msg:activitySignals.howLink}}** explain it. **{{msg:signals.select}}** ticks
+  rows to delete.
 - Detail page: **{{msg:signals.transactionDetails}}**, **{{msg:activityDetail.openFiling}}**,
   **{{msg:activityDetail.snapshotTitle}}**, **{{msg:activityDetail.relatedTitle}}**, **{{msg:activityDetail.resultsTitle}}**.
 

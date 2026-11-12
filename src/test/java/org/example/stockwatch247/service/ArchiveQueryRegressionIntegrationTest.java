@@ -63,5 +63,18 @@ class ArchiveQueryRegressionIntegrationTest {
         assertThat(query.page(-1, null, "date", false, 0, 50, completed).ids()).isEmpty();
         assertThat(query.page(user.getId(), null, "date", false, 0, 50,
                 new SignalArchiveFilter("all", "%")).ids()).isEmpty();
+
+        // The figures cover every tab: 61 signals, 30 unread, the one without a plan still running, and the 60
+        // finished trade results (1% to 60%).
+        var summary = query.summary(user.getId(), null, new SignalArchiveFilter("unread", ""));
+        assertThat(summary.total()).isEqualTo(61);
+        assertThat(summary.unread()).isEqualTo(30);
+        assertThat(summary.active()).isEqualTo(1);
+        assertThat(summary.completed()).isEqualTo(60);
+        assertThat(summary.outcomes()).hasSize(60);
+        assertThat(summary.higher()).isEqualTo(60);
+        assertThat(summary.median()).isEqualTo(30.5);
+        assertThat(summary.days().stream().mapToLong(SignalArchiveQuery.Day::count).sum()).isEqualTo(61);
+        assertThat(query.summary(user.getId(), asset.getId(), new SignalArchiveFilter("all", "%")).total()).isZero();
     }
 }

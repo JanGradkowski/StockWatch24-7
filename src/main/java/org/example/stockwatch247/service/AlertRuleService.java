@@ -483,6 +483,20 @@ public class AlertRuleService {
                 filteredArchive(user, asset, sort, direction, page, filter));
     }
 
+    /** The figures above the account archive: the whole archive for this filter, on every state tab. */
+    public SignalArchiveQuery.Summary getSignalArchiveSummary(User user, SignalArchiveFilter filter) {
+        if (archiveQuery == null) return new SignalArchiveQuery.Summary(0, 0, 0, List.of(), List.of());
+        return archiveQuery.summary(user.getId(), null, filter);
+    }
+
+    /** The figures above one stock's archive (the stock of an alert rule the user follows). */
+    public SignalArchiveQuery.Summary getCompanySignalArchiveSummary(User user, Long alertRuleId, SignalArchiveFilter filter) {
+        if (archiveQuery == null) return new SignalArchiveQuery.Summary(0, 0, 0, List.of(), List.of());
+        AlertRule selected = alertRuleRepository.findByIdAndUserAndIsActiveTrue(alertRuleId, user)
+                .orElseThrow(() -> new IllegalArgumentException("Active alert rule not found."));
+        return archiveQuery.summary(user.getId(), selected.getStockAsset().getId(), filter);
+    }
+
     private SignalArchivePage filteredArchive(User user, StockAsset asset, String sort, String direction,
                                                int page, SignalArchiveFilter filter) {
         // The account archive also lists chart and custom alert triggers, which only the archive query reads.
@@ -3165,6 +3179,76 @@ public class AlertRuleService {
         }
         public SignalArchiveEntry {
             stageOutcomes = stageOutcomes == null ? List.of() : List.copyOf(stageOutcomes);
+        }
+
+        /**
+         * Still running, as the archive's Active tab counts it: a pending setup, an open trade plan or projection, or
+         * a custom alert trigger still being measured.
+         */
+        public boolean active() {
+            if (trigger != null) return trigger.open();
+            if (activity != null) return false;
+            SignalLifecycleView plan = signal.lifecycle();
+            if (signal.patternFamily() == AlertPatternFamily.ELLIOTT_WAVE && plan.elliottTradePlanStatus() != null) {
+                return "ACTIVE".equals(plan.elliottTradePlanStatus()) || "PROJECTION_ONLY".equals(plan.elliottTradePlanStatus());
+            }
+            if (signal.patternFamily() == AlertPatternFamily.HARMONIC_FORMATION && plan.harmonicStopStatus() != null) {
+                return "ACTIVE".equals(plan.harmonicStopStatus()) || "PROJECTION_ONLY".equals(plan.harmonicStopStatus());
+            }
+            return plan.status() == SignalLifecycleStatus.POTENTIAL || plan.status() == SignalLifecycleStatus.DETECTED;
+        }
+
+        /**
+         * The status mark: waiting while a pattern waits for the price to confirm it (the rows worth a look), open while
+         * a trade, projection or trigger is still measured, done once finished. Gains and losses are coloured on the
+         * result, not here.
+         */
+        public String tone() {
+            if (!active()) return "done";
+            return signal != null && waitsForConfirmation() ? "waiting" : "open";
+        }
+
+        /** A pattern the price has cancelled or that ran out, whose projection is still followed. */
+        public boolean projectionOpen() {
+            return signal != null && active() && !waitsForConfirmation()
+                    && java.util.EnumSet.of(SignalLifecycleStatus.INVALIDATED, SignalLifecycleStatus.REJECTED, SignalLifecycleStatus.EXPIRED)
+                    .contains(signal.lifecycle().status());
+        }
+
+        private boolean waitsForConfirmation() {
+            // A harmonic trade already open with its stop is running, not waiting.
+            if ("ACTIVE".equals(signal.lifecycle().harmonicStopStatus())) return false;
+            SignalLifecycleStatus status = signal.lifecycle().status();
+            return status == SignalLifecycleStatus.POTENTIAL || status == SignalLifecycleStatus.DETECTED;
+        }
+
+        /**
+         * The status word's message key: how a finished Elliott or harmonic plan ended (target, stop, time limit, not
+         * filled), the stop while a harmonic trade is open, or null for the pattern's own status.
+         */
+        public String statusWordKey() {
+            if (signal == null) return null;
+            SignalLifecycleView plan = signal.lifecycle();
+            boolean harmonic = signal.patternFamily() == AlertPatternFamily.HARMONIC_FORMATION;
+            String status = signal.patternFamily() == AlertPatternFamily.ELLIOTT_WAVE ? plan.elliottTradePlanStatus()
+                    : harmonic ? plan.harmonicStopStatus() : null;
+            if (status == null) return null;
+            if (active()) return harmonic && "ACTIVE".equals(status) ? "signals.statusWord.activeStop" : null;
+            return switch (status) {
+                case "TARGET_REACHED" -> "signals.statusWord.targetReached";
+                case "STOPPED" -> "signals.statusWord.stopBreached";
+                case "TIME_STOPPED" -> harmonic ? "signals.statusWord.timeStop" : "signals.statusWord.timeLimit";
+                case "NOT_FILLED" -> "signals.statusWord.notFilled";
+                case "STRUCTURE_INVALIDATED" -> "signals.statusWord.invalidated";
+                case "STAGE_COMPLETED" -> "signals.statusWord.stageCompleted";
+                case "REVISED" -> "signals.statusWord.revised";
+                default -> null;
+            };
+        }
+
+        /** When the signal, filing or trigger arrived. */
+        public java.time.LocalDateTime received() {
+            return trigger != null ? trigger.received() : activity != null ? activity.received() : signal.sentAt();
         }
 
         private String groupKey(String sortKey) {

@@ -13,5 +13,12 @@
     <path class="sort-arrow-down" d="m3 10 3 3 3-3"/>
   </svg>
 </a>
+<!--/* A sortable column title for the list tables: the arrow shows on the sorted column, and aria-sort says which. */-->
+<th th:fragment="header(links, archive, key, label, initialDirection, className)" scope="col" th:class="${className}"
+    th:with="active=${archive.sort() == key},next=${active ? (archive.direction() == 'asc' ? 'desc' : 'asc') : initialDirection},currentWord=${archive.direction() == 'asc' ? #messages.msg('archive.sort.ascending') : #messages.msg('archive.sort.descending')},nextWord=${next == 'asc' ? #messages.msg('archive.sort.ascending') : #messages.msg('archive.sort.descending')}"
+    th:attr="aria-sort=${active ? (archive.direction() == 'asc' ? 'ascending' : 'descending') : 'none'}">
+  <a class="ca-sort" th:href="${links.get(key)}"
+     th:attr="aria-label=${active ? #messages.msg('archive.sort.ariaActive', label, currentWord, nextWord) : #messages.msg('archive.sort.aria', label, nextWord)},title=${#messages.msg('archive.sort.title', label, nextWord)}"><span th:text="${label}">Ticker</span><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></a>
+</th>
 </body>
 </html>
