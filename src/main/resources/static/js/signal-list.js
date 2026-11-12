@@ -24,6 +24,25 @@
   // The dots only show the spread; the link under them lists the finished signals, best first.
   figures.spread(document.querySelector('[data-sa-spread]'), (data.outcomes || []).map(([, , symbol, time, value]) => ({ value, symbol, time })));
 
+  // Phones fold the figures into one line, so the list starts on the first screen; the line opens them (remembered).
+  const band = document.querySelector('.sa-figures');
+  const bandToggle = band?.querySelector('[data-sa-figures-toggle]');
+  if (band && bandToggle) {
+    const setOpen = open => {
+      band.classList.toggle('is-open', open);
+      bandToggle.setAttribute('aria-expanded', String(open));
+    };
+    let remembered = false;
+    try { remembered = window.localStorage.getItem('sa.figuresOpen') === '1'; } catch { /* stays folded */ }
+    band.classList.add('is-collapsible');
+    setOpen(remembered);
+    bandToggle.addEventListener('click', () => {
+      const open = !band.classList.contains('is-open');
+      setOpen(open);
+      try { window.localStorage.setItem('sa.figuresOpen', open ? '1' : '0'); } catch { /* not remembered */ }
+    });
+  }
+
   // ------------------------------------------------------------------ the guide
 
   const guide = document.getElementById('sa-guide');

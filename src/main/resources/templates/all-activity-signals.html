@@ -54,6 +54,10 @@
   </section>
 
   <section class="ca-kpis sa-figures sa-figures-single" th:if="${summary.total() > 0}" th:aria-label="#{activitySignals.kpiAria}" aria-label="Your ticker alerts at a glance">
+    <button type="button" class="sa-figures-toggle" data-sa-figures-toggle aria-expanded="false">
+      <span class="sa-figures-toggle-text" th:text="#{activitySignals.figures.perDay}">Alerts per day</span>
+      <span class="sa-figures-toggle-hint"><span th:text="#{signals.figures.charts}">Charts</span><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+    </button>
     <div class="ca-kpi sa-figure-history">
       <div class="ca-kpi-history" data-sa-history></div>
     </div>
