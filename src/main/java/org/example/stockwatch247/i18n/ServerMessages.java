@@ -194,6 +194,8 @@ public final class ServerMessages {
             String joined = joinedParts(message, SENTENCE_BREAK, " ");
             if (joined == null) joined = joinedParts(message, LIST_BREAK, ", ");
             if (joined != null) return joined;
+            String money = PolishFormats.money(message);
+            if (money != null) return money;
             String number = PolishFormats.number(message);
             return number != null ? number : PolishFormats.dates(message);
         }

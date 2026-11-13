@@ -118,7 +118,7 @@ class ChartAlertArchiveIntegrationTest {
 
         mvc.perform(get("/home").with(as(owner)))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("<span class=\"panel-count\">11</span>")))
+                .andExpect(content().string(containsString("<span class=\"panel-count\">11 unread</span>")))
                 // The sidebar badge says the same.
                 .andExpect(content().string(containsString("app-sidebar-badge")));
     }

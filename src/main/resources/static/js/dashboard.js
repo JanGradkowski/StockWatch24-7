@@ -402,11 +402,38 @@
         deleteAllButton.addEventListener("click", () => deleteRules(true));
     }
 
+    // The assistant opens from a button in the page header, as on the signal list pages, instead of the floating
+    // corner button that covered the panels (the stylesheet hides that button once this one is there).
+    function initializeHeaderAsk() {
+        const slot = document.querySelector("[data-home-ask-slot]");
+        if (!slot || !document.querySelector("[data-assistant]")) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "hm-ask";
+        button.setAttribute("aria-label", i18n.t("assistant.open"));
+        button.title = i18n.t("assistant.open");
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("aria-hidden", "true");
+        ["M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5z", "M8.5 8.5h7M8.5 11.5h4.5"]
+            .forEach(d => { const path = document.createElementNS(svg.namespaceURI, "path"); path.setAttribute("d", d); svg.append(path); });
+        const word = document.createElement("span");
+        word.textContent = i18n.t("ca.ask");
+        word.setAttribute("aria-hidden", "true");
+        button.append(svg, word);
+        button.addEventListener("click", () => {
+            if (window.StockWatchAssistant) window.StockWatchAssistant.open();
+            else document.querySelector("[data-assistant-toggle]")?.click();
+        });
+        slot.replaceChildren(button);
+    }
+
     function initializeDashboard() {
         initializeDashboardViews();
         initializeWatchFilters();
         initializeNotificationReadButtons();
         initializeCompanyUnfollow();
+        initializeHeaderAsk();
     }
 
     if (document.readyState === "loading") {

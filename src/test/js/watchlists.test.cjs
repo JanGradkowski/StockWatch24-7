@@ -45,15 +45,12 @@ test('opening a selected watchlist shows only its overview with paired follows a
   dom.window.close();
 });
 
-test('home and watchlists accordions open the same overview and scoped ticker archive', async () => {
+test('home lists each watchlist as one row that opens its own page, without embedding its instruments', async () => {
   const dom = await setup(), doc = dom.window.document;
-  assert.equal(doc.querySelectorAll('details').length, 2);
-  const list = doc.querySelector('details');
-  list.open = true;
-  list.dispatchEvent(new dom.window.Event('toggle'));
-  await new Promise(resolve => setTimeout(resolve, 30));
-  assert.equal([...list.querySelectorAll('a')].find(a => a.textContent === 'Open watchlist').getAttribute('href'), '/watchlists/1');
-  assert.equal(list.querySelector('tbody a').getAttribute('href'), '/signals?watchlistId=1&ticker=ABC.L');
+  const rows = [...doc.querySelectorAll('.wl-home-row')];
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].getAttribute('href'), '/watchlists/1');
+  assert.equal(doc.querySelectorAll('details, tbody').length, 0, 'the instruments and tools are on the list page');
   dom.window.close();
 });
 

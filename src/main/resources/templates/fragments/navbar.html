@@ -2,6 +2,9 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
 <div th:fragment="navbar" th:classappend="${showAppNavigation == true} ? 'app-navigation' : ''">
+  <!-- The first stop for keyboard users: past the bar and the navigation to the page itself (app-navigation.js gives
+       the page's main element its target id). -->
+  <a th:if="${showAppNavigation == true}" class="skip-link" href="#main-content" th:text="#{nav.skipToContent}">Skip to main content</a>
   <th:block th:if="${showAppNavigation == true}">
     <link rel="stylesheet" th:href="@{/css/watchlists.css}">
     <script th:src="@{/js/watchlist-picker.js}" defer></script>

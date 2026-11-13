@@ -23,7 +23,7 @@
 
 <main class="page-container ca-page sa-page sa-activity-page" th:attr="data-figures=${archiveFigures},data-kind='activity',data-sort=${archive.sort()}">
   <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
-    <a th:href="@{/home}" th:text="#{common.dashboard}">Dashboard</a>
+    <a th:href="@{/home}" th:text="#{sidebar.home}">Home</a>
     <span aria-hidden="true">/</span>
     <span aria-current="page" th:text="#{activitySignals.heading}">All ticker alerts</span>
   </nav>
@@ -159,7 +159,7 @@
               <th scope="col" class="sa-col-amount" th:text="#{activitySignals.column.amount}">Amount</th>
               <th th:replace="~{fragments/archive-sort :: header(${archiveSortUrls}, ${archive}, 'date', #{activitySignals.column.traded}, 'desc', 'ca-col-fired')}"></th>
               <th scope="col" class="sa-col-outcome">
-                <span class="sa-th-help"><span class="learn-term" data-term="directionalReturn" th:text="#{activitySignals.column.return}">Return in trade direction</span><button type="button" class="sa-help-button" popovertarget="sa-return-help"
+                <span class="sa-th-help"><span class="learn-term sa-th-long" data-term="directionalReturn" th:text="#{activitySignals.column.return}">Return in trade direction</span><span class="learn-term sa-th-short" data-term="directionalReturn" aria-hidden="true" th:text="#{activitySignals.column.returnShort}">Return</span><button type="button" class="sa-help-button" popovertarget="sa-return-help"
                     th:attr="aria-label=#{activitySignals.returnHelpAria}" th:title="#{activitySignals.returnHelpAria}"><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button></span>
               </th>
               <th scope="col" class="ca-col-open"><span class="visually-hidden" th:text="#{signals.open}">Open</span></th>
@@ -168,7 +168,7 @@
           <tbody>
             <th:block th:each="signal, row : ${archive.signals()}">
               <tr th:if="${archive.sort() != 'date' and (row.first or archive.groupKey(archive.signals().get(row.index - 1)) != archive.groupKey(signal))}" class="sa-group-row">
-                <th scope="rowgroup" colspan="8"><strong th:text="${#tr.text(archive.groupLabel(signal))}">AAPL</strong></th>
+                <td class="ca-col-select" aria-hidden="true"></td><th scope="rowgroup" colspan="7"><strong th:text="${#tr.text(archive.groupLabel(signal))}">AAPL</strong></th>
               </tr>
               <tr class="ca-trigger-row sa-row" th:classappend="${signal.hasBeenRead()} ? '' : ' is-unread'">
                 <td class="ca-col-select"><input type="checkbox" name="signalKeys" th:value="${signal.source() + ':' + signal.id()}" data-signal-checkbox
@@ -180,7 +180,7 @@
                   <span class="sa-name" th:text="${signal.actorName()}">Reporting person</span>
                   <span class="sa-kind-line">
                     <span class="sa-kind">
-                      <span th:text="${signal.actorRole() != null ? #tr.text(signal.actorRole()) : #tr.text(signal.sourceLabel())}">Officer</span>
+                      <span th:text="${signal.actorRole() != null ? #tr.role(signal.actorRole()) : #tr.text(signal.sourceLabel())}">Officer</span>
                       · <span th:text="${signal.source() == 'INSIDER' ? #messages.msg('activitySignals.source.insiderOne') : #messages.msg('activitySignals.source.congressOne')}">Insider</span>
                     </span>
                     <a th:if="${signal.sourceUrl() != null}" class="sa-filing-link" th:href="${signal.sourceUrl()}" target="_blank" rel="noopener noreferrer"

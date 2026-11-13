@@ -14,18 +14,18 @@ The dashboard: what is new since the user last looked, and shortcuts to everythi
 - Greeting and a status line ("{{msg:home.caughtUp}}" when nothing is unread). Buttons
   **{{msg:signals.all}}** (`/signals`) and **{{msg:home.alertSettings}}** (`/settings/analysis-alerts`).
 - **{{msg:home.stocks.title}}**: {{msg:home.stocks.note}}.
-- **{{msg:home.latestSignals}}** ({{msg:home.newSignalsKicker}}): unread pattern signals, outlook changes
-  and chart alert triggers, each opening its report. {{msg:home.aboutScoresText}}
+- **{{msg:home.latestSignals}}** ({{msg:home.newSignalsKicker}}): the five newest unread pattern signals, outlook
+  changes and chart alert triggers, each opening its report; the status dot works as on **{{msg:signals.all}}**. {{msg:home.aboutScoresText}}
 - **{{msg:watchlists.yours}}** with **{{msg:watchlists.create}}**.
 - **{{msg:activitySignals.eyebrow}}** ({{msg:home.tickerIntro}}): **{{msg:home.latestNotifications}}**,
   congressional and insider filings with **{{msg:home.markAsRead}}**, **{{msg:home.openStock}}**,
   **{{msg:signals.markAllRead}}**, and **{{msg:activitySignals.heading}}**.
-- **{{msg:sidebar.customAlerts}}** panel: {{learn:customAlerts.dashboard}} Buttons
-  **{{msg:home.custom.manage}}** and **{{msg:home.custom.create}}**; without alerts it offers three examples
+- **{{msg:sidebar.customAlerts}}** panel ({{msg:home.custom.kicker}}): {{learn:customAlerts.dashboard}}
+  **{{msg:home.custom.create}}** in its header and **{{msg:home.custom.manage}}** under the list; without alerts it offers three examples
   and **{{msg:home.custom.moreExamples}}**. Each alert shows "{{msg:home.custom.matching}}".
 - **{{msg:sidebar.demo}}** summary with **{{msg:home.demo.open}}**.
-- Counts: **{{msg:home.followedInstruments}}**, **{{msg:home.alertsFollowed}}**, **{{msg:home.custom.metric}}**,
-  **{{msg:home.unreadTickerAlerts}}**. {{msg:home.aboutMonitoringText}}
+- The status line under the greeting links each unread count to its list. **{{msg:watchlists.yours}}** shows
+  how many instruments and signal alerts are followed. {{msg:home.aboutMonitoringText}}
 - **{{msg:js.watchlists.manageFollows}}** on a signal opens **{{msg:home.manageRules}}**: stop following
   some rules of that company ({{msg:home.manageRulesNote}}).
 

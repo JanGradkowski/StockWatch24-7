@@ -106,6 +106,16 @@ class ServerLabelsTest {
     }
 
     @Test
+    void dollarAmountsAndRangesUsePolishGroupingWithTheSignAfter() {
+        assertThat(polish("$249,280")).isEqualTo("249 280 $");
+        assertThat(polish("$66,746,944")).isEqualTo("66 746 944 $");
+        assertThat(polish("$1,001 - $15,000")).isEqualTo("1001–15 000 $");
+        assertThat(polish("$12.50")).isEqualTo("12,50 $");
+        assertThat(polish("$5,000,001 - $25,000,000")).isEqualTo("5 000 001–25 000 000 $");
+        assertThat(ServerMessages.translate("$249,280", Locale.ENGLISH)).isEqualTo("$249,280");
+    }
+
+    @Test
     void englishStaysEnglish() {
         String summary = "Trade closed successfully on 3–7 Mar 2025 when candle 4 closed at 123.4500 and reached the 125.0000 profit target.";
         assertThat(ServerMessages.translate(summary, Locale.ENGLISH)).isEqualTo(summary);

@@ -24,13 +24,13 @@
 <main class="page-container ca-page sa-page" th:classappend="${companyArchive != null} ? ' sa-one-stock'"
       th:attr="data-figures=${archiveFigures},data-sort=${archive.sort()}">
   <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
-    <a th:href="@{/home}" th:text="#{common.dashboard}">Dashboard</a>
+    <a th:href="@{/home}" th:text="#{sidebar.home}">Home</a>
     <span aria-hidden="true">/</span>
     <a th:if="${watchlistName != null}" th:href="@{/watchlists/{id}(id=${archiveFilter.watchlistId()})}" th:text="${watchlistName}">Watchlist</a>
     <span th:if="${watchlistName != null}" aria-hidden="true">/</span>
     <a th:if="${companyArchive != null}" th:href="@{/signals}" th:text="#{signals.all}">All signals</a>
     <span th:if="${companyArchive != null}" aria-hidden="true">/</span>
-    <span aria-current="page" th:text="${companyArchive != null ? companyArchive.symbol() : #messages.msg('signals.all')}">All signals</span>
+    <span aria-current="page" th:text="${companyArchive != null ? companyArchive.symbol() : (watchlistName != null ? #messages.msg('signals.watchlistCrumb') : #messages.msg('signals.all'))}">All signals</span>
   </nav>
 
   <header class="ca-alert-header">
@@ -81,7 +81,7 @@
   <section class="ca-kpis sa-figures" th:classappend="${#lists.size(summary.outcomes()) < 5} ? ' is-compact'" th:if="${summary.total() > 0}" th:aria-label="#{signals.kpiAria}" aria-label="How these signals are doing"
            th:with="measured=${#lists.size(summary.outcomes())}">
     <button type="button" class="sa-figures-toggle" data-sa-figures-toggle aria-expanded="false">
-      <span class="sa-figures-toggle-text" th:text="${measured >= 5 ? #messages.msg('signals.results.higher', summary.higher(), measured) : #messages.msg('signals.figures.perDay')}">8 of 20 finished higher</span>
+      <span class="sa-figures-toggle-text" th:attr="data-sa-recent=${measured < 5 ? 'true' : null}" th:text="${measured >= 5 ? #messages.msg('signals.results.higher', summary.higher(), measured) : #messages.msg('signals.figures.perDay')}">8 of 20 finished higher</span>
       <span class="sa-figures-toggle-hint"><span th:text="#{signals.figures.charts}">Charts</span><svg viewBox="0 0 24 24" class="ca-icon" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
     </button>
     <div class="ca-kpi sa-figure-history">
@@ -230,7 +230,7 @@
           <tbody>
             <th:block th:each="entry, row : ${archive.signals()}">
               <tr th:if="${row.first or archive.groupKey(archive.signals().get(row.index - 1)) != archive.groupKey(entry)}" class="sa-group-row">
-                <th scope="rowgroup" colspan="8">
+                <td class="ca-col-select" aria-hidden="true"></td><th scope="rowgroup" th:colspan="${companyArchive == null ? 6 : 5}" colspan="6">
                   <strong th:if="${archive.sort() == 'date'}" th:attr="data-sa-day=${#temporals.format(entry.received(), 'yyyy-MM-dd')}"
                           th:text="${#temporals.format(entry.received(), #messages.msg('signals.groupDatePattern'))}">7 November 2026</strong>
                   <strong th:unless="${archive.sort() == 'date'}" th:text="${#tr.text(archive.groupLabel(entry))}">Weekly</strong>
@@ -242,7 +242,7 @@
               <tr th:if="${entry.activity() != null}" th:with="activity=${entry.activity()}" class="ca-trigger-row sa-row" th:classappend="${activity.hasBeenRead()} ? '' : ' is-unread'">
                 <td class="ca-col-select"><input type="checkbox" name="signalKeys" th:value="${activity.key()}" data-signal-checkbox th:aria-label="#{signals.selectAria(${#tr.text(activity.familyLabel())}, ${activity.symbol()})}"></td>
                 <td th:if="${companyArchive == null}" class="ca-col-ticker"><i class="ca-dot" th:unless="${activity.hasBeenRead()}" aria-hidden="true"></i><a class="ca-trigger-link" th:href="@{${activity.detailUrl()}(returnTo=${archiveReturnUrl})}" th:text="${activity.symbol()}">AAPL</a><span class="visually-hidden" th:unless="${activity.hasBeenRead()}" th:text="#{signals.state.unread}">Unread</span><span class="sa-company" th:text="${activity.companyName()}" th:title="${activity.companyName()}">Apple Inc.</span></td>
-                <td class="sa-col-signal"><span class="sa-name" th:text="${activity.actor()}">Reported trader</span><span class="sa-kind"><span th:text="${#tr.text(activity.familyLabel())}">Insider activity</span> · <span th:text="${#tr.text(activity.title())}">purchase</span></span></td>
+                <td class="sa-col-signal"><span class="sa-name" th:text="${activity.actor()}">Reported trader</span><span class="sa-kind"><span th:text="${#tr.text(activity.familyLabel())}">Insider activity</span> · <span class="sa-trade" th:classappend="${activity.transaction() == 'PURCHASE' ? ' is-buy' : (activity.transaction() == 'SALE' ? ' is-sell' : '')}" th:text="${activity.transaction() == 'PURCHASE' ? #tr.text('Purchase') : (activity.transaction() == 'SALE' ? #tr.text('Sale') : #strings.capitalize(#tr.text(activity.title())))}">Purchase</span></span></td>
                 <td class="ca-col-fired"><time data-ca-time th:attr="datetime=${activity.received()}" th:text="${#temporals.format(activity.received(), 'dd MMM yyyy, HH:mm')}">07 Nov 2026, 15:14</time></td>
                 <td class="sa-col-status"><span class="sa-status is-done" th:text="#{signals.filingStatus}">Filing</span><time class="sa-status-time" data-ca-time th:attr="datetime=${activity.received()}"></time></td>
                 <td class="sa-col-outcome"><span class="sa-none" aria-hidden="true">—</span><span class="visually-hidden" th:text="#{signals.noResult}">No result</span></td>
@@ -267,7 +267,7 @@
                 </td>
                 <td class="sa-col-outcome">
                   <th:block th:if="${trigger.custom()}">
-                    <span th:if="${trigger.outcomeReturn() != null}" class="ca-change" th:classappend="${trigger.outcomeReturn() > 0 ? ' is-up' : (trigger.outcomeReturn() < 0 ? ' is-down' : '')}"
+                    <span th:if="${trigger.outcomeReturn() != null}" class="ca-change" th:classappend="${trigger.open() ? ' is-running' : (trigger.outcomeReturn() > 0 ? ' is-up' : (trigger.outcomeReturn() < 0 ? ' is-down' : ''))}"
                           th:text="${(trigger.outcomeReturn() > 0 ? '+' : (trigger.outcomeReturn() < 0 ? '−' : '')) + #numbers.formatDecimal(T(java.lang.Math).abs(trigger.outcomeReturn()), 1, 'DEFAULT', 2, 'DEFAULT') + '%'}">+2.00%</span>
                     <span th:unless="${trigger.outcomeReturn() != null}" class="ca-change is-waiting" th:text="#{signals.outcomePending}">Pending</span>
                   </th:block>
@@ -296,19 +296,18 @@
                         th:classappend="${' is-' + entry.tone()}"
                         th:text="${entry.statusWordKey() != null ? #messages.msg(entry.statusWordKey()) : #tr.text(lifecycle.label())}">Detected</span><span class="sa-score-inline" th:if="${signal.setupScore() != null}" th:title="#{signals.setupScoreTitle}"
                         th:aria-label="#{signals.setupScoreAria(${signal.setupScore()})}"><span aria-hidden="true" th:text="${signal.setupScore()}">78</span><span class="sa-score-scale" aria-hidden="true">/100</span></span></span>
-                  <small class="sa-status-note" th:if="${entry.projectionOpen()}" th:text="#{signals.projectionOpen}">projection still followed</small>
                   <time class="sa-status-time" data-ca-time th:attr="datetime=${signal.sentAt()}"></time>
                 </td>
                 <td class="sa-col-outcome"
                     th:title="${!entry.stageOutcomes().isEmpty()} ? null : (${lifecycle.entryPrice() != null and lifecycle.stopLossPrice() != null and lifecycle.profitTargetPrice() != null} ? #{signals.planSummary(${#numbers.formatDecimal(lifecycle.entryPrice(), 1, 2)}, ${#numbers.formatDecimal(lifecycle.stopLossPrice(), 1, 2)}, ${#numbers.formatDecimal(lifecycle.profitTargetPrice(), 1, 2)}, ${#numbers.formatDecimal(lifecycle.rewardRiskRatio(), 1, 0)})} + ' — ' + ${#tr.text(entry.outcome().priceDetail())} : ${#tr.text(entry.outcome().priceDetail())})">
                   <th:block th:if="${entry.stageOutcomes().isEmpty()}">
                     <span th:if="${entry.outcome().available()}" class="ca-change" th:classappend="${entry.active() ? ' is-running' : (entry.outcome().returnPercent() > 0 ? ' is-up' : (entry.outcome().returnPercent() < 0 ? ' is-down' : ''))}"
-                          th:text="${#tr.text(entry.outcome().valueLabel())}">+2.00%</span>
+                          th:text="${#strings.replace(#tr.text(entry.outcome().valueLabel()), '-', '−')}">+2.00%</span>
                     <span th:unless="${entry.outcome().available()}" class="ca-change is-waiting" th:text="${entry.outcome().pending() ? #messages.msg('signals.outcomePending') : #messages.msg('common.notAvailable')}">Pending</span>
                     <small class="ca-cell-note" th:unless="${entry.statusWordKey() == 'signals.statusWord.notFilled'}" th:text="${#tr.text(entry.outcome().label())}">Sold at target</small>
                   </th:block>
                   <span th:unless="${entry.stageOutcomes().isEmpty()}" th:each="stageOutcome : ${entry.stageOutcomes()}" class="sa-stage" th:title="${#tr.text(stageOutcome.priceDetail())}">
-                    <span th:if="${stageOutcome.available()}" class="ca-change" th:classappend="${entry.active() ? ' is-running' : (stageOutcome.returnPercent() > 0 ? ' is-up' : (stageOutcome.returnPercent() < 0 ? ' is-down' : ''))}" th:text="${#tr.text(stageOutcome.valueLabel())}">+2.00%</span>
+                    <span th:if="${stageOutcome.available()}" class="ca-change" th:classappend="${entry.active() ? ' is-running' : (stageOutcome.returnPercent() > 0 ? ' is-up' : (stageOutcome.returnPercent() < 0 ? ' is-down' : ''))}" th:text="${#strings.replace(#tr.text(stageOutcome.valueLabel()), '-', '−')}">+2.00%</span>
                     <span th:unless="${stageOutcome.available()}" class="ca-change is-waiting" th:text="${stageOutcome.pending() ? #messages.msg('signals.outcomePending') : #messages.msg('common.notAvailable')}">Pending</span>
                     <small class="ca-cell-note" th:unless="${entry.statusWordKey() == 'signals.statusWord.notFilled' and #lists.size(entry.stageOutcomes()) == 1}" th:text="${#tr.text(stageOutcome.label())}">Wave II completed</small>
                   </span>

@@ -100,9 +100,44 @@
     window.addEventListener('hashchange', updateActiveSection);
     window.addEventListener('stockwatch:dashboard-view', updateActiveSection);
     window.addEventListener('pageshow', () => { closeDrawer(); updateActiveSection(); });
+    // On wide screens the navigation is one row. Longer translations may not fit it: the tabs then move closer
+    // together; if that is not enough, settings, help and learning mode show only their icons, and as a last resort
+    // the tabs take a second row rather than running off the screen.
+    function fitRow() {
+        sidebar.classList.remove('nav-fit-icons', 'nav-fit-tight', 'nav-fit-compact', 'nav-fit-wrap');
+        if (mobile.matches) return;
+        const overflows = () => sidebar.scrollWidth > sidebar.clientWidth + 1;
+        if (!overflows()) return;
+        sidebar.classList.add('nav-fit-tight');
+        if (!overflows()) return;
+        sidebar.classList.add('nav-fit-icons');
+        if (!overflows()) return;
+        sidebar.classList.add('nav-fit-compact');
+        if (overflows()) sidebar.classList.add('nav-fit-wrap');
+    }
+    let fitQueued = false;
+    window.addEventListener('resize', () => {
+        if (fitQueued) return;
+        fitQueued = true;
+        requestAnimationFrame(() => { fitQueued = false; fitRow(); });
+    });
+    // The skip link's target: the page's own main element, which takes focus so the next Tab continues from there.
+    const skip = document.querySelector('.skip-link');
+    const main = document.querySelector('main');
+    if (skip && main) {
+        if (!main.id) main.id = 'main-content';
+        skip.setAttribute('href', `#${main.id}`);
+        skip.addEventListener('click', () => {
+            if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
+            main.focus();
+        });
+    }
     mobile.addEventListener('change', updateViewport);
+    mobile.addEventListener('change', fitRow);
     root.classList.add('app-navigation-ready');
     updateCollapse();
     updateActiveSection();
     updateViewport();
+    fitRow();
+    document.fonts?.ready.then(fitRow);
 })();

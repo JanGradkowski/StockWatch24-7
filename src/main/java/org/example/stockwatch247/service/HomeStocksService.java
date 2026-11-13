@@ -152,5 +152,20 @@ public class HomeStocksService {
         public double changeMagnitude() { return Math.abs(changePercent); }
 
         public String outlookTone() { return tone(outlook); }
+
+        /**
+         * Whether the sparkline's last close is at or above its first, so the line is coloured by the move it draws
+         * (the last 30 closes) rather than by the day's change. The path's y grows downwards.
+         */
+        public boolean trendRising() {
+            if (sparkline == null || !sparkline.startsWith("M")) return rising();
+            String[] points = sparkline.substring(1).split(" L");
+            return y(points[points.length - 1]) <= y(points[0]);
+        }
+
+        private static double y(String point) {
+            String[] coordinates = point.trim().split(" ");
+            return Double.parseDouble(coordinates[1]);
+        }
     }
 }

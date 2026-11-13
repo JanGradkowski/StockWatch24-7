@@ -973,9 +973,10 @@ class FrontendSecurityTest {
         assertFalse(dashboard.contains("dashboard-view-navigation"));
         assertFalse(dashboard.contains("data-dashboard-view-button"));
         assertTrue(dashboard.contains("th:href=\"@{/signals}\""));
-        assertTrue(dashboard.contains("th:href=\"@{/signals(state='unread')}\""));
+        // The unread links open the same items the counts count: signals and outlook changes, not custom triggers.
+        assertTrue(dashboard.contains("th:href=\"@{/signals(state='unread',type='candlestick,elliott,harmonic,outlook,chart')}\""));
         assertTrue(dashboard.contains("th:href=\"@{/activity-signals}\""));
-        assertTrue(dashboard.contains("id=\"technicalDashboardMetrics\""));
+        assertFalse(dashboard.contains("id=\"technicalDashboardMetrics\""), "the counts live in the headline and panels");
         assertTrue(dashboard.contains("id=\"tickerAlertsIntroduction\""));
         assertTrue(dashboard.contains("id=\"latestTickerNotifications\""));
         assertTrue(dashboard.contains("id=\"congressionalActivityDashboard\""));
@@ -987,7 +988,6 @@ class FrontendSecurityTest {
         int watchDesk = dashboard.indexOf("id=\"technicalWatchDesk\"");
         int latestSignals = dashboard.indexOf("id=\"latestTechnicalSignals\"");
         int technicalSidebar = dashboard.indexOf("class=\"dashboard-technical-sidebar\"");
-        int technicalMetrics = dashboard.indexOf("id=\"technicalDashboardMetrics\"");
         int systemPulse = dashboard.indexOf("id=\"systemPulsePanel\"");
         int tickerIntroduction = dashboard.indexOf("id=\"tickerAlertsIntroduction\"");
         int latestNotifications = dashboard.indexOf("id=\"latestTickerNotifications\"");
@@ -1001,11 +1001,8 @@ class FrontendSecurityTest {
         assertTrue(congressionalActivity > latestNotifications);
         assertTrue(insiderActivity > congressionalActivity);
         assertTrue(technicalSidebar > insiderActivity);
-        assertTrue(technicalMetrics > technicalSidebar);
-        assertTrue(systemPulse > technicalMetrics);
+        assertTrue(systemPulse > technicalSidebar);
         assertTrue(styles.contains(".dashboard-technical-sidebar"));
-        assertTrue(styles.contains(".dashboard-sidebar-metrics"));
-        assertTrue(styles.contains("grid-template-columns: repeat(2, minmax(0, 1fr));"));
 
         assertTrue(dashboardScript.contains("function initializeDashboardViews()"));
         assertTrue(dashboardScript.contains("window.location.replace(\"/ticker-alerts\")"));
@@ -1045,17 +1042,17 @@ class FrontendSecurityTest {
         assertTrue(dashboard.contains("item.technicalSignal()"));
         assertTrue(dashboard.contains("item.outlookChange()"));
         assertTrue(dashboard.contains("change.detailUrl()"));
-        assertTrue(dashboard.contains("@{/signals(state='unread')}"));
+        assertTrue(dashboard.contains("@{/signals(state='unread',type='candlestick,elliott,harmonic,outlook,chart')}"));
         assertFalse(archive.contains("technicalOutlook"));
         // Outlook changes are listed in the archive too, so its unread count matches the dashboard's.
         assertTrue(archive.contains("trigger.outlook()"));
         assertTrue(dashboard.contains("@{/alerts/signals/{id}(id=${signal.id()})}"));
         assertTrue(dashboard.contains("signal.setupScore()"));
-        assertTrue(dashboard.contains("signal.signalPeriodLabel()"));
-        assertTrue(dashboard.contains("signal.researchHorizonLabel()"));
-        assertTrue(dashboard.contains(">Status</span>"));
-        assertTrue(dashboard.contains("class=\"latest-lifecycle\""));
+        // Latest signals read like the signal list rows: one detail line, and the status dot the lists use.
+        assertTrue(dashboard.contains("class=\"hm-row\""));
+        assertTrue(dashboard.contains("th:classappend=\"${'is-' + signal.tone()}\""));
         assertTrue(dashboard.contains("signal.lifecycle().label()"));
+        assertFalse(dashboard.contains("signal.researchHorizonLabel()"));
         assertTrue(watchlists.contains("['all', 'stocks', 'funds']"));
         assertTrue(watchlistText.contains("js.watchlists.group.stocks=Stocks"));
         assertTrue(watchlistText.contains("js.watchlists.group.funds=Indexes / ETFs"));

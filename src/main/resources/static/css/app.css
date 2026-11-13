@@ -136,6 +136,27 @@
     }
     :root[data-theme] .ui-refresh .app-navigation .app-sidebar-learning svg { display: none; }
     :root[data-theme] .ui-refresh .app-navigation .app-sidebar-learning :is(.app-sidebar-learning-label, .app-sidebar-learning-switch) { display: inline-block; }
+
+    /* When the row doesn't fit (longer translations), settings, help and learning mode keep only their icons (the
+       words stay for screen readers and in the tooltips), then the tabs move closer. Set by app-navigation.js. */
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-icons .app-sidebar-footer :is(.app-sidebar-links a span, .app-sidebar-learning-label) {
+        position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-icons .app-sidebar-footer :is(.app-sidebar-links a, .app-sidebar-learning) svg {
+        display: block; flex: none; width: 18px; height: 18px;
+    }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-icons .app-sidebar-footer .app-sidebar-links a { min-width: 40px; justify-content: center; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-tight > .app-sidebar-links a { padding: 0 6px; font-size: var(--fs-sm); }
+    /* Compact: smaller tabs and edges, before the tabs would take a second row. */
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-compact { padding-inline: 8px; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-compact > .app-sidebar-links a { gap: 4px; padding: 0 4px; font-size: 12px; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-compact .app-sidebar-footer { padding-left: 4px; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-compact .app-sidebar-footer .app-sidebar-links a { min-width: 32px; padding: 0 4px; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-compact .app-sidebar-learning { margin-left: 0; padding: 0 4px; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-wrap { flex-wrap: wrap; overflow: visible; }
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar.nav-fit-wrap > .app-sidebar-links { flex: 1 1 auto; flex-wrap: wrap; }
+    /* The row clips what sticks out of it, so a focused tab's ring is drawn inside the tab. */
+    :root[data-theme] .ui-refresh .app-navigation .app-sidebar-links a:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -3px; }
 }
 
 /* Narrow screens: menu, logo and the account controls on the first line; search below on phones. */
@@ -513,3 +534,12 @@
     :root[data-theme] .ui-refresh .price-header-buttons :is(.btn-secondary) { flex: none; min-height: 34px; padding: 0 12px; font-size: var(--fs-sm); }
     :root[data-theme] .ui-refresh .chart-toolbar .toolbar-controls-row .view-toggle:not(.chart-control-menu-item) { padding-inline: 7px; }
 }
+
+/* The skip link: hidden until a keyboard user reaches it, then shown over the top bar. */
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 1100; padding: 10px 14px; border-radius: 8px; background: var(--surface);
+    color: var(--text-color); font-weight: 600; text-decoration: underline; box-shadow: 0 0 0 2px var(--primary-color); transform: translateY(-200%); }
+.skip-link:focus { transform: none; }
+main:focus { outline: none; }
+
+/* A search placeholder too long for the bar ends in an ellipsis instead of mid-word. */
+:root[data-theme] .ui-refresh .navbar .global-ticker-search { text-overflow: ellipsis; }

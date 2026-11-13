@@ -394,7 +394,9 @@
       open.open = false;
       open.querySelector('summary')?.focus();
     });
-    // A menu that opens stays on screen: upwards near the bottom, rightwards when its button is near the left edge.
+    // A menu that opens stays on screen. Near the bottom it opens upwards, but only when it fits above the button and
+    // below the sticky header; otherwise it opens downwards and the page scrolls just enough to show it. It opens
+    // rightwards when its button is near the left edge.
     document.addEventListener('toggle', event => {
       const details = event.target;
       if (!(details instanceof Element) || !details.matches('details.ca-menu') || !details.open) return;
@@ -402,10 +404,37 @@
       const panel = details.querySelector('.ca-menu-panel');
       details.classList.remove('opens-up', 'opens-right');
       if (!panel) return;
-      if (panel.getBoundingClientRect().bottom > window.innerHeight - 8) details.classList.add('opens-up');
+      const button = (details.querySelector('summary') || details).getBoundingClientRect();
+      const box = panel.getBoundingClientRect();
+      const bottomLimit = window.innerHeight - 8;
+      if (box.bottom > bottomLimit) {
+        const top = coveredTop(button.left + button.width / 2) + 8;
+        const roomAbove = button.top - 4 - top;
+        if (box.height <= roomAbove && roomAbove > bottomLimit - box.top) {
+          details.classList.add('opens-up');
+        } else {
+          const scroll = Math.min(box.bottom - bottomLimit, Math.max(0, button.top - top));
+          if (scroll > 0) window.scrollBy({ top: scroll, behavior: 'instant' });
+        }
+      }
       if (panel.getBoundingClientRect().left < 8) details.classList.add('opens-right');
-      panel.querySelector('button:not(:disabled), a')?.focus();
+      panel.querySelector('button:not(:disabled), a')?.focus({ preventScroll: true });
     }, true);
+  }
+
+  /**
+   * The bottom edge of a layer drawn over the page at the top of the window at x (the site header, which sits above
+   * menus while it is in view), or 0.
+   */
+  function coveredTop(x) {
+    let element = document.elementFromPoint(Math.max(0, Math.min(window.innerWidth - 1, x)), 1);
+    while (element && element !== document.body && element !== document.documentElement) {
+      const style = getComputedStyle(element);
+      const layered = style.position !== 'static' && style.zIndex !== 'auto' && Number(style.zIndex) > 0;
+      if (layered || style.position === 'sticky' || style.position === 'fixed') return Math.max(0, element.getBoundingClientRect().bottom);
+      element = element.parentElement;
+    }
+    return 0;
   }
   if (typeof document !== 'undefined') wireMenus();
 

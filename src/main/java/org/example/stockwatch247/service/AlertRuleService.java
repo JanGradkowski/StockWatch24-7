@@ -3047,6 +3047,30 @@ public class AlertRuleService {
     ) {
     }
 
+    /** Still running: a pending setup, or an open Elliott or harmonic trade plan or projection. */
+    static boolean signalActive(AlertPatternFamily family, SignalLifecycleView plan) {
+        if (family == AlertPatternFamily.ELLIOTT_WAVE && plan.elliottTradePlanStatus() != null) {
+            return "ACTIVE".equals(plan.elliottTradePlanStatus()) || "PROJECTION_ONLY".equals(plan.elliottTradePlanStatus());
+        }
+        if (family == AlertPatternFamily.HARMONIC_FORMATION && plan.harmonicStopStatus() != null) {
+            return "ACTIVE".equals(plan.harmonicStopStatus()) || "PROJECTION_ONLY".equals(plan.harmonicStopStatus());
+        }
+        return plan.status() == SignalLifecycleStatus.POTENTIAL || plan.status() == SignalLifecycleStatus.DETECTED;
+    }
+
+    /**
+     * A signal's status mark wherever signals are listed: waiting while a pattern waits for the price to confirm it
+     * (the rows worth a look), open while a trade or projection is still measured, done once finished. Gains and
+     * losses are coloured on the result, not here.
+     */
+    static String signalTone(AlertPatternFamily family, SignalLifecycleView plan) {
+        if (!signalActive(family, plan)) return "done";
+        // A harmonic trade already open with its stop is running, not waiting.
+        boolean waiting = !"ACTIVE".equals(plan.harmonicStopStatus())
+                && (plan.status() == SignalLifecycleStatus.POTENTIAL || plan.status() == SignalLifecycleStatus.DETECTED);
+        return waiting ? "waiting" : "open";
+    }
+
     public record LatestSignalView(
             Long id,
             String symbol,
@@ -3081,6 +3105,11 @@ public class AlertRuleService {
 
         public String directionLabel() {
             return directionDisplayLabel(pattern, tradeSignal, lifecycle);
+        }
+
+        /** The status mark, as the signal lists show it: waiting, open or done. */
+        public String tone() {
+            return lifecycle == null ? "open" : signalTone(patternFamily, lifecycle);
         }
 
     }
@@ -3188,14 +3217,7 @@ public class AlertRuleService {
         public boolean active() {
             if (trigger != null) return trigger.open();
             if (activity != null) return false;
-            SignalLifecycleView plan = signal.lifecycle();
-            if (signal.patternFamily() == AlertPatternFamily.ELLIOTT_WAVE && plan.elliottTradePlanStatus() != null) {
-                return "ACTIVE".equals(plan.elliottTradePlanStatus()) || "PROJECTION_ONLY".equals(plan.elliottTradePlanStatus());
-            }
-            if (signal.patternFamily() == AlertPatternFamily.HARMONIC_FORMATION && plan.harmonicStopStatus() != null) {
-                return "ACTIVE".equals(plan.harmonicStopStatus()) || "PROJECTION_ONLY".equals(plan.harmonicStopStatus());
-            }
-            return plan.status() == SignalLifecycleStatus.POTENTIAL || plan.status() == SignalLifecycleStatus.DETECTED;
+            return signalActive(signal.patternFamily(), signal.lifecycle());
         }
 
         /**
@@ -3204,22 +3226,8 @@ public class AlertRuleService {
          * result, not here.
          */
         public String tone() {
-            if (!active()) return "done";
-            return signal != null && waitsForConfirmation() ? "waiting" : "open";
-        }
-
-        /** A pattern the price has cancelled or that ran out, whose projection is still followed. */
-        public boolean projectionOpen() {
-            return signal != null && active() && !waitsForConfirmation()
-                    && java.util.EnumSet.of(SignalLifecycleStatus.INVALIDATED, SignalLifecycleStatus.REJECTED, SignalLifecycleStatus.EXPIRED)
-                    .contains(signal.lifecycle().status());
-        }
-
-        private boolean waitsForConfirmation() {
-            // A harmonic trade already open with its stop is running, not waiting.
-            if ("ACTIVE".equals(signal.lifecycle().harmonicStopStatus())) return false;
-            SignalLifecycleStatus status = signal.lifecycle().status();
-            return status == SignalLifecycleStatus.POTENTIAL || status == SignalLifecycleStatus.DETECTED;
+            if (signal != null) return signalTone(signal.patternFamily(), signal.lifecycle());
+            return active() ? "open" : "done";
         }
 
         /**
