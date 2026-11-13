@@ -28,6 +28,10 @@ final class PolishFormats {
     private static final Pattern DAY_SHORT_MONTH = Pattern.compile("\\b(\\d{1,2}) (" + SHORT + ")\\b");
     private static final Pattern NUMBER = Pattern.compile("([+\\-−]?)(\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.(\\d+))?((?:\\s?(?:%|×|σ|x|[A-Z]{3}))?)");
 
+    /** A dollar amount, "$249,280" or "$12.50", or a range of two, "$1,001 - $15,000". */
+    private static final String AMOUNT = "((?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?)";
+    private static final Pattern MONEY = Pattern.compile("\\$" + AMOUNT + "(?:\\s*[-–]\\s*\\$" + AMOUNT + ")?");
+
     private PolishFormats() {
     }
 
@@ -55,6 +59,18 @@ final class PolishFormats {
         }
         String fraction = matcher.group(3) == null ? "" : "," + matcher.group(3);
         return matcher.group(1) + whole + fraction + matcher.group(4);
+    }
+
+    /**
+     * A dollar amount ("$249,280") or range ("$1,001 - $15,000") in Polish form, the sign after the number:
+     * "249 280 $", "1001–15 000 $". Anything else is null.
+     */
+    static String money(String value) {
+        if (value == null) return null;
+        Matcher matcher = MONEY.matcher(value.strip());
+        if (!matcher.matches()) return null;
+        String from = number(matcher.group(1));
+        return matcher.group(2) == null ? from + " $" : from + "–" + number(matcher.group(2)) + " $";
     }
 
     private static int index(String[] values, String value) {

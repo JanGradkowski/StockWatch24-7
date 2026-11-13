@@ -291,7 +291,7 @@
     const count = document.querySelector('[data-watchlist-count]');
     if (count) count.textContent = i18n.plural('watchlists.count', visible.length, visible.length);
     if (!visible.length) { root.append(n('p', i18n.t('watchlists.noMatches'), 'wl-muted wl-no-matches')); return; }
-    if (management) renderCards(visible); else renderAccordions(visible, openIds);
+    if (management) renderCards(visible); else renderAccordions(visible);
   }
   async function togglePin(list) {
     try { await api(`/api/watchlists/${list.id}`, { method: 'PUT', body: JSON.stringify({ ...list, pinned: !list.pinned }) }); await refresh(); }
@@ -344,40 +344,37 @@
     root.append(grid);
   }
 
-  /** Home: expandable rows that load a list's instruments when opened. */
-  function renderAccordions(visible, openIds) {
+  /**
+   * Home: one short row per list that opens the list's own page, where its instruments and tools are. The unread
+   * count (signals, custom alert triggers and ticker alerts of the list's stocks) is said once, in the badge.
+   */
+  function renderAccordions(visible) {
+    const items = n('ul', null, 'wl-home-list');
     for (const list of visible) {
-      const details = n('details', null, 'wl-accordion'); details.dataset.id = String(list.id);
-      const summary = n('summary'), heading = n('div', null, 'wl-heading'), name = n('strong', null, 'wl-heading-name');
+      const item = n('li'), row = link('', `/watchlists/${list.id}`, 'wl-home-row');
+      row.replaceChildren();
+      const heading = n('span', null, 'wl-home-heading'), name = n('strong', null, 'wl-home-name');
       if (list.pinned) { const pinned = n('span', null, 'wl-pinned-mark'); pinned.append(icon('star'), n('span', i18n.t('watchlists.pinned'), 'visually-hidden')); name.append(pinned); }
       name.append(document.createTextNode(list.name));
-      heading.append(name, n('small', listSummary(list)));
-      if (list.description) heading.append(n('small', list.description, 'wl-heading-description'));
-      summary.append(heading);
-      if (list.unread > 0) summary.append(n('span', i18n.plural('watchlists.unread', list.unread, list.unread), 'wl-count-pill has-unread'));
-      details.append(summary);
-      const body = n('div', null, 'wl-body'); details.append(body);
-      let loaded = false;
-      details.addEventListener('toggle', () => {
-        if (!details.open || loaded) return;
-        loaded = true;
-        const actions = n('div', null, 'wl-list-actions');
-        actions.append(link(i18n.t('watchlists.open'), `/watchlists/${list.id}`, 'btn-secondary', 'arrow'),
-          link(i18n.t('watchlists.viewAllSignals'), signalsUrl(list), 'btn-secondary', 'signals'), markReadControl(list),
-          button(i18n.t('watchlists.editList'), () => edit(list), 'btn-secondary', 'edit'),
-          menu(i18n.t('watchlists.moreActions'), [
-            { label: i18n.t(list.pinned ? 'watchlists.unpin' : 'watchlists.pin'), icon: 'star', action: () => togglePin(list) },
-            { label: i18n.t('watchlists.addInstruments'), icon: 'plus', action: () => edit(list, { focus: 'instruments' }) },
-            'separator',
-            { label: i18n.t('watchlists.delete'), icon: 'remove', danger: true, action: () => confirmDelete(list) }
-          ]));
-        body.append(actions);
-        memberTable(list, body);
-        body.append(customAlerts(list, 'h3'));
-      });
-      details.open = openIds.has(String(list.id));
-      root.append(details);
+      const counts = n('small');
+      counts.append(n('span', i18n.plural('watchlists.instruments', list.instruments, list.instruments)), document.createTextNode(' · '),
+        n('span', i18n.plural('watchlists.followed', list.monitored, list.monitored)));
+      heading.append(name, counts);
+      row.append(heading);
+      if (list.unread > 0) {
+        const badge = n('span', null, 'panel-count wl-home-unread');
+        const label = i18n.plural('watchlists.unread', list.unread, list.unread);
+        badge.append(n('span', String(list.unread), 'wl-home-unread-count'), n('span', label.replace(String(list.unread), ''), 'wl-home-unread-word'));
+        badge.title = i18n.t('watchlists.unreadIncludes');
+        row.append(badge);
+      }
+      const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      chevron.setAttribute('viewBox', '0 0 24 24'); chevron.setAttribute('aria-hidden', 'true'); chevron.setAttribute('class', 'hm-chevron');
+      const path = document.createElementNS(chevron.namespaceURI, 'path'); path.setAttribute('d', 'M9 6l6 6-6 6'); chevron.append(path);
+      row.append(chevron);
+      item.append(row); items.append(item);
     }
+    root.append(items);
   }
 
   /** A list's own page: its header actions, a summary strip, the instruments and the custom alerts that watch it. */

@@ -27,6 +27,17 @@
   // Phones fold the figures into one line, so the list starts on the first screen; the line opens them (remembered).
   const band = document.querySelector('.sa-figures');
   const bandToggle = band?.querySelector('[data-sa-figures-toggle]');
+  // Without a results headline (ticker alerts, or too few finished signals) the folded line says how many came in the
+  // last 7 days, or when the latest one came.
+  const toggleText = bandToggle?.querySelector('.sa-figures-toggle-text');
+  if (toggleText && (activity || toggleText.hasAttribute('data-sa-recent'))) {
+    const days = (data.days || []).filter(([, count]) => count > 0).map(([day, count]) => [dayStart(day), count]);
+    const since = new Date().setHours(0, 0, 0, 0) - 6 * 86400000;
+    const recent = days.reduce((sum, [time, count]) => sum + (time >= since ? count : 0), 0);
+    const kind = activity ? 'activity' : 'signals';
+    if (recent) toggleText.textContent = i18n.plural(`sa.${kind}Week`, recent, recent);
+    else if (days.length) toggleText.textContent = i18n.t(`sa.${kind}Latest`, text.date(Math.max(...days.map(([time]) => time)), true));
+  }
   if (band && bandToggle) {
     const setOpen = open => {
       band.classList.toggle('is-open', open);
@@ -137,18 +148,10 @@
 
   const bulk = document.querySelector('[data-sa-bulk]');
   const selectButtons = [...document.querySelectorAll('[data-sa-select]')];
-  // A day's title spans the columns shown: the tick column only while choosing rows.
-  const spanGroups = () => {
-    const columns = [...document.querySelectorAll('.sa-table thead th')].filter(th => th.offsetParent !== null).length;
-    if (columns) document.querySelectorAll('.sa-group-row th').forEach(th => { th.colSpan = columns; });
-  };
-  spanGroups();
-  window.addEventListener('resize', spanGroups);
 
   function setSelecting(on) {
     page.classList.toggle('is-selecting', on);
     selectButtons.forEach(button => { button.hidden = on; });
-    spanGroups();
     if (bulk) bulk.hidden = !on;
     selectButtons.forEach(button => button.setAttribute('aria-pressed', String(on)));
     if (!on) {

@@ -22,7 +22,7 @@
 
 <main class="page-container signal-detail-page" th:attr="data-mark-read-endpoint=${markReadEndpoint}">
   <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
-    <a th:href="@{/home}" th:text="#{common.dashboard}">Dashboard</a>
+    <a th:href="@{/home}" th:text="#{sidebar.home}">Home</a>
     <span aria-hidden="true">/</span>
     <a th:href="${archiveReturnUrl != null ? archiveReturnUrl : '/activity-signals'}" th:text="${archiveReturnUrl != null ? #messages.msg('activityDetail.backToSignals') : #messages.msg('activitySignals.heading')}">All ticker alerts</a>
     <span aria-hidden="true">/</span>
@@ -48,7 +48,7 @@
               th:text="${#messages.msg(signal.transactionType() == 'PURCHASE' ? 'alertHistory.signal.BUY' : 'alertHistory.signal.SELL')}">SELL</span>
         <span class="signal-report-tag interval" th:text="#{common.interval.DAILY}">Daily</span>
         <span class="signal-report-tag" th:text="${#temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">07 Aug 2026</span>
-        <span th:if="${signal.actorRole() != null}" class="signal-report-tag" th:text="${#tr.text(signal.actorRole())}">EVP</span>
+        <span th:if="${signal.actorRole() != null}" class="signal-report-tag" th:text="${#tr.role(signal.actorRole())}">EVP</span>
       </div>
     </div>
     <div class="signal-report-actions">
@@ -161,12 +161,12 @@
       </div>
       <p class="signal-lifecycle-summary">
         <strong th:text="${signal.actorName()}">Elizabeth Forminard</strong>
-        <span th:if="${signal.actorRole() != null}" th:text="${' · ' + #tr.text(signal.actorRole())}"> · EVP</span>
+        <span th:if="${signal.actorRole() != null}" th:text="${' · ' + #tr.role(signal.actorRole())}"> · EVP</span>
         <span th:text="${' · ' + signal.companyName()}"> · Johnson &amp; Johnson</span>
       </p>
       <div class="signal-lifecycle-grid">
         <div><span th:text="#{activitySignals.column.actor}">Buyer / seller</span><strong th:text="${signal.actorName()}">Reporting person</strong></div>
-        <div><span th:text="#{activityDetail.role}">Role / chamber</span><strong th:text="${signal.actorRole() != null ? #tr.text(signal.actorRole()) : #messages.msg('activityDetail.notReported')}">EVP</strong></div>
+        <div><span th:text="#{activityDetail.role}">Role / chamber</span><strong th:text="${signal.actorRole() != null ? #tr.role(signal.actorRole()) : #messages.msg('activityDetail.notReported')}">EVP</strong></div>
         <div><span th:text="#{virtualTrades.column.company}">Company</span><strong th:text="${signal.companyName() + ' · ' + signal.symbol()}">Johnson &amp; Johnson · JNJ</strong></div>
         <div><span th:text="#{js.detailChart.transaction}">Transaction</span><strong th:text="${#tr.text(signal.transactionTypeLabel())}">Sale</strong></div>
         <div><span th:text="#{activitySignals.sort.date}">Transaction date</span><strong th:text="${#temporals.format(signal.transactionDate(), 'dd MMM yyyy')}">07 Aug 2026</strong></div>

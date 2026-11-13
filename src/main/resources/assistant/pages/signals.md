@@ -27,8 +27,8 @@ suggestions: [assistant.suggest.signals.1, assistant.suggest.signals.2]
   setup score, e.g. 78/100) and **{{msg:signals.column.tradeOutcome}}**. The status dot: amber
   **{{msg:signals.legend.waitingName}}** (a pattern waiting for confirmation, worth a look), solid grey
   **{{msg:signals.legend.openName}}** (still measured), hollow **{{msg:signals.legend.doneName}}**; gains and losses are
-  coloured on the outcome. "{{msg:signals.projectionOpen}}" under a cancelled pattern means its projection is still
-  followed. "{{msg:signals.atSave}}": {{msg:signals.atSaveTitle}}.
+  coloured on the outcome only once it is finished (results still measured are plain). A cancelled pattern can keep a
+  solid dot while its projection is still followed. "{{msg:signals.atSave}}": {{msg:signals.atSaveTitle}}.
   Click a column title to sort; signals are grouped by day. Custom alert triggers are marked
   **{{msg:signals.type.custom}}** with "{{msg:signals.conditionsMet}}"; chart alert triggers
   **{{msg:signals.type.chart}}**.

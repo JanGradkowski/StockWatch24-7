@@ -35,7 +35,17 @@ function setup({mobile = false, stored = null, blockedStorage = false, section =
     sidebar.close = () => { sidebar.open = false; sidebar.modal = false; };
     sidebar.showModal = () => { sidebar.open = true; sidebar.modal = true; };
     sidebar.getBoundingClientRect = () => ({left: 0, right: 280, top: 0, bottom: 800});
+    const sidebarClasses = new Set();
+    sidebar.classList = {add: key => sidebarClasses.add(key), remove: (...keys) => keys.forEach(key => sidebarClasses.delete(key)),
+        contains: key => sidebarClasses.has(key)};
+    // The desktop row's width: wider than the bar while it shows words, narrower once settings and help are icons.
+    let rowWidth = 1569;
+    sidebar.clientWidth = 1440;
+    // Smaller tabs save 150px, icons for settings and help another 300; a wrapped row always fits.
+    Object.defineProperty(sidebar, 'scrollWidth', {get: () => sidebarClasses.has('nav-fit-wrap') ? sidebar.clientWidth
+        : rowWidth - (sidebarClasses.has('nav-fit-tight') ? 150 : 0) - (sidebarClasses.has('nav-fit-icons') ? 300 : 0)});
     document.getElementById = id => id === 'appSidebar' ? sidebar : menu;
+    document.querySelector = () => null;
     const window = new EventTarget();
     window.StockWatchI18n = StockWatchI18n;
     window.location = {pathname: path, hash};
@@ -50,8 +60,8 @@ function setup({mobile = false, stored = null, blockedStorage = false, section =
     };
     vm.runInNewContext(fs.readFileSync('src/main/resources/static/js/app-navigation.js', 'utf8'),
         {document, window, localStorage, Element, URL, Event, requestAnimationFrame: fn => fn()});
-    return {document, root, classes, sidebar, menu, collapse, close, links, window, query, storage,
-        resizeCount: () => resizeCount,
+    return {document, root, classes, sidebar, sidebarClasses, menu, collapse, close, links, window, query, storage,
+        resizeCount: () => resizeCount, setRowWidth: width => { rowWidth = width; },
         click: element => element.dispatchEvent(new Event('click'))};
 }
 
@@ -163,4 +173,25 @@ test('dashboard shows the server-chosen view and sends old ticker-alert links to
     assert.equal(alerts.sections[0].hidden, true);
     assert.deepEqual(alerts.replaced, []);
     assert.equal(alertsApp.links[2].getAttribute('aria-current'), 'page');
+});
+
+test('a desktop row too wide for its words first tightens the tabs, then turns settings and help into icons, then wraps, and undoes it when it fits', () => {
+    const app = setup();
+    assert.ok(app.sidebarClasses.has('nav-fit-tight'), 'smaller tabs are tried first');
+    assert.ok(!app.sidebarClasses.has('nav-fit-icons'), 'so the labels stay when that is enough');
+
+    app.setRowWidth(1700);
+    app.window.dispatchEvent(new Event('resize'));
+    assert.deepEqual([...app.sidebarClasses].sort(), ['nav-fit-icons', 'nav-fit-tight']);
+
+    app.setRowWidth(2000);
+    app.window.dispatchEvent(new Event('resize'));
+    assert.ok(app.sidebarClasses.has('nav-fit-wrap'), 'as a last resort the tabs take a second row');
+
+    app.setRowWidth(1200);
+    app.window.dispatchEvent(new Event('resize'));
+    assert.equal(app.sidebarClasses.size, 0);
+
+    const phone = setup({mobile: true});
+    assert.equal(phone.sidebarClasses.size, 0);
 });

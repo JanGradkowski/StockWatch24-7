@@ -159,6 +159,8 @@
         menus.forEach(menu => menu.addEventListener('toggle', () => {
             if (!menu.open) return;
             menus.forEach(other => { if (other !== menu) other.open = false; });
+            // Custom alert and signal list menus are placed by custom-alert-text.js, which keeps them clear of the header.
+            if (menu.matches('.ca-menu')) return;
             menu.classList.remove('opens-up');
             const panel = menu.querySelector('.row-menu-panel');
             if (panel && panel.getBoundingClientRect().bottom > visibleBounds(menu).bottom - 8) menu.classList.add('opens-up');

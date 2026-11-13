@@ -148,29 +148,8 @@
     .sa-activity-table .sa-col-amount { width: 120px; }
 }
 
-/* Tablets keep the table; phones read each row as a short card. */
-@media (min-width: 769px) and (max-width: 900px) {
-    .sa-table, .sa-table tbody { display: table; }
-    .sa-table thead { display: table-header-group; }
-    .sa-table tbody { display: table-row-group; }
-    .sa-table .ca-trigger-row { display: table-row; padding: 0; }
-    .sa-table td { display: table-cell; height: 58px; padding: 8px 10px; border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 60%, transparent); }
-    .sa-table .ca-trigger-row .ca-col-select { display: none; }
-    .is-selecting .sa-table .ca-trigger-row .ca-col-select { display: table-cell; }
-    .sa-table .ca-trigger-row .ca-col-ticker { padding-left: 24px !important; }
-    .sa-table .ca-trigger-row .ca-col-ticker .ca-dot { position: absolute; margin: -3px 0 0; }
-    .sa-table .ca-trigger-row .ca-col-open { display: table-cell !important; }
-    .sa-table .sa-group-row { display: table-row; }
-    .sa-table .sa-group-row th { display: table-cell; }
-    .sa-table.is-flat .sa-group-row { display: none; }
-    .sa-table .ca-col-ticker { width: 120px; }
-    .sa-table .ca-col-fired { width: 128px; }
-    .sa-table .sa-col-status { width: 140px; }
-    .sa-table .sa-col-outcome { width: 176px; }
-    .sa-activity-table .sa-col-amount { display: none; }
-}
-
-@media (max-width: 768px) {
+/* Below 900px each row reads as a short card, as on the custom alert pages; wider screens keep the table. */
+@media (max-width: 900px) {
     /* Each signal reads as three lines: ticker and time, the signal, then its state and result. */
     .sa-table .ca-trigger-row { grid-template-columns: auto minmax(0, 1fr) auto;
         grid-template-areas: "select ticker fired" "select signal signal" "select status outcome"; row-gap: 4px; padding: 12px 14px; }
@@ -249,9 +228,11 @@
     .sa-activity-table .sa-col-trade { width: 132px; }
     .sa-activity-table .sa-col-outcome { width: 132px; }
 }
-@media (min-width: 769px) and (max-width: 1100px) {
-    /* Tablets: the time moves into the signal's second line, so the name has room. */
-    .sa-table:not(.sa-activity-table) .ca-col-fired { display: none !important; }
+@media (min-width: 901px) and (max-width: 1100px) {
+    /* Tablets: the time moves under the status, so the signal has room. The column stays in the table at no width:
+       hiding it outright left Chrome drawing an empty column after the last one. */
+    .sa-table:not(.sa-activity-table) :is(th, td).ca-col-fired { width: 0; padding-inline: 0; overflow: hidden; }
+    .sa-table:not(.sa-activity-table) :is(th, td).ca-col-fired > * { display: none; }
     .sa-table:not(.sa-activity-table) .sa-inline-time { display: inline; }
     .sa-table .sa-col-status { width: 168px; }
     .sa-table .sa-col-outcome { width: 190px; }
@@ -262,7 +243,7 @@
     .sa-activity-table .ca-col-fired { width: 118px; }
     .sa-activity-table .sa-col-outcome { width: 116px; }
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .sa-table .ca-trigger-row td { width: auto; }
     .sa-table .ca-trigger-row td.ca-col-ticker .ca-trigger-link { flex: none; }
     .sa-table .ca-trigger-row td.ca-col-ticker .sa-company { flex: 1 1 auto; min-width: 0; }
@@ -308,7 +289,7 @@
 .sa-figures-single .sa-figure-history .ca-history-bars { height: 48px; }
 .sa-results .ca-kpi-value.is-pending { color: var(--text-color); font-size: var(--fs-md); font-weight: 500; line-height: var(--lh-normal); }
 
-@media (min-width: 769px) {
+@media (min-width: 901px) {
     .sa-table:not(.sa-activity-table) .sa-col-status { width: 196px; }
     .sa-table:not(.sa-activity-table) .ca-col-fired { width: 150px; }
     /* A stock's own page starts its rows where its day titles start. */
@@ -341,7 +322,7 @@
     .sa-table:not(.sa-activity-table) .ca-col-ticker { width: 150px; }
     .sa-table:not(.sa-activity-table) .sa-col-outcome { width: 210px; }
 }
-@media (min-width: 769px) and (max-width: 1100px) {
+@media (min-width: 901px) and (max-width: 1100px) {
     /* Tablets: the signal gets the room and may take two lines; the time sits under the status. */
     .sa-table:not(.sa-activity-table) .ca-col-ticker { width: 120px; }
     .sa-table:not(.sa-activity-table) .sa-col-status { width: 150px; }
@@ -351,7 +332,7 @@
         -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .sa-table:not(.sa-activity-table) .sa-kind { white-space: normal; }
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     /* Phones: the ticker and company run up to the time, however wide the result below them is. */
     .sa-table:not(.sa-activity-table) .ca-trigger-row { grid-template-columns: auto minmax(0, 1fr) auto auto;
         grid-template-areas: "select ticker ticker fired" "select signal signal signal" "select status outcome outcome"; }
@@ -388,7 +369,7 @@
     .sa-activity-table .sa-kind-line .sa-kind { white-space: normal; }
     .sa-kind-line .sa-filing-link { display: inline-block; margin-top: 2px; }
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .sa-return-hint { display: flex; align-items: center; gap: 2px; margin: 0 0 var(--space-3); color: var(--text-soft); font-size: var(--fs-sm); }
     /* With nothing to mark as read and no other button, Ask sits beside the title instead of on a line of its own. */
     .sa-page .ca-alert-header { position: relative; }
@@ -411,7 +392,7 @@
 .sa-figures-toggle { display: none; }
 .sa-figures > .ca-kpi:first-of-type { border-left: 0; }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .sa-figures.is-collapsible .sa-figures-toggle { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 12px;
         width: 100%; min-height: 48px; padding: 0 var(--space-4); border: 0; background: transparent; color: var(--text-color);
         font: inherit; font-size: var(--fs-md); font-weight: 600; text-align: left; cursor: pointer; }
@@ -429,4 +410,94 @@
     /* Text links standing on their own get a finger-sized hit area without moving anything. */
     .sa-page :is(.sa-guide-toggle, .sa-results-foot .ca-link-button, .sa-kind-line .sa-filing-link) { display: inline-block; padding-block: 10px; margin-block: -10px; }
     .sa-return-hint .sa-help-button { width: 36px; height: 36px; margin: -6px -6px -6px 0; }
+}
+
+/* ------------------------------------------------------------------ scored review */
+
+@media (min-width: 901px) {
+    /* The per-day strip starts level with the results beside it and fills its panel, its axis level with theirs. */
+    .sa-figures:not(.is-compact):not(.sa-figures-single) .sa-figure-history { justify-content: flex-start; }
+    .sa-figures:not(.is-compact):not(.sa-figures-single) .sa-figure-history .ca-history-bars { height: 96px; }
+}
+/* The checkbox column stays in the table at no width until select mode opens it. Showing and hiding it as a whole
+   column left Chrome's day headings one column short, and a stray empty column at the end. */
+@media (min-width: 901px) {
+    .sa-table :is(th, td).ca-col-select { display: table-cell; width: 0; padding-inline: 0; }
+    .sa-table td.ca-col-select > input { display: none; }
+    .sa-page.is-selecting .sa-table :is(th, td).ca-col-select { width: 40px; padding-inline: 12px; }
+    .sa-page.is-selecting .sa-table td.ca-col-select > input { display: inline-block; }
+}
+/* A day heading has its own cell under the checkboxes, so in select mode it still runs the table's full width. */
+.sa-group-row td.ca-col-select { border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 60%, transparent);
+    background: color-mix(in srgb, var(--surface-raised) 30%, var(--surface)); }
+@media (max-width: 900px) {
+    .sa-group-row td.ca-col-select { display: none; }
+}
+
+/* Ticker alerts: where the return column is narrow its title is "Return" (the full title stays for screen readers,
+   and the (i) beside it explains the direction). */
+.sa-th-short { display: none; }
+@media (max-width: 1100px) {
+    .sa-th-help .sa-th-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .sa-th-help .sa-th-short { display: inline; }
+}
+
+/* Tables show a long company name on up to two lines instead of cutting it short, give it more room on wide
+   screens, and let a long role (often longer in Polish) wrap beside its filing link. */
+@media (min-width: 901px) {
+    .sa-table td.ca-col-ticker .sa-company { display: -webkit-box; overflow: hidden; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .sa-activity-table .sa-kind-line .sa-kind { white-space: normal; }
+}
+@media (min-width: 1281px) {
+    :root .sa-table :is(th, td).ca-col-ticker { width: 200px; }
+}
+/* A description doesn't end on one word alone. */
+.sa-page .ca-alert-meta { text-wrap: pretty; }
+
+/* The result column fits a result's note on one line ("Projection · Wave V awaiting entry", longer in Polish); a note
+   that still wraps takes two even lines. */
+.sa-table:not(.sa-activity-table) .sa-col-outcome .ca-cell-note { text-wrap: balance; }
+@media (min-width: 1281px) {
+    .sa-table:not(.sa-activity-table) .sa-col-outcome { width: 280px; }
+}
+@media (min-width: 1101px) and (max-width: 1280px) {
+    .sa-table:not(.sa-activity-table) .sa-col-outcome { width: 280px; }
+    /* The signal column is narrower here, so a long name takes two lines instead of being cut short. */
+    .sa-table:not(.sa-activity-table) :is(.sa-name:not(.sa-name-link), .sa-name-link > span) { display: -webkit-box; overflow: hidden; white-space: normal;
+        text-wrap: pretty; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .sa-table:not(.sa-activity-table) .sa-kind { white-space: normal; text-wrap: pretty; }
+}
+@media (min-width: 901px) and (max-width: 1100px) {
+    .sa-table:not(.sa-activity-table) .sa-col-outcome { width: 260px; }
+    /* A two-line signal name doesn't leave one word on its second line. */
+    .sa-table:not(.sa-activity-table) :is(.sa-name, .sa-kind) { text-wrap: pretty; }
+}
+@media (max-width: 900px) {
+    /* Phones: a result with a note ("Projection · Wave V awaiting entry") gets its own line under the status, read
+       left to right, so neither the status nor the note is squeezed into a narrow right-aligned column. */
+    .sa-table:not(.sa-activity-table) .ca-trigger-row:has(td.sa-col-outcome .ca-cell-note) {
+        grid-template-areas: "select ticker ticker fired" "select signal signal signal" "select status status status" "select outcome outcome outcome"; }
+    /* A stock's own page has no ticker line to hold the time, so the time follows the status and the signal's
+       details get the full width. */
+    .sa-one-stock .sa-table:not(.sa-activity-table) .ca-trigger-row { grid-template-areas: "select signal signal signal" "select status outcome outcome"; }
+    .sa-one-stock .sa-table:not(.sa-activity-table) .ca-trigger-row:has(td.sa-col-outcome .ca-cell-note) {
+        grid-template-areas: "select signal signal signal" "select status status status" "select outcome outcome outcome"; }
+    .sa-one-stock .sa-table:not(.sa-activity-table) .ca-trigger-row td.ca-col-fired { display: none; }
+    .sa-one-stock .sa-table:not(.sa-activity-table) .ca-trigger-row td.sa-col-status { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; }
+    .sa-one-stock .sa-table:not(.sa-activity-table) .ca-trigger-row td.sa-col-status .sa-status-time { display: inline; order: 1; margin: 0;
+        color: var(--text-soft); font-size: var(--fs-sm); font-weight: 400; }
+    .sa-one-stock .sa-table:not(.sa-activity-table) .ca-trigger-row td.sa-col-status .sa-status-time::before { content: "· "; content: "· " / ""; }
+    .sa-one-stock .sa-table:not(.sa-activity-table) .ca-trigger-row td.sa-col-status .sa-status-note { order: 2; flex-basis: 100%; }
+
+    /* The page arrows are finger-sized. */
+    .sa-pager .ca-pager-step { width: 40px; height: 40px; }
+    .sa-table:not(.sa-activity-table) .ca-trigger-row:has(td.sa-col-outcome .ca-cell-note) td.sa-col-outcome {
+        justify-self: stretch; max-width: none; text-align: left; }
+    .sa-table:not(.sa-activity-table) .ca-trigger-row td.sa-col-outcome .ca-cell-note { display: inline; margin: 0; text-wrap: wrap; }
+    .sa-table:not(.sa-activity-table) .ca-trigger-row td.sa-col-outcome .ca-cell-note::before { content: " · "; content: " · " / ""; }
+
+    /* The breadcrumb's link and each row's ticker get a finger-sized hit area without moving anything. */
+    .sa-page .signal-breadcrumb a { display: inline-block; padding-block: 10px; margin-block: -10px; }
+    .sa-table .ca-trigger-row td.ca-col-ticker .ca-trigger-link { padding: 10px 8px; margin: -10px -8px; }
+    .sa-table .ca-trigger-row .sa-name-link { padding-block: 10px; margin-block: -10px; }
 }

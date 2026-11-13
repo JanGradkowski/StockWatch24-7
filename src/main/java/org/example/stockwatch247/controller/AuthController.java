@@ -277,7 +277,7 @@ public class AuthController {
                     .sorted(Comparator.comparing(
                             DashboardLatestSignalView::occurredAt,
                             Comparator.nullsLast(Comparator.reverseOrder())))
-                    .limit(8)
+                    .limit(5)
                     .toList();
             var congressionalActivities = congressionalActivityService
                     .getLatestDashboardActivity(currentUser, 10);

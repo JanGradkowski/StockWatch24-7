@@ -23,7 +23,7 @@
 
 <main class="page-container signal-detail-page" th:attr="data-mark-read-endpoint=${'/api/alerts/signals/' + signal.id() + '/read'}">
   <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
-    <a th:href="@{/home}" th:text="#{common.dashboard}">Dashboard</a>
+    <a th:href="@{/home}" th:text="#{sidebar.home}">Home</a>
     <span aria-hidden="true">/</span>
     <a th:if="${signal.alertRuleActive()}"
        th:href="@{/alerts/{id}(id=${signal.alertRuleId()})}" th:text="${signal.symbol()}">MARA</a>

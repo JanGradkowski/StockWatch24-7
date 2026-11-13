@@ -49,6 +49,19 @@ public class TranslationDialect extends AbstractDialect implements IExpressionOb
             return value == null ? null : ServerMessages.translate(value.toString(), locale);
         }
 
+        /**
+         * An insider's officer title or a member's chamber: {@code ${#tr.role(signal.actorRole())}}. In Polish a title
+         * is translated when every part of it is a known role and is otherwise shown as filed.
+         */
+        public String role(Object value) {
+            if (value == null) return null;
+            if (AppLanguage.of(locale) == AppLanguage.PL) {
+                String polish = RoleTitles.polish(value.toString());
+                if (polish != null) return polish;
+            }
+            return text(value);
+        }
+
         /** The plural form's key for a count: {@code #messages.msg(#tr.pluralKey('rules', n), n)}. */
         public String pluralKey(String baseKey, Number count) {
             return Plurals.key(locale, baseKey, count);
