@@ -79,7 +79,8 @@ function fakeChart(window) {
         createPriceLine(line) { this.lines.push(line); return {applyOptions() {}}; },
         attachPrimitive(primitive) { this.primitives.push(primitive); primitive.attached?.({requestUpdate() {}, series: this}); },
         detachPrimitive(primitive) { this.primitives = this.primitives.filter(item => item !== primitive); },
-        priceScale: () => ({applyOptions() {}}),
+        // Every series shares the chart's price scale mode here (1 is logarithmic).
+        priceScale: () => ({applyOptions() {}, options: () => ({mode: chart.scaleMode || 0})}),
         priceFormatter: () => ({format: value => Number(value).toFixed(2)}),
         priceToCoordinate: price => 500 - price
     });
@@ -464,4 +465,50 @@ test('a line on the price scale reports the candles\' closes for its base and jo
     // A point without a value is a gap.
     const gapped = types.anchoredLineData([{time: '2026-01-06', value: 20}, {time: '2026-01-07'}, {time: '2026-01-08', value: 30}], anchors);
     assert.deepEqual(draw(gapped, {from: 0, to: 3}), []);
+
+    // A logarithmic scale has no place for a price at or below zero: it is a gap there, and the scale never sees it.
+    const dipping = [{time: '2026-01-06', value: 20}, {time: '2026-01-07', value: -3}, {time: '2026-01-08', value: 30}];
+    const onLog = types.anchoredLineData(dipping, anchors, true);
+    assert.ok(onLog.flatMap(item => view.priceValueBuilder(item)).every(value => value > 0));
+    assert.deepEqual(draw(onLog, {from: 0, to: 3}), []);
+    // Other scales keep it.
+    assert.equal(types.anchoredLineData(dipping, anchors)[2].value, -3);
+});
+
+test('on a logarithmic price scale indicator lines and fills leave out values at or below zero', async () => {
+    const {window, manager, chart} = await setup();
+    // The lower band dips below zero on the first ten candles, as a Bollinger band does on a volatile history.
+    const serve = window.fetch;
+    window.fetch = async (url, options) => {
+        const response = await serve(url, options);
+        if (!url.includes('/chart-indicators?interval=')) return response;
+        const body = await response.json();
+        body.indicators.forEach(item => item.series.filter(series => series.key === 'lower')
+            .forEach(series => series.points.slice(0, 10).forEach((point, index) => { point.value = -5 + index * 0.5; })));
+        return {ok: true, status: 200, json: async () => body};
+    };
+    manager.dataChanged();
+    const bands = manager.add('BOLLINGER');
+    await settle();
+    const lowest = () => {
+        const visuals = manager.visuals.get(bands.id);
+        const fill = visuals.series.find(series => ![...visuals.outputs.values()].includes(series));
+        const values = [
+            ...visuals.outputs.get('lower').points.map(item => item.value),
+            ...fill.points.flatMap(item => [item.upper, item.lower])
+        ].filter(Number.isFinite);
+        return Math.min(...values);
+    };
+    assert.equal(lowest(), -5, 'a normal price scale shows the band below zero');
+
+    chart.scaleMode = 1;
+    manager.priceScaleChanged();
+    assert.ok(lowest() > 0, `nothing at or below zero reaches the logarithmic scale (${lowest()})`);
+    const lower = manager.visuals.get(bands.id).outputs.get('lower').points;
+    assert.ok(lower.slice(0, 10).every(item => !Number.isFinite(item.value)), 'the line has a gap there');
+    assert.equal(lower[10].value, 60, 'and goes on where the band is above zero');
+
+    chart.scaleMode = 0;
+    manager.priceScaleChanged();
+    assert.equal(lowest(), -5, 'switching back draws the whole band again');
 });

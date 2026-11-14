@@ -102,11 +102,18 @@
         return i18n.number(value, 4);
     }
 
-    /** Band items merged with the main series' bars, each carrying that bar's close as `anchor`. */
-    function anchoredBand(items, anchors) {
+    /**
+     * Band items merged with the main series' bars, each carrying that bar's close as `anchor`. On a logarithmic scale
+     * (`positiveOnly`) a bar whose band reaches zero or below is left unfilled, as its lines have a gap there.
+     */
+    function anchoredBand(items, anchors, positiveOnly = false) {
+        const usable = value => finite(value) && (!positiveOnly || value > 0);
         const byTime = new Map();
-        (anchors || []).forEach(anchor => { if (finite(anchor.close)) byTime.set(anchor.time, {time: anchor.time, anchor: anchor.close}); });
-        items.forEach(item => byTime.set(item.time, {...(byTime.get(item.time) || {}), ...item}));
+        (anchors || []).forEach(anchor => { if (usable(anchor.close)) byTime.set(anchor.time, {time: anchor.time, anchor: anchor.close}); });
+        items.forEach(item => {
+            const band = usable(item.upper) && usable(item.lower) ? item : {time: item.time};
+            byTime.set(item.time, {...(byTime.get(item.time) || {}), ...band});
+        });
         return [...byTime.values()].sort((a, b) => (a.time < b.time ? -1 : (a.time > b.time ? 1 : 0)));
     }
 
@@ -970,6 +977,15 @@
             this.renderLegends();
         }
 
+        /**
+         * The page switched the main price scale to or from logarithmic. Lines and fills on it leave out values at or
+         * below zero on a logarithmic scale (see anchoredLineData), so their data is built again. The series stay, so
+         * the time scale keeps its points and the chart does not scroll.
+         */
+        priceScaleChanged() {
+            this.visuals.forEach(visuals => visuals.rebuilds.forEach(rebuild => rebuild()));
+        }
+
         renderIndicator(config) {
             if (!config) return;
             this.clearVisuals(config.id);
@@ -980,7 +996,8 @@
             const paneIndex = this.paneIndex(slot);
             if (paneIndex < 0) return;
             const LWC = window.LightweightCharts;
-            const visuals = {series: [], outputs: new Map(), primitives: [], markerPlugins: [], paneKey: null};
+            // `rebuilds` write the data of lines and fills on the main price scale again; see priceScaleChanged.
+            const visuals = {series: [], outputs: new Map(), primitives: [], markerPlugins: [], paneKey: null, rebuilds: []};
             this.visuals.set(config.id, visuals);
             const candleTimes = (this.candles() || []).map(candle => candle.time);
             const byKey = new Map((view.series || []).map(series => [series.key, series]));
@@ -999,6 +1016,7 @@
                 if (!anchored) return addSeries(LWC.LineSeries, options);
                 const series = window.StockWatchChartTypes.addAnchoredLine(this.chart, options, this.anchors, paneIndex);
                 visuals.series.push(series);
+                visuals.rebuilds.push(() => series.reanchor());
                 return series;
             };
 
@@ -1018,7 +1036,13 @@
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...scaleOptions
                 }, paneIndex);
                 visuals.series.push(series);
-                series.setData(anchored ? anchoredBand(data, this.anchors()) : data);
+                if (!anchored) {
+                    series.setData(data);
+                    return;
+                }
+                const write = () => series.setData(anchoredBand(data, this.anchors(), window.StockWatchChartTypes.isLogScale(series)));
+                write();
+                visuals.rebuilds.push(write);
             });
 
             const zones = definition.zones;
