@@ -22,7 +22,10 @@
         const parts = [];
         if (facts.value != null) parts.push(i18n.t('ca.evidence.value', text.number(facts.value)));
         if (facts.compare != null && condition.compare && condition.compare.kind !== 'VALUE') parts.push(i18n.t('ca.evidence.compare', text.number(facts.compare)));
-        if (facts.change != null) parts.push(i18n.t('ca.evidence.change', signed(facts.change)));
+        if (FROM_EXTREME.includes(condition.operator)) {
+          // "23.4% below the high (198.50)": how far from the top it was, and the top itself.
+          if (facts.change != null && facts.extreme != null) parts.push(fromExtreme(condition, facts));
+        } else if (facts.change != null) parts.push(i18n.t('ca.evidence.change', signed(facts.change)));
         if (facts.at && facts.at !== evidence.candle) parts.push(i18n.t('ca.evidence.on', day(facts.at)));
         return parts.join(' · ');
       }
@@ -43,8 +46,12 @@
   }
 
   /** Lower and upper tests point at their extreme ("lowest 24.1"); the others at the value on the step's candle. */
-  const LOWER = ['BELOW', 'CROSSES_BELOW', 'FALLING', 'CHANGE_BELOW', 'NEW_LOW'];
-  const UPPER = ['ABOVE', 'CROSSES_ABOVE', 'RISING', 'CHANGE_ABOVE', 'NEW_HIGH'];
+  const LOWER = ['BELOW', 'CROSSES_BELOW', 'FALLING', 'CHANGE_BELOW', 'NEW_LOW', 'DOWN_FROM_HIGH'];
+  const UPPER = ['ABOVE', 'CROSSES_ABOVE', 'RISING', 'CHANGE_ABOVE', 'NEW_HIGH', 'UP_FROM_LOW'];
+  /** Tests measured from the subject's own top or bottom. */
+  const FROM_EXTREME = ['DOWN_FROM_HIGH', 'UP_FROM_LOW'];
+  const fromExtreme = (condition, facts) => i18n.t(condition.operator === 'DOWN_FROM_HIGH' ? 'ca.evidence.belowHigh' : 'ca.evidence.aboveLow',
+    text.number(Math.abs(Number(facts.change))), text.number(facts.extreme));
 
   /** A step of a sequence: when it held, its deciding value or pattern, and how soon after the step before it came. */
   function stepDetail(condition, facts, number) {
@@ -59,6 +66,7 @@
       if (several && LOWER.includes(condition.operator) && facts.low != null) parts.push(i18n.t('ca.evidence.lowest', text.number(facts.low)));
       else if (several && UPPER.includes(condition.operator) && facts.high != null) parts.push(i18n.t('ca.evidence.highest', text.number(facts.high)));
       else if (facts.value != null) parts.push(i18n.t('ca.evidence.value', text.number(facts.value)));
+      if (FROM_EXTREME.includes(condition.operator) && facts.change != null && facts.extreme != null) parts.push(fromExtreme(condition, facts));
     } else if (facts.pattern) {
       parts.push(detail(condition, facts));
     }

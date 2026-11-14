@@ -118,6 +118,14 @@ public class CustomAlertPreview {
         if (candles.size() < 2) {
             return empty(symbol, asset.getCompanyName(), "No completed candles are stored for this stock yet.", coverage);
         }
+        if (definition.usesAllTimePrice() && marketData != null && interval != TimeInterval.MONTHLY && !hasMonthlyHistory(symbol)) {
+            // An all-time top is read from the monthly history, back to the listing: downloaded once, as the alert's checks keep it.
+            try {
+                marketData.syncCandlesForAnalysis(symbol, "1mo", CustomAlertDefinition.ALL_LOADED_CANDLES);
+            } catch (RuntimeException unavailable) {
+                // The top is then the highest of the history stored so far.
+            }
+        }
         int first = Math.max(1, candles.size() - HISTORY);
         data.prepare(definition.operands(), candles.size() - first + definition.lookbackCandles());
         data.coverPatterns(candles.size() - first + definition.lookbackCandles());
@@ -173,6 +181,11 @@ public class CustomAlertPreview {
                 candles.get(last).getClosePrice(), latest.matched(), latest.applicable(), latest.matchedConditions(),
                 latest.totalConditions(), latest.conditions(), latest.groups(), history, candles.get(first).getTimestamp(), last - first + 1L,
                 median, positive, coverage, shortened ? "ELLIOTT_WAVE" : null, data.elliottHistoryStatus());
+    }
+
+    private boolean hasMonthlyHistory(String symbol) {
+        return Boolean.TRUE.equals(db.queryForObject("select exists (select 1 from candles where symbol = ? and time_interval = '1mo')",
+                Boolean.class, symbol));
     }
 
     private static PreviewView empty(String symbol, String company, String reason, Coverage coverage) {

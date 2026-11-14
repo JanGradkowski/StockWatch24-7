@@ -46,6 +46,24 @@ test('runs, changes and new extremes look back the configured number of candles'
   dom.window.close();
 });
 
+test('a drop from the top is measured from the top itself and holds while the price stays down', () => {
+  const { dom, chart } = load();
+  const closes = [100, 120, 90, 95];
+  const highs = [101, 125, 91, 96];
+  const top = [...chart.extremesOf(highs, true, null)];
+  assert.deepEqual(top, [101, 125, 125, 125]);
+  const down25 = value('DOWN_FROM_HIGH', { percent: 25 });
+  assert.deepEqual(closes.map((_, at) => chart.holds(down25, closes, top, at)), [false, false, true, false]);
+  assert.deepEqual([...chart.passing(down25, closes, top)], [false, false, true, false], 'drawn along the candles, not as a marker');
+  assert.equal(chart.holds(value('DOWN_FROM_HIGH', { percent: 20 }), [80], [100], 0), true, 'exactly 20% counts');
+  assert.equal(chart.holds(down25, closes, [NaN, NaN, NaN, NaN], 2), false, 'an unknown top never passes');
+  const bottom = [...chart.extremesOf([49, 38, 43, 59], false, null)];
+  assert.equal(chart.holds(value('UP_FROM_LOW', { percent: 50 }), [50, 40, 44, 60], bottom, 3), true);
+  // Over the last candles: unknown until the window is full.
+  assert.deepEqual([...chart.extremesOf([5, 1, 4, 2], true, 2)].map(item => Number.isNaN(item) ? null : item), [null, 5, 4, 4]);
+  dom.window.close();
+});
+
 test('a rising run is traced over all its candles, and one-candle tests are left to markers', () => {
   const { dom, chart } = load();
   const closes = [10, 11, 12, 11, 13];

@@ -48,7 +48,16 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
     /** Operators that compare the subject with another value at the same candle. */
     static final Set<String> COMPARISONS = Set.of("ABOVE", "BELOW", "CROSSES_ABOVE", "CROSSES_BELOW");
     static final Set<String> OPERATORS = Set.of("ABOVE", "BELOW", "CROSSES_ABOVE", "CROSSES_BELOW", "BETWEEN", "OUTSIDE",
-            "RISING", "FALLING", "CHANGE_ABOVE", "CHANGE_BELOW", "NEW_HIGH", "NEW_LOW");
+            "RISING", "FALLING", "CHANGE_ABOVE", "CHANGE_BELOW", "NEW_HIGH", "NEW_LOW", "DOWN_FROM_HIGH", "UP_FROM_LOW");
+    /**
+     * Operators that measure the subject against its own top or bottom: the highest high (lowest low) of a price, or an
+     * indicator's own highest (lowest) value, over the last {@code candles} candles or, without them, all stored history.
+     */
+    static final Set<String> FROM_EXTREME = Set.of("DOWN_FROM_HIGH", "UP_FROM_LOW");
+    /** The longest "last N candles" a top or bottom is measured over. */
+    public static final int MAX_EXTREME_CANDLES = 500;
+    /** Candles a rule loads when an indicator's all-time top is needed: the whole loaded history. */
+    static final int ALL_LOADED_CANDLES = 1000;
     static final List<String> FAMILIES = List.of("CANDLESTICK", "ELLIOTT_WAVE", "HARMONIC_FORMATION");
     static final Set<String> DIRECTIONS = Set.of("BULLISH", "BEARISH", "ANY");
     /** The lifecycle point a candlestick condition waits for. */
@@ -139,6 +148,18 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
                                  Double lower, Double upper, Integer candles, Double percent, Window window)
             implements Condition {
         public String kind() { return "VALUE"; }
+
+        /** Measured against the subject's own top or bottom (see {@link #FROM_EXTREME}). */
+        public boolean fromExtreme() { return FROM_EXTREME.contains(operator); }
+
+        /** A top or bottom over all stored history, not over the last {@code candles}. */
+        public boolean allTime() { return fromExtreme() && candles == null; }
+
+        /** Candles this test reads at and before the one it is decided on. */
+        int reach() {
+            if (fromExtreme()) return candles != null ? candles : subject.isIndicator() ? ALL_LOADED_CANDLES : 1;
+            return Math.max(1, candles == null ? 1 : candles);
+        }
     }
 
     /**
@@ -186,6 +207,12 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
         return groups.stream().flatMap(group -> group.conditions().stream()).toList();
     }
 
+    /** A condition measures a price from its all-time top or bottom, which older stored history decides. */
+    public boolean usesAllTimePrice() {
+        return conditions().stream().anyMatch(condition -> condition instanceof ValueCondition value && value.allTime()
+                && "PRICE".equals(value.subject().kind()) && !"VOLUME".equals(value.subject().field()));
+    }
+
     public boolean usesActivity() {
         return conditions().stream().anyMatch(condition -> condition instanceof ActivityCondition);
     }
@@ -222,7 +249,7 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
         int lookback = 1;
         for (Condition condition : conditions()) {
             int span = switch (condition) {
-                case ValueCondition value -> value.window().span() + Math.max(1, value.candles() == null ? 1 : value.candles());
+                case ValueCondition value -> value.window().span() + value.reach();
                 case PatternCondition pattern -> pattern.window().span();
                 default -> 1;
             };
@@ -232,7 +259,7 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
             if (group.sequence() == null) continue;
             int inner = 1;
             for (Condition condition : group.conditions()) {
-                if (condition instanceof ValueCondition value) inner = Math.max(inner, 1 + Math.max(1, value.candles() == null ? 1 : value.candles()));
+                if (condition instanceof ValueCondition value) inner = Math.max(inner, 1 + value.reach());
             }
             lookback = Math.max(lookback, group.sequence().span() + group.sequence().window().span() + inner);
         }
@@ -355,6 +382,18 @@ public record CustomAlertDefinition(String match, List<Group> groups) {
                 if (percent < 0 || percent > 1000) throw new UserInputException("Enter a percentage from 0 to 1000.");
             }
             case "NEW_HIGH", "NEW_LOW" -> candles = integer(node.path("candles"), 2, 250, "Choose 2 to 250 candles.");
+            case "DOWN_FROM_HIGH", "UP_FROM_LOW" -> {
+                // Without candles the top (bottom) is the all-time one.
+                if (node.hasNonNull("candles")) {
+                    candles = integer(node.path("candles"), 2, MAX_EXTREME_CANDLES, "Choose 2 to " + MAX_EXTREME_CANDLES + " candles.");
+                }
+                boolean down = "DOWN_FROM_HIGH".equals(operator);
+                percent = number(node.path("percent"), "Enter the percentage.");
+                // A price cannot fall more than 100% below its top.
+                if (percent < 0 || percent > (down ? 100 : 1000)) {
+                    throw new UserInputException(down ? "Enter a percentage from 0 to 100." : "Enter a percentage from 0 to 1000.");
+                }
+            }
             default -> { }
         }
         return new ValueCondition(id, negate, subject, operator, compare, lower, upper, candles, percent,

@@ -105,6 +105,10 @@ public final class CustomAlertText {
             case "CHANGE_BELOW" -> subject + " falls at least " + number(condition.percent()) + "% over " + condition.candles() + " candles";
             case "NEW_HIGH" -> subject + " makes a new " + condition.candles() + "-candle high";
             case "NEW_LOW" -> subject + " makes a new " + condition.candles() + "-candle low";
+            case "DOWN_FROM_HIGH" -> subject + " is at least " + number(condition.percent()) + "% below its "
+                    + (condition.candles() == null ? "all-time high" : condition.candles() + "-candle high");
+            case "UP_FROM_LOW" -> subject + " is at least " + number(condition.percent()) + "% above its "
+                    + (condition.candles() == null ? "all-time low" : condition.candles() + "-candle low");
             default -> subject;
         };
         return switch (condition.window().mode()) {

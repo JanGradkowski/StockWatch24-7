@@ -38,6 +38,11 @@ class CustomAlertEvaluatorTest {
         final Map<String, List<ActivityHit>> activity = new HashMap<>();
         OutlookFact outlook;
         boolean stock = true;
+        /** A price field's values when set (HIGH, LOW); the close otherwise. */
+        final Map<String, double[]> prices = new HashMap<>();
+        /** The highest high and lowest low of the history before the candles, as the loader reads it. */
+        double earlierHigh = Double.NaN;
+        double earlierLow = Double.NaN;
 
         Stub(double... closes) {
             for (int index = 0; index < closes.length; index++) {
@@ -48,11 +53,16 @@ class CustomAlertEvaluatorTest {
         @Override public TimeInterval interval() { return TimeInterval.DAILY; }
         @Override public List<Candle> candles() { return candles; }
         @Override public double[] series(Operand operand) {
+            if ("PRICE".equals(operand.kind()) && prices.containsKey(operand.field())) return prices.get(operand.field());
             if ("PRICE".equals(operand.kind())) return candles.stream().mapToDouble(Candle::getClosePrice).toArray();
             return series.getOrDefault(operand.type() + ":" + operand.output(), new double[candles.size()]);
         }
         @Override public List<PatternHit> patterns(PatternCondition condition) {
             return patterns.stream().filter(hit -> hit.family().equals(condition.family())).toList();
+        }
+        @Override public double[] extremes(Operand operand, boolean highest, Integer candles) {
+            double before = candles == null && "PRICE".equals(operand.kind()) ? highest ? earlierHigh : earlierLow : Double.NaN;
+            return CustomAlertEvaluator.extremes(series(operand), before, highest, candles);
         }
         @Override public boolean stillValid(PatternHit hit, int index) { return true; }
         @Override public OutlookFact outlook() { return outlook; }
@@ -120,6 +130,110 @@ class CustomAlertEvaluatorTest {
         assertThat(CustomAlertEvaluator.evaluate(change, facts, 4).matched()).as("98 to 106 is 8.2%").isTrue();
         assertThat(CustomAlertEvaluator.evaluate(change, facts, 6).matched()).isFalse();
         assertThat(CustomAlertEvaluator.evaluate(high, facts, 4).matched()).isTrue();
+    }
+
+    private static final String CLOSE = "{\"kind\":\"PRICE\",\"field\":\"CLOSE\"}";
+
+    private static String fromTop(String operator, double percent, Integer candles) {
+        return "{\"id\":\"c1\",\"kind\":\"VALUE\",\"subject\":" + CLOSE + ",\"operator\":\"" + operator + "\",\"percent\":" + percent
+                + (candles == null ? "" : ",\"candles\":" + candles) + "}";
+    }
+
+    @Test
+    void aDropFromTheAllTimeHighIsMeasuredFromTheHighestHighIncludingOlderHistory() {
+        Stub facts = new Stub(100, 120, 110, 95, 90);
+        facts.prices.put("HIGH", new double[]{101, 125, 111, 96, 91});
+        var down25 = rule(single(fromTop("DOWN_FROM_HIGH", 25, null)));
+
+        assertThat(CustomAlertEvaluator.evaluate(down25, facts, 3).matched()).as("95 is 24% below the 125 high").isFalse();
+        var result = CustomAlertEvaluator.evaluate(down25, facts, 4);
+        assertThat(result.matched()).as("90 is 28% below it").isTrue();
+        assertThat(result.conditions().getFirst().facts()).containsEntry("value", 90.0).containsEntry("extreme", 125.0)
+                .containsEntry("change", -28.0).doesNotContainKey("compare");
+        assertThat(CustomAlertEvaluator.evaluate(down25, facts, 1).matched()).as("the candle that set the top").isFalse();
+
+        // A top from before the loaded candles counts too: 95 is far below an older 200.
+        facts.earlierHigh = 200;
+        assertThat(CustomAlertEvaluator.evaluate(down25, facts, 0).matched()).isTrue();
+        assertThat(CustomAlertEvaluator.evaluate(down25, facts, 3).conditions().getFirst().facts()).containsEntry("extreme", 200.0);
+    }
+
+    @Test
+    void aTopOverTheLastCandlesForgetsOlderHighsAndWaitsForAFullWindow() {
+        Stub facts = new Stub(100, 120, 110, 95, 90);
+        facts.prices.put("HIGH", new double[]{101, 125, 111, 96, 91});
+        facts.earlierHigh = 500;
+        var recent = rule(single(fromTop("DOWN_FROM_HIGH", 5, 2)));
+        var exactly20 = rule(single(fromTop("DOWN_FROM_HIGH", 20, 3)));
+
+        assertThat(CustomAlertEvaluator.evaluate(recent, facts, 0).matched()).as("only one candle known").isFalse();
+        assertThat(CustomAlertEvaluator.evaluate(recent, facts, 4).matched()).as("90 is 6.25% below the 96 of the last two").isTrue();
+        assertThat(CustomAlertEvaluator.evaluate(recent, facts, 4).conditions().getFirst().facts()).containsEntry("extreme", 96.0);
+        assertThat(CustomAlertEvaluator.evaluate(recent, facts, 2).matched()).as("110 is 12% below 125").isTrue();
+        assertThat(CustomAlertEvaluator.evaluate(exactly20, facts, 3).matched()).as("95 is 24% below 125").isTrue();
+        assertThat(CustomAlertEvaluator.evaluate(exactly20, facts, 4).matched()).as("90 is 18.9% below 111").isFalse();
+    }
+
+    @Test
+    void aRiseFromTheLowMirrorsItAndAnIndicatorIsMeasuredFromItsOwnValues() {
+        Stub facts = new Stub(50, 40, 44, 52, 60);
+        facts.prices.put("LOW", new double[]{49, 38, 43, 51, 59});
+        var up50 = rule(single(fromTop("UP_FROM_LOW", 50, null)));
+        assertThat(CustomAlertEvaluator.evaluate(up50, facts, 3).matched()).as("52 is 36.8% above 38").isFalse();
+        assertThat(CustomAlertEvaluator.evaluate(up50, facts, 4).matched()).as("60 is 57.9% above 38").isTrue();
+        facts.earlierLow = 45;
+        assertThat(CustomAlertEvaluator.evaluate(up50, facts, 4).conditions().getFirst().facts()).as("a lower low inside the candles wins")
+                .containsEntry("extreme", 38.0);
+
+        facts.series.put("RSI:value", new double[]{Double.NaN, 80, 60, 50, 45});
+        var rsiOff = rule(single("{\"id\":\"c1\",\"kind\":\"VALUE\",\"subject\":" + RSI + ",\"operator\":\"DOWN_FROM_HIGH\",\"percent\":40}"));
+        assertThat(CustomAlertEvaluator.evaluate(rsiOff, facts, 3).matched()).as("50 is 37.5% below RSI's own 80").isFalse();
+        assertThat(CustomAlertEvaluator.evaluate(rsiOff, facts, 4).matched()).isTrue();
+        assertThat(CustomAlertEvaluator.evaluate(rsiOff, facts, 0).matched()).as("not known yet").isFalse();
+    }
+
+    @Test
+    void extremesSkipUnknownValuesAndAWindowNeedsEveryOneOfItsCandles() {
+        double nan = Double.NaN;
+        assertThat(CustomAlertEvaluator.extremes(new double[]{nan, 3, 1, 4, 2}, nan, true, null)).containsExactly(nan, 3, 3, 4, 4);
+        assertThat(CustomAlertEvaluator.extremes(new double[]{3, 1, 4}, 2, false, null)).containsExactly(2, 1, 1);
+        assertThat(CustomAlertEvaluator.extremes(new double[]{5, 1, 4, 2, 3, 1}, nan, true, 3)).containsExactly(nan, nan, 5, 4, 4, 3);
+        assertThat(CustomAlertEvaluator.extremes(new double[]{5, nan, 4, 2, 3, 1}, nan, true, 2)).containsExactly(nan, nan, nan, 4, 3, 3);
+        assertThat(CustomAlertEvaluator.extremes(new double[]{5, 1, 4, 2, 3}, nan, false, 2)).containsExactly(nan, 1, 1, 2, 2);
+    }
+
+    @Test
+    void aDropFromTheTopIsCheckedWhenSavedAndWrittenBackWithoutCandlesForAllTime() {
+        var allTime = rule(single(fromTop("DOWN_FROM_HIGH", 30, null)));
+        assertThat(allTime.toJson().path("groups").get(0).path("conditions").get(0).has("candles")).isFalse();
+        assertThat(CustomAlertText.describe(allTime.conditions().getFirst())).isEqualTo("Close price is at least 30% below its all-time high");
+        assertThat(allTime.usesAllTimePrice()).isTrue();
+        var recent = rule(single(fromTop("UP_FROM_LOW", 150, 250)));
+        assertThat(recent.toJson().path("groups").get(0).path("conditions").get(0).path("candles").asInt()).isEqualTo(250);
+        assertThat(CustomAlertText.describe(recent.conditions().getFirst())).isEqualTo("Close price is at least 150% above its 250-candle low");
+        assertThat(recent.usesAllTimePrice()).isFalse();
+        assertThat(recent.lookbackCandles()).as("the window reaches back 250 candles").isEqualTo(251);
+
+        assertThatThrownBy(() -> rule(single(fromTop("DOWN_FROM_HIGH", 120, null)))).isInstanceOf(UserInputException.class)
+                .hasMessage("Enter a percentage from 0 to 100.");
+        assertThatThrownBy(() -> rule(single(fromTop("UP_FROM_LOW", 1200, null)))).hasMessage("Enter a percentage from 0 to 1000.");
+        assertThatThrownBy(() -> rule(single(fromTop("DOWN_FROM_HIGH", 20, 1)))).hasMessage("Choose 2 to 500 candles.");
+        assertThatThrownBy(() -> rule(single(fromTop("DOWN_FROM_HIGH", 20, 501)))).hasMessage("Choose 2 to 500 candles.");
+        assertThatThrownBy(() -> rule(single("{\"id\":\"c1\",\"kind\":\"VALUE\",\"subject\":" + CLOSE + ",\"operator\":\"DOWN_FROM_HIGH\"}")))
+                .hasMessage("Enter the percentage.");
+    }
+
+    @Test
+    void aDropFromTheTopCanBeAStepOfASequenceAndSaysWhatItWasMeasuredFrom() {
+        Stub facts = new Stub(100, 120, 90, 88, 95, 99);
+        facts.prices.put("HIGH", new double[]{101, 125, 91, 89, 96, 100});
+        var rule = rule("{\"version\":1,\"match\":\"ALL\",\"groups\":[{\"id\":\"g1\",\"match\":\"THEN\",\"conditions\":["
+                + "{\"id\":\"c1\",\"kind\":\"VALUE\",\"subject\":" + CLOSE + ",\"operator\":\"DOWN_FROM_HIGH\",\"percent\":25,\"step\":{\"candles\":2}},"
+                + "{\"id\":\"c2\",\"kind\":\"VALUE\",\"subject\":" + CLOSE + ",\"operator\":\"RISING\",\"candles\":2,\"step\":{\"within\":3}}]}]}");
+
+        var result = CustomAlertEvaluator.evaluate(rule, facts, 5);
+        assertThat(result.matched()).as("28% and 29.6% below 125 two candles in a row, then two rises").isTrue();
+        assertThat(result.conditions().getFirst().facts()).containsEntry("extreme", 125.0).containsEntry("candles", 2);
     }
 
     @Test

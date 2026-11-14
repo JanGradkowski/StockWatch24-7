@@ -99,8 +99,36 @@
         }
         return true;
       }
+      // {@code compare} is the top (bottom) itself, see extremesOf.
+      case 'DOWN_FROM_HIGH': case 'UP_FROM_LOW': {
+        if (!Number.isFinite(other) || other <= 0) return false;
+        const change = (now - other) / Math.abs(other) * 100;
+        return condition.operator === 'DOWN_FROM_HIGH' ? change <= -condition.percent + 1e-9 : change >= condition.percent - 1e-9;
+      }
       default: return false;
     }
+  }
+
+  /** Tests measured from the subject's own top (bottom). */
+  const FROM_EXTREME = ['DOWN_FROM_HIGH', 'UP_FROM_LOW'];
+
+  /**
+   * The highest (or lowest) of {@code values} on each candle, as CustomAlertEvaluator.extremes reads it: over the last
+   * {@code candles} including it (NaN until that many are known), or over every candle up to it without them.
+   */
+  function extremesOf(values, highest, candles) {
+    const span = Number(candles) >= 2 ? Number(candles) : 0;
+    let best = NaN;
+    return values.map((value, at) => {
+      if (span) {
+        if (at - span + 1 < 0) return NaN;
+        const range = values.slice(at - span + 1, at + 1);
+        if (!range.every(Number.isFinite)) return NaN;
+        return highest ? Math.max(...range) : Math.min(...range);
+      }
+      if (Number.isFinite(value) && (!Number.isFinite(best) || (highest ? value > best : value < best))) best = value;
+      return best;
+    });
   }
 
   /** Tests decided on a single candle: marked there rather than traced along the line. */
@@ -178,7 +206,7 @@
   }
 
   window.StockWatchTriggerChart = Object.freeze({
-    PALETTE, colorAt, conditionsOf, stepsOf, align, holds, passing, windowOf, atOrBefore, panePlan
+    PALETTE, colorAt, conditionsOf, stepsOf, align, holds, passing, windowOf, atOrBefore, panePlan, extremesOf
   });
 
   const page = document.querySelector('.ca-trigger-page');
@@ -367,6 +395,16 @@
       if (operand.kind === 'PRICE') return field(operand.field);
       return lines.get(id)?.values || align(series.get(id)?.points, indexOf, bars.length);
     };
+    /**
+     * The top (bottom) a value was measured from on each candle: the server's for a price, which counts the history
+     * before the chart; along the chart's own values for volume and indicators.
+     */
+    const extremeValues = (condition, view, subject) => {
+      if (view.extremes) return align(view.extremes, indexOf, bars.length);
+      const highest = condition.operator === 'DOWN_FROM_HIGH';
+      const price = condition.subject?.kind === 'PRICE' && condition.subject.field !== 'VOLUME';
+      return extremesOf(price ? field(highest ? 'HIGH' : 'LOW') : subject, highest, condition.candles);
+    };
     /** The chart series a value condition's subject is drawn on, and its pane. */
     const targetOf = (operand, id) => {
       if (operand?.kind === 'PRICE') return operand.field === 'VOLUME' ? { series: volumeSeries, pane: 1, candles: false }
@@ -459,7 +497,8 @@
       const facts = result?.facts || {};
       const view = views[condition.id] || {};
       const subject = valuesOf(condition.subject, view.subject);
-      const compare = condition.compare ? valuesOf(condition.compare, view.compare) : null;
+      const compare = FROM_EXTREME.includes(condition.operator) ? extremeValues(condition, view, subject)
+        : condition.compare ? valuesOf(condition.compare, view.compare) : null;
       const target = targetOf(condition.subject, view.subject);
       if (!target?.series) {
         layer.note = i18n.t(plan.hidden.includes(view.subject) ? 'ca.chart.notDrawn' : 'ca.chart.lineUnavailable');
@@ -541,14 +580,38 @@
           layer.series.push(ceiling);
         }
       }
+      if (FROM_EXTREME.includes(operator) && compare) {
+        // The top (bottom) it was measured from, dashed, and the level the test needed, dotted, each named on the axis.
+        // A top far above the candles (a stock 70% below its peak) would flatten them: only a level within about a
+        // third of the price sizes the pane, and the legend names the top either way.
+        const highest = operator === 'DOWN_FROM_HIGH';
+        const factor = highest ? 1 - Number(condition.percent) / 100 : 1 + Number(condition.percent) / 100;
+        const here = subject[matched];
+        const near = value => Number.isFinite(here) && here > 0 && value > 0 && Math.max(value / here, here / value) <= 1.35;
+        const levels = [[compare, LWC.LineStyle.Dashed, i18n.t(highest ? 'ca.chart.topLine' : 'ca.chart.bottomLine')],
+          [compare.map(value => value * factor), LWC.LineStyle.Dotted, `${highest ? '−' : '+'}${text.number(Number(condition.percent))}%`]];
+        levels.forEach(([values, style, title]) => {
+          const line = chart.addLineSeries({
+            color: layer.color, lineWidth: 1, lineStyle: style, priceLineVisible: false, lastValueVisible: true, title, crosshairMarkerVisible: false,
+            autoscaleInfoProvider: original => near(values[matched]) ? original() : null
+          }, target.pane);
+          line.setData(values.map((value, at) => Number.isFinite(value) ? { time: times[at], value } : { time: times[at] }));
+          layer.series.push(line);
+        });
+      }
       // The candle that decided it, with the value the evidence recorded.
       let caption = '';
       if (operator.startsWith('CHANGE') && facts.change != null) caption = i18n.plural('ca.chart.change', count, signed(facts.change), count);
       else if (operator.startsWith('NEW_')) caption = i18n.plural(`ca.chart.${operator === 'NEW_HIGH' ? 'newHigh' : 'newLow'}`, count, count);
+      // Just the distance ("−37.51%"): the legend names the top and the axis the level, and a longer caption covered the candles.
+      else if (FROM_EXTREME.includes(operator) && facts.change != null) caption = signed(Number(facts.change));
       else if (facts.value != null && target.candles && matched !== trigger) caption = short(Number(facts.value));
-      const lower = ['BELOW', 'CROSSES_BELOW', 'FALLING', 'CHANGE_BELOW', 'NEW_LOW'].includes(operator);
+      const lower = ['BELOW', 'CROSSES_BELOW', 'FALLING', 'CHANGE_BELOW', 'NEW_LOW', 'DOWN_FROM_HIGH'].includes(operator);
       if (steps.has(condition.id) && facts.candles > 1 && (lower ? facts.low : facts.high) != null) {
         layer.value = i18n.t(lower ? 'ca.evidence.lowest' : 'ca.evidence.highest', short(Number(lower ? facts.low : facts.high)));
+      } else if (FROM_EXTREME.includes(operator) && facts.extreme != null) {
+        // The top itself, which may sit far above the candles drawn.
+        layer.value = i18n.t(operator === 'DOWN_FROM_HIGH' ? 'ca.evidence.highest' : 'ca.evidence.lowest', short(Number(facts.extreme)));
       } else if (facts.value != null && !target.candles) layer.value = short(Number(facts.value));
       if (caption || !target.candles) {
         addMarker(target.series, { time: times[matched], position: 'aboveBar', color: layer.color, shape: 'circle',

@@ -13,12 +13,16 @@
   const choose = (...args) => window.StockWatchLists.choose(...args);
   const el = text.element;
   // Learning-mode explanations (js.learn.<key>) used on this page.
-  const LEARN_OPTIONS = { capacity: 'customAlerts.capacity', confirmed: 'customAlerts.confirmed', detected: 'customAlerts.detected', direction: 'customAlerts.direction', disclosureDate: 'customAlerts.disclosureDate', filingDate: 'customAlerts.filingDate', history: 'customAlerts.history', minPeople: 'customAlerts.minPeople', minScore: 'customAlerts.minScore', negate: 'customAlerts.negate', operator: 'customAlerts.operator', outcome: 'customAlerts.outcome', outlook: 'customAlerts.outlook', status: 'customAlerts.status', timeframe: 'customAlerts.timeframe', window: 'customAlerts.window', inOrder: 'customAlerts.inOrder', inARow: 'customAlerts.inARow', within: 'customAlerts.within', span: 'customAlerts.span', completed: 'customAlerts.completed' };
+  const LEARN_OPTIONS = { capacity: 'customAlerts.capacity', confirmed: 'customAlerts.confirmed', detected: 'customAlerts.detected', direction: 'customAlerts.direction', disclosureDate: 'customAlerts.disclosureDate', filingDate: 'customAlerts.filingDate', fromExtreme: 'customAlerts.fromExtreme', history: 'customAlerts.history', minPeople: 'customAlerts.minPeople', minScore: 'customAlerts.minScore', negate: 'customAlerts.negate', operator: 'customAlerts.operator', outcome: 'customAlerts.outcome', outlook: 'customAlerts.outlook', status: 'customAlerts.status', timeframe: 'customAlerts.timeframe', window: 'customAlerts.window', inOrder: 'customAlerts.inOrder', inARow: 'customAlerts.inARow', within: 'customAlerts.within', span: 'customAlerts.span', completed: 'customAlerts.completed' };
   const PRICE_FIELDS = ['CLOSE', 'OPEN', 'HIGH', 'LOW', 'VOLUME'];
   const SOURCES = ['close', 'open', 'high', 'low', 'hl2', 'hlc3', 'ohlc4', 'hlcc4'];
   const COMPARISONS = ['ABOVE', 'BELOW', 'CROSSES_ABOVE', 'CROSSES_BELOW'];
   const OPERATORS = ['ABOVE', 'BELOW', 'CROSSES_ABOVE', 'CROSSES_BELOW', 'BETWEEN', 'OUTSIDE', 'RISING', 'FALLING',
-    'CHANGE_ABOVE', 'CHANGE_BELOW', 'NEW_HIGH', 'NEW_LOW'];
+    'CHANGE_ABOVE', 'CHANGE_BELOW', 'NEW_HIGH', 'NEW_LOW', 'DOWN_FROM_HIGH', 'UP_FROM_LOW'];
+  /** Measured from the subject's own top (bottom): all-time without candles, else over the last candles. */
+  const FROM_EXTREME = ['DOWN_FROM_HIGH', 'UP_FROM_LOW'];
+  /** The longest "last N candles" a top is measured over (CustomAlertDefinition.MAX_EXTREME_CANDLES). */
+  const MAX_EXTREME_CANDLES = 500;
 
   const nodes = {
     name: form.querySelector('[data-ca-name]'), description: form.querySelector('[data-ca-description]'),
@@ -62,6 +66,8 @@
   const spanTouched = new WeakSet();
   // A sequence switched to all/any keeps its settings here, so switching back to "in order" restores them.
   const sequenceSettings = new WeakMap();
+  // A "last N candles" top switched to all-time keeps its N here, so switching back restores it.
+  const lookbacks = new WeakMap();
 
   // ------------------------------------------------------------------ small controls
 
@@ -902,7 +908,14 @@
       })));
     }
     fields.push(field(i18n.t('ca.builder.condition'), select(OPERATORS.map(op => [op, i18n.t(`ca.opLabel.${op}`)]), condition.operator, value => {
+      const wasFromExtreme = FROM_EXTREME.includes(condition.operator);
       condition.operator = value;
+      if (FROM_EXTREME.includes(value)) {
+        // A top of all time unless one of the last candles was chosen for the other direction.
+        if (!wasFromExtreme) delete condition.candles;
+        const percent = Number.isFinite(condition.percent) ? condition.percent : 20;
+        condition.percent = value === 'DOWN_FROM_HIGH' ? Math.min(100, percent) : percent;
+      }
       if (COMPARISONS.includes(value) && !condition.compare) suggestCompare(condition);
       if (['RISING', 'FALLING'].includes(value)) condition.candles = condition.candles && condition.candles <= 20 ? condition.candles : 2;
       if (['NEW_HIGH', 'NEW_LOW'].includes(value)) condition.candles = Math.max(2, condition.candles || 20);
@@ -955,6 +968,10 @@
     } else if (['CHANGE_ABOVE', 'CHANGE_BELOW'].includes(op)) {
       fields.push(field(i18n.t('ca.builder.percent'), numberInput(condition.percent, { min: 0, max: 1000 }, value => { condition.percent = value; refresh(); })));
       fields.push(field(i18n.t('ca.builder.overCandles'), numberInput(condition.candles, { min: 1, max: 250, step: 1 }, value => { condition.candles = value; refresh(); })));
+    } else if (FROM_EXTREME.includes(op)) {
+      fields.push(field(i18n.t('ca.builder.percent'), numberInput(condition.percent, { min: 0, max: op === 'DOWN_FROM_HIGH' ? 100 : 1000 },
+        value => { condition.percent = value; refresh(); })));
+      fields.push(measuredFromField(condition, refresh, rebuild));
     } else {
       const limits = ['RISING', 'FALLING'].includes(op) ? { min: 1, max: 20, step: 1 } : { min: 2, max: 250, step: 1 };
       fields.push(field(i18n.t(['RISING', 'FALLING'].includes(op) ? 'ca.builder.inARow' : 'ca.builder.lookback'),
@@ -969,6 +986,38 @@
       fields.push(...windowFields(condition, refresh, rebuild));
     }
     return fields;
+  }
+
+  /**
+   * Which top (bottom) the value is measured from, as one phrase: "[Its all-time high]", or "[Its high over the last]
+   * [250] candles". The number a user typed is kept while all-time is chosen, so switching back restores it.
+   */
+  function measuredFromField(condition, refresh, rebuild) {
+    const high = condition.operator === 'DOWN_FROM_HIGH';
+    const recent = Number.isFinite(condition.candles);
+    const phrase = el('div', 'ca-phrase');
+    const mode = select([['ALL', i18n.t(high ? 'ca.builder.allTimeHigh' : 'ca.builder.allTimeLow')],
+      ['RECENT', i18n.t(high ? 'ca.builder.recentHigh' : 'ca.builder.recentLow')]], recent ? 'RECENT' : 'ALL', value => {
+      if (value === 'ALL') {
+        if (Number.isFinite(condition.candles)) lookbacks.set(condition, condition.candles);
+        delete condition.candles;
+      } else {
+        condition.candles = lookbacks.get(condition) || 250;
+      }
+      rebuild();
+    }, i18n.t('ca.builder.measuredFrom'));
+    phrase.append(mode);
+    if (recent) {
+      const candles = restoreWhenBlank(numberInput(condition.candles, { min: 2, max: MAX_EXTREME_CANDLES, step: 1 }, value => {
+        if (value == null) return;
+        condition.candles = value; refresh();
+      }), () => condition.candles);
+      candles.setAttribute('aria-label', i18n.t('ca.builder.candles'));
+      phrase.append(candles, el('span', 'ca-phrase-unit', i18n.t('ca.builder.candlesUnit')));
+    }
+    const wrapper = field(i18n.t('ca.builder.measuredFrom'), phrase, LEARN_OPTIONS.fromExtreme);
+    wrapper.classList.add('ca-field-wide');
+    return wrapper;
   }
 
   /** In a sequence the step's own timing replaces the window: how many candles in a row it must hold. */
@@ -1312,6 +1361,8 @@
       compare: { kind: 'VALUE', value: preview?.latestClose ? Math.round(preview.latestClose) : 100 }, window: { mode: 'LATEST' } }) },
     { key: 'priceChange', make: () => ({ kind: 'VALUE', subject: { kind: 'PRICE', field: 'CLOSE' }, operator: 'CHANGE_ABOVE', candles: 5,
       percent: 5, window: { mode: 'LATEST' } }) },
+    { key: 'fromTop', make: () => ({ kind: 'VALUE', subject: { kind: 'PRICE', field: 'CLOSE' }, operator: 'DOWN_FROM_HIGH', percent: 20,
+      window: { mode: 'LATEST' } }) },
     { key: 'candlestick', make: () => ({ kind: 'PATTERN', family: 'CANDLESTICK', status: 'CONFIRMED', direction: 'BULLISH', patterns: [], window: { mode: 'ANY', candles: 3 } }) },
     { key: 'elliott', make: () => ({ kind: 'PATTERN', family: 'ELLIOTT_WAVE', direction: 'BULLISH', patterns: ['WAVE_II_END'], window: { mode: 'ANY', candles: 5 } }) },
     { key: 'harmonic', make: () => ({ kind: 'PATTERN', family: 'HARMONIC_FORMATION', direction: 'BULLISH', patterns: [], window: { mode: 'ANY', candles: 3 } }) },
@@ -1469,12 +1520,12 @@
 
   /** The picker's choices by family, and the icon of each. */
   const PICKER_SECTIONS = [
-    { id: 'price', keys: ['rsi', 'maCross', 'volume', 'breakout', 'priceLevel', 'priceChange', 'anyIndicator'] },
+    { id: 'price', keys: ['rsi', 'maCross', 'volume', 'breakout', 'priceLevel', 'priceChange', 'fromTop', 'anyIndicator'] },
     { id: 'patterns', keys: ['candlestick', 'elliott', 'harmonic'] },
     { id: 'filings', keys: ['insider', 'congress', 'outlook'] },
     { id: 'advanced', keys: ['sequence'] }
   ];
-  const PICKER_ICONS = { rsi: 'indicator', maCross: 'indicator', volume: 'indicator', breakout: 'price', priceLevel: 'price', priceChange: 'price',
+  const PICKER_ICONS = { rsi: 'indicator', maCross: 'indicator', volume: 'indicator', breakout: 'price', priceLevel: 'price', priceChange: 'price', fromTop: 'price',
     anyIndicator: 'search', candlestick: 'pattern', elliott: 'pattern', harmonic: 'pattern', insider: 'insider', congress: 'congress',
     outlook: 'outlook', sequence: 'sequence' };
 
@@ -1822,7 +1873,11 @@
     const facts = found.facts || {};
     let detail = '';
     if (!found.applicable) detail = i18n.t('ca.readout.notApplicable');
-    else if (condition.kind === 'VALUE' && facts.value != null) detail = i18n.t('ca.readout.value', text.number(facts.value));
+    else if (condition.kind === 'VALUE' && FROM_EXTREME.includes(condition.operator) && facts.change != null) {
+      // "now 23.4% below the high (198.50)": how far it is, and from what.
+      detail = i18n.t(condition.operator === 'DOWN_FROM_HIGH' ? 'ca.readout.belowHigh' : 'ca.readout.aboveLow',
+        text.number(Math.abs(facts.change)), text.number(facts.extreme));
+    } else if (condition.kind === 'VALUE' && facts.value != null) detail = i18n.t('ca.readout.value', text.number(facts.value));
     else if (condition.kind === 'PATTERN' && facts.pattern) detail = i18n.plural('ca.readout.candlesAgo', facts.candlesAgo, facts.candlesAgo);
     else if ((condition.kind === 'INSIDER' || condition.kind === 'CONGRESS') && facts.filings != null) {
       detail = i18n.plural('ca.readout.filings', facts.filings, facts.filings);

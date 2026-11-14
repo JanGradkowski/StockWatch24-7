@@ -16,6 +16,11 @@
    "draft": true, "conditions": [{"kind": "VALUE", "operator": ["NEW_HIGH"]}, {"kind": "VALUE", "indicator": "RELATIVE_VOLUME"}]},
   {"id": "drop-10", "page": "/custom-alerts/new", "language": "EN", "question": "Alert when a stock falls more than 10% in 5 days.",
    "draft": true, "conditions": [{"kind": "VALUE", "operator": ["CHANGE_BELOW"]}]},
+  {"id": "drop-from-all-time-high", "page": "/custom-alerts/new", "language": "EN",
+   "question": "Tell me when a stock is 30% below its all-time high.",
+   "draft": true, "conditions": [{"kind": "VALUE", "field": "CLOSE", "operator": ["DOWN_FROM_HIGH"]}]},
+  {"id": "off-52-week-high", "page": "/custom-alerts/new", "language": "EN", "question": "Alert me when a stock trades 15% off its 52-week high.",
+   "draft": true, "conditions": [{"kind": "VALUE", "operator": ["DOWN_FROM_HIGH"]}]},
   {"id": "macd-cross", "page": "/custom-alerts/new", "language": "EN", "question": "MACD line crosses above its signal line.",
    "draft": true, "conditions": [{"kind": "VALUE", "indicator": "MACD", "operator": ["CROSSES_ABOVE"]}]},
   {"id": "bollinger-lower", "page": "/custom-alerts/new", "language": "EN", "question": "When the price closes below the lower Bollinger Band.",
@@ -71,5 +76,7 @@
   {"id": "pl-howto-language", "page": "/home", "language": "PL", "question": "Jak zmienić język strony?", "draft": false,
    "link": "/settings/language"},
   {"id": "pl-weekly", "page": "/custom-alerts/new", "language": "PL", "question": "Na świecach tygodniowych: zamknięcie powyżej średniej SMA 40.",
-   "draft": true, "interval": "WEEKLY", "conditions": [{"kind": "VALUE", "indicator": "SMA"}]}
+   "draft": true, "interval": "WEEKLY", "conditions": [{"kind": "VALUE", "indicator": "SMA"}]},
+  {"id": "pl-drop-from-top", "page": "/custom-alerts/new", "language": "PL", "question": "Powiadom mnie, gdy akcja spadnie o 25% od swojego szczytu.",
+   "draft": true, "conditions": [{"kind": "VALUE", "operator": ["DOWN_FROM_HIGH"]}]}
 ]
