@@ -1173,7 +1173,8 @@ span.ind-legend-name {
     font-weight: 500;
 }
 
-.ind-legend-loading {
+.ind-legend-loading,
+.ind-legend-note {
     color: var(--muted-text);
 }
 

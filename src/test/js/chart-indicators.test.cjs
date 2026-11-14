@@ -38,7 +38,10 @@ const CATALOG = {
             outputs: [{key: 'macd', style: 'LINE', color: '#60a5fa', width: 2, lineStyle: 0, visible: true},
                 {key: 'signal', style: 'LINE', color: '#ffbd59', width: 2, lineStyle: 0, visible: true},
                 {key: 'histogram', style: 'HISTOGRAM', color: '#26a69a', width: 1, lineStyle: 0, visible: true, colorMode: 'SIGN_MOMENTUM'}],
-            fills: [], references: [0]}
+            fills: [], references: [0]},
+        {type: 'VOLUME_MA', shortName: 'Volume MA', category: 'VOLUME', placement: 'VOLUME', visibleRangeDependent: false, shapes: false,
+            inputs: [{key: 'period', kind: 'INTEGER', defaultValue: 20, min: 1, max: 500, step: 1}],
+            outputs: [{key: 'value', style: 'LINE', color: '#ff9f43', width: 1, lineStyle: 0, visible: true}], fills: [], references: []}
     ]
 };
 
@@ -180,6 +183,76 @@ test('panel indicators get their own pane below the volume pane; overlays stay o
     assert.deepEqual(plain(manager.slots), ['price', 'volume']);
     assert.equal(chart.panes().length, 2);
     assert.ok(manager.find(ema.id));
+});
+
+test('a volume average draws only in the volume pane and waits in the legend while volume is off', async () => {
+    const {manager, chart, window, requests} = await setup();
+    const priceSeries = chart.series[0];
+    const others = () => chart.series.filter(item => item !== priceSeries);
+    const row = id => [...window.document.querySelectorAll('[data-indicator]')].find(node => node.dataset.indicator === id);
+    // Off from the start, as a layout saved with "Volume: off" loads. On the candles' scale its share counts would
+    // flatten them.
+    manager.setVolume(false);
+    manager.dataChanged();
+    const average = manager.add('VOLUME_MA');
+    await settle();
+    assert.deepEqual(plain(manager.slots), ['price']);
+    assert.equal(others().length, 0, 'nothing is drawn beside the candles');
+    assert.ok(manager.views.has(average.id), 'it is still calculated');
+    assert.equal(row(average.id).closest('.ind-legend').dataset.slot, 'price');
+    assert.match(row(average.id).textContent, /volume pane, which is off/);
+
+    // Volume on: drawn in the volume pane at once, from the values already loaded.
+    const calculations = requests.filter(request => request.url.includes('/chart-indicators?')).length;
+    manager.setVolume(true);
+    const line = others().find(item => item.definition === 'Line');
+    assert.ok(line, 'drawn as a plain line on the volume scale');
+    assert.equal(line.pane, chart.panes()[1]);
+    assert.equal(line.points.length, 60);
+    assert.equal(line.options.priceScaleId, undefined);
+    assert.equal(requests.filter(request => request.url.includes('/chart-indicators?')).length, calculations);
+    assert.equal(row(average.id).closest('.ind-legend').dataset.slot, 'volume');
+    assert.doesNotMatch(row(average.id).textContent, /which is off/);
+
+    // Off again, and recalculated while off: still nothing beside the candles.
+    manager.setVolume(false);
+    assert.equal(others().length, 0);
+    assert.equal(manager.visuals.has(average.id), false);
+    manager.refresh(0);
+    await settle();
+    assert.equal(others().length, 0);
+    // A hidden one says nothing about the volume pane.
+    manager.toggle(average.id);
+    assert.doesNotMatch(row(average.id).textContent, /which is off/);
+});
+
+test('pane actions of a volume indicator need the volume pane', async () => {
+    const {manager, chart, window} = await setup();
+    const i18n = window.StockWatchI18n;
+    const menuItems = config => {
+        const anchor = [...window.document.querySelectorAll('[data-indicator]')].find(node => node.dataset.indicator === config.id);
+        manager.openRowMenu(config, anchor);
+        const labels = [...window.document.querySelectorAll('.ind-menu .draw-menu-item')].map(item => item.textContent);
+        manager.closeMenu();
+        return labels;
+    };
+    manager.setVolume(true);
+    manager.dataChanged();
+    const average = manager.add('VOLUME_MA');
+    await settle();
+    assert.ok(menuItems(average).includes(i18n.t('ind.action.maximize')));
+    manager.maximizePane(average.id);
+    assert.equal(manager.maximized, 'volume');
+
+    // Turning volume off ends the maximized view, so new panes get their usual share again.
+    manager.setVolume(false);
+    assert.equal(manager.maximized, null);
+    const items = menuItems(average);
+    [i18n.t('ind.action.moveUp'), i18n.t('ind.action.moveDown'), i18n.t('ind.action.maximize'), i18n.t('ind.action.restore')]
+        .forEach(label => assert.ok(!items.includes(label), `${label} is not offered`));
+    manager.add('MACD');
+    await settle();
+    assert.deepEqual(chart.panes().map(pane => pane.stretch), [480, 150]);
 });
 
 test('legend labels show the settings that change the calculation', async () => {

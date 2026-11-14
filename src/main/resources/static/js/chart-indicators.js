@@ -750,11 +750,20 @@
 
         // ---- panes
 
-        /** Pane slot an indicator draws in. */
+        /**
+         * Pane slot an indicator draws in. Volume indicators belong to the volume pane even while it is off: on the
+         * price scale their share counts would flatten the candles, so, as with TradingView's Volume MA, they are
+         * hidden with the volume and their legend row says so.
+         */
         slotOf(config) {
             if (config.pane === 'own') return config.id;
-            if (config.pane === 'volume') return this.slots.includes('volume') ? 'volume' : 'price';
+            if (config.pane === 'volume') return 'volume';
             return 'price';
+        }
+
+        /** A volume indicator while the volume pane is off: kept, calculated, but not drawn. */
+        awaitsVolume(config) {
+            return config.pane === 'volume' && !this.slots.includes('volume');
         }
 
         paneIndex(slot) {
@@ -799,6 +808,8 @@
                 }
             });
             if (this.volumeWanted && !this.volumeSeries) this.createVolumeSeries();
+            // A maximized pane that went away would otherwise keep every other pane at its minimum.
+            if (this.maximized && !this.slots.includes(this.maximized)) this.maximized = null;
             this.applyPaneHeights();
             this.onPanesChanged();
             this.positionLegends();
@@ -890,7 +901,12 @@
         setVolume(visible, options = {}) {
             this.volumeWanted = Boolean(visible);
             this.volumeOptions = options;
+            const had = this.slots.includes('volume');
             this.syncPanes();
+            // Their lines went with the pane, or wait for it: draw them from the values already loaded.
+            if (had !== this.slots.includes('volume')) {
+                this.indicators.filter(config => config.pane === 'volume').forEach(config => this.renderIndicator(config));
+            }
             this.renderLegends();
         }
 
@@ -1255,6 +1271,7 @@
             );
             row.append(name, values, controls);
             if (config.error) row.append(element('span', {className: 'ind-legend-error', text: config.error}));
+            else if (config.visible && this.awaitsVolume(config)) row.append(element('span', {className: 'ind-legend-note', text: i18n.t('ind.status.volumeOff')}));
             else if (this.loading && !this.views.has(config.id)) row.append(element('span', {className: 'ind-legend-loading', text: i18n.t('ind.status.loading')}));
             return row;
         }
@@ -1321,13 +1338,15 @@
         openRowMenu(config, anchor) {
             const definition = this.definition(config.type);
             const slot = this.slotOf(config);
+            // Pane actions need the pane on the chart; the volume pane can be off.
+            const paneShown = slot !== 'price' && this.slots.includes(slot);
             const items = [
                 {label: i18n.t('ind.action.settings'), action: () => this.openSettings(config.id)},
-                slot !== 'price' ? {label: i18n.t('ind.action.moveUp'), action: () => this.movePane(config.id, -1)} : null,
-                slot !== 'price' ? {label: i18n.t('ind.action.moveDown'), action: () => this.movePane(config.id, 1)} : null,
+                paneShown ? {label: i18n.t('ind.action.moveUp'), action: () => this.movePane(config.id, -1)} : null,
+                paneShown ? {label: i18n.t('ind.action.moveDown'), action: () => this.movePane(config.id, 1)} : null,
                 definition?.placement === 'PANEL' && config.pane === 'own' ? {label: i18n.t('ind.action.toPricePane'), action: () => this.setPricePane(config.id, false)} : null,
                 definition?.placement === 'PANEL' && config.pane !== 'own' ? {label: i18n.t('ind.action.toOwnPane'), action: () => this.setPricePane(config.id, true)} : null,
-                slot !== 'price' ? {label: i18n.t(this.maximized === slot ? 'ind.action.restore' : 'ind.action.maximize'), action: () => this.maximizePane(config.id)} : null,
+                paneShown ? {label: i18n.t(this.maximized === slot ? 'ind.action.restore' : 'ind.action.maximize'), action: () => this.maximizePane(config.id)} : null,
                 this.onAlertRequest ? {label: i18n.t('ind.action.alert'), action: () => this.onAlertRequest(config)} : null,
                 {label: i18n.t('ind.action.saveDefault'), action: () => this.saveTypeDefault(config)},
                 {label: i18n.t('ind.action.resetDefault'), action: () => this.resetTypeDefault(config)},
