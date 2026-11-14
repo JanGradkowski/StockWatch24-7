@@ -28,7 +28,10 @@ test('incompatible watchlists explain restrictions and cannot receive new signal
   checks[1].click(); w.document.querySelector('button[type=submit]').click();
   assert.deepEqual(Array.from((await result).watchlistIds), [2]);
   const membership = w.StockWatchLists.choose('AAPL', { mode: 'membership' }); await settled();
-  assert.equal(w.document.querySelector('input[type=checkbox]').disabled, false);
+  // Membership mode ignores signal-type restrictions; a list that already holds the stock is ticked and read-only.
+  const existing = w.document.querySelector('input[type=checkbox]');
+  assert.equal(existing.checked, true); assert.equal(existing.disabled, true);
+  assert.doesNotMatch(w.document.querySelector('.wl-picker').textContent, /Not allowed here/);
   w.document.querySelector('button[type=button]').click(); await membership; dom.window.close();
 });
 

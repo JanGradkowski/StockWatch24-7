@@ -1062,5 +1062,12 @@
     } catch (error) { b.textContent = error.message; }
     finally { b.disabled = false; }
   }));
+  // The stock header says how many watchlists already hold the stock instead of always offering to add it.
+  document.querySelectorAll('[data-stock-watchlists]').forEach(async b => {
+    try {
+      const selected = await api(`/api/watchlists/memberships/${encodeURIComponent(b.dataset.symbol)}`);
+      if (Array.isArray(selected) && selected.length) b.textContent = i18n.plural('watchlists.inCount', selected.length, selected.length);
+    } catch (error) { /* the default label stays */ }
+  });
   refresh();
 })();

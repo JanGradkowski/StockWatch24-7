@@ -894,7 +894,7 @@ public class AuthController {
                 case "type" -> signal.sourceLabel();
                 case "actor" -> signal.actorName();
                 default -> signal.transactionDate().format(
-                        DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH));
+                        DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH));
             };
         }
 

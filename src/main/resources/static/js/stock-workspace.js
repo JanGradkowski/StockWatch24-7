@@ -1580,6 +1580,14 @@
         structure.structureId || elliottStructureFallbackId(structure),
         structure
       ])).values());
+      // On a narrow chart only the newest structure labels its pivots; older ones keep their dots and lines, whose
+      // labels piled up at the left edge.
+      quietElliottStructures = new Set();
+      if (document.getElementById('priceChartContainer').clientWidth < 900 && uniqueStructures.length > 1) {
+        const end = structure => Math.max(...structure.points.map(point => Number(point.timestamp) || 0));
+        const newest = uniqueStructures.reduce((latest, structure) => (end(structure) > end(latest) ? structure : latest));
+        uniqueStructures.forEach(structure => { if (structure !== newest) quietElliottStructures.add(structure); });
+      }
       uniqueStructures.forEach(structure => renderHistoricalElliottStructure(structure));
       const standalone = (Array.isArray(candidates) ? candidates : []).filter(candidate =>
               candidate.structureLabel !== 'Motive 1-2-3-4-5' && candidate.points?.length >= 4);
@@ -1731,9 +1739,9 @@
     button.disabled = !supported;
     button.classList.toggle('active', supported && harmonicOverlaysEnabled);
     button.setAttribute('aria-pressed', String(supported && harmonicOverlaysEnabled));
-    button.textContent = supported && harmonicOverlaysEnabled
+    button.textContent = !supported ? i18n.t('sw.toggle.harmonic') : harmonicOverlaysEnabled
             ? i18n.t('sw.toggle.harmonicOn')
-            : i18n.t('sw.toggle.harmonic');
+            : i18n.t('sw.toggle.harmonicOff');
   }
 
   async function toggleHarmonicOverlays() {
@@ -2406,6 +2414,9 @@
     }] });
   }
 
+  // Hoisted (var): the structures whose pivots are drawn without text on a narrow chart.
+  var quietElliottStructures = new Set();
+
   function renderHistoricalElliottStructure(structure) {
     const groupId = structure.structureId || elliottStructureFallbackId(structure);
     historicalElliottGroups.set(groupId, { structure, segments: [] });
@@ -2444,13 +2455,14 @@
       value: point.price
     })));
     series.setMarkers(points
-            .filter(point => point.label && includeMarker(point))
+            // An older structure on a narrow chart draws its line only: its rings piled up at the left edge.
+            .filter(point => point.label && includeMarker(point) && !quietElliottStructures.has(structure))
             .map(point => ({
               time: timestampToChartDate(point.timestamp),
               position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
               color: elliottPointWarningLabel(structure, point) ? '#ffbd59' : color,
               shape: 'circle',
-              text: elliottPointMarkerText(structure, point)
+              text: quietElliottStructures.has(structure) ? '' : elliottPointMarkerText(structure, point)
             })));
     historicalElliottSeries.push(series);
     historicalElliottGroups.get(groupId)?.segments.push({
@@ -2526,7 +2538,7 @@
                           ? ELLIOTT_CORRECTIVE_COLOR
                           : ELLIOTT_MOTIVE_COLOR,
                   shape: buyConfirmation ? 'arrowUp' : 'arrowDown',
-                  text: `${endpointLabel} confirmed`
+                  text: document.getElementById('priceChartContainer').clientWidth < 900 ? '' : i18n.t('signalDetail.endpointConfirmed', endpointLabel)
                 }
               });
             });
@@ -3179,7 +3191,8 @@
     companyName.textContent = name && name.toUpperCase() !== String(meta.symbol || '').toUpperCase() ? name : '';
     const exchange = String(meta.exchange || '').trim();
     const exchangeDisplay = document.getElementById('exchangeDisplay');
-    exchangeDisplay.textContent = exchange;
+    // Providers name the same market differently (NASDAQ, NasdaqGS, NasdaqGM); show one name for it.
+    exchangeDisplay.textContent = /^nasdaq/i.test(exchange || '') ? 'NASDAQ' : (/^nyse/i.test(exchange || '') ? 'NYSE' : exchange);
     exchangeDisplay.hidden = !exchange;
   }
 
@@ -3262,7 +3275,8 @@
     followButton.textContent = i18n.t(insiderFollowing ? 'sw.insiderStopFollowing' : 'sw.insiderFollow');
     document.getElementById('insiderActivityStatus').textContent = state.baselinePending
             ? i18n.t('sw.preparingActivityAlerts')
-            : i18n.t('sw.insiderFollowedCount', state.followedStocks, state.maximumFollowedStocks);
+            : (state.followedStocks == null ? document.getElementById('insiderActivityStatus').textContent
+                : i18n.t('sw.insiderFollowedCount', state.followedStocks, state.maximumFollowedStocks));
   }
 
   function showHistoricalCandlestickViewPicker() {
@@ -3298,7 +3312,7 @@
     const button = document.getElementById('candlestickOverlayToggle');
     button.classList.toggle('active', historicalCandlestickOverlayEnabled);
     button.setAttribute('aria-pressed', String(historicalCandlestickOverlayEnabled));
-    button.textContent = i18n.t(historicalCandlestickOverlayEnabled ? 'sw.toggle.candlesOn' : 'sw.candlestickSignals');
+    button.textContent = i18n.t(historicalCandlestickOverlayEnabled ? 'sw.toggle.candlesOn' : 'sw.toggle.candlesOff');
     renderChartOverlayChips();
   }
 
@@ -3594,7 +3608,7 @@
   }
 
   function candlestickReturnClass(value) {
-    return Number(value) >= 0 ? 'positive' : 'negative';
+    return Number(value) > 0 ? 'positive' : (Number(value) < 0 ? 'negative' : '');
   }
 
   function moveHistoricalCandlestickCard(direction) {
@@ -3943,7 +3957,7 @@
     strong.textContent = Number.isFinite(value)
             ? `${value >= 0 ? '+' : ''}${i18n.number(value, 2)}%`
             : i18n.t('sw.pending');
-    strong.className = Number.isFinite(value) ? (value >= 0 ? 'positive' : 'negative') : '';
+    strong.className = Number.isFinite(value) && value !== 0 ? (value > 0 ? 'positive' : 'negative') : '';
     const detail = document.createElement('span');
     detail.textContent = signal.impactLabel || i18n.t('sw.tradeReturnPending');
     const basis = document.createElement('small');
@@ -4086,13 +4100,15 @@
                 headers: secureJsonHeaders()
               });
       const refreshedHistory = await refreshResponse.json().catch(() => ({}));
-      if (!refreshResponse.ok) {
+      // A reply without a trades list is a failed refresh too: never render it over the stored filings.
+      if (!refreshResponse.ok || !Array.isArray(refreshedHistory.trades)) {
         throw new Error(refreshedHistory.error || i18n.t('sw.insider.newRowsFailed'));
       }
       renderInsiderHistory(refreshedHistory);
       applyInsiderActivityState(refreshedHistory);
     } catch (error) {
-      status.textContent = error.message || i18n.t('sw.insider.historyFailed');
+      // Stored filings stay on screen when only the refresh failed; say so instead of reporting a failed load.
+      status.textContent = document.querySelector('#insiderHistoryRows tr') ? i18n.t('sw.insider.cache.STALE') : i18n.t('sw.insider.historyFailed');
       status.dataset.state = 'unavailable';
       if (!hasCachedTrades) {
         empty.hidden = false;
@@ -4136,10 +4152,8 @@
                             ? i18n.t('sw.insider.priceMissing')
                             : i18n.t('sw.insider.atPrice', formatInsiderMoney(trade.transactionPrice))),
             historyCell(i18n.t('sw.col.tradeValue'), formatInsiderMoney(trade.transactionValue)),
-            historyCell(
-                    i18n.t('sw.col.effectiveDate'),
-                    formatCongressionalDate(trade.transactionDate),
-                    i18n.t('sw.insider.filingDateShown')),
+            // The "filing date shown" caveat is a footnote under the table (Effective date*), not repeated in every row.
+            historyCell(i18n.t('sw.col.effectiveDate'), formatCongressionalDate(trade.transactionDate)),
             historyCell(i18n.t('sw.col.filed'), formatCongressionalDate(trade.filingDate)),
             insiderReturnCell(trade),
             historySourceCell(trade, detailUrl)
@@ -4160,7 +4174,7 @@
     }
     const value = Number(trade.returnPercent);
     const label = document.createElement('strong');
-    label.className = `insider-return ${value >= 0 ? 'positive' : 'negative'}`;
+    label.className = `insider-return ${value > 0 ? 'positive' : (value < 0 ? 'negative' : '')}`;
     label.textContent = `${value >= 0 ? '+' : ''}${i18n.number(value, 2)}%`;
     cell.append(label);
     if (trade.returnAsOf) {
@@ -4203,7 +4217,7 @@
       renderCongressionalHistory(history);
       applyCongressionalActivityState(history);
     } catch (error) {
-      status.textContent = error.message || i18n.t('sw.congress.historyFailed');
+      status.textContent = i18n.t('sw.congress.historyFailed');
       console.warn('Congressional activity history failed', error);
     } finally {
       setCongressionalControlsDisabled(false);
@@ -4258,17 +4272,11 @@
   function makeActivityHistoryRowInteractive(row, detailUrl, actorName) {
     if (!detailUrl) return;
     row.classList.add('activity-history-row-link');
-    row.tabIndex = 0;
-    row.setAttribute('role', 'link');
-    row.setAttribute('aria-label', actorName ? i18n.t('sw.viewActivityFor', actorName) : i18n.t('sw.viewActivityThis'));
+    // Mouse users can click anywhere in the row; keyboard and screen-reader users get the row's own "View signal" link,
+    // so the row is not a second link wrapped around the real ones.
     const navigate = () => window.requestStockWatchNavigation(detailUrl);
     row.addEventListener('click', event => {
       if (event.target.closest('a, button')) return;
-      navigate();
-    });
-    row.addEventListener('keydown', event => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
       navigate();
     });
   }
@@ -4911,6 +4919,7 @@
     stockDemoTradeSizeMode = 'none';
     document.querySelectorAll('[data-stock-demo-size-mode]').forEach(option => {
       option.classList.toggle('active', option.dataset.stockDemoSizeMode === 'none');
+      option.setAttribute('aria-pressed', String(option.dataset.stockDemoSizeMode === 'none'));
     });
     sizeField.hidden = true;
     sizeInput.value = '';
@@ -4922,6 +4931,9 @@
             i18n.t(pendingStockDemoTradeSide === 'BUY' ? 'outlook.demoBuyText' : 'outlook.demoSellText');
     status.textContent = i18n.t(`sw.demo.analysisSaved.${apiIntervalEnum(pendingStockDemoTradeInterval)}`);
     // The trade records the current quote; the drawn entry, target and stop stay on the chart.
+    // The quote the trade will record, so the stop and target can be set against it.
+    const quote = document.getElementById('livePriceDisplay').textContent.trim();
+    if (/[0-9]/.test(quote)) status.textContent = `${i18n.t('sw.demo.quote', quote)} ${status.textContent}`;
     if (fromChart) status.textContent = `${status.textContent} ${i18n.t('sw.demo.fromPosition')}`;
     confirmButton.disabled = false;
     confirmButton.textContent = i18n.t('outlook.createDemoTrade');
@@ -4940,11 +4952,13 @@
     });
 
     document.getElementById('cancelStockDemoTrade').addEventListener('click', () => dialog.close());
+    document.getElementById('closeStockDemoTradeBtn').addEventListener('click', () => dialog.close());
     document.querySelectorAll('[data-stock-demo-size-mode]').forEach(button => {
       button.addEventListener('click', () => {
         stockDemoTradeSizeMode = button.dataset.stockDemoSizeMode;
         document.querySelectorAll('[data-stock-demo-size-mode]').forEach(option => {
           option.classList.toggle('active', option === button);
+          option.setAttribute('aria-pressed', String(option === button));
         });
         sizeField.hidden = stockDemoTradeSizeMode === 'none';
         document.getElementById('stockDemoTradeSizeLabel').textContent =

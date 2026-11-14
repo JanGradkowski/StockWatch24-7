@@ -507,7 +507,7 @@
         <h2 id="elliott-trade-plan-heading" th:text="#{signalDetail.elliottPlanTitle}">Risk, reward, and price zone</h2>
         <p th:text="#{signalDetail.elliottPlanHelp}">A possible trade based on the confirmed wave stage.</p>
       </div>
-      <span class="signal-lifecycle-pill"
+      <span class="signal-lifecycle-pill possible-trade-pill"
             th:classappend="${signal.lifecycle().elliottTradeActionable() ? ' confirmed' : ' potential'}"
             th:text="${signal.lifecycle().elliottTradeActionable() ? #messages.msg('signalDetail.possibleTrade') : #messages.msg('signalDetail.projectionOnly')}">Possible trade</span>
     </div>
@@ -1285,6 +1285,9 @@
       && Number.isFinite(tradePlan.stop) && tradePlan.stop > 0
       && Number.isFinite(tradePlan.entryTime) && tradePlan.entryTime > 0;
     const tradePriceLines = [];
+    // Phones (a plot under 600px): lines, zones and markers stay, but their text tags go; the legend above and the
+    // plan below name them, and on a 300px plot the tags covered the candles and ran under the price scale.
+    const narrowChart = container.clientWidth < 600;
     if (hasTradePricePlan) {
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.entry,
@@ -1292,7 +1295,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Dashed,
         axisLabelVisible: true,
-        title: i18n.t('chart.entry')
+        title: narrowChart ? '' : i18n.t('chart.entry')
       }));
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.target,
@@ -1300,7 +1303,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Solid,
         axisLabelVisible: true,
-        title: `${i18n.t(container.dataset.family === 'ELLIOTT_WAVE' ? 'signalDetail.targetTrigger' : 'signalDetail.sellTarget')} · 1:${Number.isFinite(tradePlan.rewardRisk) ? i18n.number(tradePlan.rewardRisk, 2) : '?'}`
+        title: narrowChart ? '' : `${i18n.t(container.dataset.family === 'ELLIOTT_WAVE' ? 'signalDetail.targetTrigger' : 'signalDetail.sellTarget')} · 1:${Number.isFinite(tradePlan.rewardRisk) ? (Number.isInteger(Number(tradePlan.rewardRisk.toFixed(2))) ? String(Number(tradePlan.rewardRisk.toFixed(2))) : i18n.number(tradePlan.rewardRisk, 2)) : '?'}`
       }));
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.stop,
@@ -1308,7 +1311,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Solid,
         axisLabelVisible: true,
-        title: i18n.t('signalDetail.stopLoss')
+        title: narrowChart ? '' : i18n.t('signalDetail.stopLoss')
       }));
 
       const tradeMarkers = [{
@@ -1316,7 +1319,8 @@
         position: container.dataset.direction === 'SELL' ? 'aboveBar' : 'belowBar',
         color: initialColors.tradeEntry,
         shape: container.dataset.direction === 'SELL' ? 'arrowDown' : 'arrowUp',
-        text: i18n.t(container.dataset.family === 'ELLIOTT_WAVE' ? 'signalDetail.possibleTradeEntry' : 'signalDetail.entryCandle0')
+        // No text: the legend and the Entry price line name it, and a tag here ran into the confirmation and callout labels.
+        text: ''
       }];
       if (Number.isFinite(tradePlan.resolutionTime) && tradePlan.resolutionTime > 0
           && candleData.some(candle => candle.time === tradePlan.resolutionTime)) {
@@ -1336,7 +1340,8 @@
           position: container.dataset.direction === 'SELL' ? 'belowBar' : 'aboveBar',
           color: exitColor,
           shape: 'circle',
-          text: exitText
+          // No text: the outcome is in the plan and results below, and the tag sat on the following candles' wicks.
+          text: ''
         });
       }
       candles.setMarkers(tradeMarkers);
@@ -1348,7 +1353,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Dashed,
         axisLabelVisible: true,
-        title: i18n.t('signalDetail.confirmationCloseEntry')
+        title: narrowChart ? '' : i18n.t('signalDetail.confirmationCloseEntry')
       }));
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.structuralStop,
@@ -1356,7 +1361,7 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Dotted,
         axisLabelVisible: true,
-        title: i18n.t('signalDetail.structuralInvalidation')
+        title: narrowChart ? '' : i18n.t('signalDetail.structuralInvalidation')
       }));
       tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.stop,
@@ -1364,11 +1369,11 @@
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Solid,
         axisLabelVisible: true,
-        title: i18n.t('signalDetail.bufferedStop')
+        title: narrowChart ? '' : i18n.t('signalDetail.bufferedStop')
       }));
       if (Number.isFinite(tradePlan.target) && tradePlan.target > 0) tradePriceLines.push(candles.createPriceLine({
         price: tradePlan.target, color: initialColors.tradeTarget, lineWidth: 2, lineStyle: 2,
-        axisLabelVisible: true, title: i18n.t('signalDetail.primaryTarget')
+        axisLabelVisible: true, title: narrowChart ? '' : i18n.t('signalDetail.primaryTarget')
       }));
       const harmonicStopMarkers = [{
         time: tradePlan.entryTime,
@@ -1458,6 +1463,8 @@
     }
 
     function elliottPointWarningLabel(wave, point) {
+      // Phones: pivots carry only their letter; the qualifiers (shallow, deep, truncated) sat on the candles.
+      if (document.getElementById('signalChart')?.clientWidth < 600) return '';
       const label = String(point.label || '').toUpperCase();
       if (label === 'II' && (wave.waveTwoRetracement < 0.236 || wave.waveTwoRetracement > 0.786)) {
         return i18n.t(wave.waveTwoRetracement > 0.786 ? 'signalDetail.wave.deep' : 'signalDetail.wave.shallow');
@@ -1536,7 +1543,8 @@
           position: buyConfirmation ? 'belowBar' : 'aboveBar',
           color: elliottWave.correctionComplete ? ELLIOTT_CORRECTIVE_COLOR : ELLIOTT_MOTIVE_COLOR,
           shape: buyConfirmation ? 'arrowUp' : 'arrowDown',
-          text: `${endpointLabel} confirmed`
+          // No text: the pivot letter already sits on this candle (the tag printed over it), and the legend names the marker.
+          text: ''
         }]);
         elliottRootSeries.push(confirmationSeries);
       }
@@ -1571,7 +1579,8 @@
         position: above ? 'aboveBar' : 'belowBar',
         color,
         shape: 'circle',
-        text: `${projectedWaveLabel ? `${projectedWaveLabel} · ` : ''}${rank} · ${scenario.confidence}/100`
+        // The endpoint carries only its wave letter (or rank): the legend and the scenario cards give the rest, and a longer tag at the right edge ran under the price scale.
+        text: projectedWaveLabel || rank
       }];
     }
 
@@ -1596,7 +1605,7 @@
           lineWidth: 1,
           lineStyle: LightweightCharts.LineStyle.Dotted,
           axisLabelVisible: true,
-          title: `${projectedWaveLabel || 'Count'} invalidation`
+          title: container.clientWidth < 600 ? '' : projectedWaveLabel ? i18n.t('signalDetail.waveInvalidation', projectedWaveLabel) : i18n.t('signalDetail.countInvalidation')
         });
       }
       elliottProjectionSeries.push({ series, scenario, colorIndex: index });
@@ -1724,14 +1733,15 @@
       if (candle.time === signalTime) callout.classList.add('detection');
       const label = document.createElement('span');
       label.className = 'signal-pattern-callout-label';
-      label.textContent = candle.time === signalTime
+      const text = candle.time === signalTime
         ? i18n.t('signalDetail.patternCandleDetection', index + 1)
         : i18n.t('signalDetail.patternCandle', index + 1);
+      label.textContent = text;
       const arrow = document.createElement('span');
       arrow.className = 'signal-pattern-callout-arrow';
       callout.append(label, arrow);
       annotationLayer.append(callout);
-      return { candle, callout, label, index };
+      return { candle, callout, label, index, text };
     });
 
     function rectanglesOverlap(first, second, padding) {
@@ -1762,6 +1772,7 @@
         zone.style.width = `${Math.max(3, Math.abs(endX - startX))}px`;
         zone.style.top = `${Math.min(highY, lowY)}px`;
         zone.style.height = `${Math.max(4, Math.abs(lowY - highY))}px`;
+        keepInsideChart(zone.firstElementChild);
       });
       if (hasTradePlan && rewardZone && riskZone && timeStopLine) {
         const entryIndex = candleData.findIndex(candle => candle.time === tradePlan.entryTime);
@@ -1792,6 +1803,8 @@
           riskZone.style.width = `${width}px`;
           riskZone.style.top = `${Math.min(entryY, stopY)}px`;
           riskZone.style.height = `${Math.max(2, Math.abs(stopY - entryY))}px`;
+          keepInsideChart(rewardZone.firstElementChild);
+          keepInsideChart(riskZone.firstElementChild);
           timeStopLine.hidden = false;
           timeStopLine.style.left = `${timeStopX}px`;
         }
@@ -1824,21 +1837,75 @@
         }
       }
 
-      patternCallouts.forEach(({ candle, callout, index }) => {
+      if (trendBand && !trendBand.hidden) {
+        // A band near the chart's edge would push its centred label out of the chart: pin the label inside.
+        const label = trendBand.firstElementChild;
+        trendBand.classList.remove('label-start', 'label-end');
+        const layerBounds = annotationLayer.getBoundingClientRect();
+        const labelBounds = label.getBoundingClientRect();
+        if (labelBounds.left < layerBounds.left) trendBand.classList.add('label-start');
+        else if (labelBounds.right > layerBounds.right) trendBand.classList.add('label-end');
+      }
+
+      // Full labels where they fit. Otherwise the time stop's tag moves to the foot of its line, and if that is not
+      // enough, the pattern candles get numbered markers on three staggered rows (the legend names them).
+      timeStopLine?.classList.remove('label-low');
+      trendBand?.classList.remove('label-low');
+      placePatternCallouts(false);
+      if (!patternCalloutsCollide()) return;
+      timeStopLine?.classList.add('label-low');
+      if (timeStopLine && !patternCalloutsCollide()) return;
+      timeStopLine?.classList.remove('label-low');
+      trendBand?.classList.remove('label-low');
+      placePatternCallouts(true);
+      if (timeStopLine && patternCalloutsCollide()) timeStopLine.classList.add('label-low');
+      // Still crowded: the required-trend tag drops to the foot of its band.
+      if (trendBand && patternCalloutsCollide()) trendBand.classList.add('label-low');
+    }
+
+    // Slides a label sideways just enough to stay inside the chart (a zone near either edge would cut it off).
+    function keepInsideChart(label) {
+      if (!label) return;
+      label.style.translate = '';
+      const layerBounds = annotationLayer.getBoundingClientRect();
+      const bounds = label.getBoundingClientRect();
+      const shift = bounds.left < layerBounds.left ? layerBounds.left - bounds.left + 2
+        : (bounds.right > layerBounds.right ? layerBounds.right - bounds.right - 2 : 0);
+      if (shift) label.style.translate = `${Math.round(shift)}px 0`;
+    }
+
+    function placePatternCallouts(compact) {
+      // Rows hang from one shared baseline (the highest pattern candle), so candles of different heights never put two
+      // markers on the same row.
+      const highs = patternCallouts.map(({ candle }) => candles.priceToCoordinate(candle.high)).filter(value => value !== null);
+      const baseline = highs.length ? Math.min(...highs) : 0;
+      // Near the top of the chart the whole stack moves down together, keeping its order (clamping each row on its
+      // own flipped the rows, so a marker's arrow ran through the badge above it).
+      const usedRows = Math.min(patternCallouts.length, compact ? 3 : 2);
+      const topOffset = compact ? 62 + (usedRows - 1) * 30 : (usedRows > 1 ? 146 : 92);
+      const shift = Math.max(0, 8 - (baseline - topOffset));
+      patternCallouts.forEach(({ candle, callout, label, index, text }) => {
         callout.classList.remove('elbow-right');
+        callout.classList.toggle('compact', compact);
+        label.textContent = compact ? String(index + 1) : text;
         const x = chart.timeScale().timeToCoordinate(candle.time);
         const y = candles.priceToCoordinate(candle.high);
         if (x === null || y === null) {
           callout.hidden = true;
           return;
         }
-        const verticalOffset = index % 2 === 0 ? 92 : 146;
-        const top = Math.max(8, y - verticalOffset);
+        const verticalOffset = compact ? 62 + (index % 3) * 30 : (index % 2 === 0 ? 92 : 146);
+        // Near the top of the chart each row keeps its own height, so a clamped marker never sits on its neighbour.
+        const row = compact ? index % 3 : index % 2;
+        const top = baseline - verticalOffset + shift;
         callout.hidden = false;
         callout.style.left = `${x}px`;
         callout.style.top = `${top}px`;
-        callout.style.setProperty('--signal-callout-arrow-height', `${Math.max(30, y - top - 27)}px`);
+        // Lower labels stack above higher callouts, so a long arrow passes behind a label instead of through its text.
+        callout.style.zIndex = String(10 - row);
+        callout.style.setProperty('--signal-callout-arrow-height', `${Math.max(compact ? 18 : 30, y - top - (compact ? 22 : 27))}px`);
       });
+      if (compact) return;
 
       const detectionCallout = patternCallouts.find(({ candle }) => candle.time === signalTime);
       if (detectionCallout && !detectionCallout.callout.hidden) {
@@ -1851,6 +1918,18 @@
           detectionCallout.callout.classList.add('elbow-right');
         }
       }
+    }
+
+    // True when a pattern label leaves the chart or touches another label (a pattern label or the time stop).
+    function patternCalloutsCollide() {
+      const layerBounds = annotationLayer.getBoundingClientRect();
+      const labels = patternCallouts.filter(({ callout }) => !callout.hidden).map(({ label }) => label.getBoundingClientRect());
+      const others = [timeStopLine, trendBand].filter(item => item && !item.hidden && item.firstElementChild?.offsetWidth)
+        .map(item => item.firstElementChild.getBoundingClientRect());
+      return labels.some((bounds, index) =>
+        bounds.left < layerBounds.left || bounds.right > layerBounds.right
+        || labels.slice(index + 1).some(other => rectanglesOverlap(bounds, other, 4))
+        || others.some(other => rectanglesOverlap(bounds, other, 4)));
     }
 
     function focusSignal() {
@@ -1881,9 +1960,11 @@
       const rightEdge = entryIndex >= 0
         ? entryIndex + tradePlan.timeStopCandles + 1
         : signalIndex + 8;
+      // Wide charts keep empty room past the time stop, where the risk and reward tags sit clear of the candles.
+      const room = hasTradePlan && container.clientWidth >= 600 ? Math.ceil((rightEdge - signalIndex + candlesBeforeSignal) * 0.35) : 0;
       chart.timeScale().setVisibleLogicalRange({
         from: Math.max(-0.5, signalIndex - candlesBeforeSignal),
-        to: rightEdge
+        to: rightEdge + room
       });
     }
 

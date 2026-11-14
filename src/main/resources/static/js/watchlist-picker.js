@@ -38,13 +38,18 @@
       const actions = node('div', null, 'wl-actions');
       const cancel = node('button', i18n.t('common.cancel'), 'btn-secondary'); cancel.type = 'button';
       const save = node('button', texts.submit || i18n.t(applyingSignals ? 'watchlistPicker.apply' : 'watchlistPicker.add'), 'btn-accent'); save.type = 'submit'; save.disabled = true;
-      actions.append(cancel, save); form.append(title, intro, options, label, status, actions); dialog.append(form);
+      // A close button in the corner, like every other dialog.
+      const head = node('div', null, 'wl-picker-head');
+      const close = node('button', '\u00d7', 'wl-picker-close'); close.type = 'button'; close.setAttribute('aria-label', i18n.t('common.close'));
+      head.append(title, close);
+      actions.append(cancel, save); form.append(head, intro, options, label, status, actions); dialog.append(form);
       let finished = false;
       function finish(value) {
         if (finished) return; finished = true;
         dialog.close(); dialog.remove(); previousFocus?.focus(); resolve(value);
       }
       cancel.addEventListener('click', () => finish(null));
+      close.addEventListener('click', () => finish(null));
       dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
       dialog.addEventListener('close', () => { if (!finished) finish(null); });
       form.addEventListener('submit', event => {
@@ -63,6 +68,8 @@
             input.type = 'checkbox'; input.value = list.id; input.checked = selected.includes(list.id);
             const text = node('span', `${list.name} · ${i18n.plural('watchlists.instruments', list.instruments, list.instruments)}`);
             if (input.checked) text.append(node('small', i18n.t('watchlistPicker.alreadyIn'), 'wl-picker-membership'));
+            // Adding to a stock's watchlists: lists that already hold it are shown, ticked and read-only (unticking did nothing).
+            if (input.checked && !applyingSignals) input.disabled = true;
             const blocked = applyingSignals && list.allowedTypes ? signalTypes.filter(type => !list.allowedTypes.includes(type)) : [];
             if (blocked.length) {
               input.checked = false; input.disabled = true;

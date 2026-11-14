@@ -36,6 +36,8 @@ public class DisplayTextJsonConfiguration {
             "Detail", "Methodology", "Reason", "Rule");
     /** Labels that scripts compare against English values. */
     static final Set<String> EXCLUDED = Set.of("structureLabel");
+    /** Wave and pivot marks (1-5, I-V, a-e, A-E, W-Z) are not words: "b" must not become the Polish buy mark "K". */
+    static final java.util.regex.Pattern WAVE_MARK = java.util.regex.Pattern.compile("[1-5]|[IV]{1,3}|[A-Ea-e]|[W-Zw-z]");
 
     /** Runs after Spring Boot's own JSON customizer (order 0), so this converter replaces it. */
     @Bean
@@ -74,7 +76,8 @@ public class DisplayTextJsonConfiguration {
     private static final ValueSerializer<Object> TRANSLATED_TEXT = new ValueSerializer<>() {
         @Override
         public void serialize(Object value, JsonGenerator generator, SerializationContext context) {
-            generator.writeString(ServerMessages.translate((String) value));
+            String text = (String) value;
+            generator.writeString(WAVE_MARK.matcher(text).matches() ? text : ServerMessages.translate(text));
         }
     };
 

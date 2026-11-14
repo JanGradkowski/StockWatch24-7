@@ -20,7 +20,8 @@
 
 <main class="page-container signal-detail-page outlook-change-page">
   <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
-    <a th:href="@{/home}" th:text="#{common.dashboard}">Dashboard</a><span aria-hidden="true">/</span>
+    <a th:href="@{/home}" th:text="#{sidebar.home}">Home</a><span aria-hidden="true">/</span>
+    <a th:href="@{/stock/{symbol}(symbol=${change.symbol()})}" th:text="${change.symbol()}">AAPL</a><span aria-hidden="true">/</span>
     <a th:href="@{/stock/{symbol}/technical-outlook(symbol=${change.symbol()})}" th:text="#{outlookChange.liveOutlook}">Live Technical Outlook</a><span aria-hidden="true">/</span>
     <span th:text="#{outlookChange.changeReport}">Change report</span>
   </nav>
@@ -151,7 +152,7 @@
   function formatIndicatorValue(value, unit) {
     const number = Number(value);
     if (!Number.isFinite(number)) return i18n.t('common.unavailable');
-    return `${number.toLocaleString(i18n.tag, {maximumFractionDigits: 3})}${unit ? ` ${unit}` : ''}`;
+    return `${number.toLocaleString(i18n.tag, {maximumFractionDigits: 2})}${unit ? ` ${unit}` : ''}`;
   }
 
   function line(chart, color, data, width = 2, lineStyle = 0) {
@@ -251,7 +252,13 @@
       card.append(heading, chartHost);
       host.append(card);
       const container = chartHost;
-      const chart = StockWatchCharts.createChart(container, chartOptions(container, 180));
+      // Daily panels need dates, not times (a one-day series showed only 00:00:00); values in the millions use compact
+      // numbers on the axis (OBV read 38000000000.00).
+      const large = indicator.series.some(point => Math.abs(Number(point.value)) >= 1e6);
+      const compact = new Intl.NumberFormat(i18n.tag, {notation: 'compact', maximumFractionDigits: 1});
+      const chart = StockWatchCharts.createChart(container, {...chartOptions(container, 180),
+        timeScale: {borderColor: 'rgba(255,255,255,.12)', timeVisible: false},
+        ...(large ? {localization: {priceFormatter: value => compact.format(value)}} : {})});
       const color = ['#64e8bd', '#a78bfa', '#ffbd59', '#60a5fa'][index % 4];
       line(chart, color, indicator.series.map(point => ({time: point.timestamp, value: point.value})));
       const references = (indicator.referenceLines || []).filter(validChartValue);

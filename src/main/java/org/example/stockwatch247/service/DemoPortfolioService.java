@@ -26,7 +26,7 @@ import java.util.TreeMap;
 public class DemoPortfolioService {
     private static final MathContext MONEY = MathContext.DECIMAL128;
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
-    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private final JdbcTemplate jdbc;
     private final Clock clock;
     private final CandleCompletionService completion;

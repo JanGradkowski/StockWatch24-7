@@ -59,7 +59,8 @@ public class I18nScriptController {
         for (String key : bundle.keySet()) {
             if (key.startsWith(PREFIX)) messages.put(key.substring(PREFIX.length()), bundle.getString(key));
         }
-        String tag = language.locale().toLanguageTag();
+        // English pages format dates day-first with a 24-hour clock (en-GB), like the dates the server writes.
+        String tag = "en".equals(language.locale().getLanguage()) ? "en-GB" : language.locale().toLanguageTag();
         return """
                 (function () {
                   'use strict';

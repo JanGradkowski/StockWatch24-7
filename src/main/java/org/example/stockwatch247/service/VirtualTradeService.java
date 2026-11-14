@@ -624,7 +624,7 @@ public class VirtualTradeService {
                 case "status" -> trade.statusLabel();
                 case "return" -> trade.resultPercent() >= 0 ? "Favorable outcomes" : "Adverse outcomes";
                 default -> trade.entryAt().atZone(ZoneOffset.UTC).toLocalDate()
-                        .format(DateTimeFormatter.ofPattern("dd MMMM uuuu", Locale.ENGLISH));
+                        .format(DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.ENGLISH));
             };
         }
     }

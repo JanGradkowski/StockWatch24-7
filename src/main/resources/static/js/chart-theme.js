@@ -77,6 +77,9 @@
         // attribution notice and tradingview.com link are on the public About page instead.
         const initial = base(options);
         initial.layout = {...initial.layout, attributionLogo: false};
+        // Dates on the time axis and crosshair follow the page language (Polish pages show Polish month names).
+        const pageLocale = document.documentElement.lang;
+        if (pageLocale && !initial.localization?.locale) initial.localization = {...initial.localization, locale: pageLocale};
         const chart = library.createChart(container, initial);
         const apply = chart.applyOptions.bind(chart);
         const seriesStates = new Map();

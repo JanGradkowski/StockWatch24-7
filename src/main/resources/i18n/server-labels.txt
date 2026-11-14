@@ -3834,8 +3834,8 @@ pl: Problem z dostarczeniem e-maila
 en: Email cancelled
 pl: E-mail anulowany
 
-en: Only purchases and sales with transaction dates in the last {0} days are shown (the current CongressInvests free-tier history window). Disclosures can be filed up to 45 days after a trade.
-pl: Pokazywane są tylko zakupy i sprzedaże z datą transakcji z ostatnich {0} dni (obecne okno historii bezpłatnego planu CongressInvests). Ujawnienia mogą być składane do 45 dni po transakcji.
+en: Only purchases and sales with transaction dates in the last {0} days are shown. Disclosures can be filed up to 45 days after a trade.
+pl: Pokazywane są tylko zakupy i sprzedaże z datą transakcji z ostatnich {0} dni. Ujawnienia mogą być składane do 45 dni po transakcji.
 
 en: Following starts from the time you switch it on. Existing history is used only as a baseline and never generates old email alerts.
 pl: Obserwowanie zaczyna się od chwili włączenia. Dotychczasowa historia służy tylko jako punkt odniesienia i nigdy nie generuje alertów e-mail o dawnych transakcjach.
@@ -5938,3 +5938,9 @@ pl: Zamknięta na poziomie celu
 
 en: Closed by you
 pl: Zamknięta przez Ciebie
+
+en: combination
+pl: złożona
+
+en: zigzag correction
+pl: korekta zygzak
