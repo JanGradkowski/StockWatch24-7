@@ -19,6 +19,11 @@
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
 <main class="page-container signal-detail-page historical-candlestick-detail-page">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
+    <a th:href="@{/home}" th:text="#{sidebar.home}">Home</a><span aria-hidden="true">/</span>
+    <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" th:text="${signal.symbol()}">AAPL</a><span aria-hidden="true">/</span>
+    <span th:text="#{candleHistory.tag}">Historical candlestick</span>
+  </nav>
   <header class="signal-report-header">
     <div>
       <div class="signal-report-eyebrow" th:text="#{candleHistory.eyebrow}">Historical candlestick signal</div>
@@ -38,8 +43,6 @@
               th:classappend="${' ' + signal.statusClass()}"
               th:text="${#tr.text(signal.statusLabel())}">Confirmed</span>
         <span class="signal-report-tag" th:text="${#tr.text(signal.signalPeriodLabel())}">13&ndash;17 Jul 2026</span>
-        <span class="signal-report-tag"
-              th:text="#{detail.scoreModel(${signal.scoreVersion()})}">Score model CANDLE_V5_TEXTBOOK</span>
         <span th:if="${displayScore.customApplied()}" class="signal-report-tag" th:text="#{detail.customWeights}">Custom scoring weights</span>
       </div>
     </div>
@@ -123,6 +126,14 @@
                   class="signal-score-segment"
                   th:classappend="${displayScore.score() >= segment * 5} ? ' active' : ''"></span>
           </div>
+          <!-- The model's internal name is a detail for the curious, as on the live signal page. -->
+          <details class="how-it-works signal-score-model">
+            <summary th:text="#{signalDetail.scoringDetails}">Scoring details</summary>
+            <ul>
+              <li th:text="#{alertHistory.scoreModel(${signal.scoreVersion()})}">Score model: CANDLE_V5_TEXTBOOK</li>
+              <li th:if="${displayScore.customApplied()}" th:text="#{signalDetail.customWeightsApplied}">Your custom scoring weights are applied.</li>
+            </ul>
+          </details>
         </div>
       </div>
     </article>
@@ -198,7 +209,7 @@
                     data-family=CANDLESTICK,
                     data-symbol=${signal.symbol()},
                     data-interval=${signal.intervalLabel().toUpperCase()},
-                    data-trend-label=${chart.trendLabel()},
+                    data-trend-label=${#tr.text(chart.trendLabel())},
                     data-trade-entry=${signal.tradeEntryPrice()},
                     data-trade-stop=${signal.stopLossPrice()},
                     data-trade-target=${signal.profitTargetPrice()},

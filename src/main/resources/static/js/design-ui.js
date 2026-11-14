@@ -176,8 +176,15 @@
     // One-line status chips: the full message is in the tooltip, and a click expands it in place.
     function expandableStatus() {
         document.querySelectorAll('[data-expandable-status]').forEach(status => {
-            const sync = () => { status.title = status.textContent.trim(); };
+            // Focusable only while it has text to expand, so an empty status is not a tab stop.
+            const sync = () => { status.title = status.textContent.trim(); status.tabIndex = status.title ? 0 : -1; };
             status.addEventListener('click', () => status.classList.toggle('is-expanded'));
+            // Keyboard users open a clamped status the same way (Enter or Space).
+            status.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                status.classList.toggle('is-expanded');
+            });
             new MutationObserver(sync).observe(status, {childList: true, characterData: true, subtree: true});
             sync();
         });

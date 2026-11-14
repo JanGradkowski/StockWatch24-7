@@ -212,6 +212,25 @@
         dialog.showModal();
     }
 
+    // ---- phones: the rail folds behind one button in the chart's corner and opens over the chart, which keeps its width
+
+    function addRailToggle(railHost) {
+        const frame = railHost.parentElement;
+        if (!frame || frame.querySelector(':scope > .chart-rail-corner-toggle')) return;
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'chart-rail-corner-toggle';
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.setAttribute('aria-label', i18n?.t('draw.rail.label') || 'Drawing tools');
+        toggle.title = toggle.getAttribute('aria-label');
+        if (window.StockWatchDrawingIcons) toggle.append(window.StockWatchDrawingIcons.icon('trendLine', 16));
+        toggle.addEventListener('click', () => {
+            const open = frame.classList.toggle('rail-open');
+            toggle.setAttribute('aria-expanded', String(open));
+        });
+        frame.append(toggle);
+    }
+
     // ---- attaching
 
     /**
@@ -248,6 +267,7 @@
         if (!options.bars && symbol) {
             volumeBars = followVolume(manager, symbol, options.series);
         }
+        if (railHost) addRailToggle(railHost);
         // A chart the page sized once (not autoSize) still has the width it had before the rail took its column.
         if (railHost && !options.chart.options?.().autoSize && options.container.clientWidth) {
             options.chart.applyOptions({width: options.container.clientWidth});

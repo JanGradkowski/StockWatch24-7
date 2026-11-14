@@ -66,6 +66,11 @@
       class="page-container signal-detail-page technical-outlook-page"
       th:attr="data-symbol=${symbol}"
       aria-busy="true">
+  <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
+    <a th:href="@{/home}" th:text="#{sidebar.home}">Home</a><span aria-hidden="true">/</span>
+    <a th:href="@{/stock/{symbol}(symbol=${symbol})}" th:text="${symbol}">AAPL</a><span aria-hidden="true">/</span>
+    <span th:text="#{stock.technicalOutlook}">Technical Outlook</span>
+  </nav>
   <header class="signal-report-header technical-outlook-header">
     <div class="signal-report-heading">
       <div class="signal-report-eyebrow" th:text="#{activityDetail.tab.technical}">Technical analysis</div>
@@ -133,7 +138,7 @@
         <p th:text="#{outlook.demoTradeHelp}">A demo buy tracks gains or losses. A demo sell tracks avoided losses or missed gains; it is not a short position. The entry price and analysis are saved.</p>
       </div>
       <div class="virtual-trade-launch-actions">
-        <button type="button" class="btn-accent virtual-buy-button learn-control" data-term="demoTrade" data-create-virtual-trade="BUY" th:text="#{js.virtualTrade.marker.buy}">Demo buy</button>
+        <button type="button" class="btn-secondary virtual-buy-button learn-control" data-term="demoTrade" data-create-virtual-trade="BUY" th:text="#{js.virtualTrade.marker.buy}">Demo buy</button>
         <button type="button" class="btn-secondary virtual-sell-button learn-control" data-term="demoTrade" data-create-virtual-trade="SELL" th:text="#{js.virtualTrade.marker.sell}">Demo sell</button>
       </div>
     </section>
@@ -589,11 +594,18 @@
     document.getElementById('editIndicatorPeriods').disabled = false;
   }
 
+  // The outlook score on the app's ±100 scale, as the stock workspace and the homepage show it.
+  function signedPoints(score) {
+    const points = Math.round(Number(score) * 100);
+    if (!Number.isFinite(points) || points === 0) return '0';
+    return `${points > 0 ? '+' : '−'}${Math.abs(points)}`;
+  }
+
   function renderSummary(outlook) {
     const score = outlook.headlineScore;
     document.getElementById('headlineOutlookTitle').textContent = recommendationDisplayLabel(score.classification);
     document.getElementById('headlineOutlookScore').textContent =
-            i18n.t('outlook.headlineScore', score.buy, score.neutral, score.sell, `${score.net > 0 ? '+' : ''}${score.net}`, score.denominator);
+            i18n.t('outlook.headlineScore', score.buy, score.neutral, score.sell, `${score.net > 0 ? '+' : ''}${score.net}`, score.denominator, signedPoints(score.normalizedScore));
     document.getElementById('headlineBuy').textContent = score.buy;
     document.getElementById('headlineNeutral').textContent = score.neutral;
     document.getElementById('headlineSell').textContent = score.sell;
@@ -602,7 +614,8 @@
     outlook.categories.forEach(category => {
       const card = element('article', `technical-category-card ${category.classification.toLowerCase()}`);
       card.append(element('span', '', category.label));
-      card.append(element('strong', '', recommendationDisplayLabel(category.classification)));
+      // A category card shows its vote (Buy, Neutral, Sell/Short), like its neighbours, not the full outlook phrase.
+      card.append(element('strong', '', i18n.has(`vote.${category.classification}`) ? i18n.t(`vote.${category.classification}`) : recommendationDisplayLabel(category.classification)));
       card.append(element('small', '', category.inputs.join(' · ')));
       grid.append(card);
     });
@@ -615,8 +628,10 @@
 
   function addOverlay(name, field, options, data) {
     if (!data.length) return null;
+    // Below 1000px the line names would cover the newest candles and their markers; the overlay checkboxes above name them.
+    const narrow = document.getElementById('technicalOutlookPriceChart').clientWidth < 1000;
     const series = priceChart.addLineSeries({
-      ...options, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
+      ...options, ...(narrow ? { title: '' } : {}), priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
     });
     series.setData(data);
     priceSeriesByOverlay.set(name, [...(priceSeriesByOverlay.get(name) || []), series]);
@@ -671,10 +686,12 @@
 
     const markers = signalMarkers(outlook).concat(activityMarkers(outlook), indicatorEventMarkers(outlook), virtualTradeMarkers(outlook));
     markers.sort((left, right) => String(left.time).localeCompare(String(right.time)));
+    declutterMarkers(markers, candles);
     priceCandleSeries.setMarkers(markers);
     priceChart.timeScale().setVisibleLogicalRange({
       from: Math.max(0, candles.length - INITIAL_VISIBLE_CANDLES),
-      to: candles.length + 4
+      // Wide charts name each line at the right edge: leave room there so the names sit beside the newest candles.
+      to: candles.length + (document.getElementById('technicalOutlookPriceChart').clientWidth < 1000 ? 4 : 16)
     });
     priceRangeListener = range => maybeLoadOlderPriceCandles(range);
     priceChart.timeScale().subscribeVisibleLogicalRangeChange(priceRangeListener);
@@ -713,6 +730,7 @@
     const markers = signalMarkers(outlook).concat(
             activityMarkers(outlook), indicatorEventMarkers(outlook), virtualTradeMarkers(outlook));
     markers.sort((left, right) => String(left.time).localeCompare(String(right.time)));
+    declutterMarkers(markers, candles);
     priceCandleSeries.setMarkers(markers);
     priceDrawingTools?.scheduleRender();
   }
@@ -801,6 +819,23 @@
     }
   }
 
+  // Markers closer together than their text needs keep their shape and colour but drop the text, so neighbouring
+  // tags ("EW", "Insider") never print over each other. Markers on the same candle stack and keep theirs.
+  function declutterMarkers(markers, candles) {
+    const indexByTime = new Map(candles.map((candle, index) => [chartDate(candle.timestamp), index]));
+    const width = document.getElementById('technicalOutlookPriceChart').clientWidth || 800;
+    const barSpacing = width / (INITIAL_VISIBLE_CANDLES + 16);
+    const reach = Math.max(1, Math.ceil(56 / barSpacing));
+    const crowded = markers.map((marker, index) => {
+      const at = indexByTime.get(marker.time);
+      return at !== undefined && markers.some((other, otherIndex) => {
+        const distance = Math.abs((indexByTime.get(other.time) ?? Infinity) - at);
+        return otherIndex !== index && other.position === marker.position && distance > 0 && distance <= reach;
+      });
+    });
+    markers.forEach((marker, index) => { if (crowded[index]) marker.text = ''; });
+  }
+
   function signalMarkers(outlook) {
     return outlook.recentSignals
             .filter(signal => signal.interval === intervalEnum(currentInterval))
@@ -809,7 +844,8 @@
               position: signal.direction === 'BUY' ? 'belowBar' : 'aboveBar',
               color: signal.direction === 'BUY' ? colors().up : colors().down,
               shape: signal.direction === 'BUY' ? 'arrowUp' : 'arrowDown',
-              text: `${i18n.t(signal.family === 'ELLIOTT_WAVE' ? 'outlook.marker.elliott' : 'outlook.marker.candlestick')} ${recommendationDisplayLabel(signal.direction)}`
+              // The family tag alone (EW, candlestick): the arrow's direction and colour say buy or sell, and a long tag ran into its neighbours.
+              text: i18n.t(signal.family === 'ELLIOTT_WAVE' ? 'outlook.marker.elliott' : 'outlook.marker.candlestick')
             }));
   }
 
@@ -819,7 +855,8 @@
       const matchedDate = candleDates.find(date => date >= marker.date) || candleDates[candleDates.length - 1];
       return {
       time: matchedDate,
-      position: marker.direction === 'BUY' ? 'belowBar' : 'aboveBar',
+      // Below the bars, apart from the signal arrows above them: an insider or congressional dot no longer lands on an EW tag.
+      position: 'belowBar',
       color: marker.source === 'CONGRESSIONAL' ? '#b696ff' : '#47d4df',
       shape: 'circle', text: i18n.t(marker.source === 'CONGRESSIONAL' ? 'outlook.marker.congress' : 'outlook.marker.insider')
       };

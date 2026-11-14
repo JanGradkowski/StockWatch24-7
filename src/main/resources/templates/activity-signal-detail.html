@@ -24,9 +24,9 @@
   <nav class="signal-breadcrumb" aria-label="Breadcrumb" th:aria-label="#{common.breadcrumb}">
     <a th:href="@{/home}" th:text="#{sidebar.home}">Home</a>
     <span aria-hidden="true">/</span>
-    <a th:href="${archiveReturnUrl != null ? archiveReturnUrl : '/activity-signals'}" th:text="${archiveReturnUrl != null ? #messages.msg('activityDetail.backToSignals') : #messages.msg('activitySignals.heading')}">All ticker alerts</a>
+    <a th:href="${archiveReturnUrl != null ? archiveReturnUrl : '/stock/' + signal.symbol() + '#ticker-alerts'}" th:text="${archiveReturnUrl != null ? #messages.msg('activityDetail.backToSignals') : signal.symbol()}">AAPL</a>
     <span aria-hidden="true">/</span>
-    <span th:text="#{activityDetail.breadcrumb}">Signal analysis</span>
+    <span th:text="#{activityDetail.tickerCrumb}">Signal analysis</span>
   </nav>
 
   <header class="signal-report-header">
@@ -112,7 +112,7 @@
       </div>
 
       <div th:if="${signal.chart().available()}" class="signal-chart-legend" aria-label="Chart annotation legend" th:aria-label="#{detail.annotationLegendAria}">
-        <span><i class="signal-chart-key detection" aria-hidden="true"></i><span th:text="#{activityDetail.typeDate(${#tr.text(signal.transactionTypeLabel())})}">Sale date</span></span>
+        <span><i class="signal-chart-key detection" th:classappend="${signal.transactionType() == 'PURCHASE' ? ' buy' : ' sell'}" aria-hidden="true"></i><span th:text="#{activityDetail.typeDate(${#tr.text(signal.transactionTypeLabel())})}">Sale date</span></span>
         <span><i class="signal-chart-key pattern" aria-hidden="true"></i><span th:text="${signal.proxyEntryPrice() ? #messages.msg('activityDetail.closeProxy') : #messages.msg('activityDetail.reportedPrice')}">Reported execution price</span></span>
       </div>
 
@@ -173,13 +173,13 @@
         <div><span class="learn-term" data-term="filingDate" th:text="#{activityDetail.filingDate}">Filing date</span><strong th:text="${#temporals.format(signal.filingDate(), 'dd MMM yyyy')}">07 Aug 2026</strong></div>
         <div>
           <span th:text="#{activityDetail.executionPrice}">Execution price</span>
-          <strong th:if="${signal.transactionPrice() != null}" th:text="${signal.currency() + ' ' + #numbers.formatDecimal(signal.transactionPrice(), 1, 2)}">USD 257.76</strong>
+          <strong th:if="${signal.transactionPrice() != null}" th:text="${#numbers.formatDecimal(signal.transactionPrice(), 1, 'DEFAULT', 2, 'DEFAULT') + ' ' + signal.currency()}">USD 257.76</strong>
           <strong th:unless="${signal.transactionPrice() != null}" th:text="#{activityDetail.notDisclosed}">Not disclosed</strong>
         </div>
-        <div><span th:text="#{activityDetail.shares}">Shares</span><strong th:text="${signal.shares() != null ? #numbers.formatDecimal(signal.shares(), 1, 2) : #messages.msg('activityDetail.notDisclosed')}">9,344</strong></div>
+        <div><span th:text="#{activityDetail.shares}">Shares</span><strong th:text="${signal.shares() != null ? (signal.shares().stripTrailingZeros().scale() <= 0 ? #numbers.formatInteger(signal.shares(), 1, 'DEFAULT') : #numbers.formatDecimal(signal.shares(), 1, 'DEFAULT', 2, 'DEFAULT')) : #messages.msg('activityDetail.notDisclosed')}">9,344</strong></div>
         <div>
           <span th:text="#{activityDetail.totalValue}">Total trade value</span>
-          <strong th:if="${signal.transactionValue() != null}" th:text="${signal.currency() + ' ' + #numbers.formatDecimal(signal.transactionValue(), 1, 2)}">USD 2,408,462.72</strong>
+          <strong th:if="${signal.transactionValue() != null}" th:text="${#numbers.formatDecimal(signal.transactionValue(), 1, 'DEFAULT', 2, 'DEFAULT') + ' ' + signal.currency()}">USD 2,408,462.72</strong>
           <strong th:if="${signal.transactionValue() == null and signal.amountRange() != null}" th:text="${signal.amountRange()}">$15,001 - $50,000</strong>
           <strong th:if="${signal.transactionValue() == null and signal.amountRange() == null}" th:text="#{activityDetail.notDisclosed}">Not disclosed</strong>
         </div>
@@ -206,7 +206,7 @@
       </div>
       <p class="signal-lifecycle-note" th:text="${#tr.text(signal.disclosureNotice())}">Results use the execution price reported in the filing.</p>
       <p th:if="${signal.filingUrl() != null}" class="signal-lifecycle-delivery">
-        <a th:href="${signal.filingUrl()}" target="_blank" rel="noopener noreferrer" th:text="#{activityDetail.openFiling}">Open the official filing &rarr;</a>
+        <a class="text-link" th:href="${signal.filingUrl()}" target="_blank" rel="noopener noreferrer" th:text="#{activityDetail.openFiling}">Open the official filing &rarr;</a>
       </p>
     </section>
   </div>
@@ -417,7 +417,7 @@
     const entryPrice = Number(chartContainer.dataset.entryPrice);
     const direction = chartContainer.dataset.direction;
     const actionLabel = chartContainer.dataset.actionLabel || window.StockWatchI18n.t('detailChart.transaction');
-    candleSeries.setMarkers([{time: signalTime, position: direction === 'SELL' ? 'aboveBar' : 'belowBar', color: colors.signal, shape: direction === 'SELL' ? 'arrowDown' : 'arrowUp', text: `${actionLabel} · ${window.StockWatchI18n.number(entryPrice, 2)}`}]);
+    candleSeries.setMarkers([{time: signalTime, position: direction === 'SELL' ? 'aboveBar' : 'belowBar', color: direction === 'SELL' ? colors.down : colors.up, shape: direction === 'SELL' ? 'arrowDown' : 'arrowUp', text: `${actionLabel} · ${window.StockWatchI18n.number(entryPrice, 2)}`}]);
     candleSeries.createPriceLine({price: entryPrice, color: colors.entry, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: window.StockWatchI18n.t('chart.entry')});
     const signalIndex = candleData.findIndex(candle => candle.time === signalTime);
     if (signalIndex >= 0) priceChart.timeScale().setVisibleLogicalRange({from: Math.max(-.5, signalIndex - 18), to: signalIndex + 8});
@@ -461,7 +461,7 @@
     const horizon = selected[selected.length - 1];
     resultsSeries.setMarkers([
       {time: selected[0].time, position: tradeSignal === 'SELL' ? 'aboveBar' : 'belowBar', color: colors.entry, shape: tradeSignal === 'SELL' ? 'arrowDown' : 'arrowUp', text: window.StockWatchI18n.t(tradeSignal === 'SELL' ? 'activityDetail.startMarker.SELL' : 'activityDetail.startMarker.BUY')},
-      {time: best.time, position: best.directionalReturn >= 0 ? 'aboveBar' : 'belowBar', color: colors.best, shape: tradeSignal === 'SELL' ? 'arrowUp' : 'arrowDown', text: `${resultsWorkspace.dataset.bestActionLabel} · candle ${best.candleNumber}`}
+      {time: best.time, position: best.directionalReturn >= 0 ? 'aboveBar' : 'belowBar', color: colors.best, shape: tradeSignal === 'SELL' ? 'arrowUp' : 'arrowDown', text: `${resultsWorkspace.dataset.bestActionLabel} · ${window.StockWatchI18n.t('activityDetail.candleNumber', best.candleNumber)}`}
     ]);
     resultsChart.timeScale().fitContent();
     updateResultMetric('resultHorizonReturn', signedNumber(horizon.directionalReturn, 2, '%'), horizon.directionalReturn >= 0);

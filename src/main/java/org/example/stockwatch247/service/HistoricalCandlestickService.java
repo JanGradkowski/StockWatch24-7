@@ -926,7 +926,7 @@ public class HistoricalCandlestickService {
         if (entryPrice != null && tradePlan == null) summary = "Projection only: no valid positive stop/target.";
         if (tradePlan != null && !tradePlan.actionable()) summary = tradePlan.qualification();
         else if (resolution != null && resolution.reason() != null)
-            summary = resolution.reason() + " Modeled exit " + resolution.fillPrice() + ".";
+            summary = resolution.reason() + " Modeled exit " + String.format(java.util.Locale.ROOT, "%.4f", resolution.fillPrice()) + ".";
         return new HistoricalLifecycleView(
                 status,
                 lifecycleLabel(status),

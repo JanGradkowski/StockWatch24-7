@@ -543,3 +543,244 @@ main:focus { outline: none; }
 
 /* A search placeholder too long for the bar ends in an ellipsis instead of mid-word. */
 :root[data-theme] .ui-refresh .navbar .global-ticker-search { text-overflow: ellipsis; }
+
+/* ------------------------------------------------------------------ stock workspace subpages */
+
+/* An outlook category lists every indicator it counts, wrapping rather than cut off with an ellipsis. */
+:root[data-theme] .ui-refresh .technical-category-card small { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: break-word; }
+/* Large single glyphs and numbers get a line box tall enough for their ascenders. */
+:root[data-theme] .ui-refresh .outlook-change-arrow { line-height: 1.25; }
+:root[data-theme] .ui-refresh .signal-score-orbit-core strong { line-height: 1.2; }
+/* Scenario facts: the label column is as wide as its longest word (Polish labels run longer), shared by every row. */
+:root[data-theme] .ui-refresh .elliott-projection-scenario dl { grid-template-columns: fit-content(40%) minmax(0, 1fr); }
+:root[data-theme] .ui-refresh .elliott-projection-scenario dt { letter-spacing: 0; text-transform: none; }
+:root[data-theme] .ui-refresh .elliott-projection-scenario dl > div { grid-column: 1 / -1; grid-template-columns: subgrid; }
+/* On narrow charts the pattern candles carry numbered markers instead of full labels (signal-detail.html). */
+:root[data-theme] .ui-refresh .signal-pattern-callout.compact .signal-pattern-callout-label {
+    display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; box-shadow: none; line-height: 1;
+}
+:root[data-theme] .ui-refresh .signal-pattern-callout.compact .signal-pattern-callout-arrow { width: 2px; min-height: 18px; box-shadow: none; }
+/* A trend band at the chart's edge keeps its label inside the chart. */
+:root[data-theme] .ui-refresh .signal-chart-trend-band.label-start > span { left: 4px; transform: none; }
+:root[data-theme] .ui-refresh .signal-chart-trend-band.label-end > span { right: 4px; left: auto; transform: none; }
+/* A custom alert's links on the stock page are 24px targets, not 20px lines of text. */
+:root[data-theme] .ui-refresh .stock-custom-facts .text-link { display: inline-flex; align-items: center; min-height: 24px; }
+/* The time stop's tag drops to the foot of its line when it would cover the pattern labels (signal-detail.html). */
+:root[data-theme] .ui-refresh .signal-trade-time-stop-line.label-low > span { top: auto; bottom: 8px; }
+
+/* The signal-alert cards fit their panel on phones: tracks that may shrink, a tighter gap, so nothing scrolls sideways.
+   (The two direction columns' 110px minimum plus the gaps made each card 348px inside a 316px panel at 390px.) */
+:root[data-theme] .ui-refresh .alert-sections-layout > * { min-width: 0; }
+@media (max-width: 480px) {
+    :root[data-theme] .ui-refresh .alert-section { padding: 12px; }
+    :root[data-theme] .ui-refresh .alert-grid:not(.outlook-alert-grid) { grid-template-columns: 56px repeat(2, minmax(0, 1fr)); column-gap: 8px; overflow-x: visible; }
+}
+
+/* Phones: rows that used to scroll sideways and cut a word in half wrap instead. The stock header's four buttons
+   become two rows of two; report tabs and the chart's interval switcher wrap inside their card. */
+@media (max-width: 480px) {
+    :root[data-theme] .ui-refresh .price-header-buttons { flex-wrap: wrap; overflow-x: visible; }
+    :root[data-theme] .ui-refresh .price-header-buttons :is(.price-header-actions, .price-header-demo-trading) { flex: 1 1 100%; }
+    :root[data-theme] .ui-refresh .price-header-buttons .virtual-trade-launch-actions { flex: 1 1 100%; }
+    :root[data-theme] .ui-refresh .price-header-buttons :is(.btn-secondary) { flex: 1 1 0; justify-content: center; }
+}
+@media (max-width: 600px) {
+    :root[data-theme] .ui-refresh .signal-view-tabs { flex-wrap: wrap; overflow-x: visible; }
+    :root[data-theme] .ui-refresh .signal-view-tab { padding: 0 10px; }
+    :root[data-theme] .ui-refresh .signal-chart-heading-actions { flex: 1 1 100%; min-width: 0; max-width: 100%; justify-items: start; }
+    :root[data-theme] .ui-refresh .signal-detail-interval-switcher { flex-wrap: wrap; max-width: 100%; }
+}
+
+/* Dialogs dim the page without blurring it: a full-screen blur is costly on weak graphics hardware. */
+:root[data-theme] body.ui-refresh dialog::backdrop { backdrop-filter: none; }
+/* The insider history table (eight columns) fits its dialog on a desktop instead of scrolling sideways inside it. */
+:root[data-theme] .ui-refresh dialog.insider-history-dialog { width: min(1260px, calc(100vw - 32px)); max-width: min(1260px, calc(100vw - 32px)); }
+/* A history row's two links (the signal and the official filing) stack instead of running together. */
+:root[data-theme] .ui-refresh :is(.history-signal-detail-link, .history-signal-detail-link + a) { display: block; width: fit-content; }
+/* A low setup score is grey, not red: red and green mean price direction or buy/sell only. */
+:root[data-theme] .ui-refresh :is(.signal-score-card.low, .signal-score-card.unrated) { --score-accent: var(--muted-text); --score-glow: transparent; }
+:root[data-theme] .ui-refresh :is(.signal-score-card.low, .signal-score-card.unrated) .signal-score-segment.active { background: var(--muted-text); }
+:root[data-theme] .ui-refresh .threshold-dot.low { background: var(--muted-text); }
+/* The header's four buttons share one height and one centre line (the demo pair sat 7px higher and 2px shorter). */
+@media (min-width: 769px) {
+    :root[data-theme] .ui-refresh .price-header :is(.price-header-demo-trading, .virtual-trade-launch-actions) { display: flex; align-items: center; gap: 8px; margin: 0; padding: 0; }
+    :root[data-theme] .ui-refresh .price-header :is(.price-header-actions, .virtual-trade-launch-actions) > .btn-secondary { height: 36px; min-height: 36px; margin: 0; }
+}
+/* The light theme's sale badge uses the theme's red, not the dark theme's pale pink (2.1:1 on white). */
+:root[data-theme="light"] .ui-refresh .congressional-history-type.sale { color: var(--danger); }
+/* A disfavoured or monitoring scenario stays readable: a dashed outline marks it instead of fading its text.
+   (Opacity .66 with desaturation put its labels at about 2:1.) */
+:root[data-theme] .ui-refresh .elliott-projection-scenario.disfavored { opacity: 1; filter: none; border-style: dashed; }
+/* Status lines read as text, not as controls: no button-like box, no link colour. */
+:root[data-theme] .ui-refresh .congressional-activity-status { padding: 0; border: 0; background: transparent; color: var(--text-soft); }
+:root[data-theme] .ui-refresh .outlook-alert-status { color: var(--text-soft); font-weight: 600; }
+
+/* Light theme: the risk and reward chart labels use light pills with dark text (the dark pill kept dark text at 1.2:1). */
+:root[data-theme="light"] .ui-refresh .signal-trade-chart-zone > span { border: 1px solid var(--glass-border); background: rgba(255, 255, 255, 0.92); color: var(--text-color); }
+/* Only the preferred target zone carries a tag on the chart; alternates are drawn and described in the scenario cards. */
+:root[data-theme] .ui-refresh .elliott-projection-chart-zone:not(.rank-1) > span { display: none; }
+/* Light theme: scenario ranks and an expired outcome chip at readable contrast (the pale blue and grey sat near 2:1). */
+:root[data-theme="light"] .ui-refresh .elliott-projection-rank { color: #1d5f93; }
+:root[data-theme="light"] .ui-refresh .historical-outcome-pill:is(.expired, .inconclusive) { color: var(--text-soft); }
+/* The workspace score is a sentence, set in the body face like the rest of the outlook summary. */
+:root[data-theme] .ui-refresh .stock-outlook-verdict > [data-overview-score] { font-family: var(--font-sans, inherit); font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) {
+    /* Polish interval names (Tygodniowy, Miesięczny) set the first column's width instead of running under the toggles. */
+    :root[data-theme] .ui-refresh .alert-grid:not(.outlook-alert-grid) { grid-template-columns: max-content repeat(2, minmax(0, 1fr)); }
+    /* Workspace tabs wrap a long name (Alerty o transakcjach) onto two lines instead of cutting it. */
+    :root[data-theme] .ui-refresh .stock-workspace-tab { justify-content: center; padding: 4px 6px; line-height: 1.2; text-align: center; white-space: normal; }
+}
+/* Phones: an alert cell shows only its eye; the column header names the direction (each checkbox keeps its full
+   aria-label). Polish labels such as Spadkowe no longer push the cards past the panel at 360px. */
+@media (max-width: 480px) {
+    :root[data-theme] .ui-refresh .alert-grid:not(.outlook-alert-grid) .alert-eye-label { display: none; }
+    :root[data-theme] .ui-refresh .alert-grid:not(.outlook-alert-grid) .alert-eye-toggle { min-width: 0; justify-content: center; }
+}
+
+/* Elliott target zones are drawn without tags on the chart: the legend names the projection and the scenario cards give
+   each zone's rank and timing (a tag on the chart covered the pivots beneath it). */
+:root[data-theme] .ui-refresh .elliott-projection-chart-zone > span { display: none; }
+/* Phones: when report tabs wrap onto two rows, each tab carries its own baseline so both rows read as tabs. */
+@media (max-width: 600px) {
+    :root[data-theme] .ui-refresh .signal-view-tabs { border-bottom: 0; gap: 0; }
+    :root[data-theme] .ui-refresh .signal-view-tab { margin: 0; border-bottom: 1px solid var(--rf-line); }
+    :root[data-theme] .ui-refresh :is(.signal-view-tab.active, .signal-view-tab[aria-selected="true"]) { border-bottom: 2px solid var(--primary-color); }
+}
+/* Light theme: an expired lifecycle chip keeps readable text (it was a pale grey at 2.1:1). */
+:root[data-theme="light"] .ui-refresh .signal-lifecycle-pill:is(.expired, .inconclusive) { color: var(--text-soft); }
+
+/* Phones: the plot keeps its numbered pattern markers and lines, but drops the text tags (risk, reward, time stop,
+   required trend): on a 300px chart they were cut to fragments. The legend above and the plan below give them in full. */
+@media (max-width: 600px) {
+    :root[data-theme] .ui-refresh :is(.signal-trade-chart-zone, .signal-chart-trend-band, .signal-trade-time-stop-line) > span { display: none; }
+}
+/* A ticker alert's transaction swatch matches its chart arrow: red for a sale, green for a purchase. */
+:root[data-theme] .ui-refresh .signal-chart-key.detection.sell { background: var(--danger); }
+:root[data-theme] .ui-refresh .signal-chart-key.detection.buy { background: var(--accent-color); }
+
+/* The Elliott status line wraps instead of being cut with an ellipsis (its full text was only in a hover title). */
+:root[data-theme] .ui-refresh [data-expandable-status] { overflow: visible; text-overflow: clip; white-space: normal; }
+/* One heading size for the analysis column's sections (some were 13px labels, others 16px display titles). */
+:root[data-theme] .ui-refresh :is(.stock-overview-head h2, .alert-title) { color: var(--text-color); font-size: var(--fs-md); font-weight: 700; letter-spacing: 0; }
+/* Risk and reward tags sit at the far end of their zones, clear of the candles right after entry. */
+:root[data-theme] .ui-refresh .signal-trade-chart-zone > span { right: 7px; left: auto; }
+@media (max-width: 600px) {
+    /* Daily, Weekly, Monthly in three equal columns, so a long Polish name never sits alone on a second row. */
+    :root[data-theme] .ui-refresh .signal-detail-interval-switcher { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+}
+@media (max-width: 600px) {
+    /* Each interval button stacks its name over its sub-label (Interwał transakcji), which wraps inside its column. */
+    :root[data-theme] .ui-refresh .signal-detail-interval-button { flex-direction: column; justify-content: center; gap: 0; min-width: 0; padding: 4px 6px; }
+    :root[data-theme] .ui-refresh .signal-detail-interval-button small { line-height: 1.15; text-align: center; white-space: normal; }
+}
+
+/* Below 1100px the alert card's actions sit under its description, in rows that wrap, so long Polish labels
+   (Zastosuj zmiany, Przestań obserwować wszystko) are never clipped; Apply comes before the account-wide Unfollow all. */
+@media (max-width: 1100px) {
+    :root[data-theme] .ui-refresh .stock-page .alert-header { display: block; }
+    :root[data-theme] .ui-refresh .stock-page .alert-header-actions { min-width: 0; margin-top: 12px; align-items: flex-start; }
+    :root[data-theme] .ui-refresh .stock-page :is(.alert-overall-follow-row, .alert-apply-row) { flex-wrap: wrap; justify-content: flex-start; }
+    :root[data-theme] .ui-refresh .stock-page .alert-header-actions :is(button, .btn-secondary, .btn-accent) { white-space: normal; }
+    :root[data-theme] .ui-refresh .stock-page .alert-header-actions .alert-apply-row { order: -1; }
+}
+:root[data-theme].stock-workspace-side-by-side .ui-refresh .stock-page .alert-header-actions .alert-apply-row { order: -1; }
+/* Insider history: the filing links and dates get room; the directional return column no longer takes a third of the table. */
+:root[data-theme] .ui-refresh .insider-history-table :is(th, td):nth-child(7) { width: 190px; }
+:root[data-theme] .ui-refresh .insider-history-table :is(th, td):nth-child(8) { min-width: 150px; }
+:root[data-theme] .ui-refresh .insider-history-table td:is(:nth-child(5), :nth-child(6)) > strong { white-space: nowrap; }
+/* Phones: every dialog stacks its primary button above Cancel, as the demo trade dialog does. */
+@media (max-width: 600px) {
+    :root[data-theme] .ui-refresh .historical-candlestick-lookback-actions { display: flex; flex-direction: column-reverse; }
+    :root[data-theme] .ui-refresh .historical-candlestick-lookback-actions button { width: 100%; }
+}
+
+/* Polish market snapshot: a gap between columns, so a long direction value never runs into the next label. */
+:root[data-theme] .ui-refresh .signal-snapshot-grid { column-gap: 20px; }
+/* The practice card's description at the size of the other section descriptions. */
+:root[data-theme] .ui-refresh .signal-practice-plan p { color: var(--text-soft); font-size: var(--fs-sm); }
+/* Ticker alert values outrank their explanations: larger figures, returns coloured by sign. */
+:root[data-theme] .ui-refresh .signal-trade-plan-summary strong { font-size: var(--fs-lg); }
+:root[data-theme] .ui-refresh .signal-trade-plan-summary strong.positive { color: var(--accent-color); }
+:root[data-theme] .ui-refresh .signal-trade-plan-summary strong.negative { color: var(--danger); }
+/* Risk and reward tags sit just past their zones (after the time stop), in the empty part of the plot, not over the
+   candles after entry; near the chart's edge the script slides them back inside. */
+:root[data-theme] .ui-refresh .signal-trade-chart-zone > span { right: auto; left: calc(100% + 6px); }
+
+/* Ticker alert details: returns coloured by sign and larger than the explanation under them. */
+:root[data-theme] .ui-refresh .signal-lifecycle-grid > div > strong { font-size: var(--fs-lg); }
+:root[data-theme] .ui-refresh .signal-lifecycle-grid strong.positive { color: var(--accent-color); }
+:root[data-theme] .ui-refresh .signal-lifecycle-grid strong.negative { color: var(--danger); }
+/* Form labels in sentence case, like the rest of the dialog (NUMBER OF CANDLES sat beside Interval). */
+:root[data-theme] .ui-refresh .historical-candlestick-lookback-field > span { letter-spacing: 0; text-transform: none; }
+/* Section headings on the signal detail share one size. */
+:root[data-theme] .ui-refresh .signal-practice-plan h2 { font-size: var(--fs-md); }
+/* A custom alert that matches now is a status, not a buy: it uses the accent blue rather than green. */
+:root[data-theme] .ui-refresh .stock-custom-state.matching { background: color-mix(in srgb, var(--primary-color) 12%, var(--surface)); color: var(--primary-strong, var(--primary-color)); }
+
+/* Projection history (signal detail): a styled disclosure like the rest of the page - a chevron summary, a sized
+   heading, nested levels set in from a rule, small tables - and the same gap as the other cards. */
+:root[data-theme] .ui-refresh .elliott-projection-card { margin-top: 16px; }
+:root[data-theme] .ui-refresh .elliott-projection-card details > summary { display: flex; align-items: center; gap: 8px; padding: 8px 0; color: var(--text-color); font-weight: 650; list-style: none; cursor: pointer; }
+:root[data-theme] .ui-refresh .elliott-projection-card details > summary::-webkit-details-marker { display: none; }
+:root[data-theme] .ui-refresh .elliott-projection-card details > summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+:root[data-theme] .ui-refresh .elliott-projection-card details[open] > summary::before { transform: rotate(45deg); }
+:root[data-theme] .ui-refresh .elliott-projection-card h3 { margin: 14px 0 4px; font-size: var(--fs-md); font-weight: 700; letter-spacing: 0; text-transform: none; }
+:root[data-theme] .ui-refresh .elliott-projection-card details details { margin-left: 4px; padding-left: 12px; border-left: 1px solid var(--glass-border); }
+:root[data-theme] .ui-refresh .elliott-projection-card details p { color: var(--text-soft); font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .elliott-projection-card details table { width: 100%; margin: 6px 0 10px; border-collapse: collapse; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .elliott-projection-card details :is(th, td) { padding: 4px 8px; border-bottom: 1px solid var(--glass-border); text-align: left; }
+@media (max-width: 600px) {
+    /* The chart line pickers (10 overlays, 22 panels on the outlook change page) flow as compact chips, several per row,
+       instead of one chip per row; the picker sits flush with its card instead of being inset twice. */
+    :root[data-theme] .ui-refresh .chart-visibility-legend { margin: 0 0 12px; padding: 8px 10px 10px; }
+    :root[data-theme] .ui-refresh .chart-legend-options { gap: 6px; }
+    :root[data-theme] .ui-refresh .chart-legend-option { flex: 0 1 auto; gap: 6px; min-height: 30px; padding: 2px 8px; font-size: 12px; }
+}
+/* The demo trade dialog has a close button in its corner, like the other dialogs. */
+:root[data-theme] .ui-refresh .virtual-trade-create-dialog .unsaved-alert-dialog-content { position: relative; }
+:root[data-theme] .ui-refresh .virtual-trade-create-dialog :is(.unsaved-alert-kicker, h2) { padding-right: 44px; }
+:root[data-theme] .ui-refresh .stock-demo-close { position: absolute; top: 14px; right: 14px; }
+
+/* A history status that reports stale or unavailable data reads as a small alert in both themes (the light theme
+   kept the dark theme's pale pink text: 1.2:1). */
+:root[data-theme] .ui-refresh :is(.insider-history-dialog, .congressional-history-dialog) .congressional-history-status[data-state="unavailable"] { padding: 8px 12px; border: 1px solid; border-radius: 8px; }
+:root[data-theme="light"] .ui-refresh :is(.insider-history-dialog, .congressional-history-dialog) .congressional-history-status[data-state="unavailable"] { border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--danger) 8%, #fff); color: #9b1c31; }
+/* A long chart status shows two lines; a click or Enter expands it (design-ui.js). The full text stays in the page.
+*/
+:root[data-theme] .ui-refresh [data-expandable-status]:not(.is-expanded) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; cursor: pointer; }
+/* The clamp clips at the padding box, so the bottom padding becomes a border of the same colour: no third line peeks. */
+:root[data-theme] .ui-refresh .elliott-overlay-status[data-expandable-status]:not(.is-expanded):not(:empty) { padding-bottom: 0; border-bottom: 6px solid var(--rf-raised); }
+/* Unfollow all affects every stock: a quiet text button after Apply changes, not a peer of it. */
+:root[data-theme] .ui-refresh .alert-follow-all-btn { min-height: 32px; padding-inline: 4px; border-color: transparent; background: none; color: var(--text-soft); text-decoration: underline; }
+/* Projection history keeps the card gap below it too. */
+:root[data-theme] .ui-refresh .elliott-projection-card { margin-bottom: 16px; }
+/* Outlook report and change chart cards: the card's own padding is the only inset (the heading, note and line picker
+   added 1.3rem more, so their content sat 21px further in than every other card's). */
+:root[data-theme] .ui-refresh .technical-outlook-chart-card :is(.technical-outlook-chart-heading, .technical-chart-note) { padding-inline: 0; }
+:root[data-theme] .ui-refresh .technical-outlook-chart-card .chart-visibility-legend { margin-inline: 0; }
+:root[data-theme] .ui-refresh .signal-chart-trend-band.label-low > span { top: auto; bottom: 36px; }
+
+/* Watchlist picker: a close button beside the title; on phones the main button stacks above Cancel, like the other dialogs. */
+.wl-picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.wl-picker-close { flex: none; width: 32px; height: 32px; border: 1px solid var(--glass-border); border-radius: 8px; background: transparent; color: var(--text-soft); font-size: 20px; line-height: 1; cursor: pointer; }
+@media (max-width: 600px) {
+    .wl-picker .wl-actions { flex-direction: column-reverse; align-items: stretch; }
+}
+
+/* Ticker alert transaction details: tiles flow in as many columns as fit, with values at body size, instead of eight
+   fixed columns whose long values (an insider's role) wrapped over three lines and left empty cells. */
+:root[data-theme] .ui-refresh main[data-mark-read-endpoint] .signal-lifecycle-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+:root[data-theme] .ui-refresh main[data-mark-read-endpoint] .signal-lifecycle-grid > div > strong { font-size: var(--fs-md); }
+
+/* Scenario cards in sentence case (PREFERRED, 54/100 CONFIDENCE, ACTIVE were capitals beside lowercase names). */
+:root[data-theme] .ui-refresh .elliott-projection-scenario :is(header span, .elliott-projection-state span) { letter-spacing: 0; text-transform: none; }
+:root[data-theme] .ui-refresh .elliott-projection-scenario h3::first-letter { text-transform: uppercase; }
+:root[data-theme] .ui-refresh .signal-lifecycle-pill { letter-spacing: 0; text-transform: none; }
+/* Lookback dialog: one label style and one field inset for the select and number fields. */
+:root[data-theme] .ui-refresh .historical-candlestick-lookback-field > span { font-size: inherit; font-weight: inherit; }
+:root[data-theme] .ui-refresh .lookback-picker-dialog :is(select, input[type="number"]) { padding: 8px 12px; }
+/* Light theme: direction tags at full text contrast (the sell tag was 4.1:1). */
+:root[data-theme="light"] .ui-refresh .signal-report-tag.direction.sell { color: #a3122b; }
+:root[data-theme="light"] .ui-refresh .signal-report-tag.direction.buy { color: #05664f; }
+/* "Possible trade" is a status, not a buy: neutral, like the other status pills. */
+:root[data-theme] .ui-refresh .possible-trade-pill.confirmed { border-color: var(--glass-border); background: var(--surface-raised); color: var(--text-color); }

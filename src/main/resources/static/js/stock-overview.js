@@ -101,7 +101,8 @@
       link.href = signal.detailUrl;
       const head = el('span', 'stock-recent-signal-head');
       head.append(el('strong', '', signal.label),
-              el('span', `stock-outlook-pill stock-outlook-tone-${tone(signal.direction)}`, directionLabel(signal.direction)));
+              // An invalidated or expired signal keeps its direction word but loses the buy or sell colour.
+              el('span', `stock-outlook-pill stock-outlook-tone-${/invalid|expir|unieważ|zaneg|wygas/i.test(signal.lifecycle || '') ? 'neutral' : tone(signal.direction)}`, directionLabel(signal.direction)));
       const familyKey = `stockOverview.family.${signal.family}`;
       const meta = [i18n.has(familyKey) ? i18n.t(familyKey) : signal.family, signal.intervalLabel,
         i18n.date(Number(signal.timestamp) * 1000, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })];

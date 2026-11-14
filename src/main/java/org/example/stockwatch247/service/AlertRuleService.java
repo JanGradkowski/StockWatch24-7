@@ -2723,7 +2723,7 @@ public class AlertRuleService {
         }
         if (event.getTradeQualification() != null) {
             summary = event.getTradeQualification();
-            if (event.getTradeResolutionPrice() != null) summary += " Modeled exit: " + event.getTradeResolutionPrice() + ".";
+            if (event.getTradeResolutionPrice() != null) summary += " Modeled exit: " + String.format(java.util.Locale.ROOT, "%.4f", event.getTradeResolutionPrice().doubleValue()) + ".";
         }
         return new SignalLifecycleView(
                 status,
@@ -3285,12 +3285,12 @@ public class AlertRuleService {
                 case "confidence" -> "Score unavailable";
                 case "status" -> "MATCHED_ON_APPLY".equals(trigger.status()) ? "Matched at save" : "Triggered";
                 case "trade-return" -> returnGroupLabel(trigger.outcomeReturn());
-                default -> trigger.received().format(DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH));
+                default -> trigger.received().format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH));
             };
             if (activity!=null) return switch(sortKey) {
                 case "ticker" -> activity.symbol(); case "interval" -> "Filings"; case "confidence" -> "Score unavailable";
                 case "status" -> "Recorded activity"; case "trade-return" -> "Return unavailable";
-                default -> activity.received().format(DateTimeFormatter.ofPattern("dd MMMM yyyy",Locale.ENGLISH));
+                default -> activity.received().format(DateTimeFormatter.ofPattern("d MMMM yyyy",Locale.ENGLISH));
             };
             return switch (sortKey) {
                 case "ticker" -> signal.symbol();
@@ -3303,7 +3303,7 @@ public class AlertRuleService {
                 };
                 case "status" -> signal.lifecycle().label();
                 case "trade-return" -> returnGroupLabel(outcome.returnPercent());
-                default -> signal.sentAt().format(DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH));
+                default -> signal.sentAt().format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH));
             };
         }
 

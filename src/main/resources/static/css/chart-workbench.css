@@ -860,6 +860,52 @@
     }
 }
 
+/* Phones: the rail folds behind a corner button (chart-page-tools.js) and opens over the chart, so the chart keeps
+   the full width instead of losing a column to tools few people use on a small screen. */
+.chart-rail-corner-toggle {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .chart-tools-frame {
+        position: relative;
+    }
+
+    .chart-tools-frame > .chart-tools-rail {
+        position: absolute;
+        top: 40px;
+        bottom: 0;
+        left: 4px;
+        z-index: 25;
+    }
+
+    .chart-tools-frame:not(.rail-open) > .chart-tools-rail {
+        display: none;
+    }
+
+    .chart-rail-corner-toggle {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        z-index: 26;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text-soft);
+        cursor: pointer;
+    }
+
+    .chart-tools-frame.rail-open > .chart-rail-corner-toggle {
+        border-color: var(--primary-color);
+        color: var(--text-color);
+    }
+}
+
 /* ---- stock chart: rail column, header actions, footer bar */
 
 .chart-workbench-body {

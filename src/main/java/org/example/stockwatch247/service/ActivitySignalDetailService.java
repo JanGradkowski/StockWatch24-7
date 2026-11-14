@@ -38,7 +38,7 @@ public class ActivitySignalDetailService {
     private static final int CHART_CANDLES_BEFORE = 180;
     private static final int CHART_CANDLES_AFTER = 120;
     private static final DateTimeFormatter PERIOD_FORMAT =
-            DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
+            DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
     private final CongressionalTradeDeliveryRepository congressionalDeliveryRepository;
     private final InsiderTradeDeliveryRepository insiderDeliveryRepository;

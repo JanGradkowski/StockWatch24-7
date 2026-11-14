@@ -452,7 +452,7 @@ public class CongressionalActivityService {
     private String relevanceNotice() {
         return "Only purchases and sales with transaction dates in the last "
                 + historyDays
-                + " days are shown (the current CongressInvests free-tier history window). "
+                + " days are shown. "
                 + "Disclosures can be filed up to 45 days after a trade.";
     }
 
