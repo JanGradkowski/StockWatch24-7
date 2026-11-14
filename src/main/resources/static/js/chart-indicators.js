@@ -102,11 +102,18 @@
         return i18n.number(value, 4);
     }
 
-    /** Band items merged with the main series' bars, each carrying that bar's close as `anchor`. */
-    function anchoredBand(items, anchors) {
+    /**
+     * Band items merged with the main series' bars, each carrying that bar's close as `anchor`. On a logarithmic scale
+     * (`positiveOnly`) a bar whose band reaches zero or below is left unfilled, as its lines have a gap there.
+     */
+    function anchoredBand(items, anchors, positiveOnly = false) {
+        const usable = value => finite(value) && (!positiveOnly || value > 0);
         const byTime = new Map();
-        (anchors || []).forEach(anchor => { if (finite(anchor.close)) byTime.set(anchor.time, {time: anchor.time, anchor: anchor.close}); });
-        items.forEach(item => byTime.set(item.time, {...(byTime.get(item.time) || {}), ...item}));
+        (anchors || []).forEach(anchor => { if (usable(anchor.close)) byTime.set(anchor.time, {time: anchor.time, anchor: anchor.close}); });
+        items.forEach(item => {
+            const band = usable(item.upper) && usable(item.lower) ? item : {time: item.time};
+            byTime.set(item.time, {...(byTime.get(item.time) || {}), ...band});
+        });
         return [...byTime.values()].sort((a, b) => (a.time < b.time ? -1 : (a.time > b.time ? 1 : 0)));
     }
 
@@ -750,11 +757,20 @@
 
         // ---- panes
 
-        /** Pane slot an indicator draws in. */
+        /**
+         * Pane slot an indicator draws in. Volume indicators belong to the volume pane even while it is off: on the
+         * price scale their share counts would flatten the candles, so, as with TradingView's Volume MA, they are
+         * hidden with the volume and their legend row says so.
+         */
         slotOf(config) {
             if (config.pane === 'own') return config.id;
-            if (config.pane === 'volume') return this.slots.includes('volume') ? 'volume' : 'price';
+            if (config.pane === 'volume') return 'volume';
             return 'price';
+        }
+
+        /** A volume indicator while the volume pane is off: kept, calculated, but not drawn. */
+        awaitsVolume(config) {
+            return config.pane === 'volume' && !this.slots.includes('volume');
         }
 
         paneIndex(slot) {
@@ -799,6 +815,8 @@
                 }
             });
             if (this.volumeWanted && !this.volumeSeries) this.createVolumeSeries();
+            // A maximized pane that went away would otherwise keep every other pane at its minimum.
+            if (this.maximized && !this.slots.includes(this.maximized)) this.maximized = null;
             this.applyPaneHeights();
             this.onPanesChanged();
             this.positionLegends();
@@ -890,7 +908,12 @@
         setVolume(visible, options = {}) {
             this.volumeWanted = Boolean(visible);
             this.volumeOptions = options;
+            const had = this.slots.includes('volume');
             this.syncPanes();
+            // Their lines went with the pane, or wait for it: draw them from the values already loaded.
+            if (had !== this.slots.includes('volume')) {
+                this.indicators.filter(config => config.pane === 'volume').forEach(config => this.renderIndicator(config));
+            }
             this.renderLegends();
         }
 
@@ -954,6 +977,15 @@
             this.renderLegends();
         }
 
+        /**
+         * The page switched the main price scale to or from logarithmic. Lines and fills on it leave out values at or
+         * below zero on a logarithmic scale (see anchoredLineData), so their data is built again. The series stay, so
+         * the time scale keeps its points and the chart does not scroll.
+         */
+        priceScaleChanged() {
+            this.visuals.forEach(visuals => visuals.rebuilds.forEach(rebuild => rebuild()));
+        }
+
         renderIndicator(config) {
             if (!config) return;
             this.clearVisuals(config.id);
@@ -964,7 +996,8 @@
             const paneIndex = this.paneIndex(slot);
             if (paneIndex < 0) return;
             const LWC = window.LightweightCharts;
-            const visuals = {series: [], outputs: new Map(), primitives: [], markerPlugins: [], paneKey: null};
+            // `rebuilds` write the data of lines and fills on the main price scale again; see priceScaleChanged.
+            const visuals = {series: [], outputs: new Map(), primitives: [], markerPlugins: [], paneKey: null, rebuilds: []};
             this.visuals.set(config.id, visuals);
             const candleTimes = (this.candles() || []).map(candle => candle.time);
             const byKey = new Map((view.series || []).map(series => [series.key, series]));
@@ -983,6 +1016,7 @@
                 if (!anchored) return addSeries(LWC.LineSeries, options);
                 const series = window.StockWatchChartTypes.addAnchoredLine(this.chart, options, this.anchors, paneIndex);
                 visuals.series.push(series);
+                visuals.rebuilds.push(() => series.reanchor());
                 return series;
             };
 
@@ -1002,7 +1036,13 @@
                     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...scaleOptions
                 }, paneIndex);
                 visuals.series.push(series);
-                series.setData(anchored ? anchoredBand(data, this.anchors()) : data);
+                if (!anchored) {
+                    series.setData(data);
+                    return;
+                }
+                const write = () => series.setData(anchoredBand(data, this.anchors(), window.StockWatchChartTypes.isLogScale(series)));
+                write();
+                visuals.rebuilds.push(write);
             });
 
             const zones = definition.zones;
@@ -1255,6 +1295,7 @@
             );
             row.append(name, values, controls);
             if (config.error) row.append(element('span', {className: 'ind-legend-error', text: config.error}));
+            else if (config.visible && this.awaitsVolume(config)) row.append(element('span', {className: 'ind-legend-note', text: i18n.t('ind.status.volumeOff')}));
             else if (this.loading && !this.views.has(config.id)) row.append(element('span', {className: 'ind-legend-loading', text: i18n.t('ind.status.loading')}));
             return row;
         }
@@ -1321,13 +1362,15 @@
         openRowMenu(config, anchor) {
             const definition = this.definition(config.type);
             const slot = this.slotOf(config);
+            // Pane actions need the pane on the chart; the volume pane can be off.
+            const paneShown = slot !== 'price' && this.slots.includes(slot);
             const items = [
                 {label: i18n.t('ind.action.settings'), action: () => this.openSettings(config.id)},
-                slot !== 'price' ? {label: i18n.t('ind.action.moveUp'), action: () => this.movePane(config.id, -1)} : null,
-                slot !== 'price' ? {label: i18n.t('ind.action.moveDown'), action: () => this.movePane(config.id, 1)} : null,
+                paneShown ? {label: i18n.t('ind.action.moveUp'), action: () => this.movePane(config.id, -1)} : null,
+                paneShown ? {label: i18n.t('ind.action.moveDown'), action: () => this.movePane(config.id, 1)} : null,
                 definition?.placement === 'PANEL' && config.pane === 'own' ? {label: i18n.t('ind.action.toPricePane'), action: () => this.setPricePane(config.id, false)} : null,
                 definition?.placement === 'PANEL' && config.pane !== 'own' ? {label: i18n.t('ind.action.toOwnPane'), action: () => this.setPricePane(config.id, true)} : null,
-                slot !== 'price' ? {label: i18n.t(this.maximized === slot ? 'ind.action.restore' : 'ind.action.maximize'), action: () => this.maximizePane(config.id)} : null,
+                paneShown ? {label: i18n.t(this.maximized === slot ? 'ind.action.restore' : 'ind.action.maximize'), action: () => this.maximizePane(config.id)} : null,
                 this.onAlertRequest ? {label: i18n.t('ind.action.alert'), action: () => this.onAlertRequest(config)} : null,
                 {label: i18n.t('ind.action.saveDefault'), action: () => this.saveTypeDefault(config)},
                 {label: i18n.t('ind.action.resetDefault'), action: () => this.resetTypeDefault(config)},

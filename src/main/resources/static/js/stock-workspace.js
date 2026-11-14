@@ -586,12 +586,22 @@
 
   // ---- price scale
 
+  let logScaleApplied = false;
+
   function applyPriceScale() {
     if (!priceChart) return;
     const mode = LightweightCharts.PriceScaleMode[PRICE_SCALE_MODES[priceScaleSettings.mode] || 'Normal'];
     const scale = { mode, invertScale: priceScaleSettings.invert, autoScale: priceScaleSettings.auto };
     priceChart.priceScale('right').applyOptions(scale);
     priceOnlyChart?.priceScale('right').applyOptions(scale);
+    // Lines on the price scale leave out values at or below zero while it is logarithmic (a Bollinger lower band below
+    // zero otherwise stretches it far below the candles), so they are built again when it switches to or from log.
+    const log = priceScaleSettings.mode === 'log';
+    if (log !== logScaleApplied) {
+      logScaleApplied = log;
+      reanchorPriceOverlays();
+      indicatorManager?.priceScaleChanged();
+    }
     updatePriceScaleButtons();
   }
 

@@ -230,6 +230,36 @@ async function run(browser, { language, catalog }) {
     await page.click(`[data-chart-scale="${mode}"]`);
   }
   await page.evaluate(id => indicatorManager.remove(id), emaId);
+
+  // A volume average lives in the volume pane. With volume off it is not drawn: on the candles' scale its share
+  // counts would flatten them. Its legend row stays, and turning volume on draws it again without a new request.
+  const volumeMaId = await page.evaluate(() => indicatorManager.add('VOLUME_MA').id);
+  await page.waitForFunction(id => indicatorManager.visuals.get(id)?.outputs.get('value'), volumeMaId);
+  const settled = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  // Pixels between two prices inside the candles' range: about zero when the candles are flattened.
+  const priceSpan = () => page.evaluate(() => Math.abs(priceSeries.priceToCoordinate(5000) - priceSeries.priceToCoordinate(6000)));
+  await settled();
+  const spanWithVolume = await priceSpan();
+  await page.click('#volumeChartToggle');
+  await settled();
+  assert.deepEqual(await page.evaluate(() => indicatorManager.slots.includes('volume')), false);
+  assert.equal(await page.evaluate(id => indicatorManager.visuals.has(id), volumeMaId), false, 'not drawn while volume is off');
+  const sequence = await page.evaluate(() => { indicatorManager.refresh(0); return indicatorManager.requestSequence; });
+  await page.waitForFunction(before => indicatorManager.requestSequence > before && !indicatorManager.loading, sequence);
+  await settled();
+  assert.equal(await page.evaluate(id => indicatorManager.visuals.has(id), volumeMaId), false, 'not drawn after a recalculation either');
+  const spanWithoutVolume = await priceSpan();
+  assert.ok(spanWithoutVolume >= spanWithVolume * 0.9, `the candles keep their scale (${spanWithVolume}px, then ${spanWithoutVolume}px)`);
+  const volumeMaRow = page.locator(`.ind-legend[data-slot="price"] .ind-legend-row[data-indicator="${volumeMaId}"]`);
+  assert.equal((await volumeMaRow.locator('.ind-legend-note').innerText()).trim(), text['ind.status.volumeOff']);
+  await shot('volume-off');
+  const requestsBefore = await page.evaluate(() => indicatorManager.requestSequence);
+  await page.click('#volumeChartToggle');
+  assert.equal(await page.evaluate(id => indicatorManager.visuals.get(id)?.outputs.get('value')?.getPane().paneIndex(), volumeMaId), 1);
+  assert.equal(await page.evaluate(() => indicatorManager.requestSequence), requestsBefore);
+  assert.equal(await page.locator('.ind-legend-note').count(), 0);
+  await page.evaluate(id => indicatorManager.remove(id), volumeMaId);
+
   // The preset handler is asynchronous (it may load older history first).
   await page.click('[data-chart-range="1Y"]');
   await page.waitForFunction(() => {

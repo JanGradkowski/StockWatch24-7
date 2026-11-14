@@ -420,17 +420,20 @@
      * line's own points merged in. A point without a value is a gap; bars between two values are not. Each item knows
      * the nearest value at or before it (`previous`) and after it (`following`), so drawing skips the bars between
      * the points of a sparse line, such as an Elliott wave. Items after the line's last value are left out, so the
-     * price axis label shows that value.
+     * price axis label shows that value. On a logarithmic scale (`positiveOnly`) a value at or below zero is a gap as
+     * well: it has no position there, and the chart would stretch the scale orders of magnitude below the candles to
+     * fit it (a Bollinger lower band below zero squeezed the candles into a sliver).
      */
-    function anchoredLineData(points, anchors) {
+    function anchoredLineData(points, anchors, positiveOnly = false) {
+        const usable = value => finite(value) && (!positiveOnly || value > 0);
         const byTime = new Map();
         (anchors || []).forEach(anchor => {
-            if (finite(anchor.close)) byTime.set(timeKey(anchor.time), {time: anchor.time, anchor: anchor.close});
+            if (usable(anchor.close)) byTime.set(timeKey(anchor.time), {time: anchor.time, anchor: anchor.close});
         });
         (points || []).forEach(point => {
             const key = timeKey(point.time);
             const item = byTime.get(key) || {time: point.time};
-            if (finite(point.value)) {
+            if (usable(point.value)) {
                 item.value = point.value;
                 if (point.color) item.color = point.color;
             } else {
@@ -559,20 +562,30 @@
         }
     }
 
+    /** Whether the series' price scale is logarithmic, where prices at or below zero have no position. */
+    function isLogScale(series) {
+        try {
+            return series.priceScale().options().mode === (window.LightweightCharts.PriceScaleMode?.Logarithmic ?? 1);
+        } catch (error) {
+            return false;
+        }
+    }
+
     /**
      * Adds an AnchoredLineView series. `anchors()` returns the main series' bars as {time, close}; setData takes the
      * line's points ({time, value, color?}) and merges them with the anchors, and reanchor() does it again when the
-     * main series changes.
+     * main series or the price scale's mode changes.
      */
     function addAnchoredLine(chart, options = {}, anchors = () => [], paneIndex = 0) {
         const series = chart.addCustomSeries(new AnchoredLineView(), options, paneIndex);
         const write = series.setData.bind(series);
         let points = [];
+        const build = () => anchoredLineData(points, anchors(), isLogScale(series));
         series.setData = data => {
             points = Array.isArray(data) ? data : [];
-            write(anchoredLineData(points, anchors()));
+            write(build());
         };
-        series.reanchor = () => write(anchoredLineData(points, anchors()));
+        series.reanchor = () => write(build());
         return series;
     }
 
@@ -589,5 +602,5 @@
 
     window.StockWatchChartTypes = Object.freeze({TYPES, PRESETS, DAY, isOhlc: type => OHLC.has(type), isPriceOnly: type => PRICE_ONLY.has(type),
         heikinAshi, options, data, create, rangeStart, nearestIndex, withAlpha, autoBox, renko, lineBreak, kagi, pointFigure, priceOnly,
-        elementIndex, KagiView, PointFigureView, AnchoredLineView, anchoredLineData, addAnchoredLine});
+        elementIndex, KagiView, PointFigureView, AnchoredLineView, anchoredLineData, addAnchoredLine, isLogScale});
 })();
