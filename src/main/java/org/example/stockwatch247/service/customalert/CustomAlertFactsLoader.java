@@ -196,6 +196,35 @@ public class CustomAlertFactsLoader {
         return new StockData(asset, interval, List.copyOf(loaded), limit, checkCandles == null ? null : List.copyOf(checkCandles));
     }
 
+    /**
+     * The highest high and lowest low stored before {@code first}: older candles of the interval itself, and weekly and
+     * monthly candles that ended before it. Daily candles are often stored for a few years only, monthly ones back to
+     * the listing, so together they give the all-time top and bottom. NaN for each when nothing older is stored.
+     */
+    double[] earlierRange(String symbol, TimeInterval interval, long first) {
+        java.time.LocalDate day = java.time.Instant.ofEpochSecond(first).atZone(java.time.ZoneOffset.UTC).toLocalDate();
+        // Two days of margin, so a candle stamped just before midnight UTC is still read as part of its own week or month.
+        long margin = 2 * 86_400L;
+        long weeksBefore = first - 7 * 86_400L - margin;
+        long monthsBefore = day.withDayOfMonth(1).atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond() - margin;
+        try (var stage = org.example.stockwatch247.service.CheckTimings.enter("custom alerts: earlier history")) {
+            double[] range = db.query("""
+                    select max(high_price), min(low_price) from candles
+                    where symbol = ? and high_price is not null and low_price > 0
+                      and ((time_interval = ? and timestamp < ?) or (time_interval = '1wk' and timestamp <= ?)
+                           or (time_interval = '1mo' and timestamp < ?))
+                    """, result -> {
+                if (!result.next()) return null;
+                double high = result.getDouble(1);
+                boolean noHigh = result.wasNull();
+                double low = result.getDouble(2);
+                boolean noLow = result.wasNull();
+                return new double[]{noHigh ? Double.NaN : high, noLow ? Double.NaN : low};
+            }, symbol, apiInterval(interval), first, weeksBefore, monthsBefore);
+            return range == null ? new double[]{Double.NaN, Double.NaN} : range;
+        }
+    }
+
     /** One stock's shared data; {@link #forOwner} adds an owner's detection settings and outlook profile. */
     public final class StockData {
         private final StockAsset asset;
@@ -417,6 +446,33 @@ public class CustomAlertFactsLoader {
             });
         }
 
+        /** The highest high and lowest low stored before the first loaded candle, read once (see {@link #earlierRange}). */
+        private double[] earlier;
+
+        /**
+         * The operand's top or bottom on each candle (see {@link CustomAlertEvaluator.Facts#extremes}). A price's all-time
+         * top also counts the history stored before the loaded candles.
+         */
+        double[] extremes(Operand operand, boolean highest, Integer candles) {
+            String key = "extreme:" + (highest ? "high:" : "low:") + candles + ":" + operand.seriesKey();
+            double[] known = values.get(key);
+            if (known != null) return known;
+            boolean price = "PRICE".equals(operand.kind()) && !"VOLUME".equals(operand.field());
+            double before = candles == null && price ? earlier(highest) : Double.NaN;
+            // Not computed inside values.computeIfAbsent: reading the series may add to the map itself.
+            double[] computed = CustomAlertEvaluator.extremes(series(operand), before, highest, candles);
+            values.put(key, computed);
+            return computed;
+        }
+
+        private double earlier(boolean highest) {
+            if (earlier == null) {
+                earlier = series.isEmpty() ? new double[]{Double.NaN, Double.NaN}
+                        : earlierRange(asset.getTickerSymbol(), interval, series.getFirst().getTimestamp());
+            }
+            return earlier[highest ? 0 : 1];
+        }
+
         List<ActivityHit> activity(String source) {
             // From the first loaded candle back by the longest window, so a replay of old candles sees their filings too.
             java.time.LocalDate first = series.isEmpty() ? java.time.LocalDate.now(java.time.ZoneOffset.UTC)
@@ -440,6 +496,10 @@ public class CustomAlertFactsLoader {
                 @Override public List<Candle> candles() { return series; }
 
                 @Override public double[] series(Operand operand) { return data.series(operand); }
+
+                @Override public double[] extremes(Operand operand, boolean highest, Integer candles) {
+                    return data.extremes(operand, highest, candles);
+                }
 
                 @Override public List<PatternHit> patterns(PatternCondition condition) {
                     return data.patterns(condition.family(), owner);

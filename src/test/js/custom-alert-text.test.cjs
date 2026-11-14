@@ -42,6 +42,18 @@ test('dollar amounts are grouped so large totals stay readable', () => {
   dom.window.close();
 });
 
+test('a drop from the top names the all-time high unless a number of candles was chosen', () => {
+  const { dom, text } = load();
+  const close = { kind: 'PRICE', field: 'CLOSE' };
+  const down = extra => text.describe({ id: 'c1', kind: 'VALUE', subject: close, operator: 'DOWN_FROM_HIGH', percent: 20, ...extra }, definitions);
+  assert.equal(down({}), 'Close price is at least 20% below its all-time high');
+  assert.equal(down({ candles: 250 }), 'Close price is at least 20% below its 250-candle high');
+  assert.equal(down({ window: { mode: 'EVERY', candles: 5 } }), 'Close price is at least 20% below its all-time high on each of the last 5 candles');
+  assert.equal(text.describe({ id: 'c1', kind: 'VALUE', subject: close, operator: 'UP_FROM_LOW', percent: 50 }, definitions),
+    'Close price is at least 50% above its all-time low');
+  dom.window.close();
+});
+
 test('every starting point describes itself in words with existing translations', () => {
   const { dom, text } = load();
   assert.ok(text.templates.length >= 8);

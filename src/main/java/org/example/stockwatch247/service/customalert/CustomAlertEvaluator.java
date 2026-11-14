@@ -44,6 +44,15 @@ public final class CustomAlertEvaluator {
         /** The operand's value on each candle; NaN where it is not known yet. */
         double[] series(Operand operand);
 
+        /**
+         * The operand's highest (or lowest) value on each candle: over the last {@code candles} candles up to and including
+         * it, or over all history up to it when {@code candles} is null. Here "all" is the loaded candles; the loader
+         * also counts a price's older stored history.
+         */
+        default double[] extremes(Operand operand, boolean highest, Integer candles) {
+            return CustomAlertEvaluator.extremes(series(operand), Double.NaN, highest, candles);
+        }
+
         /** Every detection of the condition's family for this stock, under the owner's detection settings. */
         List<PatternHit> patterns(PatternCondition condition);
 
@@ -153,10 +162,14 @@ public final class CustomAlertEvaluator {
         int shown = matchedAt != null ? matchedAt : index;
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("value", finite(at(subject, shown)));
-        if (compare != null) details.put("compare", finite(at(compare, shown)));
+        if (condition.fromExtreme()) {
+            // The top (or bottom) the value was measured from, and how far from it the value was.
+            details.put("extreme", finite(at(compare, shown)));
+            details.put("change", finite(change(at(compare, shown), at(subject, shown))));
+        } else if (compare != null) details.put("compare", finite(at(compare, shown)));
         if (condition.lower() != null) details.put("lower", condition.lower());
         if (condition.upper() != null) details.put("upper", condition.upper());
-        if (condition.percent() != null) {
+        if (condition.percent() != null && !condition.fromExtreme()) {
             int from = shown - condition.candles();
             details.put("change", from >= 0 ? finite(change(at(subject, from), at(subject, shown))) : null);
         }
@@ -168,6 +181,7 @@ public final class CustomAlertEvaluator {
     }
 
     private static double[] compareSeries(ValueCondition condition, Facts facts, int length) {
+        if (condition.fromExtreme()) return extremes(condition, facts);
         if (condition.compare() == null) return null;
         return "VALUE".equals(condition.compare().kind()) ? constant(length, condition.compare().value()) : facts.series(condition.compare());
     }
@@ -212,8 +226,65 @@ public final class CustomAlertEvaluator {
                 }
                 yield true;
             }
+            // {@code compare} is the top (bottom) itself, see {@link #extremes(ValueCondition, Facts)}.
+            case "DOWN_FROM_HIGH", "UP_FROM_LOW" -> {
+                double extreme = at(compare, at);
+                if (!Double.isFinite(extreme) || extreme <= 0) yield false;
+                double change = change(extreme, now);
+                // A hair of tolerance, so 80 is 20% below 100 although (80 - 100) / 100 * 100 is not exactly -20.
+                yield "DOWN_FROM_HIGH".equals(condition.operator()) ? change <= -condition.percent() + 1e-9
+                        : change >= condition.percent() - 1e-9;
+            }
             default -> false;
         };
+    }
+
+    /** The top (bottom) a DOWN_FROM_HIGH (UP_FROM_LOW) condition measures its subject from, on each candle. */
+    static double[] extremes(ValueCondition condition, Facts facts) {
+        boolean highest = "DOWN_FROM_HIGH".equals(condition.operator());
+        return facts.extremes(extremeSource(condition.subject(), highest), highest, condition.candles());
+    }
+
+    /** A price is measured from the candles' highs (or lows), so a top reached during a day counts; volume and indicators from their own values. */
+    static Operand extremeSource(Operand subject, boolean highest) {
+        return "PRICE".equals(subject.kind()) && !"VOLUME".equals(subject.field()) ? Operand.price(highest ? "HIGH" : "LOW") : subject;
+    }
+
+    /**
+     * The highest (or lowest) of {@code values} on each candle. With {@code candles}: over the last that many candles
+     * including it, NaN until that many are known. Without: over every candle up to it, starting from {@code before},
+     * the extreme of the history before the first candle (NaN when unknown). Values not known yet are skipped.
+     */
+    static double[] extremes(double[] values, double before, boolean highest, Integer candles) {
+        double[] result = new double[values.length];
+        if (candles == null) {
+            double extreme = before;
+            for (int at = 0; at < values.length; at++) {
+                double value = values[at];
+                if (Double.isFinite(value) && (!Double.isFinite(extreme) || (highest ? value > extreme : value < extreme))) extreme = value;
+                result[at] = extreme;
+            }
+            return result;
+        }
+        // A window's extreme in one pass: the deque keeps the candidates of the current window, best first.
+        int[] deque = new int[values.length];
+        int head = 0;
+        int tail = 0;
+        int lastUnknown = -1;
+        for (int at = 0; at < values.length; at++) {
+            double value = values[at];
+            if (!Double.isFinite(value)) {
+                lastUnknown = at;
+                head = tail = 0;
+                result[at] = Double.NaN;
+                continue;
+            }
+            while (tail > head && (highest ? values[deque[tail - 1]] <= value : values[deque[tail - 1]] >= value)) tail--;
+            deque[tail++] = at;
+            while (deque[head] <= at - candles) head++;
+            result[at] = at - candles + 1 >= 0 && lastUnknown <= at - candles ? values[deque[head]] : Double.NaN;
+        }
+        return result;
     }
 
     // ------------------------------------------------------------------ patterns
@@ -468,7 +539,7 @@ public final class CustomAlertEvaluator {
             default -> 0;
         };
         if (at - back < 0) return false;
-        boolean comparesAlong = CustomAlertDefinition.COMPARISONS.contains(condition.operator());
+        boolean comparesAlong = CustomAlertDefinition.COMPARISONS.contains(condition.operator()) || condition.fromExtreme();
         boolean endsOnly = condition.operator().startsWith("CHANGE_");
         for (int candle = at - back; candle <= at; candle++) {
             if (endsOnly && candle != at - back && candle != at) continue;
@@ -516,6 +587,11 @@ public final class CustomAlertEvaluator {
                 details.put("value", finite(at(subject, from + reach)));
                 if (value.compare() != null && !"VALUE".equals(value.compare().kind())) {
                     details.put("compare", finite(at(facts.series(value.compare()), from + reach)));
+                }
+                if (value.fromExtreme()) {
+                    double extreme = at(extremes(value, facts), from + reach);
+                    details.put("extreme", finite(extreme));
+                    details.put("change", finite(change(extreme, at(subject, from + reach))));
                 }
                 double low = Double.POSITIVE_INFINITY;
                 double high = Double.NEGATIVE_INFINITY;

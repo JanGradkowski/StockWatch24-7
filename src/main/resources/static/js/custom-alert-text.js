@@ -190,6 +190,12 @@
         text = i18n.t(`ca.op.${op}`, subject, condition.candles); break;
       case 'CHANGE_ABOVE': case 'CHANGE_BELOW':
         text = i18n.t(`ca.op.${op}`, subject, number(condition.percent), condition.candles); break;
+      // Without candles the top (bottom) is the all-time one.
+      case 'DOWN_FROM_HIGH': case 'UP_FROM_LOW':
+        text = Number.isFinite(Number(condition.candles)) && condition.candles != null
+          ? i18n.t(`ca.op.${op}`, subject, number(condition.percent), condition.candles)
+          : i18n.t(`ca.op.allTime.${op}`, subject, number(condition.percent));
+        break;
       default: text = subject;
     }
     const window = condition.window || { mode: 'LATEST' };

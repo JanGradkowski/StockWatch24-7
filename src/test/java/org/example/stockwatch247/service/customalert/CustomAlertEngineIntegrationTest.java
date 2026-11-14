@@ -171,6 +171,38 @@ class CustomAlertEngineIntegrationTest {
         assertThat(listPage.signals()).hasSize(2);
     }
 
+    private void monthlyCandle(String symbol, LocalDate month, double high, double low) {
+        jdbc.update("""
+                insert into candles (symbol, time_interval, timestamp, open_price, high_price, low_price, close_price, volume, updated_at)
+                values (?, '1mo', ?, ?, ?, ?, ?, 90000000, current_timestamp)
+                """, symbol, month.atStartOfDay(ZoneOffset.UTC).toEpochSecond(), low, high, low, high);
+    }
+
+    @Test
+    void anAllTimeHighCountsTheMonthlyHistoryOlderThanTheDailyCandles() {
+        User owner = user();
+        String symbol = stock("EQUITY");
+        long list = watchlist(owner, "Drawdowns", symbol);
+        // Years of monthly history before the daily candles; the month the daily candles start in holds them, so it is not "older".
+        monthlyCandle(symbol, LocalDate.of(2021, 11, 1), 200, 150);
+        monthlyCandle(symbol, LocalDate.of(2026, 1, 1), 300, 100);
+        candles(List.of(symbol), 150, 120, 110);
+        String rule = """
+                {"version":1,"match":"ALL","groups":[{"id":"g1","match":"ALL","conditions":[
+                  {"id":"c1","kind":"VALUE","subject":{"kind":"PRICE","field":"CLOSE"},"operator":"DOWN_FROM_HIGH","percent":40}]}]}
+                """;
+        var alert = alerts.create(owner, command("40% below the top", rule, "BECOMES_TRUE", 0, list, true));
+
+        engine.establishBaselines();
+        assertThat(alerts.states(owner, alert.id())).extracting(CustomAlertService.StockStateView::state).containsExactly("MATCHING");
+        long event = jdbc.queryForObject("select min(id) from custom_alert_events where alert_id = ?", Long.class, alert.id());
+        var trigger = alerts.trigger(owner, event);
+        var found = trigger.evidence().path("conditions").get(0).path("facts");
+        assertThat(found.path("extreme").asDouble()).as("the 2021 top, not the daily 151 nor the current month").isEqualTo(200.0);
+        assertThat(found.path("change").asDouble()).as("110 against 200").isEqualTo(-45.0);
+        assertThat(trigger.ruleText()).contains("Close price is at least 40% below its all-time high");
+    }
+
     @Test
     void anAlertOnTwoIntervalsKeepsAStatePerIntervalAndEachTriggerNamesItsInterval() {
         User owner = user();

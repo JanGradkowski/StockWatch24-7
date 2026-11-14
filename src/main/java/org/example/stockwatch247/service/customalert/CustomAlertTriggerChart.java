@@ -88,11 +88,20 @@ public class CustomAlertTriggerChart {
 
     /**
      * Which series a value condition reads ({@code subject}, {@code compare}); how many candles a candlestick
-     * pattern spans; a wave count's or formation's turning points; the filings an activity condition counted.
+     * pattern spans; a wave count's or formation's turning points; the filings an activity condition counted;
+     * the top (bottom) a price was measured from on each candle, [time, value], counting the history before the chart.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ConditionView(String subject, String compare, Integer formationCandles, List<PointView> points,
-                                List<FilingView> filings) { }
+                                List<FilingView> filings, List<Number[]> extremes) {
+        ConditionView(String subject, String compare, Integer formationCandles, List<PointView> points, List<FilingView> filings) {
+            this(subject, compare, formationCandles, points, filings, null);
+        }
+
+        ConditionView withExtremes(List<Number[]> extremes) {
+            return new ConditionView(subject, compare, formationCandles, points, filings, extremes);
+        }
+    }
 
     public record PointView(String label, long time, double price, String pivot) { }
 
@@ -147,6 +156,7 @@ public class CustomAlertTriggerChart {
         CustomAlertDefinition definition = definition(evidence, trigger);
         if (definition != null && !shown.isEmpty()) {
             series = series(definition, trigger.symbol(), interval, shown, conditions);
+            extremes(definition, trigger, interval, shown, conditions);
         }
         // Triggers of the alert's other intervals came from other candles than the ones shown.
         List<OtherTrigger> others = shown.isEmpty() ? List.of() : db.query("""
@@ -218,6 +228,42 @@ public class CustomAlertTriggerChart {
             series.add(new SeriesView(id, view.placement(), line == null ? null : line.style(), points, view.references(), null));
         });
         return series;
+    }
+
+    /**
+     * For each price measured from its top (bottom): that top on every shown candle, as the check read it. An all-time
+     * top counts the history stored before the chart; a "last N candles" one the candles just before it. Volume and
+     * indicators are measured from their own values, which the page reads along the chart.
+     */
+    private void extremes(CustomAlertDefinition definition, CustomAlertService.TriggerView trigger, String interval, List<Number[]> shown,
+                          Map<String, ConditionView> conditions) {
+        long first = shown.getFirst()[0].longValue();
+        for (CustomAlertDefinition.Condition condition : definition.conditions()) {
+            if (!(condition instanceof ValueCondition value) || !value.fromExtreme()) continue;
+            if (!"PRICE".equals(value.subject().kind()) || "VOLUME".equals(value.subject().field())) continue;
+            boolean highest = "DOWN_FROM_HIGH".equals(value.operator());
+            int column = highest ? 2 : 3;
+            List<Number[]> earlier = value.candles() == null || value.candles() < 2 ? List.of()
+                    : candles("timestamp < ? order by timestamp desc", trigger.symbol(), interval, first, value.candles() - 1);
+            List<Number[]> read = new ArrayList<>(earlier.reversed());
+            read.addAll(shown);
+            double[] prices = read.stream().mapToDouble(candle -> candle[column].doubleValue()).toArray();
+            double before = Double.NaN;
+            if (value.candles() == null) {
+                try {
+                    before = facts.earlierRange(trigger.symbol(), trigger.interval(), first)[highest ? 0 : 1];
+                } catch (RuntimeException unavailable) {
+                    log.debug("Earlier history unavailable for {}: {}", trigger.symbol(), unavailable.getMessage());
+                }
+            }
+            double[] extremes = CustomAlertEvaluator.extremes(prices, before, highest, value.candles());
+            List<Number[]> points = new ArrayList<>();
+            for (int index = earlier.size(); index < read.size(); index++) {
+                if (Double.isFinite(extremes[index])) points.add(new Number[]{read.get(index)[0], extremes[index]});
+            }
+            ConditionView known = conditions.get(value.id());
+            conditions.put(value.id(), known == null ? new ConditionView(null, null, null, null, null, points) : known.withExtremes(points));
+        }
     }
 
     private static String register(Operand operand, Map<String, Operand> operands, Map<String, IndicatorConfiguration> configurations,

@@ -30,6 +30,7 @@ characters; if left empty it is named after the first condition when saved) and
   - **{{msg:js.ca.picker.breakout.title}}** — the close makes a new high compared with the last 20 candles.
   - **{{msg:js.ca.picker.priceLevel.title}}** — the close crosses above a level (pre-filled near the latest close).
   - **{{msg:js.ca.picker.priceChange.title}}** — the close rises by at least 5% over 5 candles.
+  - **{{msg:js.ca.picker.fromTop.title}}** — the close is at least 20% below its all-time high.
   - **{{msg:js.ca.picker.candlestick.title}}** — a bullish candlestick pattern, confirmed within the last 3 candles.
   - **{{msg:js.ca.picker.elliott.title}}** — a bullish Elliott Wave II end within the last 5 candles.
   - **{{msg:js.ca.picker.harmonic.title}}** — a bullish harmonic pattern within the last 3 candles.
@@ -115,6 +116,9 @@ sequence), **{{msg:js.ca.builder.duplicate}}**, **{{msg:js.ca.builder.moveUp}}**
     **{{msg:js.ca.builder.percent}}** (0–1000) and **{{msg:js.ca.builder.overCandles}}** (1–250).
   - **{{msg:js.ca.opLabel.NEW_HIGH}}** / **{{msg:js.ca.opLabel.NEW_LOW}}** —
     **{{msg:js.ca.builder.lookback}}** (2–250).
+  - **{{msg:js.ca.opLabel.DOWN_FROM_HIGH}}** / **{{msg:js.ca.opLabel.UP_FROM_LOW}}** — **{{msg:js.ca.builder.percent}}**,
+    **{{msg:js.ca.builder.measuredFrom}}** **{{msg:js.ca.builder.allTimeHigh}}** (default) or the last N candles (2–500;
+    52-week: 250 daily). A price counts candle highs (lows).
 - **{{msg:js.ca.builder.when}}** (not shown inside a sequence): **{{msg:js.ca.window.label.LATEST}}**,
   **{{msg:js.ca.window.label.ANY}}** or **{{msg:js.ca.window.label.EVERY}}** (the last one is not offered for
   crosses, new highs and new lows), with **{{msg:js.ca.builder.candles}}** (1–60). {{learn:customAlerts.window}}
@@ -191,6 +195,8 @@ condition reads the stock being checked.
 
 - **Crosses** marks one candle; **is above/below** holds for as long as the value stays there. For
   "tell me when it happens" use a cross or the default trigger mode **{{msg:customAlerts.mode.BECOMES_TRUE}}**.
+- "Fell 20%": **{{msg:js.ca.opLabel.CHANGE_BELOW}}** = vs N candles ago, **{{msg:js.ca.opLabel.DOWN_FROM_HIGH}}** =
+  vs the top. Ask when both fit.
 - **{{msg:js.ca.window.label.LATEST}}** vs **{{msg:js.ca.window.label.ANY}}**: conditions joined with AND must
   all be true; a window of a few candles lets them happen close together instead of on the same candle.
 - Candlestick **{{msg:js.ca.patternStatus.CONFIRMED}}** comes late and rarely (most patterns never reach
@@ -223,7 +229,7 @@ parentheses):
   `ABOVE`, `BELOW`, `CROSSES_ABOVE`, `CROSSES_BELOW` → `"compare": OPERAND`;
   `BETWEEN`, `OUTSIDE` → `"lower": n, "upper": n`; `RISING`, `FALLING` → `"candles": 1–20`;
   `CHANGE_ABOVE`, `CHANGE_BELOW` → `"percent": 0–1000, "candles": 1–250`; `NEW_HIGH`, `NEW_LOW` →
-  `"candles": 2–250`.
+  `"candles": 2–250`; `DOWN_FROM_HIGH`, `UP_FROM_LOW` → `"percent": 0–100` / `0–1000`, `"candles": 2–500` (none: all-time).
   - OPERAND: `{"kind": "VALUE", "value": 30}` · `{"kind": "PRICE", "field": "CLOSE" | "OPEN" | "HIGH" | "LOW" | "VOLUME"}`
     · `{"kind": "INDICATOR", "type": "RSI", "parameters": {"period": 14}, "output": "value"}`. `type`,
     parameter names and `output` come from the indicator list below; parameters left out take their

@@ -189,10 +189,16 @@ public class CustomAlertEngine {
      */
     private void refreshHigherTimeframes(String symbol, List<Target> targets) {
         if (marketData == null) return;
+        // A top or bottom of all time is read from the monthly history, which goes back to the listing: it is downloaded
+        // once in full and then kept current (split adjustments included). Rules saved with a "last N candles" top
+        // also match here; refreshing their monthly candles costs a delta request at most once an hour.
+        boolean allTime = targets.stream().anyMatch(target -> target.definition().contains("\"operator\":\"DOWN_FROM_HIGH\"")
+                || target.definition().contains("\"operator\":\"UP_FROM_LOW\""));
         for (String timeframe : List.of("1wk", "1mo")) {
-            if (targets.stream().noneMatch(target -> target.definition().contains("\"timeframe\":\"" + timeframe + "\""))) continue;
+            boolean monthlyHistory = allTime && "1mo".equals(timeframe);
+            if (!monthlyHistory && targets.stream().noneMatch(target -> target.definition().contains("\"timeframe\":\"" + timeframe + "\""))) continue;
             try {
-                marketData.syncCandlesForAnalysis(symbol, timeframe, 300);
+                marketData.syncCandlesForAnalysis(symbol, timeframe, monthlyHistory ? CustomAlertDefinition.ALL_LOADED_CANDLES : 300);
             } catch (RuntimeException unavailable) {
                 if (org.example.stockwatch247.service.InfrastructureRecovery.isDatabaseUnavailable(unavailable)) throw unavailable;
                 log.warn("Custom alert {} candles could not be refreshed for {}: {}", timeframe, symbol, unavailable.getClass().getSimpleName());
