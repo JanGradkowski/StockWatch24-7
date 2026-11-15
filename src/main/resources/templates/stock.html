@@ -371,7 +371,7 @@
           <p id="historicalCandlestickCardTrend" class="elliott-wave-card-message"></p>
           <p id="historicalCandlestickCardNote" class="elliott-wave-card-note"></p>
           <div id="historicalCandlestickCardClusterNavigation"
-               class="historical-candlestick-card-navigation"
+               class="hover-card-navigation"
                hidden>
             <button id="previousHistoricalCandlestickSignal" type="button" aria-label="Previous nearby signal" th:aria-label="#{stock.previousSignalAria}">&larr;</button>
             <span id="historicalCandlestickCardClusterPosition"></span>
@@ -399,6 +399,11 @@
           </div>
           <p id="harmonicFormationCardMessage" class="elliott-wave-card-message"></p>
           <p id="harmonicFormationCardNote" class="elliott-wave-card-note"></p>
+          <div id="harmonicFormationCardNavigation" class="hover-card-navigation" hidden>
+            <button id="previousHarmonicFormation" type="button" aria-label="Previous formation at this point" th:aria-label="#{stock.previousFormationAria}">&larr;</button>
+            <span id="harmonicFormationCardPosition"></span>
+            <button id="nextHarmonicFormation" type="button" aria-label="Next formation at this point" th:aria-label="#{stock.nextFormationAria}">&rarr;</button>
+          </div>
           <a id="harmonicFormationCardLink" class="elliott-wave-card-link" href="#" th:text="#{stock.openHistoricalDetails}">Open historical signal details</a>
         </aside>
       </div>
