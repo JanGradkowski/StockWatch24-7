@@ -209,6 +209,15 @@
   let chosenChartHeight = null;
   let fittedWindowHeight = null;
   const CHART_HEIGHT_MAX_DEFAULT = 900;
+  // The side panel's width when the user moved the splitter between it and the chart (they share a row from
+  // 1360px); otherwise it is 440px. The chart takes the rest of the row. app.css applies the same limits, so a
+  // width chosen on a large screen still leaves the chart 640px when the window narrows.
+  let chosenSidePanelWidth = null;
+  const SIDE_PANEL_WIDTH = { min: 360, max: 720, default: 440 };
+  const CHART_MIN_WIDTH = 640;
+  // A press on a resize handle changes nothing until the pointer has moved this far, so a click or a wobble
+  // never leaves the chart a few pixels off its default.
+  const RESIZE_DRAG_THRESHOLD = 4;
   let baselineFrame = null;
   let chartResizeObserver = null;
   let generalChartResizeFrame = null;
@@ -910,6 +919,7 @@
       // Saved before panes shared the chart: it was the price pane's height, so only a taller one is kept.
       chosenChartHeight = Math.min(1200, extras.priceHeight);
     }
+    if (Number.isFinite(extras.sidePanelWidth)) chooseSidePanelWidth(extras.sidePanelWidth, false);
     if (typeof extras.volume === 'boolean' && extras.volume !== volumeChartEnabled) {
       volumeChartEnabled = extras.volume;
       indicatorManager.setVolume(volumeChartEnabled, volumeHooks());
@@ -937,6 +947,7 @@
     }
     if (typeof extras.chartType === 'string') setChartType(extras.chartType, false);
     updateStageHeight();
+    updateChartSizeReset();
   }
 
   // ---- compare
@@ -1068,9 +1079,13 @@
       volume: () => themedVolumeData(),
       priceFormatter: formatPlainPrice,
       drawings: drawingManager,
-      onPanesChanged: () => updateStageHeight()
+      onPanesChanged: () => {
+        updateStageHeight();
+        updateChartSizeReset();
+      }
     });
     manager.onLayoutLoaded = applyChartPreferences;
+    manager.onPaneHeightsChanged = updateChartSizeReset;
     manager.onStatus = showChartStatus;
     if (typeof StockWatchChartAlerts !== 'undefined') {
       manager.onAlertRequest = config => StockWatchChartAlerts.openForIndicator(config);
@@ -1868,13 +1883,16 @@
     harmonicHitTargetFrame = requestAnimationFrame(() => {
       harmonicHitTargetFrame = null;
       const stage = document.getElementById('priceChartStage');
+      // Measured once: reading them after a button was shown or hidden forced a layout per button.
+      const stageWidth = stage.clientWidth;
+      const paneHeight = pricePaneHeight();
       document.querySelectorAll('.harmonic-formation-hit-target').forEach(button => {
         const overlay = button._harmonicOverlay;
         const endpoint = overlay?.formation?.points?.at(-1);
         const x = endpoint ? priceChart.timeScale().timeToCoordinate(timestampToChartDate(endpoint.timestamp)) : null;
         const y = endpoint ? overlay.series.priceToCoordinate(Number(endpoint.price)) : null;
         const visible = Number.isFinite(x) && Number.isFinite(y)
-                && x >= 0 && x <= stage.clientWidth && y >= 0 && y <= pricePaneHeight();
+                && x >= 0 && x <= stageWidth && y >= 0 && y <= paneHeight;
         button.hidden = !visible;
         if (visible) {
           button.style.left = `${x}px`;
@@ -2614,6 +2632,9 @@
   function positionElliottHitTargets() {
     if (!priceChart) return;
     const stage = document.getElementById('priceChartStage');
+    // Measured once: reading them after a button was shown or hidden forced a layout per button.
+    const stageWidth = stage.clientWidth;
+    const paneHeight = pricePaneHeight();
     document.querySelectorAll('.elliott-wave-hit-target').forEach(button => {
       const segment = button._elliottSegment;
       const point = button._elliottPoint;
@@ -2622,7 +2643,7 @@
               : null;
       const y = point ? segment.series.priceToCoordinate(Number(point.price)) : null;
       const visible = Number.isFinite(x) && Number.isFinite(y)
-              && x >= 0 && x <= stage.clientWidth && y >= 0 && y <= pricePaneHeight();
+              && x >= 0 && x <= stageWidth && y >= 0 && y <= paneHeight;
       button.hidden = !visible;
       if (visible) {
         button.style.left = `${x}px`;
@@ -3419,6 +3440,9 @@
   function positionHistoricalCandlestickHitTargets() {
     if (!priceChart || !priceSeries || !historicalCandlestickOverlayEnabled) return;
     const stage = document.getElementById('priceChartStage');
+    // Measured once: reading them after a button was hidden forced a layout per button.
+    const stageWidth = stage.clientWidth;
+    const paneHeight = pricePaneHeight();
     const candleByTimestamp = new Map(globalCandleData.map(candle => [Number(candle.timestamp), candle]));
     const candidates = [];
     document.querySelectorAll('.historical-candlestick-hit-target').forEach(button => {
@@ -3432,7 +3456,7 @@
       const candleY = priceSeries.priceToCoordinate(candlePrice);
       const y = Number(candleY) + (buy ? 22 : -22);
       if (!Number.isFinite(x) || !Number.isFinite(y)
-              || x < 0 || x > stage.clientWidth || y < 0 || y > pricePaneHeight()) return;
+              || x < 0 || x > stageWidth || y < 0 || y > paneHeight) return;
       candidates.push({button, signal, x, y, buy});
     });
     candidates.sort((left, right) => left.x - right.x || left.y - right.y);
@@ -4727,6 +4751,7 @@
   }
 
   function resizeGeneralWorkspaceCharts() {
+    updateSideResizerValue();
     if (!priceChart) return;
     const priceContainer = document.getElementById('priceChartContainer');
     if (priceContainer.clientWidth && priceContainer.clientHeight) {
@@ -4757,6 +4782,188 @@
     indicatorManager?.setExtra('chartHeight', height);
     indicatorManager?.setExtra('priceHeight', null);
     updateStageHeight();
+    updateChartSizeReset();
+  }
+
+  // ---- chart width: the splitter between the chart and the side panel
+
+  function sideBySideLayout() {
+    return document.documentElement.classList.contains('stock-workspace-side-by-side');
+  }
+
+  /** The side panel's limits in this window: 360–720px, leaving the chart at least 640px (app.css does the same). */
+  function sidePanelWidthLimits() {
+    const page = document.querySelector('.stock-page');
+    const style = window.getComputedStyle(page);
+    const row = page.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const gutter = document.getElementById('stockSideResizer')?.offsetWidth || 20;
+    const max = Math.max(SIDE_PANEL_WIDTH.min, Math.min(SIDE_PANEL_WIDTH.max, row - gutter - CHART_MIN_WIDTH));
+    return { min: SIDE_PANEL_WIDTH.min, max, row, gutter };
+  }
+
+  /** The side panel's width as laid out (the tabs above it share its column). */
+  function currentSidePanelWidth() {
+    return document.querySelector('.stock-workspace-navigation')?.getBoundingClientRect().width
+            || chosenSidePanelWidth || SIDE_PANEL_WIDTH.default;
+  }
+
+  /** Sets the side panel's width (null for the default) without reading the layout back, so a drag never forces one. */
+  function applySidePanelWidth(width) {
+    chosenSidePanelWidth = Number.isFinite(width)
+            ? Math.round(Math.min(SIDE_PANEL_WIDTH.max, Math.max(SIDE_PANEL_WIDTH.min, width)))
+            : null;
+    const page = document.querySelector('.stock-page');
+    if (chosenSidePanelWidth === null) page.style.removeProperty('--stock-side-width');
+    else page.style.setProperty('--stock-side-width', `${chosenSidePanelWidth}px`);
+  }
+
+  /** A width for the side panel from the splitter, or null for the default; {@code save} keeps it with the layout. */
+  function chooseSidePanelWidth(width, save = true) {
+    applySidePanelWidth(width);
+    if (save) indicatorManager?.setExtra('sidePanelWidth', chosenSidePanelWidth);
+    updateSideResizerValue();
+    updateChartSizeReset();
+  }
+
+  /** The splitter reports the chart's width, within the range the side panel's limits leave it. */
+  function updateSideResizerValue() {
+    const resizer = document.getElementById('stockSideResizer');
+    if (!resizer || !sideBySideLayout()) return;
+    const { min, max, row, gutter } = sidePanelWidthLimits();
+    const chartWidth = document.getElementById('generalWorkspacePanel').getBoundingClientRect().width;
+    resizer.setAttribute('aria-valuemin', String(Math.round(row - gutter - max)));
+    resizer.setAttribute('aria-valuemax', String(Math.round(row - gutter - min)));
+    resizer.setAttribute('aria-valuenow', String(Math.round(chartWidth)));
+  }
+
+  function initializeSideResizer() {
+    const resizer = document.getElementById('stockSideResizer');
+    if (!resizer) return;
+    let startWidth = 0;
+    let previewWidth = 0;
+    let limits = null;
+    const clearPreview = () => resizer.style.removeProperty('--resizer-shift');
+    // While dragging, only the splitter's guide line follows the pointer; the chart and the side panel take the new
+    // width once, on release. Applied live, every step changed the chart's visible range, so the chart re-rendered,
+    // its overlays reloaded and the page re-laid out each frame: about 20 fps on a CPU slowed down four times.
+    attachResizeDrag(resizer, {
+      axis: 'x',
+      bodyClass: 'chart-panel-resizing-width',
+      onStart: () => {
+        limits = sidePanelWidthLimits();
+        startWidth = currentSidePanelWidth();
+        previewWidth = startWidth;
+      },
+      // The splitter is the chart's right edge: dragging it right widens the chart and narrows the side panel.
+      onMove: delta => {
+        previewWidth = Math.min(limits.max, Math.max(limits.min, startWidth - delta));
+        resizer.style.setProperty('--resizer-shift', `${startWidth - previewWidth}px`);
+      },
+      onCancel: clearPreview,
+      onEnd: () => {
+        clearPreview();
+        if (Math.round(previewWidth) !== Math.round(startWidth)) chooseSidePanelWidth(previewWidth);
+      }
+    });
+    resizer.addEventListener('keydown', event => {
+      const { min, max } = sidePanelWidthLimits();
+      const width = currentSidePanelWidth();
+      const step = event.shiftKey ? 50 : 10;
+      let next = null;
+      if (event.key === 'ArrowLeft') next = width + step;
+      if (event.key === 'ArrowRight') next = width - step;
+      if (event.key === 'Home') next = max;
+      if (event.key === 'End') next = min;
+      if (next === null) return;
+      event.preventDefault();
+      chooseSidePanelWidth(Math.min(max, Math.max(min, next)));
+    });
+    resizer.addEventListener('dblclick', () => chooseSidePanelWidth(null));
+    updateSideResizerValue();
+  }
+
+  // ---- "Reset size": the chart's height, width and pane split back to their defaults
+
+  /** A chosen width counts only while the chart shares its row: a narrower window shows the chart at full width. */
+  function chartSizeIsCustom() {
+    return chosenChartHeight !== null || (chosenSidePanelWidth !== null && sideBySideLayout())
+            || indicatorManager?.hasCustomPaneHeights?.() === true;
+  }
+
+  function updateChartSizeReset() {
+    const button = document.getElementById('chartSizeReset');
+    if (!button) return;
+    const custom = chartSizeIsCustom();
+    // Focus would fall to the page when the button it is on disappears; the height handle is next to it.
+    if (!custom && document.activeElement === button) {
+      document.querySelector('#priceChartPanel .chart-resize-handle')?.focus({ preventScroll: true });
+    }
+    button.hidden = !custom;
+  }
+
+  function resetChartSize() {
+    chooseChartHeight(null);
+    chooseSidePanelWidth(null);
+    indicatorManager?.resetPaneHeights?.();
+    updateChartSizeReset();
+  }
+
+  /**
+   * Pointer drags on a resize handle. Nothing changes until the pointer has moved RESIZE_DRAG_THRESHOLD pixels; then
+   * onMove gets the distance from where the drag started, at most once a frame. Escape during the drag, or a pointer
+   * the browser cancels, calls onCancel to put back the size the drag started from.
+   */
+  function attachResizeDrag(handle, { axis, bodyClass, onStart, onMove, onCancel, onEnd }) {
+    let drag = null;
+    let frame = null;
+    const position = event => (axis === 'x' ? event.clientX : event.clientY);
+    const flush = () => {
+      frame = null;
+      if (drag?.moved) onMove(drag.delta);
+    };
+    const finish = commit => {
+      if (!drag) return;
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+        frame = null;
+        if (commit && drag.moved) onMove(drag.delta);
+      }
+      const { pointerId, moved } = drag;
+      drag = null;
+      handle.classList.remove('is-resizing');
+      document.body.classList.remove(bodyClass);
+      if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId);
+      if (!moved) return;
+      if (commit) onEnd?.();
+      else onCancel();
+    };
+
+    handle.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || drag) return;
+      drag = { pointerId: event.pointerId, start: position(event), delta: 0, moved: false };
+      onStart();
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add('is-resizing');
+      document.body.classList.add(bodyClass);
+      event.preventDefault();
+    });
+    handle.addEventListener('pointermove', event => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      drag.delta = position(event) - drag.start;
+      if (!drag.moved && Math.abs(drag.delta) < RESIZE_DRAG_THRESHOLD) return;
+      drag.moved = true;
+      frame ??= window.requestAnimationFrame(flush);
+    });
+    handle.addEventListener('pointerup', () => finish(true));
+    handle.addEventListener('pointercancel', () => finish(false));
+    handle.addEventListener('lostpointercapture', () => finish(true));
+    // Capture phase, so Escape ends the drag before it closes menus or cards on the page.
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !drag) return;
+      event.preventDefault();
+      event.stopPropagation();
+      finish(false);
+    }, true);
   }
 
   function setResizableChartHeight(handle, requestedHeight) {
@@ -4799,35 +5006,21 @@
               || Number(handle.dataset.chartResizeDefault);
       handle.setAttribute('aria-valuenow', String(Math.round(initialHeight)));
 
-      let activePointerId = null;
-      let startY = 0;
       let startHeight = 0;
-
-      const finishResize = () => {
-        if (activePointerId === null) return;
-        activePointerId = null;
-        handle.classList.remove('is-resizing');
-        document.body.classList.remove('chart-panel-resizing');
-      };
-
-      handle.addEventListener('pointerdown', event => {
-        if (event.button !== 0) return;
-        activePointerId = event.pointerId;
-        startY = event.clientY;
-        startHeight = resizableHeight(handle, target);
-        handle.setPointerCapture(event.pointerId);
-        handle.classList.add('is-resizing');
-        document.body.classList.add('chart-panel-resizing');
-        event.preventDefault();
+      let startChosen = null;
+      attachResizeDrag(handle, {
+        axis: 'y',
+        bodyClass: 'chart-panel-resizing',
+        onStart: () => {
+          startHeight = resizableHeight(handle, target);
+          startChosen = chosenChartHeight;
+        },
+        onMove: delta => setResizableChartHeight(handle, startHeight + delta),
+        onCancel: () => {
+          if (handle.dataset.chartResizeTarget === 'priceChartStage') chooseChartHeight(startChosen);
+          else setResizableChartHeight(handle, startHeight);
+        }
       });
-
-      handle.addEventListener('pointermove', event => {
-        if (event.pointerId !== activePointerId) return;
-        setResizableChartHeight(handle, startHeight + event.clientY - startY);
-      });
-      handle.addEventListener('pointerup', finishResize);
-      handle.addEventListener('pointercancel', finishResize);
-      handle.addEventListener('lostpointercapture', finishResize);
 
       handle.addEventListener('keydown', event => {
         const currentHeight = resizableHeight(handle, target);
@@ -4847,6 +5040,10 @@
         else setResizableChartHeight(handle, Number(handle.dataset.chartResizeDefault));
       });
     });
+
+    initializeSideResizer();
+    document.getElementById('chartSizeReset')?.addEventListener('click', resetChartSize);
+    updateChartSizeReset();
   }
 
   // Wide screens keep the chart in view and show the other sections in a side panel beside it (app.css lays
@@ -4860,6 +5057,7 @@
     const tabs = [...document.querySelectorAll('[data-stock-workspace-tab]')];
 
     document.documentElement.classList.toggle('stock-workspace-side-by-side', sideBySide);
+    updateChartSizeReset();
     tabs.forEach(tab => {
       const isActive = tab.dataset.stockWorkspaceTab === nextSection;
       tab.classList.toggle('active', isActive);
