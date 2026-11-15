@@ -428,21 +428,39 @@
         <button type="button" class="chart-range-button" data-chart-scale="auto" aria-pressed="true" title="Fit the price scale to the visible candles" th:title="#{stock.scale.autoTitle}" th:text="#{stock.scale.auto}">Auto</button>
       </div>
     </div>
-    <div class="chart-resize-handle"
-         data-chart-resize-target="priceChartStage"
-         data-chart-resize-min="260"
-         data-chart-resize-max="1200"
-         data-chart-resize-default="490"
-         role="separator"
-         aria-label="Resize the Price action chart"
-         aria-orientation="horizontal"
-         aria-valuemin="260"
-         aria-valuemax="1200"
-         aria-valuenow="490"
-         tabindex="0" th:aria-label="#{stock.resizePriceAria}"><span aria-hidden="true"></span><small th:text="#{stock.dragResize}">Drag to resize</small></div>
+    <!-- The handle sets the chart's height; "Reset size" shows once the height, width or pane split differs from the default. -->
+    <div class="chart-resize-bar">
+      <div class="chart-resize-handle"
+           data-chart-resize-target="priceChartStage"
+           data-chart-resize-min="260"
+           data-chart-resize-max="1200"
+           data-chart-resize-default="490"
+           role="separator"
+           aria-label="Resize the Price action chart"
+           aria-orientation="horizontal"
+           aria-valuemin="260"
+           aria-valuemax="1200"
+           aria-valuenow="490"
+           title="Drag to change the chart's height. Double-click for the default height."
+           tabindex="0" th:aria-label="#{stock.resizePriceAria}" th:title="#{stock.resizeHeightTitle}"><span aria-hidden="true"></span><small th:text="#{stock.dragResize}">Drag to resize</small></div>
+      <button id="chartSizeReset" type="button" class="chart-range-button chart-size-reset"
+              title="Back to the default height, width and pane sizes" th:title="#{stock.resetSizeTitle}"
+              hidden th:text="#{stock.resetSize}">Reset size</button>
+    </div>
   </section>
 
   </div>
+
+  <!-- From 1360px the chart and the side panel share a row; this splitter moves the boundary between them.
+       stock-workspace.js keeps both within their limits, and the stylesheet does again when the window narrows. -->
+  <div id="stockSideResizer"
+       class="stock-side-resizer"
+       role="separator"
+       aria-orientation="vertical"
+       aria-controls="generalWorkspacePanel"
+       aria-label="Change the chart's width" th:aria-label="#{stock.resizeWidthAria}"
+       title="Drag to change the chart's width. Double-click for the default width." th:title="#{stock.resizeWidthTitle}"
+       tabindex="0"><span aria-hidden="true"></span></div>
 
   <div id="technicalAnalysisWorkspacePanel"
        class="stock-workspace-panel"

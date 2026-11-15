@@ -814,6 +814,20 @@ class FrontendSecurityTest {
         assertTrue(stylesheet.contains(".chart-resize-handle"));
         assertTrue(stylesheet.contains("cursor: ns-resize"));
         assertTrue(stylesheet.contains("touch-action: none"));
+
+        // Beside the side panel the chart's width follows a splitter, kept within limits the stylesheet enforces too,
+        // and one button puts the height, width and pane split back to their defaults.
+        assertTrue(stock.contains("id=\"stockSideResizer\""));
+        assertTrue(stock.contains("aria-orientation=\"vertical\""));
+        assertTrue(stock.contains("attachResizeDrag(resizer, {"));
+        assertTrue(stock.contains("RESIZE_DRAG_THRESHOLD"));
+        assertTrue(stock.contains("indicatorManager?.setExtra('sidePanelWidth', chosenSidePanelWidth)"));
+        assertTrue(stock.contains("id=\"chartSizeReset\""));
+        assertTrue(stock.contains("addEventListener('click', resetChartSize)"));
+        assertTrue(stock.contains("indicatorManager?.resetPaneHeights?.()"));
+        String workspaceStylesheet = Files.readString(Path.of("src/main/resources/static/css/app.css"));
+        assertTrue(workspaceStylesheet.contains("clamp(360px, min(var(--stock-side-width, 440px), 100% - 660px), 720px)"));
+        assertTrue(workspaceStylesheet.contains("cursor: col-resize"));
     }
 
     @Test

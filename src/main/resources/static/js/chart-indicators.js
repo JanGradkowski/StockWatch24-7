@@ -866,7 +866,24 @@
                 this.applyPaneHeights();
                 this.positionLegends();
                 this.scheduleSave();
+                this.onPaneHeightsChanged?.();
             }
+        }
+
+        /** True when a pane on the chart now has a height the user dragged (removed panes' heights don't count). */
+        hasCustomPaneHeights() {
+            return this.slots.some(slot => finite(this.paneHeights[slot]));
+        }
+
+        /** The default split between the panes again, and no maximized pane. */
+        resetPaneHeights() {
+            this.paneHeights = {};
+            const wasMaximized = Boolean(this.maximized);
+            this.maximized = null;
+            this.applyPaneHeights();
+            this.positionLegends();
+            if (wasMaximized) this.renderLegends();
+            this.scheduleSave();
         }
 
         movePane(id, direction) {
