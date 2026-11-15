@@ -6985,7 +6985,7 @@ body.chart-panel-resizing * {
     color: #ffd18a;
 }
 
-.historical-candlestick-card-navigation {
+.hover-card-navigation {
     display: grid;
     grid-template-columns: 30px 1fr 30px;
     gap: 0.45rem;
@@ -6993,11 +6993,11 @@ body.chart-panel-resizing * {
     margin-top: 0.7rem;
 }
 
-.historical-candlestick-card-navigation[hidden] {
+.hover-card-navigation[hidden] {
     display: none;
 }
 
-.historical-candlestick-card-navigation button {
+.hover-card-navigation button {
     height: 28px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 7px;
@@ -7006,7 +7006,14 @@ body.chart-panel-resizing * {
     cursor: pointer;
 }
 
-.historical-candlestick-card-navigation span {
+.hover-card-navigation button:hover,
+.hover-card-navigation button:focus-visible {
+    border-color: rgba(123, 140, 255, 0.34);
+    color: var(--accent);
+    outline: none;
+}
+
+.hover-card-navigation span {
     color: var(--muted-text);
     font-size: var(--fs-xs);
     font-weight: 720;
@@ -7190,6 +7197,11 @@ html[data-theme='light'] .elliott-wave-hover-card {
     border-color: rgba(75, 91, 230, 0.25);
     background: rgba(255, 255, 255, 0.97);
     box-shadow: 0 18px 40px rgba(45, 58, 43, 0.22);
+}
+
+html[data-theme='light'] .hover-card-navigation button {
+    border-color: rgba(75, 91, 230, 0.22);
+    background: rgba(75, 91, 230, 0.05);
 }
 
 html[data-theme='light'] .elliott-wave-card-outcome strong.positive {

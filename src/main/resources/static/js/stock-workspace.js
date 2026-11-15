@@ -103,6 +103,8 @@
   let harmonicHitTargetFrame = null;
   let harmonicCardHovered = false;
   let harmonicCardPinned = false;
+  let activeHarmonicOverlays = [];
+  let activeHarmonicOverlayIndex = 0;
   let harmonicCardHideTimer = null;
   let elliottHierarchyOverlay = null;
   let elliottSignalCards = new Map();
@@ -1197,6 +1199,10 @@
       });
       document.getElementById('harmonicFormationCardClose')
               .addEventListener('click', hideHarmonicFormationCard);
+      document.getElementById('previousHarmonicFormation')
+              .addEventListener('click', () => moveHarmonicFormationCard(-1));
+      document.getElementById('nextHarmonicFormation')
+              .addEventListener('click', () => moveHarmonicFormationCard(1));
       document.addEventListener('keydown', event => {
         if (event.key === 'Escape' && activeElliottSegment) hideElliottWaveCard();
         if (event.key === 'Escape' && !harmonicCard.hidden) hideHarmonicFormationCard();
@@ -1792,7 +1798,7 @@
       if (requestId !== harmonicRequestSequence || currentInterval !== interval || !harmonicOverlaysEnabled) return;
       clearHarmonicOverlays();
       const formations = Array.isArray(history.formations) ? history.formations : [];
-      formations.forEach(renderHarmonicFormation);
+      harmonicFormationGroups(formations).forEach(renderHarmonicFormationGroup);
       rebuildHarmonicHitTargets();
       if (formations.length === 0) {
         status.textContent = i18n.t('sw.harmonic.none');
@@ -1813,9 +1819,49 @@
     }
   }
 
-  function renderHarmonicFormation(formation) {
-    const points = Array.isArray(formation.points) ? formation.points : [];
-    if (points.length !== 4 && points.length !== 5) return;
+  // Formations that finish on the same pivot share one D marker and one hover target; otherwise the
+  // targets stack and only the top one (often the standalone AB=CD) can ever be opened.
+  function harmonicFormationGroups(formations) {
+    const groups = new Map();
+    formations.forEach(formation => {
+      const points = Array.isArray(formation.points) ? formation.points : [];
+      if (points.length !== 4 && points.length !== 5) return;
+      const endpoint = points.at(-1);
+      const key = `${formation.direction}:${Number(endpoint.timestamp)}:${Number(endpoint.price)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(formation);
+    });
+    return [...groups.values()].map(group => group.sort(compareHarmonicFormations));
+  }
+
+  // A named five-point formation is the more specific read of a shared D than the four-point AB=CD.
+  function compareHarmonicFormations(first, second) {
+    return second.points.length - first.points.length
+            || (Number(second.qualityScore) || 0) - (Number(first.qualityScore) || 0)
+            || String(first.pattern).localeCompare(String(second.pattern));
+  }
+
+  function renderHarmonicFormationGroup(group) {
+    // Near-duplicates of one pattern (a pivot a candle apart) stay drawn but are listed once.
+    const listed = group.filter((formation, index) =>
+            group.findIndex(other => other.pattern === formation.pattern) === index);
+    const overlays = group.map(formation =>
+            renderHarmonicFormation(formation, formation === group[0] ? harmonicEndpointText(listed) : ''));
+    const cardOverlays = overlays.filter(overlay => listed.includes(overlay.formation));
+    overlays.forEach(overlay => { overlay.group = cardOverlays; });
+  }
+
+  function harmonicEndpointText(formations) {
+    const [first] = formations;
+    const label = first.points.at(-1).label;
+    if (formations.length === 1) return `${label} · ${harmonicDisplayName(first)} · Q${first.qualityScore}`;
+    const names = formations.map(formation =>
+            `${harmonicPatternName(formation.pattern)} Q${formation.qualityScore}`).join(' + ');
+    return `${label} · ${i18n.t(first.direction === 'BEARISH' ? 'sw.harmonic.bearish' : 'sw.harmonic.bullish', names)}`;
+  }
+
+  function renderHarmonicFormation(formation, endpointText) {
+    const points = formation.points;
     const colors = harmonicOverlayColors(formation.direction);
     const series = addPriceOverlayLine({
       color: colors.line,
@@ -1829,18 +1875,17 @@
       time: timestampToChartDate(Number(point.timestamp)),
       value: Number(point.price)
     })));
-    const patternLabel = harmonicDisplayName(formation);
     series.setMarkers(points.map((point, index) => ({
       time: timestampToChartDate(Number(point.timestamp)),
       position: point.pivotType === 'HIGH' ? 'aboveBar' : 'belowBar',
       color: colors.marker,
       shape: index === points.length - 1 ? (formation.direction === 'BEARISH' ? 'arrowDown' : 'arrowUp') : 'circle',
-      text: index === points.length - 1
-              ? `${point.label} · ${patternLabel} · Q${formation.qualityScore}`
-              : point.label
+      text: index === points.length - 1 ? endpointText : point.label
     })));
     harmonicFormationSeries.push(series);
-    harmonicFormationOverlays.push({ series, formation });
+    const overlay = { series, formation, group: [] };
+    harmonicFormationOverlays.push(overlay);
+    return overlay;
   }
 
   function clearHarmonicOverlays() {
@@ -1858,13 +1903,16 @@
     layer.replaceChildren();
     harmonicFormationOverlays.forEach(overlay => {
       const endpoint = overlay.formation.points?.at(-1);
-      if (!endpoint) return;
+      if (!endpoint || overlay.group[0] !== overlay) return;
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `elliott-wave-hit-target harmonic-formation-hit-target ${overlay.formation.direction === 'BEARISH' ? 'sell' : 'buy'}`;
       button.style.borderColor = HARMONIC_FORMATION_COLOR;
       button.style.color = HARMONIC_FORMATION_COLOR;
-      button.setAttribute('aria-label', i18n.t('sw.harmonic.pointAria', endpoint.label, harmonicDisplayName(overlay.formation)));
+      button.setAttribute('aria-label', overlay.group.length > 1
+              ? i18n.t('sw.harmonic.groupPointAria', endpoint.label,
+                      overlay.group.map(item => harmonicDisplayName(item.formation)).join(', '))
+              : i18n.t('sw.harmonic.pointAria', endpoint.label, harmonicDisplayName(overlay.formation)));
       button.title = i18n.t('sw.harmonic.openSummary');
       button._harmonicOverlay = overlay;
       button.addEventListener('mouseenter', () => showHarmonicFormationCard(overlay, false));
@@ -1908,6 +1956,25 @@
     hideHistoricalCandlestickCard();
     clearTimeout(harmonicCardHideTimer);
     harmonicCardPinned = pinned;
+    activeHarmonicOverlays = overlay.group?.length ? overlay.group : [overlay];
+    activeHarmonicOverlayIndex = Math.max(0, activeHarmonicOverlays.indexOf(overlay));
+    renderActiveHarmonicFormationCard();
+    const card = document.getElementById('harmonicFormationHoverCard');
+    card.hidden = false;
+    positionHarmonicFormationCard(overlay);
+  }
+
+  function moveHarmonicFormationCard(direction) {
+    if (activeHarmonicOverlays.length <= 1) return;
+    activeHarmonicOverlayIndex = (activeHarmonicOverlayIndex + direction + activeHarmonicOverlays.length)
+            % activeHarmonicOverlays.length;
+    renderActiveHarmonicFormationCard();
+    positionHarmonicFormationCard(activeHarmonicOverlays[activeHarmonicOverlayIndex]);
+  }
+
+  function renderActiveHarmonicFormationCard() {
+    const overlay = activeHarmonicOverlays[activeHarmonicOverlayIndex];
+    if (!overlay) return;
     harmonicFormationOverlays.forEach(item => item.series.applyOptions({
       lineWidth: item === overlay ? 4 : 2
     }));
@@ -1951,9 +2018,9 @@
             i18n.t('sw.harmonic.cardNote', endpoint.label, i18n.number(endpoint.price, 4));
     document.getElementById('harmonicFormationCardLink').href =
             `/stock/${encodedTicker}/harmonic-formations/${encodeURIComponent(currentInterval)}/${encodeURIComponent(formation.pattern)}/${encodeURIComponent(endpoint.timestamp)}`;
-    const card = document.getElementById('harmonicFormationHoverCard');
-    card.hidden = false;
-    positionHarmonicFormationCard(overlay);
+    document.getElementById('harmonicFormationCardNavigation').hidden = activeHarmonicOverlays.length <= 1;
+    document.getElementById('harmonicFormationCardPosition').textContent =
+            i18n.t('sw.harmonic.groupPosition', activeHarmonicOverlayIndex + 1, activeHarmonicOverlays.length);
   }
 
   function harmonicPatternName(pattern) {
@@ -1994,6 +2061,7 @@
     clearTimeout(harmonicCardHideTimer);
     harmonicCardPinned = false;
     harmonicCardHovered = false;
+    activeHarmonicOverlays = [];
     harmonicFormationOverlays.forEach(item => item.series.applyOptions({ lineWidth: 2 }));
     const card = document.getElementById('harmonicFormationHoverCard');
     if (card) card.hidden = true;
