@@ -4,6 +4,7 @@ import org.example.stockwatch247.model.AlertEvent;
 import org.example.stockwatch247.model.AlertRule;
 import org.example.stockwatch247.model.Candle;
 import org.example.stockwatch247.model.EnrichedCandle;
+import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.AlertPatternFamily;
 import org.example.stockwatch247.model.enums.CandlePattern;
 import org.example.stockwatch247.model.enums.ElliottSignalStage;
@@ -903,6 +904,10 @@ public class ScheduledAlertService {
         if (elliottCandles.isEmpty()) return;
         for (AlertRule rule : rules) {
             if (rule.getPatternFamily() != AlertPatternFamily.ELLIOTT_WAVE) continue;
+            List<AlertRule> otherFollows = rules.stream()
+                    .filter(other -> other != rule && other.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE
+                            && sameAccount(other, rule))
+                    .toList();
             ElliottWaveDetectionService detector = elliottDetector(rule);
             int minimumConfidence = detector.minimumSignalConfidence();
             Object settings = elliottWavePreferencesService == null ? "factory"
@@ -929,6 +934,7 @@ public class ScheduledAlertService {
                         .findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
                                 rule, candidate.developmentKey())
                         .orElse(null);
+                if (heldByAnotherFollow(otherFollows, event, candidate)) continue;
                 if (event == null) {
                     event = alertEventRepository
                             .findFirstByAlertRuleAndPatternAndSignalCandleTimestampOrderByIdAsc(
@@ -1121,6 +1127,27 @@ public class ScheduledAlertService {
     private boolean countsChosenDevelopments() {
         return AnalysisComputationScope.memo(List.of("previous-count-chosen-developments"),
                 () -> analysisPool != null && analysisPool.checksSideBySide());
+    }
+
+    /**
+     * Whether another of the account's Elliott follows of this stock and interval already holds a developing
+     * signal: an older event still tracking the same count, or an older event at the same pattern and candle.
+     * A count's expected move changes direction at every stage, so an account that follows both BUY and SELL
+     * Elliott signals would otherwise get a second copy of the count from the other follow. The count stays with
+     * the follow that saw it first, and the account sees each signal once, as it would with one follow.
+     */
+    private boolean heldByAnotherFollow(List<AlertRule> otherFollows, AlertEvent own,
+                                        ElliottWaveDetectionService.DevelopingImpulse candidate) {
+        if (otherFollows.isEmpty()) return false;
+        return alertEventRepository.findElliottDevelopmentHeldByRules(otherFollows, candidate.developmentKey(),
+                        candidate.pattern(), candidate.confirmationTimestamp(), PageRequest.of(0, 1)).stream()
+                .anyMatch(held -> own == null || own.getId() == null || held.getId() < own.getId());
+    }
+
+    private static boolean sameAccount(AlertRule first, AlertRule second) {
+        User a = first.getUser();
+        User b = second.getUser();
+        return a == b || a != null && b != null && a.getId() != null && a.getId().equals(b.getId());
     }
 
     private boolean hasElliottCycleStageForUser(
