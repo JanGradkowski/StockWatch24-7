@@ -1,0 +1,360 @@
+/* The public landing page (index.html). Every rule is scoped to body.lp, so the About page keeps its own bar.
+   Flat surfaces and borders only: no blur, no large shadows and no animation, for weaker GPUs. */
+
+:root[data-theme] body.lp {
+    --lp-max: 1180px;
+    --lp-gutter: clamp(16px, 4vw, 40px);
+    --lp-line: var(--glass-border);
+    --lp-up: var(--accent-color);
+    --lp-down: var(--danger);
+    --lp-tint: color-mix(in srgb, var(--primary-color) 12%, transparent);
+    min-height: 100vh;
+    margin: 0;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-sans);
+    line-height: var(--lh-normal);
+}
+
+body.lp .lp-wrap { width: 100%; max-width: calc(var(--lp-max) + 2 * var(--lp-gutter)); margin: 0 auto; padding: 0 var(--lp-gutter); box-sizing: border-box; }
+body.lp :is(h1, h2, h3, p, ul, ol, figure) { margin: 0; }
+body.lp :is(ul, ol) { padding: 0; list-style: none; }
+body.lp :is(#how, #features, #main-content) { scroll-margin-top: 80px; }
+body.lp main:focus { outline: none; }
+
+/* ------------------------------------------------------------------ top bar */
+
+:root[data-theme] body.lp .lp-header {
+    position: sticky; top: 0; z-index: 100;
+    border-bottom: 1px solid var(--lp-line);
+    background: var(--bg-color);
+}
+:root[data-theme] body.lp .navbar.lp-nav {
+    position: static; display: flex; gap: 12px; align-items: center;
+    width: 100%; max-width: calc(var(--lp-max) + 2 * var(--lp-gutter)); min-height: 64px; box-sizing: border-box;
+    margin: 0 auto; padding: 0 var(--lp-gutter);
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none;
+}
+:root[data-theme] body.lp .lp-nav .logo { flex: none; margin-right: 20px; }
+body.lp .lp-nav-links { display: flex; flex: 1 1 auto; gap: 4px; align-items: center; }
+:root[data-theme] body.lp .lp-nav-links a {
+    display: inline-flex; align-items: center; min-height: 40px; padding: 0 12px; border-radius: 8px;
+    color: var(--text-soft); font-size: var(--fs-md); font-weight: 550; text-decoration: none; white-space: nowrap;
+}
+:root[data-theme] body.lp .lp-nav-links a:hover { background: var(--surface-raised); color: var(--text-color); }
+body.lp .lp-nav-actions { display: flex; flex: none; gap: 12px; align-items: center; margin-left: auto; }
+:root[data-theme] body.lp .lp-nav-actions a { min-height: 40px; white-space: nowrap; }
+:root[data-theme] body.lp .lp-nav .theme-toggle.theme-toggle-in-navbar { position: static; flex: none; transform: none; }
+:root[data-theme] body.lp .lp-nav .theme-toggle.theme-toggle-in-navbar:hover { transform: none; }
+
+/* ------------------------------------------------------------------ shared type and controls */
+
+:root[data-theme] body.lp .lp-eyebrow,
+:root[data-theme] body.lp .lp-kicker {
+    margin-bottom: 12px; color: var(--primary-strong); font-size: var(--fs-sm); font-weight: 600; letter-spacing: .01em;
+}
+:root[data-theme="light"] body.lp :is(.lp-eyebrow, .lp-kicker) { color: var(--primary-color); }
+:root[data-theme] body.lp :is(h1, h2) { color: var(--text-color); font-weight: 700; letter-spacing: -0.03em; text-wrap: balance; }
+:root[data-theme] body.lp h1 { max-width: 15ch; overflow-wrap: break-word; font-size: clamp(2.5rem, 1.6rem + 3vw, 3.75rem); line-height: 1.2; padding-bottom: .06em; }
+:root[data-theme] body.lp h2 { font-size: clamp(1.75rem, 1.3rem + 1.5vw, 2.5rem); line-height: 1.18; }
+:root[data-theme] body.lp h3 { color: var(--text-color); font-size: var(--fs-lg); font-weight: 650; letter-spacing: -0.01em; line-height: var(--lh-tight); }
+:root[data-theme] body.lp p { color: var(--text-soft); text-wrap: pretty; }
+
+body.lp .lp-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+:root[data-theme] body.lp .lp-btn-lg {
+    display: inline-flex; gap: 8px; align-items: center; justify-content: center;
+    min-height: 48px; padding: 0 20px; font-size: var(--fs-base); text-decoration: none; white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ hero */
+
+body.lp .lp-hero {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.04fr); gap: 56px; align-items: center;
+    padding-top: 72px; padding-bottom: 72px;
+}
+:root[data-theme] body.lp .lp-lead { max-width: 34rem; margin-top: 20px; font-size: var(--fs-lg); line-height: var(--lh-relaxed); }
+body.lp .lp-hero .lp-actions { margin-top: 32px; }
+body.lp .lp-checks { display: grid; gap: 10px; margin-top: 32px; }
+:root[data-theme] body.lp .lp-checks li { display: flex; gap: 10px; align-items: center; color: var(--text-soft); font-size: var(--fs-md); }
+body.lp .lp-checks svg {
+    flex: none; width: 20px; height: 20px; padding: 2px; box-sizing: border-box; border-radius: 999px;
+    background: var(--lp-tint); fill: none; stroke: var(--primary-strong); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+}
+:root[data-theme="light"] body.lp .lp-checks svg { stroke: var(--primary-color); }
+
+/* The illustrative product card. */
+body.lp .lp-preview { min-width: 0; }
+:root[data-theme] body.lp .lp-card {
+    padding: 20px; border: 1px solid var(--lp-line); border-radius: var(--radius-lg);
+    background: var(--surface); box-shadow: var(--shadow-sm);
+}
+body.lp .lp-card-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
+body.lp .lp-card-id { display: grid; grid-template-columns: auto auto; gap: 2px 10px; align-items: center; justify-content: start; }
+:root[data-theme] body.lp .lp-sym { font-family: var(--font-mono); font-size: var(--fs-xl); font-weight: 700; letter-spacing: -0.01em; }
+:root[data-theme] body.lp .lp-co { grid-column: 1 / -1; color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] body.lp .lp-chip {
+    justify-self: start; padding: 2px 8px; border: 1px solid var(--lp-line); border-radius: 999px;
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600;
+}
+body.lp .lp-quote { display: grid; justify-items: end; gap: 2px; font-family: var(--font-mono); }
+:root[data-theme] body.lp .lp-quote strong { font-size: var(--fs-xl); font-weight: 650; }
+:root[data-theme] body.lp .lp-quote span { font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] body.lp .lp-up-text { color: var(--lp-up); }
+
+body.lp .lp-chart-frame { margin-top: 16px; overflow: hidden; }
+body.lp .lp-chart { display: block; width: 100%; height: auto; }
+body.lp .lp-chart .lp-grid-line { stroke: var(--lp-line); stroke-width: 1; }
+body.lp .lp-chart g line { stroke-width: 1.4; }
+body.lp .lp-chart .lp-up line { stroke: var(--lp-up); }
+body.lp .lp-chart .lp-up rect { fill: var(--lp-up); }
+body.lp .lp-chart .lp-down line { stroke: var(--lp-down); }
+body.lp .lp-chart .lp-down rect { fill: var(--lp-down); }
+body.lp .lp-chart .lp-mark { fill: var(--lp-tint); stroke: var(--primary-color); stroke-width: 1.2; stroke-dasharray: 3 3; }
+body.lp .lp-chart .lp-level { stroke-width: 1.2; stroke-dasharray: 5 4; }
+body.lp .lp-chart .lp-level-target { stroke: var(--lp-up); }
+body.lp .lp-chart .lp-level-entry { stroke: var(--primary-color); }
+body.lp .lp-chart .lp-level-stop { stroke: var(--lp-down); }
+
+body.lp .lp-levels { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; font-size: var(--fs-sm); }
+:root[data-theme] body.lp .lp-levels li { display: inline-flex; gap: 6px; align-items: center; color: var(--muted-text); }
+body.lp .lp-levels li::before { width: 14px; height: 0; border-top: 2px dashed currentColor; content: ""; }
+:root[data-theme] body.lp .lp-levels b { color: var(--text-color); font-family: var(--font-mono); font-weight: 600; }
+:root[data-theme] body.lp .lp-levels-target::before { color: var(--lp-up); }
+:root[data-theme] body.lp .lp-levels-entry::before { color: var(--primary-color); }
+:root[data-theme] body.lp .lp-levels-stop::before { color: var(--lp-down); }
+
+body.lp .lp-outlook { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--lp-line); }
+body.lp .lp-outlook-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-content: space-between; font-size: var(--fs-md); }
+:root[data-theme] body.lp .lp-outlook-row > span { color: var(--text-soft); }
+:root[data-theme] body.lp .lp-outlook-row strong { font-weight: 650; }
+body.lp .lp-meter {
+    position: relative; height: 6px; margin-top: 10px; border-radius: 999px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--lp-down) 55%, transparent), var(--surface-raised) 50%, color-mix(in srgb, var(--lp-up) 55%, transparent));
+}
+body.lp .lp-meter-mark {
+    position: absolute; top: 50%; left: 73%; width: 14px; height: 14px; box-sizing: border-box;
+    border: 3px solid var(--surface); border-radius: 999px; background: var(--lp-up); transform: translate(-50%, -50%);
+}
+:root[data-theme] body.lp .lp-meter-scale { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted-text); font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+body.lp .lp-signals { margin-top: 16px; border-top: 1px solid var(--lp-line); }
+body.lp .lp-signals li { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--lp-line); }
+body.lp .lp-signals li:last-child { padding-bottom: 0; border-bottom: 0; }
+body.lp .lp-signal-name { display: grid; gap: 1px; min-width: 0; }
+:root[data-theme] body.lp .lp-signal-name strong { color: var(--text-color); font-size: var(--fs-md); font-weight: 600; }
+:root[data-theme] body.lp .lp-signal-name span { color: var(--muted-text); font-size: var(--fs-sm); }
+:root[data-theme] body.lp .lp-pill {
+    flex: none; padding: 3px 10px; border: 1px solid var(--lp-line); border-radius: 999px;
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap;
+}
+:root[data-theme] body.lp .lp-pill-accent { border-color: color-mix(in srgb, var(--primary-color) 50%, transparent); background: var(--lp-tint); color: var(--primary-strong); }
+:root[data-theme="light"] body.lp .lp-pill-accent { color: var(--primary-color); }
+:root[data-theme] body.lp .lp-preview figcaption { margin-top: 10px; color: var(--muted-text); font-size: var(--fs-sm); text-align: right; }
+
+
+/* ------------------------------------------------------------------ sections */
+
+body.lp .lp-section { padding-top: 96px; }
+/* The hero already ends with 72px of space, so the first section needs less above it. */
+body.lp .lp-hero + .lp-section { padding-top: 40px; }
+body.lp .lp-section-head { max-width: 46rem; margin-bottom: 40px; }
+:root[data-theme] body.lp .lp-section-head > p:not(.lp-eyebrow) { margin-top: 14px; font-size: var(--fs-lg); line-height: var(--lh-relaxed); }
+
+body.lp .lp-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: none; }
+/* Each step spans three shared rows (number, title, text), so a title that wraps keeps the bodies level. */
+body.lp .lp-steps li { display: grid; grid-row: span 3; grid-template-rows: subgrid; align-content: start; }
+:root[data-theme] body.lp .lp-steps li { padding: 24px; border: 1px solid var(--lp-line); border-radius: var(--radius-md); background: var(--surface); }
+:root[data-theme] body.lp .lp-step-number {
+    display: inline-grid; width: 32px; height: 32px; margin-bottom: 18px; place-items: center;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 55%, transparent); border-radius: 999px;
+    background: var(--lp-tint); color: var(--primary-strong); font-family: var(--font-mono); font-size: var(--fs-md); font-weight: 650;
+}
+:root[data-theme="light"] body.lp .lp-step-number { color: var(--primary-color); }
+:root[data-theme] body.lp :is(.lp-steps, .lp-grid) p { margin-top: 8px; font-size: var(--fs-md); line-height: var(--lh-relaxed); }
+
+/* Spotlights: copy beside a small illustrative panel. */
+:root[data-theme] body.lp .lp-spot {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start;
+    margin-bottom: 16px; padding: 40px; border: 1px solid var(--lp-line); border-radius: var(--radius-lg); background: var(--surface);
+}
+body.lp .lp-spot-flip .lp-spot-copy { order: 2; }
+/* The outlook's copy is far shorter than its seven-row breakdown, so it sits centred beside it. */
+:root[data-theme] body.lp .lp-spot.lp-spot-center { align-items: center; }
+/* Beside the tall breakdown a narrower copy column runs longer, so less space is left around it. */
+@media (min-width: 1025px) {
+    :root[data-theme] body.lp .lp-spot.lp-spot-center { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); }
+}
+/* The pattern sketches' box takes the copy's full height, with the sketches centred in it. */
+:root[data-theme] body.lp .lp-spot.lp-spot-stretch { align-items: stretch; }
+body.lp .lp-spot-stretch .lp-patterns { align-items: center; }
+:root[data-theme] body.lp .lp-more {
+    display: inline-flex; gap: 6px; align-items: center; min-height: 44px; margin-top: 12px;
+    color: var(--primary-strong); font-size: var(--fs-md); font-weight: 600; text-decoration: underline; text-underline-offset: 3px;
+}
+:root[data-theme="light"] body.lp .lp-more { color: var(--primary-color); }
+:root[data-theme] body.lp .lp-more:hover { color: var(--text-color); }
+:root[data-theme] body.lp .lp-spot-copy h3 { font-size: var(--fs-2xl); letter-spacing: -0.02em; }
+:root[data-theme] body.lp .lp-spot-copy > p:not(.lp-kicker) { margin-top: 12px; font-size: var(--fs-base); line-height: var(--lh-relaxed); }
+:root[data-theme] body.lp .lp-spot-visual { padding: 24px; border: 1px solid var(--lp-line); border-radius: var(--radius-md); background: var(--surface-soft); }
+
+body.lp .lp-breakdown { display: grid; gap: 10px; }
+body.lp .lp-bar-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr) 3rem; gap: 12px; align-items: center; font-size: var(--fs-md); }
+:root[data-theme] body.lp .lp-bar-row > span:first-child { color: var(--text-soft); line-height: var(--lh-tight); }
+:root[data-theme] body.lp .lp-bar-row b { color: var(--text-color); font-family: var(--font-mono); font-weight: 600; text-align: right; }
+body.lp .lp-bar { position: relative; height: 8px; border-radius: 999px; background: var(--surface-raised); }
+body.lp .lp-bar::after { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--muted-text); content: ""; }
+body.lp .lp-bar i { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+body.lp .lp-bar-pos { left: 50%; background: var(--lp-up); }
+body.lp .lp-bar-neg { right: 50%; background: var(--lp-down); }
+/* Bar half-widths are the category scores (+80, +40, −10, +50, +60, +42, +60) over 200; their average is +46. */
+body.lp .lp-bar-row:nth-child(1) i { width: 40%; }
+body.lp .lp-bar-row:nth-child(2) i { width: 20%; }
+body.lp .lp-bar-row:nth-child(3) i { width: 5%; }
+body.lp .lp-bar-row:nth-child(4) i { width: 25%; }
+body.lp .lp-bar-row:nth-child(5) i { width: 30%; }
+body.lp .lp-bar-row:nth-child(6) i { width: 21%; }
+body.lp .lp-bar-row:nth-child(7) i { width: 30%; }
+:root[data-theme] body.lp .lp-breakdown-note { color: var(--muted-text); font-size: var(--fs-sm); }
+body.lp .lp-breakdown-total { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--lp-line); font-size: var(--fs-md); }
+:root[data-theme] body.lp .lp-breakdown-total > span { color: var(--text-soft); }
+:root[data-theme] body.lp .lp-breakdown-total strong { font-weight: 650; }
+
+body.lp .lp-rule { display: grid; gap: 12px; }
+body.lp .lp-rule-line { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr); gap: 8px; align-items: start; }
+body.lp .lp-rule-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+:root[data-theme] body.lp .lp-rule-join { padding-top: 7px; color: var(--muted-text); font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] body.lp .lp-token {
+    padding: 6px 10px; border: 1px solid var(--lp-line); border-radius: 8px; background: var(--surface);
+    color: var(--text-color); font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 550;
+}
+:root[data-theme] body.lp .lp-token-op { border-color: color-mix(in srgb, var(--primary-color) 45%, transparent); background: var(--lp-tint); color: var(--primary-strong); font-family: var(--font-sans); }
+:root[data-theme="light"] body.lp .lp-token-op { color: var(--primary-color); }
+body.lp .lp-rule-preview { margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--lp-line); }
+body.lp .lp-rule-preview-head { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; font-size: var(--fs-sm); }
+:root[data-theme] body.lp .lp-rule-preview-head span { color: var(--text-soft); }
+:root[data-theme] body.lp .lp-rule-preview-head strong { color: var(--text-color); font-weight: 650; }
+body.lp .lp-rule-track {
+    position: relative; height: 28px; margin-top: 10px; border-radius: 6px;
+    background: repeating-linear-gradient(90deg, var(--surface-raised) 0 2px, transparent 2px 6px);
+}
+body.lp .lp-rule-track i { position: absolute; top: 3px; bottom: 3px; width: 3px; border-radius: 2px; background: var(--primary-color); transform: translateX(-50%); }
+body.lp .lp-rule-track i:nth-child(1) { left: 9%; }
+body.lp .lp-rule-track i:nth-child(2) { left: 23%; }
+body.lp .lp-rule-track i:nth-child(3) { left: 41%; }
+body.lp .lp-rule-track i:nth-child(4) { left: 58%; }
+body.lp .lp-rule-track i:nth-child(5) { left: 77%; }
+body.lp .lp-rule-track i:nth-child(6) { left: 94%; }
+
+/* Elliott and harmonic sketches: one line, labeled turning points, the accent only. */
+body.lp .lp-patterns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+body.lp .lp-pattern { min-width: 0; }
+/* Capped so the labels stay 13–15px whatever the column width. */
+body.lp .lp-pattern svg { display: block; width: 100%; max-width: 260px; height: auto; margin: 0 auto; overflow: visible; }
+body.lp .lp-pattern-line { fill: none; stroke: var(--primary-color); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+body.lp .lp-pattern-fill { fill: var(--lp-tint); stroke: none; }
+body.lp .lp-pattern-ratio { stroke: var(--muted-text); stroke-width: 1.2; stroke-dasharray: 4 4; }
+body.lp .lp-pattern-label text { fill: var(--text-color); font-family: var(--font-mono); font-size: 15px; font-weight: 700; text-anchor: middle; }
+:root[data-theme] body.lp .lp-pattern figcaption { margin-top: 12px; color: var(--text-soft); font-size: var(--fs-sm); text-align: center; }
+:root[data-theme] body.lp .lp-run-head { margin: 20px 0 0; color: var(--text-color); font-size: var(--fs-base); font-weight: 650; }
+:root[data-theme] body.lp .lp-run-head + p { margin-top: 6px; }
+
+body.lp .lp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+:root[data-theme] body.lp .lp-feature { padding: 24px; border: 1px solid var(--lp-line); border-radius: var(--radius-md); background: var(--surface); }
+:root[data-theme] body.lp .lp-icon {
+    display: inline-grid; width: 40px; height: 40px; margin-bottom: 16px; place-items: center;
+    border-radius: 10px; background: var(--lp-tint); color: var(--primary-strong);
+}
+:root[data-theme="light"] body.lp .lp-icon { color: var(--primary-color); }
+body.lp .lp-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ------------------------------------------------------------------ closing call to action and footer */
+
+body.lp .lp-cta { padding-top: 96px; padding-bottom: 96px; }
+:root[data-theme] body.lp .lp-cta-panel {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 32px; align-items: center;
+    padding: 48px; border: 1px solid var(--lp-line); border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, var(--lp-tint), transparent 60%), var(--surface);
+}
+:root[data-theme] body.lp .lp-cta-panel p { max-width: 38rem; margin-top: 12px; font-size: var(--fs-base); line-height: var(--lh-relaxed); }
+
+:root[data-theme] body.lp .lp-footer { border-top: 1px solid var(--lp-line); background: var(--bg-deep); }
+body.lp .lp-footer-inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 32px; align-items: start; padding-top: 32px; padding-bottom: 32px; }
+/* The 44px link row lines up with the logo's 30px row, not with the logo and tagline together. */
+body.lp .lp-footer-links { margin-top: -7px; }
+:root[data-theme] body.lp .lp-footer-brand p { margin-top: 8px; color: var(--muted-text); font-size: var(--fs-sm); }
+body.lp .lp-footer-links { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+:root[data-theme] body.lp .lp-footer-links a {
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 8px;
+    color: var(--text-soft); font-size: var(--fs-md); font-weight: 550; text-decoration: none;
+}
+:root[data-theme] body.lp .lp-footer-links a:hover { background: var(--surface-raised); color: var(--text-color); }
+:root[data-theme] body.lp .lp-footer-note { display: flex; flex-wrap: wrap; grid-column: 1 / -1; gap: 4px 16px; padding-top: 16px; border-top: 1px solid var(--lp-line); color: var(--muted-text); font-size: var(--fs-sm); }
+
+/* ------------------------------------------------------------------ narrower screens */
+
+@media (max-width: 1024px) {
+    body.lp .lp-hero { grid-template-columns: minmax(0, 1fr); gap: 48px; padding-top: 56px; }
+    :root[data-theme] body.lp .lp-spot { grid-template-columns: minmax(0, 1fr); gap: 28px; padding: 32px; }
+    body.lp .lp-spot-flip .lp-spot-copy { order: 0; }
+}
+
+@media (max-width: 900px) {
+    body.lp .lp-nav-cta { display: none; }
+    body.lp .lp-steps { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme] body.lp .lp-cta-panel { grid-template-columns: minmax(0, 1fr); padding: 32px; }
+    body.lp .lp-footer-inner { grid-template-columns: minmax(0, 1fr); }
+    body.lp .lp-footer-links { justify-content: flex-start; margin-top: 0; margin-left: -12px; }
+}
+
+@media (max-width: 640px) {
+    body.lp .lp-hero { gap: 40px; padding-top: 40px; padding-bottom: 56px; }
+    :root[data-theme] body.lp .lp-lead { font-size: var(--fs-base); }
+    body.lp .lp-actions > a { flex: 1 1 100%; }
+    body.lp .lp-section { padding-top: 72px; }
+    body.lp .lp-section-head { margin-bottom: 28px; }
+    body.lp .lp-grid { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme] body.lp .lp-card { padding: 16px; }
+    :root[data-theme] body.lp .lp-spot { padding: 24px 20px; }
+    :root[data-theme] body.lp .lp-spot-visual { padding: 18px 16px; }
+    /* Show the last 20 candles larger instead of all 29 as a sparkline; the crop falls between two candles. */
+    body.lp .lp-chart { width: 151.5%; margin-left: -51.5%; }
+    body.lp .lp-patterns { grid-template-columns: minmax(0, 1fr); }
+    /* Each alert condition gets the full width under its joining word, so it isn't split mid-phrase. */
+    body.lp .lp-rule-line { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    :root[data-theme] body.lp .lp-rule-join { padding-top: 0; }
+    body.lp .lp-rule-chips { gap: 6px; }
+    :root[data-theme] body.lp .lp-token { padding: 5px 8px; }
+    :root[data-theme] body.lp .lp-nav-actions a,
+    :root[data-theme] body.lp .lp-nav .theme-toggle.theme-toggle-in-navbar { min-height: 44px; }
+    :root[data-theme] body.lp .lp-nav .theme-toggle.theme-toggle-in-navbar { width: 44px; height: 44px; }
+    :root[data-theme] body.lp .logo { min-width: 44px; min-height: 44px; }
+    body.lp .lp-bar-row { grid-template-columns: 7rem minmax(0, 1fr) 2.75rem; gap: 10px; }
+    body.lp .lp-cta { padding-top: 72px; padding-bottom: 72px; }
+    :root[data-theme] body.lp .lp-cta-panel { padding: 28px 20px; }
+    :root[data-theme] body.lp .lp-preview figcaption { text-align: left; }
+    body.lp .lp-footer-links { display: grid; grid-template-columns: repeat(2, max-content); column-gap: 8px; }
+}
+
+/* Below 700px the section links leave the bar (the footer repeats them) and its sign-up button returns. */
+@media (max-width: 700px) {
+    body.lp .lp-nav-links { display: none; }
+    body.lp .lp-nav-cta { display: inline-flex; }
+}
+
+/* On phones the hero's own call to action sits right below the bar, so the bar keeps only Sign in. */
+@media (max-width: 520px) {
+    :root[data-theme] body.lp .lp-nav .logo { margin-right: 0; }
+    body.lp .lp-nav-cta { display: none; }
+}
+
+/* The longest Polish word in the headline needs a smaller size at the 320px reflow width. */
+@media (max-width: 380px) {
+    :root[data-theme] body.lp h1 { font-size: 2.125rem; }
+    /* The arrow is decoration; dropping it keeps the Polish label on one line in both panels. */
+    :root[data-theme] body.lp .lp-btn-lg { padding: 0 14px; font-size: 0.9375rem; }
+    body.lp .lp-btn-lg > span[aria-hidden] { display: none; }
+    :root[data-theme] body.lp .lp-cta-panel { padding: 24px 10px; }
+}
+
+/* The footer has room for the wordmark even where the top bar shows only the mark. */
+:root[data-theme] body.lp .lp-footer .logo-word { display: inline; }

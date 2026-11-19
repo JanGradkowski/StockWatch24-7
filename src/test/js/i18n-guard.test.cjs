@@ -12,7 +12,7 @@ const SCRIPTS = 'src/main/resources/static/js';
 const REPLACING = ['th:text', 'th:utext', 'th:replace', 'th:insert', 'th:remove'];
 const ATTRIBUTES = ['placeholder', 'title', 'aria-label', 'alt'];
 // Names, symbols and samples that are the same in every language.
-const UNTRANSLATED = new Set(['StockWatch', 'StockWatch 24/7', 'English', 'Polski', 'NVIDIA Corporation', 'Jan', 'Kowalski']);
+const UNTRANSLATED = new Set(['StockWatch', 'StockWatch 24/7', 'English', 'Polski', 'Apple Inc.', 'SMA (200)', 'RSI (14)', 'Jan', 'Kowalski']);
 
 function files(directory, extension) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
