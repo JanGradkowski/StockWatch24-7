@@ -70,6 +70,27 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             AlertRule alertRule,
             String elliottDevelopmentKey);
 
+    /**
+     * The oldest event of these rules that holds a developing Elliott signal: one still tracking the count, or one
+     * at the same pattern and candle. Deleted events count, so a signal deleted under one follow does not return
+     * under another.
+     */
+    @Query("""
+            select event
+            from AlertEvent event
+            where event.alertRule in :rules
+              and ((event.elliottDevelopmentKey = :developmentKey
+                    and event.lifecycleStatus = org.example.stockwatch247.model.enums.SignalLifecycleStatus.DETECTED)
+                   or (event.pattern = :pattern and event.signalCandleTimestamp = :signalCandleTimestamp))
+            order by event.id
+            """)
+    List<AlertEvent> findElliottDevelopmentHeldByRules(
+            @Param("rules") java.util.Collection<AlertRule> rules,
+            @Param("developmentKey") String developmentKey,
+            @Param("pattern") CandlePattern pattern,
+            @Param("signalCandleTimestamp") Long signalCandleTimestamp,
+            Pageable pageable);
+
     @Query("select count(event) from AlertEvent event where event.alertRule = :alertRule and event.deletedAt is null")
     long countByAlertRule(@Param("alertRule") AlertRule alertRule);
 

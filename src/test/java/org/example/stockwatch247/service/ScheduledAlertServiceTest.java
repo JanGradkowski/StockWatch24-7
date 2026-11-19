@@ -543,6 +543,144 @@ class ScheduledAlertServiceTest {
     }
 
     @Test
+    void anAccountFollowingBothDirectionsKeepsOneElliottCountWhenItsMoveTurns() {
+        String symbol = "SAP.DE";
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        AlertRule buy = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        AlertRule sell = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        sell.setUser(buy.getUser());
+        List<EnrichedCandle> enriched = List.of(enriched(1, 100.0));
+        when(alertEventRepository.findDevelopingElliottEvents(symbol, TimeInterval.WEEKLY)).thenReturn(List.of());
+        ScheduledAlertService service = service(mock(AlertRuleRepository.class), alertEventRepository,
+                mock(CandleRepository.class), mock(MarketDataService.class), notificationService, detector);
+
+        Candle waveTwoClose = candle(symbol, "1wk", 3, 105, 107, 103, 106);
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(bullishWaveTwo()));
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(sell, buy),
+                List.of(waveTwoClose), enriched, waveTwoClose.getTimestamp());
+
+        ArgumentCaptor<AlertEvent> saved = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventRepository).save(saved.capture());
+        AlertEvent count = saved.getValue();
+        assertThat(count.getAlertRule()).isSameAs(buy);
+        count.setId(10L);
+
+        // Wave III expects a pullback, the SELL follow's direction, but the BUY follow already tracks the count.
+        ElliottWaveDetectionService.DevelopingImpulse waveThree = bullishWaveThree();
+        Candle waveThreeClose = candle(symbol, "1wk", 4, 141, 142, 138, 139);
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(waveThree));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                buy, waveThree.developmentKey())).thenReturn(Optional.of(count));
+        when(alertEventRepository.findElliottDevelopmentHeldByRules(eq(List.of(buy)), eq(waveThree.developmentKey()),
+                eq(waveThree.pattern()), eq(waveThree.confirmationTimestamp()), any())).thenReturn(List.of(count));
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(sell, buy),
+                List.of(waveThreeClose), enriched, waveThreeClose.getTimestamp());
+
+        verify(alertEventRepository, org.mockito.Mockito.times(2)).save(saved.capture());
+        assertThat(saved.getAllValues()).allMatch(event -> event == count);
+        assertThat(count.getElliottSignalStage()).isEqualTo(ElliottSignalStage.WAVE_III_END);
+        assertThat(count.getTradeSignal()).isEqualTo(TradeSignal.SELL);
+        verify(notificationService, never()).sendDevelopingElliottEmail(eq(sell), any(), any(),
+                org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
+    void aLaterCopyOfAnElliottCountStopsAdvancingOnceTheAccountFollowsBothDirections() {
+        String symbol = "SAP.DE";
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        AlertNotificationService notificationService = mock(AlertNotificationService.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        AlertRule buy = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        AlertRule sell = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        sell.setUser(buy.getUser());
+        List<EnrichedCandle> enriched = List.of(enriched(1, 100.0));
+        when(alertEventRepository.findDevelopingElliottEvents(symbol, TimeInterval.WEEKLY)).thenReturn(List.of());
+        ScheduledAlertService service = service(mock(AlertRuleRepository.class), alertEventRepository,
+                mock(CandleRepository.class), mock(MarketDataService.class), notificationService, detector);
+        ArgumentCaptor<AlertEvent> saved = ArgumentCaptor.forClass(AlertEvent.class);
+
+        // The BUY follow saw Wave II; the SELL follow, checked alone (as before this fix), copied the count at Wave III.
+        Candle waveTwoClose = candle(symbol, "1wk", 3, 105, 107, 103, 106);
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(bullishWaveTwo()));
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(buy),
+                List.of(waveTwoClose), enriched, waveTwoClose.getTimestamp());
+        verify(alertEventRepository).save(saved.capture());
+        AlertEvent original = saved.getValue();
+        original.setId(10L);
+        Candle waveThreeClose = candle(symbol, "1wk", 4, 141, 142, 138, 139);
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(bullishWaveThree()));
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(sell),
+                List.of(waveThreeClose), enriched, waveThreeClose.getTimestamp());
+        verify(alertEventRepository, org.mockito.Mockito.times(2)).save(saved.capture());
+        AlertEvent copy = saved.getValue();
+        assertThat(copy).isNotSameAs(original);
+        assertThat(copy.getAlertRule()).isSameAs(sell);
+        copy.setId(20L);
+
+        ElliottWaveDetectionService.DevelopingImpulse waveFour = developingCandidate(
+                ElliottSignalStage.WAVE_IV_END, CandlePattern.ELLIOTT_BULLISH_WAVE_IV_END,
+                TradeSignal.BUY, 5 * 86_400L, 131.0,
+                List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"), point("II", 3, 106, "LOW"),
+                        point("III", 4, 140, "HIGH"), point("IV", 5, 130, "LOW")));
+        Candle waveFourClose = candle(symbol, "1wk", 5, 132, 133, 129, 131);
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(waveFour));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                buy, waveFour.developmentKey())).thenReturn(Optional.of(original));
+        when(alertEventRepository.findFirstByAlertRuleAndElliottDevelopmentKeyOrderByIdAsc(
+                sell, waveFour.developmentKey())).thenReturn(Optional.of(copy));
+        when(alertEventRepository.findElliottDevelopmentHeldByRules(eq(List.of(buy)), eq(waveFour.developmentKey()),
+                eq(waveFour.pattern()), eq(waveFour.confirmationTimestamp()), any())).thenReturn(List.of(original));
+        when(alertEventRepository.findElliottDevelopmentHeldByRules(eq(List.of(sell)), eq(waveFour.developmentKey()),
+                eq(waveFour.pattern()), eq(waveFour.confirmationTimestamp()), any())).thenReturn(List.of(copy));
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(sell, buy),
+                List.of(waveFourClose), enriched, waveFourClose.getTimestamp());
+
+        assertThat(original.getElliottSignalStage()).isEqualTo(ElliottSignalStage.WAVE_IV_END);
+        assertThat(copy.getElliottSignalStage()).isEqualTo(ElliottSignalStage.WAVE_III_END);
+        verify(notificationService, org.mockito.Mockito.times(1)).sendDevelopingElliottEmail(eq(sell), any(), any(),
+                org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
+    void anotherAccountsElliottFollowGetsItsOwnCount() {
+        String symbol = "SAP.DE";
+        AlertEventRepository alertEventRepository = mock(AlertEventRepository.class);
+        ElliottWaveDetectionService detector = mock(ElliottWaveDetectionService.class);
+        AlertRule buy = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.BUY);
+        AlertRule otherAccountsSell = rule(symbol, TimeInterval.WEEKLY, AlertPatternFamily.ELLIOTT_WAVE, TradeSignal.SELL);
+        List<EnrichedCandle> enriched = List.of(enriched(1, 100.0));
+        when(alertEventRepository.findDevelopingElliottEvents(symbol, TimeInterval.WEEKLY)).thenReturn(List.of());
+        ScheduledAlertService service = service(mock(AlertRuleRepository.class), alertEventRepository,
+                mock(CandleRepository.class), mock(MarketDataService.class), mock(AlertNotificationService.class),
+                detector);
+        Candle waveThreeClose = candle(symbol, "1wk", 4, 141, 142, 138, 139);
+        when(detector.findDevelopingImpulses(enriched)).thenReturn(List.of(bullishWaveThree()));
+
+        service.processDevelopingElliott(symbol, TimeInterval.WEEKLY, List.of(buy, otherAccountsSell),
+                List.of(waveThreeClose), enriched, waveThreeClose.getTimestamp());
+
+        ArgumentCaptor<AlertEvent> saved = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventRepository).save(saved.capture());
+        assertThat(saved.getValue().getAlertRule()).isSameAs(otherAccountsSell);
+        verify(alertEventRepository, never()).findElliottDevelopmentHeldByRules(any(), any(), any(), any(), any());
+    }
+
+    private ElliottWaveDetectionService.DevelopingImpulse bullishWaveTwo() {
+        return developingCandidate(ElliottSignalStage.WAVE_II_END, CandlePattern.ELLIOTT_BULLISH_WAVE_II_END,
+                TradeSignal.BUY, 3 * 86_400L, 106.0,
+                List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"), point("II", 3, 106, "LOW")));
+    }
+
+    private ElliottWaveDetectionService.DevelopingImpulse bullishWaveThree() {
+        return developingCandidate(ElliottSignalStage.WAVE_III_END, CandlePattern.ELLIOTT_BULLISH_WAVE_III_END,
+                TradeSignal.SELL, 4 * 86_400L, 139.0,
+                List.of(point("0", 1, 100, "LOW"), point("I", 2, 120, "HIGH"), point("II", 3, 106, "LOW"),
+                        point("III", 4, 140, "HIGH")));
+    }
+
+    @Test
     void waveVRemainsOnTheSameDevelopingCardUntilValidatedAbcCompletes() {
         String symbol = "SAP.DE";
         AlertRuleRepository alertRuleRepository = mock(AlertRuleRepository.class);
