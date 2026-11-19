@@ -19,15 +19,27 @@ public class SignalArchiveQuery {
                 new SignalArchiveFilter("all", ""));
     }
 
-    /** A technical signal still running: a pending setup, or a trade plan or projection not yet resolved. */
-    private static final String OPEN = """
-            (case when r.pattern_family = 'ELLIOTT_WAVE' and e.elliott_trade_plan_status is not null
-                then e.elliott_trade_plan_status in ('ACTIVE', 'PROJECTION_ONLY')
-             when r.pattern_family = 'HARMONIC_FORMATION' and e.harmonic_stop_status is not null
-                then e.harmonic_stop_status = 'ACTIVE' or e.harmonic_stop_status = 'PROJECTION_ONLY'
-                    and e.trade_plan_version in ('HARMONIC_TRADE_V2','HARMONIC_TRADE_V3')
-             else coalesce(e.lifecycle_status, 'DETECTED') in ('POTENTIAL', 'DETECTED') end)
-            """;
+    /** A technical signal (as {@code e}, its rule as {@code r}) still running: a pending setup, or a trade plan or projection not yet resolved. */
+    private static String open(String e, String r) {
+        return """
+            (case when %2$s.pattern_family = 'ELLIOTT_WAVE' and %1$s.elliott_trade_plan_status is not null
+                then %1$s.elliott_trade_plan_status in ('ACTIVE', 'PROJECTION_ONLY')
+             when %2$s.pattern_family = 'HARMONIC_FORMATION' and %1$s.harmonic_stop_status is not null
+                then %1$s.harmonic_stop_status = 'ACTIVE' or %1$s.harmonic_stop_status = 'PROJECTION_ONLY'
+                    and %1$s.trade_plan_version in ('HARMONIC_TRADE_V2','HARMONIC_TRADE_V3')
+             else coalesce(%1$s.lifecycle_status, 'DETECTED') in ('POTENTIAL', 'DETECTED') end)
+            """.formatted(e, r);
+    }
+
+    /** The state tab's condition on a technical signal {@code e} of the rule {@code r}; empty for every signal. */
+    private static String stateCondition(String state, String e, String r) {
+        return switch (state) {
+            case "unread" -> e + ".read_at is null";
+            case "active" -> open(e, r);
+            case "completed" -> "not " + open(e, r);
+            default -> "";
+        };
+    }
 
     public Result page(long userId, Long stockId, String sort, boolean ascending, int requestedPage, int size,
                        SignalArchiveFilter filter) {
@@ -73,14 +85,12 @@ public class SignalArchiveQuery {
     private static String technicalWhere(SignalArchiveFilter filter) {
         List<String> families = technicalFamilies(filter);
         if (families.isEmpty()) return null;
+        String state = stateCondition(filter.state(), "e", "r");
         String where = "r.user_id = ? and e.deleted_at is null and (cast(? as bigint) is null or r.stock_asset_id = ?)"
                 + " and " + tickerMatch("a.ticker_symbol", filter)
-                + switch (filter.state()) {
-                    case "unread" -> " and e.read_at is null";
-                    case "active" -> " and " + OPEN;
-                    case "completed" -> " and not " + OPEN;
-                    default -> "";
-                };
+                + (state.isEmpty() ? "" : " and " + state)
+                // Signals that end at the same point are one row, led by the newest that fits this tab.
+                + " and " + SamePointSignals.leadsPoint("e", "r", stateCondition(filter.state(), "o", "ro"));
         if (families.size() < 3) {
             where += " and coalesce(r.pattern_family,'CANDLESTICK') in ("
                     + String.join(",", families.stream().map(family -> "'" + family + "'").toList()) + ")";
@@ -106,6 +116,7 @@ public class SignalArchiveQuery {
         long total = count(all);
         long unread = count(branches(userId, stockId, filter.withState("unread"), false));
         long active = count(branches(userId, stockId, filter.withState("active"), false));
+        long completed = count(branches(userId, stockId, filter.withState("completed"), false));
         List<Day> days = jdbc.query("select cast(received as date) as signal_day, count(*) as signals from (" + union(all)
                         + ") archive where received is not null group by 1 order by 1",
                 (r, n) -> new Day(r.getDate("signal_day").toLocalDate(), r.getLong("signals")), parameters(all).toArray());
@@ -116,7 +127,7 @@ public class SignalArchiveQuery {
                 (r, n) -> new Outcome(r.getString("kind"), r.getLong("id"), r.getString("ticker"),
                         r.getTimestamp("received").toLocalDateTime(), r.getDouble("trade_return")),
                 parameters(finished).toArray());
-        return new Summary(total, unread, active, days, outcomes);
+        return new Summary(total, unread, active, days, outcomes, completed);
     }
 
     private long count(List<Branch> branches) {
@@ -525,8 +536,14 @@ public class SignalArchiveQuery {
      * an open trade plan, a custom alert trigger still being measured), signals per day, and the result of every
      * finished signal that has one, newest first.
      */
-    public record Summary(long total, long unread, long active, List<Day> days, List<Outcome> outcomes) {
-        public long completed() { return total - active; }
+    /**
+     * The archive's figures. Completed is counted on its own: a point whose signals are partly running and partly
+     * finished is a row on both the Active and the Completed tab, so the tabs need not add up to the total.
+     */
+    public record Summary(long total, long unread, long active, List<Day> days, List<Outcome> outcomes, long completed) {
+        public Summary(long total, long unread, long active, List<Day> days, List<Outcome> outcomes) {
+            this(total, unread, active, days, outcomes, total - active);
+        }
 
         /** The median result of the finished signals; null before any is measured. */
         public Double median() {

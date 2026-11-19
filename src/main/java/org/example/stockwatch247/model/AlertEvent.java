@@ -243,6 +243,10 @@ public class AlertEvent {
     @Column(name = "harmonic_endpoint_timestamp")
     private Long harmonicEndpointTimestamp;
 
+    /** The candle the pattern ends on; signals that share it, their day and direction show as one. See patternEnd. */
+    @Column(name = "pattern_end_timestamp")
+    private Long patternEndTimestamp;
+
     @Column(name = "harmonic_endpoint_price")
     private Double harmonicEndpointPrice;
 
@@ -473,6 +477,37 @@ public class AlertEvent {
     }
 
     public Long getHarmonicEndpointTimestamp() { return harmonicEndpointTimestamp; }
+    public Long getPatternEndTimestamp() { return patternEndTimestamp; }
+
+    /**
+     * The candle the pattern ends on: a harmonic formation's D point, the last point of an Elliott count (a
+     * developing count stores its confirmation candle as the endpoint, so the count's own last point is read), an
+     * Elliott signal's endpoint, or a candlestick's signal candle. V103 fills older rows the same way.
+     */
+    public Long patternEnd() {
+        if (harmonicEndpointTimestamp != null) return harmonicEndpointTimestamp;
+        Long lastPoint = lastStructurePoint(elliottStructureSnapshot);
+        if (lastPoint != null) return lastPoint;
+        return elliottEndpointTimestamp != null ? elliottEndpointTimestamp : signalCandleTimestamp;
+    }
+
+    @PrePersist
+    @PreUpdate
+    void derivePatternEnd() {
+        patternEndTimestamp = patternEnd();
+    }
+
+    private static Long lastStructurePoint(String snapshot) {
+        if (snapshot == null || snapshot.isBlank()) return null;
+        String[] lines = snapshot.strip().split("\n");
+        String[] fields = lines[lines.length - 1].split("\\|", -1);
+        if (fields.length < 2) return null;
+        try {
+            return Long.parseLong(fields[1].trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
     public Double getHarmonicEndpointPrice() { return harmonicEndpointPrice; }
     public String getHarmonicPointsSnapshot() { return harmonicPointsSnapshot; }
     public String getHarmonicMeasurementsSnapshot() { return harmonicMeasurementsSnapshot; }

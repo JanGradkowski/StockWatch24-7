@@ -419,6 +419,7 @@ public class AuthController {
         model.addAttribute("firstName", currentUser.getFirstName());
         AlertRuleService.SignalDetailView signal = alertRuleService.getSignalDetail(currentUser, alertEventId);
         model.addAttribute("signal", signal);
+        model.addAttribute("samePointSignals", alertRuleService.getSamePointSignals(currentUser, alertEventId));
         model.addAttribute("displayScore", displayScore(currentUser, signal));
         return "signal-detail";
     }

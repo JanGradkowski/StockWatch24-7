@@ -443,7 +443,8 @@ public class ScheduledAlertService {
 
     void processSymbolInterval(String symbol, TimeInterval interval, Instant scheduledFor) {
         List<java.util.concurrent.Future<?>> scansAhead = new java.util.ArrayList<>();
-        try (var scope = AnalysisComputationScope.open()) {
+        // New signal emails wait for the end of the check, so signals that end at the same point go out as one.
+        try (var scope = AnalysisComputationScope.open(); var emails = notificationService.openSamePointBatch()) {
             processSymbolIntervalScoped(symbol, interval, scheduledFor, scansAhead);
         } finally {
             // A scan the check no longer needs (it failed, or did not read it) stops using the pool.

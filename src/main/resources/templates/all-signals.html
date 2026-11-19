@@ -277,15 +277,18 @@
               </tr>
 
               <!--/* A technical pattern signal */-->
-              <tr th:if="${entry.signal() != null}" th:with="signal=${entry.signal()},lifecycle=${entry.signal().lifecycle()},stop=${entry.signal().lifecycle().harmonicStopStatus()},state=${entry.signal().lifecycle().cssClass()}"
-                  class="ca-trigger-row sa-row" th:classappend="${signal.hasBeenRead()} ? '' : ' is-unread'">
+              <!--/* Signals that end at the same point are one row: the newest leads, the others are named under it. */-->
+              <tr th:if="${entry.signal() != null}" th:with="signal=${entry.signal()},lifecycle=${entry.signal().lifecycle()},stop=${entry.signal().lifecycle().harmonicStopStatus()},state=${entry.signal().lifecycle().cssClass()},read=${entry.pointRead()},others=${entry.samePoint().size()}"
+                  class="ca-trigger-row sa-row" th:classappend="${read} ? '' : ' is-unread'">
                 <td class="ca-col-select"><input type="checkbox" name="signalIds" th:value="${signal.id()}" data-signal-checkbox th:aria-label="#{signals.selectAria(${#tr.text(signal.patternLabel())}, ${signal.symbol()})}"></td>
-                <td th:if="${companyArchive == null}" class="ca-col-ticker"><i class="ca-dot" th:unless="${signal.hasBeenRead()}" aria-hidden="true"></i><a class="ca-trigger-link" th:href="@{/alerts/signals/{id}(id=${signal.id()},returnTo=${archiveReturnUrl})}"
-                    th:aria-label="${#messages.msg(signal.hasBeenRead() ? 'signals.openAria.read' : 'signals.openAria.unread', #tr.text(signal.patternLabel()), signal.symbol())}" th:text="${signal.symbol()}">NVDA</a><span class="sa-company" th:text="${signal.companyName()}" th:title="${signal.companyName()}">NVIDIA Corp.</span></td>
+                <td th:if="${companyArchive == null}" class="ca-col-ticker"><i class="ca-dot" th:unless="${read}" aria-hidden="true"></i><a class="ca-trigger-link" th:href="@{/alerts/signals/{id}(id=${signal.id()},returnTo=${archiveReturnUrl})}"
+                    th:aria-label="${others > 0 ? #messages.msg(read ? 'signals.openAria.point.read' : 'signals.openAria.point.unread', #tr.text(signal.patternLabel()), signal.symbol(), others) : #messages.msg(read ? 'signals.openAria.read' : 'signals.openAria.unread', #tr.text(signal.patternLabel()), signal.symbol())}" th:text="${signal.symbol()}">NVDA</a><span class="sa-company" th:text="${signal.companyName()}" th:title="${signal.companyName()}">NVIDIA Corp.</span></td>
                 <td class="sa-col-signal">
                   <a th:if="${companyArchive != null}" class="sa-name ca-trigger-link sa-name-link" th:href="@{/alerts/signals/{id}(id=${signal.id()},returnTo=${archiveReturnUrl})}"
-                     th:aria-label="${#messages.msg(signal.hasBeenRead() ? 'signals.openAria.read' : 'signals.openAria.unread', #tr.text(signal.patternLabel()), signal.symbol())}"><i class="ca-dot" th:unless="${signal.hasBeenRead()}" aria-hidden="true"></i><span th:text="${#tr.text(signal.patternLabel())}">Bullish Engulfing</span></a>
+                     th:aria-label="${others > 0 ? #messages.msg(read ? 'signals.openAria.point.read' : 'signals.openAria.point.unread', #tr.text(signal.patternLabel()), signal.symbol(), others) : #messages.msg(read ? 'signals.openAria.read' : 'signals.openAria.unread', #tr.text(signal.patternLabel()), signal.symbol())}"><i class="ca-dot" th:unless="${read}" aria-hidden="true"></i><span th:text="${#tr.text(signal.patternLabel())}">Bullish Engulfing</span></a>
                   <span th:unless="${companyArchive != null}" class="sa-name" th:text="${#tr.text(signal.patternLabel())}">Bullish Engulfing</span>
+                  <span th:if="${others > 0}" class="sa-also"><span class="sa-also-label" th:text="#{signals.samePoint}">Also at this point:</span>
+                    <th:block th:each="other, it : ${entry.samePoint()}"><span class="sa-also-name" th:text="${#tr.text(other.patternLabel())}">AB=CD</span><span th:if="${other.setupScore() != null}" class="sa-also-score" th:text="${' · ' + other.setupScore() + '/100'}"> · 93/100</span><span th:unless="${it.last}">, </span></th:block></span>
                   <span class="sa-kind"><span th:text="${#tr.text(signal.familyLabel())}">Candlestick</span> · <span class="sa-direction"
                         th:classappend="${state == 'rejected' or state == 'invalidated' or state == 'expired' or stop == 'STOPPED' or stop == 'TIME_STOPPED' ? '' : (signal.tradeSignal().name() == 'BUY' ? ' is-buy' : ' is-sell')}"
                         th:text="${#tr.text(signal.directionLabel())}">Potential buy</span> · <span th:text="${#tr.text(signal.intervalLabel())}">Weekly</span></span>

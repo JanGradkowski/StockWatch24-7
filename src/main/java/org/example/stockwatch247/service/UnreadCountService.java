@@ -50,10 +50,11 @@ public class UnreadCountService {
     public Counts counts(User user) {
         if (user == null || user.getId() == null) return Counts.NONE;
         long id = user.getId();
+        // Signals that end at the same point are one row, as on the archive's Unread tab.
         long technical = count("""
                 select count(*) from alert_events e join alert_rules r on r.id = e.alert_rule_id
-                where r.user_id = ? and e.read_at is null and e.deleted_at is null
-                """, id);
+                where r.user_id = ? and e.read_at is null and e.deleted_at is null and
+                """ + SamePointSignals.leadsPoint("e", "r", "o.read_at is null"), id);
         long outlook = count("""
                 select count(*) from technical_outlook_notifications n
                 join technical_outlook_subscriptions s on s.id = n.subscription_id

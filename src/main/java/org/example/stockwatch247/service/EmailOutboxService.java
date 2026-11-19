@@ -61,6 +61,11 @@ public class EmailOutboxService {
 
     private void enqueueNotification(SimpleMailMessage message, Long eventId, Long outlookId,
                                      Duration lifetime, String deduplicationKey, String receipt, String digestReceipts) {
+        enqueueNotification(message, eventId, outlookId, lifetime, deduplicationKey, receipt, digestReceipts, Duration.ZERO);
+    }
+
+    private void enqueueNotification(SimpleMailMessage message, Long eventId, Long outlookId, Duration lifetime,
+                                     String deduplicationKey, String receipt, String digestReceipts, Duration hold) {
         if (senders.getIfAvailable() == null) throw new IllegalStateException("Email delivery is not configured.");
         UUID id = UUID.randomUUID();
         try {
@@ -68,11 +73,12 @@ public class EmailOutboxService {
             var encrypted = crypto.encrypt(mapper.writeValueAsString(payload), "email-outbox:" + id);
             int inserted = jdbc.update("""
                 insert into email_outbox(id, deduplication_key, ciphertext, iv, alert_event_id, outlook_notification_id, expires_at, receipt,
-                    digest_receipts)
-                values (?, ?, ?, ?, ?, ?, current_timestamp + (? * interval '1 second'), ?, ?)
+                    digest_receipts, available_at)
+                values (?, ?, ?, ?, ?, ?, current_timestamp + (? * interval '1 second'), ?, ?, current_timestamp + (? * interval '1 second'))
                 on conflict (deduplication_key) do nothing
                 """, id, deduplicationKey,
-                    encrypted.ciphertext(), encrypted.iv(), eventId, outlookId, lifetime.toSeconds(), receipt, digestReceipts);
+                    encrypted.ciphertext(), encrypted.iv(), eventId, outlookId, lifetime.toSeconds(), receipt, digestReceipts,
+                    hold.toSeconds());
             if (inserted > 0 && eventId != null) {
                 log.info("Technical signal email queued: eventId={} receipt={} outboxId={}", eventId, receipt, id);
             }
@@ -82,6 +88,96 @@ public class EmailOutboxService {
         } catch (tools.jackson.core.JacksonException e) {
             throw new IllegalStateException("Could not queue email.", e);
         }
+    }
+
+    /**
+     * Queues a technical signal email that waits until its check releases or combines it (see SamePointEmailBatch),
+     * or at the latest until {@code hold} has passed, so a check that stops halfway still sends it.
+     */
+    @Transactional
+    public void enqueueHeld(SimpleMailMessage message, long eventId, Duration lifetime, String deduplicationKey,
+                            String receipt, Duration hold) {
+        enqueueNotification(message, eventId, null, lifetime, deduplicationKey, receipt, null, hold);
+    }
+
+    /** Lets held emails go out now. */
+    @Transactional
+    public void release(java.util.Collection<String> deduplicationKeys) {
+        if (deduplicationKeys.isEmpty()) return;
+        jdbc.update(connection -> {
+            var statement = connection.prepareStatement("""
+                update email_outbox set available_at = current_timestamp where deduplication_key = any(?)
+                and delivered_at is null and expired_at is null and available_at > current_timestamp
+                """);
+            statement.setArray(1, connection.createArrayOf("text", deduplicationKeys.toArray()));
+            return statement;
+        });
+    }
+
+    /**
+     * Replaces held emails, in the given order, with the one email {@code combiner} builds from them. The first
+     * one's signal and receipt go on the new email and the others' receipts with it, so delivery records each
+     * signal's email; the held ones stay as erased rows, so a retried check cannot queue them again. An email that
+     * already left the hold (sent, or being sent after a long check) stays as it is, and fewer than two left are
+     * released as they are. Returns how many emails were combined.
+     */
+    @Transactional
+    public int combineHeld(List<String> deduplicationKeys,
+                           java.util.function.Function<List<Payload>, SimpleMailMessage> combiner) {
+        record Held(UUID id, String key, String ciphertext, String iv, Long eventId, String receipt) { }
+        List<Held> held = new java.util.ArrayList<>(jdbc.query(connection -> {
+            var statement = connection.prepareStatement("""
+                select id, deduplication_key, ciphertext, iv, alert_event_id, receipt from email_outbox
+                where deduplication_key = any(?) and delivered_at is null and expired_at is null and ciphertext is not null
+                and (lease_until is null or lease_until < current_timestamp) for update
+                """);
+            statement.setArray(1, connection.createArrayOf("text", deduplicationKeys.toArray()));
+            return statement;
+        }, (rs, row) -> new Held(rs.getObject(1, UUID.class), rs.getString(2), rs.getString(3), rs.getString(4),
+                rs.getObject(5, Long.class), rs.getString(6))));
+        if (held.size() < 2) {
+            release(deduplicationKeys);
+            return 0;
+        }
+        held.sort(java.util.Comparator.comparingInt(row -> deduplicationKeys.indexOf(row.key())));
+        try {
+            List<Payload> payloads = new java.util.ArrayList<>();
+            for (Held row : held) {
+                payloads.add(mapper.readValue(crypto.decrypt(row.ciphertext(), row.iv(), "email-outbox:" + row.id()), Payload.class));
+            }
+            Held first = held.getFirst();
+            List<DigestReceipt> others = held.stream().skip(1)
+                    .map(row -> new DigestReceipt(row.eventId(), null, row.receipt())).toList();
+            enqueueNotification(combiner.apply(payloads), first.eventId(), null, Duration.ofDays(7),
+                    "same-point:" + String.join("|", held.stream().map(Held::key).toList()), first.receipt(),
+                    mapper.writeValueAsString(others));
+        } catch (tools.jackson.core.JacksonException e) {
+            throw new IllegalStateException("Could not combine emails.", e);
+        }
+        jdbc.update(connection -> {
+            var statement = connection.prepareStatement("""
+                update email_outbox set expired_at = current_timestamp, ciphertext = null, iv = null where id = any(?)
+                """);
+            statement.setArray(1, connection.createArrayOf("uuid", held.stream().map(Held::id).toArray()));
+            return statement;
+        });
+        return held.size();
+    }
+
+    /**
+     * Several emails as one: an introduction, the list of their subjects, then each email in full. The alert
+     * summaries and the emails for signals that end at the same point share it.
+     */
+    public static String combinedText(String introduction, List<Payload> payloads) {
+        StringBuilder text = new StringBuilder(introduction).append("\n\n");
+        for (Payload payload : payloads) text.append("- ").append(payload.subject()).append('\n');
+        for (int index = 0; index < payloads.size(); index++) {
+            Payload payload = payloads.get(index);
+            text.append('\n').append("=".repeat(60)).append('\n')
+                    .append(index + 1).append(". ").append(payload.subject()).append("\n\n")
+                    .append(payload.text().stripTrailing()).append('\n');
+        }
+        return text.toString();
     }
 
     /**
@@ -181,15 +277,8 @@ public class EmailOutboxService {
             text.append(first.text().stripTrailing());
         } else {
             message.setSubject(translate.apply("StockWatch summary: " + payloads.size() + " alerts"));
-            text.append(translate.apply("This summary collects " + payloads.size() + " alerts from your latest checks."))
-                    .append("\n\n");
-            for (Payload payload : payloads) text.append("- ").append(payload.subject()).append('\n');
-            for (int index = 0; index < payloads.size(); index++) {
-                Payload payload = payloads.get(index);
-                text.append('\n').append("=".repeat(60)).append('\n')
-                        .append(index + 1).append(". ").append(payload.subject()).append("\n\n")
-                        .append(payload.text().stripTrailing()).append('\n');
-            }
+            text.append(combinedText(translate.apply("This summary collects " + payloads.size()
+                    + " alerts from your latest checks."), payloads));
         }
         if (links != null) {
             text.append("\n\n")
