@@ -36,7 +36,7 @@
 
 }
 :root[data-theme] .ui-refresh .theme-toggle { border-color: var(--rf-line); background: var(--rf-panel); box-shadow: none; backdrop-filter: none; }
-/* Only the app's top bar moves the switch; the landing and about bars keep it centred in their own bar. */
+/* Only the app's top bar moves the switch; the About bar keeps it centred in its own bar (landing.css places the landing page's). */
 :root[data-theme] .ui-refresh .app-navigation .theme-toggle { top: 12px; right: 20px; transform: none; }
 :root[data-theme] .ui-refresh .navbar :is(.global-ticker-search) { height: 40px; border-radius: var(--rf-radius-control); background: var(--rf-panel); }
 :root[data-theme] .ui-refresh .navbar :is(.logout-btn, .history-back-button) {
@@ -700,29 +700,25 @@
 :root[data-theme] .ui-refresh .auth-card .btn-accent { width: 100%; min-height: 44px; }
 :root[data-theme] .ui-refresh :is(.auth-switch, .auth-help) .text-link { font-weight: 600; }
 
-/* Landing and about: the product pictures stay; cards, labels and the closing call to action follow the app. */
-:root[data-theme] body.ui-refresh.landing-page { background: var(--bg-color); }
+/* About page: its bar, cards, labels and closing call to action follow the app. */
 :root[data-theme] .ui-refresh .landing-nav { box-shadow: none; backdrop-filter: none; }
-:root[data-theme] .ui-refresh :is(.feature-number, .about-section-number, .terminal-label, .floating-signal-head,
-    :is(.about-definition-grid, .about-function-grid, .about-monitoring-flow, .about-history-grid, .about-limit-grid) article > span) {
+:root[data-theme] .ui-refresh :is(.about-section-number, :is(.about-definition-grid, .about-function-grid, .about-monitoring-flow, .about-history-grid, .about-limit-grid) article > span) {
     color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em; text-transform: none;
 }
-:root[data-theme] .ui-refresh :is(.feature-card, .about-definition-grid article, .about-function-grid article) {
+:root[data-theme] .ui-refresh :is(.about-definition-grid article, .about-function-grid article) {
     border: 1px solid var(--rf-line); border-radius: var(--rf-radius); background: var(--rf-panel); background-image: none; box-shadow: none;
 }
-:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta) {
+:root[data-theme] .ui-refresh .about-final-cta {
     border: 1px solid var(--rf-line); border-radius: 16px; background: var(--surface-soft); background-image: none; box-shadow: none;
 }
-:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta)::before,
-:root[data-theme] .ui-refresh :is(.cta-panel, .about-final-cta)::after { display: none; }
+:root[data-theme] .ui-refresh .about-final-cta::before,
+:root[data-theme] .ui-refresh .about-final-cta::after { display: none; }
 /* About: every explanatory card is the plain panel (the light theme gave them a gradient, so their text could not be
    checked for contrast); the diagrams keep their own drawing. */
 :root[data-theme] body.ui-refresh.about-page main article { background: var(--rf-panel); background-image: none; box-shadow: none; }
 :root[data-theme] .ui-refresh .about-signal { letter-spacing: 0; }
 :root[data-theme] .ui-refresh .about-signal.buy { background: color-mix(in srgb, var(--rf-buy) 12%, transparent); color: var(--rf-buy); }
 :root[data-theme] .ui-refresh .about-signal.sell { background: color-mix(in srgb, var(--rf-sell) 12%, transparent); color: var(--rf-sell); }
-:root[data-theme] .ui-refresh .wave-bar { background: color-mix(in srgb, var(--violet) 55%, transparent); box-shadow: none; }
-:root[data-theme] .ui-refresh .wave-bar:nth-child(6) { background: var(--primary-color); }
 
 /* ------------------------------------------------------------------ narrow screens */
 

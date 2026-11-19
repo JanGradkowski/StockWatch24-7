@@ -31,12 +31,12 @@
     .technical-outlook-summary, .technical-outlook-indicator-card, .technical-outlook-category,
     .technical-outlook-verdict, .price-header, .chart-toolbar, .chart-wrapper, .demo-portfolio,
     .outlook-indicator-chart-card, .virtual-trade-summary, .virtual-trade-comparison,
-    .about-definition-grid article, .about-function-grid article, .feature-card) {
+    .about-definition-grid article, .about-function-grid article) {
     background: var(--surface); border-color: var(--glass-border); border-radius: 14px;
     box-shadow: var(--shadow-sm); backdrop-filter: none;
 }
 :root[data-theme] :is(.glass-panel, .metric-card, .signal-archive-shell, .settings-card)::before { display: none; }
-:root[data-theme] :is(.metric-card, .latest-signal-row, .signal-archive-row, .feature-card):hover { transform: none; }
+:root[data-theme] :is(.metric-card, .latest-signal-row, .signal-archive-row):hover { transform: none; }
 :root[data-theme] :is(.btn-primary, .btn-secondary, .btn-accent, .danger-button, .danger-outline-button) {
     min-height: 40px; padding: .625rem 1rem; border-radius: 8px; font-size: var(--fs-md);
     font-weight: 600; letter-spacing: 0; box-shadow: none; transform: none;
@@ -298,7 +298,6 @@
 :root[data-theme] .auth-card input { min-height: 46px; }
 :root[data-theme] .auth-card .auth-kicker { display: none; }
 :root[data-theme] .auth-pitch h1 { font-size: clamp(2rem,4vw,3.25rem); }
-:root[data-theme] .feature-card { padding: 1.5rem; }
 :root[data-theme] .about-section { scroll-margin-top: 100px; }
 :root[data-theme] .about-rule-details > summary { min-height: 44px; font-size: var(--fs-md); }
 :root[data-theme] .about-section-heading { margin-bottom: 1.5rem; }
@@ -392,8 +391,7 @@
 /* Fixed-width digits keep prices, scores and percentages aligned in columns. */
 :root[data-theme] body { font-variant-numeric: tabular-nums; }
 
-/* One background for public and signed-in pages: the same slate, with a faint brand tint on the landing hero only. */
-:root[data-theme] .landing-page { background: radial-gradient(circle at 28% 12%, color-mix(in srgb, var(--primary-color) 6%, transparent), transparent 30rem), var(--bg-color); }
+/* One background for public and signed-in pages: the same slate. */
 :root[data-theme] .about-page { background: var(--bg-color); }
 :root[data-theme] .auth-shell { background: var(--surface); backdrop-filter: none; }
 :root[data-theme] .auth-showcase { background: radial-gradient(circle at 20% 90%, color-mix(in srgb, var(--primary-color) 8%, transparent), transparent 18rem), var(--surface-soft); }

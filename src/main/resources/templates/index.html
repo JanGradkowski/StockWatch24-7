@@ -7,227 +7,292 @@
     <title th:text="#{landing.title}">StockWatch 24/7 — Technical analysis and stock alerts</title>
     <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
     <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
-  <link rel="stylesheet" th:href="@{/css/design.css}">
-  <link rel="stylesheet" th:href="@{/css/refresh.css}">
-  <link rel="stylesheet" th:href="@{/css/app.css}">
-  <script th:src="@{/js/design-ui.js}" defer></script>
+    <link rel="stylesheet" th:href="@{/css/design.css}">
+    <link rel="stylesheet" th:href="@{/css/refresh.css}">
+    <link rel="stylesheet" th:href="@{/css/app.css}">
+    <link rel="stylesheet" th:href="@{/css/landing.css}">
+    <script th:src="@{/js/design-ui.js}" defer></script>
 </head>
-<body class="landing-page ui-refresh">
+<body class="ui-refresh lp">
+<a class="skip-link" href="#main-content" th:text="#{nav.skipToContent}">Skip to main content</a>
 
-<div class="landing-shell">
-    <nav class="navbar landing-nav" aria-label="Main navigation" th:aria-label="#{sidebar.mainAria}">
+<header class="lp-header">
+    <nav class="navbar lp-nav" aria-label="Main navigation" th:aria-label="#{sidebar.mainAria}">
         <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home" th:aria-label="#{sidebar.logoHome}">
             <span class="logo-mark" aria-hidden="true"></span>
             <span class="logo-word">StockWatch <span>24/7</span></span>
         </a>
-        <div class="nav-links">
-            <a href="#platform" class="btn-secondary" th:text="#{landing.nav.platform}">Platform</a>
-            <a th:href="@{/about}" class="btn-secondary" th:text="#{landing.nav.about}">About</a>
-            <a th:href="@{/login}" class="btn-primary" th:text="#{auth.signIn}">Sign in</a>
-            <a th:href="@{/signup}" class="btn-accent" th:text="#{landing.startMonitoring}">Start monitoring</a>
+        <div class="lp-nav-links">
+            <a href="#how" th:text="#{landing.nav.how}">How it works</a>
+            <a href="#features" th:text="#{landing.nav.platform}">Features</a>
+            <a th:href="@{/about}" th:text="#{landing.nav.about}">About</a>
+        </div>
+        <div class="lp-nav-actions">
+            <a th:href="@{/login}" class="btn-secondary" th:text="#{auth.signIn}">Sign in</a>
+            <a th:href="@{/signup}" class="btn-accent lp-nav-cta" th:text="#{landing.startMonitoring}">Start monitoring</a>
         </div>
     </nav>
+</header>
 
-    <main>
-        <section class="landing-hero">
-            <div class="hero-copy">
-                <div class="eyebrow" th:text="#{landing.eyebrow}">Technical analysis and custom alerts</div>
-                <h1><span th:text="#{landing.headline1}">Follow the market.</span><br><span class="text-gradient" th:text="#{landing.headline2}">Track the signals.</span></h1>
-                <p th:text="#{landing.pitch}">StockWatch analyzes the stocks you follow after every daily, weekly and monthly close: a technical outlook, Elliott Waves, harmonic patterns and candlestick patterns. Write your own alerts, and chart your ideas with 121 indicators and 86 drawing tools.</p>
-                <div class="hero-actions">
-                    <a th:href="@{/signup}" class="btn-accent large"><span th:text="#{landing.buildWatchlist}">Build your watchlist</span> <span class="button-arrow" aria-hidden="true">→</span></a>
-                    <a th:href="@{/login}" class="btn-primary large" th:text="#{landing.openDashboard}">Open dashboard</a>
-                </div>
-                <div class="hero-proof">
-                    <div class="proof-avatars" aria-hidden="true">
-                        <span class="proof-avatar">SW</span>
-                        <span class="proof-avatar">AI</span>
-                        <span class="proof-avatar">24</span>
-                    </div>
-                    <span th:text="#{landing.proof}">Technical analysis, custom alerts and charting in one workspace.</span>
-                </div>
+<main id="main-content" tabindex="-1">
+    <section class="lp-hero lp-wrap" aria-labelledby="lp-hero-title">
+        <div class="lp-hero-copy">
+            <p class="lp-eyebrow" th:text="#{landing.eyebrow}">Technical analysis and custom alerts</p>
+            <h1 id="lp-hero-title" th:text="#{landing.headline}">Your stocks, analyzed after every close.</h1>
+            <p class="lp-lead" th:text="#{landing.pitch}">StockWatch reads the daily, weekly and monthly charts of the stocks you follow and tells you when a setup you care about appears.</p>
+            <div class="lp-actions">
+                <a th:href="@{/signup}" class="btn-accent lp-btn-lg"><span th:text="#{landing.buildWatchlist}">Build your watchlist</span> <span aria-hidden="true">→</span></a>
+                <a href="#how" class="btn-secondary lp-btn-lg" th:text="#{landing.seeHow}">See how it works</a>
             </div>
-
-            <div class="market-stage" aria-label="StockWatch market workspace preview" th:aria-label="#{landing.previewAria}">
-                <div class="terminal-card">
-                    <div class="terminal-topbar">
-                        <div class="window-dots" aria-hidden="true">
-                            <span class="window-dot"></span>
-                            <span class="window-dot"></span>
-                            <span class="window-dot"></span>
-                        </div>
-                        <span class="terminal-label" th:text="#{landing.preview.overview}">Market overview</span>
-                        <span class="terminal-live" th:text="#{landing.preview.monitoring}">Monitoring</span>
-                    </div>
-                    <div class="terminal-body">
-                        <div class="terminal-quote">
-                            <div>
-                                <div class="terminal-symbol">NVDA</div>
-                                <div class="terminal-company">NVIDIA Corporation</div>
-                            </div>
-                            <div class="terminal-price">
-                                <strong>$164.92</strong>
-                                <span class="market-up">+2.84%</span>
-                            </div>
-                        </div>
-                        <svg class="hero-chart" viewBox="0 0 620 245" role="img" aria-label="Illustrative rising market chart" th:aria-label="#{landing.preview.chartAria}" preserveAspectRatio="none">
-                            <defs>
-                                <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stop-color="#b7f34a" stop-opacity="0.23"/>
-                                    <stop offset="100%" stop-color="#b7f34a" stop-opacity="0"/>
-                                </linearGradient>
-                            </defs>
-                            <line class="chart-grid-line" x1="0" y1="45" x2="620" y2="45"/>
-                            <line class="chart-grid-line" x1="0" y1="105" x2="620" y2="105"/>
-                            <line class="chart-grid-line" x1="0" y1="165" x2="620" y2="165"/>
-                            <line class="chart-grid-line" x1="0" y1="225" x2="620" y2="225"/>
-                            <path class="chart-area" d="M0 203 C35 190,60 202,92 174 S145 158,178 171 S235 124,270 137 S328 108,360 121 S413 68,449 82 S503 58,535 70 S582 31,620 22 L620 245 L0 245 Z"/>
-                            <path class="chart-line" d="M0 203 C35 190,60 202,92 174 S145 158,178 171 S235 124,270 137 S328 108,360 121 S413 68,449 82 S503 58,535 70 S582 31,620 22"/>
-                            <circle class="chart-dot" cx="620" cy="22" r="4"/>
-                        </svg>
-                        <div class="terminal-stats">
-                            <div class="terminal-stat"><span th:text="#{landing.preview.analysis}">Analysis</span><strong th:text="#{landing.preview.automatedOutlook}">Automated outlook</strong></div>
-                            <div class="terminal-stat"><span th:text="#{landing.preview.setupScore}">Setup score</span><strong class="market-up" th:text="#{landing.preview.strongScore}">Strong · 88/100</strong></div>
-                            <div class="terminal-stat"><span th:text="#{landing.preview.tracking}">Tracking</span><strong th:text="#{landing.preview.active}">Active</strong></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="floating-insight" aria-hidden="true">
-                    <span class="insight-icon">⌁</span>
-                    <span><strong th:text="#{landing.preview.harmonicFound}">Harmonic formation found</strong><span th:text="#{landing.preview.harmonicDetail}">Daily · bullish Gartley</span></span>
-                </div>
-                <div class="floating-signal" aria-hidden="true">
-                    <div class="floating-signal-head"><span th:text="#{landing.preview.signalDelivered}">Signal delivered</span><span class="signal-pill" th:text="#{landing.preview.buy}">BUY</span></div>
-                    <strong th:text="#{landing.preview.candleConfirmed}">Daily candle confirmed</strong>
-                    <p th:text="#{landing.preview.emailQueued}">Email notification queued for delivery.</p>
-                </div>
-            </div>
-        </section>
-
-        <div class="market-strip" aria-label="Illustrative market ticker" th:aria-label="#{landing.tickerAria}">
-            <div class="market-track">
-                <div class="market-item"><strong>S&amp;P 500</strong><span class="market-up">+0.72%</span></div>
-                <div class="market-item"><strong>NASDAQ</strong><span class="market-up">+1.14%</span></div>
-                <div class="market-item"><strong>BTC-USD</strong><span class="market-down">−0.36%</span></div>
-                <div class="market-item"><strong>AAPL</strong><span class="market-up">+0.48%</span></div>
-                <div class="market-item"><strong>NVDA</strong><span class="market-up">+2.84%</span></div>
-                <div class="market-item"><strong>EUR/USD</strong><span class="market-down">−0.11%</span></div>
-                <div class="market-item"><strong>S&amp;P 500</strong><span class="market-up">+0.72%</span></div>
-                <div class="market-item"><strong>NASDAQ</strong><span class="market-up">+1.14%</span></div>
-                <div class="market-item"><strong>BTC-USD</strong><span class="market-down">−0.36%</span></div>
-                <div class="market-item"><strong>AAPL</strong><span class="market-up">+0.48%</span></div>
-                <div class="market-item"><strong>NVDA</strong><span class="market-up">+2.84%</span></div>
-                <div class="market-item"><strong>EUR/USD</strong><span class="market-down">−0.11%</span></div>
-            </div>
+            <ul class="lp-checks">
+                <li><svg viewBox="0 0 20 20" aria-hidden="true"><polyline points="4 10.5 8 14.5 16 6"/></svg><span th:text="#{landing.check.explained}">Every score explains its inputs</span></li>
+                <li><svg viewBox="0 0 20 20" aria-hidden="true"><polyline points="4 10.5 8 14.5 16 6"/></svg><span th:text="#{landing.check.outcomes}">Every signal followed to its outcome</span></li>
+                <li><svg viewBox="0 0 20 20" aria-hidden="true"><polyline points="4 10.5 8 14.5 16 6"/></svg><span th:text="#{landing.check.email}">An email when your alert matches</span></li>
+            </ul>
         </div>
 
-        <section id="platform" class="landing-section">
-            <div class="section-heading">
-                <div class="eyebrow" th:text="#{landing.platform.eyebrow}">Analysis, alerts and charting</div>
-                <h2><span th:text="#{landing.platform.headline1}">Less chart watching.</span><br><span th:text="#{landing.platform.headline2}">More signal clarity.</span></h2>
-                <p th:text="#{landing.platform.pitch}">Read an automated outlook, find Elliott Waves, harmonic and candlestick patterns, write alerts from your own rules and draw your analysis on the chart. Every signal is followed to its outcome, and demo trades test an idea without a real order.</p>
+        <figure class="lp-preview">
+            <div class="lp-card" aria-hidden="true">
+                <div class="lp-card-head">
+                    <div class="lp-card-id">
+                        <span class="lp-sym">AAPL</span>
+                        <span class="lp-chip" th:text="#{landing.preview.daily}">Daily</span>
+                        <span class="lp-co">Apple Inc.</span>
+                    </div>
+                    <div class="lp-quote">
+                        <strong th:text="#{landing.preview.price}">$229.87</strong>
+                        <span class="lp-up-text" th:text="#{landing.preview.change}">+3.41%</span>
+                    </div>
+                </div>
+                <div class="lp-chart-frame"><svg class="lp-chart" viewBox="0 0 560 200">
+                    <line class="lp-grid-line" x1="0" x2="560" y1="60" y2="60"/>
+                    <line class="lp-grid-line" x1="0" x2="560" y1="140" y2="140"/>
+                    <rect class="lp-mark" x="505" y="88" width="42" height="74" rx="6"/>
+                    <line class="lp-level lp-level-target" x1="0" x2="560" y1="18.3" y2="18.3"/>
+                    <line class="lp-level lp-level-entry" x1="0" x2="560" y1="100.8" y2="100.8"/>
+                    <line class="lp-level lp-level-stop" x1="0" x2="560" y1="178.5" y2="178.5"/>
+                    <g class="lp-down"><line x1="17.2" x2="17.2" y1="41.8" y2="86.2"/><rect x="12.2" y="52.9" width="10" height="22.3"/></g>
+                    <g class="lp-up"><line x1="35.7" x2="35.7" y1="67.4" y2="86.4"/><rect x="30.7" y="72.7" width="10" height="3.4"/></g>
+                    <g class="lp-down"><line x1="54.2" x2="54.2" y1="70.5" y2="87.8"/><rect x="49.2" y="73.9" width="10" height="9"/></g>
+                    <g class="lp-down"><line x1="72.7" x2="72.7" y1="78.6" y2="106"/><rect x="67.7" y="83.4" width="10" height="11.3"/></g>
+                    <g class="lp-down"><line x1="91.2" x2="91.2" y1="85" y2="106.8"/><rect x="86.2" y="94.2" width="10" height="1.8"/></g>
+                    <g class="lp-down"><line x1="109.7" x2="109.7" y1="94.7" y2="108.9"/><rect x="104.7" y="99.4" width="10" height="2"/></g>
+                    <g class="lp-down"><line x1="128.1" x2="128.1" y1="95.2" y2="114.6"/><rect x="123.1" y="101.3" width="10" height="9.5"/></g>
+                    <g class="lp-down"><line x1="146.6" x2="146.6" y1="105.2" y2="117.2"/><rect x="141.6" y="107.7" width="10" height="4"/></g>
+                    <g class="lp-up"><line x1="165.1" x2="165.1" y1="103.9" y2="124"/><rect x="160.1" y="112.5" width="10" height="1.5"/></g>
+                    <g class="lp-down"><line x1="183.6" x2="183.6" y1="108.8" y2="123.6"/><rect x="178.6" y="112.4" width="10" height="5.2"/></g>
+                    <g class="lp-down"><line x1="202.1" x2="202.1" y1="113.7" y2="126"/><rect x="197.1" y="119.2" width="10" height="1.5"/></g>
+                    <g class="lp-down"><line x1="220.6" x2="220.6" y1="113.9" y2="131.2"/><rect x="215.6" y="121.1" width="10" height="2"/></g>
+                    <g class="lp-up"><line x1="239" x2="239" y1="111.7" y2="131.6"/><rect x="234" y="122.7" width="10" height="2.4"/></g>
+                    <g class="lp-down"><line x1="257.5" x2="257.5" y1="111.7" y2="142.1"/><rect x="252.5" y="120" width="10" height="13.9"/></g>
+                    <g class="lp-down"><line x1="276" x2="276" y1="126.8" y2="151.2"/><rect x="271" y="133.7" width="10" height="8.7"/></g>
+                    <g class="lp-down"><line x1="294.5" x2="294.5" y1="133.2" y2="153.2"/><rect x="289.5" y="139.1" width="10" height="5.1"/></g>
+                    <g class="lp-down"><line x1="313" x2="313" y1="138.2" y2="151.6"/><rect x="308" y="146" width="10" height="1.5"/></g>
+                    <g class="lp-down"><line x1="331.4" x2="331.4" y1="141.6" y2="171"/><rect x="326.4" y="147.4" width="10" height="13.7"/></g>
+                    <g class="lp-up"><line x1="349.9" x2="349.9" y1="145.9" y2="168.4"/><rect x="344.9" y="148.9" width="10" height="9.3"/></g>
+                    <g class="lp-down"><line x1="368.4" x2="368.4" y1="146.1" y2="156.9"/><rect x="363.4" y="152.1" width="10" height="1.5"/></g>
+                    <g class="lp-up"><line x1="386.9" x2="386.9" y1="131.9" y2="160.8"/><rect x="381.9" y="143.8" width="10" height="12.9"/></g>
+                    <g class="lp-down"><line x1="405.4" x2="405.4" y1="139.4" y2="152.7"/><rect x="400.4" y="142.8" width="10" height="3.4"/></g>
+                    <g class="lp-down"><line x1="423.9" x2="423.9" y1="142.3" y2="172"/><rect x="418.9" y="145.5" width="10" height="15.4"/></g>
+                    <g class="lp-up"><line x1="442.3" x2="442.3" y1="141.7" y2="168.7"/><rect x="437.3" y="152.5" width="10" height="5.5"/></g>
+                    <g class="lp-up"><line x1="460.8" x2="460.8" y1="134.2" y2="154.1"/><rect x="455.8" y="143.8" width="10" height="5.6"/></g>
+                    <g class="lp-down"><line x1="479.3" x2="479.3" y1="143.1" y2="151.4"/><rect x="474.3" y="147.4" width="10" height="1.5"/></g>
+                    <g class="lp-up"><line x1="497.8" x2="497.8" y1="141.6" y2="156.7"/><rect x="492.8" y="149.7" width="10" height="2.8"/></g>
+                    <g class="lp-down"><line x1="516.3" x2="516.3" y1="135.8" y2="154.1"/><rect x="511.3" y="140.2" width="10" height="8.2"/></g>
+                    <g class="lp-up"><line x1="534.8" x2="534.8" y1="96.2" y2="155.3"/><rect x="529.8" y="100.8" width="10" height="50.1"/></g>
+                </svg></div>
+                <ul class="lp-levels">
+                    <li class="lp-levels-target"><span th:text="#{landing.preview.target}">Target</span> <b th:text="#{landing.preview.targetValue}">243.00</b></li>
+                    <li class="lp-levels-entry"><span th:text="#{landing.preview.entry}">Entry</span> <b th:text="#{landing.preview.entryValue}">229.87</b></li>
+                    <li class="lp-levels-stop"><span th:text="#{landing.preview.stop}">Stop</span> <b th:text="#{landing.preview.stopValue}">217.50</b></li>
+                </ul>
+                <div class="lp-outlook">
+                    <div class="lp-outlook-row">
+                        <span th:text="#{landing.preview.outlook}">Technical outlook</span>
+                        <strong class="lp-up-text" th:text="#{landing.preview.moderateBuy}">Moderate buy · +46</strong>
+                    </div>
+                    <div class="lp-meter"><span class="lp-meter-mark"></span></div>
+                    <div class="lp-meter-scale"><span>−100</span><span>0</span><span>+100</span></div>
+                </div>
+                <ul class="lp-signals">
+                    <li>
+                        <span class="lp-signal-name"><strong th:text="#{landing.preview.engulfing}">Bullish Engulfing</strong><span th:text="#{landing.preview.daily}">Daily</span></span>
+                        <span class="lp-pill" th:text="#{landing.preview.awaiting}">Awaiting confirmation</span>
+                    </li>
+                    <li>
+                        <span class="lp-signal-name"><strong th:text="#{landing.preview.gartley}">Bullish Gartley</strong><span th:text="#{landing.preview.weekly}">Weekly</span></span>
+                        <span class="lp-pill" th:text="#{landing.preview.watching}">Watching</span>
+                    </li>
+                    <li>
+                        <span class="lp-signal-name"><strong th:text="#{landing.preview.alert}">Your alert: close crosses above SMA 200</strong><span th:text="#{landing.preview.daily}">Daily</span></span>
+                        <span class="lp-pill lp-pill-accent" th:text="#{landing.preview.emailSent}">Email sent</span>
+                    </li>
+                </ul>
             </div>
+            <figcaption>
+                <span th:text="#{landing.preview.caption}">Illustrative example, not live data.</span>
+                <span class="visually-hidden" th:text="#{landing.preview.description}">Example: Apple on the daily chart after a Bullish Engulfing signal, with its target and stop, a moderate buy outlook and an alert that sent an email.</span>
+            </figcaption>
+        </figure>
+    </section>
 
-            <div class="bento-grid">
-                <article class="feature-card large">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature1.number}">01 / TECHNICAL OUTLOOK</span>
-                        <h3 th:text="#{landing.feature1.title}">Automated technical analysis</h3>
-                        <p th:text="#{landing.feature1.text}">A buy, neutral or sell outlook scored from −100 to +100 on the daily, weekly and monthly interval. Seven indicator categories feed it, from trend and momentum to volume and recent pattern signals, and every score explains its inputs.</p>
-                    </div>
-                    <div class="feature-visual signal-stack" aria-hidden="true">
-                        <div class="signal-chip"><span th:text="#{landing.feature1.trend}">Trend</span><strong class="market-up" th:text="#{landing.feature1.bullish}">Bullish</strong></div>
-                        <div class="signal-chip"><span th:text="#{landing.feature1.momentum}">Momentum</span><strong th:text="#{landing.feature1.neutral}">Neutral</strong></div>
-                        <div class="signal-chip"><span th:text="#{landing.feature1.outlook}">Outlook</span><strong class="market-up" th:text="#{landing.feature1.moderateBuy}">Moderate buy · +46</strong></div>
-                    </div>
-                </article>
+    <section id="how" class="lp-section lp-wrap" aria-labelledby="lp-how-title">
+        <div class="lp-section-head">
+            <p class="lp-eyebrow" th:text="#{landing.how.eyebrow}">How it works</p>
+            <h2 id="lp-how-title" th:text="#{landing.how.title}">From watchlist to signal in three steps</h2>
+        </div>
+        <ol class="lp-steps">
+            <li>
+                <span class="lp-step-number" aria-hidden="true">1</span>
+                <h3 th:text="#{landing.how.step1.title}">Build a watchlist</h3>
+                <p th:text="#{landing.how.step1.text}">Add the stocks, indexes and ETFs you follow, grouped into your own lists.</p>
+            </li>
+            <li>
+                <span class="lp-step-number" aria-hidden="true">2</span>
+                <h3 th:text="#{landing.how.step2.title}">StockWatch reads every close</h3>
+                <p th:text="#{landing.how.step2.text}">After each daily, weekly and monthly candle closes, it scores the technical outlook and looks for Elliott Waves, harmonic and candlestick patterns.</p>
+            </li>
+            <li>
+                <span class="lp-step-number" aria-hidden="true">3</span>
+                <h3 th:text="#{landing.how.step3.title}">You hear about what matters</h3>
+                <p th:text="#{landing.how.step3.text}">Write alerts from your own rules and get an email when one matches. Every signal is then followed to its outcome.</p>
+            </li>
+        </ol>
+    </section>
 
-                <article class="feature-card medium">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature2.number}">02 / CUSTOM ALERTS</span>
-                        <h3 th:text="#{landing.feature2.title}">Alerts from your own rules</h3>
-                        <p th:text="#{landing.feature2.text}">Combine price, 104 indicators, candlestick, Elliott Wave and harmonic patterns, the outlook, and insider and congressional trades. A live preview replays the rule over the last 500 candles before you save it.</p>
-                    </div>
-                    <div class="feature-visual wave-visual" aria-hidden="true">
-                        <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
-                    </div>
-                </article>
+    <section id="features" class="lp-section lp-wrap" aria-labelledby="lp-features-title">
+        <div class="lp-section-head">
+            <p class="lp-eyebrow" th:text="#{landing.platform.eyebrow}">Features</p>
+            <h2 id="lp-features-title" th:text="#{landing.platform.title}">Less chart watching, more signal clarity.</h2>
+            <p th:text="#{landing.platform.pitch}">Analysis, alerts and charting in one workspace, from the first signal to its outcome.</p>
+        </div>
 
-                <article class="feature-card third">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature3.number}">03 / ELLIOTT WAVES</span>
-                        <h3 th:text="#{landing.feature3.title}">Wave counts on the chart</h3>
-                        <p th:text="#{landing.feature3.text}">Impulse waves 1–5 and A-B-C corrections on daily, weekly and monthly candles, labeled on the chart with Fibonacci targets and projections for the next wave.</p>
-                    </div>
-                </article>
-
-                <article class="feature-card third">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature4.number}">04 / HARMONIC PATTERNS</span>
-                        <h3 th:text="#{landing.feature4.title}">11 harmonic patterns</h3>
-                        <p th:text="#{landing.feature4.text}">Gartley, Bat, Butterfly, Crab, Shark, Cypher, 5-0, AB=CD and their variants, each with labeled X-A-B-C-D points, ratios, a quality score and a structural stop.</p>
-                    </div>
-                </article>
-
-                <article class="feature-card third">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature5.number}">05 / CANDLESTICK PATTERNS</span>
-                        <h3 th:text="#{landing.feature5.title}">17 candlestick patterns</h3>
-                        <p th:text="#{landing.feature5.text}">From Hammer and Engulfing to Morning Star and Three White Soldiers, each checked for the trend before it and followed until it is confirmed, invalidated or expires.</p>
-                    </div>
-                </article>
-
-                <article class="feature-card third">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature6.number}">06 / INDICATORS</span>
-                        <h3 th:text="#{landing.feature6.title}">121 chart indicators</h3>
-                        <p th:text="#{landing.feature6.text}">Moving averages, trend, momentum, volatility, volume, levels, statistics and volume profiles, on the price chart or in their own panes, with indicator sets you can save.</p>
-                    </div>
-                </article>
-
-                <article class="feature-card third">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature7.number}">07 / DRAWING</span>
-                        <h3 th:text="#{landing.feature7.title}">86 drawing tools</h3>
-                        <p th:text="#{landing.feature7.text}">Trend lines, channels, pitchforks, Fibonacci and Gann tools, long and short positions, pattern and Elliott Wave tools, shapes and notes, saved to your account for each stock.</p>
-                    </div>
-                </article>
-
-                <article class="feature-card third">
-                    <div class="feature-content">
-                        <span class="feature-number" th:text="#{landing.feature8.number}">08 / OUTCOMES &amp; DEMO TRADES</span>
-                        <h3 th:text="#{landing.feature8.title}">See what happened after the signal</h3>
-                        <p th:text="#{landing.feature8.text}">Every signal carries an entry, stop and target and is followed to its result. Demo trades test an idea at the current quote without placing a real order.</p>
-                    </div>
-                    <div class="feature-visual recovery-timeline" aria-hidden="true">
-                        <span class="recovery-node">✓</span><span class="recovery-line"></span><span class="recovery-node">↻</span><span class="recovery-line"></span><span class="recovery-node">✓</span>
-                    </div>
-                </article>
+        <article class="lp-spot lp-spot-center">
+            <div class="lp-spot-copy">
+                <p class="lp-kicker" th:text="#{landing.feature1.kicker}">Technical outlook</p>
+                <h3 th:text="#{landing.feature1.title}">Automated technical analysis</h3>
+                <p th:text="#{landing.feature1.text}">A buy, neutral or sell outlook scored from −100 to +100 on the daily, weekly and monthly interval.</p>
+                <a class="lp-more" th:href="@{/about#glossary}"><span th:text="#{landing.feature1.more}">The outlook and other terms, explained</span> <span aria-hidden="true">→</span></a>
             </div>
-        </section>
+            <div class="lp-spot-visual lp-breakdown" aria-hidden="true">
+                <div class="lp-bar-row"><span th:text="#{landing.outlook.trend}">Trend</span><span class="lp-bar"><i class="lp-bar-pos"></i></span><b>+80</b></div>
+                <div class="lp-bar-row"><span th:text="#{landing.outlook.momentum}">Momentum</span><span class="lp-bar"><i class="lp-bar-pos"></i></span><b>+40</b></div>
+                <div class="lp-bar-row"><span th:text="#{landing.outlook.volatility}">Volatility</span><span class="lp-bar"><i class="lp-bar-neg"></i></span><b>−10</b></div>
+                <div class="lp-bar-row"><span th:text="#{landing.outlook.volume}">Volume</span><span class="lp-bar"><i class="lp-bar-pos"></i></span><b>+50</b></div>
+                <div class="lp-bar-row"><span th:text="#{landing.outlook.priceLocation}">Price location</span><span class="lp-bar"><i class="lp-bar-pos"></i></span><b>+60</b></div>
+                <div class="lp-bar-row"><span th:text="#{landing.outlook.marketRelative}">Market-relative</span><span class="lp-bar"><i class="lp-bar-pos"></i></span><b>+42</b></div>
+                <div class="lp-bar-row"><span th:text="#{landing.outlook.candlestick}">Candlesticks</span><span class="lp-bar"><i class="lp-bar-pos"></i></span><b>+60</b></div>
+                <p class="lp-breakdown-note" th:text="#{landing.outlook.note}">Seven categories, equally weighted: their average is the outlook.</p>
+                <div class="lp-breakdown-total"><span th:text="#{landing.preview.outlook}">Technical outlook</span><strong class="lp-up-text" th:text="#{landing.preview.moderateBuy}">Moderate buy · +46</strong></div>
+            </div>
+        </article>
 
-        <section class="landing-section">
-            <div class="cta-panel">
-                <div class="eyebrow" th:text="#{landing.cta.eyebrow}">Get started</div>
-                <h2><span th:text="#{landing.cta.headline1}">Follow the stocks</span><br><span class="text-gradient" th:text="#{landing.cta.headline2}">that matter to you.</span></h2>
-                <p th:text="#{landing.cta.pitch}">Create your account, build a watchlist and let StockWatch analyze it after every close. Then write alerts for the setups you care about, or test an idea with a demo trade.</p>
-                <div class="hero-actions">
-                    <a th:href="@{/signup}" class="btn-accent large"><span th:text="#{landing.startMonitoring}">Start monitoring</span> <span class="button-arrow" aria-hidden="true">→</span></a>
+        <article class="lp-spot lp-spot-flip">
+            <div class="lp-spot-copy">
+                <p class="lp-kicker" th:text="#{landing.feature2.kicker}">Custom alerts</p>
+                <h3 th:text="#{landing.feature2.title}">Alerts from your own rules</h3>
+                <p th:text="#{landing.feature2.text}">Combine price, indicators and patterns.</p>
+            </div>
+            <div class="lp-spot-visual lp-rule" aria-hidden="true">
+                <div class="lp-rule-line"><span class="lp-rule-join" th:text="#{landing.rule.when}">When</span><span class="lp-rule-chips"><span class="lp-token" th:text="#{landing.rule.close}">Close</span><span class="lp-token lp-token-op" th:text="#{landing.rule.crossesAbove}">crosses above</span><span class="lp-token">SMA (200)</span></span></div>
+                <div class="lp-rule-line"><span class="lp-rule-join" th:text="#{landing.rule.and}">and</span><span class="lp-rule-chips"><span class="lp-token">RSI (14)</span><span class="lp-token lp-token-op" th:text="#{landing.rule.below}">is below</span><span class="lp-token">40</span></span></div>
+                <div class="lp-rule-preview">
+                    <div class="lp-rule-preview-head"><span th:text="#{landing.rule.preview}">Preview · last 500 candles</span><strong th:text="#{landing.rule.matches}">6 matches</strong></div>
+                    <div class="lp-rule-track"><i></i><i></i><i></i><i></i><i></i><i></i></div>
                 </div>
             </div>
-        </section>
-    </main>
+        </article>
 
-    <footer class="site-footer">
-        <a class="logo" th:href="@{/}">
-            <span class="logo-mark" aria-hidden="true"></span>
-            <span class="logo-word">StockWatch <span>24/7</span></span>
-        </a>
-        <span class="footer-tagline" th:text="#{landing.footer.tagline}">Automated technical analysis and custom alerts.</span>
-        <a th:href="@{/about}" th:text="#{landing.nav.about}">About</a>
-        <span>© 2026 StockWatch 24/7</span>
-    </footer>
-</div>
+        <article class="lp-spot lp-spot-stretch">
+            <div class="lp-spot-copy">
+                <p class="lp-kicker" th:text="#{landing.patterns.kicker}">Chart patterns</p>
+                <h3 th:text="#{landing.patterns.title}">Elliott Waves and harmonic patterns, labeled on the chart</h3>
+                <h4 class="lp-run-head" th:text="#{landing.feature3.title}">Wave counts on the chart</h4>
+                <p th:text="#{landing.feature3.text}">Impulse waves 1–5 and A-B-C corrections.</p>
+                <h4 class="lp-run-head" th:text="#{landing.feature4.title}">11 harmonic patterns</h4>
+                <p th:text="#{landing.feature4.text}">Gartley, Bat, Butterfly and more.</p>
+            </div>
+            <div class="lp-spot-visual lp-patterns" aria-hidden="true">
+                <figure class="lp-pattern">
+                    <svg viewBox="-8 -16 256 184">
+                        <polyline class="lp-pattern-line" points="14 146 62 86 88 114 150 36 178 70 226 22"/>
+                        <g class="lp-pattern-label">
+                            <text x="62" y="72">1</text><text x="88" y="136">2</text><text x="150" y="26">3</text><text x="178" y="92">4</text><text x="226" y="12">5</text>
+                        </g>
+                    </svg>
+                    <figcaption th:text="#{landing.patterns.elliott}">Elliott impulse, waves 1–5</figcaption>
+                </figure>
+                <figure class="lp-pattern">
+                    <svg viewBox="-8 -16 256 184">
+                        <polygon class="lp-pattern-fill" points="16 140 70 30 112 98"/>
+                        <polygon class="lp-pattern-fill" points="112 98 152 60 214 116"/>
+                        <line class="lp-pattern-ratio" x1="16" y1="140" x2="112" y2="98"/>
+                        <line class="lp-pattern-ratio" x1="112" y1="98" x2="214" y2="116"/>
+                        <polyline class="lp-pattern-line" points="16 140 70 30 112 98 152 60 214 116"/>
+                        <g class="lp-pattern-label">
+                            <text x="16" y="158">X</text><text x="70" y="22">A</text><text x="112" y="120">B</text><text x="152" y="50">C</text><text x="214" y="138">D</text>
+                        </g>
+                    </svg>
+                    <figcaption th:text="#{landing.patterns.harmonic}">Bullish Gartley, X-A-B-C-D</figcaption>
+                </figure>
+            </div>
+        </article>
+
+        <ul class="lp-grid">
+            <li class="lp-feature">
+                <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><line x1="8" y1="3" x2="8" y2="21"/><rect x="5" y="7" width="6" height="9" rx="1"/><line x1="16" y1="5" x2="16" y2="19"/><rect x="13" y="8" width="6" height="7" rx="1"/></svg></span>
+                <h3 th:text="#{landing.feature5.title}">17 candlestick patterns</h3>
+                <p th:text="#{landing.feature5.text}">From Hammer and Engulfing to Morning Star.</p>
+            </li>
+            <li class="lp-feature">
+                <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 16c3-6 5-8 8-4s5 2 10-6"/><line x1="3" y1="21" x2="21" y2="21"/></svg></span>
+                <h3 th:text="#{landing.feature6.title}">121 chart indicators</h3>
+                <p th:text="#{landing.feature6.text}">Moving averages, trend, momentum and more.</p>
+            </li>
+            <li class="lp-feature">
+                <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><line x1="5" y1="12" x2="12" y2="5"/></svg></span>
+                <h3 th:text="#{landing.feature7.title}">86 drawing tools</h3>
+                <p th:text="#{landing.feature7.text}">Trend lines, channels, pitchforks and more.</p>
+            </li>
+            <li class="lp-feature">
+                <span class="lp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/></svg></span>
+                <h3 th:text="#{landing.feature8.title}">See what happened after the signal</h3>
+                <p th:text="#{landing.feature8.text}">Every signal carries an entry, stop and target.</p>
+            </li>
+        </ul>
+    </section>
+
+    <section class="lp-cta lp-wrap" aria-labelledby="lp-cta-title">
+        <div class="lp-cta-panel">
+            <div>
+                <h2 id="lp-cta-title" th:text="#{landing.cta.title}">Follow the stocks that matter to you.</h2>
+                <p th:text="#{landing.cta.pitch}">Create your account, build a watchlist and let StockWatch analyze it after every close.</p>
+            </div>
+            <div class="lp-actions">
+                <a th:href="@{/signup}" class="btn-accent lp-btn-lg"><span th:text="#{landing.buildWatchlist}">Build your watchlist</span> <span aria-hidden="true">→</span></a>
+                <a th:href="@{/login}" class="btn-secondary lp-btn-lg" th:text="#{auth.signIn}">Sign in</a>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="lp-footer">
+    <div class="lp-wrap lp-footer-inner">
+        <div class="lp-footer-brand">
+            <a class="logo" th:href="@{/}" aria-label="StockWatch 24/7 home" th:aria-label="#{sidebar.logoHome}">
+                <span class="logo-mark" aria-hidden="true"></span>
+                <span class="logo-word">StockWatch <span>24/7</span></span>
+            </a>
+            <p th:text="#{landing.footer.tagline}">Automated technical analysis and custom alerts.</p>
+        </div>
+        <nav class="lp-footer-links" aria-label="Footer" th:aria-label="#{landing.footer.navAria}">
+            <a href="#how" th:text="#{landing.nav.how}">How it works</a>
+            <a href="#features" th:text="#{landing.nav.platform}">Features</a>
+            <a th:href="@{/about}" th:text="#{landing.nav.about}">About</a>
+            <a th:href="@{/login}" th:text="#{auth.signIn}">Sign in</a>
+        </nav>
+        <p class="lp-footer-note"><span>© 2026 StockWatch 24/7</span> <span th:text="#{landing.disclaimer}">Informational only, not financial advice.</span></p>
+    </div>
+</footer>
 </body>
 </html>
