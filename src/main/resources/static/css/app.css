@@ -867,3 +867,7 @@ main:focus { outline: none; }
 :root[data-theme="light"] .ui-refresh .signal-report-tag.direction.buy { color: #05664f; }
 /* "Possible trade" is a status, not a buy: neutral, like the other status pills. */
 :root[data-theme] .ui-refresh .possible-trade-pill.confirmed { border-color: var(--glass-border); background: var(--surface-raised); color: var(--text-color); }
+/* Signal page: the other signals that end at the same point, under the header tags. */
+.signal-same-point { margin: 0.75rem 0 0; color: var(--text-soft); font-size: var(--fs-sm); line-height: 1.5; }
+.signal-same-point-label { margin-right: 4px; }
+.signal-same-point .text-link { font-weight: 600; }

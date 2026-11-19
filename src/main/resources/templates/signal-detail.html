@@ -60,6 +60,13 @@
               th:title="${#tr.text(signal.lifecycle().summary())}"
               th:text="#{signalDetail.status(${#tr.text(signal.lifecycle().label())})}">Status: Detected</span>
       </div>
+      <!-- Other signals that end at the same point; the signals list shows them as one row. -->
+      <p th:if="${samePointSignals != null and !#lists.isEmpty(samePointSignals)}" class="signal-same-point">
+        <span class="signal-same-point-label" th:text="#{signals.samePoint}">Also at this point:</span>
+        <th:block th:each="other, it : ${samePointSignals}"><a class="text-link"
+            th:href="${archiveReturnUrl != null} ? @{/alerts/signals/{id}(id=${other.id()},returnTo=${archiveReturnUrl})} : @{/alerts/signals/{id}(id=${other.id()})}"
+            th:text="${#tr.text(other.patternLabel()) + (other.setupScore() != null ? ' · ' + other.setupScore() + '/100' : '')}">AB=CD · 93/100</a><span th:unless="${it.last}">, </span></th:block>
+      </p>
     </div>
     <div class="signal-report-actions">
       <a th:href="@{/stock/{symbol}(symbol=${signal.symbol()})}" class="btn-primary"><span th:text="#{detail.openWorkspace}">Open workspace</span> <span class="button-arrow" aria-hidden="true">&rarr;</span></a>

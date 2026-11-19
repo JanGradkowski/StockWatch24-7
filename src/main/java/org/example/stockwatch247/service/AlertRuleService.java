@@ -66,6 +66,10 @@ public class AlertRuleService {
     @Autowired
     void setArchiveQuery(SignalArchiveQuery archiveQuery) { this.archiveQuery = archiveQuery; }
 
+    private SamePointSignals samePointSignals;
+    @Autowired(required = false)
+    void setSamePointSignals(SamePointSignals samePointSignals) { this.samePointSignals = samePointSignals; }
+
     private List<SignalArchiveEntry> archiveEntries(List<AlertEvent> events) {
         if (events.isEmpty()) return List.of();
         if (archiveQuery == null || elliottTradePlanService == null)
@@ -499,8 +503,9 @@ public class AlertRuleService {
 
     private SignalArchivePage filteredArchive(User user, StockAsset asset, String sort, String direction,
                                                int page, SignalArchiveFilter filter) {
-        // The account archive also lists chart and custom alert triggers, which only the archive query reads.
-        if (!filter.applied() && (asset != null || archiveQuery == null)) return getSignalArchive(user, asset, sort, direction, page);
+        // The archive query also lists chart and custom alert triggers, and shows signals that end at the same point
+        // as one row; the repository pages remain for setups without it.
+        if (archiveQuery == null) return getSignalArchive(user, asset, sort, direction, page);
         String sortKey = normalizeArchiveSort(sort);
         String directionKey = "asc".equalsIgnoreCase(direction) ? "asc" : "desc";
         var result = archiveQuery.page(user.getId(), asset == null ? null : asset.getId(), sortKey,
@@ -508,11 +513,38 @@ public class AlertRuleService {
         return queryArchivePage(user, result, sortKey, directionKey);
     }
 
+    /** Adds to each technical row the other signals that end at its point. */
+    private List<SignalArchiveEntry> withSamePoint(User user, List<SignalArchiveEntry> entries) {
+        if (samePointSignals == null || entries.isEmpty()) return entries;
+        var others = samePointSignals.others(entries.stream().map(entry -> entry.signal().id()).toList());
+        if (others.isEmpty()) return entries;
+        var views = samePointViews(user, others.values().stream().flatMap(List::stream).toList());
+        return entries.stream().map(entry -> {
+            List<Long> ids = others.getOrDefault(entry.signal().id(), List.of());
+            return ids.isEmpty() ? entry : entry.withSamePoint(ids.stream().map(views::get).filter(java.util.Objects::nonNull).toList());
+        }).toList();
+    }
+
+    private java.util.Map<Long, LatestSignalView> samePointViews(User user, List<Long> ids) {
+        if (ids.isEmpty()) return java.util.Map.of();
+        return alertEventRepository.findOwnedArchiveIds(ids, user).stream()
+                .collect(Collectors.toMap(AlertEvent::getId, this::toLatestSignalView, (first, second) -> first));
+    }
+
+    /** The other signals that end at this signal's point, highest score first, for its page. */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public List<LatestSignalView> getSamePointSignals(User user, Long alertEventId) {
+        if (samePointSignals == null || alertEventRepository.findOwnedByIdAndUser(alertEventId, user).isEmpty()) return List.of();
+        List<Long> ids = samePointSignals.others(List.of(alertEventId)).getOrDefault(alertEventId, List.of());
+        var views = samePointViews(user, ids);
+        return ids.stream().map(views::get).filter(java.util.Objects::nonNull).toList();
+    }
+
     private SignalArchivePage queryArchivePage(User user, SignalArchiveQuery.Result result, String sort, String direction) {
         var byId = result.ids().isEmpty() ? java.util.Map.<Long, AlertEvent>of()
                 : alertEventRepository.findOwnedArchiveIds(result.ids(), user).stream()
                     .collect(Collectors.toMap(AlertEvent::getId, event -> event));
-        var entries = archiveEntries(result.ids().stream().map(byId::get).filter(java.util.Objects::nonNull).toList());
+        var entries = withSamePoint(user, archiveEntries(result.ids().stream().map(byId::get).filter(java.util.Objects::nonNull).toList()));
         if (!result.rows().isEmpty()) {
             var technical = entries.stream().collect(Collectors.toMap(entry -> entry.signal().id(), entry -> entry));
             entries = result.rows().stream().map(row -> switch (row.kind()) {
@@ -1282,11 +1314,17 @@ public class AlertRuleService {
         );
     }
 
+    /** Marks the signal read, with the other signals at its point: the archive showed them as one row. */
     @Transactional
     public boolean markSignalRead(User user, Long alertEventId) {
         return alertEventRepository.findOwnedByIdAndUser(alertEventId, user)
                 .map(event -> {
-                    event.markRead(LocalDateTime.now());
+                    LocalDateTime now = LocalDateTime.now();
+                    event.markRead(now);
+                    if (samePointSignals != null) {
+                        List<Long> others = samePointSignals.others(List.of(alertEventId)).getOrDefault(alertEventId, List.of());
+                        if (!others.isEmpty()) alertEventRepository.findOwnedArchiveIds(others, user).forEach(other -> other.markRead(now));
+                    }
                     return true;
                 })
                 .orElse(false);
@@ -3201,13 +3239,29 @@ public class AlertRuleService {
             SignalArchiveOutcome outcome,
             List<SignalArchiveOutcome> stageOutcomes,
             SignalArchiveQuery.ActivitySignal activity,
-            SignalArchiveQuery.AlertTrigger trigger
+            SignalArchiveQuery.AlertTrigger trigger,
+            List<LatestSignalView> samePoint
     ) {
         public SignalArchiveEntry(LatestSignalView signal,SignalArchiveOutcome outcome,List<SignalArchiveOutcome> stageOutcomes) {
             this(signal,outcome,stageOutcomes,null,null);
         }
+        public SignalArchiveEntry(LatestSignalView signal, SignalArchiveOutcome outcome, List<SignalArchiveOutcome> stageOutcomes,
+                                  SignalArchiveQuery.ActivitySignal activity, SignalArchiveQuery.AlertTrigger trigger) {
+            this(signal, outcome, stageOutcomes, activity, trigger, List.of());
+        }
         public SignalArchiveEntry {
             stageOutcomes = stageOutcomes == null ? List.of() : List.copyOf(stageOutcomes);
+            samePoint = samePoint == null ? List.of() : List.copyOf(samePoint);
+        }
+
+        /** This row with the other signals that end at its point (see SamePointSignals). */
+        public SignalArchiveEntry withSamePoint(List<LatestSignalView> others) {
+            return new SignalArchiveEntry(signal, outcome, stageOutcomes, activity, trigger, others);
+        }
+
+        /** A technical row is read once every signal at its point is. */
+        public boolean pointRead() {
+            return signal != null && signal.hasBeenRead() && samePoint.stream().allMatch(LatestSignalView::hasBeenRead);
         }
 
         /**

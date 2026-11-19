@@ -30,6 +30,13 @@ public class SignalArchiveDeletionService {
         this.jdbc = jdbc;
     }
 
+    private SamePointSignals samePointSignals;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void configureSamePoint(SamePointSignals samePointSignals) {
+        this.samePointSignals = samePointSignals;
+    }
+
     public SignalArchiveDeletionService(
             AlertEventRepository alertEventRepository,
             CongressionalTradeDeliveryRepository congressionalDeliveryRepository,
@@ -100,16 +107,28 @@ public class SignalArchiveDeletionService {
         return deleted;
     }
 
+    /**
+     * Deletes the selected signals with the other signals at their points, which the archive showed in the same rows.
+     * Returns how many rows went: a row is one selected signal, however many signals end at its point.
+     */
     @Transactional
     public int deleteTechnicalSignals(User user, Collection<Long> requestedIds) {
         requireUser(user);
         List<Long> ids = normalizeIds(requestedIds);
         List<AlertEvent> ownedSignals = alertEventRepository.findOwnedByIdsAndUser(ids, user);
         requireCompleteOwnership(ids.size(), ownedSignals.size());
+        if (samePointSignals != null) {
+            var selected = ownedSignals.stream().map(AlertEvent::getId).collect(java.util.stream.Collectors.toSet());
+            List<Long> others = samePointSignals.withOthers(ids).stream().filter(id -> !selected.contains(id)).toList();
+            if (!others.isEmpty()) {
+                ownedSignals = new java.util.ArrayList<>(ownedSignals);
+                ownedSignals.addAll(alertEventRepository.findOwnedByIdsAndUser(others, user));
+            }
+        }
         Instant deletedAt = Instant.now();
         ownedSignals.forEach(signal -> signal.markDeleted(deletedAt));
         alertEventRepository.saveAll(ownedSignals);
-        return ownedSignals.size();
+        return ids.size();
     }
 
     @Transactional

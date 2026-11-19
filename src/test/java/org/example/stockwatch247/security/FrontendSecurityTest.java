@@ -1105,7 +1105,8 @@ class FrontendSecurityTest {
         assertTrue(archive.contains("'trade-return'"));
         assertTrue(archive.contains("archiveSortUrls"));
         assertTrue(archive.contains("archive.groupKey"));
-        assertTrue(archive.contains("signal.hasBeenRead()"));
+        // A technical row is read once every signal at its point is (signals that end at one point share a row).
+        assertTrue(archive.contains("entry.pointRead()"));
         assertTrue(archive.contains("Signal status"));
         assertTrue(archive.contains("Setup score"));
         assertTrue(archive.contains("lifecycle.label()"));

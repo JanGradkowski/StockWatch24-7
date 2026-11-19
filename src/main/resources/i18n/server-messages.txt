@@ -187,6 +187,9 @@ internal
 en: Could not queue email.
 internal
 
+en: Could not combine emails.
+internal
+
 en: SMTP accepted but delivery ownership expired.
 internal
 
@@ -1898,6 +1901,15 @@ pl: E-maile z sygnałami przychodzą teraz jako jedno podsumowanie na każde spr
 
 en: Signal emails now arrive one by one.
 pl: E-maile z sygnałami przychodzą teraz pojedynczo.
+
+en: StockWatch: {0} signals at the same point on {1}
+pl: StockWatch: sygnały w tym samym punkcie ({0}) – {1}
+
+en: These {0} signals on {1} end at the same point ({2}).
+pl: Te sygnały dla {1} (liczba: {0}) kończą się w tym samym punkcie ({2}).
+
+en: Each keeps its own plan, entry, stop and target below.
+pl: Każdy z nich ma poniżej własny plan: wejście, stop i cel.
 
 en: StockWatch summary: {0} alerts
 pl: StockWatch – podsumowanie alertów ({0})

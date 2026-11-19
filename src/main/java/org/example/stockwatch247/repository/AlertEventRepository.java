@@ -22,6 +22,20 @@ import java.util.Optional;
 
 @Repository
 public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
+    /**
+     * The JPQL form of SamePointSignals.leadsPoint for a signal named {@code event}: no other visible signal at its
+     * point has newer news. Close it with {@code ")"}, or add a condition on the other signal {@code o} first.
+     */
+    String OTHER_AT_POINT_IS_NEWER = """
+            not exists (select o.id from AlertEvent o join o.alertRule ro
+                where ro.user = event.alertRule.user and ro.stockAsset = event.alertRule.stockAsset
+                  and ro.interval = event.alertRule.interval and ro.patternFamily = event.alertRule.patternFamily
+                  and o.tradeSignal = event.tradeSignal and o.signalCandleTimestamp = event.signalCandleTimestamp
+                  and o.patternEndTimestamp = event.patternEndTimestamp and o.deletedAt is null and o.id <> event.id
+                  and (o.sentAt > event.sentAt or (o.sentAt = event.sentAt and o.id < event.id))""";
+    String LEADS_POINT = OTHER_AT_POINT_IS_NEWER + ")";
+    String LEADS_UNREAD_POINT = OTHER_AT_POINT_IS_NEWER + " and o.readAt is null)";
+
     @Query(value = "select id from alert_rules where id = :id for update", nativeQuery = true)
     Long lockPublicationRule(@Param("id") Long id);
 
@@ -91,27 +105,26 @@ public interface AlertEventRepository extends JpaRepository<AlertEvent, Long> {
             @Param("signalCandleTimestamp") Long signalCandleTimestamp,
             Pageable pageable);
 
-    @Query("select count(event) from AlertEvent event where event.alertRule = :alertRule and event.deletedAt is null")
+    /** The rule's signals as the archive lists them: signals that end at the same point count once. */
+    @Query("select count(event) from AlertEvent event where event.alertRule = :alertRule and event.deletedAt is null and "
+            + LEADS_POINT)
     long countByAlertRule(@Param("alertRule") AlertRule alertRule);
 
-    @Query("select count(event) from AlertEvent event where event.alertRule = :alertRule and event.readAt is null and event.deletedAt is null")
+    /** The rule's unread rows, as the archive's Unread tab lists them. */
+    @Query("select count(event) from AlertEvent event where event.alertRule = :alertRule and event.readAt is null"
+            + " and event.deletedAt is null and " + LEADS_UNREAD_POINT)
     long countByAlertRuleAndReadAtIsNull(@Param("alertRule") AlertRule alertRule);
 
     @Query("select event from AlertEvent event where event.alertRule = :alertRule and event.deletedAt is null order by event.signalCandleTimestamp desc")
     List<AlertEvent> findByAlertRuleOrderBySignalCandleTimestampDesc(
             @Param("alertRule") AlertRule alertRule);
 
+    /** The dashboard's newest unread signals, one per point (see LEADS_UNREAD_POINT). */
     @EntityGraph(attributePaths = {"alertRule", "alertRule.stockAsset"})
-    @Query("""
-            select event
-            from AlertEvent event
-            join event.alertRule rule
-            where rule.user = :user
-              and rule.isActive = true
-              and event.readAt is null
-              and event.deletedAt is null
-            order by event.sentAt desc, event.id desc
-            """)
+    @Query("select event from AlertEvent event join event.alertRule rule"
+            + " where rule.user = :user and rule.isActive = true and event.readAt is null and event.deletedAt is null"
+            + " and " + LEADS_UNREAD_POINT
+            + " order by event.sentAt desc, event.id desc")
     List<AlertEvent> findByAlertRule_UserAndAlertRule_IsActiveTrueAndReadAtIsNullOrderBySentAtDescIdDesc(
             @Param("user") User user,
             Pageable pageable);

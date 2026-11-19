@@ -93,6 +93,11 @@
 .sa-name-link { display: flex; align-items: center; gap: 6px; font-family: var(--font-sans); }
 .sa-row.is-unread .sa-name { font-weight: 700; }
 .sa-kind { display: block; margin-top: 2px; overflow: hidden; color: var(--text-soft); font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
+/* The other signals that end at the row's point, between its name and its kind */
+.sa-also { display: block; margin-top: 2px; overflow: hidden; color: var(--text-color); font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
+.sa-also-label { color: var(--text-soft); }
+.sa-also-name { font-weight: 600; }
+.sa-also-score { color: var(--text-soft); }
 .sa-direction.is-buy { color: var(--accent-color); }
 .sa-direction.is-sell { color: var(--danger); }
 .sa-status { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; color: var(--text-color); font-size: var(--fs-sm); font-weight: 600; }
@@ -164,6 +169,7 @@
     .sa-table .ca-trigger-row :is(td.sa-col-score, td.ca-col-company, td.ca-col-open, td.sa-col-amount) { display: none; }
     .sa-table .sa-name { white-space: normal; }
     .sa-table .sa-kind { white-space: normal; }
+    .sa-table .sa-also { white-space: normal; }
     .sa-table .sa-col-outcome .ca-cell-note { display: inline; margin-left: 6px; white-space: normal; }
     .sa-table .sa-col-outcome .ca-change.is-waiting { font-size: var(--fs-sm); }
     .sa-page:not(.is-selecting) .sa-row.is-unread td.ca-col-ticker,

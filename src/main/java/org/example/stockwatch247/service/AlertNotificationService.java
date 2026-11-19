@@ -26,6 +26,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -108,7 +109,102 @@ public class AlertNotificationService {
         if (outbox == null) send(message);
         else if (summary.isPresent()) outbox.hold(message, summary.get().getId(), event.getId(), null,
                 "initial-alert:" + event.getId(), "INITIAL");
-        else outbox.enqueue(message, event == null ? null : event.getId(), java.time.Duration.ofDays(7));
+        else if (!queueForSamePoint(message, event, "initial-alert:" + event.getId(), "INITIAL"))
+            outbox.enqueue(message, event == null ? null : event.getId(), java.time.Duration.ofDays(7));
+    }
+
+    /** How long a check's new signal email waits at most for the check to combine or release it. */
+    static final java.time.Duration SAME_POINT_HOLD = java.time.Duration.ofMinutes(5);
+
+    /**
+     * Opens a stock check's email batch: until it closes, new signal emails wait in the queue, then signals that end
+     * at the same point go out as one email (see SamePointSignals). Null without the durable queue, whose emails go
+     * out at once.
+     */
+    public SamePointEmailBatch openSamePointBatch() {
+        return outbox == null ? null : SamePointEmailBatch.open(this::sendSamePoint);
+    }
+
+    /** Queues a signal email held in the open batch; false when no batch is open. */
+    private boolean queueForSamePoint(SimpleMailMessage message, AlertEvent event, String key, String receipt) {
+        SamePointEmailBatch batch = SamePointEmailBatch.current();
+        if (batch == null || event == null || event.getId() == null || event.getAlertRule() == null) return false;
+        outbox.enqueueHeld(message, event.getId(), java.time.Duration.ofDays(7), key, receipt, SAME_POINT_HOLD);
+        batch.hold(event, key);
+        return true;
+    }
+
+    /**
+     * A closed batch's emails: one email for each point with several new signals, highest score first; the others
+     * go out on their own. A failure leaves the held emails to go out on their own once the hold has passed.
+     */
+    void sendSamePoint(List<SamePointEmailBatch.Held> held) {
+        java.util.Map<Object, List<SamePointEmailBatch.Held>> points = new java.util.LinkedHashMap<>();
+        for (SamePointEmailBatch.Held note : held) {
+            AlertEvent event = note.event();
+            boolean identified = event.getAlertRule().getUser() != null && event.getAlertRule().getUser().getId() != null
+                    && event.getAlertRule().getStockAsset() != null && event.getAlertRule().getStockAsset().getId() != null
+                    && event.patternEnd() != null;
+            points.computeIfAbsent(identified ? SamePointSignals.Point.of(event) : note, ignored -> new ArrayList<>()).add(note);
+        }
+        for (List<SamePointEmailBatch.Held> point : points.values()) {
+            try {
+                if (point.size() == 1) {
+                    outbox.release(List.of(point.getFirst().deduplicationKey()));
+                    continue;
+                }
+                List<SamePointEmailBatch.Held> ordered = point.stream()
+                        .sorted(java.util.Comparator.comparing((SamePointEmailBatch.Held note) -> note.event().getConfidenceScore(),
+                                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+                                .thenComparing(note -> note.event().getId()))
+                        .toList();
+                AlertEvent lead = ordered.getFirst().event();
+                outbox.combineHeld(ordered.stream().map(SamePointEmailBatch.Held::deduplicationKey).toList(),
+                        payloads -> samePointMessage(lead, payloads));
+            } catch (RuntimeException failure) {
+                log.warn("Same-point signal emails left to their hold: events={} reason={}",
+                        point.stream().map(note -> note.event().getId()).toList(), failure.toString());
+            }
+        }
+    }
+
+    /**
+     * One email for signals that end at the same point: what they share, their subjects, then each email in full,
+     * and the email settings links once at the end instead of after each.
+     */
+    SimpleMailMessage samePointMessage(AlertEvent lead, List<EmailOutboxService.Payload> payloads) {
+        EmailOutboxService.Payload first = payloads.getFirst();
+        Locale locale = languages == null || first.to() == null || first.to().length == 0
+                ? Locale.ENGLISH : languages.localeForEmail(first.to()[0]);
+        AlertRule rule = lead.getAlertRule();
+        List<String> settings = new ArrayList<>();
+        if (links != null && first.to() != null && first.to().length > 0) {
+            settings.add("Manage alert emails: " + links.baseUrl() + NotificationEmailLinks.MANAGE_PATH);
+            links.account(first.to()[0]).ifPresent(account ->
+                    settings.add("Stop all alert emails: " + links.unsubscribeUrl(account.getId())));
+        }
+        List<String> localizedSettings = settings.stream()
+                .map(line -> org.example.stockwatch247.i18n.ServerMessages.translateLines(line, locale)).toList();
+        List<EmailOutboxService.Payload> bodies = payloads.stream().map(payload -> new EmailOutboxService.Payload(
+                payload.from(), payload.to(), payload.subject(), payload.text().lines()
+                        .filter(line -> !localizedSettings.contains(line.stripTrailing()))
+                        .collect(java.util.stream.Collectors.joining("\n")))).toList();
+        String symbol = rule.getStockAsset().getTickerSymbol();
+        String introduction = translateLine("These " + payloads.size() + " signals on " + stockLabel(rule.getStockAsset())
+                + " end at the same point (" + SignalPeriodFormatter.format(lead.patternEnd(), rule.getInterval(), signalTimeZone)
+                + ").", locale) + "\n" + translateLine("Each keeps its own plan, entry, stop and target below.", locale);
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(first.from());
+        message.setTo(first.to());
+        message.setSubject(translateLine("StockWatch: " + payloads.size() + " signals at the same point on " + symbol, locale));
+        StringBuilder text = new StringBuilder(EmailOutboxService.combinedText(introduction, bodies));
+        if (!localizedSettings.isEmpty()) text.append('\n').append(String.join("\n", localizedSettings)).append('\n');
+        message.setText(text.toString());
+        return message;
+    }
+
+    private static String translateLine(String text, Locale locale) {
+        return org.example.stockwatch247.i18n.ServerMessages.translate(text, locale);
     }
 
     private void queueFollowUp(SimpleMailMessage message, AlertEvent event, String transition) {
@@ -465,10 +561,12 @@ public class AlertNotificationService {
         message.setSubject(subject);
         message.setText(body);
         localize(message, signalPath(event));
+        String key = initial ? "initial-alert:" + event.getId() : "elliott-stage:" + event.getId() + ":" + event.getElliottSignalStage() + ":" + signal.candleTimestamp() + ":" + invalidated;
+        String receipt = initial ? "INITIAL" : "FOLLOW_UP";
         if (outbox == null) send(message);
-        else outbox.enqueue(message, event.getId(), java.time.Duration.ofDays(7),
-                initial ? "initial-alert:" + event.getId() : "elliott-stage:" + event.getId() + ":" + event.getElliottSignalStage() + ":" + signal.candleTimestamp() + ":" + invalidated,
-                initial ? "INITIAL" : "FOLLOW_UP");
+        // A count reaching a new wave is a new signal at its point; an invalidation is not.
+        else if (invalidated || !queueForSamePoint(message, event, key, receipt))
+            outbox.enqueue(message, event.getId(), java.time.Duration.ofDays(7), key, receipt);
         return true;
     }
 
