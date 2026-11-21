@@ -332,7 +332,7 @@ public class TechnicalOutlookTrackingService {
                 : signals.size() + " new technical signal" + (signals.size() == 1 ? " was" : "s were")
                 + " recorded and classified as supporting or contradicting evidence below.";
         String driverText = drivers.isEmpty() ? "" : " Main drivers: " + String.join(" ", drivers);
-        return "%s %s from %s to %s (score %.1f%% → %.1f%%). %s %s%s".formatted(
+        return String.format(java.util.Locale.ROOT, "%s %s from %s to %s (score %.1f%% → %.1f%%). %s %s%s",
                 current.symbol(), movement,
                 displayClassification(previous.headlineScore().classification()),
                 displayClassification(current.headlineScore().classification()),
@@ -577,7 +577,7 @@ public class TechnicalOutlookTrackingService {
 
     private static String formatValue(Double value, String unit) {
         if (value == null || !Double.isFinite(value)) return "unavailable";
-        return "%.3f%s".formatted(value, unit == null || unit.isBlank() ? "" : " " + unit);
+        return String.format(java.util.Locale.ROOT, "%.3f%s", value, unit == null || unit.isBlank() ? "" : " " + unit);
     }
 
     private static void requireSupported(TimeInterval interval) {

@@ -20,14 +20,23 @@ import java.util.Set;
 @Service
 public class TrackedInstrumentGuard {
     private static final String QUOTA_LOCK = "alert-stock-quota";
+    /** The account's tracked instruments. Its one parameter is the account id. */
     private static final String TRACKED_FOR_USER = """
-            select stock_asset_id from alert_rules where user_id = ? and is_active = true
+            with account(account_id) as (select cast(? as bigint))
+            select stock_asset_id from alert_rules where user_id = (select account_id from account) and is_active = true
             union
-            select stock_asset_id from technical_outlook_subscriptions where user_id = ? and is_active = true
+            select stock_asset_id from technical_outlook_subscriptions
+            where user_id = (select account_id from account) and is_active = true
             union
             select target.stock_asset_id from custom_alert_effective_targets target
-            join custom_alerts alert on alert.id = target.alert_id where alert.user_id = ? and alert.active
+            join custom_alerts alert on alert.id = target.alert_id
+            where alert.user_id = (select account_id from account) and alert.active
+            union
+            select asset.id from chart_alerts chart join stock_assets asset on asset.ticker_symbol = chart.symbol
+            where chart.user_id = (select account_id from account) and chart.active
             """;
+    private static final String CUSTOM_ALERT_BRANCH = "where alert.user_id = (select account_id from account) and alert.active";
+    /** Chart alerts count too: every active one adds its stock to the scheduled checks. */
     private static final String TRACKED_GLOBALLY = """
             select stock_asset_id from alert_rules where is_active = true
             union
@@ -35,6 +44,9 @@ public class TrackedInstrumentGuard {
             union
             select target.stock_asset_id from custom_alert_effective_targets target
             join custom_alerts alert on alert.id = target.alert_id where alert.active
+            union
+            select asset.id from chart_alerts chart join stock_assets asset on asset.ticker_symbol = chart.symbol
+            where chart.active
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -176,19 +188,18 @@ public class TrackedInstrumentGuard {
                 "select lock_name from security_resource_locks where lock_name = ? for update",
                 String.class, QUOTA_LOCK);
         Long[] ids = assetIds.toArray(Long[]::new);
-        String trackedExcept = TRACKED_FOR_USER.replace("where alert.user_id = ? and alert.active",
-                "where alert.user_id = ? and alert.active and alert.id <> ?");
+        String trackedExcept = TRACKED_FOR_USER.replace(CUSTOM_ALERT_BRANCH, CUSTOM_ALERT_BRANCH + " and alert.id <> ?");
         long newForUser = count(connection -> {
             var statement = connection.prepareStatement("select count(*) from unnest(?) id where id not in (" + trackedExcept + ")");
             statement.setArray(1, connection.createArrayOf("bigint", ids));
-            for (int index = 2; index <= 4; index++) statement.setLong(index, user.getId());
-            statement.setLong(5, except);
+            statement.setLong(2, user.getId());
+            statement.setLong(3, except);
             return statement;
         });
         long tracked = count(connection -> {
             var statement = connection.prepareStatement("select count(*) from (" + trackedExcept + ") tracked");
-            for (int index = 1; index <= 3; index++) statement.setLong(index, user.getId());
-            statement.setLong(4, except);
+            statement.setLong(1, user.getId());
+            statement.setLong(2, except);
             return statement;
         });
         long room = Math.max(0, maximumPerUser - tracked);
@@ -222,7 +233,7 @@ public class TrackedInstrumentGuard {
 
     public long trackedCount(User user) {
         Long count = jdbcTemplate.queryForObject("select count(*) from (" + TRACKED_FOR_USER + ") tracked",
-                Long.class, user.getId(), user.getId(), user.getId());
+                Long.class, user.getId());
         return count == null ? 0 : count;
     }
 
@@ -231,8 +242,6 @@ public class TrackedInstrumentGuard {
         if (symbols.isEmpty()) return Set.of();
         String placeholders = String.join(",", java.util.Collections.nCopies(symbols.size(), "?"));
         java.util.List<Object> arguments = new java.util.ArrayList<>();
-        arguments.add(user.getId());
-        arguments.add(user.getId());
         arguments.add(user.getId());
         arguments.addAll(symbols);
         return Set.copyOf(jdbcTemplate.queryForList(
@@ -255,7 +264,7 @@ public class TrackedInstrumentGuard {
     private boolean tracksForUser(User user, StockAsset asset) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "select exists (select 1 from (" + TRACKED_FOR_USER + ") tracked where stock_asset_id = ?)",
-                Boolean.class, user.getId(), user.getId(), user.getId(), asset.getId()));
+                Boolean.class, user.getId(), asset.getId()));
     }
 
     private boolean trackedGlobally(StockAsset asset) {

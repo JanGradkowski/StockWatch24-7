@@ -352,7 +352,7 @@ public class ChartController {
                                                     @RequestParam long from, @RequestParam long to, Principal principal) {
         String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validInterval = SecurityInputValidator.requireInterval(interval);
-        HistoricalPatternInputs.validateRange(from, to);
+        HistoricalPatternInputs.validateChunk(validInterval, from, to);
         TimeInterval timeframe = elliottInterval(validInterval);
         var settings = elliottPreferences(principal).profile(timeframe).rules();
         var detector = elliottWaveDetectionService.configured(settings);
@@ -372,7 +372,7 @@ public class ChartController {
                                                          @RequestParam long from, @RequestParam long to, Principal principal) {
         String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validInterval = SecurityInputValidator.requireInterval(interval);
-        HistoricalPatternInputs.validateRange(from, to);
+        HistoricalPatternInputs.validateChunk(validInterval, from, to);
         TimeInterval timeframe = elliottInterval(validInterval);
         var settings = elliottPreferences(principal).profile(timeframe).rules();
         return cachedRange(HistoricalSignalCacheService.Family.ELLIOTT_WAVE, validSymbol, validInterval,
@@ -387,7 +387,7 @@ public class ChartController {
                                                   @RequestParam long from, @RequestParam long to, Principal principal) {
         String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validInterval = SecurityInputValidator.requireInterval(interval);
-        HistoricalPatternInputs.validateRange(from, to);
+        HistoricalPatternInputs.validateChunk(validInterval, from, to);
         TimeInterval timeframe = harmonicInterval(validInterval);
         var preferences = harmonicPreferences(principal);
         return cachedRange(HistoricalSignalCacheService.Family.HARMONIC_FORMATION, validSymbol, validInterval,

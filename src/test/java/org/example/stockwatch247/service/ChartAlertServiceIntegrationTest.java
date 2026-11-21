@@ -37,8 +37,14 @@ class ChartAlertServiceIntegrationTest {
                 """, Long.class, "chart-alert-" + suffix + "@example.com");
     }
 
+    /** A listed stock: chart alerts, like other follows, are only accepted for a listing (with market data). */
     private String symbol() {
-        return "ZA" + UUID.randomUUID().toString().replace("-", "").substring(0, 5).toUpperCase();
+        String symbol = "ZA" + UUID.randomUUID().toString().replace("-", "").substring(0, 5).toUpperCase();
+        jdbc.update("""
+                insert into stock_assets (ticker_symbol, company_name, exchange, currency, instrument_type, market_data_verified_at)
+                values (?, 'Chart alert test', 'TEST', 'USD', 'EQUITY', current_timestamp)
+                """, symbol);
+        return symbol;
     }
 
     /** Weekday candles from 5 January 2026, closing at the given prices. */

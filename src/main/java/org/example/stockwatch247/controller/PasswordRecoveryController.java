@@ -45,7 +45,7 @@ public class PasswordRecoveryController {
                 resetQueue.enqueue(normalized, request.getRemoteAddr());
             } else {
                 User user = users.findByEmailIgnoreCase(normalized).orElse(null);
-                if (user != null && user.isVerified() && user.getDeletionRequestedAt() == null)
+                if (user != null && user.getDeletionRequestedAt() == null)
                     codes.issue(user, PasswordSecurityCodeService.RESET, request.getRemoteAddr());
             }
         } catch (RuntimeException ignored) {

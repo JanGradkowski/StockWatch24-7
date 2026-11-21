@@ -88,7 +88,7 @@ public class AccountSecurityService {
                               PasswordSecurityCodeService codeService) {
         SecurityInputValidator.requirePassword(newPassword);
         User user = locked(userId);
-        if (!user.isVerified() || user.getDeletionRequestedAt() != null) return PasswordChangeResult.rejected();
+        if (user.getDeletionRequestedAt() != null) return PasswordChangeResult.rejected();
         if (!codeService.verify(userId, PasswordSecurityCodeService.RESET, code))
             return PasswordChangeResult.rejected();
         // Only someone holding a valid code gets this far, so the specific message reveals nothing new,
@@ -96,6 +96,14 @@ public class AccountSecurityService {
         if (passwordEncoder.matches(newPassword, user.getPasswordHash()))
             throw new UserInputException("Choose a password different from your current password.");
         codeService.discard(userId, PasswordSecurityCodeService.RESET);
+        if (!user.isVerified()) {
+            // The code reached the address, which proves it as the verification link would. The password set at
+            // sign-up is replaced, so whoever signed up with someone else's address loses it to its owner.
+            user.setVerified(true);
+            user.setVerificationTokenHash(null);
+            user.setVerificationExpiresAt(null);
+            user.setVerificationLastSentAt(null);
+        }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setPasswordChangedAt(LocalDateTime.now(clock));
         user.setSecurityVersion(user.getSecurityVersion() + 1);

@@ -1,6 +1,7 @@
 package org.example.stockwatch247.service;
 
 import org.example.stockwatch247.model.Candle;
+import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.enums.TimeInterval;
 import org.example.stockwatch247.repository.CandleRepository;
@@ -92,6 +93,24 @@ public class ChartAlertService {
         this.notifications = service;
     }
 
+    private TrackedInstrumentGuard guard;
+
+    @Autowired(required = false)
+    void configureGuard(TrackedInstrumentGuard guard) {
+        this.guard = guard;
+    }
+
+    /**
+     * An active chart alert adds its stock to the scheduled checks, so it passes the same gate as other follows: a
+     * listing that returned market data and trades in sessions, within the account's and the site's capacity.
+     */
+    private void requireTrackable(long userId, String symbol) {
+        if (guard == null) return;
+        User user = users.findById(userId).orElseThrow(() -> new UserInputException("Account not found."));
+        StockAsset asset = guard.requireMarketData(guard.resolveListing(symbol));
+        guard.enforceCapacity(user, asset);
+    }
+
     public record CreateCommand(String symbol, String interval, String sourceKind, String sourceId, String label,
                                 String condition, String frequency, JsonNode definition) { }
 
@@ -169,6 +188,7 @@ public class ChartAlertService {
         if (active != null && active >= MAX_ACTIVE_PER_USER) {
             throw new ConflictException("You already have " + MAX_ACTIVE_PER_USER + " active chart alerts. Delete or switch off one first.");
         }
+        requireTrackable(userId, symbol);
         Long id = db.queryForObject("""
                 insert into chart_alerts (user_id, symbol, interval, source_kind, source_id, label, condition, definition,
                                           frequency, last_checked_timestamp, created_at, updated_at)
@@ -198,6 +218,7 @@ public class ChartAlertService {
             if (count != null && count >= MAX_ACTIVE_PER_USER) {
                 throw new ConflictException("You already have " + MAX_ACTIVE_PER_USER + " active chart alerts. Delete or switch off one first.");
             }
+            requireTrackable(userId, existing.symbol());
             // Switching an alert back on starts from now; candles it missed while off cannot trigger it.
             TimeInterval interval = interval(existing.interval());
             db.update("update chart_alerts set active = true, last_checked_timestamp = ?, updated_at = current_timestamp where id = ?",

@@ -40,7 +40,7 @@ public class HistoricalCandlestickController {
             @RequestParam String interval, @RequestParam long from, @RequestParam long to, Principal principal) {
         String validSymbol = SecurityInputValidator.requireMarketSymbol(symbol);
         String validInterval = SecurityInputValidator.requireInterval(interval);
-        org.example.stockwatch247.service.HistoricalPatternInputs.validateRange(from, to);
+        org.example.stockwatch247.service.HistoricalPatternInputs.validateChunk(validInterval, from, to);
         TimeInterval timeframe = switch (validInterval) {
             case "1d" -> TimeInterval.DAILY;
             case "1wk" -> TimeInterval.WEEKLY;

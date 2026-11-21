@@ -86,7 +86,7 @@ public class VirtualTradeService {
         VirtualTradeSide side = requireSide(command.side());
         Interval interval = Interval.parse(command.interval());
         StockAsset asset = stockAssetRepository.findByTickerSymbolIgnoreCase(symbol)
-                .orElseThrow(() -> new IllegalArgumentException(
+                .orElseThrow(() -> new UserInputException(
                         "Open the stock workspace once so its market metadata can be resolved before creating a demo trade."));
         Quote quote = liveQuote(asset.getTickerSymbol());
         TechnicalOutlookService.OutlookView outlook = outlookService.getOutlook(
@@ -97,7 +97,7 @@ public class VirtualTradeService {
         BigDecimal quantity = optionalPositive(command.quantity(), "Quantity");
         BigDecimal notional = optionalPositive(command.notionalValue(), "Virtual investment");
         if (quantity != null && notional != null) {
-            throw new IllegalArgumentException("Choose either a quantity or a virtual investment amount, not both.");
+            throw new UserInputException("Choose either a quantity or a virtual investment amount, not both.");
         }
         if (quantity == null && notional != null) {
             quantity = notional.divide(quote.price(), 8, RoundingMode.HALF_UP);
@@ -137,7 +137,7 @@ public class VirtualTradeService {
 
     @Transactional
     public TradeView close(User user, Long tradeId) {
-        VirtualTrade trade = owned(user, tradeId);
+        VirtualTrade trade = ownedForUpdate(user, tradeId);
         if (trade.getStatus() == VirtualTradeStatus.CLOSED) {
             return toTradeView(trade, exitQuote(trade));
         }
@@ -158,7 +158,7 @@ public class VirtualTradeService {
 
     @Transactional
     public void delete(User user, Long tradeId) {
-        VirtualTrade trade = owned(user, tradeId);
+        VirtualTrade trade = ownedForUpdate(user, tradeId);
         Instant deletedAt = Instant.now();
         trade.markDeleted(deletedAt);
         trade.setUpdatedAt(deletedAt);
@@ -339,14 +339,14 @@ public class VirtualTradeService {
         String price = entry.stripTrailingZeros().toPlainString();
         if (side == VirtualTradeSide.BUY) {
             if (stop != null && stop.compareTo(entry) >= 0)
-                throw new IllegalArgumentException("For a demo buy, the stop loss must be below the current price of " + price + ".");
+                throw new UserInputException("For a demo buy, the stop loss must be below the current price of " + price + ".");
             if (target != null && target.compareTo(entry) <= 0)
-                throw new IllegalArgumentException("For a demo buy, the target must be above the current price of " + price + ".");
+                throw new UserInputException("For a demo buy, the target must be above the current price of " + price + ".");
         } else {
             if (stop != null && stop.compareTo(entry) <= 0)
-                throw new IllegalArgumentException("For a demo sell, the stop loss must be above the current price of " + price + ".");
+                throw new UserInputException("For a demo sell, the stop loss must be above the current price of " + price + ".");
             if (target != null && target.compareTo(entry) >= 0)
-                throw new IllegalArgumentException("For a demo sell, the target must be below the current price of " + price + ".");
+                throw new UserInputException("For a demo sell, the target must be below the current price of " + price + ".");
         }
     }
 
@@ -357,7 +357,7 @@ public class VirtualTradeService {
                 .filter(event -> event.getAlertRule().getStockAsset().getId().equals(asset.getId()))
                 .map(org.example.stockwatch247.model.AlertEvent::getId)
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("The signal for this trade plan was not found."));
+                .orElseThrow(() -> new UserInputException("The signal for this trade plan was not found."));
     }
 
     /**
@@ -367,13 +367,14 @@ public class VirtualTradeService {
      */
     @Transactional
     public boolean closeAtPlanLevel(long tradeId) {
-        VirtualTrade trade = tradeRepository.findById(tradeId).orElse(null);
+        // Locked, so a close or delete the user makes meanwhile is neither overwritten nor undone.
+        VirtualTrade trade = tradeRepository.findByIdForUpdate(tradeId).orElse(null);
         if (trade == null || trade.getStatus() != VirtualTradeStatus.TRACKING || trade.getDeletedAt() != null
                 || trade.getStopPrice() == null && trade.getTargetPrice() == null || completion == null) return false;
         String apiInterval = interval(trade.getAnalysisInterval());
         long completeBefore = completion.firstIncompleteCandleTimestamp(trade.getAnalysisInterval());
         List<Candle> candles = candleRepository.findBySymbolAndTimeIntervalAndTimestampGreaterThanAndTimestampLessThanOrderByTimestampAsc(
-                trade.getStockAsset().getTickerSymbol(), apiInterval, trade.getEntryAt().getEpochSecond() - 1, completeBefore,
+                trade.getStockAsset().getTickerSymbol(), apiInterval, lastCandleBeforeEntry(trade), completeBefore,
                 org.springframework.data.domain.PageRequest.of(0, 1000));
         for (Candle candle : candles) {
             PlanExit exit = planExit(trade.getSide(), trade.getStopPrice(), trade.getTargetPrice(), candle);
@@ -398,6 +399,27 @@ public class VirtualTradeService {
         return false;
     }
 
+    /** Entry prices taken while the market was shut: the close of the session before the trade. */
+    static final java.util.Set<String> CLOSED_MARKET_SOURCES =
+            java.util.Set.of("Last close (market closed)", "Latest stored daily close (no live quote)");
+
+    /**
+     * The timestamp of the last candle traded (at least partly) before the entry price was set; stop and target are
+     * checked from the next candle on. Candles are stored at UTC midnight of their date, before their session opens.
+     * A live price falls inside the current session, so that session's candle (on or before the entry) does not
+     * count. A price taken while the market was shut is a finished session's close (its quote time is that session's
+     * last trade), so every later session counts in full, including one that opened after a pre-market entry.
+     */
+    static long lastCandleBeforeEntry(VirtualTrade trade) {
+        if (CLOSED_MARKET_SOURCES.contains(trade.getEntryQuoteSource()) && trade.getEntryQuoteTimestamp() != null) {
+            long quotedSession = LocalDate.ofInstant(Instant.ofEpochSecond(trade.getEntryQuoteTimestamp()), ZoneOffset.UTC)
+                    .atStartOfDay(ZoneOffset.UTC).toEpochSecond();
+            Long latestCompleted = trade.getEntryCandleTimestamp();
+            return latestCompleted == null ? quotedSession : Math.max(quotedSession, latestCompleted);
+        }
+        return trade.getEntryAt().getEpochSecond() - 1;
+    }
+
     static PlanExit planExit(VirtualTradeSide side, BigDecimal stop, BigDecimal target, Candle candle) {
         BigDecimal open = BigDecimal.valueOf(candle.getOpenPrice());
         BigDecimal high = BigDecimal.valueOf(candle.getHighPrice());
@@ -418,9 +440,16 @@ public class VirtualTradeService {
     record PlanExit(String reason, BigDecimal price) { }
 
     private VirtualTrade owned(User user, Long id) {
-        if (id == null || id <= 0) throw new IllegalArgumentException("A valid demo trade is required.");
+        if (id == null || id <= 0) throw new UserInputException("A valid demo trade is required.");
         return tradeRepository.findOwnedById(id, user)
-                .orElseThrow(() -> new IllegalArgumentException("Demo trade was not found."));
+                .orElseThrow(() -> new UserInputException("Demo trade was not found."));
+    }
+
+    /** The user's trade, locked for the rest of the transaction: a close or delete waits for the stop/target worker. */
+    private VirtualTrade ownedForUpdate(User user, Long id) {
+        if (id == null || id <= 0) throw new UserInputException("A valid demo trade is required.");
+        return tradeRepository.findOwnedByIdForUpdate(id, user)
+                .orElseThrow(() -> new UserInputException("Demo trade was not found."));
     }
 
     /**
@@ -445,7 +474,11 @@ public class VirtualTradeService {
             return new Quote(amount, timestamp, "Latest stored daily close (no live quote)");
         }
         if (Boolean.FALSE.equals(values.get("marketOpen"))) {
-            return new Quote(amount, timestamp, "Last close (market closed)");
+            // The time of the session's last trade, whose UTC date is the session's own date on every exchange;
+            // the quote's timestamp is when its session bar began. See lastCandleBeforeEntry.
+            long lastTrade = values.get("quotedAt") instanceof Number quotedAt && quotedAt.longValue() > 0
+                    ? quotedAt.longValue() : timestamp;
+            return new Quote(amount, lastTrade, "Last close (market closed)");
         }
         if (now - timestamp > MAX_LIVE_QUOTE_AGE.toSeconds()) {
             throw new ConflictException("The latest quote for this demo trade is out of date. Try again in a minute.");
@@ -524,14 +557,14 @@ public class VirtualTradeService {
         try {
             return VirtualTradeSide.valueOf(raw == null ? "" : raw.toUpperCase(Locale.ROOT));
         } catch (RuntimeException exception) {
-            throw new IllegalArgumentException("Choose Demo buy or Demo sell.");
+            throw new UserInputException("Choose Demo buy or Demo sell.");
         }
     }
 
     private BigDecimal optionalPositive(BigDecimal value, String label) {
         if (value == null) return null;
         if (value.signum() <= 0 || value.compareTo(MAX_SIZE) > 0) {
-            throw new IllegalArgumentException(label + " must be greater than zero and no more than " + MAX_SIZE.toPlainString() + ".");
+            throw new UserInputException(label + " must be greater than zero and no more than " + MAX_SIZE.toPlainString() + ".");
         }
         return value.setScale(8, RoundingMode.HALF_UP);
     }
@@ -575,7 +608,7 @@ public class VirtualTradeService {
                 case "1d", "daily" -> new Interval("1d", TimeInterval.DAILY);
                 case "1wk", "weekly" -> new Interval("1wk", TimeInterval.WEEKLY);
                 case "1mo", "monthly" -> new Interval("1mo", TimeInterval.MONTHLY);
-                default -> throw new IllegalArgumentException("Demo Trading supports daily, weekly, and monthly analysis.");
+                default -> throw new UserInputException("Demo Trading supports daily, weekly, and monthly analysis.");
             };
         }
     }

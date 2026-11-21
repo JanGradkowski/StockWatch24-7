@@ -143,6 +143,36 @@ class VirtualTradeServiceTest {
         return new Candle("AAPL", "1d", 1_771_000_000L, open, high, low, close, 1_000L);
     }
 
+    /** Daily candles are stored at UTC midnight of their date, before their session opens. */
+    @Test
+    void planChecksStartWithTheFirstSessionTradedAfterTheEntryPrice() {
+        long monday = Instant.parse("2026-11-16T00:00:00Z").getEpochSecond();
+        long tuesday = Instant.parse("2026-11-17T00:00:00Z").getEpochSecond();
+        long friday = Instant.parse("2026-11-13T00:00:00Z").getEpochSecond();
+        // Bought before Tuesday's US open at Monday's close: Tuesday's whole session came after the trade.
+        VirtualTrade preMarket = trade("Last close (market closed)", Instant.parse("2026-11-17T09:00:00Z"),
+                Instant.parse("2026-11-16T21:00:00Z").getEpochSecond(), monday);
+        assertThat(VirtualTradeService.lastCandleBeforeEntry(preMarket)).isEqualTo(monday).isLessThan(tuesday);
+        // Bought on Monday evening after the close (before Brussels midnight, so Friday is the latest completed
+        // candle): Monday's own range came before the trade.
+        VirtualTrade evening = trade("Last close (market closed)", Instant.parse("2026-11-16T22:30:00Z"),
+                Instant.parse("2026-11-16T21:00:00Z").getEpochSecond(), friday);
+        assertThat(VirtualTradeService.lastCandleBeforeEntry(evening)).isEqualTo(monday);
+        // A live price falls inside Tuesday's session, which therefore does not count.
+        Instant live = Instant.parse("2026-11-17T16:00:00Z");
+        VirtualTrade during = trade("Twelve Data", live, live.getEpochSecond(), monday);
+        assertThat(VirtualTradeService.lastCandleBeforeEntry(during)).isEqualTo(live.getEpochSecond() - 1).isGreaterThan(tuesday);
+    }
+
+    private static VirtualTrade trade(String source, Instant entryAt, long quoteTimestamp, long latestCompletedCandle) {
+        VirtualTrade trade = new VirtualTrade();
+        trade.setEntryQuoteSource(source);
+        trade.setEntryAt(entryAt);
+        trade.setEntryQuoteTimestamp(quoteTimestamp);
+        trade.setEntryCandleTimestamp(latestCompletedCandle);
+        return trade;
+    }
+
     @Test
     void virtualSellReportsAvoidedLossWithoutPretendingToBeAShortSale() {
         when(pricingService.getLatestPrice("AAPL")).thenReturn(quote(100.0, 1_770_000_000L));
@@ -174,7 +204,7 @@ class VirtualTradeServiceTest {
         ArgumentCaptor<VirtualTrade> captor = ArgumentCaptor.forClass(VirtualTrade.class);
         org.mockito.Mockito.verify(tradeRepository).saveAndFlush(captor.capture());
         VirtualTrade stored = captor.getValue();
-        when(tradeRepository.findOwnedById(stored.getId(), user)).thenReturn(Optional.of(stored));
+        when(tradeRepository.findOwnedByIdForUpdate(stored.getId(), user)).thenReturn(Optional.of(stored));
         clock.at(1_771_000_060L);
 
         VirtualTradeService.TradeView closed = service.close(user, stored.getId());
@@ -191,7 +221,7 @@ class VirtualTradeServiceTest {
         VirtualTrade trade = new VirtualTrade();
         trade.setId(123L);
         trade.setUpdatedAt(Instant.parse("2026-08-01T10:00:00Z"));
-        when(tradeRepository.findOwnedById(123L, user)).thenReturn(Optional.of(trade));
+        when(tradeRepository.findOwnedByIdForUpdate(123L, user)).thenReturn(Optional.of(trade));
 
         service.delete(user, 123L);
 
