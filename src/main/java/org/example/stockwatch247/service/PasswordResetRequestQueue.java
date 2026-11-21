@@ -52,7 +52,9 @@ public class PasswordResetRequestQueue {
         if (claimed.isEmpty()) return false;
         Request request = claimed.getFirst();
         User user = users.findByEmailIgnoreCase(request.email()).orElse(null);
-        if (user != null && user.isVerified() && user.getDeletionRequestedAt() == null) {
+        // Unverified accounts get a code too: only the address owner receives it, and a reset with it verifies the
+        // account, so a sign-up someone else made with that address cannot lock its owner out.
+        if (user != null && user.getDeletionRequestedAt() == null) {
             try {
                 codes.issue(user, PasswordSecurityCodeService.RESET, request.clientKey());
             } catch (RuntimeException failure) {

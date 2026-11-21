@@ -50,6 +50,30 @@ public class HistoricalPatternInputs {
         if (from <= 0 || to < from) throw new IllegalArgumentException("A positive, ordered candle range is required.");
     }
 
+    /** The chart's range chunk: so many days, as in pattern-range-loader.js. */
+    static long chunkSeconds(String interval) {
+        long days = switch (interval == null ? "" : interval) {
+            case "1wk" -> 448L;
+            case "1mo" -> 992L;
+            default -> 128L;
+        };
+        return days * 86_400L;
+    }
+
+    /**
+     * A range as the chart asks for it (pattern-range-loader.js): one chunk aligned to a multiple of its length, the
+     * first starting at 1. Each range's result is cached for a month, so accepting any range would let one account
+     * add a cache row with every request.
+     */
+    public static void validateChunk(String interval, long from, long to) {
+        validateRange(from, to);
+        long span = chunkSeconds(interval);
+        long start = Math.floorDiv(from, span) * span;
+        if (from != Math.max(1L, start) || to != start + span - 1) {
+            throw new IllegalArgumentException("Pattern ranges are requested in aligned chunks.");
+        }
+    }
+
     private record InputKey(String symbol, String interval, long generation, long cutoff) { }
 
     public final class Snapshot {

@@ -630,6 +630,9 @@ pl: Nieprawidłowy znacznik czasu świecy.
 en: A positive, ordered candle range is required.
 pl: Wymagany jest prawidłowy, uporządkowany zakres świec.
 
+en: Pattern ranges are requested in aligned chunks.
+pl: Zakresy formacji są pobierane w wyrównanych fragmentach.
+
 en: The candle price range is invalid.
 pl: Zakres cen świecy jest nieprawidłowy.
 

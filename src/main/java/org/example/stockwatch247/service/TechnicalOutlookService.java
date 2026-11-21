@@ -463,10 +463,10 @@ public class TechnicalOutlookService {
         String slowEmaLabel = "EMA " + rules.slowEmaPeriod();
         String emaPairLabel = fastEmaLabel + " / " + slowEmaLabel;
         String longSmaLabel = "SMA " + rules.longSmaPeriod();
-        String macdLabel = "MACD %d/%d/%d".formatted(
+        String macdLabel = String.format(java.util.Locale.ROOT, "MACD %d/%d/%d",
                 rules.macdFastPeriod(), rules.macdSlowPeriod(), rules.macdSignalPeriod());
         String cciLabel = "CCI " + rules.cciPeriod();
-        String bollingerLabel = "Bollinger Bands %d, %.1fσ".formatted(
+        String bollingerLabel = String.format(java.util.Locale.ROOT, "Bollinger Bands %d, %.1fσ",
                 rules.bollingerPeriod(), rules.bollingerDeviation());
         String atrLabel = "ATR " + rules.atrPeriod();
         String vwapLabel = "Rolling VWAP " + rules.vwapPeriod();

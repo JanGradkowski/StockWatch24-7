@@ -82,6 +82,23 @@ class AccountSecurityRegressionIntegrationTest {
         assertThat(challenges.findById(challenge.getId()).orElseThrow().getFailedAttempts()).isZero();
     }
 
+    /** Someone else signed up with the address and never verified it: the owner's reset code reclaims and verifies it. */
+    @Test void aResetCodeReclaimsAnUnverifiedSignUpForItsAddressOwner() {
+        account.setVerified(false);
+        account.setVerificationTokenHash("squatter-token-hash");
+        account.setVerificationExpiresAt(LocalDateTime.now().plusHours(24));
+        account = users.saveAndFlush(account);
+        resetCode("12345678");
+
+        assertThat(security.resetPassword(account.getId(), "12345678", "Owner-password-for-review42!", codes).successful()).isTrue();
+
+        User reclaimed = users.findById(account.getId()).orElseThrow();
+        assertThat(reclaimed.isVerified()).isTrue();
+        assertThat(reclaimed.getVerificationTokenHash()).isNull();
+        assertThat(encoder.matches("Owner-password-for-review42!", reclaimed.getPasswordHash())).isTrue();
+        assertThat(reclaimed.getSecurityVersion()).isEqualTo(1);
+    }
+
     private PasswordSecurityCode resetCode(String rawCode) {
         PasswordSecurityCode challenge = new PasswordSecurityCode(); challenge.setUser(account);
         challenge.setPurpose(PasswordSecurityCodeService.RESET); challenge.setCodeHash(encoder.encode(rawCode));

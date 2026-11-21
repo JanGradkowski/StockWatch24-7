@@ -1222,7 +1222,7 @@ public class ScheduledAlertService {
         event.setTradePlanVersion(validPlan ? "ELLIOTT_NEXT_WAVE_V1" : null);
         event.setLifecycleResolutionReason(null);
         event.setLifecycleUpdatedAt(now);
-        event.appendElliottTransition("%s|%s|%s|%.10f|%.10f|%.10f|%s".formatted(
+        event.appendElliottTransition(String.format(java.util.Locale.ROOT, "%s|%s|%s|%.10f|%.10f|%.10f|%s",
                 now, candidate.stage(), candidate.expectedMove(), candidate.confirmationClose(),
                 candidate.stopLossPrice(), candidate.targetPrice(),
                 candidate.correctionType() == null ? "NONE" : candidate.correctionType()));
@@ -1262,7 +1262,7 @@ public class ScheduledAlertService {
     }
 
     private String elliottSnapshot(List<ElliottWaveDetectionService.ElliottWavePoint> points) {
-        return points.stream().map(point -> "%s|%d|%.10f|%s".formatted(
+        return points.stream().map(point -> String.format(java.util.Locale.ROOT, "%s|%d|%.10f|%s",
                         point.label(), point.timestamp(), point.price(), point.pivotType()))
                 .collect(java.util.stream.Collectors.joining("\n"));
     }
@@ -1320,7 +1320,7 @@ public class ScheduledAlertService {
             event.setLifecycleUpdatedAt(java.time.LocalDateTime.now());
             event.setSentAt(java.time.LocalDateTime.now());
             event.setReadAt(null);
-            event.appendElliottTransition("%s|INVALIDATED|%s|%.10f|%s".formatted(
+            event.appendElliottTransition(String.format(java.util.Locale.ROOT, "%s|INVALIDATED|%s|%.10f|%s",
                     java.time.LocalDateTime.now(), event.getElliottSignalStage(),
                     resolutionClose, reason));
             DetectedSignal invalidation = new DetectedSignal(
@@ -1574,7 +1574,7 @@ public class ScheduledAlertService {
 
     private String harmonicPointsSnapshot(HarmonicPatternDetectionService.HarmonicFormation formation) {
         return formation.points().stream()
-                .map(point -> "%s|%d|%.10f|%s".formatted(
+                .map(point -> String.format(java.util.Locale.ROOT, "%s|%d|%.10f|%s",
                         point.label(), point.timestamp(), point.price(), point.pivotType()))
                 .collect(java.util.stream.Collectors.joining("\n"));
     }

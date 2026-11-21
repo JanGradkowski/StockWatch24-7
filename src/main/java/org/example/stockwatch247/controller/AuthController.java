@@ -464,9 +464,10 @@ public class AuthController {
         // One custom alert's triggers have a page of their own; older links (emails, bookmarks) go there.
         if (customAlertId != null && customAlertId > 0 && customAlerts != null) {
             customAlerts.requireOwned(currentUser, customAlertId);
-            var location = org.springframework.web.util.UriComponentsBuilder.fromPath("/custom-alerts/{id}");
+            // Built without a URI template, so braces in the ticker are encoded rather than read as variables.
+            var location = org.springframework.web.util.UriComponentsBuilder.fromPath("/custom-alerts/" + customAlertId);
             if (!ticker.isBlank()) location.queryParam("ticker", ticker.trim());
-            return "redirect:" + location.buildAndExpand(customAlertId).encode().toUriString();
+            return "redirect:" + location.build().encode().toUriString();
         }
         if (watchlistId != null) {
             watchlists.requireOwned(currentUser, watchlistId);

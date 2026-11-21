@@ -586,6 +586,9 @@ public class CustomAlertService {
                     """, id, asset.getId());
         } else {
             db.update("delete from custom_alert_exclusions where alert_id = ? and stock_asset_id = ?", id, asset.getId());
+            // The stock is tracked again, so it needs room like any stock the alert starts covering.
+            if (guard != null && isActive(id)) guard.enforceCapacity(user, db.queryForList(
+                    "select stock_asset_id from custom_alert_effective_targets where alert_id = ?", Long.class, id), id);
         }
         syncStates(id, false);
         return get(user, id);

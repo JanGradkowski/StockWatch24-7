@@ -41,16 +41,33 @@ class ChartControllerPatternRangeTest {
         when(harmonics.configured(any(), any())).thenReturn(harmonics);
         var raw = List.of(new Candle("AAPL", "1d", 10L, 10, 12, 9, 11.0, 100L));
         when(snapshot.raw()).thenReturn(raw);
-        controller.getElliottRange("aapl", "1d", 100, 200, null);
-        controller.getElliottCandidateRange("aapl", "1d", 100, 200, null);
-        controller.getHarmonicRange("aapl", "1d", 100, 200, null);
-        verify(waves).findPatternCandidates(List.of(), 100, 200);
-        verify(harmonics).detectRange(raw, 100, 200);
+        // The chart's second daily chunk (pattern-range-loader.js: 128 days, aligned).
+        long from = 128L * 86_400, to = 2 * 128L * 86_400 - 1;
+        controller.getElliottRange("aapl", "1d", from, to, null);
+        controller.getElliottCandidateRange("aapl", "1d", from, to, null);
+        controller.getHarmonicRange("aapl", "1d", from, to, null);
+        verify(waves).findPatternCandidates(List.of(), from, to);
+        verify(harmonics).detectRange(raw, from, to);
         verify(snapshot).structures(eq(waves), any());
         verifyNoInteractions(repository, market);
-        assertThatThrownBy(() -> controller.getHarmonicRange("AAPL", "1d", 200, 100, null))
+        assertThatThrownBy(() -> controller.getHarmonicRange("AAPL", "1d", to, from, null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> controller.getElliottCandidateRange("AAPL", "1h", 100, 200, null))
+        assertThatThrownBy(() -> controller.getElliottCandidateRange("AAPL", "1h", from, to, null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** Each range is cached, so only the chunks the chart asks for are accepted, not one per arbitrary range. */
+    @Test void rangesMustBeTheChartsAlignedChunks() {
+        long day = 86_400;
+        HistoricalPatternInputs.validateChunk("1d", 1, 128 * day - 1);
+        HistoricalPatternInputs.validateChunk("1d", 128 * day, 256 * day - 1);
+        HistoricalPatternInputs.validateChunk("1wk", 448 * day, 896 * day - 1);
+        HistoricalPatternInputs.validateChunk("1mo", 1, 992 * day - 1);
+        assertThatThrownBy(() -> HistoricalPatternInputs.validateChunk("1d", 100, 200))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> HistoricalPatternInputs.validateChunk("1d", 128 * day, 256 * day))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> HistoricalPatternInputs.validateChunk("1wk", 128 * day, 256 * day - 1))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

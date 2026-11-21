@@ -922,7 +922,7 @@ public class AlertNotificationService {
         if (rule.getPatternFamily() == AlertPatternFamily.ELLIOTT_WAVE) {
             String structuralRule = lifecycleEvent.getInvalidationPrice() == null
                     ? "the hard Elliott structure rules; ordinary Wave V/C extensions revise the endpoint"
-                    : "the hard Elliott structure boundary at %.4f".formatted(
+                    : String.format(java.util.Locale.ROOT, "the hard Elliott structure boundary at %.4f",
                             lifecycleEvent.getInvalidationPrice());
             String percentageRules = percentageLifecycleRules(lifecycleEvent);
             return """
@@ -1081,12 +1081,12 @@ public class AlertNotificationService {
         String invalidationDirection = event.getTradeSignal()
                 == org.example.stockwatch247.model.enums.TradeSignal.BUY ? "below" : "above";
         String invalidationLine = event.hasCandlestickRiskRewardPlan()
-                ? "Stop loss: completed-candle close at %.4f".formatted(event.getStopLossPrice())
+                ? String.format(java.util.Locale.ROOT, "Stop loss: completed-candle close at %.4f", event.getStopLossPrice())
                 : elliottSignal
                 ? event.getInvalidationPrice() == null
                 ? "Invalidation rule: hard Elliott structure rules (no fixed price boundary)"
-                : "Structural invalidation boundary: %.4f".formatted(event.getInvalidationPrice())
-                : "Invalidation boundary: close %s %.4f".formatted(
+                : String.format(java.util.Locale.ROOT, "Structural invalidation boundary: %.4f", event.getInvalidationPrice())
+                : String.format(java.util.Locale.ROOT, "Invalidation boundary: close %s %.4f",
                         invalidationDirection, event.getInvalidationPrice());
         String directionClassification = immediateConfirmationRequired
                 ? switch (status) {
@@ -1098,15 +1098,15 @@ public class AlertNotificationService {
                 }
                 : event.getTradeSignal().name();
         String confirmationLine = event.hasCandlestickRiskRewardPlan()
-                ? "Successful trade target: completed-candle close at %.4f".formatted(
+                ? String.format(java.util.Locale.ROOT, "Successful trade target: completed-candle close at %.4f",
                         event.getProfitTargetPrice())
                 : immediateConfirmationRequired
-                ? "Outcome confirmation trigger: close %s %.4f".formatted(
+                ? String.format(java.util.Locale.ROOT, "Outcome confirmation trigger: close %s %.4f",
                         expectedDirection, event.getConfirmationTriggerPrice())
-                : "Confirmation trigger: close %s %.4f".formatted(
+                : String.format(java.util.Locale.ROOT, "Confirmation trigger: close %s %.4f",
                         expectedDirection, event.getConfirmationTriggerPrice());
         String measurementLine = immediateConfirmationRequired
-                ? "Result measurement start: detection candle close on %s at %.4f".formatted(
+                ? String.format(java.util.Locale.ROOT, "Result measurement start: detection candle close on %s at %.4f",
                         SignalPeriodFormatter.format(
                                 event.getDetectionCandleTimestamp(), rule.getInterval(), signalTimeZone),
                         event.getDetectionClosePrice())
@@ -1220,7 +1220,7 @@ public class AlertNotificationService {
                 : mostFavorableCompletedCloseMove(event, rule);
         String favorableLine = favorableMove == null
                 ? "Most favorable completed-close move: unavailable because the completed trade path is not cached."
-                : "Most favorable completed-close move: %+.2f%%".formatted(favorableMove);
+                : String.format(java.util.Locale.ROOT, "Most favorable completed-close move: %+.2f%%", favorableMove);
         String statusMeaning = switch (status) {
             case CONFIRMED -> "CONFIRMED means the profit target closed successfully and the trade ended at its planned R:R target.";
             case INVALIDATED -> "INVALIDATED means a completed candle closed at or beyond the configured stop loss and ended the trade.";
@@ -1230,7 +1230,7 @@ public class AlertNotificationService {
         String resultReturnLine = status == SignalLifecycleStatus.CONFIRMED
                 ? "Trade result return: %+.2f%% (fixed at the exact entry-to-target return, even if the resolution close overshot the target)"
                         .formatted(targetReturn)
-                : "Entry-to-exit return: %+.2f%%".formatted(exitReturn);
+                : String.format(java.util.Locale.ROOT, "Entry-to-exit return: %+.2f%%", exitReturn);
         long entryTimestamp = event.getDetectionCandleTimestamp() == null
                 ? event.getSignalCandleTimestamp()
                 : event.getDetectionCandleTimestamp();
@@ -1308,7 +1308,7 @@ public class AlertNotificationService {
         }
         String atrSource = event.getAtrCircuitBreakerValue() == null
                 ? "ATR was unavailable, so the percentage cap supplied the risk distance"
-                : "frozen ATR(%d) %.4f × %.2f".formatted(
+                : String.format(java.util.Locale.ROOT, "frozen ATR(%d) %.4f × %.2f",
                         event.getAtrCircuitBreakerPeriod(),
                         event.getAtrCircuitBreakerValue(),
                         event.getAtrCircuitBreakerMultiplier());

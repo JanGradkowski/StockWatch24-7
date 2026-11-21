@@ -3,7 +3,9 @@ package org.example.stockwatch247.repository;
 import org.example.stockwatch247.model.StockAsset;
 import org.example.stockwatch247.model.User;
 import org.example.stockwatch247.model.VirtualTrade;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -37,6 +39,19 @@ public interface VirtualTradeRepository extends JpaRepository<VirtualTrade, Long
             where trade.id = :id and trade.user = :user and trade.deletedAt is null
             """)
     Optional<VirtualTrade> findOwnedById(@Param("id") Long id, @Param("user") User user);
+
+    /**
+     * The trade with its row locked until the transaction ends, so a close, a delete and the stop/target worker
+     * cannot overwrite one another's changes. Only the trade row is locked (no join), not its stock.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select trade from VirtualTrade trade where trade.id = :id")
+    Optional<VirtualTrade> findByIdForUpdate(@Param("id") Long id);
+
+    /** As {@link #findOwnedById}, with the trade row locked (see {@link #findByIdForUpdate}). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select trade from VirtualTrade trade where trade.id = :id and trade.user = :user and trade.deletedAt is null")
+    Optional<VirtualTrade> findOwnedByIdForUpdate(@Param("id") Long id, @Param("user") User user);
 
     Optional<VirtualTrade> findByUserAndClientRequestId(User user, String clientRequestId);
 }
