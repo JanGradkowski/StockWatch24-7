@@ -11,6 +11,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -23,6 +25,7 @@ import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -146,6 +149,32 @@ class GeminiAssistantModelTest {
     @Test
     void aRefusedRequestIsNotSentToTheFallback() {
         server.expect(once(), requestTo(MAIN)).andRespond(withStatus(HttpStatus.BAD_REQUEST).body("{\"error\": {\"code\": 400}}"));
+        assertThatThrownBy(() -> model("gemini-3.8-flash").generate(question()))
+                .isInstanceOfSatisfying(AssistantModel.UnavailableException.class, failure -> assertThat(failure.busy()).isFalse());
+        server.verify();
+    }
+
+    @Test
+    void aModelThatDoesNotAnswerInTimeIsBusyAndTheFallbackIsNotAsked() {
+        server.expect(once(), requestTo(MAIN)).andRespond(withException(new SocketTimeoutException("Read timed out")));
+        assertThatThrownBy(() -> model("gemini-3.8-flash").generate(question()))
+                .isInstanceOfSatisfying(AssistantModel.UnavailableException.class,
+                        failure -> assertThat(failure.busy() && !failure.daily()).isTrue());
+        server.verify();
+    }
+
+    @Test
+    void aModelThatCannotBeReachedHandsTheQuestionToTheFallback() {
+        server.expect(once(), requestTo(MAIN)).andRespond(withException(new SocketTimeoutException("Connect timed out")));
+        server.expect(once(), requestTo(FALLBACK)).andRespond(withSuccess(ANSWER, MediaType.APPLICATION_JSON));
+        assertThat(model("gemini-3.8-flash").generate(question()).model()).isEqualTo("gemini-3.8-flash");
+        server.verify();
+    }
+
+    @Test
+    void whenNoModelCanBeReachedTheAssistantIsDownNotBusy() {
+        server.expect(once(), requestTo(MAIN)).andRespond(withException(new ConnectException("Connection refused")));
+        server.expect(once(), requestTo(FALLBACK)).andRespond(withException(new SocketTimeoutException("Connect timed out")));
         assertThatThrownBy(() -> model("gemini-3.8-flash").generate(question()))
                 .isInstanceOfSatisfying(AssistantModel.UnavailableException.class, failure -> assertThat(failure.busy()).isFalse());
         server.verify();
