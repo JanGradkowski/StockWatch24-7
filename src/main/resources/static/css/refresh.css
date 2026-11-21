@@ -605,9 +605,7 @@
 :root[data-theme] .ui-refresh .signal-archive-pagination { padding-top: 16px; }
 
 /* A cell's value and its note sit on separate lines at every width (on phones they ran together, as in "MSFTMSFT"). */
-:root[data-theme] .ui-refresh .virtual-trade-archive-row > div > :is(strong, span, small, time):not(.virtual-trade-side-pill) { display: block; }
-/* The pill names its own state; a column label inside it reads "StatusTracking". */
-:root[data-theme] .ui-refresh .virtual-trade-status-pill[data-mobile-label]::before { display: none; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row > div > :is(strong, span, small, time):not(.sa-status) { display: block; }
 @media (max-width: 1024px) {
     /* Stacked rows read down the left edge instead of centring each cell. */
     :root[data-theme] .ui-refresh :is(.signal-archive-row, .activity-signal-archive-row, .virtual-trade-archive-row) > * { justify-self: start; text-align: left; }
@@ -620,8 +618,116 @@
 /* Demo trading: the portfolio figure leads; period tiles are quiet until chosen. */
 :root[data-theme] .ui-refresh .portfolio-value { font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700; letter-spacing: -.03em; }
 :root[data-theme] .ui-refresh .portfolio-period { border-color: var(--rf-line-soft); border-radius: 10px; background: transparent; }
-:root[data-theme] .ui-refresh .portfolio-period.is-selected { border-color: color-mix(in srgb, var(--text-color) 35%, var(--rf-line)); background: var(--rf-raised); box-shadow: none; }
+/* The chosen period's border reaches 3:1 in both themes, so the fill is not its only cue. */
+:root[data-theme] .ui-refresh .portfolio-period.is-selected { border-color: color-mix(in srgb, var(--text-color) 70%, var(--rf-line)); background: var(--rf-raised); box-shadow: none; }
 :root[data-theme] .ui-refresh .portfolio-ranking { border-color: var(--rf-line-soft); background: transparent; }
+/* Trade history: every note wraps inside its own column, and the value pills never reach into the next one. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row > div > :is(span, small, time):not(.sa-status) { overflow: visible; white-space: normal; text-overflow: clip; overflow-wrap: anywhere; }
+/* The money result is coloured text beside the percentage, not a second bordered pill competing with it. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-monetary-result {
+    width: fit-content; max-width: 100%; margin-top: 0; padding: 0; border: 0; background: none; font-size: var(--fs-sm); font-weight: 600;
+}
+/* "Percentage only" is a note, not an amount, so it is quieter than the money values around it. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-unsized { color: var(--text-soft); font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] .ui-refresh .portfolio-note { margin-top: 12px; }
+/* Section headings outrank the subsections inside them. */
+:root[data-theme] .ui-refresh .virtual-trades-archive-page .panel-title { font-size: var(--fs-lg); font-weight: 700; }
+:root[data-theme] .ui-refresh .virtual-trades-archive-page .portfolio-ranking-heading h3 { font-size: var(--fs-md); font-weight: 650; }
+/* The breakdown sits under the total it adds up to, not at the far side of the card. */
+:root[data-theme] .ui-refresh .virtual-trades-archive-page .portfolio-value-heading { flex-direction: column; align-items: flex-start; gap: 12px; }
+/* A current or final value: its label on one line and the amount under it, the same in every row. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-evaluated-value > span { display: block; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-evaluated-value > span:first-child { color: var(--muted-text); font-weight: 400; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-evaluated-value > span + span { color: var(--text-color); }
+/* Tickers read as on the signal lists: monospace, with the company name a step quieter under them. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-ticker > strong { font-family: var(--font-mono); font-size: var(--fs-md); font-weight: 600; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-ticker > span { color: var(--text-soft); font-size: var(--fs-sm); }
+@media (max-width: 599px) {
+    /* On phones the money result always goes under the percentage, so every card's outcome has the same shape. */
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-outcome > .virtual-trade-monetary-result { flex-basis: 100%; }
+}
+:root[data-theme] .ui-refresh .portfolio-value-heading .panel-meta { text-wrap: pretty; }
+/* Delete fills the row menu at every width, left-aligned like the menu items elsewhere. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-record .row-menu-panel form { display: block; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-record .row-menu-panel .signal-archive-delete-button { width: 100%; text-align: left; }
+/* Every cell starts at the top, so a row's main values share one line; the menu and chevron sit on that line too. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row { align-items: start; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-record { align-items: start; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-record > .row-menu { align-self: start; margin-top: 10px; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-chevron { align-self: start; margin-top: 4px; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-status { padding-top: 2px; }
+/* The current or final value is a plain line under the amount, not a tinted pill that wraps. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-evaluated-value {
+    display: block; width: auto; margin-top: 2px; padding: 0; border: 0; background: none; color: var(--text-soft); font-weight: 600;
+}
+/* The result and its amount share a line; what it means goes under them. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-outcome { display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 2px 8px; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-outcome > span,
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .virtual-trade-outcome::before { flex-basis: 100%; }
+/* Status reads as on the signal lists: a dot and a word. Amber is still being measured, grey is finished. */
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .sa-status { display: inline-flex; align-items: center; gap: 6px; overflow: visible; color: var(--text-color); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .sa-status::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--warning); }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .sa-status.is-done { color: var(--text-soft); font-weight: 500; }
+:root[data-theme] .ui-refresh .virtual-trade-archive-row .sa-status.is-done::before { background: var(--muted-text); }
+:root[data-theme] .ui-refresh .virtual-trade-chevron { display: inline-flex; color: var(--text-soft); }
+:root[data-theme] .ui-refresh .virtual-trade-chevron svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* Zero is neither a gain nor a loss, so it keeps the text colour. */
+:root[data-theme] .ui-refresh .virtual-trade-outcome.neutral strong { color: var(--text-color); }
+/* The calculation note is what beginners need, so its summary reads at body size. */
+:root[data-theme] .ui-refresh .portfolio-method > summary { color: var(--text-color); font-size: var(--fs-sm); font-weight: 600; }
+:root[data-theme] .ui-refresh .portfolio-method > summary:hover { text-decoration: underline; text-underline-offset: 3px; }
+:root[data-theme] .ui-refresh .portfolio-periods-help { margin: 16px 0 8px; }
+@media (max-width: 1024px) {
+    /* A trade card: ticker, status and › on the first line, the decision under them, then the four values two by two. */
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas: "ticker ticker" "decision decision" "entry evaluation" "amount outcome";
+        gap: 4px 16px;
+    }
+    /* The card uses its full width: the "···" sits in its top corner instead of a column of its own, the status beside
+       the short ticker, and the › at the card's right edge. */
+    :root[data-theme] .ui-refresh .virtual-trade-archive-record { position: relative; grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-record > .row-menu { position: absolute; top: calc(1rem - 8px); right: 0; margin-top: 0; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-status { position: absolute; top: calc(1rem + 2px); right: 44px; padding-top: 0; }
+    /* The › sits under the "···", on the company line, which leaves room for it; the values below get the full width. */
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-chevron { position: absolute; top: calc(1rem + 28px); right: 10px; margin-top: 0; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-ticker { padding-right: 24px; }
+    /* The stacked toolbar is a grid whose one column would otherwise shrink to its text (it keeps the wide layout's
+       space-between), leaving the sort list short of the rows' edge in English. */
+    :root[data-theme] .ui-refresh .virtual-trades-archive-page .signal-archive-toolbar { grid-template-columns: minmax(0, 1fr); }
+    :root[data-theme] .ui-refresh .virtual-trades-archive-page .signal-archive-sort-form,
+    :root[data-theme] .ui-refresh .virtual-trades-archive-page .signal-archive-sort-form :is(label, select) { width: 100%; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-ticker { grid-area: ticker; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-decision { grid-area: decision; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-entry { grid-area: entry; margin-top: 8px; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-evaluation { grid-area: evaluation; margin-top: 8px; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-position-value { grid-area: amount; margin-top: 8px; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-outcome { grid-area: outcome; margin-top: 8px; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > .virtual-trade-chevron { display: inline-flex; }
+    /* The heading lines name themselves, so they carry no column label. */
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > :is(.virtual-trade-ticker, .virtual-trade-decision, .virtual-trade-status)::before { content: none; }
+    /* The decision as one line: "Demo sell · Daily outlook". */
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > div.virtual-trade-decision > :is(strong, span):not(.sa-status) { display: inline; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > div.virtual-trade-decision > strong:not(.sa-status) { color: var(--text-soft); font-size: var(--fs-xs); font-weight: 600; }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row > div.virtual-trade-decision > span:not(.sa-status)::before { content: " · "; }
+}
+@media (min-width: 700px) and (max-width: 1024px) {
+    /* Tablets have room for the four values on one line. */
+    :root[data-theme] .ui-refresh .virtual-trade-archive-row {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-areas: "ticker ticker ticker ticker" "decision decision decision decision" "entry evaluation amount outcome";
+    }
+}
+@media (min-width: 1025px) {
+    /* The heading row shares the row's columns; its padding adds the row's own padding and the menu column with its gap. */
+    :root[data-theme] .ui-refresh :is(.virtual-trade-archive-head, .virtual-trade-archive-row) {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, .85fr) minmax(0, .95fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.3fr) minmax(0, .65fr) 32px;
+    }
+    :root[data-theme] .ui-refresh .virtual-trade-archive-head { padding: 0 calc(.875rem + 40px + .5rem) 8px .875rem; }
+}
+/* The sort controls keep their size; the heading text wraps beside them. */
+:root[data-theme] .ui-refresh .virtual-trades-archive-page .signal-archive-toolbar > .signal-archive-sort-form { flex: none; }
+:root[data-theme] .ui-refresh .virtual-trades-archive-page .signal-archive-toolbar > div { flex: 1 1 auto; min-width: 0; }
 
 /* ------------------------------------------------------------------ reports: outlook, history, ticker alerts, demo trade */
 

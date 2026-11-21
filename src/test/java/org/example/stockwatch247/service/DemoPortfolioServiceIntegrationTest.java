@@ -101,6 +101,23 @@ class DemoPortfolioServiceIntegrationTest {
         assertThat(balance.missingPrices()).isEqualTo(1);
     }
 
+    @Test void ranksGainsAndLossesApartAndNamesUnchangedStocks() {
+        var owner = account();
+        var symbols = new java.util.ArrayList<String>();
+        for (int close : List.of(90, 100, 110, 120)) {
+            StockAsset stock = asset("USD"); symbols.add(stock.getTickerSymbol());
+            price(stock, "2026-09-11", close);
+            trade(owner, stock, "2026-07-01T12:00:00Z", 100, 1, null, null);
+        }
+        var overall = service.portfolio(owner.getId(), "overall").currencies().getFirst().selected();
+        assertThat(overall.best()).extracting(DemoPortfolioService.StockView::returnPercent)
+                .usingElementComparator(java.math.BigDecimal::compareTo)
+                .containsExactly(new java.math.BigDecimal("20"), new java.math.BigDecimal("10"));
+        assertThat(overall.worst()).extracting(DemoPortfolioService.StockView::symbol).containsExactly(symbols.getFirst());
+        // 100 against 100 is no change: neither a best nor a weakest performer.
+        assertThat(overall.unchanged()).extracting(DemoPortfolioService.StockView::symbol).containsExactly(symbols.get(1));
+    }
+
     @Test void ranksDistinctStocksAndWeightsRepeatedBuysByCapital() {
         var symbols = new java.util.ArrayList<String>();
         for (int close : List.of(70, 80, 90, 110, 120, 130, 140)) {
@@ -136,10 +153,11 @@ class DemoPortfolioServiceIntegrationTest {
                         .sessionAttr(AccountSession.SECURITY_VERSION, account.getSecurityVersion())
                         .param("page", "1").param("period", "month"))
                 .andExpect(status().isOk()).andExpect(view().name("virtual-trades"))
-                .andExpect(content().string(containsString("Value and performance")))
+                .andExpect(content().string(containsString("Your demo portfolio")))
                 .andExpect(content().string(containsString("Last month stock performance")))
-                .andExpect(content().string(containsString("Top 3 performers")))
-                .andExpect(content().string(containsString("Bottom 3 performers")))
+                // The only buy closed in 2020, so last month has no stock to rank: one note instead of two empty lists.
+                .andExpect(content().string(containsString("No stock prices available for this period.")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString("<h4>Best performers</h4>"))))
                 .andExpect(content().string(containsString("#demoPortfolio")))
                 .andReturn();
         var summary = (DemoPortfolioService.PortfolioView) result.getModelAndView().getModel().get("portfolio");

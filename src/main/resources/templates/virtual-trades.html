@@ -24,56 +24,54 @@
       <h1 class="title"><span class="learn-term" data-term="demoTrade" th:text="#{virtualTrades.heading}">Demo Trading</span></h1>
       <p class="subtitle" th:text="#{virtualTrades.subtitle}">Review your demo trades. Buys track returns; sells track avoided losses or missed gains, not short positions.</p>
     </div>
-    <div class="signal-archive-total" aria-label="Total demo trades" th:aria-label="#{virtualTrades.totalAria}">
-      <strong th:text="${archive.totalTrades()}">0</strong>
-      <span th:text="${#messages.msg(#tr.pluralKey('virtualTrades.totalLabel', archive.totalTrades()))}">demo trades</span>
-    </div>
   </header>
 
   <section id="demoPortfolio" class="demo-portfolio" aria-labelledby="demoPortfolioHeading">
-    <div class="portfolio-section-heading"><div><div class="eyebrow" th:text="#{virtualTrades.portfolioEyebrow}">Your demo portfolio</div><h2 id="demoPortfolioHeading" class="panel-title" th:text="#{virtualTrades.portfolioHeading}">Value and performance</h2></div><p class="panel-meta" th:text="#{virtualTrades.portfolioHelp}">Select a period to see its best and worst performing stocks.</p></div>
+    <div class="portfolio-section-heading"><h2 id="demoPortfolioHeading" class="panel-title" th:text="#{virtualTrades.portfolioEyebrow}">Your demo portfolio</h2></div>
     <div th:if="${portfolio.currencies().isEmpty()}" class="portfolio-empty">
-      <strong th:text="${#numbers.formatDecimal(0, 1, 2)}">0.00</strong><h3 th:text="#{virtualTrades.noSizedTitle}">No sized buy trades yet</h3><p th:text="#{virtualTrades.noSizedText}">Create a demo buy with a quantity or investment amount to track portfolio value.</p>
+      <strong th:text="${#tr.number(0, 2)}">0.00</strong><h3 th:text="#{virtualTrades.noSizedTitle}">No sized buy trades yet</h3><p th:text="#{virtualTrades.noSizedText}">Create a demo buy with a quantity or investment amount to track portfolio value.</p>
     </div>
     <article th:each="balance : ${portfolio.currencies()}" class="portfolio-currency">
       <header class="portfolio-value-heading">
         <div><span class="portfolio-value-label" th:text="#{virtualTrades.portfolioValue(${balance.currency()})}">Portfolio value</span>
-          <strong class="portfolio-value" th:text="${balance.value() != null ? #numbers.formatDecimal(balance.value(), 1, 2) + ' ' + balance.currency() : #messages.msg('virtualTrades.unavailable')}">0.00 USD</strong>
+          <strong class="portfolio-value" th:text="${balance.value() != null ? #tr.money(balance.value(), 2, balance.currency()) : #messages.msg('virtualTrades.unavailable')}">0.00 USD</strong>
           <p class="panel-meta" th:text="${#tr.text(balance.priceDates())}"></p>
         </div>
         <dl class="portfolio-value-breakdown">
-          <div><dt><span class="learn-term" data-term="openPosition" th:text="#{virtualTrades.openPositions}">Open positions</span></dt><dd th:text="${balance.openValue() != null ? #numbers.formatDecimal(balance.openValue(), 1, 2) + ' ' + balance.currency() : #messages.msg('virtualTrades.unavailable')}"></dd></div>
-          <div><dt th:text="#{virtualTrades.cash}">Cash from closed buys</dt><dd th:text="${#numbers.formatDecimal(balance.cash(), 1, 2) + ' ' + balance.currency()}"></dd></div>
-          <div><dt th:text="#{virtualTrades.totalInvested}">Total invested</dt><dd th:text="${#numbers.formatDecimal(balance.invested(), 1, 2) + ' ' + balance.currency()}"></dd></div>
+          <div><dt><span class="learn-term" data-term="openPosition" th:text="#{virtualTrades.openPositions}">Open positions</span></dt><dd th:text="${balance.openValue() != null ? #tr.money(balance.openValue(), 2, balance.currency()) : #messages.msg('virtualTrades.unavailable')}"></dd></div>
+          <div><dt th:text="#{virtualTrades.cash}">Cash from closed buys</dt><dd th:text="${#tr.money(balance.cash(), 2, balance.currency())}"></dd></div>
+          <div><dt th:text="#{virtualTrades.totalInvested}">Total invested</dt><dd th:text="${#tr.money(balance.invested(), 2, balance.currency())}"></dd></div>
         </dl>
       </header>
       <p th:if="${balance.missingPrices() > 0}" class="portfolio-data-note" role="status" th:text="${#messages.msg(#tr.pluralKey('virtualTrades.missingPrices', balance.missingPrices()), balance.missingPrices())}"></p>
       <p th:if="${balance.entryValuations() > 0}" class="panel-meta" th:text="${#messages.msg(#tr.pluralKey('virtualTrades.entryValuations', balance.entryValuations()), balance.entryValuations())}"></p>
+      <p class="panel-meta portfolio-periods-help" th:text="#{virtualTrades.portfolioHelp}">Select a period to see its best and worst performing stocks.</p>
       <nav class="portfolio-periods" th:aria-label="#{virtualTrades.periodsAria(${balance.currency()})}">
         <a th:each="period : ${balance.periods()}"
            th:href="@{/virtual-trades(sort=${archive.sort()},direction=${archive.direction()},page=${archive.page()},period=${period.key()})} + '#demoPortfolio'"
            class="portfolio-period" th:classappend="${portfolio.selectedPeriod() == period.key()} ? ' is-selected' : ''"
            th:attr="aria-current=${portfolio.selectedPeriod() == period.key() ? 'true' : null}">
           <span th:text="${#tr.text(period.label())}">Overall</span>
-          <strong th:classappend="${period.returnPercent() == null ? '' : (period.returnPercent().signum() >= 0 ? ' portfolio-positive' : ' portfolio-negative')}"
-                  th:text="${period.returnPercent() != null ? (period.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(period.returnPercent(), 1, 2) + '%' : #messages.msg('common.notAvailable')}">+0.00%</strong>
-          <small th:text="${period.gain() != null ? (period.gain().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(period.gain(), 1, 2) + ' ' + balance.currency() : #messages.msg('virtualTrades.historicalPricesMissing')}"></small>
+          <strong th:classappend="${period.returnPercent() == null ? '' : ' portfolio-' + #tr.tone(period.returnPercent())}"
+                  th:text="${period.returnPercent() != null ? #tr.signedPercent(period.returnPercent()) : #messages.msg('common.notAvailable')}">+0.00%</strong>
+          <small th:text="${period.gain() != null ? #tr.signedMoney(period.gain(), balance.currency()) : #messages.msg('virtualTrades.historicalPricesMissing')}"></small>
         </a>
       </nav>
       <div class="portfolio-ranking-heading"><h3 th:text="#{virtualTrades.stockPerformance(${#tr.text(balance.selected().label())})}">Stock performance</h3><p class="panel-meta" th:text="${#tr.text(balance.selected().comparison())}"></p></div>
-      <div class="portfolio-rankings">
-        <section class="portfolio-ranking" aria-label="Best performing stocks" th:aria-label="#{virtualTrades.bestAria}"><h4 th:text="#{virtualTrades.top3}">Top 3 performers</h4>
-          <ol><li th:each="stock : ${balance.selected().best()}"><a th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"><strong th:text="${stock.symbol()}"></strong><span th:text="${stock.companyName()}"></span></a><div><strong th:classappend="${stock.returnPercent().signum() >= 0 ? ' portfolio-positive' : ' portfolio-negative'}" th:text="${(stock.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(stock.returnPercent(), 1, 2) + '%'}"></strong><small th:text="${(stock.gain().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(stock.gain(), 1, 2) + ' ' + balance.currency()}"></small></div></li></ol>
-          <p th:if="${balance.selected().best().isEmpty()}" class="panel-meta" th:text="#{virtualTrades.noPrices}">No stock prices available for this period.</p>
+      <p th:if="${balance.selected().best().isEmpty() and balance.selected().worst().isEmpty() and balance.selected().unchanged().isEmpty()}" class="panel-meta" th:text="#{virtualTrades.noPrices}">No stock prices available for this period.</p>
+      <div class="portfolio-rankings" th:unless="${balance.selected().best().isEmpty() and balance.selected().worst().isEmpty()}">
+        <section th:unless="${balance.selected().best().isEmpty()}" class="portfolio-ranking" aria-label="Best performing stocks" th:aria-label="#{virtualTrades.bestAria}"><h4 th:text="#{virtualTrades.top3}">Best performers</h4>
+          <ol><li th:each="stock : ${balance.selected().best()}"><a th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"><strong th:text="${stock.symbol()}"></strong><span th:text="${stock.companyName()}"></span></a><div><strong th:classappend="${' portfolio-' + #tr.tone(stock.returnPercent())}" th:text="${#tr.signedPercent(stock.returnPercent())}"></strong><small th:text="${#tr.signedMoney(stock.gain(), balance.currency())}"></small></div></li></ol>
         </section>
-        <section class="portfolio-ranking" aria-label="Worst performing stocks" th:aria-label="#{virtualTrades.worstAria}"><h4 th:text="#{virtualTrades.bottom3}">Bottom 3 performers</h4>
-          <ol><li th:each="stock : ${balance.selected().worst()}"><a th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"><strong th:text="${stock.symbol()}"></strong><span th:text="${stock.companyName()}"></span></a><div><strong th:classappend="${stock.returnPercent().signum() >= 0 ? ' portfolio-positive' : ' portfolio-negative'}" th:text="${(stock.returnPercent().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(stock.returnPercent(), 1, 2) + '%'}"></strong><small th:text="${(stock.gain().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(stock.gain(), 1, 2) + ' ' + balance.currency()}"></small></div></li></ol>
-          <p th:if="${balance.selected().worst().isEmpty()}" class="panel-meta" th:text="#{virtualTrades.noPrices}">No stock prices available for this period.</p>
+        <section th:unless="${balance.selected().worst().isEmpty()}" class="portfolio-ranking" aria-label="Worst performing stocks" th:aria-label="#{virtualTrades.worstAria}"><h4 th:text="#{virtualTrades.bottom3}">Weakest performers</h4>
+          <ol><li th:each="stock : ${balance.selected().worst()}"><a th:href="@{/stock/{symbol}(symbol=${stock.symbol()})}"><strong th:text="${stock.symbol()}"></strong><span th:text="${stock.companyName()}"></span></a><div><strong th:classappend="${' portfolio-' + #tr.tone(stock.returnPercent())}" th:text="${#tr.signedPercent(stock.returnPercent())}"></strong><small th:text="${#tr.signedMoney(stock.gain(), balance.currency())}"></small></div></li></ol>
         </section>
       </div>
+      <p th:unless="${balance.selected().unchanged().isEmpty()}" class="panel-meta portfolio-note"
+         th:text="#{virtualTrades.unchanged(${#strings.listJoin(balance.selected().unchanged().![symbol()], ', ')})}">Unchanged: GS, NFLX</p>
       <p th:if="${balance.selected().unavailableStocks() > 0}" class="panel-meta" th:text="${#messages.msg(#tr.pluralKey('virtualTrades.unavailableStocks', balance.selected().unavailableStocks()), balance.selected().unavailableStocks())}"></p>
     </article>
-    <p th:if="${portfolio.excludedTrades() > 0}" class="panel-meta" th:text="${#messages.msg(#tr.pluralKey('virtualTrades.excludedTrades', portfolio.excludedTrades()), portfolio.excludedTrades())}"></p>
+    <p th:if="${portfolio.excludedTrades() > 0}" class="panel-meta portfolio-note" th:text="${#messages.msg(#tr.pluralKey('virtualTrades.excludedTrades', portfolio.excludedTrades()), portfolio.excludedTrades())}"></p>
     <details class="portfolio-method"><summary th:text="#{virtualTrades.methodTitle}">How portfolio performance is calculated</summary>
       <p th:text="#{virtualTrades.method1}">Portfolio value includes open demo buys and cash from closed buys. Each buy adds its investment; cash is not automatically reinvested. Demo sells are listed separately.</p>
       <p th:text="#{virtualTrades.method2}">Return is profit or loss divided by starting capital plus new investments. Adding a trade is not a gain. Rankings combine buys of the same stock by invested value; closed positions only affect periods when they were held.</p>
@@ -82,27 +80,24 @@
     </details>
   </section>
 
-  <section class="signal-archive-shell" aria-labelledby="virtualTradesHeading">
+  <section id="tradeHistory" class="signal-archive-shell" aria-labelledby="virtualTradesHeading">
     <div class="signal-archive-toolbar">
       <div>
         <h2 id="virtualTradesHeading" class="panel-title" th:text="#{virtualTrades.historyHeading}">Trade history</h2>
-        <p class="panel-meta" th:text="#{virtualTrades.historyHelp}">Open trades use the latest available price. Closing a trade saves its final result and analysis.</p>
+        <p class="panel-meta"><strong class="virtual-trade-count" th:text="${archive.totalTrades() + ' ' + #messages.msg(#tr.pluralKey('virtualTrades.totalLabel', archive.totalTrades()))}">9 demo trades</strong> · <span th:text="#{virtualTrades.historyHelp}">Open trades use the latest available price. Closing a trade saves its final result and analysis.</span></p>
       </div>
-      <form method="get" th:action="@{/virtual-trades}" class="signal-archive-sort-form" aria-label="Sort demo trades" th:aria-label="#{virtualTrades.sortAria}">
-        <input type="hidden" name="period" th:value="${portfolio.selectedPeriod()}">
-        <label><span th:text="#{common.sortBy}">Sort by</span><select name="sort">
-          <option value="date" th:selected="${archive.sort() == 'date'}" th:text="#{virtualTrades.sort.date}">Date</option>
-          <option value="ticker" th:selected="${archive.sort() == 'ticker'}" th:text="#{virtualTrades.sort.ticker}">Ticker</option>
-          <option value="side" th:selected="${archive.sort() == 'side'}" th:text="#{virtualTrades.sort.side}">Buy or sell</option>
-          <option value="status" th:selected="${archive.sort() == 'status'}" th:text="#{virtualTrades.sort.status}">Open or closed</option>
-          <option value="return" th:selected="${archive.sort() == 'return'}" th:text="#{virtualTrades.outcome}">Outcome</option>
+      <!--/* One list of orders, as on the signal lists; each option is a link to that order. */-->
+      <div class="signal-archive-sort-form" th:if="${!#lists.isEmpty(archive.trades())}" th:with="period=${portfolio.selectedPeriod()},current=${archive.sort() + '-' + archive.direction()}">
+        <label><span th:text="#{common.sortBy}">Sort by</span><select data-sort-navigate>
+          <option th:value="@{/virtual-trades(sort='date',direction='desc',period=${period})} + '#tradeHistory'" th:selected="${current == 'date-desc'}" th:text="#{signals.sortOption.newest}">Newest first</option>
+          <option th:value="@{/virtual-trades(sort='date',direction='asc',period=${period})} + '#tradeHistory'" th:selected="${current == 'date-asc'}" th:text="#{signals.sortOption.oldest}">Oldest first</option>
+          <option th:value="@{/virtual-trades(sort='return',direction='desc',period=${period})} + '#tradeHistory'" th:selected="${current == 'return-desc'}" th:text="#{signals.sortOption.best}">Best result first</option>
+          <option th:value="@{/virtual-trades(sort='return',direction='asc',period=${period})} + '#tradeHistory'" th:selected="${current == 'return-asc'}" th:text="#{signals.sortOption.worst}">Worst result first</option>
+          <option th:value="@{/virtual-trades(sort='ticker',direction='asc',period=${period})} + '#tradeHistory'" th:selected="${current == 'ticker-asc'}" th:text="#{signals.sortOption.ticker}">Ticker A–Z</option>
+          <option th:value="@{/virtual-trades(sort='status',direction='desc',period=${period})} + '#tradeHistory'" th:selected="${current == 'status-desc'}" th:text="#{virtualTrades.sortOption.open}">Open trades first</option>
+          <option th:value="@{/virtual-trades(sort='side',direction='asc',period=${period})} + '#tradeHistory'" th:selected="${current == 'side-asc'}" th:text="#{virtualTrades.sortOption.buys}">Buys first</option>
         </select></label>
-        <label><span th:text="#{common.order}">Order</span><select name="direction">
-          <option value="desc" th:selected="${archive.direction() == 'desc'}" th:text="#{common.descending}">Descending</option>
-          <option value="asc" th:selected="${archive.direction() == 'asc'}" th:text="#{common.ascending}">Ascending</option>
-        </select></label>
-        <button type="submit" class="btn-primary signal-archive-apply" th:text="#{common.applySorting}">Apply sorting</button>
-      </form>
+      </div>
     </div>
 
     <p th:if="${virtualTradeDeleteMessage}" class="signal-delete-feedback success"
@@ -117,42 +112,60 @@
 
     <div th:if="${!#lists.isEmpty(archive.trades())}" class="signal-archive-results virtual-trade-archive-results">
       <div class="virtual-trade-archive-head" aria-hidden="true">
-        <span th:text="#{virtualTrades.column.decision}">Decision</span><span th:text="#{virtualTrades.column.company}">Company</span><span class="learn-term" data-term="entry" th:text="#{virtualTrades.column.entry}">Entry</span><span th:text="#{virtualTrades.column.evaluation}">Evaluation</span><span th:text="#{virtualTrades.column.amount}">Amount &amp; value</span><span th:text="#{virtualTrades.outcome}">Outcome</span><span th:text="#{virtualTrades.column.status}">Status</span><span></span><span th:text="#{virtualTrades.column.action}">Action</span>
+        <span th:text="#{signals.column.ticker}">Ticker</span><span th:text="#{virtualTrades.column.decision}">Decision</span><span class="learn-term" data-term="entry" th:text="#{virtualTrades.column.entry}">Entry</span><span th:text="#{virtualTrades.column.evaluation}">Evaluation</span><span th:text="#{virtualTrades.column.amount}">Amount &amp; value</span><span th:text="#{virtualTrades.outcome}">Outcome</span><span th:text="#{virtualTrades.column.status}">Status</span><span></span>
       </div>
       <div class="signal-archive-list">
         <div th:each="trade, row : ${archive.trades()}" class="signal-archive-entry">
           <div th:if="${row.first or archive.groupKey(archive.trades().get(row.index - 1)) != archive.groupKey(trade)}"
                class="signal-archive-group-label">
-            <strong th:text="${#tr.text(archive.groupLabel(trade))}">08 August 2026</strong>
+            <strong th:text="${archive.sort() == 'date' ? #temporals.format(trade.entryAt(), #messages.msg('signals.groupDatePattern')) : #tr.text(archive.groupLabel(trade))}">Saturday, 8 August 2026</strong>
           </div>
-          <div class="virtual-trade-archive-record">
+          <!--/* The values each cell shows, worked out once so the row's spoken name can repeat them with their labels. */-->
+          <div class="virtual-trade-archive-record"
+               th:with="entryMoney=${#tr.money(trade.entryPrice(), trade.priceDigits(trade.entryPrice()), trade.currency())},
+                        entryTime=${#temporals.format(trade.entryAt(), 'd MMM yyyy, HH:mm')},
+                        result=${#tr.signedPercent(trade.resultPercent())},
+                        planText=${trade.stopPrice() != null or trade.targetPrice() != null ? #messages.msg('virtualTrade.planLine', trade.stopPrice() != null ? #tr.number(trade.stopPrice(), trade.priceDigits(trade.stopPrice())) : '–', trade.targetPrice() != null ? #tr.number(trade.targetPrice(), trade.priceDigits(trade.targetPrice())) : '–') : null},
+                        evalMoney=${#tr.money(trade.evaluationPrice(), trade.priceDigits(trade.evaluationPrice()), trade.currency())},
+                        evalCaption=${trade.evaluationSource() == 'Latest completed daily candle' or trade.evaluationSource() == 'Latest stored daily close (no live quote)' ? #messages.msg('virtualTrades.source.lastClose') : #tr.text(trade.evaluationSource())},
+                        valueLabel=${trade.evaluatedPositionValue() != null ? #messages.msg('virtualTrades.valueLabel.' + (trade.status() == 'CLOSED' ? 'final' : 'current') + '.' + (trade.side() == 'BUY' ? 'buy' : 'sell')) : null},
+                        valueMoney=${trade.evaluatedPositionValue() != null ? #tr.money(trade.evaluatedPositionValue(), 2, trade.currency()) : null},
+                        valueLine=${valueLabel != null ? valueLabel + ' ' + valueMoney : null},
+                        moneyResult=${trade.monetaryResult() != null ? #tr.signedMoney(trade.monetaryResult(), trade.currency()) : null}">
+            <!--/* The row's name reads each value with its label, since the column titles are visual only. */-->
             <a th:href="@{/virtual-trades/{id}(id=${trade.id()})}"
                class="virtual-trade-archive-row"
-               th:classappend="${' ' + #strings.toLowerCase(trade.side())}">
+               th:classappend="${' ' + #strings.toLowerCase(trade.side())}"
+               th:aria-label="#{virtualTrades.rowAria(${#tr.text(trade.sideLabel())}, ${trade.symbol()}, ${trade.companyName()},
+                   ${entryMoney + ', ' + entryTime + (planText != null ? ', ' + planText : '')},
+                   ${evalMoney + ', ' + evalCaption},
+                   ${valueLine != null ? #tr.money(trade.notionalValue(), 2, trade.currency()) + ', ' + valueLine : #messages.msg('virtualTrades.percentageOnly')},
+                   ${result + (moneyResult != null ? ' (' + moneyResult + ')' : '')},
+                   ${#tr.text(trade.outcomeLabel())}, ${#tr.text(trade.statusLabel())})}">
+            <div class="virtual-trade-ticker"><strong th:text="${trade.symbol()}">AAPL</strong><span th:text="${trade.companyName()}">Apple Inc.</span></div>
             <div class="virtual-trade-decision">
-              <span class="virtual-trade-side-pill" th:text="${#tr.text(trade.sideLabel())}">Demo buy</span>
-              <strong th:text="#{virtualTrades.intervalOutlook(${#tr.text(trade.intervalLabel())})}">Daily outlook</strong>
+              <strong th:text="${#tr.text(trade.sideLabel())}">Demo buy</strong>
+              <span th:text="#{virtualTrades.intervalOutlook(${#tr.text(trade.intervalLabel())})}">Daily outlook</span>
             </div>
-            <div><strong th:text="${trade.symbol()}">AAPL</strong><span th:text="${trade.companyName()}">Apple Inc.</span></div>
-            <div><strong th:text="${#numbers.formatDecimal(trade.entryPrice(), 1, trade.priceDigits(trade.entryPrice())) + ' ' + trade.currency()}">100 USD</strong><time th:text="${#temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')}">08 Aug</time>
-              <small th:if="${trade.stopPrice() != null or trade.targetPrice() != null}" class="virtual-trade-plan-line"
-                     th:text="${#messages.msg('virtualTrade.planLine', trade.stopPrice() != null ? #numbers.formatDecimal(trade.stopPrice(), 1, trade.priceDigits(trade.stopPrice())) : '–', trade.targetPrice() != null ? #numbers.formatDecimal(trade.targetPrice(), 1, trade.priceDigits(trade.targetPrice())) : '–')}">Stop 95.00 · Target 110.00</small></div>
-            <div><strong th:text="${#numbers.formatDecimal(trade.evaluationPrice(), 1, trade.priceDigits(trade.evaluationPrice())) + ' ' + trade.currency()}">105 USD</strong><span th:text="${#tr.text(trade.evaluationSource())}">Latest completed candle</span></div>
-            <div class="virtual-trade-position-value" th:if="${trade.evaluatedPositionValue() != null}">
-              <strong th:text="${#numbers.formatDecimal(trade.notionalValue(), 1, 2) + ' ' + trade.currency()}">1,000.00 USD</strong>
+            <!--/* Inside a day's group the row needs only the time, as on the signal lists. */-->
+            <div class="virtual-trade-entry"><strong th:text="${entryMoney}">100.00 USD</strong><time th:text="${archive.sort() == 'date' ? #temporals.format(trade.entryAt(), 'HH:mm') : entryTime}">10:00</time>
+              <small th:if="${planText != null}" class="virtual-trade-plan-line" th:text="${planText}">Stop 95.00 · Target 110.00</small></div>
+            <div class="virtual-trade-evaluation"><strong th:text="${evalMoney}">105.00 USD</strong><span th:text="${evalCaption}">Last daily close</span></div>
+            <div class="virtual-trade-position-value" th:if="${valueLine != null}">
+              <strong th:text="${#tr.money(trade.notionalValue(), 2, trade.currency())}">1,000.00 USD</strong>
               <span th:text="${trade.side() == 'BUY' ? #messages.msg('virtualTrades.investedAtEntry') : #messages.msg('virtualTrades.valueAtSellDecision')}">Invested at entry</span>
-              <small class="virtual-trade-evaluated-value" th:text="${#messages.msg('virtualTrades.value.' + (trade.status() == 'CLOSED' ? 'final' : 'current') + '.' + (trade.side() == 'BUY' ? 'buy' : 'sell'), #numbers.formatDecimal(trade.evaluatedPositionValue(), 1, 2) + ' ' + trade.currency())}">Current value 1,050.00 USD</small>
+              <!--/* The label and its amount are two lines at every width, so the pair never splits in a different place per row. */-->
+              <small class="virtual-trade-evaluated-value"><span th:text="${valueLabel}">Current value</span><span th:text="${valueMoney}">1,050.00 USD</span></small>
             </div>
-            <div class="virtual-trade-position-value" th:if="${trade.evaluatedPositionValue() == null}"><strong th:text="#{virtualTrades.percentageOnly}">Percentage only</strong><span th:text="#{virtualTrades.noMonetarySize}">No monetary size</span></div>
-            <div class="virtual-trade-outcome" th:classappend="${trade.resultPercent() >= 0 ? ' positive' : ' negative'}">
-              <strong th:text="${(trade.resultPercent() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.resultPercent(), 1, 2) + '%'}">+5.00%</strong>
+            <div class="virtual-trade-position-value" th:if="${valueLine == null}"><strong class="virtual-trade-unsized" th:text="#{virtualTrades.percentageOnly}">Percentage only</strong><span th:text="#{virtualTrades.noMonetarySize}">No monetary size</span></div>
+            <div class="virtual-trade-outcome" th:classappend="${' ' + #tr.tone(trade.resultPercent())}">
+              <!--/* The result and its amount share a line; a stop or target exit is named once, under Evaluation. */-->
+              <strong th:text="${result}">+5.00%</strong>
+              <small th:if="${moneyResult != null}" class="virtual-trade-monetary-result" th:text="${moneyResult}">+50.00 USD</small>
               <span th:text="${#tr.text(trade.outcomeLabel())}">Gain</span>
-              <small th:if="${trade.exitReason() == 'STOP' or trade.exitReason() == 'TARGET'}" class="virtual-trade-exit-reason" th:text="${#tr.text(trade.exitReasonLabel())}">Closed at the target</small>
-              <small th:text="#{virtualTrades.fromEntry(${#temporals.format(trade.entryAt(), 'dd MMM yyyy, HH:mm')})}">From captured entry · 08 Aug 2026, 10:00</small>
-              <small th:if="${trade.monetaryResult() != null}" class="virtual-trade-monetary-result" th:text="${(trade.monetaryResult().signum() >= 0 ? '+' : '') + #numbers.formatDecimal(trade.monetaryResult(), 1, 2) + ' ' + trade.currency()}">+50 USD</small>
             </div>
-            <span class="virtual-trade-status-pill" th:classappend="${' ' + #strings.toLowerCase(trade.status())}" th:text="${#tr.text(trade.statusLabel())}">Tracking</span>
-            <span class="latest-signal-arrow" aria-hidden="true">&rarr;</span>
+            <div class="virtual-trade-status"><span class="sa-status" th:classappend="${trade.status() == 'CLOSED' ? ' is-done' : ' is-open'}" th:text="${#tr.text(trade.statusLabel())}">Tracking</span></div>
+            <span class="latest-signal-arrow virtual-trade-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M9 6l6 6-6 6"/></svg></span>
             </a>
             <details class="row-menu">
               <summary th:aria-label="#{virtualTrades.moreActionsAria(${#tr.text(trade.sideLabel())}, ${trade.symbol()})}" title="More actions" th:title="#{virtualTrades.moreActions}"><span aria-hidden="true">&middot;&middot;&middot;</span></summary>
