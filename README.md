@@ -277,6 +277,7 @@ The complete development template is in [`.env.example`](.env.example). Importan
 | `GEMINI_API_KEY` | Google AI Studio key for the "Ask StockWatch" assistant. Empty by default, which hides the assistant button; set it and restart to show it. On the free tier each model allows about 20 requests a day per key, so each developer should use their own |
 | `ASSISTANT_ENABLED` | Turns the assistant off even when a key is set (default `true`) |
 | `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL` | Gemini model to ask first, and the one asked when it is busy or out of quota |
+| `ASSISTANT_TIMEOUT_SECONDS` | Seconds one model may take to answer (default `50`). An overloaded model often answers slowly; one still silent then counts as busy, and the assistant asks the user to try again in a minute |
 | `SPRING_PROFILES_ACTIVE=prod` | Enables production security requirements |
 
 Never commit `.env`, database passwords, SMTP credentials, or API keys. Store production secrets in the hosting platform's secret manager.

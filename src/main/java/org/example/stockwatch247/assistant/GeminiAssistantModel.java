@@ -19,6 +19,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.net.SocketTimeoutException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,8 +39,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * thinks is set with {@code thinkingLevel} instead. Thought parts are skipped when the answer is read.</p>
  *
  * <p>Quotas are counted per model, and a new model is often overloaded. So a fallback model can stand in: when the
- * main model answers "high demand" (503), times out, or has used its quota (429), the fallback is asked. A model out
- * of quota rests (a minute, or until Google's daily reset at midnight Pacific time) instead of being asked again.</p>
+ * main model answers "high demand" (503), has used its quota (429) or cannot be reached, the fallback is asked. A model
+ * out of quota rests (a minute, or until Google's daily reset at midnight Pacific time) instead of being asked again.</p>
+ *
+ * <p>An overloaded model often answers slowly instead of with a 503. One that connects but has not answered when the
+ * timeout ends is therefore busy too, but the fallback is not asked then: the wait is used up, and the fallback shares
+ * Google's load, so it would double the wait for what is most likely another "busy".</p>
  */
 @Component
 public class GeminiAssistantModel implements AssistantModel {
@@ -69,7 +74,7 @@ public class GeminiAssistantModel implements AssistantModel {
                                 @Value("${assistant.gemini.fallback-model:}") String fallbackModel,
                                 @Value("${assistant.gemini.thinking-level:LOW}") String thinkingLevel,
                                 @Value("${assistant.gemini.max-output-tokens:4096}") int maxOutputTokens,
-                                @Value("${assistant.timeout-seconds:30}") long timeoutSeconds) {
+                                @Value("${assistant.timeout-seconds:50}") long timeoutSeconds) {
         this(restTemplate(timeoutSeconds), json, baseUrl, apiKey, model, fallbackModel, thinkingLevel, maxOutputTokens,
                 Duration.ofSeconds(2), Clock.systemUTC());
     }
@@ -109,8 +114,11 @@ public class GeminiAssistantModel implements AssistantModel {
         return !apiKey.isEmpty() && validName(models.getFirst());
     }
 
-    /** Why one model did not answer. REFUSED is a problem with the request itself, which another model would share. */
-    private enum Failure { OVERLOADED, UNREACHABLE, QUOTA, REFUSED }
+    /**
+     * Why one model did not answer. SLOW: connected, but no answer before the timeout. REFUSED is a problem with the
+     * request itself, which another model would share.
+     */
+    private enum Failure { OVERLOADED, SLOW, UNREACHABLE, QUOTA, REFUSED }
 
     private static final class Attempt extends RuntimeException {
         final Failure failure;
@@ -127,6 +135,7 @@ public class GeminiAssistantModel implements AssistantModel {
         String body = json.writeValueAsString(body(request));
         boolean busy = false;
         Attempt last = null;
+        asking:
         for (String model : models) {
             if (resting(model) != null) {
                 busy = true;
@@ -141,9 +150,10 @@ public class GeminiAssistantModel implements AssistantModel {
                     last = failed;
                     switch (failed.failure) {
                         case REFUSED -> throw new UnavailableException(failed.getMessage(), false, failed);
-                        case QUOTA, OVERLOADED -> busy = true;
+                        case QUOTA, OVERLOADED, SLOW -> busy = true;
                         default -> { }
                     }
+                    if (failed.failure == Failure.SLOW) break asking;
                     if (failed.failure != Failure.OVERLOADED) break;
                     if (attempt < tries) pause();
                 }
@@ -181,9 +191,24 @@ public class GeminiAssistantModel implements AssistantModel {
             }
             throw new Attempt(status >= 500 ? Failure.OVERLOADED : Failure.REFUSED, "Gemini " + model + " answered " + status, failure);
         } catch (RestClientException failure) {
+            if (answerTimedOut(failure)) {
+                log.warn("Gemini {} did not answer before the timeout, so it counts as busy: {}", model, failure.getMessage());
+                throw new Attempt(Failure.SLOW, "Gemini " + model + " did not answer in time", failure);
+            }
             log.warn("Gemini {} could not be reached: {}", model, failure.getMessage());
             throw new Attempt(Failure.UNREACHABLE, "Gemini " + model + " could not be reached", failure);
         }
+    }
+
+    /** The read timeout ended the wait: connected, but no answer in time. A connect timeout means Google was not reached. */
+    private static boolean answerTimedOut(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SocketTimeoutException timeout) {
+                String message = timeout.getMessage() == null ? "" : timeout.getMessage().toLowerCase(Locale.ROOT);
+                return !message.contains("connect");
+            }
+        }
+        return false;
     }
 
     private void pause() {

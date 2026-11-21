@@ -43,6 +43,7 @@ server {
     client_header_timeout 10s;
     keepalive_timeout 15s;
     send_timeout 30s;
+    proxy_read_timeout 30s;
     limit_conn stockwatch_connections 20;
     limit_req_status 429;
     limit_conn_status 429;
@@ -55,6 +56,14 @@ server {
 
     location = /resend-verification {
         limit_req zone=stockwatch_auth burst=3 nodelay;
+        include /etc/nginx/snippets/stockwatch-proxy.conf;
+    }
+
+    # One question may wait for the model up to three times (another page's details, a repaired alert), each up to
+    # ASSISTANT_TIMEOUT_SECONDS (50 s by default).
+    location = /api/assistant/chat {
+        limit_req zone=stockwatch_general burst=40 nodelay;
+        proxy_read_timeout 180s;
         include /etc/nginx/snippets/stockwatch-proxy.conf;
     }
 
