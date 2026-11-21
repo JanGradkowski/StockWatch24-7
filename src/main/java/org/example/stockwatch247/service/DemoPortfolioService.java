@@ -155,16 +155,23 @@ public class DemoPortfolioService {
             };
             String comparison = "overall".equals(period.getKey()) ? "Since each buy was opened"
                     : "Since the close on or before " + DATE.format(period.getValue().atZone(ZoneOffset.UTC).toLocalDate().minusDays(1));
-            periods.add(new PeriodView(period.getKey(), label, total.percent(), total.gain(),
-                    ranked.stream().sorted(descending).limit(3).toList(), ranked.stream().sorted(ascending).limit(3).toList(),
+            // Gains and losses are ranked apart, so no stock is in both lists; a stock with no change (as shown, to two
+            // decimals) is neither a best nor a weakest performer and is named below them instead.
+            List<StockView> best = ranked.stream().filter(stock -> shownSign(stock) > 0).sorted(descending).limit(3).toList();
+            List<StockView> worst = ranked.stream().filter(stock -> shownSign(stock) < 0).sorted(ascending).limit(3).toList();
+            List<StockView> unchanged = ranked.stream().filter(stock -> shownSign(stock) == 0)
+                    .sorted(Comparator.comparing(StockView::symbol)).toList();
+            periods.add(new PeriodView(period.getKey(), label, total.percent(), total.gain(), best, worst, unchanged,
                     stocks.size() - ranked.size(), comparison));
         }
         List<Long> dates = positions.stream().filter(position -> !position.closed()).map(position -> latest.get(position.symbol()))
                 .filter(java.util.Objects::nonNull).map(Price::timestamp).distinct().sorted().toList();
         String priceDates = dates.isEmpty()
                 ? (positions.stream().allMatch(Position::closed) ? "Recorded exit prices for closed buys" : "Daily-close prices unavailable")
-                : "Daily-close prices: "
-                + date(dates.getFirst()) + (dates.size() > 1 ? " to " + date(dates.getLast()) : "");
+                // Stocks' latest closes can fall on different days, so the line says which closes value the open positions.
+                : dates.size() > 1
+                ? "Open positions are valued at the latest daily close of each stock, dated " + date(dates.getFirst()) + " to " + date(dates.getLast())
+                : "Open positions are valued at the daily close of " + date(dates.getFirst());
         return new CurrencyView(currency, missing == 0 ? open.add(cash) : null, invested,
                 missing == 0 ? open : null, cash, positions.size(), missing, atEntry, priceDates, List.copyOf(periods),
                 periods.stream().filter(period -> period.key().equals(selected)).findFirst().orElseThrow());
@@ -221,6 +228,11 @@ public class DemoPortfolioService {
                                int trades, int missingPrices, int entryValuations, String priceDates,
                                List<PeriodView> periods, PeriodView selected) { }
     public record PeriodView(String key, String label, BigDecimal returnPercent, BigDecimal gain,
-                             List<StockView> best, List<StockView> worst, int unavailableStocks, String comparison) { }
+                             List<StockView> best, List<StockView> worst, List<StockView> unchanged,
+                             int unavailableStocks, String comparison) { }
+
+    private static int shownSign(StockView stock) {
+        return stock.returnPercent().setScale(2, java.math.RoundingMode.HALF_UP).signum();
+    }
     public record StockView(String symbol, String companyName, BigDecimal returnPercent, BigDecimal gain) { }
 }

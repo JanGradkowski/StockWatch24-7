@@ -11,7 +11,7 @@ Practice trades with play money: {{msg:sidebar.demo.title}}. Nothing here places
 
 ## What's on it
 
-- `/virtual-trades`: **{{msg:virtualTrades.portfolioHeading}}** (portfolio value of sized buy trades),
+- `/virtual-trades`: **{{msg:virtualTrades.portfolioEyebrow}}** (portfolio value of sized buy trades),
   **{{msg:virtualTrades.methodTitle}}**, and **{{msg:virtualTrades.historyHeading}}** with sorting and
   delete.
 - `/virtual-trades/{id}`: one trade with tabs **{{msg:virtualTrade.tab.general}}**,

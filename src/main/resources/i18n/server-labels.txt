@@ -3802,11 +3802,11 @@ pl: Zapisane ceny wyjścia dla zamkniętych kupn
 en: Daily-close prices unavailable
 pl: Ceny zamknięcia dziennego niedostępne
 
-en: Daily-close prices: {0}
-pl: Ceny zamknięcia dziennego: {0}
+en: Open positions are valued at the daily close of {0}
+pl: Otwarte pozycje wyceniono po zamknięciu dnia {0}
 
-en: Daily-close prices: {0} to {1}
-pl: Ceny zamknięcia dziennego: od {0} do {1}
+en: Open positions are valued at the latest daily close of each stock, dated {0} to {1}
+pl: Otwarte pozycje wyceniono po ostatnim zamknięciu dnia każdej akcji, z dni od {0} do {1}
 
 en: Quantity
 pl: Liczba akcji

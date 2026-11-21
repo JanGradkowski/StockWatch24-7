@@ -169,8 +169,35 @@
             const inside = event.target instanceof Element ? event.target.closest('details.row-menu') : null;
             menus.forEach(menu => { if (menu !== inside) menu.open = false; });
         });
+        // Escape closes the open menu; focus inside it goes back to its button rather than staying on a hidden item.
         document.addEventListener('keydown', event => {
-            if (event.key === 'Escape') menus.forEach(menu => { menu.open = false; });
+            if (event.key !== 'Escape') return;
+            menus.forEach(menu => {
+                if (!menu.open) return;
+                const focusInside = menu.contains(document.activeElement);
+                menu.open = false;
+                if (focusInside) menu.querySelector('summary')?.focus();
+            });
+        });
+    }
+    // A sort list whose options are links (the demo trade history): choosing an order opens it. Arrow keys on the
+    // closed list only move through the options, so a keyboard user applies one with Enter instead of reloading at
+    // every step; leaving the list without Enter puts back the order the page shows.
+    function sortLinks() {
+        const stepKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'];
+        document.querySelectorAll('select[data-sort-navigate]').forEach(select => {
+            const shown = select.value;
+            let stepping = false;
+            const open = () => { if (select.value && select.value !== shown) window.location.assign(select.value); };
+            select.addEventListener('keydown', event => {
+                if (event.key === 'Enter') { event.preventDefault(); open(); return; }
+                const opensList = event.key === ' ' || event.key === 'F4' || (event.altKey && stepKeys.includes(event.key));
+                if (opensList) stepping = false;
+                else if (stepKeys.includes(event.key) || event.key.length === 1) stepping = true;
+            });
+            select.addEventListener('pointerdown', () => { stepping = false; });
+            select.addEventListener('change', () => { if (!stepping) open(); });
+            select.addEventListener('blur', () => { if (stepping) select.value = shown; stepping = false; });
         });
     }
     // One-line status chips: the full message is in the tooltip, and a click expands it in place.
@@ -213,5 +240,5 @@
             ring.style.setProperty('--score-percent', String(Math.max(0, Math.min(100, Number(ring.dataset.scorePercent) || 0)))));
     }
     labelRows(); settingsChanges(); appearancePreview(); fieldErrors();
-    filterableMenus(); rowMenus(); expandableStatus(); passwordByteLimits(); scoreRings();
+    filterableMenus(); rowMenus(); sortLinks(); expandableStatus(); passwordByteLimits(); scoreRings();
 })();
