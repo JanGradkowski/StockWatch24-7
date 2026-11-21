@@ -207,7 +207,8 @@ class StockWatch247ApplicationTests {
                 .andExpect(view().name("virtual-trades"))
                 .andExpect(content().string(containsString("Demo Trading")))
                 .andExpect(content().string(containsString("Avoided loss")))
-                .andExpect(content().string(containsString("Final reference value 900.00 USD")))
+                // The list shows a value's label above its amount; the amount keeps its currency with a no-break space.
+                .andExpect(content().string(containsString("<span>Final reference value</span><span>900.00 USD</span>")))
                 .andExpect(content().string(containsString("class=\"virtual-trade-monetary-result\"")))
                 .andExpect(content().string(containsString("Delete")))
                 .andExpect(content().string(containsString("/virtual-trades/" + trade.getId() + "/delete")));
