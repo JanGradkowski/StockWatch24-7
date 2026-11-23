@@ -36,8 +36,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+// No channel type can send here, so nothing in these tests reaches a real provider.
 @SpringBootTest(properties = {"alerts.schedule.enabled=false", "alert-channels.enabled=true",
-        "alert-channels.worker-enabled=false"})
+        "alert-channels.worker-enabled=false", "alert-channels.discord.enabled=false"})
 @AutoConfigureMockMvc
 @Transactional
 class AlertDeliverySettingsIntegrationTest {

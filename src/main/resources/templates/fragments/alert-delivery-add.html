@@ -3,6 +3,19 @@
 <body>
 <!--/* Forms that add a channel, one per kind this server can send to (deliveryAvailable). */-->
 <th:block th:fragment="addChannels">
+  <article th:if="${deliveryAvailable['DISCORD']}" class="channel-add" id="add-discord">
+    <h3 th:text="#{settings.delivery.discord.heading}">Discord</h3>
+    <p th:text="#{settings.delivery.discord.help}">In Discord: Server Settings, Integrations, Webhooks, New Webhook, then Copy Webhook URL.</p>
+    <p th:text="#{settings.delivery.discord.audience}">Everyone who can read that Discord channel will see your alerts.</p>
+    <form th:action="@{/settings/alert-delivery/discord}" method="post">
+      <div class="form-group"><label for="discordWebhookUrl" th:text="#{settings.delivery.discord.url}">Webhook URL</label>
+        <input id="discordWebhookUrl" name="webhookUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" required maxlength="300"
+               th:placeholder="#{settings.delivery.discord.urlHint}" placeholder="https://discord.com/api/webhooks/…"></div>
+      <div class="form-group"><label for="discordLabel" th:text="#{settings.delivery.discord.label}">Name (optional)</label>
+        <input id="discordLabel" name="label" maxlength="80" autocomplete="off" th:placeholder="#{settings.delivery.discord.labelHint}" placeholder="The webhook's name in Discord"></div>
+      <button class="btn-accent" type="submit" th:text="#{settings.delivery.discord.submit}">Add Discord</button>
+    </form>
+  </article>
 </th:block>
 </body>
 </html>

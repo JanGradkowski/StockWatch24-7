@@ -39,6 +39,21 @@ public class AlertDeliverySettingsController {
         this.channels = channels;
     }
 
+    @PostMapping("/settings/alert-delivery/discord")
+    public String addDiscord(@RequestParam String webhookUrl, @RequestParam(required = false) String label,
+                             Principal principal, RedirectAttributes redirect) {
+        User user = current(principal);
+        try {
+            ChannelStore.Channel channel = channels.addDiscord(user, webhookUrl, label);
+            redirect.addFlashAttribute("success", "Discord channel " + channel.label() + " added. Send a test to check it.");
+            return anchor(channel);
+        } catch (UserInputException invalid) {
+            // The pasted URL is a credential: it is never put back into the form.
+            redirect.addFlashAttribute("error", invalid.getMessage());
+            return PAGE + "#add-discord";
+        }
+    }
+
     @PostMapping("/settings/alert-delivery/{id}/test")
     public String test(@PathVariable String id, Principal principal, RedirectAttributes redirect) {
         User user = current(principal);

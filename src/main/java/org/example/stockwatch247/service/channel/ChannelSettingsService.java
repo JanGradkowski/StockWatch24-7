@@ -66,6 +66,8 @@ public class ChannelSettingsService {
     private AlertNotificationService notifications;
     @Autowired(required = false)
     private Messages messages;
+    @Autowired(required = false)
+    private DiscordSender discord;
 
     public ChannelSettingsService(ChannelStore store, ChannelDeliveryWorker worker, JdbcTemplate jdbc,
                                   RequestRateLimiter limiter, SecurityEventRepository events,
@@ -156,6 +158,34 @@ public class ChannelSettingsService {
         ChannelStore.Channel created = store.create(channel);
         if (created.status() == ChannelStatus.ACTIVE) announce(user, created);
         return created;
+    }
+
+    /**
+     * Adds a Discord channel webhook: the pasted URL must be a Discord webhook, and Discord must know it. Its name
+     * becomes the channel's name unless one was given.
+     */
+    public ChannelStore.Channel addDiscord(User user, String pasted, String label) {
+        if (!available(ChannelType.DISCORD) || discord == null) {
+            throw new UserInputException("This kind of channel is not set up on this server.");
+        }
+        DiscordSender.Webhook webhook = DiscordSender.parse(pasted).orElseThrow(() -> new UserInputException(
+                "That isn't a Discord webhook URL. It starts with https://discord.com/api/webhooks/."));
+        String lookup = "discord:" + webhook.id();
+        boolean known = store.byLookup(ChannelType.DISCORD, store.lookupHash(ChannelType.DISCORD, lookup)).stream()
+                .anyMatch(channel -> channel.userId() == user.getId());
+        if (known) throw new UserInputException("This Discord webhook is already one of your channels.");
+        java.util.Optional<String> name;
+        try {
+            name = discord.lookUp(webhook);
+        } catch (org.example.stockwatch247.security.GuardedHttpClient.OutboundException | RuntimeException unreachable) {
+            throw new UserInputException("Discord could not be reached. Try again in a minute.");
+        }
+        if (name.isEmpty()) throw new UserInputException("Discord doesn't know this webhook. Copy it again.");
+        String chosen = label == null || label.isBlank() ? name.get() : label.strip();
+        if (chosen.length() > 80) chosen = chosen.substring(0, 80);
+        return create(user, new ChannelStore.NewChannel(user.getId(), ChannelType.DISCORD, chosen, webhook.hint(),
+                DiscordSender.SCOPE, ChannelStatus.ACTIVE, defaultKinds(user), defaultDirections(user), null,
+                Map.of("webhookUrl", webhook.url(), "webhookId", webhook.id()), lookup));
     }
 
     /** Records the new channel under Sessions and activity and emails the owner, best effort. */
