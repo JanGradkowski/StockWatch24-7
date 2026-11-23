@@ -134,6 +134,16 @@ class DiscordSenderTest {
     }
 
     @Test
+    void quietHoursSuppressTheNotification() {
+        var quiet = new ChannelSender.Target(1, UUID.randomUUID(), 1, ChannelType.DISCORD, "Desk", "discord",
+                Map.of("webhookUrl", "https://discord.com/api/webhooks/123456789012345678/abcDEF_ghi-jkl0123456789", "quietNow", "true"), null);
+        sender.send(quiet, single(), ChannelSender.PartProgress.NONE);
+        assertThat(received.getLast()).contains("\"flags\":4096");
+        sender.send(target(), single(), ChannelSender.PartProgress.NONE);
+        assertThat(received.getLast()).doesNotContain("flags");
+    }
+
+    @Test
     void lookingUpAWebhookReadsItsName() throws Exception {
         answers.add(new Answer(200, Map.of("Content-Type", "application/json"), "{\"name\": \"Captain Hook\", \"channel_id\": \"1\"}"));
         var webhook = DiscordSender.parse("https://discord.com/api/webhooks/123456789012345678/abcDEF_ghi-jkl0123456789").orElseThrow();

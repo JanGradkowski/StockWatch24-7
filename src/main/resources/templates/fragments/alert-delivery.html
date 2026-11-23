@@ -130,6 +130,11 @@
                 <label><input type="checkbox" name="directions" value="BUY" th:checked="${view.hasDirection('BUY')}"><span th:text="#{analysis.email.buy}">Buy</span></label>
                 <label><input type="checkbox" name="directions" value="SELL" th:checked="${view.hasDirection('SELL')}"><span th:text="#{analysis.email.sell}">Sell/Short</span></label>
               </fieldset>
+              <fieldset th:if="${channel.type().chat()}"><legend th:text="#{settings.delivery.mode}">How alerts arrive</legend>
+                <label><input type="radio" name="deliveryMode" value="EACH" th:checked="${channel.deliveryMode() != 'SUMMARY'}"><span th:text="#{settings.delivery.mode.each}">One message per alert</span></label>
+                <label><input type="radio" name="deliveryMode" value="SUMMARY" th:checked="${channel.deliveryMode() == 'SUMMARY'}"><span th:text="#{settings.delivery.mode.summary}">One summary per check run</span></label>
+              </fieldset>
+              <label th:if="${channel.type().name() != 'WEBHOOK'}" class="channel-quiet"><input type="checkbox" name="quietHours" value="true" th:checked="${channel.quietHours()}"><span th:text="#{settings.delivery.quiet}">Quiet at night: between 22:00 and 07:00 messages arrive without sound</span></label>
               <div class="form-group"><label th:for="|language-${view.id()}|" th:text="#{settings.delivery.language}">Language</label>
                 <select th:id="|language-${view.id()}|" name="language">
                   <option value="auto" th:selected="${channel.language() == null}" th:text="#{settings.delivery.language.account}">Same as my account</option>

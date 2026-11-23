@@ -73,8 +73,9 @@ public class WebPushSender implements ChannelSender {
             return new SendResult.ChannelGone("PUSH_GONE");
         }
         if (!allowed(endpoint)) return new SendResult.ChannelGone("PUSH_GONE");
-        byte[] payload = mapper.writeValueAsString(notification(outgoing, "true".equals(target.configString("hideDetails"))))
-                .getBytes(StandardCharsets.UTF_8);
+        Map<String, Object> notification = notification(outgoing, "true".equals(target.configString("hideDetails")));
+        if ("true".equals(target.configString("quietNow"))) notification.put("silent", true);
+        byte[] payload = mapper.writeValueAsString(notification).getBytes(StandardCharsets.UTF_8);
         byte[] body = WebPushCrypto.encrypt(payload, WebPushCrypto.base64Url(target.configString("p256dh")),
                 WebPushCrypto.base64Url(target.configString("auth")));
         String audience = endpoint.getScheme() + "://" + endpoint.getHost() + (endpoint.getPort() < 0 ? "" : ":" + endpoint.getPort());

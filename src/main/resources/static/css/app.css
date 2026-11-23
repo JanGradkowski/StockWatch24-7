@@ -1006,3 +1006,5 @@ main:focus { outline: none; }
 :root[data-theme] .ui-refresh .push-card [data-push-state][hidden] { display: none; }
 :root[data-theme] .ui-refresh .push-hide { display: flex; gap: 8px; align-items: center; min-height: 32px; font-size: var(--fs-sm); }
 :root[data-theme] .ui-refresh .push-hide input { accent-color: var(--primary-color); }
+:root[data-theme] .ui-refresh .channel-quiet { display: flex; gap: 8px; align-items: center; min-height: 32px; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .channel-quiet input { accent-color: var(--primary-color); }

@@ -193,6 +193,8 @@ public class AlertDeliverySettingsController {
                          @RequestParam(required = false) List<String> directions,
                          @RequestParam(required = false) String language,
                          @RequestParam(required = false) String preset,
+                         @RequestParam(required = false) String deliveryMode,
+                         @RequestParam(required = false) String quietHours,
                          Principal principal, RedirectAttributes redirect) {
         User user = current(principal);
         ChannelStore.Channel channel = owned(user, id);
@@ -206,7 +208,8 @@ public class AlertDeliverySettingsController {
         }
         Set<String> sides = directions == null ? Set.of() : new LinkedHashSet<>(directions);
         try {
-            channels.update(user, channel, label, chosen, sides, language, "email".equals(preset));
+            channels.update(user, channel, label, chosen, sides, language, "email".equals(preset), deliveryMode,
+                    "true".equals(quietHours));
             redirect.addFlashAttribute("success", "Channel saved.");
         } catch (UserInputException invalid) {
             redirect.addFlashAttribute("error", invalid.getMessage());

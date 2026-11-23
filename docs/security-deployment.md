@@ -66,7 +66,38 @@ The application has a PostgreSQL-backed second layer of rate limits, provider co
 
 Alert schedule checkpoints are also stored in PostgreSQL. On every startup, and once per minute while running, the app compares those checkpoints with the configured daily, weekly, and monthly cron schedules. Missed runs are queued in their original order and evaluate only candles that were available at the original scheduled time. The default recovery batch is 100 schedule occurrences per pass, so an extended outage is drained incrementally without creating an unbounded startup burst. Completed signal events remain protected by their database uniqueness constraint, preventing a recovered run from recording the same rule/pattern/candle twice.
 
-## 4. Release and external checks
+## 4. Alert channels (Telegram, Discord, webhooks, Web Push)
+
+Alerts can also go to Telegram, Discord, the user's own webhook and browser push (`docs/alert-delivery-channels-plan.md`).
+`ALERT_CHANNELS_ENABLED` (default `true`) switches them all off. Discord and webhooks need no setting.
+
+```text
+TELEGRAM_BOT_TOKEN=<from @BotFather; privacy on, groups off, commands start/stop/help>
+TELEGRAM_BOT_USERNAME=<the bot's username, without @>
+VAPID_PUBLIC_KEY=<from VapidKeyGenerator>
+VAPID_PRIVATE_KEY=<from VapidKeyGenerator>
+VAPID_SUBJECT=mailto:<a mailbox that reads push service notices>
+PWA_ENABLED=true
+```
+
+- Telegram is offered only with a token and a username. The bot reads its updates by polling, so it needs no inbound
+  URL; only one process may poll a bot, so development needs its own bot.
+- Generate the VAPID pair once and keep it: every browser's push subscription is bound to the public key, and a new
+  pair ends them all. Generate it with
+  `java -Dloader.main=org.example.stockwatch247.service.channel.VapidKeyGenerator -cp target/StockWatch24-7-0.0.1-SNAPSHOT.jar org.springframework.boot.loader.launch.PropertiesLauncher`.
+  Push to phones, and installing on iOS, need the final public HTTPS origin.
+- `PWA_ENABLED=false` is the kill switch for a faulty service worker: every device removes it on its next visit.
+- The production checks refuse a malformed Telegram token, a token without a username, a mismatched VAPID pair or
+  subject, generated VAPID keys, and any relaxed outgoing-request setting (`alert-channels.allow-private-targets`,
+  `alert-channels.webhook.allow-http`, `alert-channels.allow-any-port`, provider base URLs other than the real ones).
+- Egress: allow `api.telegram.org`, `discord.com`, the push services (`fcm.googleapis.com`,
+  `updates.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`) and HTTPS on ports 443 and 8443
+  for webhooks; deny RFC 1918 and cloud metadata addresses at the firewall as a second line behind the application's
+  own checks.
+- Telegram and Discord are processors the user chooses: name them, and the push services, in the privacy policy before
+  enabling channels in production.
+
+## 5. Release and external checks
 
 Run locally or let the security workflow enforce:
 

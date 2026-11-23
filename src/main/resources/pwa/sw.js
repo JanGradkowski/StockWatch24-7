@@ -3,7 +3,7 @@
    Every other request goes to the network untouched. */
 'use strict';
 
-const CACHE = 'stockwatch-shell-v2';
+const CACHE = 'stockwatch-shell-v3';
 const SHELL = ['/offline', '/icons/icon-192.png', '/icons/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -31,6 +31,7 @@ self.addEventListener('push', (event) => {
     body: typeof data.body === 'string' ? data.body : '',
     tag: typeof data.tag === 'string' ? data.tag : undefined,
     lang: typeof data.lang === 'string' ? data.lang : undefined,
+    silent: data.silent === true,
     icon: '/icons/icon-192.png',
     data: { url: sameOrigin(data.url) },
   }));
