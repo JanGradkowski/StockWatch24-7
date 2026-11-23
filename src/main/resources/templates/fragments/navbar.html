@@ -46,7 +46,7 @@
       <a th:if="${firstName == null}" href="/signup" class="btn-accent" th:text="#{nav.getStarted}">Get started</a>
     </div>
     <span th:if="${firstName != null}" id="accountThemeSync" hidden
-          th:attr="data-theme-endpoint=@{/api/settings/theme},data-csrf-token=${_csrf.token}"></span>
+          th:attr="data-theme-endpoint=@{/api/settings/theme},data-csrf-token=${_csrf.token},data-push-revision=${pushRevision}"></span>
   </nav>
   <th:block th:if="${showAppNavigation == true}">
     <th:block th:replace="~{fragments/app-sidebar :: sidebar}"></th:block>

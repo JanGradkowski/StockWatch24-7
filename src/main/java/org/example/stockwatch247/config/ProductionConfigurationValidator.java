@@ -180,6 +180,15 @@ public class ProductionConfigurationValidator implements InitializingBean, Envir
         require("https://discord.com".equals(environment.getProperty("alert-channels.discord.api-base-url",
                         "https://discord.com")),
                 "Production Discord delivery must use https://discord.com (alert-channels.discord.api-base-url).");
+        String vapidPublic = environment.getProperty("alert-channels.push.vapid-public-key", "");
+        String vapidPrivate = environment.getProperty("alert-channels.push.vapid-private-key", "");
+        if (!vapidPublic.isBlank() || !vapidPrivate.isBlank()) {
+            require(org.example.stockwatch247.service.channel.VapidKeys.valid(vapidPublic.strip(), vapidPrivate.strip(),
+                            environment.getProperty("alert-channels.push.vapid-subject", "").strip()),
+                    "VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be one matching P-256 pair, with VAPID_SUBJECT a mailto: or https: contact.");
+        }
+        require(!environment.getProperty("alert-channels.push.dev-generate", Boolean.class, false),
+                "Production must not generate VAPID keys (alert-channels.push.dev-generate=false).");
         String telegramToken = environment.getProperty("alert-channels.telegram.bot-token", "");
         if (!telegramToken.isBlank()) {
             require(org.example.stockwatch247.service.channel.TelegramApi.TOKEN.matcher(telegramToken.strip()).matches(),

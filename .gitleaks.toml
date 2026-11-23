@@ -8,4 +8,6 @@ description = "Published test vectors that are not real secrets"
 regexes = [
     # RFC 6238 Appendix B shared secret ("12345678901234567890" in Base32), used by TotpServiceTest.
     '''GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ''',
+    # RFC 8291 Appendix A auth secret, used by WebPushCryptoTest.
+    '''BTBZMqHH6r4Tts7J_aSIgg''',
 ]
