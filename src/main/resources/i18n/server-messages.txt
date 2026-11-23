@@ -2278,3 +2278,15 @@ pl: Dodano kanał Discord {0}. Wyślij test, aby go sprawdzić.
 
 en: Discord answered {0}.
 internal
+
+en: Too many Telegram links. Use the last one, or try again in an hour.
+pl: Zbyt wiele linków do Telegrama. Użyj ostatniego albo spróbuj ponownie za godzinę.
+
+en: Telegram chat {0} linked. Your alerts will arrive there.
+pl: Połączono czat Telegram {0}. Twoje alerty będą tam przychodzić.
+
+en: The Telegram chat was refused and removed.
+pl: Czat Telegram został odrzucony i usunięty.
+
+en: Telegram is not configured.
+internal
