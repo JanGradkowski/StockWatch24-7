@@ -409,7 +409,7 @@ public class InsiderActivityService {
             } catch (DataIntegrityViolationException race) {
                 continue;
             }
-            if (notificationService.isEmailDeliveryEnabled()) {
+            if (notificationService.deliversActivityAlerts()) {
                 try {
                     org.example.stockwatch247.service.JobLeaseGuard.requireOwnership();
                     notificationService.sendInsiderTradeEmail(delivery);

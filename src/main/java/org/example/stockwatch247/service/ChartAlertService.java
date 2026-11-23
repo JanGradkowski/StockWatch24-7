@@ -512,7 +512,8 @@ public class ChartAlertService {
         body.append(once ? "This alert is now switched off." : "This alert stays on and can trigger again on later candles.").append('\n')
                 .append("Open the chart: ").append(publicBaseUrl).append("/stock/").append(symbol);
         try {
-            if (notifications.sendChartAlertEmail(user, interval, "Chart alert for " + symbol + ": " + alert.label(), body.toString(), eventId)) {
+            if (notifications.sendChartAlertEmail(user, interval, "Chart alert for " + symbol + ": " + alert.label(), body.toString(),
+                    eventId, symbol)) {
                 db.update("update chart_alert_events set email_queued_at = current_timestamp where id = ?", eventId);
             }
         } catch (RuntimeException failure) {

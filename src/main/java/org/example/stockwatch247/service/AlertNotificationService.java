@@ -16,6 +16,9 @@ import org.example.stockwatch247.model.enums.TradeSignal;
 import org.example.stockwatch247.service.CandlePatternDetectionService.DetectedSignal;
 import org.example.stockwatch247.repository.CandleRepository;
 import org.example.stockwatch247.service.congress.CongressionalTradeStore.ClaimedDelivery;
+import org.example.stockwatch247.service.channel.AlertKind;
+import org.example.stockwatch247.service.channel.AlertNotice;
+import org.example.stockwatch247.service.channel.ChannelFanout;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -103,6 +106,20 @@ public class AlertNotificationService {
         return links.account(recipients[0]).filter(User::isAlertEmailDigest);
     }
 
+    /**
+     * Queues a new signal's email and, for {@code channelKind}, its copy for the account's channels. The channel copy
+     * is taken first, from the English text, before the email is localized. Returns whether an email was queued.
+     */
+    private boolean queueInitial(SimpleMailMessage message, AlertEvent event, boolean email, AlertKind channelKind,
+                                 TradeSignal direction) {
+        if (channelKind != null && event != null && event.getId() != null) {
+            eventToChannels(message, event, channelKind, direction, "initial-alert:" + event.getId(), true);
+        }
+        if (!email) return false;
+        queueInitial(message, event);
+        return true;
+    }
+
     private void queueInitial(SimpleMailMessage message, AlertEvent event) {
         var summary = event == null || event.getId() == null ? java.util.Optional.<User>empty() : summaryAccount(message);
         localize(message, signalPath(event), summary.isEmpty());
@@ -122,7 +139,7 @@ public class AlertNotificationService {
      * out at once.
      */
     public SamePointEmailBatch openSamePointBatch() {
-        return outbox == null ? null : SamePointEmailBatch.open(this::sendSamePoint);
+        return outbox == null && (channels == null || !channels.enabled()) ? null : SamePointEmailBatch.open(this::sendSamePoint);
     }
 
     /** Queues a signal email held in the open batch; false when no batch is open. */
@@ -139,6 +156,33 @@ public class AlertNotificationService {
      * go out on their own. A failure leaves the held emails to go out on their own once the hold has passed.
      */
     void sendSamePoint(List<SamePointEmailBatch.Held> held) {
+        try {
+            sendSamePointEmails(held);
+        } finally {
+            releaseChannels(held);
+        }
+    }
+
+    /** The check finished: its held channel messages may go, grouped by the point they share. */
+    private void releaseChannels(List<SamePointEmailBatch.Held> held) {
+        if (channels == null) return;
+        java.util.Map<Long, List<String>> byUser = new java.util.LinkedHashMap<>();
+        for (SamePointEmailBatch.Held note : held) {
+            AlertRule rule = note.event().getAlertRule();
+            if (rule == null || rule.getUser() == null || rule.getUser().getId() == null) continue;
+            byUser.computeIfAbsent(rule.getUser().getId(), ignored -> new ArrayList<>()).add(note.deduplicationKey());
+        }
+        byUser.forEach((user, keys) -> {
+            try {
+                channels.release(keys, user);
+            } catch (RuntimeException failure) {
+                log.warn("Held channel messages left to their hold: user={} reason={}", user, failure.toString());
+            }
+        });
+    }
+
+    private void sendSamePointEmails(List<SamePointEmailBatch.Held> held) {
+        if (outbox == null) return;
         java.util.Map<Object, List<SamePointEmailBatch.Held>> points = new java.util.LinkedHashMap<>();
         for (SamePointEmailBatch.Held note : held) {
             AlertEvent event = note.event();
@@ -207,6 +251,17 @@ public class AlertNotificationService {
         return org.example.stockwatch247.i18n.ServerMessages.translate(text, locale);
     }
 
+    /** As {@link #queueInitial(SimpleMailMessage, AlertEvent, boolean, AlertKind, TradeSignal)}, for a follow-up. */
+    private boolean queueFollowUp(SimpleMailMessage message, AlertEvent event, String transition, boolean email,
+                                  AlertKind channelKind, TradeSignal direction) {
+        if (channelKind != null && event != null && event.getId() != null) {
+            eventToChannels(message, event, channelKind, direction, "follow-up:" + event.getId() + ":" + transition, false);
+        }
+        if (!email) return false;
+        queueFollowUp(message, event, transition);
+        return true;
+    }
+
     private void queueFollowUp(SimpleMailMessage message, AlertEvent event, String transition) {
         var summary = summaryAccount(message);
         localize(message, signalPath(event), summary.isEmpty());
@@ -220,9 +275,125 @@ public class AlertNotificationService {
         }
     }
 
-    private void queueLifecycle(SimpleMailMessage message, AlertEvent event) {
-        queueFollowUp(message, event, "lifecycle:" + event.getLifecycleStatus() + ":"
-                + event.getResolutionCandleTimestamp());
+    /** Queues a lifecycle email and its channel copy, each when wanted; returns whether an email was queued. */
+    private boolean queueLifecycle(SimpleMailMessage message, AlertEvent event) {
+        AlertKind kind = outcomeKind(event.getLifecycleStatus());
+        boolean channel = channelsWant(event.getAlertRule(), kind, event.getTradeSignal());
+        return queueFollowUp(message, event, "lifecycle:" + event.getLifecycleStatus() + ":"
+                + event.getResolutionCandleTimestamp(), isSignalLifecycleEmailEnabled(event), channel ? kind : null,
+                event.getTradeSignal());
+    }
+
+    /** A lifecycle message is built when its email or one of the account's channels wants it. */
+    private boolean lifecycleWanted(AlertEvent event) {
+        return isSignalLifecycleEmailEnabled(event) || event != null && event.getAlertRule() != null
+                && channelsWant(event.getAlertRule(), outcomeKind(event.getLifecycleStatus()), event.getTradeSignal());
+    }
+
+    // ------------------------------------------------------------------ alert channels
+
+    @Autowired(required = false)
+    private ChannelFanout channels;
+
+    void setChannels(ChannelFanout channels) { this.channels = channels; }
+
+    /** Whether insider and congressional alerts have anywhere to go: email, or the account's channels. */
+    public boolean deliversActivityAlerts() {
+        return emailEnabled || channels != null && channels.enabled();
+    }
+
+    static String channelDirection(TradeSignal direction) {
+        return direction == TradeSignal.BUY ? "BUY" : direction == TradeSignal.SELL ? "SELL" : null;
+    }
+
+    static AlertKind signalKind(AlertPatternFamily family) {
+        if (family == AlertPatternFamily.ELLIOTT_WAVE) return AlertKind.SIGNAL_ELLIOTT;
+        if (family == AlertPatternFamily.HARMONIC_FORMATION) return AlertKind.SIGNAL_HARMONIC;
+        return AlertKind.SIGNAL_CANDLESTICK;
+    }
+
+    /** The channel kind of a signal's follow-up, matching the email switches for its lifecycle status. */
+    static AlertKind outcomeKind(SignalLifecycleStatus status) {
+        if (status == null) return AlertKind.OUTCOME_EXPIRED;
+        return switch (status) {
+            case DETECTED, CONFIRMED -> AlertKind.OUTCOME_CONFIRMED;
+            case INVALIDATED -> AlertKind.OUTCOME_INVALIDATED;
+            case REJECTED, EXPIRED, POTENTIAL -> AlertKind.OUTCOME_EXPIRED;
+        };
+    }
+
+    /**
+     * True when an active channel of the rule's owner takes this kind of alert in this direction and the owner's
+     * watchlists follow it. Unlike email, a list's email switch does not matter here.
+     */
+    private boolean channelsWant(AlertRule rule, AlertKind kind, TradeSignal direction) {
+        if (channels == null || rule == null || rule.getUser() == null || rule.getUser().getId() == null) return false;
+        if (!channels.wants(rule.getUser().getId(), kind, channelDirection(direction))) return false;
+        return watchlistEmails == null || direction == null || rule.getStockAsset() == null || rule.getInterval() == null
+                || watchlistEmails.follows(rule, direction);
+    }
+
+    private boolean channelsWant(Long userId, AlertKind kind, String symbol, String type, String interval) {
+        if (channels == null || userId == null || !channels.wants(userId, kind, null)) return false;
+        return watchlistEmails == null || symbol == null || watchlistEmails.follows(userId, symbol, type, interval, "ANY");
+    }
+
+    /** A signal's alert for the account's channels, from the email's English text, keyed like its email. */
+    private void eventToChannels(SimpleMailMessage message, AlertEvent event, AlertKind kind, TradeSignal direction,
+                                 String key, boolean newSignal) {
+        if (channels == null) return;
+        AlertRule rule = event.getAlertRule();
+        String point = newSignal ? pointKey(event) : null;
+        AlertNotice notice = new AlertNotice(rule.getUser().getId(), kind, channelDirection(direction),
+                rule.getStockAsset().getTickerSymbol(), message.getSubject(), message.getText(), signalPath(event), key,
+                AlertNotice.Source.ALERT_EVENT, event.getId(), point, eventFacts(event, rule, direction));
+        SamePointEmailBatch batch = point == null ? null : SamePointEmailBatch.current();
+        if (batch != null) {
+            // Held while the check runs, so the signals that end at this point go out as one message.
+            channels.publish(notice, SAME_POINT_HOLD);
+            batch.hold(event, key);
+        } else {
+            channels.publish(notice);
+        }
+    }
+
+    /** Signals of one account that end at the same point share this key (see SamePointSignals.Point). */
+    static String pointKey(AlertEvent event) {
+        AlertRule rule = event.getAlertRule();
+        if (rule == null || rule.getUser() == null || rule.getUser().getId() == null || rule.getStockAsset() == null
+                || rule.getStockAsset().getId() == null || event.patternEnd() == null) return null;
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(
+                    SamePointSignals.Point.of(event).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return "point:" + java.util.HexFormat.of().formatHex(digest, 0, 16);
+        } catch (java.security.NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 is unavailable.", unavailable);
+        }
+    }
+
+    /** Structured values for push titles and webhook JSON; the names are stable English. */
+    private java.util.Map<String, Object> eventFacts(AlertEvent event, AlertRule rule, TradeSignal direction) {
+        java.util.Map<String, Object> facts = new java.util.LinkedHashMap<>();
+        facts.put("family", familyLabel(rule.getPatternFamily()));
+        if (event.getPattern() != null) facts.put("pattern", patternLabel(event.getPattern()));
+        facts.put("interval", intervalLabel(rule.getInterval()));
+        facts.put("direction", directionLabel(direction));
+        if (event.getTradeEntryPrice() != null) facts.put("entry", event.getTradeEntryPrice());
+        if (event.getStopLossPrice() != null) facts.put("stop", event.getStopLossPrice());
+        if (event.getProfitTargetPrice() != null) facts.put("target", event.getProfitTargetPrice());
+        if (event.getConfidenceScore() != null) facts.put("score", event.getConfidenceScore());
+        if (event.getClosePrice() != null) facts.put("close", event.getClosePrice());
+        if (event.getSignalCandleTimestamp() != null) facts.put("signalPeriod",
+                SignalPeriodFormatter.format(event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone));
+        if (event.getLifecycleStatus() != null) facts.put("status", event.getLifecycleStatus().name());
+        return facts;
+    }
+
+    private void toChannels(long userId, AlertKind kind, String symbol, String subject, String body, String viewPath,
+                            String key, AlertNotice.Source source, Long sourceId, java.util.Map<String, Object> facts) {
+        if (channels == null) return;
+        channels.publish(new AlertNotice(userId, kind, null, symbol, subject, body, viewPath, key, source, sourceId, null,
+                facts));
     }
 
     public boolean usesDurableDelivery() { return outbox != null; }
@@ -492,7 +663,10 @@ public class AlertNotificationService {
                 signal.closePrice()
         );
 
-        if (!isSignalEmailEnabled(rule, signal)) {
+        boolean email = isSignalEmailEnabled(rule, signal);
+        AlertKind channelKind = signalKind(rule.getPatternFamily());
+        boolean channel = channelsWant(rule, channelKind, signal.tradeSignal());
+        if (!email && !channel) {
             log.debug("[EMAIL DISABLED] Signal email suppressed for "
                     + rule.getStockAsset().getTickerSymbol() + ".");
             return false;
@@ -503,8 +677,7 @@ public class AlertNotificationService {
         message.setTo(rule.getUser().getEmail());
         message.setSubject(subject);
         message.setText(body);
-        queueInitial(message, lifecycleEvent);
-        return true;
+        return queueInitial(message, lifecycleEvent, email, channel ? channelKind : null, signal.tradeSignal());
     }
 
     public boolean sendDevelopingElliottEmail(
@@ -576,7 +749,10 @@ public class AlertNotificationService {
                         elliottPossibleTradeSection(event),
                         signal.setupScore(),
                         SignalScoreBreakdown.formatEmail(signal.reasons(), signal.tradeSignal()));
-        if (!isDevelopingElliottEmailEnabled(rule)) {
+        boolean email = isDevelopingElliottEmailEnabled(rule);
+        AlertKind channelKind = invalidated ? AlertKind.OUTCOME_INVALIDATED : AlertKind.SIGNAL_ELLIOTT;
+        boolean channel = channelsWant(rule, channelKind, signal.tradeSignal());
+        if (!email && !channel) {
             log.debug("[EMAIL DISABLED] Developing Elliott email suppressed for " + symbol + ".");
             return false;
         }
@@ -585,9 +761,11 @@ public class AlertNotificationService {
         message.setTo(rule.getUser().getEmail());
         message.setSubject(subject);
         message.setText(body);
-        localize(message, signalPath(event));
         String key = initial ? "initial-alert:" + event.getId() : "elliott-stage:" + event.getId() + ":" + event.getElliottSignalStage() + ":" + signal.candleTimestamp() + ":" + invalidated;
         String receipt = initial ? "INITIAL" : "FOLLOW_UP";
+        if (channel && event.getId() != null) eventToChannels(message, event, channelKind, signal.tradeSignal(), key, !invalidated);
+        if (!email) return false;
+        localize(message, signalPath(event));
         if (outbox == null) send(message);
         // A count reaching a new wave is a new signal at its point; an invalidation is not.
         else if (invalidated || !queueForSamePoint(message, event, key, receipt))
@@ -688,9 +866,12 @@ public class AlertNotificationService {
         SignalLifecycleStatus preferenceStatus = plan.getStatus()
                 == org.example.stockwatch247.model.enums.ElliottTradePlanStatus.TARGET_REACHED
                 ? SignalLifecycleStatus.CONFIRMED : SignalLifecycleStatus.INVALIDATED;
-        if (!emailEnabled || !allowsWatchlistEmail(rule, plan.getExpectedMove()) || preferencesService != null
-                && !preferencesService.allowsLifecycleEmail(
-                rule.getUser(), preferenceStatus, rule.getInterval(), plan.getExpectedMove())) {
+        boolean email = emailEnabled && allowsWatchlistEmail(rule, plan.getExpectedMove()) && (preferencesService == null
+                || preferencesService.allowsLifecycleEmail(
+                rule.getUser(), preferenceStatus, rule.getInterval(), plan.getExpectedMove()));
+        AlertKind channelKind = outcomeKind(preferenceStatus);
+        boolean channel = channelsWant(rule, channelKind, plan.getExpectedMove());
+        if (!email && !channel) {
             log.debug("[EMAIL DISABLED] Elliott trade outcome email suppressed for " + symbol + ".");
             return false;
         }
@@ -699,9 +880,9 @@ public class AlertNotificationService {
         message.setTo(rule.getUser().getEmail());
         message.setSubject("StockWatch Elliott trade plan: " + outcome + " on " + symbol);
         message.setText(body);
-        queueFollowUp(message, plan.getAlertEvent(), "elliott-plan:" + plan.getId() + ":"
-                + plan.getStatus() + ":" + plan.getResolutionTimestamp());
-        return true;
+        return queueFollowUp(message, plan.getAlertEvent(), "elliott-plan:" + plan.getId() + ":"
+                + plan.getStatus() + ":" + plan.getResolutionTimestamp(), email, channel ? channelKind : null,
+                plan.getExpectedMove());
     }
 
     private boolean isDevelopingElliottEmailEnabled(AlertRule rule) {
@@ -772,7 +953,9 @@ public class AlertNotificationService {
                 SignalScoreBreakdown.formatEmail(signal.reasons(), signal.tradeSignal())
         );
 
-        if (!isSignalEmailEnabled(rule, signal)) {
+        boolean email = isSignalEmailEnabled(rule, signal);
+        boolean channel = channelsWant(rule, AlertKind.SIGNAL_HARMONIC, signal.tradeSignal());
+        if (!email && !channel) {
             log.debug("[EMAIL DISABLED] Harmonic signal email suppressed for " + symbol + ".");
             return false;
         }
@@ -782,8 +965,7 @@ public class AlertNotificationService {
         message.setSubject("StockWatch harmonic " + patternLabel.toLowerCase()
                 + ": " + directionLabel(signal.tradeSignal()) + " on " + symbol);
         message.setText(body);
-        queueInitial(message, event);
-        return true;
+        return queueInitial(message, event, email, channel ? AlertKind.SIGNAL_HARMONIC : null, signal.tradeSignal());
     }
 
     private String qualifiedTradeSection(AlertEvent event) {
@@ -875,10 +1057,14 @@ public class AlertNotificationService {
                         breachedCandle.getTimestamp(), rule.getInterval(), signalTimeZone),
                 breachedCandle.getHighPrice(), breachedCandle.getLowPrice(),
                 breachedCandle.getClosePrice(), event.getHarmonicStopResolutionReason());
-        if (!emailEnabled || !allowsWatchlistEmail(rule,event.getTradeSignal()) || preferencesService != null
-                && !preferencesService.allowsLifecycleEmail(
-                rule.getUser(), "TARGET_REACHED".equals(event.getHarmonicStopStatus()) ? SignalLifecycleStatus.CONFIRMED : SignalLifecycleStatus.INVALIDATED,
-                rule.getInterval(), event.getTradeSignal())) {
+        SignalLifecycleStatus outcomeStatus = "TARGET_REACHED".equals(event.getHarmonicStopStatus())
+                ? SignalLifecycleStatus.CONFIRMED : SignalLifecycleStatus.INVALIDATED;
+        boolean email = emailEnabled && allowsWatchlistEmail(rule,event.getTradeSignal()) && (preferencesService == null
+                || preferencesService.allowsLifecycleEmail(
+                rule.getUser(), outcomeStatus, rule.getInterval(), event.getTradeSignal()));
+        AlertKind channelKind = outcomeKind(outcomeStatus);
+        boolean channel = channelsWant(rule, channelKind, event.getTradeSignal());
+        if (!email && !channel) {
             log.debug("[EMAIL DISABLED] Harmonic stop outcome email suppressed for " + symbol + ".");
             return false;
         }
@@ -888,9 +1074,9 @@ public class AlertNotificationService {
         message.setSubject("StockWatch harmonic " + ("HARMONIC_STOP_V1".equals(event.getTradePlanVersion()) ? "stop breached" : event.getHarmonicStopStatus().toLowerCase().replace('_', ' ')) + ": "
                 + patternLabel.toLowerCase() + " on " + symbol);
         message.setText(body);
-        queueFollowUp(message, event, "harmonic-outcome:" + event.getHarmonicStopStatus()
-                + ":" + event.getHarmonicStopResolutionTimestamp());
-        return true;
+        return queueFollowUp(message, event, "harmonic-outcome:" + event.getHarmonicStopStatus()
+                + ":" + event.getHarmonicStopResolutionTimestamp(), email, channel ? channelKind : null,
+                event.getTradeSignal());
     }
 
     private String formatHarmonicPoints(String snapshot, AlertRule rule) {
@@ -1192,7 +1378,7 @@ public class AlertNotificationService {
                 resolutionReason
         );
 
-        if (!isSignalLifecycleEmailEnabled(event)) {
+        if (!lifecycleWanted(event)) {
             log.debug("[EMAIL DISABLED] " + statusLabel
                     + " lifecycle email suppressed for " + symbol + ".");
             return false;
@@ -1204,8 +1390,7 @@ public class AlertNotificationService {
         message.setSubject("StockWatch pattern " + statusLabel.toLowerCase()
                 + ": " + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText(body);
-        queueLifecycle(message, event);
-        return true;
+        return queueLifecycle(message, event);
     }
 
     private boolean sendCandlestickTradeLifecycleEmail(AlertEvent event,
@@ -1222,7 +1407,7 @@ public class AlertNotificationService {
         }
 
         if (event.getTradeQualification() != null) {
-            if (!isSignalLifecycleEmailEnabled(event)) return false;
+            if (!lifecycleWanted(event)) return false;
             double exit = event.getTradeResolutionPrice() == null ? event.getResolutionClosePrice() : event.getTradeResolutionPrice();
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromAddress);
@@ -1232,8 +1417,7 @@ public class AlertNotificationService {
                     + "\nModeled exit before costs: " + exit
                     + "\nDirectional return before costs: " + directionalReturnPercent(event.getTradeSignal(), event.getTradeEntryPrice(), exit)
                     + "%\n" + event.getLifecycleResolutionReason());
-            queueLifecycle(message, event);
-            return true;
+            return queueLifecycle(message, event);
         }
 
         double targetReturn = directionalReturnPercent(
@@ -1312,7 +1496,7 @@ public class AlertNotificationService {
                 targetReturn,
                 favorableLine);
 
-        if (!isSignalLifecycleEmailEnabled(event)) {
+        if (!lifecycleWanted(event)) {
             log.debug("[EMAIL DISABLED] " + status
                     + " candlestick trade email suppressed for " + symbol + ".");
             return false;
@@ -1323,8 +1507,7 @@ public class AlertNotificationService {
         message.setSubject("StockWatch candlestick trade " + status.name().toLowerCase(Locale.ROOT)
                 + ": " + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText(body);
-        queueLifecycle(message, event);
-        return true;
+        return queueLifecycle(message, event);
     }
 
     private String atrCircuitBreakerDescription(AlertEvent event) {
@@ -1401,7 +1584,7 @@ public class AlertNotificationService {
     private boolean sendLegacyCandlestickLifecycleNotice(AlertEvent event,
                                                           AlertRule rule,
                                                           String symbol) {
-        if (!isSignalLifecycleEmailEnabled(event)) return false;
+        if (!lifecycleWanted(event)) return false;
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
         message.setTo(rule.getUser().getEmail());
@@ -1425,12 +1608,11 @@ public class AlertNotificationService {
                 intervalLabel(rule.getInterval()),
                 SignalPeriodFormatter.format(
                         event.getSignalCandleTimestamp(), rule.getInterval(), signalTimeZone)));
-        queueLifecycle(message, event);
-        return true;
+        return queueLifecycle(message, event);
     }
 
     private boolean sendNotFilledEmail(AlertEvent event, AlertRule rule, String symbol) {
-        if (!isSignalLifecycleEmailEnabled(event)) return false;
+        if (!lifecycleWanted(event)) return false;
         String body = """
                 No trade was opened for %s.
 
@@ -1455,8 +1637,7 @@ public class AlertNotificationService {
         message.setTo(rule.getUser().getEmail());
         message.setSubject("StockWatch trade not filled: " + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText(body);
-        queueLifecycle(message, event);
-        return true;
+        return queueLifecycle(message, event);
     }
 
     private boolean sendCandidateGateLifecycleEmail(AlertEvent event,
@@ -1590,7 +1771,7 @@ public class AlertNotificationService {
                         event.getRewardRiskRatio());
         }
 
-        if (!isSignalLifecycleEmailEnabled(event)) {
+        if (!lifecycleWanted(event)) {
             log.debug("[EMAIL DISABLED] " + status
                     + " candidate-gate email suppressed for " + symbol + ".");
             return false;
@@ -1601,8 +1782,7 @@ public class AlertNotificationService {
         message.setSubject("StockWatch " + (detected ? "signal detected" : "candidate rejected")
                 + ": " + patternLabel(event.getPattern()) + " on " + symbol);
         message.setText(body);
-        queueLifecycle(message, event);
-        return true;
+        return queueLifecycle(message, event);
     }
 
     public void sendCongressionalTradeEmail(ClaimedDelivery delivery) {
@@ -1647,6 +1827,14 @@ public class AlertNotificationService {
                 assetLine,
                 sourceLine);
 
+        if (channelsWant(delivery.userId(), AlertKind.CONGRESS, delivery.ticker(), "CONGRESS", "DAILY")) {
+            java.util.Map<String, Object> facts = new java.util.LinkedHashMap<>();
+            facts.put("actor", delivery.memberName());
+            facts.put("activity", transactionLabel);
+            toChannels(delivery.userId(), AlertKind.CONGRESS, delivery.ticker(), subject, body,
+                    "/activity-signals/congressional/" + delivery.deliveryId(), "congress:" + delivery.deliveryId(),
+                    AlertNotice.Source.CONGRESS_DELIVERY, delivery.deliveryId(), facts);
+        }
         if (!emailEnabled || watchlistEmails!=null && !watchlistEmails.allows(delivery.userId(),delivery.ticker(),"CONGRESS","DAILY","ANY") || preferencesService != null
                 && !preferencesService.allowsCongressionalEmail(delivery.userId())
                 || notificationEmailsPaused(delivery.recipientEmail())) {
@@ -1713,6 +1901,15 @@ public class AlertNotificationService {
                 trade.getFilingDate(),
                 source);
 
+        String subject = "StockWatch insider " + activity.toLowerCase() + " filed: " + symbol;
+        Long owner = delivery.getSubscription().getUser().getId();
+        if (delivery.getId() != null && channelsWant(owner, AlertKind.INSIDER, symbol, "INSIDER", "DAILY")) {
+            java.util.Map<String, Object> facts = new java.util.LinkedHashMap<>();
+            facts.put("actor", trade.getInsiderName());
+            facts.put("activity", activity);
+            toChannels(owner, AlertKind.INSIDER, symbol, subject, body, "/activity-signals/insider/" + delivery.getId(),
+                    "insider:" + delivery.getId(), AlertNotice.Source.INSIDER_DELIVERY, delivery.getId(), facts);
+        }
         if (!emailEnabled || watchlistEmails!=null && !watchlistEmails.allows(delivery.getSubscription().getUser().getId(),symbol,"INSIDER","DAILY","ANY") || preferencesService != null
                 && !preferencesService.allowsInsiderEmail(delivery.getSubscription().getUser())
                 || delivery.getSubscription().getUser().isNotificationEmailsPaused()) {
@@ -1724,8 +1921,7 @@ public class AlertNotificationService {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
         message.setTo(delivery.getSubscription().getUser().getEmail());
-        message.setSubject("StockWatch insider " + activity.toLowerCase()
-                + " filed: " + symbol);
+        message.setSubject(subject);
         message.setText(body);
         localize(message, delivery.getId() == null ? null : "/activity-signals/insider/" + delivery.getId());
         sendNotification(message);
@@ -1742,6 +1938,11 @@ public class AlertNotificationService {
 
     public boolean sendTechnicalOutlookChangeEmail(User user, String symbol,
             org.example.stockwatch247.model.enums.TimeInterval interval, String subject, String body, Long notificationId) {
+        if (notificationId != null && channelsWant(user.getId(), AlertKind.OUTLOOK, symbol, "OUTLOOK", interval.name())) {
+            toChannels(user.getId(), AlertKind.OUTLOOK, symbol, subject, body, "/technical-outlook/changes/" + notificationId,
+                    "outlook:" + notificationId, AlertNotice.Source.OUTLOOK, notificationId,
+                    java.util.Map.of("interval", intervalLabel(interval)));
+        }
         if(watchlistEmails!=null && !watchlistEmails.allows(user.getId(),symbol,"OUTLOOK",interval.name(),"ANY")) return false;
         return sendOutlookEmail(user, interval, subject, body, notificationId);
     }
@@ -1781,6 +1982,17 @@ public class AlertNotificationService {
      */
     public boolean sendChartAlertEmail(User user, org.example.stockwatch247.model.enums.TimeInterval interval,
                                        String subject, String body, long eventId) {
+        return sendChartAlertEmail(user, interval, subject, body, eventId, null);
+    }
+
+    /** As above; {@code symbol} gives the channels' copy a link to the chart. Returns whether an email was queued. */
+    public boolean sendChartAlertEmail(User user, org.example.stockwatch247.model.enums.TimeInterval interval,
+                                       String subject, String body, long eventId, String symbol) {
+        if (channels != null && user.getId() != null && channels.wants(user.getId(), AlertKind.CHART, null)) {
+            toChannels(user.getId(), AlertKind.CHART, symbol, subject, body, symbol == null ? null : "/stock/" + symbol,
+                    "chart-alert:" + eventId, AlertNotice.Source.CHART_ALERT_EVENT, eventId,
+                    java.util.Map.of("interval", intervalLabel(interval)));
+        }
         if (!emailEnabled || preferencesService != null && !preferencesService.allowsChartAlertEmail(user, interval)) {
             return false;
         }
@@ -1811,6 +2023,19 @@ public class AlertNotificationService {
             send(message);
         }
         return true;
+    }
+
+    /** Whether a custom alert of this account has a channel to go to (its own switch is checked by the caller). */
+    public boolean customAlertChannelsWanted(User user) {
+        return channels != null && user != null && user.getId() != null && channels.wants(user.getId(), AlertKind.CUSTOM, null);
+    }
+
+    /** A custom alert's triggers for the account's channels, keyed like their email; true when a channel took them. */
+    public boolean sendCustomAlertToChannels(User user, String subject, String body, String viewPath, String deduplicationKey,
+                                             long lastEventId) {
+        if (!customAlertChannelsWanted(user)) return false;
+        return channels.publish(new AlertNotice(user.getId(), AlertKind.CUSTOM, null, null, subject, body, viewPath,
+                deduplicationKey, AlertNotice.Source.CUSTOM_ALERT_EVENT, lastEventId, null, java.util.Map.of())) > 0;
     }
 
     public boolean isSignalEmailEnabled(AlertRule rule, DetectedSignal signal) {

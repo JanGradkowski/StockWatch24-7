@@ -111,7 +111,7 @@ class CongressionalActivityPollingServiceTest {
         when(store.claimNextDelivery(anyString(), any(), anyInt()))
                 .thenReturn(Optional.of(delivery))
                 .thenReturn(Optional.empty());
-        when(notifications.isEmailDeliveryEnabled()).thenReturn(true);
+        when(notifications.deliversActivityAlerts()).thenReturn(true);
 
         service.deliverQueuedEmails();
 
