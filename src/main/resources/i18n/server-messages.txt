@@ -2206,3 +2206,57 @@ pl: Nazwa może mieć najwyżej 80 znaków.
 
 en: Not a stop.
 internal
+
+en: Unknown kind of alert.
+internal
+
+en: Alert channels are not available on this server.
+pl: Kanały alertów nie są dostępne na tym serwerze.
+
+en: Too many channels added in the last hour. Try again later.
+pl: W ostatniej godzinie dodano zbyt wiele kanałów. Spróbuj ponownie później.
+
+en: Test sent to {0}. Check that it arrived.
+pl: Wysłano test do kanału {0}. Sprawdź, czy dotarł.
+
+en: This kind of channel is not set up on this server.
+pl: Ten rodzaj kanału nie jest skonfigurowany na tym serwerze.
+
+en: Too many tests. Wait a few minutes and try again.
+pl: Zbyt wiele testów. Odczekaj kilka minut i spróbuj ponownie.
+
+en: This channel no longer exists, so it was stopped. Add it again to keep using it.
+pl: Ten kanał już nie istnieje, więc został zatrzymany. Dodaj go ponownie, aby dalej z niego korzystać.
+
+en: The service asked StockWatch to slow down. Try the test again in a minute.
+pl: Usługa poprosiła StockWatch o wolniejsze tempo. Spróbuj wysłać test za minutę.
+
+en: The address points to a private network, which StockWatch can't reach.
+pl: Adres wskazuje na sieć prywatną, do której StockWatch nie ma dostępu.
+
+en: The test did not arrive ({0}). Check the channel and try again.
+pl: Test nie dotarł ({0}). Sprawdź kanał i spróbuj ponownie.
+
+en: Channel paused. Alerts that were waiting for it were dropped.
+pl: Kanał wstrzymano. Alerty, które na niego czekały, zostały pominięte.
+
+en: Channel resumed.
+pl: Kanał wznowiono.
+
+en: Channel saved.
+pl: Zapisano kanał.
+
+en: Channel removed.
+pl: Usunięto kanał.
+
+en: No channel was active.
+pl: Żaden kanał nie był aktywny.
+
+en: All channels paused.
+pl: Wstrzymano wszystkie kanały.
+
+en: No channel was paused.
+pl: Żaden kanał nie był wstrzymany.
+
+en: Paused channels resumed.
+pl: Wznowiono wstrzymane kanały.

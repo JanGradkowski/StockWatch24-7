@@ -871,3 +871,101 @@ main:focus { outline: none; }
 .signal-same-point { margin: 0.75rem 0 0; color: var(--text-soft); font-size: var(--fs-sm); line-height: 1.5; }
 .signal-same-point-label { margin-right: 4px; }
 .signal-same-point .text-link { font-weight: 600; }
+
+/* ------------------------------------------------------------------ settings: alert delivery */
+/* One row per channel: icon, name and activity, status, actions; its panels (choices, recent deliveries,
+   remove) open underneath with native details elements. Flat surfaces only, no shadows or transitions. */
+:root[data-theme] .ui-refresh .channel-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+:root[data-theme] .ui-refresh .channel-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto auto;
+    grid-template-areas: "icon main status actions" "panels panels panels panels";
+    gap: var(--space-2) var(--space-3);
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+}
+:root[data-theme] .ui-refresh .channel-row-email { grid-template-areas: "icon main status actions"; }
+:root[data-theme] .ui-refresh .channel-icon {
+    grid-area: icon; width: 40px; height: 40px; display: grid; place-items: center;
+    border-radius: 10px; background: var(--surface-raised); color: var(--primary-color);
+}
+:root[data-theme] .ui-refresh .channel-icon svg {
+    width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+:root[data-theme] .ui-refresh .channel-main { grid-area: main; display: grid; gap: 2px; min-width: 0; }
+:root[data-theme] .ui-refresh .channel-main strong { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+:root[data-theme] .ui-refresh :is(.channel-meta, .channel-activity) { color: var(--muted-text); font-size: var(--fs-xs); line-height: 1.5; overflow-wrap: anywhere; }
+:root[data-theme] .ui-refresh .channel-problem { color: var(--warning); font-size: var(--fs-xs); line-height: 1.5; }
+:root[data-theme] .ui-refresh .channel-status {
+    grid-area: status; padding: 0.3rem 0.6rem; border: 1px solid var(--glass-border); border-radius: 999px;
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 700; white-space: nowrap;
+}
+:root[data-theme] .ui-refresh .channel-status.is-active { color: var(--accent-color); border-color: color-mix(in srgb, var(--accent-color) 45%, var(--glass-border)); }
+:root[data-theme] .ui-refresh .channel-status:is(.is-pending, .is-paused) { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, var(--glass-border)); }
+:root[data-theme] .ui-refresh .channel-status:is(.is-failing, .is-revoked) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--glass-border)); }
+:root[data-theme] .ui-refresh .channel-actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
+:root[data-theme] .ui-refresh .channel-actions form { margin: 0; }
+:root[data-theme] .ui-refresh .channel-panels {
+    grid-area: panels; display: grid; gap: 2px; padding-top: var(--space-2); border-top: 1px solid var(--glass-border);
+}
+:root[data-theme] .ui-refresh .channel-details summary {
+    display: flex; align-items: center; min-height: 36px; cursor: pointer;
+    color: var(--text-soft); font-size: var(--fs-xs); font-weight: 650;
+}
+:root[data-theme] .ui-refresh .channel-details summary:hover { color: var(--text-color); }
+:root[data-theme] .ui-refresh .channel-choices { display: grid; gap: var(--space-4); padding: var(--space-2) 0 var(--space-3); }
+:root[data-theme] .ui-refresh .channel-choices .form-group { display: grid; gap: 4px; max-width: 360px; margin: 0; }
+:root[data-theme] .ui-refresh .channel-choices fieldset {
+    margin: 0; padding: 0; border: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 2px var(--space-4);
+}
+:root[data-theme] .ui-refresh .channel-choices legend { margin-bottom: 6px; font-size: var(--fs-xs); font-weight: 700; }
+:root[data-theme] .ui-refresh .channel-choices fieldset label { display: flex; gap: 8px; align-items: center; min-height: 32px; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .channel-choices input[type="checkbox"] { accent-color: var(--primary-color); }
+:root[data-theme] .ui-refresh .channel-form-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+:root[data-theme] .ui-refresh .channel-recent { list-style: none; margin: 0; padding: var(--space-1) 0 var(--space-3); display: grid; gap: 6px; font-size: var(--fs-xs); }
+:root[data-theme] .ui-refresh .channel-recent li { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; gap: var(--space-2); align-items: baseline; }
+:root[data-theme] .ui-refresh .channel-recent time { color: var(--muted-text); font-variant-numeric: tabular-nums; }
+:root[data-theme] .ui-refresh .channel-outcome { color: var(--text-soft); font-weight: 650; }
+:root[data-theme] .ui-refresh .channel-outcome.is-delivered { color: var(--accent-color); }
+:root[data-theme] .ui-refresh .channel-outcome:is(.is-failed, .is-channel_gone, .is-rejected) { color: var(--danger); }
+:root[data-theme] .ui-refresh .channel-remove p { margin: 0 0 var(--space-2); color: var(--muted-text); font-size: var(--fs-xs); line-height: 1.55; }
+:root[data-theme] .ui-refresh .channel-remove form { padding-bottom: var(--space-3); }
+:root[data-theme] .ui-refresh .channel-bulk { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; margin-top: var(--space-4); }
+:root[data-theme] .ui-refresh .channel-bulk form { margin: 0; }
+:root[data-theme] .ui-refresh .channel-bulk p { flex: 1 1 260px; margin: 0; }
+:root[data-theme] .ui-refresh .channel-empty {
+    margin: 0; padding: var(--space-4); border: 1px dashed var(--glass-border); border-radius: var(--radius-sm);
+    color: var(--text-soft); font-size: var(--fs-sm); line-height: 1.55;
+}
+:root[data-theme] .ui-refresh .channel-add-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-3); }
+:root[data-theme] .ui-refresh .channel-add {
+    display: grid; gap: var(--space-3); align-content: start; padding: var(--space-4);
+    border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface-soft);
+}
+:root[data-theme] .ui-refresh .channel-add h3 { margin: 0; font-size: var(--fs-sm); }
+:root[data-theme] .ui-refresh .channel-add p { margin: 0; color: var(--muted-text); font-size: var(--fs-xs); line-height: 1.55; }
+:root[data-theme] .ui-refresh .channel-add .form-group { display: grid; gap: 4px; margin: 0; }
+:root[data-theme] .ui-refresh .channel-add input:not([type="checkbox"]) { width: 100%; }
+:root[data-theme] .ui-refresh .channel-stopped-banner { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+:root[data-theme] .ui-refresh .warning-msg { border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--glass-border)); color: var(--text-color); }
+:root[data-theme] .ui-refresh .channel-email-link { margin: var(--space-4) 0 0; }
+@media (max-width: 600px) {
+    :root[data-theme] .ui-refresh .channel-row {
+        grid-template-columns: 40px minmax(0, 1fr) auto;
+        grid-template-areas: "icon main status" "actions actions actions" "panels panels panels";
+        padding: var(--space-3);
+    }
+    :root[data-theme] .ui-refresh .channel-row-email { grid-template-areas: "icon main status" "actions actions actions"; }
+    :root[data-theme] .ui-refresh .channel-actions { justify-content: flex-start; }
+    :root[data-theme] .ui-refresh :is(.channel-actions, .channel-bulk, .channel-form-actions) :is(button, a) { min-height: 44px; }
+    :root[data-theme] .ui-refresh .channel-details summary { min-height: 44px; }
+    :root[data-theme] .ui-refresh .channel-recent li { grid-template-columns: 1fr auto; }
+    :root[data-theme] .ui-refresh .channel-recent li time { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+    :root[data-theme] .ui-refresh :is(.channel-actions, .channel-bulk, .channel-form-actions) > :is(form, a, button) { flex: 1 1 100%; }
+    :root[data-theme] .ui-refresh :is(.channel-actions, .channel-bulk, .channel-form-actions) form button { width: 100%; }
+}

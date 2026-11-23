@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<!--/* The Alert delivery settings tab: email at a glance, the account's channels, and ways to add one.
+       No inline styles or scripts: /settings forbids style attributes (CspNonceFilter). Everything works
+       without JavaScript; alert-delivery-settings.js only adds copy buttons and Telegram polling. */-->
+<th:block th:fragment="alertDelivery">
+
+  <div th:each="stopped : ${deliveryStopped}" class="settings-message warning-msg channel-stopped-banner" role="status">
+    <span th:text="${stopped.status().name() == 'FAILING'} ? #{settings.delivery.stopped.failing(${stopped.label()})} : #{settings.delivery.stopped.removed(${stopped.label()})}">Alerts to Desk stopped.</span>
+    <a class="text-link" th:href="|#channel-${stopped.publicId()}|" th:text="#{settings.delivery.stopped.fix}">Fix it</a>
+  </div>
+
+  <section class="settings-card channel-card" id="delivery-email">
+    <div class="settings-card-heading"><div><span class="settings-number">01</span><h2 th:text="#{settings.delivery.email.heading}">Email</h2></div>
+      <p th:text="#{settings.delivery.email.note}">Email has its own choices on the Analysis &amp; Alerts page.</p></div>
+    <div class="channel-row channel-row-email">
+      <span class="channel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m4 7 8 6 8-6"></path></svg></span>
+      <div class="channel-main">
+        <strong th:text="#{settings.delivery.email.label}">Email</strong>
+        <span class="channel-meta" th:text="|${user.email} · ${user.alertEmailDigest ? #messages.msg('settings.delivery.email.digest') : #messages.msg('settings.delivery.email.each')}|">you@example.com · One email per alert</span>
+      </div>
+      <span class="channel-status" th:classappend="${user.notificationEmailsPaused} ? ' is-paused' : ' is-active'" th:text="${user.notificationEmailsPaused} ? #{settings.delivery.status.PAUSED} : #{settings.delivery.status.ACTIVE}">Active</span>
+      <div class="channel-actions"><a class="btn-secondary" th:href="@{/settings/analysis-alerts#alert-emails}" th:text="#{settings.delivery.email.manage}">Email settings</a></div>
+    </div>
+  </section>
+
+  <section class="settings-card channel-card" id="delivery-channels">
+    <div class="settings-card-heading"><div><span class="settings-number">02</span><h2 th:text="#{settings.delivery.channels.heading}">Your channels</h2></div>
+      <p th:text="#{settings.delivery.channels.note}">Each channel gets the alerts you choose for it, in its own language.</p></div>
+
+    <p th:if="${#lists.isEmpty(deliveryChannels)}" class="channel-empty" th:text="#{settings.delivery.channels.empty}">Alerts reach you by email and on the website. Add Telegram, Discord, a webhook or this device to get them elsewhere too.</p>
+
+    <ul th:unless="${#lists.isEmpty(deliveryChannels)}" class="channel-list" th:aria-label="#{settings.delivery.channels.heading}">
+      <li th:each="view : ${deliveryChannels}" th:with="channel=${view.channel()}, status=${view.channel().status().name()}" class="channel-row" th:id="|channel-${view.id()}|" th:attr="data-channel-status=${status}">
+        <span class="channel-icon" aria-hidden="true" th:switch="${channel.type().name()}">
+          <svg th:case="'TELEGRAM'" viewBox="0 0 24 24"><path d="M21 4 3 11l6 2 2 6 3-4 5 4z"></path><path d="m9 13 8-6"></path></svg>
+          <svg th:case="'DISCORD'" viewBox="0 0 24 24"><path d="M5 5h14v10H9l-4 4z"></path><path d="M9 10h.01M15 10h.01"></path></svg>
+          <svg th:case="'WEBHOOK'" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1"></path><path d="M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"></path></svg>
+          <svg th:case="*" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"></path><path d="M10 20a2 2 0 0 0 4 0"></path></svg>
+        </span>
+        <div class="channel-main">
+          <strong th:text="${channel.label()}">Trading desk</strong>
+          <span class="channel-meta" th:with="typeName=${#messages.msg('settings.delivery.type.' + channel.type().name())}"
+                th:text="${channel.displayHint() == null} ? ${typeName} : ${typeName + ' · ' + channel.displayHint()}">Discord · discord.com · …/1234</span>
+          <span class="channel-activity">
+            <th:block th:if="${view.lastSent() != null}" th:text="#{settings.delivery.lastSent(${view.lastSent()})}">Last sent 23 Nov, 14:02</th:block><th:block th:if="${view.lastSent() == null}" th:text="#{settings.delivery.neverSent}">Nothing sent yet</th:block>
+            · <th:block th:text="#{settings.delivery.counts(${view.delivered()}, ${view.waiting()}, ${view.failed()})}">30 days: 12 sent, 0 waiting, 1 failed</th:block>
+          </span>
+          <span th:if="${status == 'REVOKED'}" class="channel-problem" role="note"
+                th:text="${#messages.msgOrNull('settings.delivery.gone.' + channel.disabledReason()) ?: #messages.msg('settings.delivery.gone.other')}">Discord says this webhook no longer exists.</span>
+          <span th:if="${status == 'FAILING'}" class="channel-problem" role="note"
+                th:text="#{settings.delivery.failingFor(${#messages.msgOrNull('settings.delivery.reason.' + channel.disabledReason()) ?: #messages.msg('settings.delivery.reason.other', channel.disabledReason())})}">Stopped after failing for more than a day.</span>
+          <span th:if="${status != 'REVOKED' and status != 'FAILING' and channel.lastFailureCode() != null and view.lastFailure() != null}" class="channel-problem" role="note"
+                th:text="#{settings.delivery.lastFailure(${view.lastFailure()}, ${#messages.msgOrNull('settings.delivery.reason.' + channel.lastFailureCode()) ?: #messages.msg('settings.delivery.reason.other', channel.lastFailureCode())})}">Last try 10:42 failed.</span>
+        </div>
+        <span class="channel-status" th:classappend="|is-${#strings.toLowerCase(status)}|" th:text="${#messages.msg('settings.delivery.status.' + status)}">Active</span>
+        <div class="channel-actions">
+          <form th:if="${status == 'ACTIVE' or status == 'PAUSED' or status == 'PENDING'}" th:action="@{|/settings/alert-delivery/${view.id()}/test|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.test}">Send test</button></form>
+          <form th:if="${status == 'ACTIVE'}" th:action="@{|/settings/alert-delivery/${view.id()}/pause|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.pause}">Pause</button></form>
+          <form th:if="${status == 'PAUSED'}" th:action="@{|/settings/alert-delivery/${view.id()}/resume|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.resume}">Resume</button></form>
+          <form th:if="${status == 'FAILING'}" th:action="@{|/settings/alert-delivery/${view.id()}/test|}" method="post"><button class="btn-primary" type="submit" th:text="#{settings.delivery.retry}">Retry now</button></form>
+        </div>
+
+        <div class="channel-panels">
+          <details th:unless="${status == 'REVOKED'}" class="channel-details">
+            <summary th:text="#{settings.delivery.choose}">Choose alerts</summary>
+            <form th:action="@{|/settings/alert-delivery/${view.id()}/update|}" method="post" class="channel-choices">
+              <div class="form-group"><label th:for="|label-${view.id()}|" th:text="#{settings.delivery.name}">Name</label>
+                <input th:id="|label-${view.id()}|" name="label" th:value="${channel.label()}" maxlength="80" required autocomplete="off"></div>
+              <fieldset><legend th:text="#{analysis.email.newActivity}">New activity</legend>
+                <label><input type="checkbox" name="kinds" value="SIGNAL_CANDLESTICK" th:checked="${view.hasKind('SIGNAL_CANDLESTICK')}"><span th:text="#{analysis.email.candlestick}">Candlestick signals</span></label>
+                <label><input type="checkbox" name="kinds" value="SIGNAL_ELLIOTT" th:checked="${view.hasKind('SIGNAL_ELLIOTT')}"><span th:text="#{analysis.email.elliott}">Elliott Wave signals</span></label>
+                <label><input type="checkbox" name="kinds" value="SIGNAL_HARMONIC" th:checked="${view.hasKind('SIGNAL_HARMONIC')}"><span th:text="#{analysis.email.harmonic}">Harmonic Formation signals</span></label>
+                <label><input type="checkbox" name="kinds" value="OUTLOOK" th:checked="${view.hasKind('OUTLOOK')}"><span th:text="#{settings.delivery.kind.OUTLOOK}">Technical outlook changes</span></label>
+                <label><input type="checkbox" name="kinds" value="CHART" th:checked="${view.hasKind('CHART')}"><span th:text="#{analysis.email.chartAlerts}">Chart alerts</span></label>
+                <label><input type="checkbox" name="kinds" value="CUSTOM" th:checked="${view.hasKind('CUSTOM')}"><span th:text="#{analysis.email.customAlerts}">Custom alerts</span></label>
+                <label><input type="checkbox" name="kinds" value="INSIDER" th:checked="${view.hasKind('INSIDER')}"><span th:text="#{analysis.email.insider}">Corporate insider activity</span></label>
+                <label><input type="checkbox" name="kinds" value="CONGRESS" th:checked="${view.hasKind('CONGRESS')}"><span th:text="#{analysis.email.congressional}">Congressional activity</span></label>
+              </fieldset>
+              <fieldset><legend th:text="#{analysis.email.resolution}">Signal resolution</legend>
+                <label><input type="checkbox" name="kinds" value="OUTCOME_CONFIRMED" th:checked="${view.hasKind('OUTCOME_CONFIRMED')}"><span th:text="#{analysis.email.confirmed}">Confirmed</span></label>
+                <label><input type="checkbox" name="kinds" value="OUTCOME_INVALIDATED" th:checked="${view.hasKind('OUTCOME_INVALIDATED')}"><span th:text="#{analysis.email.invalidated}">Invalidated</span></label>
+                <label><input type="checkbox" name="kinds" value="OUTCOME_EXPIRED" th:checked="${view.hasKind('OUTCOME_EXPIRED')}"><span th:text="#{analysis.email.expired}">Rejected / expired</span></label>
+              </fieldset>
+              <fieldset><legend th:text="#{analysis.email.directions}">Directions</legend>
+                <label><input type="checkbox" name="directions" value="BUY" th:checked="${view.hasDirection('BUY')}"><span th:text="#{analysis.email.buy}">Buy</span></label>
+                <label><input type="checkbox" name="directions" value="SELL" th:checked="${view.hasDirection('SELL')}"><span th:text="#{analysis.email.sell}">Sell/Short</span></label>
+              </fieldset>
+              <div class="form-group"><label th:for="|language-${view.id()}|" th:text="#{settings.delivery.language}">Language</label>
+                <select th:id="|language-${view.id()}|" name="language">
+                  <option value="auto" th:selected="${channel.language() == null}" th:text="#{settings.delivery.language.account}">Same as my account</option>
+                  <option value="en" lang="en" th:selected="${channel.language() == 'en'}">English</option>
+                  <option value="pl" lang="pl" th:selected="${channel.language() == 'pl'}">Polski</option>
+                </select>
+                <small class="settings-muted" th:text="#{settings.delivery.language.help}">For a shared Discord server, pick the language its members read.</small></div>
+              <div class="channel-form-actions">
+                <button class="btn-accent" type="submit" th:text="#{settings.delivery.save}">Save</button>
+                <button class="btn-secondary" type="submit" name="preset" value="email" th:text="#{settings.delivery.sameAsEmail}">Use my email choices</button>
+              </div>
+            </form>
+          </details>
+
+          <details class="channel-details">
+            <summary th:text="#{settings.delivery.recent}">Recent deliveries</summary>
+            <p th:if="${#lists.isEmpty(view.recent())}" class="settings-muted" th:text="#{settings.delivery.recent.none}">Nothing has been sent here yet.</p>
+            <ol th:unless="${#lists.isEmpty(view.recent())}" class="channel-recent">
+              <li th:each="delivery : ${view.recent()}"><time th:text="${delivery.when()}">23 Nov, 14:02</time>
+                <span th:text="${#messages.msgOrNull('settings.delivery.kind.' + delivery.kind()) ?: delivery.kind()}">Candlestick signal</span>
+                <span class="channel-outcome" th:classappend="|is-${#strings.toLowerCase(delivery.outcome())}|" th:text="${#messages.msg('settings.delivery.outcome.' + delivery.outcome())}">Delivered</span></li>
+            </ol>
+          </details>
+
+          <details class="channel-details channel-remove">
+            <summary th:text="#{settings.delivery.remove}">Remove</summary>
+            <p th:text="#{settings.delivery.remove.confirm}">Alerts stop going here at once, and alerts waiting for this channel are dropped. You can add it again later.</p>
+            <form th:action="@{|/settings/alert-delivery/${view.id()}/remove|}" method="post"><button class="danger-button" type="submit" th:text="#{settings.delivery.remove.submit}">Remove this channel</button></form>
+          </details>
+        </div>
+      </li>
+    </ul>
+
+    <div th:unless="${#lists.isEmpty(deliveryChannels)}" class="channel-bulk">
+      <form th:action="@{/settings/alert-delivery/pause-all}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.pauseAll}">Pause all channels</button></form>
+      <form th:action="@{/settings/alert-delivery/resume-all}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.resumeAll}">Resume paused channels</button></form>
+      <p class="settings-muted" th:text="#{settings.delivery.pauseAll.note}">Pausing drops alerts waiting for a channel, so resuming sends no burst of old ones. Email is paused separately.</p>
+    </div>
+  </section>
+
+  <section class="settings-card channel-card" id="delivery-add">
+    <div class="settings-card-heading"><div><span class="settings-number">03</span><h2 th:text="#{settings.delivery.add.heading}">Add a channel</h2></div>
+      <p th:text="#{settings.delivery.add.note}">Messages carry the same detail as the email: pattern, entry, stop, target and a link.</p></div>
+    <p th:unless="${deliveryAnyAvailable}" class="channel-empty" th:text="#{settings.delivery.add.none}">No other channels are set up on this server yet.</p>
+    <div th:if="${deliveryAnyAvailable}" class="channel-add-grid">
+      <th:block th:replace="~{fragments/alert-delivery-add :: addChannels}"></th:block>
+    </div>
+  </section>
+</th:block>
+</body>
+</html>
