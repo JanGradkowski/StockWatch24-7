@@ -6,7 +6,7 @@
     <meta name="description"
           content="Learn how StockWatch 24/7 detects candlestick patterns, classifies Elliott Wave structures, scores technical evidence, and monitors completed candles." th:content="#{about.learnHowStockwatch247Detects}">
     <title th:text="#{about.aboutStockwatchStockwatch247}">About StockWatch — StockWatch 24/7</title>
-    <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+    <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script><th:block th:replace="~{fragments/pwa :: head}"></th:block>
     <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <link rel="stylesheet" th:href="@{/css/refresh.css}">
