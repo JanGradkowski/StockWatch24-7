@@ -73,7 +73,9 @@ public class SettingsController {
             "/settings/harmonic-formations", "/settings/language", "/settings/alert-delivery"})
     public String page(Model model, Principal principal, HttpSession session, HttpServletRequest request) {
         User user = current(principal);
-        String settingsTab = request.getRequestURI().endsWith("/appearance") ? "appearance"
+        // A form that answers with the page itself (a new Telegram link) names its tab.
+        String settingsTab = request.getAttribute("settingsTab") instanceof String forced ? forced
+                : request.getRequestURI().endsWith("/appearance") ? "appearance"
                 : request.getRequestURI().endsWith("/alert-delivery") ? "delivery"
                 : request.getRequestURI().endsWith("/language") ? "language"
                 : request.getRequestURI().endsWith("/analysis-alerts") ? "analysis"

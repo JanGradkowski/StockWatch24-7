@@ -983,3 +983,5 @@ main:focus { outline: none; }
     :root[data-theme] .ui-refresh :is(.channel-actions, .channel-bulk, .channel-form-actions) > :is(form, a, button) { flex: 1 1 100%; }
     :root[data-theme] .ui-refresh :is(.channel-actions, .channel-bulk, .channel-form-actions) form button { width: 100%; }
 }
+:root[data-theme] .ui-refresh .telegram-link { display: grid; gap: var(--space-3); justify-items: start; }
+:root[data-theme] .ui-refresh .telegram-qr { width: 160px; height: 160px; padding: 8px; border-radius: var(--radius-sm); background: #fff; image-rendering: pixelated; }

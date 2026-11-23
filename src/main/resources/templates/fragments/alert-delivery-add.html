@@ -3,6 +3,21 @@
 <body>
 <!--/* Forms that add a channel, one per kind this server can send to (deliveryAvailable). */-->
 <th:block th:fragment="addChannels">
+  <article th:if="${deliveryAvailable['TELEGRAM']}" class="channel-add" id="add-telegram">
+    <h3 th:text="#{settings.delivery.telegram.heading}">Telegram</h3>
+    <p th:text="#{settings.delivery.telegram.help}">Get your alerts in a private chat with the StockWatch bot, on your phone and computer.</p>
+    <div th:if="${telegramLink != null}" class="telegram-link" data-telegram-link
+         th:attr="data-status-url=@{|/api/alert-delivery/telegram/link-status/${telegramLink.requestId()}|}">
+      <a class="btn-accent" th:href="${telegramLink.deepLink()}" target="_blank" rel="noopener noreferrer" th:text="#{settings.delivery.telegram.open}">Open Telegram</a>
+      <img th:if="${telegramLink.qrDataUri() != null}" class="telegram-qr" th:src="${telegramLink.qrDataUri()}" width="160" height="160"
+           th:alt="#{settings.delivery.telegram.qr}" alt="QR code for the Telegram link">
+      <p role="status" data-telegram-status th:text="#{settings.delivery.telegram.waiting(${telegramLink.minutes()})}">Press Start in Telegram, then come back here. The link works for 15 minutes.</p>
+      <a class="btn-secondary" th:href="@{/settings/alert-delivery#delivery-channels}" th:text="#{settings.delivery.telegram.check}">I pressed Start</a>
+    </div>
+    <form th:unless="${telegramLink != null}" th:action="@{/settings/alert-delivery/telegram/link}" method="post">
+      <button class="btn-accent" type="submit" th:text="#{settings.delivery.telegram.link}">Link Telegram</button>
+    </form>
+  </article>
   <article th:if="${deliveryAvailable['DISCORD']}" class="channel-add" id="add-discord">
     <h3 th:text="#{settings.delivery.discord.heading}">Discord</h3>
     <p th:text="#{settings.delivery.discord.help}">In Discord: Server Settings, Integrations, Webhooks, New Webhook, then Copy Webhook URL.</p>

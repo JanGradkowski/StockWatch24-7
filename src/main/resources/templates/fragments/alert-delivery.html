@@ -48,6 +48,8 @@
             <th:block th:if="${view.lastSent() != null}" th:text="#{settings.delivery.lastSent(${view.lastSent()})}">Last sent 23 Nov, 14:02</th:block><th:block th:if="${view.lastSent() == null}" th:text="#{settings.delivery.neverSent}">Nothing sent yet</th:block>
             · <th:block th:text="#{settings.delivery.counts(${view.delivered()}, ${view.waiting()}, ${view.failed()})}">30 days: 12 sent, 0 waiting, 1 failed</th:block>
           </span>
+          <span th:if="${status == 'PENDING' and channel.type().name() == 'TELEGRAM'}" class="channel-problem" role="note"
+                th:text="#{settings.delivery.telegram.pending(${channel.label()})}">Telegram chat @jan wants your alerts. Confirm only if this chat is yours.</span>
           <span th:if="${status == 'REVOKED'}" class="channel-problem" role="note"
                 th:text="${#messages.msgOrNull('settings.delivery.gone.' + channel.disabledReason()) ?: #messages.msg('settings.delivery.gone.other')}">Discord says this webhook no longer exists.</span>
           <span th:if="${status == 'FAILING'}" class="channel-problem" role="note"
@@ -57,7 +59,9 @@
         </div>
         <span class="channel-status" th:classappend="|is-${#strings.toLowerCase(status)}|" th:text="${#messages.msg('settings.delivery.status.' + status)}">Active</span>
         <div class="channel-actions">
-          <form th:if="${status == 'ACTIVE' or status == 'PAUSED' or status == 'PENDING'}" th:action="@{|/settings/alert-delivery/${view.id()}/test|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.test}">Send test</button></form>
+          <form th:if="${status == 'PENDING' and channel.type().name() == 'TELEGRAM'}" th:action="@{|/settings/alert-delivery/${view.id()}/confirm|}" method="post"><button class="btn-primary" type="submit" th:text="#{settings.delivery.telegram.confirm}">This is me</button></form>
+          <form th:if="${status == 'PENDING' and channel.type().name() == 'TELEGRAM'}" th:action="@{|/settings/alert-delivery/${view.id()}/reject|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.telegram.reject}">Not me</button></form>
+          <form th:if="${status == 'ACTIVE' or status == 'PAUSED' or (status == 'PENDING' and channel.type().name() != 'TELEGRAM')}" th:action="@{|/settings/alert-delivery/${view.id()}/test|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.test}">Send test</button></form>
           <form th:if="${status == 'ACTIVE'}" th:action="@{|/settings/alert-delivery/${view.id()}/pause|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.pause}">Pause</button></form>
           <form th:if="${status == 'PAUSED'}" th:action="@{|/settings/alert-delivery/${view.id()}/resume|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.resume}">Resume</button></form>
           <form th:if="${status == 'FAILING'}" th:action="@{|/settings/alert-delivery/${view.id()}/test|}" method="post"><button class="btn-primary" type="submit" th:text="#{settings.delivery.retry}">Retry now</button></form>

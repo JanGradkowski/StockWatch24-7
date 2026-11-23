@@ -65,8 +65,14 @@ public class GuardedHttpClient implements DisposableBean, AutoCloseable {
         public OutboundTargetPolicy.Problem problem() { return problem; }
     }
 
+    /** {@code responseTimeout}, when set, replaces the 10-second wait for a response (a long poll needs more). */
     public record Request(String method, URI uri, Map<String, String> headers, byte[] body, String contentType,
-                          int maxResponseBytes, String logLabel) {
+                          int maxResponseBytes, String logLabel, java.time.Duration responseTimeout) {
+        public Request(String method, URI uri, Map<String, String> headers, byte[] body, String contentType,
+                       int maxResponseBytes, String logLabel) {
+            this(method, uri, headers, body, contentType, maxResponseBytes, logLabel, null);
+        }
+
         public static Request get(URI uri, int maxResponseBytes, String logLabel) {
             return new Request("GET", uri, Map.of(), null, null, maxResponseBytes, logLabel);
         }
@@ -74,6 +80,10 @@ public class GuardedHttpClient implements DisposableBean, AutoCloseable {
         public static Request postJson(URI uri, Map<String, String> headers, String json, int maxResponseBytes, String logLabel) {
             return new Request("POST", uri, headers, json.getBytes(StandardCharsets.UTF_8), "application/json",
                     maxResponseBytes, logLabel);
+        }
+
+        public Request withResponseTimeout(java.time.Duration timeout) {
+            return new Request(method, uri, headers, body, contentType, maxResponseBytes, logLabel, timeout);
         }
     }
 
@@ -134,7 +144,15 @@ public class GuardedHttpClient implements DisposableBean, AutoCloseable {
             http.setEntity(new ByteArrayEntity(request.body(), request.contentType() == null
                     ? ContentType.APPLICATION_OCTET_STREAM : ContentType.parse(request.contentType())));
         }
-        var deadline = deadlines.schedule(http::cancel, TOTAL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        long total = TOTAL_TIMEOUT_SECONDS;
+        if (request.responseTimeout() != null) {
+            http.setConfig(RequestConfig.custom()
+                    .setResponseTimeout(Timeout.ofMilliseconds(request.responseTimeout().toMillis()))
+                    .setConnectionRequestTimeout(Timeout.ofSeconds(5))
+                    .build());
+            total = request.responseTimeout().toSeconds() + 5;
+        }
+        var deadline = deadlines.schedule(http::cancel, total, TimeUnit.SECONDS);
         long started = System.nanoTime();
         try {
             return client.execute(http, response -> {

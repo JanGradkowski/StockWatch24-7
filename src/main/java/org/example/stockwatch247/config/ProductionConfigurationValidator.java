@@ -180,6 +180,16 @@ public class ProductionConfigurationValidator implements InitializingBean, Envir
         require("https://discord.com".equals(environment.getProperty("alert-channels.discord.api-base-url",
                         "https://discord.com")),
                 "Production Discord delivery must use https://discord.com (alert-channels.discord.api-base-url).");
+        String telegramToken = environment.getProperty("alert-channels.telegram.bot-token", "");
+        if (!telegramToken.isBlank()) {
+            require(org.example.stockwatch247.service.channel.TelegramApi.TOKEN.matcher(telegramToken.strip()).matches(),
+                    "TELEGRAM_BOT_TOKEN does not look like a bot token (digits, a colon, then the secret).");
+            require(!environment.getProperty("alert-channels.telegram.bot-username", "").isBlank(),
+                    "TELEGRAM_BOT_USERNAME is required with TELEGRAM_BOT_TOKEN.");
+            require("https://api.telegram.org".equals(environment.getProperty("alert-channels.telegram.api-base-url",
+                            "https://api.telegram.org")),
+                    "Production Telegram delivery must use https://api.telegram.org (alert-channels.telegram.api-base-url).");
+        }
     }
 
     private void validateTrustedProxyPattern() {
