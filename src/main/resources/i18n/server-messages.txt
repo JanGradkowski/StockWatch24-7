@@ -2180,3 +2180,29 @@ internal
 
 en: Missing assistant knowledge file {0}
 internal
+
+# --- Alert channels (Telegram, Discord, webhooks, push) ---------------------------------------------
+
+en: You already have the most channels of this kind.
+pl: Masz już maksymalną liczbę kanałów tego rodzaju.
+
+en: Choose at least one kind of alert.
+pl: Wybierz co najmniej jeden rodzaj alertów.
+
+en: Choose Buy, Sell/Short or both.
+pl: Wybierz kupno, sprzedaż / krótką sprzedaż albo oba kierunki.
+
+en: Unknown delivery mode.
+internal
+
+en: Unknown direction.
+internal
+
+en: Give the channel a name.
+pl: Nadaj kanałowi nazwę.
+
+en: Use at most 80 characters for the name.
+pl: Nazwa może mieć najwyżej 80 znaków.
+
+en: Not a stop.
+internal
