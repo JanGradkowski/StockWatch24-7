@@ -5,5 +5,5 @@ package org.example.stockwatch247.service.channel;
  * for example because the watchlist that followed the signal no longer does.
  */
 public interface ChannelDeliveryFilter {
-    boolean allows(ChannelStore.Channel channel, Long alertEventId, ChannelMessage message);
+    boolean allows(ChannelStore.Channel channel, ChannelMessage message);
 }

@@ -179,7 +179,8 @@ public class CongressionalActivityPollingService {
             fixedDelayString = "${congressional-activity.delivery-worker-delay-ms:60000}",
             initialDelayString = "${congressional-activity.delivery-worker-initial-delay-ms:45000}")
     public void deliverQueuedEmails() {
-        if (!enabled || !notificationService.isEmailDeliveryEnabled()) {
+        // Deliveries reach email, the account's alert channels, or both; without either they wait.
+        if (!enabled || !notificationService.deliversActivityAlerts()) {
             return;
         }
         for (int processed = 0; processed < deliveryBatchSize; processed++) {

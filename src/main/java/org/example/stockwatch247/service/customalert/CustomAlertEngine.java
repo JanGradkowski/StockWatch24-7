@@ -644,19 +644,24 @@ public class CustomAlertEngine {
         if (events.isEmpty()) return false;
         Long[] ids = events.stream().map(row -> ((Number) row.get("id")).longValue()).toArray(Long[]::new);
         User owner = users.findById(((Number) alert.get("user_id")).longValue()).orElse(null);
-        boolean allowed = owner != null && Boolean.TRUE.equals(alert.get("email_enabled")) && notifications != null
-                && (preferences == null || preferences.allowsCustomAlertEmail(owner));
+        // The alert's own switch is "Notify me": it covers email and the account's alert channels. The account's
+        // email choices then decide the email only.
+        boolean notify = owner != null && Boolean.TRUE.equals(alert.get("email_enabled")) && notifications != null;
+        boolean allowed = notify && (preferences == null || preferences.allowsCustomAlertEmail(owner));
+        boolean channel = notify && notifications.customAlertChannelsWanted(owner);
         boolean sent = false;
-        if (allowed) {
+        if (allowed || channel) {
             String name = (String) alert.get("name");
             // A check that caught up on missed candles can bring several triggers for one stock.
             long stocks = events.stream().map(row -> row.get("ticker_symbol")).distinct().count();
             String subject = stocks == 1
                     ? "Custom alert: " + name + " for " + events.getFirst().get("ticker_symbol")
                     : "Custom alert: " + name + " for " + stocks + " stocks";
-            sent = notifications.sendCustomAlertEmail(owner, subject, digestBody(name, events),
-                    events.size() == 1 ? "/custom-alerts/triggers/" + ids[0] : "/custom-alerts/" + alertId,
-                    "custom-alert:" + alertId + ":" + ids[ids.length - 1]);
+            String body = digestBody(name, events);
+            String path = events.size() == 1 ? "/custom-alerts/triggers/" + ids[0] : "/custom-alerts/" + alertId;
+            String key = "custom-alert:" + alertId + ":" + ids[ids.length - 1];
+            if (channel) sent = notifications.sendCustomAlertToChannels(owner, subject, body, path, key, ids[ids.length - 1]);
+            if (allowed) sent |= notifications.sendCustomAlertEmail(owner, subject, body, path, key);
         }
         boolean queued = sent;
         db.update(connection -> {

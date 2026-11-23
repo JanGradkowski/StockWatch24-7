@@ -180,7 +180,7 @@ public class ChannelDeliveryWorker {
                 continue;
             }
             if (row.kind() == null || !channel.accepts(row.kind(), message.direction()) || row.sourceDeleted()
-                    || filter != null && !filter.allows(channel, row.alertEventId(), message)) {
+                    || filter != null && !filter.allows(channel, message)) {
                 filtered.add(row.id());
                 continue;
             }
