@@ -129,6 +129,7 @@ public class ProductionConfigurationValidator implements InitializingBean, Envir
                 "MFA_ENCRYPTION_KEY must be a unique production secret of at least 32 characters.");
 
         validateAssistant();
+        validateAlertChannels();
         require(!verificationRequired || emailEnabled,
                 "Email delivery must be enabled when production email verification is required.");
         if (emailEnabled) {
@@ -165,6 +166,17 @@ public class ProductionConfigurationValidator implements InitializingBean, Envir
                 "GEMINI_MODEL is required when the assistant has a key.");
         require(!environment.getProperty("assistant.log-messages", Boolean.class, false),
                 "Production must not log assistant questions (ASSISTANT_LOG_MESSAGES=false).");
+    }
+
+    /** Outgoing alert requests must not reach private networks or plain-http receivers. */
+    private void validateAlertChannels() {
+        if (environment == null) return;
+        require(!environment.getProperty("alert-channels.allow-private-targets", Boolean.class, false),
+                "Production alert channels must not reach private addresses (alert-channels.allow-private-targets=false).");
+        require(!environment.getProperty("alert-channels.webhook.allow-http", Boolean.class, false),
+                "Production webhooks must use HTTPS (alert-channels.webhook.allow-http=false).");
+        require(!environment.getProperty("alert-channels.allow-any-port", Boolean.class, false),
+                "Production webhooks must use port 443 or 8443 (alert-channels.allow-any-port=false).");
     }
 
     private void validateTrustedProxyPattern() {

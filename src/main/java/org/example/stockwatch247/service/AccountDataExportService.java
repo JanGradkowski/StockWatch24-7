@@ -99,6 +99,18 @@ public class AccountDataExportService {
         data.put("demoTrades", rows("""
                 select * from virtual_trades where user_id = ? and deleted_at is null order by id
                 """, userId));
+        // Where alerts go besides email, without their targets: no URLs, chat ids, keys or signing secrets.
+        data.put("alertChannels", rows("""
+                select channel_type as type, label, display_hint, status, array_to_string(alert_kinds, ', ') as alert_kinds,
+                       array_to_string(directions, ', ') as directions, delivery_mode, language, created_at,
+                       last_success_at, disabled_reason, disabled_at
+                from alert_channels where user_id = ? order by created_at, id
+                """, userId));
+        data.put("alertChannelDeliveries", rows("""
+                select c.label as channel, d.alert_kind, d.created_at, d.delivered_at, d.expired_at, d.outcome
+                from alert_channel_deliveries d join alert_channels c on c.id = d.channel_id
+                where c.user_id = ? order by d.created_at, d.id
+                """, userId));
         data.put("securityEvents", rows("""
                 select event_type, description, created_at from security_events where user_id = ? order by created_at, id
                 """, userId));

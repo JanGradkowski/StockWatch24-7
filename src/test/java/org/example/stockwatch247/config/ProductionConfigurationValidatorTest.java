@@ -81,6 +81,20 @@ class ProductionConfigurationValidatorTest {
         assertThatThrownBy(validator::afterPropertiesSet).hasMessageContaining("Secure");
     }
 
+    @Test
+    void productionAlertChannelsMayNotReachPrivateNetworksOrPlainHttp() {
+        for (String relaxed : new String[]{"alert-channels.allow-private-targets", "alert-channels.webhook.allow-http",
+                "alert-channels.allow-any-port"}) {
+            ProductionConfigurationValidator validator = validator(
+                    "https://stockwatch.example", "127\\.0\\.0\\.1", true, "secret");
+            var environment = new org.springframework.mock.env.MockEnvironment().withProperty(relaxed, "true");
+            environment.setActiveProfiles("prod");
+            validator.setEnvironment(environment);
+
+            assertThatThrownBy(validator::afterPropertiesSet).as(relaxed).hasMessageContaining(relaxed);
+        }
+    }
+
     private ProductionConfigurationValidator validator(String publicUrl,
                                                         String trustedProxies,
                                                         boolean emailEnabled,

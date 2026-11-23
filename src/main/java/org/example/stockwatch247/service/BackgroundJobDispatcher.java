@@ -16,9 +16,12 @@ public class BackgroundJobDispatcher {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BackgroundJobDispatcher.class);
     @org.springframework.beans.factory.annotation.Autowired
     private InfrastructureRecovery recovery = new InfrastructureRecovery();
+    // Alert channels have two queues: chats and push, and user webhooks, so a slow receiver never holds up a chat.
+    // Each runs its channels' sends on virtual threads, so these queues hold a platform thread only briefly.
     private final Map<String, Semaphore> slots = Map.of("insider", new Semaphore(1),
             "email", new Semaphore(1), "imports", new Semaphore(1), "custom-alerts", new Semaphore(1),
-            "custom-alert-email", new Semaphore(1), "elliott-history", new Semaphore(1), "analysis-store", new Semaphore(1));
+            "custom-alert-email", new Semaphore(1), "elliott-history", new Semaphore(1), "analysis-store", new Semaphore(1),
+            "channels", new Semaphore(1), "webhooks", new Semaphore(1));
     private final ExecutorService workers = Executors.newFixedThreadPool(4, Thread.ofPlatform().daemon(true).name("durable-worker-", 0).factory());
     public void submit(String queue, Runnable work) {
         if (!recovery.ready()) return;

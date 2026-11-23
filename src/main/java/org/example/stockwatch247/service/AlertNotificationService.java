@@ -324,6 +324,31 @@ public class AlertNotificationService {
         queueAccount(message, 86400);
     }
 
+    /**
+     * An alert channel stopped on its own: Discord or the receiver removed it ({@code removed}), or it kept failing.
+     * An account notice, so it is not held back by "Pause all alert emails".
+     */
+    public void sendChannelStoppedNotice(User user, String label, String channelType, boolean removed) {
+        requireEmailDelivery();
+        String type = text(user, "channel.type." + channelType);
+        SimpleMailMessage message = baseMessage(user, text(user, "email.channelStopped.subject", type, label));
+        message.setText(text(user, removed ? "email.channelStopped.removed" : "email.channelStopped.failing", type, label)
+                + "\n\n" + text(user, "email.channelStopped.fix",
+                (links == null ? "" : links.baseUrl()) + "/settings/alert-delivery"));
+        queueAccount(message, 86400 * 3);
+    }
+
+    /** A channel now receives the account's alerts; sent so a link someone else completed does not go unnoticed. */
+    public void sendChannelAddedNotice(User user, String label, String channelType) {
+        requireEmailDelivery();
+        String type = text(user, "channel.type." + channelType);
+        SimpleMailMessage message = baseMessage(user, text(user, "email.channelAdded.subject", type));
+        message.setText(text(user, "email.channelAdded.body", type, label,
+                (links == null ? "" : links.baseUrl()) + "/settings/alert-delivery")
+                + "\n\n" + text(user, "email.security.footer"));
+        queueAccount(message, 86400);
+    }
+
     private SimpleMailMessage baseMessage(User user, String subject) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromAddress);
