@@ -1772,7 +1772,8 @@ public class AlertNotificationService {
 
     /**
      * A custom alert triggered for one or more stocks in one check. The caller has already checked the
-     * alert's own email switch and the account's choices; the outbox drops it if the account paused emails.
+     * alert's own email switch and the account's choices. Its {@code custom-alert:} key marks it as an alert
+     * email, so the outbox drops it if the account paused emails and adds the one-click unsubscribe headers.
      */
     public boolean sendCustomAlertEmail(User user, String subject, String body, String viewPath, String deduplicationKey) {
         if (!emailEnabled) return false;

@@ -435,7 +435,8 @@ public class EmailOutboxService {
         /** Alert and notification emails, as opposed to account and security messages. */
         boolean notification() {
             return eventId != null || outlookId != null || digestReceipts != null
-                    || deduplicationKey != null && deduplicationKey.startsWith("chart-alert:");
+                    || deduplicationKey != null && (deduplicationKey.startsWith("chart-alert:")
+                    || deduplicationKey.startsWith("custom-alert:"));
         }
     }
 
