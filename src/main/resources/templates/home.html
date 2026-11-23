@@ -18,6 +18,10 @@
 <div th:replace="~{fragments/navbar :: navbar}"></div>
 
 <main class="dashboard-container">
+  <div th:each="stopped : ${stoppedChannels}" class="settings-message warning-msg channel-stopped-banner" role="status">
+    <span th:text="${stopped.status().name() == 'FAILING'} ? #{settings.delivery.stopped.failing(${stopped.label()})} : #{settings.delivery.stopped.removed(${stopped.label()})}">Alerts to Desk stopped.</span>
+    <a class="text-link" th:href="@{|/settings/alert-delivery#channel-${stopped.publicId()}|}" th:text="#{settings.delivery.stopped.fix}">Fix it</a>
+  </div>
   <header th:unless="${dashboardView == 'alerts'}" class="app-hero welcome-header">
     <div class="app-hero-copy" th:with="unreadTotal=${latestSignalUnreadCount + customAlertUnreadCount + tickerNotificationUnreadCount}">
       <!-- The headline is the status (what is waiting); the date and greeting sit above it, the breakdown below. -->

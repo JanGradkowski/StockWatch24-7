@@ -70,10 +70,11 @@ public class SettingsController {
 
     @GetMapping({"/settings", "/settings/appearance", "/settings/analysis-alerts", "/settings/detection",
             "/settings/scoring", "/settings/candlestick-patterns", "/settings/elliott-waves",
-            "/settings/harmonic-formations", "/settings/language"})
+            "/settings/harmonic-formations", "/settings/language", "/settings/alert-delivery"})
     public String page(Model model, Principal principal, HttpSession session, HttpServletRequest request) {
         User user = current(principal);
         String settingsTab = request.getRequestURI().endsWith("/appearance") ? "appearance"
+                : request.getRequestURI().endsWith("/alert-delivery") ? "delivery"
                 : request.getRequestURI().endsWith("/language") ? "language"
                 : request.getRequestURI().endsWith("/analysis-alerts") ? "analysis"
                 : request.getRequestURI().endsWith("/scoring") ? "scoring"
@@ -81,6 +82,11 @@ public class SettingsController {
                 : request.getRequestURI().endsWith("/elliott-waves") ? "elliott-waves"
                 : request.getRequestURI().endsWith("/harmonic-formations") ? "harmonic-formations"
                 : request.getRequestURI().endsWith("/detection") ? "detection" : "general";
+        boolean deliveryShown = alertChannels != null && alertChannels.enabled();
+        if ("delivery".equals(settingsTab) && !deliveryShown) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND);
+        }
+        model.addAttribute("deliveryShown", deliveryShown);
         model.addAttribute("settingsTab", settingsTab);
         model.addAttribute("firstName", user.getFirstName());
         model.addAttribute("user", user);
@@ -110,6 +116,18 @@ public class SettingsController {
         }
         if ("harmonic-formations".equals(settingsTab)) {
             model.addAttribute("harmonicPatternPreferences", harmonicPatternPreferences.get(user));
+        }
+        if ("delivery".equals(settingsTab)) {
+            java.util.Locale locale = org.example.stockwatch247.i18n.Messages.current();
+            model.addAttribute("deliveryChannels", alertChannels.views(user.getId(), locale));
+            model.addAttribute("deliveryStopped", alertChannels.stoppedOnTheirOwn(user.getId()));
+            java.util.Map<String, Boolean> available = new java.util.LinkedHashMap<>();
+            for (var type : org.example.stockwatch247.service.channel.ChannelType.values()) {
+                available.put(type.name(), alertChannels.available(type));
+            }
+            model.addAttribute("deliveryAvailable", available);
+            model.addAttribute("deliveryAnyAvailable", available.entrySet().stream()
+                    .anyMatch(entry -> entry.getValue() && !entry.getKey().equals("PUSH")));
         }
         if ("language".equals(settingsTab)) {
             model.addAttribute("languageChoice", org.example.stockwatch247.i18n.LanguagePreferenceService.settingsChoice(user));
@@ -549,6 +567,9 @@ public class SettingsController {
         item.put("interval", rule.getInterval()); item.put("family", rule.getPatternFamily());
         item.put("signal", rule.getTradeSignal()); item.put("createdAt", rule.getCreatedAt()); return item;
     }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.service.channel.ChannelSettingsService alertChannels;
+
     private User current(Principal principal) {
         return org.example.stockwatch247.security.CurrentAccount.find(users, principal.getName()).orElseThrow(() -> new IllegalArgumentException("Account not found."));
     }

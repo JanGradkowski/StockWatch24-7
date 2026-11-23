@@ -166,6 +166,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (path.startsWith("/api/congressional-activity/")) {
             return new Limit("congressional-activity", 30, Duration.ofMinutes(1), true);
         }
+        // Alert channels: the settings forms, Telegram link polling and this browser's push subscription.
+        // Tests and additions have their own per-account limits in ChannelSettingsService.
+        if ("POST".equals(method) && path.startsWith("/settings/alert-delivery")) {
+            return new Limit("alert-delivery", 30, Duration.ofMinutes(10));
+        }
+        if (path.startsWith("/api/alert-delivery/")) {
+            return new Limit("alert-delivery-status", 60, Duration.ofMinutes(1), true);
+        }
+        if (path.startsWith("/api/push/")) {
+            return new Limit("push-subscriptions", 30, Duration.ofHours(1));
+        }
         return null;
     }
 

@@ -12,6 +12,8 @@ public class UserViewModelAdvice {
     private final UserRepository users;
     private org.example.stockwatch247.service.UnreadCountService unreadCounts;
     public UserViewModelAdvice(UserRepository users) { this.users = users; }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.service.channel.ChannelSettingsService alertChannels;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void configureUnreadCounts(org.example.stockwatch247.service.UnreadCountService counts) { this.unreadCounts = counts; }
@@ -37,6 +39,10 @@ public class UserViewModelAdvice {
             model.addAttribute("navigationUnread", unreadCounts == null ? null : unreadCounts.counts(user));
         }
         String path = request.getRequestURI().substring(request.getContextPath().length());
+        // A channel that stopped on its own is announced on the home page until it is fixed or removed.
+        if (user != null && alertChannels != null && path.equals("/home")) {
+            model.addAttribute("stoppedChannels", alertChannels.stoppedOnTheirOwn(user.getId()));
+        }
         // The assistant panel: on every signed-in page, with questions suited to the page it is opened on.
         boolean assistantShown = user != null && assistant != null && assistant.enabled();
         model.addAttribute("assistantEnabled", assistantShown);
