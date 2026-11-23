@@ -18,7 +18,8 @@
       <span class="channel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m4 7 8 6 8-6"></path></svg></span>
       <div class="channel-main">
         <strong th:text="#{settings.delivery.email.label}">Email</strong>
-        <span class="channel-meta" th:text="|${user.email} · ${user.alertEmailDigest ? #messages.msg('settings.delivery.email.digest') : #messages.msg('settings.delivery.email.each')}|">you@example.com · One email per alert</span>
+        <span class="channel-meta" th:text="${user.email}">you@example.com</span>
+        <span class="channel-activity" th:text="${user.alertEmailDigest} ? #{settings.delivery.email.digest} : #{settings.delivery.email.each}">One email per alert</span>
       </div>
       <span class="channel-status" th:classappend="${user.notificationEmailsPaused} ? ' is-paused' : ' is-active'" th:text="${user.notificationEmailsPaused} ? #{settings.delivery.status.PAUSED} : #{settings.delivery.status.ACTIVE}">Active</span>
       <div class="channel-actions"><a class="btn-secondary" th:href="@{/settings/analysis-alerts#alert-emails}" th:text="#{settings.delivery.email.manage}">Email settings</a></div>
@@ -60,6 +61,7 @@
           <form th:if="${status == 'ACTIVE'}" th:action="@{|/settings/alert-delivery/${view.id()}/pause|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.pause}">Pause</button></form>
           <form th:if="${status == 'PAUSED'}" th:action="@{|/settings/alert-delivery/${view.id()}/resume|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.resume}">Resume</button></form>
           <form th:if="${status == 'FAILING'}" th:action="@{|/settings/alert-delivery/${view.id()}/test|}" method="post"><button class="btn-primary" type="submit" th:text="#{settings.delivery.retry}">Retry now</button></form>
+          <a th:if="${status == 'REVOKED' and deliveryAvailable[channel.type().name()]}" class="btn-secondary" th:href="|#add-${#strings.toLowerCase(channel.type().name())}|" th:text="#{settings.delivery.addAgain}">Add again</a>
         </div>
 
         <div class="channel-panels">

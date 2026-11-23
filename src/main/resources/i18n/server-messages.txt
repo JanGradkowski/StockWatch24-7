@@ -2260,3 +2260,21 @@ pl: Żaden kanał nie był wstrzymany.
 
 en: Paused channels resumed.
 pl: Wznowiono wstrzymane kanały.
+
+en: That isn't a Discord webhook URL. It starts with https://discord.com/api/webhooks/.
+pl: To nie jest adres URL webhooka Discord. Zaczyna się od https://discord.com/api/webhooks/.
+
+en: This Discord webhook is already one of your channels.
+pl: Ten webhook Discord jest już jednym z Twoich kanałów.
+
+en: Discord could not be reached. Try again in a minute.
+pl: Nie udało się połączyć z Discordem. Spróbuj ponownie za minutę.
+
+en: Discord doesn't know this webhook. Copy it again.
+pl: Discord nie zna tego webhooka. Skopiuj go ponownie.
+
+en: Discord channel {0} added. Send a test to check it.
+pl: Dodano kanał Discord {0}. Wyślij test, aby go sprawdzić.
+
+en: Discord answered {0}.
+internal

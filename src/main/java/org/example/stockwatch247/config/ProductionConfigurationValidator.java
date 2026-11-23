@@ -177,6 +177,9 @@ public class ProductionConfigurationValidator implements InitializingBean, Envir
                 "Production webhooks must use HTTPS (alert-channels.webhook.allow-http=false).");
         require(!environment.getProperty("alert-channels.allow-any-port", Boolean.class, false),
                 "Production webhooks must use port 443 or 8443 (alert-channels.allow-any-port=false).");
+        require("https://discord.com".equals(environment.getProperty("alert-channels.discord.api-base-url",
+                        "https://discord.com")),
+                "Production Discord delivery must use https://discord.com (alert-channels.discord.api-base-url).");
     }
 
     private void validateTrustedProxyPattern() {
