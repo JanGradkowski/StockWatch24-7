@@ -114,6 +114,14 @@ class TelegramSenderTest {
     }
 
     @Test
+    void quietHoursSendSilently() {
+        var quiet = new ChannelSender.Target(1, UUID.randomUUID(), 1, ChannelType.TELEGRAM, "@jan", "telegram",
+                Map.of("chatId", "4242", "quietNow", "true"), null);
+        sender.send(quiet, new Outgoing(Mode.SINGLE, List.of(item("Subject", "Body", null)), 0), ChannelSender.PartProgress.NONE);
+        assertThat(telegram.sent().getLast().body()).contains("\"disable_notification\":true");
+    }
+
+    @Test
     void theBotTokenNeverReachesTheLog(CapturedOutput output) throws Exception {
         telegram.close();
         assertThat(send()).isInstanceOf(SendResult.Retry.class);

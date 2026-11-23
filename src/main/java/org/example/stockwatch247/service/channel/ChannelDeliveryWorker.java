@@ -201,7 +201,7 @@ public class ChannelDeliveryWorker {
         Mode mode = claim.mode() == Mode.GROUP && items.size() == 1 ? Mode.SINGLE : claim.mode();
         int partsSent = claim.rows().stream().filter(row -> keep.contains(row.id())).mapToInt(Row::partsSent).min().orElse(0);
         var target = new ChannelSender.Target(channel.id(), channel.publicId(), channel.userId(), channel.type(),
-                channel.label(), channel.providerScope(), store.config(channel), channel.language());
+                channel.label(), channel.providerScope(), withQuiet(channel, store.config(channel)), channel.language());
         SendResult result;
         try {
             result = sender.send(target, new Outgoing(mode, items, partsSent),
@@ -253,7 +253,11 @@ public class ChannelDeliveryWorker {
             picked = due.subList(0, Math.min(CLAIM_LIMIT, due.size()));
         } else {
             Row first = due.getFirst();
-            if (channel.type() == ChannelType.WEBHOOK || first.groupKey() == null) {
+            if (first.groupKey() != null && first.groupKey().startsWith("summary:")) {
+                // A released summary goes out as one list.
+                mode = Mode.ROLL_UP;
+                picked = due.stream().filter(row -> first.groupKey().equals(row.groupKey())).limit(CLAIM_LIMIT).toList();
+            } else if (channel.type() == ChannelType.WEBHOOK || first.groupKey() == null) {
                 mode = Mode.SINGLE;
                 picked = List.of(first);
             } else {
@@ -265,6 +269,16 @@ public class ChannelDeliveryWorker {
                 + "attempts = attempts + 1 where id in (" + placeholders(picked.size()) + ")",
                 prepend(owner, picked.stream().map(Row::id).toList()));
         return new Claim(channel, mode, picked);
+    }
+
+    /** Between 22:00 and 07:00 a channel with quiet hours gets its messages silently ("quietNow" for the sender). */
+    Map<String, Object> withQuiet(ChannelStore.Channel channel, Map<String, Object> config) {
+        if (!channel.quietHours()) return config;
+        int hour = java.time.ZonedDateTime.now(zone).getHour();
+        if (hour >= 7 && hour < 22) return config;
+        Map<String, Object> quiet = new java.util.LinkedHashMap<>(config);
+        quiet.put("quietNow", "true");
+        return quiet;
     }
 
     private long paceFor(long channelId) {

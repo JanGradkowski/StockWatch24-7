@@ -42,6 +42,7 @@ public class TelegramSender implements ChannelSender {
         String chatId = target.configString("chatId");
         if (chatId == null) return new SendResult.ChannelGone("TELEGRAM_CHAT_GONE");
         List<String> parts = formatter.messages(outgoing);
+        boolean quiet = "true".equals(target.configString("quietNow"));
         String firstId = null;
         for (int part = Math.min(outgoing.partsSent(), parts.size()); part < parts.size(); part++) {
             if (part > outgoing.partsSent() && !pause()) return new SendResult.Retry("INTERRUPTED", null);
@@ -51,11 +52,11 @@ public class TelegramSender implements ChannelSender {
             String replyTo = part == 0 && outgoing.mode() != Mode.ROLL_UP ? outgoing.first().replyTo() : null;
             TelegramApi.Result result;
             try {
-                result = sendMessage(chatId, parts.get(part), true, replyTo);
+                result = sendMessage(chatId, parts.get(part), true, replyTo, quiet);
                 if (!result.ok() && result.errorCode() == 400
                         && result.description().toLowerCase(Locale.ROOT).contains("can't parse entities")) {
                     log.warn("Telegram could not parse a message; sending it as plain text: channel={}", target.id());
-                    result = sendMessage(chatId, TelegramFormatter.plain(parts.get(part)), false, replyTo);
+                    result = sendMessage(chatId, TelegramFormatter.plain(parts.get(part)), false, replyTo, quiet);
                 }
             } catch (GuardedHttpClient.OutboundException failure) {
                 return new SendResult.Retry(failure.failure().name(), null);
@@ -71,13 +72,14 @@ public class TelegramSender implements ChannelSender {
         return new SendResult.Delivered(firstId, null);
     }
 
-    private TelegramApi.Result sendMessage(String chatId, String text, boolean html, String replyTo)
+    private TelegramApi.Result sendMessage(String chatId, String text, boolean html, String replyTo, boolean quiet)
             throws GuardedHttpClient.OutboundException {
         Map<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("chat_id", chatId);
         parameters.put("text", text);
         if (html) parameters.put("parse_mode", "HTML");
         parameters.put("link_preview_options", Map.of("is_disabled", true));
+        if (quiet) parameters.put("disable_notification", true);
         if (replyTo != null) {
             Map<String, Object> reply = new LinkedHashMap<>();
             reply.put("message_id", Long.parseLong(replyTo));

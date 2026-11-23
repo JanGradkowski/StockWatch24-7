@@ -1,6 +1,8 @@
 # Plan: alert delivery channels (Web Push PWA, Telegram, Discord, webhooks)
 
-Status: **planned, not built** (2026-11-21, against `main` at `2f332cc`).
+Status: **built** (2026-11-23). PRs 0–5 merged as #69–#75; PR 6 (installable app) #76, PR 7 (Web Push) #77 and PR 8
+(chat summaries and quiet hours) followed. Deployment settings: `docs/security-deployment.md`, section 4. Summaries
+are offered for Telegram and Discord only: a webhook receiver gets every alert as its own request.
 
 Paths are relative to `src/main/java/org/example/stockwatch247/` unless they start with `src/` or `docs/`.
 "Assumption" marks anything not confirmed in the code (mostly provider behaviour, checked against public docs at

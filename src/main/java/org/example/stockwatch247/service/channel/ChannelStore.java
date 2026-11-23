@@ -37,7 +37,7 @@ public class ChannelStore {
                           String providerScope, ChannelStatus status, Set<AlertKind> kinds, Set<String> directions,
                           String deliveryMode, String language, int consecutiveFailures, Instant lastSuccessAt,
                           Instant lastFailureAt, String lastFailureCode, String disabledReason, Instant disabledAt,
-                          Instant createdAt) {
+                          Instant createdAt, boolean quietHours) {
         public boolean accepts(AlertKind kind, String direction) {
             return kinds.contains(kind) && (direction == null || directions.contains(direction));
         }
@@ -51,7 +51,7 @@ public class ChannelStore {
     private static final String COLUMNS = """
             id, public_id, user_id, channel_type, label, display_hint, provider_scope, status, alert_kinds, directions,
             delivery_mode, language, consecutive_failures, last_success_at, last_failure_at, last_failure_code,
-            disabled_reason, disabled_at, created_at""";
+            disabled_reason, disabled_at, created_at, quiet_hours""";
 
     private final JdbcTemplate jdbc;
     private final SecurityCryptoService crypto;
@@ -170,6 +170,10 @@ public class ChannelStore {
                 channel.id());
     }
 
+    public void setQuietHours(Channel channel, boolean quiet) {
+        jdbc.update("update alert_channels set quiet_hours = ?, updated_at = current_timestamp where id = ?", quiet, channel.id());
+    }
+
     /** Makes the channel active again: alerts reach it from now on, and failure counters start over. */
     public boolean activate(Channel channel) {
         return jdbc.update("""
@@ -271,7 +275,7 @@ public class ChannelStore {
             rs.getString("language"), rs.getInt("consecutive_failures"), instant(rs.getTimestamp("last_success_at")),
             instant(rs.getTimestamp("last_failure_at")), rs.getString("last_failure_code"),
             rs.getString("disabled_reason"), instant(rs.getTimestamp("disabled_at")),
-            instant(rs.getTimestamp("created_at")));
+            instant(rs.getTimestamp("created_at")), rs.getBoolean("quiet_hours"));
 
     private static Set<AlertKind> kinds(Array array) throws SQLException {
         Set<AlertKind> kinds = EnumSet.noneOf(AlertKind.class);

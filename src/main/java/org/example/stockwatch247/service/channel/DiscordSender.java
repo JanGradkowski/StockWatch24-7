@@ -90,6 +90,14 @@ public class DiscordSender implements ChannelSender {
         String url = target.configString("webhookUrl");
         if (url == null || !url.startsWith(CANONICAL_BASE)) return new SendResult.ChannelGone("DISCORD_GONE");
         List<Map<String, Object>> parts = formatter.messages(outgoing);
+        if ("true".equals(target.configString("quietNow"))) {
+            // SUPPRESS_NOTIFICATIONS: the message arrives without a sound or a push to members' phones.
+            parts = parts.stream().map(payload -> {
+                Map<String, Object> quiet = new java.util.LinkedHashMap<>(payload);
+                quiet.put("flags", 4096);
+                return quiet;
+            }).toList();
+        }
         Duration pace = null;
         for (int part = Math.min(outgoing.partsSent(), parts.size()); part < parts.size(); part++) {
             if (!limiter.tryAcquire("discord-global-pace", 40, Duration.ofSeconds(1))) {

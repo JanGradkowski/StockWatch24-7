@@ -326,8 +326,25 @@ public class ChannelSettingsService {
         return channel.status() == ChannelStatus.PAUSED && store.activate(channel);
     }
 
+    @Autowired(required = false)
+    private ChannelSummaries summaries;
+
     public void update(User user, ChannelStore.Channel channel, String label, Set<AlertKind> kinds, Set<String> directions,
                        String language, boolean sameAsEmail) {
+        update(user, channel, label, kinds, directions, language, sameAsEmail, null, channel.quietHours());
+    }
+
+    /**
+     * Saves the channel's name, alert choices and language, and for chats how alerts arrive (one by one or one summary
+     * per check run). Switching a summary back to one by one sends what it was holding at once.
+     */
+    public void update(User user, ChannelStore.Channel channel, String label, Set<AlertKind> kinds, Set<String> directions,
+                       String language, boolean sameAsEmail, String deliveryMode, boolean quietHours) {
+        if (deliveryMode != null && channel.type().chat() && !deliveryMode.equals(channel.deliveryMode())) {
+            store.setDeliveryMode(channel, deliveryMode);
+            if (deliveryMode.equals("EACH") && summaries != null) summaries.releaseNow(channel.id());
+        }
+        if (channel.type() != ChannelType.WEBHOOK && quietHours != channel.quietHours()) store.setQuietHours(channel, quietHours);
         if (label != null && !label.equals(channel.label())) store.rename(channel, label);
         if (sameAsEmail) store.updateChoices(channel, defaultKinds(user), defaultDirections(user), language);
         else store.updateChoices(channel, kinds, directions, language);

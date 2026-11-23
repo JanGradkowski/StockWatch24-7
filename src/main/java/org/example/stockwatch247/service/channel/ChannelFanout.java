@@ -82,16 +82,19 @@ public class ChannelFanout {
             String sourceColumn = notice.source() == null ? null : notice.source().column();
             String sql = "insert into alert_channel_deliveries(id, channel_id, deduplication_key, alert_kind, group_key, "
                     + (sourceColumn == null ? "" : sourceColumn + ", ")
-                    + "ciphertext, iv, available_at, expires_at) values (?, ?, ?, ?, ?, "
+                    + "ciphertext, iv, available_at, expires_at, held) values (?, ?, ?, ?, ?, "
                     + (sourceColumn == null ? "" : "?, ")
-                    + "?, ?, ?, ?) on conflict (channel_id, deduplication_key) do nothing";
+                    + "?, ?, ?, ?, ?) on conflict (channel_id, deduplication_key) do nothing";
+            // A chat set to one summary per check run holds what the email summary would hold (ChannelSummaries).
+            boolean held = "SUMMARY".equals(channel.deliveryMode()) && channel.type().chat()
+                    && AlertKind.SUMMARIZABLE.contains(notice.kind());
             Timestamp available = Timestamp.from(now.plus(hold));
             Timestamp expires = Timestamp.from(now.plus(channel.type().lifetime()));
             written += sourceColumn == null
                     ? jdbc.update(sql, id, channel.id(), notice.deduplicationKey(), notice.kind().name(), notice.groupKey(),
-                        encrypted.ciphertext(), encrypted.iv(), available, expires)
+                        encrypted.ciphertext(), encrypted.iv(), available, expires, held)
                     : jdbc.update(sql, id, channel.id(), notice.deduplicationKey(), notice.kind().name(), notice.groupKey(),
-                        notice.sourceId(), encrypted.ciphertext(), encrypted.iv(), available, expires);
+                        notice.sourceId(), encrypted.ciphertext(), encrypted.iv(), available, expires, held);
         }
         return written;
     }
