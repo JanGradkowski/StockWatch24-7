@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Automated technical analysis and custom alerts for the stocks you follow: a technical outlook, Elliott Waves, harmonic and candlestick patterns, 121 chart indicators and 86 drawing tools." th:content="#{landing.meta}">
     <title th:text="#{landing.title}">StockWatch 24/7 — Technical analysis and stock alerts</title>
-    <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+    <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script><th:block th:replace="~{fragments/pwa :: head}"></th:block>
     <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
     <link rel="stylesheet" th:href="@{/css/design.css}">
     <link rel="stylesheet" th:href="@{/css/refresh.css}">

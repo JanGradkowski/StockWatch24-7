@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+<!--/* In every page head: the manifest that makes StockWatch installable, its icons and colours, and the script that
+       registers the service worker (left out when pwa.enabled is off). */-->
+<th:block th:fragment="head">
+<link rel="manifest" th:href="@{/manifest.webmanifest}" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f8f9fb" media="(prefers-color-scheme: light)">
+<link rel="icon" type="image/svg+xml" th:href="@{/icons/icon.svg}" href="/icons/icon.svg">
+<link rel="apple-touch-icon" th:href="@{/icons/apple-touch-icon.png}" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="StockWatch">
+<script th:if="${pwaEnabled == null or pwaEnabled}" defer th:src="@{/js/pwa.js}"></script>
+</th:block>
+</head>
+</html>

@@ -64,7 +64,9 @@ public class SecurityConfig {
                         .requestMatchers("/error", "/", "/index.html", "/css/**", "/js/**", "/i18n/**", "/webjars/**",
                                 "/images/**", "/signup", "/login", "/login/2fa", "/login/2fa/cancel", "/verify-email", "/resend-verification",
                                 "/forgot-password", "/reset-password", "/cancel-account-deletion", "/about",
-                                "/email/unsubscribe").permitAll()
+                                "/email/unsubscribe",
+                                // The installable app: browsers fetch the manifest without cookies.
+                                "/manifest.webmanifest", "/sw.js", "/icons/**", "/offline").permitAll()
 
                         // 2. Protected Routes (Added /stock/** here for the new stock page)
                         .requestMatchers("/home", "/stock/**", "/api/**").authenticated()

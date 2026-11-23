@@ -12,6 +12,8 @@ public class UserViewModelAdvice {
     private final UserRepository users;
     private org.example.stockwatch247.service.UnreadCountService unreadCounts;
     public UserViewModelAdvice(UserRepository users) { this.users = users; }
+    @org.springframework.beans.factory.annotation.Value("${pwa.enabled:true}")
+    private boolean pwaEnabled = true;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.example.stockwatch247.service.channel.ChannelSettingsService alertChannels;
 
@@ -33,6 +35,7 @@ public class UserViewModelAdvice {
         if (request.getRequestURI().substring(request.getContextPath().length()).startsWith("/api/")) return;
         User user = principal == null ? null : org.example.stockwatch247.security.CurrentAccount.find(users, principal.getName()).orElse(null);
         model.addAttribute("showAppNavigation", user != null);
+        model.addAttribute("pwaEnabled", pwaEnabled);
         if (user != null) {
             model.addAttribute("firstName", user.getFirstName());
             // Sidebar badges: what is waiting on each page, without opening it.

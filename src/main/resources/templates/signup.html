@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title th:text="|#{auth.signup.title} — StockWatch 24/7|">Create account — StockWatch 24/7</title>
-  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script>
+  <script th:src="@{/i18n/messages.js(lang=${#locale.language},v=${T(org.example.stockwatch247.i18n.I18nScriptController).VERSION})}"></script><script th:src="@{/js/theme.js}"></script><th:block th:replace="~{fragments/pwa :: head}"></th:block>
   <link rel="stylesheet" th:href="@{/css/tokens.css}"><link rel="stylesheet" th:href="@{/css/style.css}">
   <link rel="stylesheet" th:href="@{/css/design.css}">
   <link rel="stylesheet" th:href="@{/css/refresh.css}">

@@ -19,8 +19,18 @@
     <p th:unless="${webhookSecret.rotated()}" th:text="#{settings.delivery.webhook.thenTest}">Then send a test: the webhook starts receiving alerts once a test reaches it.</p>
   </div>
 
+  <section th:if="${pwaEnabled == null or pwaEnabled}" class="settings-card channel-card" id="delivery-device">
+    <div class="settings-card-heading"><div><span class="settings-number">01</span><h2 th:text="#{settings.delivery.device.heading}">This device</h2></div>
+      <p th:text="#{settings.delivery.device.note}">Install StockWatch as an app: it opens in its own window, like any other app.</p></div>
+    <div class="channel-device">
+      <button class="btn-accent" type="button" data-pwa-install hidden th:text="#{settings.delivery.device.install}">Install StockWatch</button>
+      <p class="settings-muted" data-pwa-installed hidden th:text="#{settings.delivery.device.installed}">StockWatch is running as an installed app on this device.</p>
+      <p class="settings-muted" data-pwa-manual th:text="#{settings.delivery.device.manual}">Use your browser's Install or Add to Home Screen option. On iPhone and iPad: Share, then Add to Home Screen.</p>
+    </div>
+  </section>
+
   <section class="settings-card channel-card" id="delivery-email">
-    <div class="settings-card-heading"><div><span class="settings-number">01</span><h2 th:text="#{settings.delivery.email.heading}">Email</h2></div>
+    <div class="settings-card-heading"><div><span class="settings-number" th:text="${pwaEnabled == null or pwaEnabled} ? '02' : '01'">01</span><h2 th:text="#{settings.delivery.email.heading}">Email</h2></div>
       <p th:text="#{settings.delivery.email.note}">Email has its own choices on the Analysis &amp; Alerts page.</p></div>
     <div class="channel-row channel-row-email">
       <span class="channel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m4 7 8 6 8-6"></path></svg></span>
@@ -35,7 +45,7 @@
   </section>
 
   <section class="settings-card channel-card" id="delivery-channels">
-    <div class="settings-card-heading"><div><span class="settings-number">02</span><h2 th:text="#{settings.delivery.channels.heading}">Your channels</h2></div>
+    <div class="settings-card-heading"><div><span class="settings-number" th:text="${pwaEnabled == null or pwaEnabled} ? '03' : '02'">02</span><h2 th:text="#{settings.delivery.channels.heading}">Your channels</h2></div>
       <p th:text="#{settings.delivery.channels.note}">Each channel gets the alerts you choose for it, in its own language.</p></div>
 
     <p th:if="${#lists.isEmpty(deliveryChannels)}" class="channel-empty" th:text="#{settings.delivery.channels.empty}">Alerts reach you by email and on the website. Add Telegram, Discord, a webhook or this device to get them elsewhere too.</p>
@@ -148,7 +158,7 @@
   </section>
 
   <section class="settings-card channel-card" id="delivery-add">
-    <div class="settings-card-heading"><div><span class="settings-number">03</span><h2 th:text="#{settings.delivery.add.heading}">Add a channel</h2></div>
+    <div class="settings-card-heading"><div><span class="settings-number" th:text="${pwaEnabled == null or pwaEnabled} ? '04' : '03'">03</span><h2 th:text="#{settings.delivery.add.heading}">Add a channel</h2></div>
       <p th:text="#{settings.delivery.add.note}">Messages carry the same detail as the email: pattern, entry, stop, target and a link.</p></div>
     <p th:unless="${deliveryAnyAvailable}" class="channel-empty" th:text="#{settings.delivery.add.none}">No other channels are set up on this server yet.</p>
     <div th:if="${deliveryAnyAvailable}" class="channel-add-grid">
