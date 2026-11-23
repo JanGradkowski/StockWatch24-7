@@ -107,6 +107,38 @@ public class AlertDeliverySettingsController {
         return PAGE + "#delivery-channels";
     }
 
+    /** A new webhook: the page is rendered in this response so its signing secret is shown once, never stored in a flash. */
+    @PostMapping("/settings/alert-delivery/webhook")
+    public String addWebhook(@RequestParam String url, @RequestParam(required = false) String label,
+                             org.springframework.ui.Model model, Principal principal, jakarta.servlet.http.HttpSession session,
+                             jakarta.servlet.http.HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response,
+                             RedirectAttributes redirect) {
+        User user = current(principal);
+        try {
+            model.addAttribute("webhookSecret", channels.addWebhook(user, url, label));
+        } catch (UserInputException invalid) {
+            redirect.addFlashAttribute("error", invalid.getMessage());
+            return PAGE + "#add-webhook";
+        }
+        return pageWithSecret(model, principal, session, request, response);
+    }
+
+    @PostMapping("/settings/alert-delivery/{id}/rotate-secret")
+    public String rotateSecret(@PathVariable String id, org.springframework.ui.Model model, Principal principal,
+                               jakarta.servlet.http.HttpSession session, jakarta.servlet.http.HttpServletRequest request,
+                               jakarta.servlet.http.HttpServletResponse response) {
+        ChannelStore.Channel channel = owned(current(principal), id);
+        model.addAttribute("webhookSecret", channels.rotateSecret(channel));
+        return pageWithSecret(model, principal, session, request, response);
+    }
+
+    private String pageWithSecret(org.springframework.ui.Model model, Principal principal, jakarta.servlet.http.HttpSession session,
+                                  jakarta.servlet.http.HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        request.setAttribute("settingsTab", "delivery");
+        return settingsPage.page(model, principal, session, request);
+    }
+
     @PostMapping("/settings/alert-delivery/discord")
     public String addDiscord(@RequestParam String webhookUrl, @RequestParam(required = false) String label,
                              Principal principal, RedirectAttributes redirect) {

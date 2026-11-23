@@ -3,6 +3,21 @@
    JavaScript the "I pressed Start" link does the same by reloading the page. */
 (function () {
   'use strict';
+  // Copy buttons for a secret shown once; they appear only where the clipboard can be written.
+  document.querySelectorAll('[data-copy]').forEach(function (button) {
+    var source = button.parentElement && button.parentElement.querySelector('[data-copy-source]');
+    if (!source || !navigator.clipboard) return;
+    button.hidden = false;
+    button.addEventListener('click', function () {
+      navigator.clipboard.writeText(source.textContent.trim()).then(function () {
+        button.textContent = window.StockWatchI18n ? window.StockWatchI18n.t('delivery.copied') : button.textContent;
+      });
+    });
+  });
+})();
+
+(function () {
+  'use strict';
   var box = document.querySelector('[data-telegram-link]');
   if (!box) return;
   var url = box.getAttribute('data-status-url');

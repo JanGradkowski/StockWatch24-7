@@ -31,6 +31,23 @@
       <button class="btn-accent" type="submit" th:text="#{settings.delivery.discord.submit}">Add Discord</button>
     </form>
   </article>
+  <article th:if="${deliveryAvailable['WEBHOOK']}" class="channel-add" id="add-webhook">
+    <h3 th:text="#{settings.delivery.webhook.heading}">Webhook</h3>
+    <p th:text="#{settings.delivery.webhook.help}">StockWatch posts each alert as signed JSON to your own HTTPS address, for automation and your own tools.</p>
+    <form th:action="@{/settings/alert-delivery/webhook}" method="post">
+      <div class="form-group"><label for="webhookUrl" th:text="#{settings.delivery.webhook.url}">HTTPS address</label>
+        <input id="webhookUrl" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" required maxlength="2048"
+               th:placeholder="#{settings.delivery.webhook.urlHint}" placeholder="https://hooks.example.com/stockwatch"></div>
+      <div class="form-group"><label for="webhookLabel" th:text="#{settings.delivery.webhook.label}">Name (optional)</label>
+        <input id="webhookLabel" name="label" maxlength="80" autocomplete="off"></div>
+      <button class="btn-accent" type="submit" th:text="#{settings.delivery.webhook.submit}">Add webhook</button>
+    </form>
+    <details class="channel-details webhook-format">
+      <summary th:text="#{settings.delivery.webhook.format}">Message format</summary>
+      <p th:text="#{settings.delivery.webhook.formatHelp}">Each alert is one POST with Standard Webhooks headers. Check the signature with your secret and reject timestamps older than five minutes; the same webhook-id on a retry is the same alert.</p>
+      <pre class="webhook-example"><code th:text="#{settings.delivery.webhook.example}">…</code></pre>
+    </details>
+  </article>
 </th:block>
 </body>
 </html>

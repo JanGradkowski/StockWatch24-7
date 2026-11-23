@@ -11,6 +11,14 @@
     <a class="text-link" th:href="|#channel-${stopped.publicId()}|" th:text="#{settings.delivery.stopped.fix}">Fix it</a>
   </div>
 
+  <div th:if="${webhookSecret != null}" class="settings-message success-msg webhook-secret" role="status" id="webhook-secret">
+    <p><strong th:text="${webhookSecret.rotated()} ? #{settings.delivery.webhook.rotated(${webhookSecret.channel().label()})} : #{settings.delivery.webhook.added(${webhookSecret.channel().label()})}">Webhook added.</strong>
+      <span th:text="#{settings.delivery.webhook.secretOnce}">Copy its signing secret now: it is shown only this once.</span></p>
+    <div class="webhook-secret-row"><code data-copy-source th:text="${webhookSecret.secret()}">whsec_…</code>
+      <button class="btn-secondary" type="button" data-copy hidden th:text="#{settings.delivery.copy}">Copy</button></div>
+    <p th:unless="${webhookSecret.rotated()}" th:text="#{settings.delivery.webhook.thenTest}">Then send a test: the webhook starts receiving alerts once a test reaches it.</p>
+  </div>
+
   <section class="settings-card channel-card" id="delivery-email">
     <div class="settings-card-heading"><div><span class="settings-number">01</span><h2 th:text="#{settings.delivery.email.heading}">Email</h2></div>
       <p th:text="#{settings.delivery.email.note}">Email has its own choices on the Analysis &amp; Alerts page.</p></div>
@@ -115,6 +123,12 @@
                 <span th:text="${#messages.msgOrNull('settings.delivery.kind.' + delivery.kind()) ?: delivery.kind()}">Candlestick signal</span>
                 <span class="channel-outcome" th:classappend="|is-${#strings.toLowerCase(delivery.outcome())}|" th:text="${#messages.msg('settings.delivery.outcome.' + delivery.outcome())}">Delivered</span></li>
             </ol>
+          </details>
+
+          <details th:if="${channel.type().name() == 'WEBHOOK' and status != 'REVOKED'}" class="channel-details">
+            <summary th:text="#{settings.delivery.webhook.secret}">Signing secret</summary>
+            <p class="settings-muted" th:text="#{settings.delivery.webhook.rotateHelp}">A new secret is shown once. The old one keeps signing alongside it for 24 hours, so you can update your receiver.</p>
+            <form th:action="@{|/settings/alert-delivery/${view.id()}/rotate-secret|}" method="post"><button class="btn-secondary" type="submit" th:text="#{settings.delivery.webhook.rotate}">Make a new secret</button></form>
           </details>
 
           <details class="channel-details channel-remove">
