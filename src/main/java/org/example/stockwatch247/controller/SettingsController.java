@@ -128,6 +128,7 @@ public class SettingsController {
                 available.put(type.name(), alertChannels.available(type));
             }
             model.addAttribute("deliveryAvailable", available);
+            if (vapidKeys != null) model.addAttribute("vapidPublicKey", vapidKeys.publicKey());
             model.addAttribute("deliveryAnyAvailable", available.entrySet().stream()
                     .anyMatch(entry -> entry.getValue() && !entry.getKey().equals("PUSH")));
         }
@@ -571,6 +572,8 @@ public class SettingsController {
     }
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.example.stockwatch247.service.channel.ChannelSettingsService alertChannels;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.example.stockwatch247.service.channel.VapidKeys vapidKeys;
 
     private User current(Principal principal) {
         return org.example.stockwatch247.security.CurrentAccount.find(users, principal.getName()).orElseThrow(() -> new IllegalArgumentException("Account not found."));

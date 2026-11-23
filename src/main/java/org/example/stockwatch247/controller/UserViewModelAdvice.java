@@ -38,6 +38,8 @@ public class UserViewModelAdvice {
         model.addAttribute("pwaEnabled", pwaEnabled);
         if (user != null) {
             model.addAttribute("firstName", user.getFirstName());
+            // Push devices follow the account's security version (V107); pwa.js re-sends this browser when it changes.
+            model.addAttribute("pushRevision", user.getSecurityVersion());
             // Sidebar badges: what is waiting on each page, without opening it.
             model.addAttribute("navigationUnread", unreadCounts == null ? null : unreadCounts.counts(user));
         }

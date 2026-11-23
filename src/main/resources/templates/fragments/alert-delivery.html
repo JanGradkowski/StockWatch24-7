@@ -27,6 +27,25 @@
       <p class="settings-muted" data-pwa-installed hidden th:text="#{settings.delivery.device.installed}">StockWatch is running as an installed app on this device.</p>
       <p class="settings-muted" data-pwa-manual th:text="#{settings.delivery.device.manual}">Use your browser's Install or Add to Home Screen option. On iPhone and iPad: Share, then Add to Home Screen.</p>
     </div>
+    <div th:if="${deliveryAvailable['PUSH']}" class="push-card" data-push-card th:attr="data-vapid-key=${vapidPublicKey}">
+      <h3 th:text="#{settings.delivery.push.heading}">Notifications on this device</h3>
+      <p data-push-state="unsupported" hidden th:text="#{settings.delivery.push.unsupported}">This browser cannot show StockWatch notifications.</p>
+      <p data-push-state="ios" hidden th:text="#{settings.delivery.push.ios}">On iPhone and iPad, add StockWatch to your Home Screen first (Share, then Add to Home Screen), open it from there and sign in. Then turn notifications on.</p>
+      <div data-push-state="off" hidden>
+        <p th:text="#{settings.delivery.push.offHelp}">Get a notification on this device when an alert arrives, even with StockWatch closed.</p>
+        <button class="btn-accent" type="button" data-push-enable th:text="#{settings.delivery.push.enable}">Turn on notifications</button>
+      </div>
+      <p data-push-state="denied" hidden th:text="#{settings.delivery.push.denied}">Notifications are blocked for StockWatch in this browser. Allow them in the site settings (the icon next to the address), then reload this page.</p>
+      <div data-push-state="on" hidden>
+        <p th:text="#{settings.delivery.push.on}">Notifications are on for this device. It is listed under Your channels, where you choose its alerts.</p>
+        <label class="push-hide"><input type="checkbox" data-push-hide><span th:text="#{settings.delivery.push.hide}">Hide alert details on the lock screen</span></label>
+        <div class="channel-form-actions">
+          <button class="btn-secondary" type="button" data-push-test th:text="#{settings.delivery.test}">Send test</button>
+          <button class="btn-secondary" type="button" data-push-disable th:text="#{settings.delivery.push.disable}">Turn off on this device</button>
+        </div>
+      </div>
+      <p class="settings-muted" data-push-message role="status"></p>
+    </div>
   </section>
 
   <section class="settings-card channel-card" id="delivery-email">

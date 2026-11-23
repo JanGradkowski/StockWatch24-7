@@ -2317,3 +2317,39 @@ internal
 
 en: Could not sign the webhook.
 internal
+
+en: This browser's push address is not supported.
+pl: Adres powiadomień tej przeglądarki nie jest obsługiwany.
+
+en: This browser sent unusable push keys. Turn notifications off and on again.
+pl: Ta przeglądarka przesłała nieprawidłowe klucze powiadomień. Wyłącz i ponownie włącz powiadomienia.
+
+en: Turn notifications on for this device first.
+pl: Najpierw włącz powiadomienia na tym urządzeniu.
+
+en: The push message is too long.
+internal
+
+en: Not an uncompressed P-256 point.
+internal
+
+en: The point is not on P-256.
+internal
+
+en: Not a P-256 public key.
+internal
+
+en: Not a P-256 private key.
+internal
+
+en: P-256 is unavailable.
+internal
+
+en: Could not encrypt the push message.
+internal
+
+en: Could not sign the VAPID token.
+internal
+
+en: The push secret is not 16 bytes.
+internal
