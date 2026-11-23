@@ -985,3 +985,15 @@ main:focus { outline: none; }
 }
 :root[data-theme] .ui-refresh .telegram-link { display: grid; gap: var(--space-3); justify-items: start; }
 :root[data-theme] .ui-refresh .telegram-qr { width: 160px; height: 160px; padding: 8px; border-radius: var(--radius-sm); background: #fff; image-rendering: pixelated; }
+:root[data-theme] .ui-refresh .webhook-secret { display: grid; gap: var(--space-2); }
+:root[data-theme] .ui-refresh .webhook-secret p { margin: 0; }
+:root[data-theme] .ui-refresh .webhook-secret-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+:root[data-theme] .ui-refresh .webhook-secret code {
+    padding: 0.4rem 0.6rem; border: 1px solid var(--glass-border); border-radius: 6px; background: var(--surface-soft);
+    font-size: var(--fs-sm); overflow-wrap: anywhere; user-select: all;
+}
+:root[data-theme] .ui-refresh .webhook-example {
+    margin: var(--space-2) 0 0; padding: var(--space-3); overflow-x: auto; border-radius: 6px; background: var(--surface-raised);
+    font-size: var(--fs-xs); line-height: 1.5;
+}
+:root[data-theme] .ui-refresh .webhook-format p { margin: 0; }

@@ -2290,3 +2290,30 @@ pl: Czat Telegram został odrzucony i usunięty.
 
 en: Telegram is not configured.
 internal
+
+en: Use an https:// address.
+pl: Użyj adresu https://.
+
+en: Remove the user name and password from the address.
+pl: Usuń nazwę użytkownika i hasło z adresu.
+
+en: Use a host name, not an IP address.
+pl: Użyj nazwy hosta, nie adresu IP.
+
+en: Use port 443 or 8443.
+pl: Użyj portu 443 lub 8443.
+
+en: That is not a valid web address.
+pl: To nie jest prawidłowy adres internetowy.
+
+en: StockWatch could not find that host. Check the address.
+pl: StockWatch nie znalazł tego hosta. Sprawdź adres.
+
+en: This address is already one of your webhooks.
+pl: Ten adres jest już jednym z Twoich webhooków.
+
+en: Only a webhook has a signing secret.
+internal
+
+en: Could not sign the webhook.
+internal

@@ -68,6 +68,13 @@ public class ChannelSettingsService {
     private Messages messages;
     @Autowired(required = false)
     private DiscordSender discord;
+    @Autowired(required = false)
+    private WebhookSender webhooks;
+    @Autowired(required = false)
+    private org.example.stockwatch247.security.GuardedHttpClient http;
+
+    /** A webhook just added or given a new secret, with the secret shown this once. */
+    public record WebhookSecret(ChannelStore.Channel channel, String secret, boolean rotated) { }
 
     public ChannelSettingsService(ChannelStore store, ChannelDeliveryWorker worker, JdbcTemplate jdbc,
                                   RequestRateLimiter limiter, SecurityEventRepository events,
@@ -186,6 +193,57 @@ public class ChannelSettingsService {
         return create(user, new ChannelStore.NewChannel(user.getId(), ChannelType.DISCORD, chosen, webhook.hint(),
                 DiscordSender.SCOPE, ChannelStatus.ACTIVE, defaultKinds(user), defaultDirections(user), null,
                 Map.of("webhookUrl", webhook.url(), "webhookId", webhook.id()), lookup));
+    }
+
+    /**
+     * Adds a webhook, waiting for its first test: the address must be HTTPS (port 443 or 8443 in production) on a
+     * host that resolves only to public addresses. Returns the signing secret, which is shown once.
+     */
+    public WebhookSecret addWebhook(User user, String url, String label) {
+        if (!available(ChannelType.WEBHOOK) || webhooks == null || http == null) {
+            throw new UserInputException("This kind of channel is not set up on this server.");
+        }
+        java.net.URI uri;
+        try {
+            uri = http.policy().validateUrl(url);
+            http.policy().checkedAddresses(uri.getHost());
+        } catch (org.example.stockwatch247.security.OutboundTargetPolicy.TargetRejected rejected) {
+            throw new UserInputException(switch (rejected.problem()) {
+                case NOT_HTTPS -> "Use an https:// address.";
+                case CREDENTIALS -> "Remove the user name and password from the address.";
+                case IP_LITERAL -> "Use a host name, not an IP address.";
+                case PORT -> "Use port 443 or 8443.";
+                case PRIVATE_ADDRESS, OWN_HOST -> "The address points to a private network, which StockWatch can't reach.";
+                default -> "That is not a valid web address.";
+            });
+        } catch (java.net.UnknownHostException unknown) {
+            throw new UserInputException("StockWatch could not find that host. Check the address.");
+        }
+        String lookup = "webhook:" + uri;
+        boolean known = store.byLookup(ChannelType.WEBHOOK, store.lookupHash(ChannelType.WEBHOOK, lookup)).stream()
+                .anyMatch(channel -> channel.userId() == user.getId());
+        if (known) throw new UserInputException("This address is already one of your webhooks.");
+        String secret = webhooks.newSecret();
+        String name = label == null || label.isBlank() ? uri.getHost() : label.strip();
+        if (name.length() > 80) name = name.substring(0, 80);
+        ChannelStore.Channel channel = create(user, new ChannelStore.NewChannel(user.getId(), ChannelType.WEBHOOK, name,
+                uri.getHost(), null, ChannelStatus.PENDING, defaultKinds(user), defaultDirections(user), null,
+                Map.of("url", uri.toString(), "secret", secret), lookup));
+        return new WebhookSecret(channel, secret, false);
+    }
+
+    /** A new signing secret; the old one keeps signing alongside it for 24 hours. */
+    public WebhookSecret rotateSecret(ChannelStore.Channel channel) {
+        if (channel.type() != ChannelType.WEBHOOK || channel.status() == ChannelStatus.REVOKED || webhooks == null) {
+            throw new UserInputException("Only a webhook has a signing secret.");
+        }
+        Map<String, Object> config = new java.util.LinkedHashMap<>(store.config(channel));
+        String secret = webhooks.newSecret();
+        config.put("previousSecret", config.get("secret"));
+        config.put("previousSecretUntil", Instant.now().plus(Duration.ofHours(24)).toString());
+        config.put("secret", secret);
+        store.replaceConfig(channel, config, null, null);
+        return new WebhookSecret(channel, secret, true);
     }
 
     /** Records the new channel under Sessions and activity and emails the owner, best effort. */
